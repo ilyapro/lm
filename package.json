@@ -1,0 +1,13 @@
+{
+  "name": "lm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal project scaffold for future application work.",
+  "scripts": {
+    "check": "bash scripts/check.sh",
+    "test": "bash scripts/test.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
