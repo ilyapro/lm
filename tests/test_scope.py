@@ -80,3 +80,23 @@ def test_implicit_project_scope_can_be_inferred_from_query(tmp_path: Path) -> No
         ids = {result.node.id for result in results}
         assert alpha.id in ids
         assert beta.id not in ids
+
+
+def test_implicit_project_scope_can_be_inferred_from_russian_query(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        alpha = store.append_trace(
+            "Политика перезапуска очереди для альфа",
+            {"scope": "project:альфа", "agent": "agent-a"},
+        )
+        beta = store.append_trace(
+            "Политика перезапуска очереди для бета",
+            {"scope": "project:бета", "agent": "agent-b"},
+        )
+
+        plan = resolve_scope(query="какая политика очереди у альфа", store=store)
+        assert plan.scopes == ("project:альфа", "global")
+
+        results = memory_recall(store, "политика очереди альфа", max_results=10)
+        ids = {result.node.id for result in results}
+        assert alpha.id in ids
+        assert beta.id not in ids

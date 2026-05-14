@@ -230,4 +230,4 @@ def _ambient_project(ambient: Mapping[str, Any], ambient_scope: str | None) -> s
 
 
 def _tokens(value: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", value.lower())
+    return re.findall(r"\w+", value.lower())
