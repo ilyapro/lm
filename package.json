@@ -2,10 +2,13 @@
   "name": "lm",
   "version": "0.1.0",
   "private": true,
-  "description": "Minimal project scaffold for future application work.",
+  "description": "Living Memory MCP server backed by one SQLite file.",
   "scripts": {
     "check": "bash scripts/check.sh",
-    "test": "bash scripts/test.sh"
+    "setup:python": "bash scripts/setup-python.sh",
+    "test": "bash scripts/test.sh",
+    "test:python": "bash scripts/test.sh",
+    "server": "bash scripts/server.sh"
   },
   "engines": {
     "node": ">=20"
