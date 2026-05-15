@@ -36,62 +36,24 @@ def create_mcp_server(
     *,
     config: MemoryConfig | None = None,
     config_path: str | Path | None = None,
+    default_scope: str | None = None,
     name: str = "Living Memory",
     mcp_factory: Any | None = None,
 ) -> Any:
     """Create a FastMCP server bound to one SQLite store."""
 
-    store = MemoryStore(_resolve_config(db_path=db_path, config=config, config_path=config_path))
+    store = MemoryStore(
+        _resolve_config(
+            db_path=db_path,
+            config=config,
+            config_path=config_path,
+            default_scope=default_scope,
+        )
+    )
     mcp_cls = mcp_factory or _load_fastmcp()
     mcp = mcp_cls(
         name,
-        instructions=(
-            "Living Memory is your persistent knowledge store across tasks and sessions.\n"
-            "\n"
-            "## When to use\n"
-            "1. **Start of task** — call `memory_recall` with the task description to "
-            "retrieve relevant past context (patterns, pitfalls, architecture notes).\n"
-            "2. **During work — recall** — call `memory_recall` when you have questions "
-            "about the project domain, environment, conventions, or tooling before "
-            "searching the codebase. Memory is faster and may already contain the answer "
-            "(e.g. 'how are experiments configured?', 'what test runner is used?', "
-            "'known issues with tooltip components').\n"
-            "   - Use `depth: 'causal'` when debugging failures — it follows cause→effect "
-            "chains to find root causes.\n"
-            "3. **During work — remember** — call `memory_remember` whenever you discover "
-            "something worth preserving:\n"
-            "   - Unexpected behaviour or wrong assumptions about the codebase\n"
-            "   - Non-obvious architectural constraints or coupling\n"
-            "   - Failure root causes and what fixed them\n"
-            "   - Newly discovered conventions, configs, or env details\n"
-            "4. **Correct mistakes** — if you recall a fact that turns out to be wrong, "
-            "call `memory_teach` with the original trace ID and the correction. "
-            "This supersedes the bad fact and prevents it from resurfacing.\n"
-            "5. **End of task** — call `memory_remember` with a concise task outcome "
-            "summary (what was done, key files, anything surprising).\n"
-            "\n"
-            "## Scope\n"
-            "Always set `context.scope` to `'project:<name>'` (e.g. `'project:online'`) "
-            "when the fact is project-specific. The scope is inferred from your "
-            "environment when omitted, but explicit is better.\n"
-            "\n"
-            "## Structured context\n"
-            "Pass structured metadata in the `context` parameter of `memory_remember`:\n"
-            "```json\n"
-            '{"scope": "project:online", "task": "EZ-13771", "agent": "codex"}\n'
-            "```\n"
-            "This enables precise recall by task or project later.\n"
-            "\n"
-            "## How to write good traces\n"
-            "- Be **concrete and factual**: prefer 'file X exports Y, not Z' over vague notes.\n"
-            "- Include **file paths, function names, config keys** — specifics enable recall.\n"
-            "- One fact per trace. Short is better than long.\n"
-            "\n"
-            "## What NOT to store\n"
-            "- Routine actions ('I ran the tests') without new insight.\n"
-            "- Copies of code — reference file paths instead.\n"
-            "- Speculation or plans — only store verified facts.\n"
-        ),
+        instructions=_server_instructions(store.config.default_scope),
     )
     runtime_lock = RLock()
     _attach(mcp, "memory_store", store)
@@ -101,15 +63,71 @@ def create_mcp_server(
     return mcp
 
 
+def _server_instructions(default_scope: str) -> str:
+    return (
+        "Living Memory is your persistent knowledge store across tasks and sessions.\n"
+        "\n"
+        "## When to use\n"
+        "1. **Start of task** — call `memory_recall` with the task description to "
+        "retrieve relevant past context (patterns, pitfalls, architecture notes).\n"
+        "2. **During work — recall** — call `memory_recall` when you have questions "
+        "about the project domain, environment, conventions, or tooling before "
+        "searching the codebase. Memory is faster and may already contain the answer "
+        "(e.g. 'how are experiments configured?', 'what test runner is used?', "
+        "'known issues with tooltip components').\n"
+        "   - Use `depth: 'causal'` when debugging failures — it follows cause→effect "
+        "chains to find root causes.\n"
+        "3. **During work — remember** — call `memory_remember` whenever you discover "
+        "something worth preserving:\n"
+        "   - Unexpected behaviour or wrong assumptions about the codebase\n"
+        "   - Non-obvious architectural constraints or coupling\n"
+        "   - Failure root causes and what fixed them\n"
+        "   - Newly discovered conventions, configs, or env details\n"
+        "4. **Correct mistakes** — if you recall a fact that turns out to be wrong, "
+        "call `memory_teach` with the original trace ID and the correction. "
+        "This supersedes the bad fact and prevents it from resurfacing.\n"
+        "5. **End of task** — call `memory_remember` with a concise task outcome "
+        "summary (what was done, key files, anything surprising).\n"
+        "\n"
+        "## Scope\n"
+        "Always set `context.scope` to `'project:<name>'` (e.g. `'project:online'`) "
+        "when the fact is project-specific. The scope is inferred from your "
+        "environment when omitted, but explicit is better.\n"
+        f"Your default scope is {default_scope}.\n"
+        "\n"
+        "## Structured context\n"
+        "Pass structured metadata in the `context` parameter of `memory_remember`:\n"
+        "```json\n"
+        '{"scope": "project:online", "task": "EZ-13771", "agent": "codex"}\n'
+        "```\n"
+        "This enables precise recall by task or project later.\n"
+        "\n"
+        "## How to write good traces\n"
+        "- Be **concrete and factual**: prefer 'file X exports Y, not Z' over vague notes.\n"
+        "- Include **file paths, function names, config keys** — specifics enable recall.\n"
+        "- One fact per trace. Short is better than long.\n"
+        "\n"
+        "## What NOT to store\n"
+        "- Routine actions ('I ran the tests') without new insight.\n"
+        "- Copies of code — reference file paths instead.\n"
+        "- Speculation or plans — only store verified facts.\n"
+    )
+
+
 def run_server(
     db_path: str | Path | None = None,
     *,
     config_path: str | Path | None = None,
+    default_scope: str | None = None,
     transport: str = "stdio",
     host: str = "127.0.0.1",
     port: int = 8000,
 ) -> None:
-    mcp = create_mcp_server(db_path=db_path, config_path=config_path)
+    mcp = create_mcp_server(
+        db_path=db_path,
+        config_path=config_path,
+        default_scope=default_scope,
+    )
     if transport == "stdio":
         mcp.run()
     else:
@@ -124,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         run_server(
             db_path=db_path,
             config_path=args.config,
+            default_scope=args.default_scope,
             transport=args.transport,
             host=args.host,
             port=args.port,
@@ -323,6 +342,7 @@ def _resolve_config(
     db_path: str | Path | None,
     config: MemoryConfig | None,
     config_path: str | Path | None,
+    default_scope: str | None,
 ) -> MemoryConfig:
     if config is not None and config_path is not None:
         raise ValueError("provide config or config_path, not both")
@@ -330,9 +350,11 @@ def _resolve_config(
         resolved = load_config(config_path)
     else:
         resolved = config or MemoryConfig()
-    if db_path is None:
-        return resolved
-    return replace(resolved, db_path=Path(db_path))
+    if db_path is not None:
+        resolved = replace(resolved, db_path=Path(db_path))
+    if default_scope is not None:
+        resolved = replace(resolved, default_scope=default_scope)
+    return resolved
 
 
 def _load_fastmcp() -> Any:
@@ -411,6 +433,11 @@ def _build_parser() -> ArgumentParser:
     parser.add_argument(
         "--config",
         help="Optional TOML config path.",
+    )
+    parser.add_argument(
+        "--default-scope",
+        dest="default_scope",
+        help="Fallback scope for new traces when context.scope is omitted.",
     )
     parser.add_argument(
         "--transport",

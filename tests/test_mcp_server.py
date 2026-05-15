@@ -110,6 +110,24 @@ def test_mcp_tools_delegate_to_memory_services(tmp_path: Path) -> None:
     assert forgotten["node"]["decay_reason"] == "test cleanup"
 
 
+def test_server_default_scope_applies_to_unspecified_trace_scope(tmp_path: Path) -> None:
+    mcp = create_mcp_server(
+        tmp_path / "memory.sqlite3",
+        default_scope="project:scope-test",
+        mcp_factory=FakeMCP,
+    )
+
+    assert "Your default scope is project:scope-test" in str(mcp.instructions)
+
+    remembered = mcp.tools["memory_remember"](
+        "trace without explicit scope",
+        {"agent": "agent-a"},
+    )
+
+    assert remembered["node"]["scope"] == "project:scope-test"
+    assert remembered["node"]["context"]["scope"] == "project:scope-test"
+
+
 def test_server_help_does_not_require_runtime_dependency() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "living_memory.server", "--help"],
@@ -121,3 +139,4 @@ def test_server_help_does_not_require_runtime_dependency() -> None:
 
     assert result.returncode == 0
     assert "SQLite" in result.stdout
+    assert "--default-scope" in result.stdout
