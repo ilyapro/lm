@@ -363,6 +363,7 @@ def _consolidation_result_to_dict(result: ConsolidationResult) -> dict[str, Any]
     return {
         "concepts_created": [node_to_dict(node) for node in result.concepts_created],
         "concepts_updated": [node_to_dict(node) for node in result.concepts_updated],
+        "concepts_promoted": [node_to_dict(node) for node in result.concepts_promoted],
         "decayed": [node_to_dict(node) for node in result.decayed],
         "clusters_considered": result.clusters_considered,
         "traces_considered": result.traces_considered,

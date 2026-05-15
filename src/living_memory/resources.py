@@ -64,6 +64,7 @@ def memory_stats(store: MemoryStore) -> dict[str, Any]:
         "phase": phase_to_dict(store),
         "counts": count_nodes(store),
         "confidence": confidence_summary(store),
+        "promotions": promotion_summary(store),
         "scopes": scope_summary(store),
         "retrieval_weights": retrieval_weights_summary(store),
     }
@@ -97,6 +98,7 @@ def memory_status(store: MemoryStore, scope: str | None = None) -> dict[str, Any
         "counts": count_nodes(store, scope=normalized_scope),
         "confidence": confidence_summary(store, scope=normalized_scope),
         "coverage": coverage_summary(store, scope=normalized_scope),
+        "promotions": promotion_summary(store, scope=normalized_scope),
         "retrieval_policy": retrieval_policy_for_scope(store, normalized_scope or "global"),
     }
 
@@ -242,6 +244,37 @@ def coverage_summary(store: MemoryStore, scope: str | None = None) -> dict[str, 
     return {"scopes": scopes, "scope_count": len(scopes)}
 
 
+def promotion_summary(store: MemoryStore, scope: str | None = None) -> dict[str, Any]:
+    """Summarize active global concepts created or reinforced by promotion."""
+
+    concepts = store.list_nodes(
+        level="concept",
+        scope="global",
+        include_decayed=False,
+        limit=DEFAULT_CONCEPT_LIMIT,
+    )
+    promoted_concepts = 0
+    promotion_events = 0
+    source_scopes: set[str] = set()
+    for concept in concepts:
+        promoted_from = _string_list(concept.provenance.get("promoted_from"))
+        if not promoted_from:
+            continue
+        if scope not in (None, "global") and scope not in promoted_from:
+            continue
+
+        promoted_concepts += 1
+        source_scopes.update(promoted_from)
+        events = concept.provenance.get("promotion_events")
+        promotion_events += len(events) if isinstance(events, list) else 1
+
+    return {
+        "promoted_concepts": promoted_concepts,
+        "promotion_events": promotion_events,
+        "source_scopes": sorted(source_scopes),
+    }
+
+
 def scope_summary(store: MemoryStore) -> list[dict[str, Any]]:
     rows = store.connection.execute(
         """
@@ -295,3 +328,9 @@ def weights_to_dict(weights: RetrievalWeights) -> dict[str, Any]:
         "learning_rate": weights.learning_rate,
         "updated_at": weights.updated_at,
     }
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]

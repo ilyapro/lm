@@ -133,6 +133,45 @@ def test_memory_store_crud_search_connections_and_append_only_traces(tmp_path: P
         assert store.get_connection(connection.id) is None
 
 
+def test_find_similar_by_embedding_filters_scope_prefix_and_threshold(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        alpha = store.create_node(
+            level="concept",
+            content="alpha database timeout pattern",
+            context={"scope": "project:alpha"},
+            embedding=[1.0, 0.0],
+        )
+        beta = store.create_node(
+            level="concept",
+            content="beta database timeout pattern",
+            context={"scope": "project:beta"},
+            embedding=[0.8, 0.6],
+        )
+        store.create_node(
+            level="concept",
+            content="global database timeout pattern",
+            context={"scope": "global"},
+            embedding=[0.9, 0.1],
+        )
+        store.create_node(
+            level="concept",
+            content="gamma unrelated pattern",
+            context={"scope": "project:gamma"},
+            embedding=[0.0, 1.0],
+        )
+
+        matches = store.find_similar_by_embedding(
+            alpha.embedding or [],
+            level="concept",
+            exclude_scope="project:alpha",
+            scope_prefix="project:",
+            threshold=0.75,
+        )
+
+        assert [node.id for node, _score in matches] == [beta.id]
+        assert matches[0][1] == pytest.approx(0.8)
+
+
 def test_toml_config_loads_storage_phase_and_retrieval_settings(tmp_path: Path) -> None:
     config_path = tmp_path / "memory.toml"
     config_path.write_text(

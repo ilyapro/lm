@@ -20,6 +20,9 @@ DEFAULT_MIN_CLUSTER_SIZE = 100
 DEFAULT_RECENT_LIMIT = 10_000
 JACCARD_SIMILARITY_THRESHOLD = 0.58
 EMBEDDING_SIMILARITY_THRESHOLD = 0.65
+CROSS_SCOPE_PROMOTION_PHASE = 4
+CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
+GLOBAL_PROMOTION_DEDUP_THRESHOLD = 0.8
 
 _STOP_WORDS = {
     "a",
@@ -104,13 +107,14 @@ class ConsolidationResult:
 
     concepts_created: list[Node] = field(default_factory=list)
     concepts_updated: list[Node] = field(default_factory=list)
+    concepts_promoted: list[Node] = field(default_factory=list)
     decayed: list[Node] = field(default_factory=list)
     clusters_considered: int = 0
     traces_considered: int = 0
 
     @property
     def concepts(self) -> list[Node]:
-        return [*self.concepts_created, *self.concepts_updated]
+        return [*self.concepts_created, *self.concepts_updated, *self.concepts_promoted]
 
 
 @dataclass(slots=True)
@@ -130,6 +134,7 @@ class _TraceCluster:
     token_counts: Counter[str]
     embedding_sum: list[float] | None = None
     embedding_count: int = 0
+    embeddings_by_trace_id: dict[str, list[float]] = field(default_factory=dict)
     strategy: str = "token-jaccard"
 
     @property
@@ -153,12 +158,18 @@ class _TraceCluster:
         self.token_counts.update(tokens)
         if embedding is None:
             return
+        self.embeddings_by_trace_id[trace.id] = list(embedding)
         if self.embedding_sum is None:
             self.embedding_sum = [0.0] * len(embedding)
         for index, value in enumerate(embedding):
             if index < len(self.embedding_sum):
                 self.embedding_sum[index] += value
         self.embedding_count += 1
+
+    def embedding_for(self, trace: Node) -> list[float] | None:
+        if trace.embedding is not None:
+            return trace.embedding
+        return self.embeddings_by_trace_id.get(trace.id)
 
 
 class ConsolidationService:
@@ -245,6 +256,9 @@ def memory_consolidate(
             continue
         concept, created = _merge_cluster_into_concept(store, cluster)
         _update_edge_weights_from_co_access(store, concept, cluster.traces)
+        promoted = _cross_scope_promotion(store, concept, phase_number=phase.number)
+        if promoted is not None:
+            result.concepts_promoted.append(promoted)
         if created:
             result.concepts_created.append(concept)
         else:
@@ -360,6 +374,9 @@ def _cluster_traces(
                     Counter(tokens),
                     embedding_sum=list(embedding) if embedding is not None else None,
                     embedding_count=1 if embedding is not None else 0,
+                    embeddings_by_trace_id={trace.id: list(embedding)}
+                    if embedding is not None
+                    else {},
                     strategy="embedding-cosine" if embedding is not None else "token-jaccard",
                 )
             )
@@ -375,6 +392,7 @@ def _merge_cluster_into_concept(
     confidence = _consensus_confidence(cluster.traces, unique_agents)
     temporal_hint = detect_temporal_hint(cluster.traces)
     best_trace = max(cluster.traces, key=_trace_quality)
+    concept_embedding = cluster.embedding_for(best_trace) or cluster.representative_embedding
     usefulness = sum(max(0.0, trace.usefulness_score) for trace in cluster.traces) / len(
         cluster.traces
     )
@@ -403,6 +421,7 @@ def _merge_cluster_into_concept(
                 "agent": "memory_consolidate",
                 "timestamp": _utc_now(),
             },
+            embedding=concept_embedding,
             stats=stats,
             provenance=provenance,
         )
@@ -414,10 +433,268 @@ def _merge_cluster_into_concept(
     concept = store.update_node(
         existing.id,
         content=best_trace.content if _trace_quality(best_trace) >= _node_quality(existing) else None,
+        embedding=concept_embedding,
         stats=stats,
         provenance={**existing.provenance, **provenance},
     )
     return concept, False
+
+
+def _cross_scope_promotion(
+    store: MemoryStore, concept: Node, *, phase_number: int
+) -> Node | None:
+    if phase_number < CROSS_SCOPE_PROMOTION_PHASE:
+        return None
+    if concept.level != "concept" or not concept.scope.startswith("project:"):
+        return None
+    if concept.embedding is None:
+        return None
+
+    matches = store.find_similar_by_embedding(
+        concept.embedding,
+        level="concept",
+        exclude_scope=concept.scope,
+        scope_prefix="project:",
+        threshold=CROSS_SCOPE_PROMOTION_THRESHOLD,
+        limit=100_000,
+    )
+    sources_by_scope: dict[str, tuple[Node, float]] = {concept.scope: (concept, 1.0)}
+    for candidate, similarity in matches:
+        if candidate.id == concept.id or candidate.scope == concept.scope:
+            continue
+        current = sources_by_scope.get(candidate.scope)
+        if current is None or (similarity, candidate.confidence) > (
+            current[1],
+            current[0].confidence,
+        ):
+            sources_by_scope[candidate.scope] = (candidate, similarity)
+
+    if len(sources_by_scope) < 3:
+        return None
+
+    project_sources = [source for source, _similarity in sources_by_scope.values()]
+    similarities = {source.id: similarity for source, similarity in sources_by_scope.values()}
+    global_matches = store.find_similar_by_embedding(
+        concept.embedding,
+        level="concept",
+        scope="global",
+        threshold=GLOBAL_PROMOTION_DEDUP_THRESHOLD,
+        limit=10,
+    )
+    if global_matches:
+        return _reinforce_global_concept(
+            store,
+            global_matches[0][0],
+            project_sources,
+            similarities=similarities,
+        )
+    return _create_global_promoted_concept(
+        store,
+        project_sources,
+        similarities=similarities,
+    )
+
+
+def _create_global_promoted_concept(
+    store: MemoryStore,
+    project_sources: list[Node],
+    *,
+    similarities: Mapping[str, float],
+) -> Node:
+    best_source = _highest_confidence_source(project_sources)
+    source_scopes = _source_scopes(project_sources)
+    source_concepts = _source_concept_ids(project_sources)
+    source_traces = _source_trace_ids(project_sources)
+    promoted_at = _utc_now()
+    provenance = {
+        "source_traces": source_traces,
+        "promoted_from": source_scopes,
+        "source_concepts": source_concepts,
+        "promoted_at": promoted_at,
+        "strategy": "cross-scope-promotion",
+        "promotion_events": [
+            _promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at)
+        ],
+    }
+    global_concept = store.create_node(
+        level="concept",
+        content=best_source.content,
+        context={
+            "scope": "global",
+            "agent": "memory_consolidate",
+            "timestamp": promoted_at,
+        },
+        embedding=best_source.embedding,
+        stats={
+            "confidence": _promoted_confidence(project_sources),
+            "unique_agents": _promoted_unique_agents(project_sources),
+            "temporal_hint": _promoted_temporal_hint(project_sources),
+            "usefulness_score": _promoted_usefulness(project_sources),
+        },
+        provenance=provenance,
+    )
+    _connect_project_concepts_to_global(
+        store,
+        project_sources,
+        global_concept,
+        similarities=similarities,
+    )
+    return global_concept
+
+
+def _reinforce_global_concept(
+    store: MemoryStore,
+    global_concept: Node,
+    project_sources: list[Node],
+    *,
+    similarities: Mapping[str, float],
+) -> Node | None:
+    source_scopes = set(_source_scopes(project_sources))
+    source_concepts = set(_source_concept_ids(project_sources))
+    existing_scopes = set(_string_list(global_concept.provenance.get("promoted_from")))
+    existing_concepts = set(_string_list(global_concept.provenance.get("source_concepts")))
+    source_traces = set(_source_trace_ids(project_sources))
+    existing_traces = set(global_concept.source_traces)
+    new_scopes = source_scopes - existing_scopes
+    new_concepts = source_concepts - existing_concepts
+    new_traces = source_traces - existing_traces
+
+    _connect_project_concepts_to_global(
+        store,
+        project_sources,
+        global_concept,
+        similarities=similarities,
+    )
+    if not new_scopes and not new_concepts and not new_traces:
+        return None
+
+    promoted_at = _utc_now()
+    provenance = dict(global_concept.provenance)
+    provenance["source_traces"] = sorted(existing_traces | source_traces)
+    provenance["promoted_from"] = sorted(existing_scopes | source_scopes)
+    provenance["source_concepts"] = sorted(existing_concepts | source_concepts)
+    provenance.setdefault("promoted_at", promoted_at)
+    provenance["last_promoted_at"] = promoted_at
+    provenance["strategy"] = "cross-scope-promotion"
+    events = list(provenance.get("promotion_events", []))
+    events.append(_promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at))
+    provenance["promotion_events"] = events
+
+    stats = {
+        "confidence": _reinforced_confidence(global_concept, project_sources, len(new_scopes)),
+        "unique_agents": max(global_concept.unique_agents, _promoted_unique_agents(project_sources)),
+        "temporal_hint": global_concept.temporal_hint or _promoted_temporal_hint(project_sources),
+        "usefulness_score": max(global_concept.usefulness_score, _promoted_usefulness(project_sources)),
+    }
+    return store.update_node(global_concept.id, stats=stats, provenance=provenance)
+
+
+def _connect_project_concepts_to_global(
+    store: MemoryStore,
+    project_sources: Iterable[Node],
+    global_concept: Node,
+    *,
+    similarities: Mapping[str, float],
+) -> None:
+    for source in project_sources:
+        _upsert_weighted_connection(
+            store,
+            source.id,
+            global_concept.id,
+            "related",
+            weight=max(0.1, similarities.get(source.id, CROSS_SCOPE_PROMOTION_THRESHOLD)),
+            metadata={
+                "basis": "cross_scope_promotion",
+                "source_scope": source.scope,
+                "target_scope": "global",
+                "similarity": round(similarities.get(source.id, 0.0), 6),
+            },
+        )
+
+
+def _highest_confidence_source(project_sources: Iterable[Node]) -> Node:
+    return max(
+        project_sources,
+        key=lambda source: (
+            source.confidence,
+            source.unique_agents,
+            source.usefulness_score,
+            _node_quality(source),
+            source.id,
+        ),
+    )
+
+
+def _source_scopes(project_sources: Iterable[Node]) -> list[str]:
+    return sorted({source.scope for source in project_sources})
+
+
+def _source_concept_ids(project_sources: Iterable[Node]) -> list[str]:
+    return sorted({source.id for source in project_sources})
+
+
+def _source_trace_ids(project_sources: Iterable[Node]) -> list[str]:
+    return sorted({trace_id for source in project_sources for trace_id in source.source_traces})
+
+
+def _promotion_event(
+    project_sources: Iterable[Node],
+    *,
+    similarities: Mapping[str, float],
+    promoted_at: str,
+) -> dict[str, Any]:
+    sources = list(project_sources)
+    return {
+        "promoted_at": promoted_at,
+        "source_scopes": _source_scopes(sources),
+        "source_concepts": _source_concept_ids(sources),
+        "similarities": {
+            source.id: round(similarities.get(source.id, 0.0), 6) for source in sources
+        },
+    }
+
+
+def _promoted_confidence(project_sources: Iterable[Node]) -> float:
+    sources = list(project_sources)
+    if not sources:
+        return 0.0
+    base = max(source.confidence for source in sources)
+    scope_bonus = min(0.12, 0.02 * max(0, len(_source_scopes(sources)) - 1))
+    return round(min(0.99, base + scope_bonus), 6)
+
+
+def _reinforced_confidence(
+    global_concept: Node, project_sources: Iterable[Node], new_scope_count: int
+) -> float:
+    if new_scope_count <= 0:
+        return global_concept.confidence
+    source_confidence = _promoted_confidence(project_sources)
+    boost = min(0.1, 0.02 * new_scope_count)
+    return round(min(0.99, max(global_concept.confidence, source_confidence) + boost), 6)
+
+
+def _promoted_unique_agents(project_sources: Iterable[Node]) -> int:
+    return sum(max(1, source.unique_agents) for source in project_sources)
+
+
+def _promoted_usefulness(project_sources: Iterable[Node]) -> float:
+    sources = list(project_sources)
+    if not sources:
+        return 0.0
+    return round(sum(source.usefulness_score for source in sources) / len(sources), 6)
+
+
+def _promoted_temporal_hint(project_sources: Iterable[Node]) -> str | None:
+    hints = [source.temporal_hint for source in project_sources if source.temporal_hint]
+    if not hints:
+        return None
+    return Counter(hints).most_common(1)[0][0]
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
 
 
 def _find_existing_concept(store: MemoryStore, scope: str, cluster_key: str) -> Node | None:

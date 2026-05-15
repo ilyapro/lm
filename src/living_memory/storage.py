@@ -13,6 +13,7 @@ import time
 from datetime import UTC, datetime
 
 from living_memory.config import MemoryConfig, RetrievalWeightConfig
+from living_memory.embeddings import cosine_similarity
 from living_memory.models import (
     CONNECTION_TYPES,
     NODE_LEVELS,
@@ -612,6 +613,62 @@ class MemoryStore:
             params,
         ).fetchall()
         return [(_node_from_row(row), float(row["score"])) for row in rows]
+
+    def find_similar_by_embedding(
+        self,
+        embedding: list[float],
+        *,
+        level: NodeLevel = "concept",
+        exclude_scope: str | None = None,
+        scope_prefix: str | None = None,
+        scope: str | None = None,
+        threshold: float = 0.7,
+        limit: int = 50,
+    ) -> list[tuple[Node, float]]:
+        """Scan active embedded nodes and return cosine matches above a threshold."""
+
+        self._validate_level(level)
+        if not embedding or limit <= 0:
+            return []
+
+        clauses = ["level = ?", "decayed = 0", "embedding IS NOT NULL"]
+        params: list[Any] = [level]
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(scope)
+        if exclude_scope is not None:
+            clauses.append("scope != ?")
+            params.append(exclude_scope)
+        if scope_prefix is not None:
+            clauses.append("scope LIKE ?")
+            params.append(f"{scope_prefix}%")
+
+        rows = self._conn.execute(
+            f"""
+            SELECT *
+            FROM nodes
+            WHERE {' AND '.join(clauses)}
+            """,
+            params,
+        ).fetchall()
+
+        matches: list[tuple[Node, float]] = []
+        for row in rows:
+            node = _node_from_row(row)
+            score = cosine_similarity(embedding, node.embedding)
+            if score >= threshold:
+                matches.append((node, score))
+
+        matches.sort(
+            key=lambda item: (
+                -item[1],
+                -item[0].confidence,
+                -item[0].usefulness_score,
+                item[0].scope,
+                item[0].id,
+            )
+        )
+        return matches[: int(limit)]
 
     def trace_count(self, *, include_decayed: bool = True) -> int:
         if include_decayed:
