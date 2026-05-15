@@ -179,3 +179,11 @@ class PhaseInfo:
     @property
     def label(self) -> str:
         return f"Phase {self.number}: {self.name}"
+
+
+def string_list(value: Any) -> list[str]:
+    """Return a string list from JSON-like provenance values."""
+
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]

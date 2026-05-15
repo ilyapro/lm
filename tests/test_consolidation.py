@@ -206,6 +206,53 @@ def test_cross_scope_promotion_reinforces_existing_global_without_duplicate(
         assert result.concepts_promoted == [reinforced]
 
 
+def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(_phase4_config(tmp_path / "memory.sqlite3")) as store:
+        alpha = store.create_node(
+            level="concept",
+            content="database timeout connection pool retry budget",
+            context={"scope": "project:alpha"},
+            embedding=[1.0, 0.0],
+            stats={"confidence": 0.8, "unique_agents": 2, "usefulness_score": 0.5},
+            provenance={"source_traces": ["trace-alpha"]},
+        )
+        beta = store.create_node(
+            level="concept",
+            content="database timeout connection pool retry budget",
+            context={"scope": "project:beta"},
+            embedding=[1.0, 0.0],
+            stats={"confidence": 0.8, "unique_agents": 2, "usefulness_score": 0.5},
+            provenance={"source_traces": ["trace-beta"]},
+        )
+        gamma = store.create_node(
+            level="concept",
+            content="database timeout connection pool retry budget",
+            context={"scope": "project:gamma"},
+            embedding=[1.0, 0.0],
+            stats={"confidence": 0.8, "unique_agents": 2, "usefulness_score": 0.5},
+            provenance={"source_traces": ["trace-gamma"]},
+        )
+
+        promoted = _cross_scope_promotion(store, alpha, phase_number=4)
+        assert promoted is not None
+        original_confidence = promoted.confidence
+
+        store.soft_delete_node(gamma.id, "source obsolete")
+        memory_consolidate(store, force=True)
+
+        refreshed = store.get_node(promoted.id)
+        assert refreshed is not None
+        assert refreshed.confidence < original_confidence
+        assert refreshed.unique_agents == alpha.unique_agents + beta.unique_agents
+        assert refreshed.provenance["active_promoted_from"] == [
+            "project:alpha",
+            "project:beta",
+        ]
+        assert refreshed.provenance["active_source_concepts"] == sorted([alpha.id, beta.id])
+
+
 def test_cross_scope_promotion_is_phase_gated(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

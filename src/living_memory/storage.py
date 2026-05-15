@@ -640,17 +640,22 @@ class MemoryStore:
             clauses.append("scope != ?")
             params.append(exclude_scope)
         if scope_prefix is not None:
-            clauses.append("scope LIKE ?")
-            params.append(f"{scope_prefix}%")
+            upper_bound = _prefix_upper_bound(scope_prefix)
+            clauses.append("scope >= ?")
+            params.append(scope_prefix)
+            if upper_bound is not None:
+                clauses.append("scope < ?")
+                params.append(upper_bound)
 
         rows = self._conn.execute(
             f"""
             SELECT *
             FROM nodes
             WHERE {' AND '.join(clauses)}
+            ORDER BY scope ASC, confidence DESC, usefulness_score DESC, id ASC
             """,
             params,
-        ).fetchall()
+        )
 
         matches: list[tuple[Node, float]] = []
         for row in rows:
@@ -868,6 +873,10 @@ class MemoryStore:
                     ON nodes(scope, content)
                     WHERE level IN ('concept', 'schema') AND decayed = 0;
 
+                CREATE INDEX IF NOT EXISTS idx_nodes_embedded_active_scope
+                    ON nodes(level, scope)
+                    WHERE decayed = 0 AND embedding IS NOT NULL;
+
                 CREATE INDEX IF NOT EXISTS idx_nodes_level_scope_active
                     ON nodes(level, scope)
                     WHERE decayed = 0;
@@ -949,6 +958,15 @@ def _scope_family(scope: str) -> str:
     if ":" in scope:
         return scope.split(":", 1)[0]
     return scope
+
+
+def _prefix_upper_bound(prefix: str) -> str | None:
+    if not prefix:
+        return None
+    last = ord(prefix[-1])
+    if last >= 0x10FFFF:
+        return None
+    return prefix[:-1] + chr(last + 1)
 
 
 def _json_dumps(value: Any) -> str:

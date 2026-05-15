@@ -53,6 +53,8 @@ def test_storage_schema_has_uniform_nodes_fts_edges_indexes_and_weights(tmp_path
         assert "level IN ('concept', 'schema') AND decayed = 0" in indexes[
             "idx_nodes_concepts_content"
         ]
+        assert "idx_nodes_embedded_active_scope" in indexes
+        assert "embedding IS NOT NULL" in indexes["idx_nodes_embedded_active_scope"]
 
         project_weights = store.get_retrieval_weights("project:alpha")
         assert project_weights.scope == "project"

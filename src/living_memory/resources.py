@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from living_memory.models import Connection, Node, RetrievalWeights
+from living_memory.models import Connection, Node, RetrievalWeights, string_list
 from living_memory.scope import normalize_scope
 from living_memory.storage import MemoryStore
 
@@ -257,7 +257,7 @@ def promotion_summary(store: MemoryStore, scope: str | None = None) -> dict[str,
     promotion_events = 0
     source_scopes: set[str] = set()
     for concept in concepts:
-        promoted_from = _string_list(concept.provenance.get("promoted_from"))
+        promoted_from = string_list(concept.provenance.get("promoted_from"))
         if not promoted_from:
             continue
         if scope not in (None, "global") and scope not in promoted_from:

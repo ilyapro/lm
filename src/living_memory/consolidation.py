@@ -12,7 +12,7 @@ import re
 from living_memory.decay import DecayResult, apply_decay, memory_forget
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
-from living_memory.models import Connection, Node
+from living_memory.models import Connection, Node, string_list
 from living_memory.storage import MemoryStore
 from living_memory.temporal import detect_temporal_hint
 
@@ -232,6 +232,7 @@ def memory_consolidate(
     if min_cluster_size < 1:
         raise ValueError("min_cluster_size must be positive")
 
+    _refresh_promoted_global_concepts(store)
     trace_limit = max(recent_limit, min_cluster_size) if force else recent_limit
     traces = store.list_nodes(
         level="trace",
@@ -551,8 +552,8 @@ def _reinforce_global_concept(
 ) -> Node | None:
     source_scopes = set(_source_scopes(project_sources))
     source_concepts = set(_source_concept_ids(project_sources))
-    existing_scopes = set(_string_list(global_concept.provenance.get("promoted_from")))
-    existing_concepts = set(_string_list(global_concept.provenance.get("source_concepts")))
+    existing_scopes = set(string_list(global_concept.provenance.get("promoted_from")))
+    existing_concepts = set(string_list(global_concept.provenance.get("source_concepts")))
     source_traces = set(_source_trace_ids(project_sources))
     existing_traces = set(global_concept.source_traces)
     new_scopes = source_scopes - existing_scopes
@@ -691,10 +692,60 @@ def _promoted_temporal_hint(project_sources: Iterable[Node]) -> str | None:
     return Counter(hints).most_common(1)[0][0]
 
 
-def _string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value]
+def _refresh_promoted_global_concepts(store: MemoryStore) -> list[Node]:
+    refreshed: list[Node] = []
+    global_concepts = store.list_nodes(
+        level="concept",
+        scope="global",
+        include_decayed=False,
+        limit=100_000,
+    )
+    for global_concept in global_concepts:
+        source_concept_ids = string_list(global_concept.provenance.get("source_concepts"))
+        if not source_concept_ids:
+            continue
+
+        active_sources = [
+            source
+            for source_id in source_concept_ids
+            if (source := store.get_node(source_id)) is not None
+            and source.level == "concept"
+            and source.scope.startswith("project:")
+            and not source.decayed
+        ]
+        active_scopes = _source_scopes(active_sources)
+        active_concepts = _source_concept_ids(active_sources)
+        if (
+            string_list(global_concept.provenance.get("active_promoted_from")) == active_scopes
+            and string_list(global_concept.provenance.get("active_source_concepts"))
+            == active_concepts
+        ):
+            continue
+
+        provenance = dict(global_concept.provenance)
+        provenance["active_promoted_from"] = active_scopes
+        provenance["active_source_concepts"] = active_concepts
+        provenance["last_promotion_refresh_at"] = _utc_now()
+        stats = {
+            "confidence": min(
+                global_concept.confidence,
+                _active_promotion_confidence(active_sources),
+            ),
+            "unique_agents": _promoted_unique_agents(active_sources),
+            "temporal_hint": _promoted_temporal_hint(active_sources),
+            "usefulness_score": _promoted_usefulness(active_sources),
+        }
+        refreshed.append(store.update_node(global_concept.id, stats=stats, provenance=provenance))
+    return refreshed
+
+
+def _active_promotion_confidence(project_sources: Iterable[Node]) -> float:
+    sources = list(project_sources)
+    if not sources:
+        return 0.5
+    if len(_source_scopes(sources)) < 3:
+        return round(max(source.confidence for source in sources), 6)
+    return _promoted_confidence(sources)
 
 
 def _find_existing_concept(store: MemoryStore, scope: str, cluster_key: str) -> Node | None:
