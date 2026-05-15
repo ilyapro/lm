@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 from threading import RLock
 from typing import Any
+import os
 import sys
 
 from living_memory.config import MemoryConfig, load_config
@@ -138,11 +139,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     db_path = args.db or args.sqlite_file
+    default_scope = args.default_scope or os.environ.get("LM_DEFAULT_SCOPE") or os.environ.get("LM_SCOPE")
     try:
         run_server(
             db_path=db_path,
             config_path=args.config,
-            default_scope=args.default_scope,
+            default_scope=default_scope,
             transport=args.transport,
             host=args.host,
             port=args.port,
@@ -437,7 +439,8 @@ def _build_parser() -> ArgumentParser:
     parser.add_argument(
         "--default-scope",
         dest="default_scope",
-        help="Fallback scope for new traces when context.scope is omitted.",
+        help="Fallback scope for new traces when context.scope is omitted. "
+             "Also reads LM_DEFAULT_SCOPE or LM_SCOPE env vars (CLI wins).",
     )
     parser.add_argument(
         "--transport",
