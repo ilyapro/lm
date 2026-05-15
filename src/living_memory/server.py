@@ -46,8 +46,35 @@ def create_mcp_server(
     mcp = mcp_cls(
         name,
         instructions=(
-            "Living Memory exposes append-only traces, consolidated concepts, "
-            "graph links, recall, maintenance, status, resources, and prompt context."
+            "Living Memory is your persistent knowledge store across tasks and sessions.\n"
+            "\n"
+            "## When to use\n"
+            "1. **Start of task** — call `memory_recall` with the task description to "
+            "retrieve relevant past context (patterns, pitfalls, architecture notes).\n"
+            "2. **During work — recall** — call `memory_recall` when you have questions "
+            "about the project domain, environment, conventions, or tooling before "
+            "searching the codebase. Memory is faster and may already contain the answer "
+            "(e.g. 'how are experiments configured?', 'what test runner is used?', "
+            "'known issues with tooltip components').\n"
+            "3. **During work — remember** — call `memory_remember` whenever you discover "
+            "something worth preserving:\n"
+            "   - Unexpected behaviour or wrong assumptions about the codebase\n"
+            "   - Non-obvious architectural constraints or coupling\n"
+            "   - Failure root causes and what fixed them\n"
+            "   - Newly discovered conventions, configs, or env details\n"
+            "4. **End of task** — call `memory_remember` with a concise task outcome "
+            "summary (what was done, key files, anything surprising).\n"
+            "\n"
+            "## How to write good traces\n"
+            "- Be **concrete and factual**: prefer 'file X exports Y, not Z' over vague notes.\n"
+            "- Include **file paths, function names, config keys** — specifics enable recall.\n"
+            "- One fact per trace. Short is better than long.\n"
+            "- Set `context.scope` to 'project:<name>' when the fact is project-specific.\n"
+            "\n"
+            "## What NOT to store\n"
+            "- Routine actions ('I ran the tests') without new insight.\n"
+            "- Copies of code — reference file paths instead.\n"
+            "- Speculation or plans — only store verified facts.\n"
         ),
     )
     runtime_lock = RLock()
