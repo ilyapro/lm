@@ -39,3 +39,4 @@ venv/
 dist/
 build/
 *.egg-info/
+*.sqlite3
