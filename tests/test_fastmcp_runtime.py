@@ -14,6 +14,19 @@ def test_real_fastmcp_server_registers_and_exercises_all_tools(tmp_path: Path) -
     asyncio.run(_exercise_real_fastmcp_server(tmp_path))
 
 
+def test_lm_auth_token_attaches_static_verifier_to_real_fastmcp(tmp_path: Path) -> None:
+    pytest.importorskip("fastmcp")
+    from fastmcp.server.auth import StaticTokenVerifier
+
+    unguarded = create_mcp_server(tmp_path / "noauth.sqlite3")
+    assert getattr(unguarded, "auth", None) is None
+
+    guarded = create_mcp_server(tmp_path / "auth.sqlite3", auth_token="secret-token")
+    auth = getattr(guarded, "auth", None)
+    assert isinstance(auth, StaticTokenVerifier)
+    assert "secret-token" in auth.tokens
+
+
 async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
 

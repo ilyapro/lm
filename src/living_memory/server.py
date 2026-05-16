@@ -41,6 +41,7 @@ def create_mcp_server(
     default_scope: str | None = None,
     name: str = "Living Memory",
     mcp_factory: Any | None = None,
+    auth_token: str | None = None,
 ) -> Any:
     """Create a FastMCP server bound to one SQLite store."""
 
@@ -53,16 +54,35 @@ def create_mcp_server(
         )
     )
     mcp_cls = mcp_factory or _load_fastmcp()
-    mcp = mcp_cls(
-        name,
-        instructions=_server_instructions(store.config.default_scope),
-    )
+    factory_kwargs: dict[str, Any] = {
+        "instructions": _server_instructions(store.config.default_scope),
+    }
+    token_value = auth_token if auth_token is not None else os.environ.get("LM_AUTH_TOKEN", "")
+    token_value = token_value.strip()
+    # Only wire auth on the real FastMCP — custom test factories don't accept it.
+    if token_value and mcp_factory is None:
+        auth_provider = _build_static_token_auth(token_value)
+        if auth_provider is not None:
+            factory_kwargs["auth"] = auth_provider
+    mcp = mcp_cls(name, **factory_kwargs)
     runtime_lock = RLock()
     _attach(mcp, "memory_store", store)
     _register_tools(mcp, store, runtime_lock)
     _register_resources(mcp, store, runtime_lock)
     _register_prompts(mcp, store, runtime_lock)
     return mcp
+
+
+def _build_static_token_auth(token: str) -> Any | None:
+    """Return a FastMCP static-token verifier or None if unsupported by factory."""
+
+    try:
+        from fastmcp.server.auth import StaticTokenVerifier
+    except ImportError:
+        return None
+    return StaticTokenVerifier(
+        tokens={token: {"client_id": "living-memory", "scopes": []}},
+    )
 
 
 def _server_instructions(default_scope: str) -> str:
