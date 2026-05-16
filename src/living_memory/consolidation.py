@@ -189,13 +189,19 @@ class ConsolidationService:
         self.recent_limit = recent_limit
 
     def memory_consolidate(
-        self, *, scope: str | None = None, force: bool = False
+        self,
+        *,
+        scope: str | None = None,
+        force: bool = False,
+        min_cluster_size: int | None = None,
     ) -> ConsolidationResult:
         return memory_consolidate(
             self.store,
             scope=scope,
             force=force,
-            min_cluster_size=self.min_cluster_size,
+            min_cluster_size=(
+                self.min_cluster_size if min_cluster_size is None else min_cluster_size
+            ),
             recent_limit=self.recent_limit,
         )
 

@@ -130,6 +130,54 @@ def test_mcp_remember_automatically_creates_concept_with_temporal_consensus_and_
     assert block.endswith("END ACTIVE MEMORY CONTEXT")
 
 
+def test_adaptive_policy_consolidates_young_scope_at_low_thresholds(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "adaptive")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=RecordingMCP)
+
+    triggers: list[int] = []
+    last_with_concept: dict[str, Any] | None = None
+    for index in range(15):
+        result = mcp.tools["memory_remember"](
+            f"weekly monday deploy rollback requires migration guard before release {index}",
+            {
+                "scope": "project:young",
+                "agent": "agent-a" if index % 2 == 0 else "agent-b",
+                "timestamp": "2026-05-04T09:00:00Z",
+            },
+            {"confidence": 0.5, "usefulness_score": 0.3},
+        )
+        if result["auto_consolidation"] is not None:
+            triggers.append(index + 1)
+            if result["auto_consolidation"]["concepts_created"]:
+                last_with_concept = result
+
+    # Adaptive ladder: trigger at count = 5, 10, 15 (step=5 while count<50).
+    assert triggers == [5, 10, 15]
+    assert last_with_concept is not None
+    concept = last_with_concept["auto_consolidation"]["concepts_created"][0]
+    # Merge floor for trace_count<25 is 3; cluster of similar traces meets it.
+    assert concept["level"] == "concept"
+    assert concept["scope"] == "project:young"
+    assert len(concept["provenance"]["source_traces"]) >= 3
+
+
+def test_fixed_policy_remains_default_and_skips_low_volume_consolidation(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    monkeypatch.delenv("LM_AUTO_CONSOLIDATE_POLICY", raising=False)
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=RecordingMCP)
+
+    for index in range(20):
+        result = mcp.tools["memory_remember"](
+            f"weekly monday deploy rollback requires migration guard before release {index}",
+            {"scope": "project:young", "agent": "agent-a"},
+            {"confidence": 0.5},
+        )
+        assert result["auto_consolidation"] is None
+
+
 def test_project_scope_isolation_keeps_other_projects_out_of_recall(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         alpha = store.append_trace(

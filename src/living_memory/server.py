@@ -318,6 +318,42 @@ def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             )
 
 
+_ADAPTIVE_MIN_TRACES = 5
+
+
+def _adaptive_trigger_step(trace_count: int) -> int | None:
+    """Trigger step for adaptive auto-consolidate policy.
+
+    Fires earlier on young scopes (every 5 up to 50, every 25 up to 500)
+    and falls back to the fixed cadence on mature scopes. Returns None when
+    the scope holds too few traces to be worth consolidating.
+    """
+
+    if trace_count < _ADAPTIVE_MIN_TRACES:
+        return None
+    if trace_count < 50:
+        return 5
+    if trace_count < 500:
+        return 25
+    return DEFAULT_MIN_CLUSTER_SIZE
+
+
+def _adaptive_merge_floor(trace_count: int) -> int:
+    """Cluster size required to promote into a concept under adaptive policy."""
+
+    if trace_count < 25:
+        return 3
+    if trace_count < 100:
+        return 5
+    if trace_count < 1000:
+        return 25
+    return DEFAULT_MIN_CLUSTER_SIZE
+
+
+def _auto_consolidate_policy() -> str:
+    return os.environ.get("LM_AUTO_CONSOLIDATE_POLICY", "fixed").strip().lower()
+
+
 def _auto_consolidate_if_due(
     store: MemoryStore,
     consolidation_service: ConsolidationService,
@@ -332,6 +368,19 @@ def _auto_consolidate_if_due(
         (scope,),
     ).fetchone()
     trace_count = int(row["count"])
+
+    if _auto_consolidate_policy() == "adaptive":
+        step = _adaptive_trigger_step(trace_count)
+        if step is None or trace_count % step != 0:
+            return None
+        return _consolidation_result_to_dict(
+            consolidation_service.memory_consolidate(
+                scope=scope,
+                force=False,
+                min_cluster_size=_adaptive_merge_floor(trace_count),
+            )
+        )
+
     if trace_count < DEFAULT_MIN_CLUSTER_SIZE or trace_count % DEFAULT_MIN_CLUSTER_SIZE != 0:
         return None
     return _consolidation_result_to_dict(
