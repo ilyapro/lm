@@ -54,6 +54,7 @@ def test_server_registers_exact_tools_resources_and_prompt(tmp_path: Path) -> No
         "memory_consolidate",
         "memory_forget",
         "memory_status",
+        "memory_health",
     }
     assert set(mcp.resources) == {
         "memory://global/concepts",

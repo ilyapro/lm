@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from living_memory.models import Connection, Node, RetrievalWeights, string_list
@@ -317,6 +318,155 @@ def retrieval_weights_summary(store: MemoryStore) -> list[dict[str, Any]]:
 
 def retrieval_policy_for_scope(store: MemoryStore, scope: str) -> dict[str, Any]:
     return weights_to_dict(store.get_retrieval_weights(scope).normalized())
+
+
+def memory_health(
+    store: MemoryStore,
+    *,
+    scope: str | None = None,
+    window_hours: int = 168,
+    top_stale: int = 5,
+) -> dict[str, Any]:
+    """Health report: activity ratios, dedup density, staleness, retrieval policy."""
+
+    if window_hours < 1:
+        raise ValueError("window_hours must be >= 1")
+    if top_stale < 0:
+        raise ValueError("top_stale must be >= 0")
+
+    normalized_scope = normalize_scope(scope) if scope else None
+    now = datetime.now(UTC)
+    window_cutoff = (now - timedelta(hours=window_hours)).isoformat().replace("+00:00", "Z")
+
+    scope_clauses: list[str] = []
+    scope_params: list[Any] = []
+    if normalized_scope:
+        scope_clauses.append("scope = ?")
+        scope_params.append(normalized_scope)
+    scope_where = (" WHERE " + " AND ".join(scope_clauses)) if scope_clauses else ""
+
+    recall_total = int(
+        store.connection.execute(
+            f"SELECT COUNT(*) AS c FROM recall_events{scope_where}",
+            scope_params,
+        ).fetchone()["c"]
+    )
+    window_clauses = list(scope_clauses) + ["created_at >= ?"]
+    recall_window = int(
+        store.connection.execute(
+            f"SELECT COUNT(*) AS c FROM recall_events WHERE {' AND '.join(window_clauses)}",
+            list(scope_params) + [window_cutoff],
+        ).fetchone()["c"]
+    )
+
+    trace_clauses = ["level = 'trace'", "decayed = 0"]
+    trace_params: list[Any] = []
+    if normalized_scope:
+        trace_clauses.append("scope = ?")
+        trace_params.append(normalized_scope)
+    trace_where = " AND ".join(trace_clauses)
+
+    remember_window = int(
+        store.connection.execute(
+            f"SELECT COUNT(*) AS c FROM nodes WHERE {trace_where} AND timestamp >= ?",
+            list(trace_params) + [window_cutoff],
+        ).fetchone()["c"]
+    )
+    ratio = (recall_window / remember_window) if remember_window > 0 else None
+
+    dup_row = store.connection.execute(
+        f"""
+        SELECT COUNT(*) AS total, COUNT(DISTINCT content) AS distinct_content
+        FROM nodes WHERE {trace_where}
+        """,
+        trace_params,
+    ).fetchone()
+    total_traces = int(dup_row["total"])
+    distinct_contents = int(dup_row["distinct_content"])
+    duplicate_excess = max(0, total_traces - distinct_contents)
+    duplicate_density = (duplicate_excess / total_traces) if total_traces > 0 else 0.0
+
+    age_rows = store.connection.execute(
+        f"SELECT timestamp, last_accessed FROM nodes WHERE {trace_where}",
+        trace_params,
+    ).fetchall()
+    ages: list[float] = []
+    now_epoch = now.timestamp()
+    for row in age_rows:
+        ref = row["last_accessed"] or row["timestamp"]
+        if not ref:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(ref).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        ages.append(max(0.0, now_epoch - parsed.timestamp()))
+
+    stale_rows: list[Any] = []
+    if top_stale > 0:
+        stale_rows = store.connection.execute(
+            f"""
+            SELECT id, content, timestamp, access_count, last_accessed
+            FROM nodes WHERE {trace_where}
+            ORDER BY (CASE WHEN last_accessed IS NULL THEN 0 ELSE 1 END),
+                     timestamp ASC
+            LIMIT ?
+            """,
+            list(trace_params) + [int(top_stale)],
+        ).fetchall()
+
+    counts = count_nodes(store, scope=normalized_scope)
+    trace_counts = counts["by_level"]["trace"]
+    decay_pool = trace_counts["active"] + trace_counts["decayed"]
+    decay_rate = (trace_counts["decayed"] / decay_pool) if decay_pool > 0 else 0.0
+
+    policy_scope = normalized_scope or "global"
+    return {
+        "scope": normalized_scope or "all",
+        "window_hours": window_hours,
+        "generated_at": now.isoformat().replace("+00:00", "Z"),
+        "counts": counts,
+        "activity": {
+            "recall_total": recall_total,
+            "recall_in_window": recall_window,
+            "remember_in_window": remember_window,
+            "recall_to_remember_ratio": ratio,
+        },
+        "dedup": {
+            "total_traces": total_traces,
+            "distinct_contents": distinct_contents,
+            "duplicate_excess": duplicate_excess,
+            "duplicate_density": duplicate_density,
+        },
+        "staleness": {
+            "decay_rate": decay_rate,
+            "age_seconds_p50": _percentile(ages, 0.5),
+            "age_seconds_p90": _percentile(ages, 0.9),
+            "top_stale": [
+                {
+                    "id": str(row["id"]),
+                    "content_preview": str(row["content"])[:120],
+                    "timestamp": str(row["timestamp"]),
+                    "access_count": int(row["access_count"]),
+                    "last_accessed": (
+                        str(row["last_accessed"]) if row["last_accessed"] else None
+                    ),
+                }
+                for row in stale_rows
+            ],
+        },
+        "retrieval_policy": retrieval_policy_for_scope(store, policy_scope),
+    }
+
+
+def _percentile(values: list[float], quantile: float) -> float | None:
+    if not values:
+        return None
+    if not 0.0 <= quantile <= 1.0:
+        raise ValueError("quantile must be in [0, 1]")
+    ordered = sorted(values)
+    idx = max(0, min(len(ordered) - 1, int(round(quantile * (len(ordered) - 1)))))
+    return ordered[idx]
 
 
 def weights_to_dict(weights: RetrievalWeights) -> dict[str, Any]:

@@ -33,6 +33,79 @@ def test_feedback_moves_retrieval_weights_toward_successful_method(tmp_path: Pat
         assert store.get_node(node.id).usefulness_score == pytest.approx(1.0)
 
 
+def test_adaptive_tuning_raises_learning_rate_for_young_scope(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    monkeypatch.setenv("LM_RETRIEVAL_TUNING_POLICY", "adaptive")
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        node = store.append_trace(
+            "single fact",
+            {"scope": "project:young", "agent": "agent-a"},
+        )
+        result = RecallResult(
+            node=node,
+            score=0.7,
+            bm25_score=0.7,
+            vector_score=0.0,
+            graph_score=0.0,
+            methods=("bm25",),
+        )
+        apply_retrieval_feedback(store, result, useful=True, signal=1.0)
+        weights = store.get_retrieval_weights("project:young")
+        # trace_count=1 → adaptive ladder selects 0.20
+        assert weights.learning_rate == pytest.approx(0.20)
+
+
+def test_adaptive_tuning_lowers_learning_rate_as_scope_matures(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    monkeypatch.setenv("LM_RETRIEVAL_TUNING_POLICY", "adaptive")
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for index in range(60):
+            store.append_trace(
+                f"fact {index}",
+                {"scope": "project:mature", "agent": f"agent-{index}"},
+            )
+        node = store.get_node(
+            store.list_nodes(level="trace", scope="project:mature", limit=1)[0].id
+        )
+        result = RecallResult(
+            node=node,
+            score=0.7,
+            bm25_score=0.7,
+            vector_score=0.0,
+            graph_score=0.0,
+            methods=("bm25",),
+        )
+        apply_retrieval_feedback(store, result, useful=True, signal=1.0)
+        weights = store.get_retrieval_weights("project:mature")
+        # trace_count=60 falls in 50..500 band → 0.05
+        assert weights.learning_rate == pytest.approx(0.05)
+
+
+def test_fixed_tuning_policy_leaves_learning_rate_untouched(
+    tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    monkeypatch.delenv("LM_RETRIEVAL_TUNING_POLICY", raising=False)
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        node = store.append_trace(
+            "single fact",
+            {"scope": "project:young", "agent": "agent-a"},
+        )
+        result = RecallResult(
+            node=node,
+            score=0.7,
+            bm25_score=0.7,
+            vector_score=0.0,
+            graph_score=0.0,
+            methods=("bm25",),
+        )
+        apply_retrieval_feedback(store, result, useful=True, signal=1.0)
+        weights = store.get_retrieval_weights("project:young")
+        # default learning_rate stays at 0.05 — no adaptive retuning
+        assert weights.learning_rate == pytest.approx(0.05)
+
+
 def test_service_feedback_updates_rank_for_future_recalls(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         low = store.append_trace(

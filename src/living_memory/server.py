@@ -21,6 +21,7 @@ from living_memory.prompts import retrieval_context_prompt
 from living_memory.resources import (
     connection_to_dict,
     global_concepts,
+    memory_health as health_view,
     memory_stats,
     memory_status as status_view,
     node_to_dict,
@@ -268,6 +269,22 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
 
         with runtime_lock:
             return status_view(store, scope=scope)
+
+    @mcp.tool
+    def memory_health(
+        scope: str | None = None,
+        window_hours: int = 168,
+        top_stale: int = 5,
+    ) -> dict[str, Any]:
+        """Report activity ratios, dedup density, staleness, and retrieval policy."""
+
+        with runtime_lock:
+            return health_view(
+                store,
+                scope=scope,
+                window_hours=window_hours,
+                top_stale=top_stale,
+            )
 
 
 def _register_resources(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:

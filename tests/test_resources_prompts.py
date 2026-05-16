@@ -5,6 +5,7 @@ from pathlib import Path
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.resources import (
     global_concepts,
+    memory_health,
     memory_stats,
     memory_status,
     project_concepts,
@@ -116,3 +117,54 @@ def test_retrieval_context_prompt_formats_top_relevant_concepts(tmp_path: Path) 
         assert other_project.id not in block
         assert "retrieval_policy: confidence" in block
         assert block.endswith("END ACTIVE MEMORY CONTEXT")
+
+
+def test_memory_health_reports_activity_dedup_and_staleness(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.append_trace(
+            "rollback migration release notes",
+            {"scope": "project:alpha", "agent": "agent-a"},
+        )
+        store.append_trace(
+            "rollback migration release notes",
+            {"scope": "project:alpha", "agent": "agent-b"},
+        )
+        store.append_trace(
+            "unique fact about caching",
+            {"scope": "project:alpha", "agent": "agent-c"},
+        )
+        store.record_recall_event(
+            query="rollback",
+            scope="project:alpha",
+            requested_scope="project:alpha",
+            resolved_scopes=["project:alpha"],
+            results=[],
+            ambient_context={},
+        )
+
+        report = memory_health(store, scope="project:alpha", window_hours=24, top_stale=2)
+
+        assert report["scope"] == "project:alpha"
+        assert report["counts"]["by_level"]["trace"]["active"] == 3
+        assert report["activity"]["recall_in_window"] == 1
+        assert report["activity"]["remember_in_window"] == 3
+        assert report["activity"]["recall_to_remember_ratio"] > 0
+        # Two identical contents → duplicate_excess=1, density 1/3
+        assert report["dedup"]["total_traces"] == 3
+        assert report["dedup"]["distinct_contents"] == 2
+        assert report["dedup"]["duplicate_excess"] == 1
+        assert report["dedup"]["duplicate_density"] > 0
+        assert report["staleness"]["age_seconds_p50"] is not None
+        assert len(report["staleness"]["top_stale"]) == 2
+        assert "retrieval_policy" in report
+
+
+def test_memory_health_handles_empty_scope(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        report = memory_health(store, scope="project:empty")
+
+    assert report["counts"]["active"] == 0
+    assert report["dedup"]["duplicate_density"] == 0.0
+    assert report["staleness"]["age_seconds_p50"] is None
+    assert report["staleness"]["top_stale"] == []
+    assert report["activity"]["recall_to_remember_ratio"] is None

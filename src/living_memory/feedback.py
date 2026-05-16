@@ -4,11 +4,61 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import os
 from types import SimpleNamespace
 from typing import Any
 
 from living_memory.models import Node, RecallEvent, RetrievalWeights
 from living_memory.storage import MemoryStore
+
+
+_ADAPTIVE_LR_LADDER: tuple[tuple[int, float], ...] = (
+    (10, 0.20),
+    (50, 0.10),
+    (500, 0.05),
+)
+_ADAPTIVE_LR_FLOOR = 0.02
+
+
+def _retrieval_tuning_policy() -> str:
+    return os.environ.get("LM_RETRIEVAL_TUNING_POLICY", "fixed").strip().lower()
+
+
+def _adaptive_learning_rate(trace_count: int) -> float:
+    """Effective learning rate for a scope of the given size.
+
+    Young scopes converge fast on a few feedback signals; mature scopes
+    move slowly to avoid oscillation around a settled policy.
+    """
+
+    for ceiling, rate in _ADAPTIVE_LR_LADDER:
+        if trace_count < ceiling:
+            return rate
+    return _ADAPTIVE_LR_FLOOR
+
+
+def _maybe_retune_learning_rate(store: MemoryStore, scope: str) -> None:
+    if _retrieval_tuning_policy() != "adaptive":
+        return
+    row = store.connection.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM nodes
+        WHERE level = 'trace' AND scope = ? AND decayed = 0
+        """,
+        (scope,),
+    ).fetchone()
+    target_lr = _adaptive_learning_rate(int(row["count"]) if row else 0)
+    current = store.get_retrieval_weights(scope)
+    if abs(current.learning_rate - target_lr) < 1e-6:
+        return
+    store.set_retrieval_weights(
+        scope,
+        bm25=current.bm25,
+        vector=current.vector,
+        graph=current.graph,
+        learning_rate=target_lr,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +121,7 @@ def apply_retrieval_feedback(
         node = store.update_node(node.id, stats={"usefulness_score": updated_usefulness})
 
     target_scope = scope or (node.scope if node is not None else "global")
+    _maybe_retune_learning_rate(store, target_scope)
     method_signals = _method_signals(result, signed_signal)
     weights = store.update_retrieval_weights(
         target_scope,

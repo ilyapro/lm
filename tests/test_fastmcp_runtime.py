@@ -30,6 +30,7 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
         "memory_consolidate",
         "memory_forget",
         "memory_status",
+        "memory_health",
     }
     assert resources == {
         "memory://global/concepts",
