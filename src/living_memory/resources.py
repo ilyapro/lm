@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from living_memory.models import Connection, Node, RetrievalWeights, string_list
+from living_memory.models import Connection, Node, RecallEvent, RetrievalWeights, string_list
 from living_memory.scope import normalize_scope
 from living_memory.storage import MemoryStore
 
@@ -456,6 +456,83 @@ def memory_health(
             ],
         },
         "retrieval_policy": retrieval_policy_for_scope(store, policy_scope),
+    }
+
+
+def recall_events_summary(
+    store: MemoryStore,
+    *,
+    scope: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Summary of recall events for the dashboard resource."""
+
+    normalized_scope = normalize_scope(scope) if scope else None
+
+    scope_clauses: list[str] = []
+    scope_params: list[Any] = []
+    if normalized_scope:
+        scope_clauses.append("(scope = ? OR requested_scope = ?)")
+        scope_params.extend([normalized_scope, normalized_scope])
+    scope_where = (" WHERE " + " AND ".join(scope_clauses)) if scope_clauses else ""
+
+    total = int(
+        store.connection.execute(
+            f"SELECT COUNT(*) AS c FROM recall_events{scope_where}",
+            scope_params,
+        ).fetchone()["c"]
+    )
+    feedback_applied = int(
+        store.connection.execute(
+            f"SELECT COUNT(*) AS c FROM recall_events{' WHERE ' + ' AND '.join(scope_clauses + ['feedback_applied = 1']) if scope_clauses else ' WHERE feedback_applied = 1'}",
+            scope_params,
+        ).fetchone()["c"]
+    )
+
+    events = store.list_recall_events(
+        scope=normalized_scope,
+        limit=max(0, int(limit)),
+    )
+    recent = [recall_event_to_dict(e) for e in events]
+
+    return {
+        "uri": "memory://recall_events",
+        "scope": normalized_scope or "all",
+        "total": total,
+        "feedback_applied": feedback_applied,
+        "recent": recent,
+    }
+
+
+def connections_summary(
+    store: MemoryStore,
+    *,
+    scope: str | None = None,
+) -> dict[str, Any]:
+    """Summary of graph connections for the dashboard resource."""
+
+    rows = store.connection.execute(
+        "SELECT type, COUNT(*) AS count FROM connections GROUP BY type ORDER BY count DESC"
+    ).fetchall()
+    by_type = [{"type": str(row["type"]), "count": int(row["count"])} for row in rows]
+    total = sum(item["count"] for item in by_type)
+
+    return {
+        "uri": "memory://connections",
+        "total": total,
+        "by_type": by_type,
+    }
+
+
+def recall_event_to_dict(event: RecallEvent) -> dict[str, Any]:
+    return {
+        "id": event.id,
+        "query": event.query,
+        "scope": event.scope,
+        "requested_scope": event.requested_scope,
+        "result_count": len(event.results),
+        "feedback_applied": event.feedback_applied,
+        "created_at": event.created_at,
     }
 
 

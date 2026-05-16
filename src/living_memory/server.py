@@ -20,12 +20,14 @@ from living_memory.consolidation import (
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.resources import (
     connection_to_dict,
+    connections_summary,
     global_concepts,
     memory_health as health_view,
     memory_stats,
     memory_status as status_view,
     node_to_dict,
     project_concepts,
+    recall_events_summary,
     recent_interactions,
 )
 from living_memory.retrieval import MemoryRecallService, RecallResult
@@ -327,6 +329,16 @@ def _register_resources(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None
     def resource_recent() -> dict[str, Any]:
         with runtime_lock:
             return recent_interactions(store)
+
+    @mcp.resource("memory://recall_events")
+    def resource_recall_events() -> dict[str, Any]:
+        with runtime_lock:
+            return recall_events_summary(store)
+
+    @mcp.resource("memory://connections")
+    def resource_connections() -> dict[str, Any]:
+        with runtime_lock:
+            return connections_summary(store)
 
 
 def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
