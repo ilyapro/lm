@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 import re
 
-from living_memory.models import Node
-from living_memory.retrieval import MemoryRecallService, REJECTED_ALTERNATIVE_KIND
+from living_memory.models import REJECTED_ALTERNATIVE_KIND, Node
+from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
 

@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from living_memory.models import REJECTED_ALTERNATIVE_KIND
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.retrieval import _parse_depth, memory_connect, memory_recall
 from living_memory.server import create_mcp_server
@@ -115,7 +116,7 @@ def test_rejected_alternatives_create_contradicts_edges_and_negative_trace_metad
         assert {str(row["source_id"]) for row in rows} == {node.id for node in rejected}
         for row in rows:
             metadata = json.loads(row["metadata"])
-            assert metadata["kind"] == "rejected_alternative"
+            assert metadata["kind"] == REJECTED_ALTERNATIVE_KIND
             assert metadata["reason"].strip()
 
 
@@ -183,10 +184,21 @@ def test_decision_depth_returns_primary_and_rejected_alternatives_only_for_decis
                 max_results=10,
             )
         }
+        counterfactual_ids = {
+            result.node.id
+            for result in memory_recall(
+                store,
+                "hand-write goals files",
+                scope="project:ae",
+                depth="decision",
+                max_results=10,
+            )
+        }
 
         assert rejected[0].id not in shallow_ids
         assert rejected[0].id not in numeric_ids
         assert {primary.id, rejected[0].id}.issubset(decision_ids)
+        assert {primary.id, rejected[0].id}.issubset(counterfactual_ids)
         assert _parse_depth("decision", "test query") == (1, False)
 
 

@@ -17,6 +17,7 @@ from living_memory.embeddings import cosine_similarity
 from living_memory.models import (
     CONNECTION_TYPES,
     NODE_LEVELS,
+    REJECTED_ALTERNATIVE_KIND,
     Connection,
     ConnectionType,
     Node,
@@ -231,7 +232,7 @@ class MemoryStore:
                     "contradicts",
                     weight=1.0,
                     metadata={
-                        "kind": "rejected_alternative",
+                        "kind": REJECTED_ALTERNATIVE_KIND,
                         "reason": reason,
                         "approach": approach,
                     },

@@ -8,7 +8,12 @@ from typing import Any
 
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity, tokenize
 from living_memory.feedback import FeedbackService, feedback_weighted_score
-from living_memory.models import Connection, ConnectionType, Node
+from living_memory.models import (
+    REJECTED_ALTERNATIVE_KIND,
+    Connection,
+    ConnectionType,
+    Node,
+)
 from living_memory.scope import ScopePlan, ScopeResolver
 from living_memory.storage import MemoryStore
 
@@ -18,7 +23,6 @@ STRONG_VECTOR_MATCH = 0.65
 SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5
 SCHEMA_TRIGGER_BASE_SCORE = 0.95
 SCHEMA_TRIGGER_BOOST = 1.8
-REJECTED_ALTERNATIVE_KIND = "rejected_alternative"
 
 
 @dataclass(frozen=True, slots=True)

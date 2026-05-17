@@ -16,6 +16,7 @@ CONNECTION_TYPES: tuple[str, ...] = (
     "supersedes",
     "requires",
 )
+REJECTED_ALTERNATIVE_KIND = "rejected_alternative"
 
 
 @dataclass(slots=True)
