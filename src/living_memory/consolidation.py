@@ -485,29 +485,6 @@ def _procedure_key(trace: Node) -> _ProcedureKey | None:
     )
 
 
-def _preferred_procedure_key(
-    existing: _ProcedureKey | None, current: _ProcedureKey
-) -> _ProcedureKey:
-    """Merge two keys from the same group, picking the better trigger label.
-
-    The group_field/group_raw/group_id are identical by construction (same
-    group). Trigger prefers `procedure_id`; ties favor the first encountered.
-    """
-
-    if existing is None:
-        return current
-    if existing.field != "procedure_id" and current.field == "procedure_id":
-        return _ProcedureKey(
-            field=current.field,
-            raw=current.raw,
-            trigger=current.trigger,
-            group_field=existing.group_field,
-            group_raw=existing.group_raw,
-            group_id=existing.group_id,
-        )
-    return existing
-
-
 def _create_or_update_schema(
     store: MemoryStore,
     scope: str,
