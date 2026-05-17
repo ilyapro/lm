@@ -179,6 +179,13 @@ class _TraceCluster:
         return self.embeddings_by_trace_id.get(trace.id)
 
 
+@dataclass(frozen=True, slots=True)
+class _ProcedureKey:
+    field: str
+    raw: str
+    trigger: str
+
+
 class ConsolidationService:
     """Service facade for consolidation and correction ingestion."""
 
@@ -373,38 +380,59 @@ def _materialize_procedural_schemas(
     """Group procedural traces by procedure_id/task_pattern and emit schema nodes."""
 
     groups: dict[tuple[str, str], list[Node]] = {}
+    group_keys: dict[tuple[str, str], _ProcedureKey] = {}
     for trace in traces:
         key = _procedure_key(trace)
         if not key:
             continue
-        groups.setdefault((trace.scope, key), []).append(trace)
+        group_id = (trace.scope, key.trigger)
+        groups.setdefault(group_id, []).append(trace)
+        group_keys[group_id] = _preferred_procedure_key(group_keys.get(group_id), key)
 
     schemas: list[tuple[Node, bool]] = []
-    for (scope, procedure_id), group_traces in groups.items():
+    for (scope, trigger), group_traces in groups.items():
         if len(group_traces) < min_cluster_size:
             continue
-        schema, created = _create_or_update_schema(store, scope, procedure_id, group_traces)
+        schema, created = _create_or_update_schema(
+            store, scope, group_keys[(scope, trigger)], group_traces
+        )
         _connect_schema_to_traces(store, schema, group_traces)
         schemas.append((schema, created))
     return schemas
 
 
-def _procedure_key(trace: Node) -> str | None:
+def _procedure_key(trace: Node) -> _ProcedureKey | None:
     context = trace.context or {}
-    key = context.get("procedure_id") or context.get("task_pattern")
-    if key is None:
-        return None
-    text = str(key).strip()
-    return text or None
+    for field in ("procedure_id", "task_pattern"):
+        value = context.get(field)
+        if value is None:
+            continue
+        raw = str(value).strip()
+        if not raw:
+            continue
+        trigger = _normalize_trigger(raw)
+        if trigger:
+            return _ProcedureKey(field=field, raw=raw, trigger=trigger)
+    return None
+
+
+def _preferred_procedure_key(
+    existing: _ProcedureKey | None, current: _ProcedureKey
+) -> _ProcedureKey:
+    if existing is None:
+        return current
+    if existing.field != "procedure_id" and current.field == "procedure_id":
+        return current
+    return existing
 
 
 def _create_or_update_schema(
     store: MemoryStore,
     scope: str,
-    procedure_id: str,
+    procedure_key: _ProcedureKey,
     traces: list[Node],
 ) -> tuple[Node, bool]:
-    trigger = _normalize_trigger(procedure_id)
+    trigger = procedure_key.trigger
     steps = _procedure_steps(traces)
     content = _format_schema_content(trigger, steps)
 
@@ -415,7 +443,9 @@ def _create_or_update_schema(
     usefulness = sum(max(0.0, trace.usefulness_score) for trace in traces) / len(traces)
 
     base_provenance = {
-        "procedure_id": procedure_id,
+        "procedure_key": trigger,
+        "procedure_field": procedure_key.field,
+        "procedure_pattern": procedure_key.raw,
         "strategy": "procedural",
         "consolidated_at": _utc_now(),
     }
@@ -429,12 +459,13 @@ def _create_or_update_schema(
         "scope": scope,
         "agent": "memory_consolidate",
         "timestamp": _utc_now(),
-        "procedure_id": procedure_id,
+        "procedure_key": trigger,
+        procedure_key.field: procedure_key.raw,
         "trigger": trigger,
         "procedure": steps,
     }
 
-    existing = _find_existing_schema(store, scope, procedure_id)
+    existing = _find_existing_schema(store, scope, procedure_key)
     if existing is None:
         provenance = {
             **base_provenance,
@@ -468,7 +499,7 @@ def _create_or_update_schema(
 
 
 def _find_existing_schema(
-    store: MemoryStore, scope: str, procedure_id: str
+    store: MemoryStore, scope: str, procedure_key: _ProcedureKey
 ) -> Node | None:
     schemas = store.list_nodes(
         level="schema",
@@ -478,10 +509,20 @@ def _find_existing_schema(
     )
     for schema in schemas:
         candidates = (
+            schema.context.get("procedure_key"),
+            schema.context.get("trigger"),
             schema.context.get("procedure_id"),
+            schema.context.get("task_pattern"),
+            schema.provenance.get("procedure_key"),
             schema.provenance.get("procedure_id"),
+            schema.provenance.get("procedure_pattern"),
         )
-        if procedure_id in {str(value) for value in candidates if value is not None}:
+        normalized = {
+            _normalize_trigger(str(value))
+            for value in candidates
+            if value is not None and str(value).strip()
+        }
+        if procedure_key.trigger in normalized:
             return schema
     return None
 
@@ -550,6 +591,11 @@ def _format_schema_content(trigger: str, steps: Iterable[str]) -> str:
 def _connect_schema_to_traces(
     store: MemoryStore, schema: Node, traces: Iterable[Node]
 ) -> None:
+    procedure_pattern = (
+        schema.context.get("procedure_id")
+        or schema.context.get("task_pattern")
+        or schema.context.get("procedure_key")
+    )
     for trace in traces:
         _upsert_weighted_connection(
             store,
@@ -557,7 +603,11 @@ def _connect_schema_to_traces(
             trace.id,
             "related",
             weight=0.6,
-            metadata={"basis": "procedural", "procedure_id": schema.context.get("procedure_id")},
+            metadata={
+                "basis": "procedural",
+                "procedure_key": schema.context.get("procedure_key"),
+                "procedure_id": procedure_pattern,
+            },
         )
 
 

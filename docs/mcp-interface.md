@@ -132,9 +132,10 @@ The tool clusters similar recent traces, creates or updates concept nodes,
 records source trace IDs, computes consensus confidence and weekly temporal
 hints, updates related-edge weights, and applies decay. Procedural traces
 (those tagged with `context.procedure_id` or `context.task_pattern`) are
-grouped by id and materialized as `level='schema'` nodes once three traces
-share the id. The schema's `context` stores `procedure_id`, `trigger`
-(normalized pattern), and `procedure` (ordered step descriptions).
+grouped by normalized trigger and materialized as `level='schema'` nodes once
+three traces share the pattern. The schema's `context` stores `procedure_key`,
+`trigger` (normalized pattern), the original opt-in field, and `procedure`
+(ordered step descriptions).
 
 ### `memory_forget`
 

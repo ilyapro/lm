@@ -78,6 +78,34 @@ def test_consolidation_skips_schema_below_three_procedural_traces(
         assert store.list_nodes(level="schema", scope="project:alpha") == []
 
 
+def test_consolidation_groups_task_pattern_by_normalized_trigger(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        patterns = ("Deploy Rollback", "deploy_rollback", "deploy-rollback")
+        for index, pattern in enumerate(patterns):
+            store.append_trace(
+                f"rollback step {index + 1}",
+                {
+                    "scope": "project:alpha",
+                    "agent": f"agent-{index}",
+                    "task_pattern": pattern,
+                    "step_order": index + 1,
+                },
+                feedback={"confidence": 0.6, "usefulness_score": 0.4},
+            )
+
+        result = memory_consolidate(store, scope="project:alpha")
+
+        assert len(result.schemas_created) == 1
+        schema = result.schemas_created[0]
+        assert schema.level == "schema"
+        assert schema.context["trigger"] == "deploy rollback"
+        assert schema.context["procedure_key"] == "deploy rollback"
+        assert schema.context["task_pattern"] in patterns
+        assert len(schema.context["procedure"]) == 3
+
+
 def test_nodes_table_has_no_new_columns(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         rows = store.connection.execute("PRAGMA table_info(nodes)").fetchall()
