@@ -12,10 +12,18 @@ from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
 
 DEFAULT_CONTEXT_CONCEPTS = 5
+DEFAULT_CONTEXT_SCHEMAS = 3
 
 
 @dataclass(frozen=True, slots=True)
 class ContextConcept:
+    node: Node
+    score: float
+    methods: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ContextSchema:
     node: Node
     score: float
     methods: tuple[str, ...] = ()
@@ -27,12 +35,13 @@ def retrieval_context_prompt(
     task: str = "",
     scope: str | None = None,
     max_concepts: int = DEFAULT_CONTEXT_CONCEPTS,
+    max_schemas: int = DEFAULT_CONTEXT_SCHEMAS,
     min_confidence: float = 0.0,
     retrieval_policy: str = "balanced",
     agent: str | None = None,
     ambient_context: dict[str, Any] | None = None,
 ) -> str:
-    """Build a formatted active context block from top-ranked concepts."""
+    """Build a formatted active context block from top-ranked concepts and schemas."""
 
     query = str(task or "").strip()
     ambient = dict(ambient_context or {})
@@ -48,8 +57,17 @@ def retrieval_context_prompt(
         retrieval_policy=retrieval_policy,
         ambient_context=ambient,
     )
+    schemas = select_context_schemas(
+        store,
+        task=query,
+        plan=plan,
+        max_schemas=max_schemas,
+        min_confidence=min_confidence,
+        ambient_context=ambient,
+    )
     return format_retrieval_context(
         concepts,
+        schemas=schemas,
         task=query,
         plan=plan,
         store=store,
@@ -133,9 +151,58 @@ def select_context_concepts(
     return concepts[:limit]
 
 
+def select_context_schemas(
+    store: MemoryStore,
+    *,
+    task: str,
+    plan: ScopePlan,
+    max_schemas: int = DEFAULT_CONTEXT_SCHEMAS,
+    min_confidence: float = 0.0,
+    ambient_context: dict[str, Any] | None = None,
+) -> list[ContextSchema]:
+    """Select schema nodes whose trigger matches the task."""
+
+    limit = max(0, int(max_schemas))
+    if limit == 0:
+        return []
+    if not task.strip():
+        return []
+
+    min_confidence = max(0.0, min(1.0, float(min_confidence)))
+    service = MemoryRecallService(store)
+    recall_results = service.memory_recall(
+        task,
+        scope=plan.requested_scope,
+        ambient_context=ambient_context,
+        max_results=max(limit * 4, 12),
+        log_access=False,
+        log_event=False,
+    )
+    selected: list[ContextSchema] = []
+    for result in recall_results:
+        node = result.node
+        if node.level != "schema":
+            continue
+        if node.confidence < min_confidence:
+            continue
+        if not plan.allows(node.scope):
+            continue
+        if not node.context.get("trigger"):
+            continue
+        if "trigger" not in result.methods:
+            continue
+        selected.append(
+            ContextSchema(node=node, score=result.score, methods=tuple(result.methods))
+        )
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def format_retrieval_context(
     concepts: list[ContextConcept],
     *,
+    schemas: list[ContextSchema] | None = None,
     task: str,
     plan: ScopePlan,
     store: MemoryStore,
@@ -170,6 +237,20 @@ def format_retrieval_context(
             )
         )
         lines.append(f"   {_single_line(node.content)}")
+    if schemas:
+        lines.append("skills:")
+        for index, schema in enumerate(schemas, start=1):
+            node = schema.node
+            trigger = str(node.context.get("trigger") or "")
+            method_text = ",".join(schema.methods) if schema.methods else "trigger"
+            lines.append(
+                (
+                    f"{index}. id={node.id} scope={node.scope} "
+                    f"trigger=\"{trigger}\" confidence={node.confidence:.2f} "
+                    f"score={schema.score:.4f} methods={method_text}"
+                )
+            )
+            lines.append(f"   {_single_line(node.content)}")
     lines.append("END ACTIVE MEMORY CONTEXT")
     return "\n".join(lines)
 

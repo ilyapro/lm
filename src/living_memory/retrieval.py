@@ -15,6 +15,9 @@ from living_memory.storage import MemoryStore
 
 DEFAULT_VECTOR_SCAN_LIMIT = 50_000
 STRONG_VECTOR_MATCH = 0.65
+SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5
+SCHEMA_TRIGGER_BASE_SCORE = 0.95
+SCHEMA_TRIGGER_BOOST = 1.8
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +29,7 @@ class RecallResult:
     bm25_score: float = 0.0
     vector_score: float = 0.0
     graph_score: float = 0.0
+    trigger_score: float = 0.0
     scope_rank: int = 0
     methods: tuple[str, ...] = ()
     path: tuple[str, ...] = ()
@@ -42,6 +46,7 @@ class RecallResult:
             "bm25_score": self.bm25_score,
             "vector_score": self.vector_score,
             "graph_score": self.graph_score,
+            "trigger_score": self.trigger_score,
             "methods": list(self.methods),
             "path": list(self.path),
             "recall_event_id": self.recall_event_id,
@@ -54,6 +59,7 @@ class _Candidate:
     bm25_score: float = 0.0
     vector_score: float = 0.0
     graph_score: float = 0.0
+    trigger_score: float = 0.0
     path: tuple[str, ...] = ()
 
     def methods(self) -> tuple[str, ...]:
@@ -64,6 +70,8 @@ class _Candidate:
             names.append("vector")
         if self.graph_score > 0.0:
             names.append("graph")
+        if self.trigger_score > 0.0:
+            names.append("trigger")
         return tuple(names)
 
 
@@ -113,6 +121,7 @@ class MemoryRecallService:
 
         self._collect_bm25(query, plan, candidates, max_results=max_results)
         self._collect_vector(query, plan, candidates, max_results=max_results)
+        self._collect_schema_triggers(query, plan, candidates)
 
         graph_depth, causal_mode = _parse_depth(depth, query)
         if graph_depth > 0 and candidates:
@@ -191,6 +200,8 @@ class MemoryRecallService:
             )
             if candidate.vector_score >= STRONG_VECTOR_MATCH:
                 base_score = max(base_score, candidate.vector_score)
+            if node.level == "schema" and candidate.trigger_score > 0.0:
+                base_score = max(base_score, candidate.trigger_score)
             if base_score <= 0.0:
                 continue
 
@@ -203,6 +214,8 @@ class MemoryRecallService:
             )
             if causal_mode and candidate.graph_score > 0.0:
                 adjusted *= 1.5
+            if node.level == "schema" and candidate.trigger_score > 0.0:
+                adjusted *= SCHEMA_TRIGGER_BOOST
             results.append(
                 RecallResult(
                     node=node,
@@ -210,6 +223,7 @@ class MemoryRecallService:
                     bm25_score=candidate.bm25_score,
                     vector_score=candidate.vector_score,
                     graph_score=candidate.graph_score,
+                    trigger_score=candidate.trigger_score,
                     scope_rank=plan.rank(node.scope),
                     methods=candidate.methods(),
                     path=candidate.path,
@@ -290,6 +304,36 @@ class MemoryRecallService:
         for similarity, node in scoped_scores[: per_scope_limit * max(1, len(plan.scopes))]:
             candidate = candidates.setdefault(node.id, _Candidate(node=node))
             candidate.vector_score = max(candidate.vector_score, similarity)
+
+    def _collect_schema_triggers(
+        self,
+        query: str,
+        plan: ScopePlan,
+        candidates: dict[str, _Candidate],
+    ) -> None:
+        query_tokens = set(tokenize(query))
+        if not query_tokens:
+            return
+        for scope in plan.scopes:
+            schemas = self.store.list_nodes(
+                level="schema",
+                scope=scope,
+                include_decayed=False,
+                limit=1_000,
+            )
+            for schema in schemas:
+                trigger = str(schema.context.get("trigger") or "")
+                if not trigger:
+                    continue
+                trigger_tokens = set(tokenize(trigger))
+                if not trigger_tokens:
+                    continue
+                overlap = len(query_tokens & trigger_tokens) / len(trigger_tokens)
+                if overlap < SCHEMA_TRIGGER_OVERLAP_THRESHOLD:
+                    continue
+                score = SCHEMA_TRIGGER_BASE_SCORE + 0.05 * overlap
+                candidate = candidates.setdefault(schema.id, _Candidate(node=schema))
+                candidate.trigger_score = max(candidate.trigger_score, score)
 
     def _collect_graph(
         self,
@@ -412,6 +456,7 @@ def _recall_result_summary(index: int, result: RecallResult) -> dict[str, Any]:
         "bm25_score": result.bm25_score,
         "vector_score": result.vector_score,
         "graph_score": result.graph_score,
+        "trigger_score": result.trigger_score,
         "methods": list(result.methods),
         "path": list(result.path),
     }

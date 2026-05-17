@@ -23,6 +23,7 @@ EMBEDDING_SIMILARITY_THRESHOLD = 0.65
 CROSS_SCOPE_PROMOTION_PHASE = 4
 CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
 GLOBAL_PROMOTION_DEDUP_THRESHOLD = 0.8
+PROCEDURAL_MIN_CLUSTER_SIZE = 3
 
 _STOP_WORDS = {
     "a",
@@ -108,6 +109,8 @@ class ConsolidationResult:
     concepts_created: list[Node] = field(default_factory=list)
     concepts_updated: list[Node] = field(default_factory=list)
     concepts_promoted: list[Node] = field(default_factory=list)
+    schemas_created: list[Node] = field(default_factory=list)
+    schemas_updated: list[Node] = field(default_factory=list)
     decayed: list[Node] = field(default_factory=list)
     clusters_considered: int = 0
     traces_considered: int = 0
@@ -115,6 +118,10 @@ class ConsolidationResult:
     @property
     def concepts(self) -> list[Node]:
         return [*self.concepts_created, *self.concepts_updated, *self.concepts_promoted]
+
+    @property
+    def schemas(self) -> list[Node]:
+        return [*self.schemas_created, *self.schemas_updated]
 
 
 @dataclass(slots=True)
@@ -258,6 +265,14 @@ def memory_consolidate(
         traces_considered=len(traces),
     )
 
+    for schema, created in _materialize_procedural_schemas(
+        store, traces, min_cluster_size=PROCEDURAL_MIN_CLUSTER_SIZE
+    ):
+        if created:
+            result.schemas_created.append(schema)
+        else:
+            result.schemas_updated.append(schema)
+
     for cluster in clusters:
         if len(cluster.traces) < min_cluster_size:
             continue
@@ -344,6 +359,203 @@ def memory_teach(
         original=corrected_original,
         implicit_feedback=implicit_feedback,
     )
+
+
+def _materialize_procedural_schemas(
+    store: MemoryStore,
+    traces: Iterable[Node],
+    *,
+    min_cluster_size: int,
+) -> list[tuple[Node, bool]]:
+    """Group procedural traces by procedure_id/task_pattern and emit schema nodes."""
+
+    groups: dict[tuple[str, str], list[Node]] = {}
+    for trace in traces:
+        key = _procedure_key(trace)
+        if not key:
+            continue
+        groups.setdefault((trace.scope, key), []).append(trace)
+
+    schemas: list[tuple[Node, bool]] = []
+    for (scope, procedure_id), group_traces in groups.items():
+        if len(group_traces) < min_cluster_size:
+            continue
+        schema, created = _create_or_update_schema(store, scope, procedure_id, group_traces)
+        _connect_schema_to_traces(store, schema, group_traces)
+        schemas.append((schema, created))
+    return schemas
+
+
+def _procedure_key(trace: Node) -> str | None:
+    context = trace.context or {}
+    key = context.get("procedure_id") or context.get("task_pattern")
+    if key is None:
+        return None
+    text = str(key).strip()
+    return text or None
+
+
+def _create_or_update_schema(
+    store: MemoryStore,
+    scope: str,
+    procedure_id: str,
+    traces: list[Node],
+) -> tuple[Node, bool]:
+    trigger = _normalize_trigger(procedure_id)
+    steps = _procedure_steps(traces)
+    content = _format_schema_content(trigger, steps)
+
+    sorted_trace_ids = sorted({trace.id for trace in traces})
+    unique_agents = _unique_agent_count(traces)
+    confidence = _consensus_confidence(traces, unique_agents)
+    temporal_hint = detect_temporal_hint(traces)
+    usefulness = sum(max(0.0, trace.usefulness_score) for trace in traces) / len(traces)
+
+    base_provenance = {
+        "procedure_id": procedure_id,
+        "strategy": "procedural",
+        "consolidated_at": _utc_now(),
+    }
+    stats = {
+        "confidence": confidence,
+        "unique_agents": unique_agents,
+        "temporal_hint": temporal_hint,
+        "usefulness_score": usefulness,
+    }
+    context = {
+        "scope": scope,
+        "agent": "memory_consolidate",
+        "timestamp": _utc_now(),
+        "procedure_id": procedure_id,
+        "trigger": trigger,
+        "procedure": steps,
+    }
+
+    existing = _find_existing_schema(store, scope, procedure_id)
+    if existing is None:
+        provenance = {
+            **base_provenance,
+            "source_traces": sorted_trace_ids,
+            "cluster_size": len(sorted_trace_ids),
+        }
+        schema = store.create_node(
+            level="schema",
+            content=content,
+            context=context,
+            stats=stats,
+            provenance=provenance,
+        )
+        return schema, True
+
+    merged_sources = sorted({*existing.source_traces, *sorted_trace_ids})
+    provenance = {
+        **existing.provenance,
+        **base_provenance,
+        "source_traces": merged_sources,
+        "cluster_size": len(merged_sources),
+    }
+    schema = store.update_node(
+        existing.id,
+        content=content,
+        context=context,
+        stats=stats,
+        provenance=provenance,
+    )
+    return schema, False
+
+
+def _find_existing_schema(
+    store: MemoryStore, scope: str, procedure_id: str
+) -> Node | None:
+    schemas = store.list_nodes(
+        level="schema",
+        scope=scope,
+        include_decayed=False,
+        limit=100_000,
+    )
+    for schema in schemas:
+        candidates = (
+            schema.context.get("procedure_id"),
+            schema.provenance.get("procedure_id"),
+        )
+        if procedure_id in {str(value) for value in candidates if value is not None}:
+            return schema
+    return None
+
+
+def _normalize_trigger(procedure_id: str) -> str:
+    cleaned = procedure_id.replace("_", " ").replace("-", " ").replace("/", " ")
+    return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+
+def _procedure_steps(traces: Iterable[Node]) -> list[str]:
+    ordered = sorted(
+        traces,
+        key=lambda trace: (
+            _step_order(trace),
+            trace.timestamp or "",
+            trace.created_at or "",
+            trace.id,
+        ),
+    )
+    steps: list[str] = []
+    seen: set[str] = set()
+    for trace in ordered:
+        step = _step_description(trace)
+        if not step or step in seen:
+            continue
+        seen.add(step)
+        steps.append(step)
+    return steps
+
+
+def _step_order(trace: Node) -> int:
+    context = trace.context or {}
+    for key in ("step_order", "step"):
+        value = context.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            return int(value.strip())
+    return 10_000_000
+
+
+def _step_description(trace: Node) -> str:
+    context = trace.context or {}
+    for key in ("step_description", "step_content"):
+        value = context.get(key)
+        if value:
+            return str(value).strip()
+    task = trace.task or context.get("task")
+    content = (trace.content or "").strip()
+    if task and content and str(task).strip() not in content:
+        return f"{str(task).strip()}: {content}"
+    return content
+
+
+def _format_schema_content(trigger: str, steps: Iterable[str]) -> str:
+    lines = [f"Procedure: {trigger}" if trigger else "Procedure"]
+    for index, step in enumerate(steps, start=1):
+        lines.append(f"{index}. {step}")
+    return "\n".join(lines)
+
+
+def _connect_schema_to_traces(
+    store: MemoryStore, schema: Node, traces: Iterable[Node]
+) -> None:
+    for trace in traces:
+        _upsert_weighted_connection(
+            store,
+            schema.id,
+            trace.id,
+            "related",
+            weight=0.6,
+            metadata={"basis": "procedural", "procedure_id": schema.context.get("procedure_id")},
+        )
 
 
 def _cluster_traces(

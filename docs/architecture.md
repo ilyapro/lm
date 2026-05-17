@@ -39,7 +39,11 @@ The server is a Python package under `src/living_memory`.
    from the correction to the original.
 7. `memory_consolidate` clusters recent active traces, creates or updates
    concept nodes, computes consensus confidence and weekly temporal hints,
-   refreshes related-edge weights, and applies decay.
+   refreshes related-edge weights, and applies decay. It additionally groups
+   traces by `context.procedure_id` (or `context.task_pattern`) and
+   materializes one `level='schema'` node per group of three or more
+   procedural traces, storing the normalized trigger and ordered procedure
+   steps in `context`.
 8. `memory_status`, resources, and the retrieval-context prompt read the same
    store without requiring external services.
 
@@ -67,6 +71,14 @@ Uniform storage for traces, concepts, and schemas.
 
 Raw trace content is append-only. Consolidation creates concept nodes and
 connections; it does not rewrite source traces.
+
+Schema nodes (`level='schema'`) materialize repeating procedural patterns:
+when three or more traces share a `context.procedure_id` (or
+`context.task_pattern`), consolidation emits one schema node whose `context`
+carries `procedure_id`, a normalized `trigger`, and an ordered `procedure`
+list of step descriptions sourced from the contributing traces. No new
+columns are introduced; all procedural metadata lives in the existing JSON
+`context` column.
 
 ### `connections`
 
