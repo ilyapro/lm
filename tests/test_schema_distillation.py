@@ -218,3 +218,43 @@ def test_retrieval_context_prompt_omits_skills_section_without_match(
         )
 
         assert "skills:" not in block
+
+
+def test_consolidation_is_idempotent_for_procedural_schemas(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        traces = _append_procedure_traces(
+            store, scope="project:alpha", procedure_id="deploy_rollback", count=3
+        )
+
+        first = memory_consolidate(store, scope="project:alpha")
+        second = memory_consolidate(store, scope="project:alpha")
+
+        assert len(first.schemas_created) == 1
+        assert second.schemas_created == []
+        schemas = store.list_nodes(level="schema", scope="project:alpha")
+        assert len(schemas) == 1
+        schema = schemas[0]
+        assert schema.context["trigger"] == "deploy rollback"
+        assert sorted(schema.source_traces) == sorted(trace.id for trace in traces)
+
+
+def test_consolidation_separates_distinct_procedure_triggers(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        _append_procedure_traces(
+            store, scope="project:alpha", procedure_id="deploy_rollback", count=3
+        )
+        _append_procedure_traces(
+            store, scope="project:alpha", procedure_id="cache_warm", count=3
+        )
+
+        result = memory_consolidate(store, scope="project:alpha")
+
+        triggers = sorted(schema.context["trigger"] for schema in result.schemas_created)
+        assert triggers == ["cache warm", "deploy rollback"]
+        for schema in result.schemas_created:
+            assert schema.context["procedure"]
+            assert schema.provenance["strategy"] == "procedural"
