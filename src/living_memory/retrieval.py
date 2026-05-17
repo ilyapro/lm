@@ -417,17 +417,25 @@ def _recall_result_summary(index: int, result: RecallResult) -> dict[str, Any]:
     }
 
 
+_DEPTH_ALIASES = {"shallow": 1, "normal": 1, "medium": 2, "deep": 3}
+
+
 def _parse_depth(depth: int | str | None, query: str) -> tuple[int, bool]:
     causal_query = _is_causal_query(query)
     if depth is None:
         return (1, causal_query)
     if isinstance(depth, str):
-        lowered = depth.lower()
+        lowered = depth.strip().lower()
         if lowered in {"none", "off", "0"}:
             return (0, causal_query)
         if lowered in {"causal", "cause", "why"}:
             return (2, True)
-        return (max(0, int(lowered)), causal_query)
+        if lowered in _DEPTH_ALIASES:
+            return (_DEPTH_ALIASES[lowered], causal_query)
+        try:
+            return (max(0, int(lowered)), causal_query)
+        except ValueError:
+            return (1, causal_query)
     return (max(0, int(depth)), causal_query)
 
 

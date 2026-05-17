@@ -1,7 +1,59 @@
 from pathlib import Path
 
-from living_memory.retrieval import MemoryRecallService, memory_connect, memory_recall
+import pytest
+
+from living_memory.retrieval import (
+    MemoryRecallService,
+    _parse_depth,
+    memory_connect,
+    memory_recall,
+)
 from living_memory.storage import MemoryStore
+
+
+@pytest.mark.parametrize(
+    "depth,expected_depth,expected_causal",
+    [
+        (None, 1, False),
+        (0, 0, False),
+        (1, 1, False),
+        (2, 2, False),
+        ("0", 0, False),
+        ("1", 1, False),
+        ("2", 2, False),
+        ("none", 0, False),
+        ("off", 0, False),
+        ("shallow", 1, False),
+        ("normal", 1, False),
+        ("medium", 2, False),
+        ("deep", 3, False),
+        ("SHALLOW", 1, False),
+        ("  Medium  ", 2, False),
+        ("", 1, False),
+        ("bogus", 1, False),
+        ("causal", 2, True),
+    ],
+)
+def test_parse_depth_accepts_string_aliases(
+    depth: int | str | None, expected_depth: int, expected_causal: bool
+) -> None:
+    parsed_depth, causal_mode = _parse_depth(depth, "test query")
+    assert parsed_depth == expected_depth
+    assert causal_mode is expected_causal
+
+
+def test_memory_recall_accepts_string_depth_aliases(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.append_trace("API deploy checklist", {"scope": "project:alpha"})
+        for alias in ("shallow", "normal", "medium", "deep"):
+            results = memory_recall(
+                store,
+                "API deploy checklist",
+                scope="project:alpha",
+                depth=alias,
+                max_results=5,
+            )
+            assert results, f"recall returned no results for depth={alias!r}"
 
 
 def test_causal_recall_returns_causes_for_why_queries(tmp_path: Path) -> None:

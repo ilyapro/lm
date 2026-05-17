@@ -20,14 +20,12 @@ from living_memory.consolidation import (
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.resources import (
     connection_to_dict,
-    connections_summary,
     global_concepts,
     memory_health as health_view,
     memory_stats,
     memory_status as status_view,
     node_to_dict,
     project_concepts,
-    recall_events_summary,
     recent_interactions,
 )
 from living_memory.retrieval import MemoryRecallService, RecallResult
@@ -59,7 +57,7 @@ def create_mcp_server(
     factory_kwargs: dict[str, Any] = {
         "instructions": _server_instructions(store.config.default_scope),
     }
-    token_value = auth_token if auth_token is not None else os.environ.get("LM_AUTH_TOKEN", "")
+    token_value = auth_token or ""
     token_value = token_value.strip()
     # Only wire auth on the real FastMCP — custom test factories don't accept it.
     if token_value and mcp_factory is None:
@@ -151,6 +149,7 @@ def run_server(
         db_path=db_path,
         config_path=config_path,
         default_scope=default_scope,
+        auth_token=os.environ.get("LM_AUTH_TOKEN"),
     )
     if transport == "stdio":
         mcp.run()
@@ -329,16 +328,6 @@ def _register_resources(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None
     def resource_recent() -> dict[str, Any]:
         with runtime_lock:
             return recent_interactions(store)
-
-    @mcp.resource("memory://recall_events")
-    def resource_recall_events() -> dict[str, Any]:
-        with runtime_lock:
-            return recall_events_summary(store)
-
-    @mcp.resource("memory://connections")
-    def resource_connections() -> dict[str, Any]:
-        with runtime_lock:
-            return connections_summary(store)
 
 
 def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
