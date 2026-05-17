@@ -291,6 +291,9 @@ def memory_consolidate(
     return result
 
 
+consolidate = memory_consolidate
+
+
 def memory_teach(
     store: MemoryStore,
     trace_id: str,
