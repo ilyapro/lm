@@ -258,3 +258,155 @@ def test_consolidation_separates_distinct_procedure_triggers(
         for schema in result.schemas_created:
             assert schema.context["procedure"]
             assert schema.provenance["strategy"] == "procedural"
+
+
+def test_consolidation_groups_by_task_pattern_when_procedure_ids_vary(
+    tmp_path: Path,
+) -> None:
+    """Live cross-tree-consolidator shape: shared task_pattern, varying procedure_ids.
+
+    Traces written by cross-tree-consolidator include procedure_id
+    (tree_decomposition_<classification>, varies per tree) and task_pattern
+    (sha256-derived, constant per pattern). Grouping must follow task_pattern.
+    """
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        procedure_ids = (
+            "tree_decomposition_build",
+            "tree_decomposition_lemma",
+            "tree_decomposition_doc",
+        )
+        agents = ("agent-a", "agent-b", "agent-c")
+        traces = []
+        for index, procedure_id in enumerate(procedure_ids):
+            traces.append(
+                store.append_trace(
+                    f"tree:goal-{index + 1} decomposed in cycle {index + 1}",
+                    {
+                        "scope": "project:ae",
+                        "agent": agents[index],
+                        "task": f"tree:goal-{index + 1}",
+                        "procedure_id": procedure_id,
+                        "task_pattern": "208b33b133e3cc61",
+                        "step_order": index + 1,
+                    },
+                    feedback={"confidence": 0.6, "usefulness_score": 0.4},
+                )
+            )
+
+        result = memory_consolidate(store, scope="project:ae")
+
+        assert len(result.schemas_created) == 1, (
+            "expected one schema grouped by task_pattern across varying procedure_ids, "
+            f"got {result.schemas_created}"
+        )
+        schema = result.schemas_created[0]
+        assert schema.level == "schema"
+        assert schema.context["task_pattern"] == "208b33b133e3cc61"
+        assert schema.context["procedure_key"] == "208b33b133e3cc61"
+        assert schema.context["trigger"].startswith("tree decomposition ")
+        assert sorted(schema.source_traces) == sorted(trace.id for trace in traces)
+        assert schema.provenance["strategy"] == "procedural"
+        assert schema.provenance["group_field"] == "task_pattern"
+
+
+def test_consolidation_clusters_traces_with_only_task_pattern(
+    tmp_path: Path,
+) -> None:
+    """Three traces with task_pattern but no procedure_id must still materialize a schema."""
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        agents = ("agent-a", "agent-b", "agent-c")
+        for index in range(3):
+            store.append_trace(
+                f"rollback step {index + 1}",
+                {
+                    "scope": "project:alpha",
+                    "agent": agents[index],
+                    "task_pattern": "208b33b133e3cc61",
+                    "step_order": index + 1,
+                },
+                feedback={"confidence": 0.6, "usefulness_score": 0.4},
+            )
+
+        result = memory_consolidate(store, scope="project:alpha")
+
+        assert len(result.schemas_created) == 1
+        schema = result.schemas_created[0]
+        assert schema.context["task_pattern"] == "208b33b133e3cc61"
+        assert schema.context["procedure_key"] == "208b33b133e3cc61"
+        assert schema.context["trigger"] == "208b33b133e3cc61"
+        assert schema.provenance["group_field"] == "task_pattern"
+
+
+def test_consolidation_prefers_procedure_id_for_trigger_when_grouping_by_task_pattern(
+    tmp_path: Path,
+) -> None:
+    """When traces share task_pattern, the schema trigger should come from procedure_id (readable)."""
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        # Two traces with procedure_id="tree_decomposition_build" and one with a different
+        # procedure_id; trigger should pick the most common procedure_id, not the hash.
+        sequence = (
+            "tree_decomposition_build",
+            "tree_decomposition_build",
+            "tree_decomposition_lemma",
+        )
+        agents = ("agent-a", "agent-b", "agent-c")
+        for index, procedure_id in enumerate(sequence):
+            store.append_trace(
+                f"tree:goal-{index + 1} decomposed",
+                {
+                    "scope": "project:ae",
+                    "agent": agents[index],
+                    "task": f"tree:goal-{index + 1}",
+                    "procedure_id": procedure_id,
+                    "task_pattern": "abc123def456",
+                    "step_order": index + 1,
+                },
+                feedback={"confidence": 0.6, "usefulness_score": 0.4},
+            )
+
+        result = memory_consolidate(store, scope="project:ae")
+
+        assert len(result.schemas_created) == 1
+        schema = result.schemas_created[0]
+        assert schema.context["trigger"] == "tree decomposition build"
+        assert schema.context["procedure_key"] == "abc123def456"
+        assert schema.context["task_pattern"] == "abc123def456"
+        assert schema.provenance["procedure_field"] == "procedure_id"
+        assert schema.provenance["group_field"] == "task_pattern"
+
+
+def test_consolidation_is_idempotent_when_grouping_by_task_pattern(
+    tmp_path: Path,
+) -> None:
+    """Running consolidation twice on the same task_pattern group must not duplicate the schema."""
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        agents = ("agent-a", "agent-b", "agent-c")
+        procedure_ids = (
+            "tree_decomposition_build",
+            "tree_decomposition_lemma",
+            "tree_decomposition_doc",
+        )
+        for index, procedure_id in enumerate(procedure_ids):
+            store.append_trace(
+                f"tree step {index + 1}",
+                {
+                    "scope": "project:ae",
+                    "agent": agents[index],
+                    "procedure_id": procedure_id,
+                    "task_pattern": "208b33b133e3cc61",
+                    "step_order": index + 1,
+                },
+                feedback={"confidence": 0.6, "usefulness_score": 0.4},
+            )
+
+        first = memory_consolidate(store, scope="project:ae")
+        second = memory_consolidate(store, scope="project:ae")
+
+        assert len(first.schemas_created) == 1
+        assert second.schemas_created == []
+        schemas = store.list_nodes(level="schema", scope="project:ae")
+        assert len(schemas) == 1

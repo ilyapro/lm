@@ -181,9 +181,24 @@ class _TraceCluster:
 
 @dataclass(frozen=True, slots=True)
 class _ProcedureKey:
+    """Compound key for procedural distillation.
+
+    `group_*` is the stable identifier used to cluster traces into one schema —
+    `task_pattern` is preferred because real consumers (e.g. cross-tree
+    consolidator) write a constant sha-derived hash there while the
+    `procedure_id` label can vary across instances of the same pattern.
+
+    `trigger`/`field`/`raw` is the human-readable label used for the schema's
+    trigger string — `procedure_id` is preferred so retrieval can match natural
+    language queries against the schema's trigger.
+    """
+
     field: str
     raw: str
     trigger: str
+    group_field: str
+    group_raw: str
+    group_id: str
 
 
 class ConsolidationService:
@@ -377,52 +392,119 @@ def _materialize_procedural_schemas(
     *,
     min_cluster_size: int,
 ) -> list[tuple[Node, bool]]:
-    """Group procedural traces by procedure_id/task_pattern and emit schema nodes."""
+    """Group procedural traces by their stable group key and emit schema nodes.
+
+    Each trace's stable group key is its `task_pattern` if present, otherwise
+    its `procedure_id`. Traces sharing a `task_pattern` cluster together even
+    when their `procedure_id` labels differ between instances.
+    """
 
     groups: dict[tuple[str, str], list[Node]] = {}
-    group_keys: dict[tuple[str, str], _ProcedureKey] = {}
+    keys_by_group: dict[tuple[str, str], list[_ProcedureKey]] = {}
     for trace in traces:
         key = _procedure_key(trace)
         if not key:
             continue
-        group_id = (trace.scope, key.trigger)
-        groups.setdefault(group_id, []).append(trace)
-        group_keys[group_id] = _preferred_procedure_key(group_keys.get(group_id), key)
+        group_tuple = (trace.scope, key.group_id)
+        groups.setdefault(group_tuple, []).append(trace)
+        keys_by_group.setdefault(group_tuple, []).append(key)
 
     schemas: list[tuple[Node, bool]] = []
-    for (scope, trigger), group_traces in groups.items():
+    for (scope, _group_id), group_traces in groups.items():
         if len(group_traces) < min_cluster_size:
             continue
+        procedure_key = _select_group_procedure_key(keys_by_group[(scope, _group_id)])
         schema, created = _create_or_update_schema(
-            store, scope, group_keys[(scope, trigger)], group_traces
+            store, scope, procedure_key, group_traces
         )
         _connect_schema_to_traces(store, schema, group_traces)
         schemas.append((schema, created))
     return schemas
 
 
+def _select_group_procedure_key(keys: list[_ProcedureKey]) -> _ProcedureKey:
+    """Pick the best trigger label for a group of traces sharing one group_id."""
+
+    procedure_id_keys = [key for key in keys if key.field == "procedure_id"]
+    pool = procedure_id_keys or keys
+    counts = Counter((key.field, key.raw, key.trigger) for key in pool)
+    (trigger_field, trigger_raw, trigger), _frequency = counts.most_common(1)[0]
+    representative = keys[0]
+    return _ProcedureKey(
+        field=trigger_field,
+        raw=trigger_raw,
+        trigger=trigger,
+        group_field=representative.group_field,
+        group_raw=representative.group_raw,
+        group_id=representative.group_id,
+    )
+
+
 def _procedure_key(trace: Node) -> _ProcedureKey | None:
+    """Extract group + trigger info from a trace's context.
+
+    Grouping prefers `task_pattern` (stable across procedure_id variations);
+    the trigger prefers `procedure_id` (human-readable for query matching).
+    """
+
     context = trace.context or {}
-    for field in ("procedure_id", "task_pattern"):
-        value = context.get(field)
-        if value is None:
-            continue
-        raw = str(value).strip()
-        if not raw:
-            continue
-        trigger = _normalize_trigger(raw)
-        if trigger:
-            return _ProcedureKey(field=field, raw=raw, trigger=trigger)
-    return None
+    procedure_id_raw = str(context.get("procedure_id") or "").strip()
+    task_pattern_raw = str(context.get("task_pattern") or "").strip()
+
+    if not procedure_id_raw and not task_pattern_raw:
+        return None
+
+    if task_pattern_raw:
+        group_field = "task_pattern"
+        group_raw = task_pattern_raw
+    else:
+        group_field = "procedure_id"
+        group_raw = procedure_id_raw
+    group_id = _normalize_trigger(group_raw)
+    if not group_id:
+        return None
+
+    if procedure_id_raw:
+        trigger_field = "procedure_id"
+        trigger_raw = procedure_id_raw
+    else:
+        trigger_field = group_field
+        trigger_raw = group_raw
+    trigger = _normalize_trigger(trigger_raw) or group_id
+    if trigger == group_id:
+        trigger_field = group_field
+        trigger_raw = group_raw
+
+    return _ProcedureKey(
+        field=trigger_field,
+        raw=trigger_raw,
+        trigger=trigger,
+        group_field=group_field,
+        group_raw=group_raw,
+        group_id=group_id,
+    )
 
 
 def _preferred_procedure_key(
     existing: _ProcedureKey | None, current: _ProcedureKey
 ) -> _ProcedureKey:
+    """Merge two keys from the same group, picking the better trigger label.
+
+    The group_field/group_raw/group_id are identical by construction (same
+    group). Trigger prefers `procedure_id`; ties favor the first encountered.
+    """
+
     if existing is None:
         return current
     if existing.field != "procedure_id" and current.field == "procedure_id":
-        return current
+        return _ProcedureKey(
+            field=current.field,
+            raw=current.raw,
+            trigger=current.trigger,
+            group_field=existing.group_field,
+            group_raw=existing.group_raw,
+            group_id=existing.group_id,
+        )
     return existing
 
 
@@ -433,6 +515,7 @@ def _create_or_update_schema(
     traces: list[Node],
 ) -> tuple[Node, bool]:
     trigger = procedure_key.trigger
+    group_id = procedure_key.group_id
     steps = _procedure_steps(traces)
     content = _format_schema_content(trigger, steps)
 
@@ -443,9 +526,11 @@ def _create_or_update_schema(
     usefulness = sum(max(0.0, trace.usefulness_score) for trace in traces) / len(traces)
 
     base_provenance = {
-        "procedure_key": trigger,
+        "procedure_key": group_id,
         "procedure_field": procedure_key.field,
         "procedure_pattern": procedure_key.raw,
+        "group_field": procedure_key.group_field,
+        "group_pattern": procedure_key.group_raw,
         "strategy": "procedural",
         "consolidated_at": _utc_now(),
     }
@@ -459,7 +544,8 @@ def _create_or_update_schema(
         "scope": scope,
         "agent": "memory_consolidate",
         "timestamp": _utc_now(),
-        "procedure_key": trigger,
+        "procedure_key": group_id,
+        procedure_key.group_field: procedure_key.group_raw,
         procedure_key.field: procedure_key.raw,
         "trigger": trigger,
         "procedure": steps,
@@ -501,6 +587,8 @@ def _create_or_update_schema(
 def _find_existing_schema(
     store: MemoryStore, scope: str, procedure_key: _ProcedureKey
 ) -> Node | None:
+    """Locate a schema for the same group key, tolerating legacy provenance shape."""
+
     schemas = store.list_nodes(
         level="schema",
         scope=scope,
@@ -510,19 +598,20 @@ def _find_existing_schema(
     for schema in schemas:
         candidates = (
             schema.context.get("procedure_key"),
-            schema.context.get("trigger"),
-            schema.context.get("procedure_id"),
             schema.context.get("task_pattern"),
+            schema.context.get("procedure_id"),
+            schema.context.get("trigger"),
             schema.provenance.get("procedure_key"),
-            schema.provenance.get("procedure_id"),
+            schema.provenance.get("group_pattern"),
             schema.provenance.get("procedure_pattern"),
+            schema.provenance.get("procedure_id"),
         )
         normalized = {
             _normalize_trigger(str(value))
             for value in candidates
             if value is not None and str(value).strip()
         }
-        if procedure_key.trigger in normalized:
+        if procedure_key.group_id in normalized:
             return schema
     return None
 
