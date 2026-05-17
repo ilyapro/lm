@@ -30,7 +30,13 @@ Input:
     "confidence": 0.5,
     "usefulness_score": 0.0,
     "unique_agents": 1
-  }
+  },
+  "alternatives_considered": [
+    {
+      "approach": "hand-write files under projects/<name>/state/goals/",
+      "rejected_because": "misses canonical marker; goals_list() ignores"
+    }
+  ]
 }
 ```
 
@@ -45,6 +51,16 @@ scope reaches a consolidation boundary. If a compatible prior `memory_recall`
 is pending, the new trace also records that recall under
 `provenance.prior_recalls`, links to recalled nodes, and returns an
 `implicit_feedback` summary.
+
+When `alternatives_considered` is supplied, ingest also creates one ordinary
+trace node per rejected alternative and connects each rejected trace to the
+primary trace with a `contradicts` edge whose metadata includes
+`kind: "rejected_alternative"` and the non-empty rejection `reason`. The
+response adds `rejected_alternatives: ["node id", ...]`. Rejected alternatives
+reuse the primary trace scope and task, set
+`context.is_rejected_alternative: true`, and start with confidence no greater
+than half of the primary trace confidence. Omitting the field preserves the
+previous response shape.
 
 ### `memory_teach`
 
@@ -94,7 +110,7 @@ Input:
 {
   "query": "natural language query",
   "scope": "project:alpha",
-  "depth": "causal",
+  "depth": "causal | decision",
   "max_results": 10,
   "ambient_context": {
     "session_id": "s1",
@@ -111,6 +127,10 @@ query, scope plan, result IDs, and component scores. Causal queries such as
 "why did B happen" traverse `caused` and `requires` edges. Queries whose
 tokens cover a `level='schema'` node's `context.trigger` apply an explicit
 trigger-match boost so the schema outranks its connected source traces.
+Decision recall (`depth: "decision"`) returns matching primary traces plus
+their rejected alternatives by following only `contradicts` edges with
+`metadata.kind == "rejected_alternative"`. Shallow and numeric graph depths
+filter rejected-alternative traces from results.
 
 Output includes a `recall_event_id` at the top level and on each returned
 result so later provenance can refer to the exact retrieval interaction.
@@ -226,13 +246,19 @@ skills:
    1. check migration is reversible before release
    2. run migration dry run on staging
    3. execute rollback only after dry run passes
+decision_history:
+1. id=<node> scope=project:alpha confidence=0.50 score=...
+   Used /api/goals/create after /api/switch
+   Alternatives rejected: 2 (misses canonical marker; requires JIRA env)
 END ACTIVE MEMORY CONTEXT
 ```
 
 The prompt only includes active concepts allowed by the resolved scope and the
 minimum confidence threshold. The `skills:` section appears only when the
 task tokens cover a schema's `trigger`; when no procedural patterns match the
-query, the section is omitted entirely.
+query, the section is omitted entirely. The optional `decision_history`
+section appears only when task recall finds primary traces with rejected
+alternatives.
 
 ## Node Payload Contract
 

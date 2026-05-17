@@ -18,6 +18,7 @@ STRONG_VECTOR_MATCH = 0.65
 SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5
 SCHEMA_TRIGGER_BASE_SCORE = 0.95
 SCHEMA_TRIGGER_BOOST = 1.8
+REJECTED_ALTERNATIVE_KIND = "rejected_alternative"
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,10 +125,22 @@ class MemoryRecallService:
         self._collect_schema_triggers(query, plan, candidates)
 
         graph_depth, causal_mode = _parse_depth(depth, query)
+        decision_mode = _is_decision_depth(depth)
         if graph_depth > 0 and candidates:
-            self._collect_graph(plan, candidates, max_depth=graph_depth, causal_mode=causal_mode)
+            self._collect_graph(
+                plan,
+                candidates,
+                max_depth=graph_depth,
+                causal_mode=causal_mode,
+                decision_mode=decision_mode,
+            )
 
-        ranked = self.rank_candidates(candidates, plan, causal_mode=causal_mode)
+        ranked = self.rank_candidates(
+            candidates,
+            plan,
+            causal_mode=causal_mode,
+            decision_mode=decision_mode,
+        )
         limited = ranked[:max_results]
         if log_access:
             limited = [self._record_result_access(result) for result in limited]
@@ -171,12 +184,15 @@ class MemoryRecallService:
         plan: ScopePlan,
         *,
         causal_mode: bool = False,
+        decision_mode: bool = False,
     ) -> list[RecallResult]:
         results: list[RecallResult] = []
         superseded_ids, superseding_ids = self._supersedes_sets()
         for candidate in candidates.values():
             node = candidate.node
             if node.decayed or not plan.allows(node.scope):
+                continue
+            if _is_rejected_alternative_node(node) and not decision_mode:
                 continue
 
             weights = self.store.get_retrieval_weights(node.scope).normalized()
@@ -342,6 +358,7 @@ class MemoryRecallService:
         *,
         max_depth: int,
         causal_mode: bool,
+        decision_mode: bool = False,
     ) -> None:
         queue: deque[tuple[str, float, int, tuple[str, ...]]] = deque()
         best_seen: dict[str, float] = {}
@@ -355,7 +372,12 @@ class MemoryRecallService:
             if depth >= max_depth:
                 continue
             for connection in self.store.list_connections(node_id=node_id):
-                traversal = _traversal(connection, node_id, causal_mode=causal_mode)
+                traversal = _traversal(
+                    connection,
+                    node_id,
+                    causal_mode=causal_mode,
+                    decision_mode=decision_mode,
+                )
                 if traversal is None:
                     continue
                 neighbor_id, relation_score = traversal
@@ -473,6 +495,8 @@ def _parse_depth(depth: int | str | None, query: str) -> tuple[int, bool]:
         lowered = depth.strip().lower()
         if lowered in {"none", "off", "0"}:
             return (0, causal_query)
+        if lowered in {"decision", "decisions"}:
+            return (1, False)
         if lowered in {"causal", "cause", "why"}:
             return (2, True)
         if lowered in _DEPTH_ALIASES:
@@ -482,6 +506,10 @@ def _parse_depth(depth: int | str | None, query: str) -> tuple[int, bool]:
         except ValueError:
             return (1, causal_query)
     return (max(0, int(depth)), causal_query)
+
+
+def _is_decision_depth(depth: int | str | None) -> bool:
+    return isinstance(depth, str) and depth.strip().lower() in {"decision", "decisions"}
 
 
 def _is_causal_query(query: str) -> bool:
@@ -513,7 +541,15 @@ def _traversal(
     current_id: str,
     *,
     causal_mode: bool,
+    decision_mode: bool = False,
 ) -> tuple[str, float] | None:
+    rejected_alternative = _is_rejected_alternative_connection(connection)
+    if decision_mode:
+        if not rejected_alternative:
+            return None
+    elif rejected_alternative:
+        return None
+
     if causal_mode and connection.type not in {"caused", "requires"}:
         return None
 
@@ -527,7 +563,9 @@ def _traversal(
         return None
 
     base = max(0.0, connection.weight)
-    if connection.type == "related":
+    if rejected_alternative:
+        factor = 1.0
+    elif connection.type == "related":
         factor = 0.65
     elif connection.type == "contradicts":
         factor = 0.35
@@ -547,3 +585,14 @@ def _traversal(
     if score <= 0.0:
         return None
     return neighbor, score
+
+
+def _is_rejected_alternative_connection(connection: Connection) -> bool:
+    return (
+        connection.type == "contradicts"
+        and connection.metadata.get("kind") == REJECTED_ALTERNATIVE_KIND
+    )
+
+
+def _is_rejected_alternative_node(node: Node) -> bool:
+    return bool(node.context.get("is_rejected_alternative"))

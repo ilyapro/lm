@@ -82,6 +82,31 @@ class MemoryStore:
         node_id: str | None = None,
         timestamp: str | None = None,
     ) -> Node:
+        with self._conn:
+            new_id = self._insert_node(
+                level=level,
+                content=content,
+                context=context,
+                embedding=embedding,
+                stats=stats,
+                provenance=provenance,
+                node_id=node_id,
+                timestamp=timestamp,
+            )
+        return self.get_node(new_id)  # type: ignore[return-value]
+
+    def _insert_node(
+        self,
+        *,
+        level: NodeLevel,
+        content: str,
+        context: Mapping[str, Any] | None = None,
+        embedding: Iterable[float] | None = None,
+        stats: Mapping[str, Any] | None = None,
+        provenance: Mapping[str, Any] | None = None,
+        node_id: str | None = None,
+        timestamp: str | None = None,
+    ) -> str:
         self._validate_level(level)
         if not content:
             raise ValueError("content must be non-empty")
@@ -110,41 +135,40 @@ class MemoryStore:
         corrections = _as_list(provenance_data.pop("corrections", []))
         new_id = node_id or new_ulid()
 
-        with self._conn:
-            self._conn.execute(
-                """
-                INSERT INTO nodes (
-                    id, level, content, embedding, scope, agent, task, context,
-                    timestamp, decayed, decay_reason, access_count, last_accessed,
-                    usefulness_score, confidence, unique_agents, temporal_hint,
-                    source_traces, corrections, provenance, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    new_id,
-                    level,
-                    content,
-                    _json_dumps(list(embedding)) if embedding is not None else None,
-                    scope,
-                    agent,
-                    task,
-                    _json_dumps(context_data),
-                    node_timestamp,
-                    int(stats_data.get("access_count", 0)),
-                    _optional_str(stats_data.get("last_accessed")),
-                    float(stats_data.get("usefulness_score", 0.0)),
-                    confidence,
-                    unique_agents,
-                    _optional_str(stats_data.get("temporal_hint")),
-                    _json_dumps(source_traces),
-                    _json_dumps(corrections),
-                    _json_dumps(provenance_data),
-                    now,
-                    now,
-                ),
+        self._conn.execute(
+            """
+            INSERT INTO nodes (
+                id, level, content, embedding, scope, agent, task, context,
+                timestamp, decayed, decay_reason, access_count, last_accessed,
+                usefulness_score, confidence, unique_agents, temporal_hint,
+                source_traces, corrections, provenance, created_at, updated_at
             )
-        return self.get_node(new_id)  # type: ignore[return-value]
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                new_id,
+                level,
+                content,
+                _json_dumps(list(embedding)) if embedding is not None else None,
+                scope,
+                agent,
+                task,
+                _json_dumps(context_data),
+                node_timestamp,
+                int(stats_data.get("access_count", 0)),
+                _optional_str(stats_data.get("last_accessed")),
+                float(stats_data.get("usefulness_score", 0.0)),
+                confidence,
+                unique_agents,
+                _optional_str(stats_data.get("temporal_hint")),
+                _json_dumps(source_traces),
+                _json_dumps(corrections),
+                _json_dumps(provenance_data),
+                now,
+                now,
+            ),
+        )
+        return new_id
 
     def append_trace(
         self,
@@ -155,6 +179,70 @@ class MemoryStore:
     ) -> Node:
         stats = dict(feedback or {})
         return self.create_node(level="trace", content=content, context=context, stats=stats)
+
+    def append_trace_with_rejected_alternatives(
+        self,
+        content: str,
+        context: Mapping[str, Any] | None = None,
+        *,
+        feedback: Mapping[str, Any] | None = None,
+        alternatives_considered: Iterable[Mapping[str, Any]] | None = None,
+    ) -> tuple[Node, list[Node]]:
+        """Append one primary trace and rejected-alternative traces atomically."""
+
+        alternatives = _normalize_rejected_alternatives(alternatives_considered)
+        if not alternatives:
+            return self.append_trace(content, context, feedback=feedback), []
+
+        rejected_ids: list[str] = []
+        with self._conn:
+            primary_id = self._insert_node(
+                level="trace",
+                content=content,
+                context=context,
+                stats=dict(feedback or {}),
+            )
+            primary = self.get_node(primary_id)
+            if primary is None:
+                raise RuntimeError("primary trace insert failed")
+
+            base_context = dict(primary.context)
+            for alternative in alternatives:
+                approach = alternative["approach"]
+                reason = alternative["rejected_because"]
+                rejected_context = dict(base_context)
+                rejected_context["is_rejected_alternative"] = True
+                rejected_context["rejected_for"] = primary.id
+                rejected_context["approach"] = approach
+                rejected_stats = {
+                    "confidence": max(0.0, min(1.0, primary.confidence * 0.5)),
+                    "unique_agents": primary.unique_agents,
+                    "usefulness_score": min(0.0, primary.usefulness_score),
+                }
+                rejected_id = self._insert_node(
+                    level="trace",
+                    content=_rejected_alternative_content(approach, reason),
+                    context=rejected_context,
+                    stats=rejected_stats,
+                )
+                self._insert_connection(
+                    rejected_id,
+                    primary.id,
+                    "contradicts",
+                    weight=1.0,
+                    metadata={
+                        "kind": "rejected_alternative",
+                        "reason": reason,
+                        "approach": approach,
+                    },
+                )
+                rejected_ids.append(rejected_id)
+
+        primary = self.get_node(primary_id)
+        if primary is None:
+            raise RuntimeError("primary trace insert failed")
+        rejected_nodes = [node for node_id in rejected_ids if (node := self.get_node(node_id)) is not None]
+        return primary, rejected_nodes
 
     def create_trace(
         self,
@@ -309,30 +397,13 @@ class MemoryStore:
         if self.get_node(target_id) is None:
             raise KeyError(target_id)
 
-        now = _utc_now()
-        connection_id = new_ulid()
         with self._conn:
-            self._conn.execute(
-                """
-                INSERT INTO connections (
-                    id, source_id, target_id, type, weight, metadata, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(source_id, target_id, type) DO UPDATE SET
-                    weight = excluded.weight,
-                    metadata = excluded.metadata,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    connection_id,
-                    source_id,
-                    target_id,
-                    relation_type,
-                    float(weight),
-                    _json_dumps(dict(metadata or {})),
-                    now,
-                    now,
-                ),
+            self._insert_connection(
+                source_id,
+                target_id,
+                relation_type,
+                weight=weight,
+                metadata=metadata,
             )
         row = self._conn.execute(
             """
@@ -342,6 +413,42 @@ class MemoryStore:
             (source_id, target_id, relation_type),
         ).fetchone()
         return _connection_from_row(row)
+
+    def _insert_connection(
+        self,
+        source_id: str,
+        target_id: str,
+        relation_type: ConnectionType,
+        *,
+        weight: float = 1.0,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> str:
+        self._validate_connection_type(relation_type)
+        now = _utc_now()
+        connection_id = new_ulid()
+        self._conn.execute(
+            """
+            INSERT INTO connections (
+                id, source_id, target_id, type, weight, metadata, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source_id, target_id, type) DO UPDATE SET
+                weight = excluded.weight,
+                metadata = excluded.metadata,
+                updated_at = excluded.updated_at
+            """,
+            (
+                connection_id,
+                source_id,
+                target_id,
+                relation_type,
+                float(weight),
+                _json_dumps(dict(metadata or {})),
+                now,
+                now,
+            ),
+        )
+        return connection_id
 
     def connect_nodes(
         self,
@@ -992,6 +1099,27 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, tuple):
         return list(value)
     raise ValueError("value must be a list")
+
+
+def _normalize_rejected_alternatives(
+    alternatives: Iterable[Mapping[str, Any]] | None,
+) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for item in alternatives or ():
+        if not isinstance(item, Mapping):
+            raise ValueError("alternatives_considered items must be objects")
+        approach = str(item.get("approach") or "").strip()
+        reason = str(item.get("rejected_because") or item.get("reason") or "").strip()
+        if not approach:
+            raise ValueError("alternative approach must be non-empty")
+        if not reason:
+            raise ValueError("alternative rejected_because must be non-empty")
+        normalized.append({"approach": approach, "rejected_because": reason})
+    return normalized
+
+
+def _rejected_alternative_content(approach: str, reason: str) -> str:
+    return f"Rejected alternative: {approach}\nRejected because: {reason}"
 
 
 def _node_from_row(row: sqlite3.Row) -> Node:

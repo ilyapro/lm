@@ -186,11 +186,22 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         content: str,
         context: dict[str, Any] | None = None,
         feedback: dict[str, Any] | None = None,
+        alternatives_considered: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Store a new append-only trace."""
 
         with runtime_lock:
-            node = store.append_trace(content, context, feedback=feedback)
+            if alternatives_considered is None:
+                node = store.append_trace(content, context, feedback=feedback)
+                rejected_alternatives: list[Any] | None = None
+            else:
+                node, rejected_nodes = store.append_trace_with_rejected_alternatives(
+                    content,
+                    context,
+                    feedback=feedback,
+                    alternatives_considered=alternatives_considered,
+                )
+                rejected_alternatives = [rejected.id for rejected in rejected_nodes]
             implicit_feedback = apply_pending_recall_feedback(store, node)
             node = implicit_feedback.trace
             auto_consolidation = _auto_consolidate_if_due(
@@ -198,11 +209,14 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 consolidation_service,
                 node.scope,
             )
-            return {
+            response = {
                 "node": node_to_dict(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
                 "auto_consolidation": auto_consolidation,
             }
+            if rejected_alternatives is not None:
+                response["rejected_alternatives"] = rejected_alternatives
+            return response
 
     @mcp.tool
     def memory_teach(

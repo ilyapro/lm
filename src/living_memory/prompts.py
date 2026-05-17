@@ -7,7 +7,7 @@ from typing import Any
 import re
 
 from living_memory.models import Node
-from living_memory.retrieval import MemoryRecallService
+from living_memory.retrieval import MemoryRecallService, REJECTED_ALTERNATIVE_KIND
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
 
@@ -27,6 +27,13 @@ class ContextSchema:
     node: Node
     score: float
     methods: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionHistory:
+    primary: Node
+    reasons: tuple[str, ...]
+    score: float
 
 
 def retrieval_context_prompt(
@@ -65,9 +72,17 @@ def retrieval_context_prompt(
         min_confidence=min_confidence,
         ambient_context=ambient,
     )
+    decisions = select_decision_history(
+        store,
+        task=query,
+        plan=plan,
+        max_items=max_concepts,
+        ambient_context=ambient,
+    )
     return format_retrieval_context(
         concepts,
         schemas=schemas,
+        decision_history=decisions,
         task=query,
         plan=plan,
         store=store,
@@ -199,10 +214,49 @@ def select_context_schemas(
     return selected
 
 
+def select_decision_history(
+    store: MemoryStore,
+    *,
+    task: str,
+    plan: ScopePlan,
+    max_items: int = DEFAULT_CONTEXT_CONCEPTS,
+    ambient_context: dict[str, Any] | None = None,
+) -> list[DecisionHistory]:
+    """Return primary traces that have rejected alternatives relevant to the task."""
+
+    limit = max(0, int(max_items))
+    if limit == 0 or not task.strip():
+        return []
+
+    service = MemoryRecallService(store)
+    recall_results = service.memory_recall(
+        task,
+        scope=plan.requested_scope,
+        ambient_context=ambient_context,
+        depth="decision",
+        max_results=max(limit * 6, 20),
+        log_access=False,
+    )
+
+    selected: dict[str, DecisionHistory] = {}
+    for result in recall_results:
+        node = result.node
+        if node.context.get("is_rejected_alternative") or not plan.allows(node.scope):
+            continue
+        reasons = _rejected_alternative_reasons(store, node, plan)
+        if not reasons:
+            continue
+        selected[node.id] = DecisionHistory(primary=node, reasons=tuple(reasons), score=result.score)
+        if len(selected) >= limit:
+            break
+    return list(selected.values())
+
+
 def format_retrieval_context(
     concepts: list[ContextConcept],
     *,
     schemas: list[ContextSchema] | None = None,
+    decision_history: list[DecisionHistory] | None = None,
     task: str,
     plan: ScopePlan,
     store: MemoryStore,
@@ -251,6 +305,19 @@ def format_retrieval_context(
                 )
             )
             lines.append(f"   {_single_line(node.content)}")
+    if decision_history:
+        lines.append("decision_history:")
+        for index, decision in enumerate(decision_history, start=1):
+            node = decision.primary
+            reasons = "; ".join(_single_line(reason) for reason in decision.reasons)
+            lines.append(
+                (
+                    f"{index}. id={node.id} scope={node.scope} "
+                    f"confidence={node.confidence:.2f} score={decision.score:.4f}"
+                )
+            )
+            lines.append(f"   {_single_line(node.content)}")
+            lines.append(f"   Alternatives rejected: {len(decision.reasons)} ({reasons})")
     lines.append("END ACTIVE MEMORY CONTEXT")
     return "\n".join(lines)
 
@@ -295,3 +362,24 @@ def _tokens(value: str) -> set[str]:
 
 def _single_line(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _rejected_alternative_reasons(
+    store: MemoryStore,
+    primary: Node,
+    plan: ScopePlan,
+) -> list[str]:
+    reasons: list[str] = []
+    for connection in store.list_connections(target_id=primary.id, relation_type="contradicts"):
+        if connection.metadata.get("kind") != REJECTED_ALTERNATIVE_KIND:
+            continue
+        reason = str(connection.metadata.get("reason") or "").strip()
+        if not reason:
+            continue
+        rejected = store.get_node(connection.source_id)
+        if rejected is None or rejected.decayed or not plan.allows(rejected.scope):
+            continue
+        if not rejected.context.get("is_rejected_alternative"):
+            continue
+        reasons.append(reason)
+    return reasons
