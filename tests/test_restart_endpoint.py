@@ -113,8 +113,13 @@ def server(tmp_path: Path):
         _terminate(proc)
 
 
-def _post_restart(port: int, *, token: str | None) -> httpx.Response:
-    headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
+def _post_restart(
+    port: int,
+    *,
+    token: str | None,
+    scheme: str = "Bearer",
+) -> httpx.Response:
+    headers = {"Authorization": f"{scheme} {token}"} if token is not None else {}
     return httpx.post(
         f"http://127.0.0.1:{port}/admin/restart",
         headers=headers,
@@ -205,6 +210,9 @@ def test_admin_restart_requires_bearer_token(server: dict[str, Any]) -> None:
 
     wrong_auth = _post_restart(server["port"], token="not-the-real-token")
     assert wrong_auth.status_code == 401
+
+    wrong_scheme = _post_restart(server["port"], token=TOKEN, scheme="Token")
+    assert wrong_scheme.status_code == 401
 
 
 def test_admin_restart_returns_202_and_replaces_process(server: dict[str, Any]) -> None:

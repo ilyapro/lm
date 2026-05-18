@@ -10,6 +10,7 @@ from threading import RLock, Timer
 from typing import Any
 from uuid import uuid4
 import os
+import secrets
 import sys
 
 from living_memory.config import MemoryConfig, load_config
@@ -36,6 +37,7 @@ from living_memory.storage import MemoryStore
 
 _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
+_RESTART_PENDING = False
 
 
 def create_mcp_server(
@@ -112,8 +114,25 @@ def _register_admin_routes(
             {"ok": False, "error": "unauthorized"}, status_code=401
         )
 
+    def _authorized(request: "Request") -> bool:
+        return bool(expected_token) and secrets.compare_digest(
+            _bearer_token(request),
+            expected_token,
+        )
+
     @register("/health", methods=["GET"])
     async def health(request: "Request") -> "JSONResponse":
+        if _RESTART_PENDING:
+            # Body intentionally omits the substring "ok" so shell pollers that
+            # gate on `grep -q ok` keep waiting until the post-exec process binds.
+            return JSONResponse(
+                {
+                    "status": "restarting",
+                    "service": "living-memory",
+                    "boot_id": _BOOT_ID,
+                },
+                status_code=503,
+            )
         return JSONResponse(
             {
                 "ok": True,
@@ -125,7 +144,7 @@ def _register_admin_routes(
 
     @register("/admin/info", methods=["GET"])
     async def admin_info(request: "Request") -> "JSONResponse":
-        if not expected_token or _bearer_token(request) != expected_token:
+        if not _authorized(request):
             return _unauthorized()
         now = datetime.now(timezone.utc)
         return JSONResponse(
@@ -144,7 +163,7 @@ def _register_admin_routes(
 
     @register("/admin/restart", methods=["POST"])
     async def admin_restart(request: "Request") -> "JSONResponse":
-        if not expected_token or _bearer_token(request) != expected_token:
+        if not _authorized(request):
             return _unauthorized()
         pid_before = os.getpid()
         restart_at = datetime.now(timezone.utc).isoformat()
@@ -165,7 +184,15 @@ def _schedule_self_exec(delay_seconds: float = 0.2) -> None:
 
     `os.execv` replaces the current process image while preserving the PID;
     scheduling it on a daemon timer lets the 202 response complete first.
+    Flipping `_RESTART_PENDING` makes the in-flight `/health` endpoint stop
+    advertising readiness, so external pollers don't latch onto the dying
+    process before exec replaces it.
     """
+
+    global _RESTART_PENDING
+    if _RESTART_PENDING:
+        return
+    _RESTART_PENDING = True
 
     def _exec_self() -> None:
         argv = [sys.executable, "-m", "living_memory.server", *sys.argv[1:]]
