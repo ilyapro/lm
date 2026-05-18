@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-_SRC_PACKAGE = Path(__file__).resolve().parent.parent / "src" / "living_memory"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_SRC_PACKAGE = _REPO_ROOT / "src" / "living_memory"
 if _SRC_PACKAGE.exists():
     __path__.append(str(_SRC_PACKAGE))
+
+_DEPS_DIR = _REPO_ROOT / ".cache" / "python-deps"
+if _DEPS_DIR.exists():
+    _deps = str(_DEPS_DIR)
+    if _deps not in sys.path:
+        sys.path.insert(0, _deps)
 
 from living_memory.config import MemoryConfig, RetrievalWeightConfig, load_config
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
