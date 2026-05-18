@@ -12,6 +12,7 @@ from uuid import uuid4
 import os
 import secrets
 import sys
+import time
 
 from living_memory.config import MemoryConfig, load_config
 from living_memory.consolidation import (
@@ -20,6 +21,7 @@ from living_memory.consolidation import (
     ConsolidationService,
     TeachResult,
 )
+from living_memory.decay import apply_decay
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.resources import (
     connection_to_dict,
@@ -34,6 +36,7 @@ from living_memory.resources import (
 from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.feedback import apply_pending_recall_feedback
 from living_memory.storage import MemoryStore
+from living_memory.temporal import parse_timestamp
 
 _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
@@ -79,6 +82,8 @@ def create_mcp_server(
     _register_prompts(mcp, store, runtime_lock)
     _register_admin_routes(
         mcp,
+        store=store,
+        runtime_lock=runtime_lock,
         expected_token=token_value,
         default_scope=store.config.default_scope,
     )
@@ -88,10 +93,12 @@ def create_mcp_server(
 def _register_admin_routes(
     mcp: Any,
     *,
+    store: MemoryStore,
+    runtime_lock: Any,
     expected_token: str,
     default_scope: str,
 ) -> None:
-    """Register /health, /admin/info, /admin/restart on the FastMCP HTTP app."""
+    """Register health and admin routes on the FastMCP HTTP app."""
 
     register = getattr(mcp, "custom_route", None)
     if register is None:
@@ -176,6 +183,22 @@ def _register_admin_routes(
                 "boot_id": _BOOT_ID,
             },
             status_code=202,
+        )
+
+    @register("/admin/decay-sweep", methods=["POST"])
+    async def admin_decay_sweep(request: "Request") -> "JSONResponse":
+        if not _authorized(request):
+            return _unauthorized()
+        started = time.perf_counter()
+        with runtime_lock:
+            result = _run_decay_sweep(store)
+        return JSONResponse(
+            {
+                "ok": True,
+                "decayed_count": result["decayed_count"],
+                "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+            },
+            status_code=200,
         )
 
 
@@ -422,6 +445,10 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         """Store a new append-only trace."""
 
         with runtime_lock:
+            try:
+                _decay_sweep_if_due(store)
+            except Exception:
+                pass
             if alternatives_considered is None:
                 node = store.append_trace(content, context, feedback=feedback)
                 rejected_alternatives: list[Any] | None = None
@@ -498,6 +525,10 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         """Retrieve relevant memory nodes using scope, text, vector, and graph signals."""
 
         with runtime_lock:
+            try:
+                _decay_sweep_if_due(store)
+            except Exception:
+                pass
             results = recall_service.memory_recall(
                 query,
                 scope=scope,
@@ -518,6 +549,10 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         """Run one consolidation and decay maintenance pass."""
 
         with runtime_lock:
+            try:
+                _decay_sweep_if_due(store)
+            except Exception:
+                pass
             result = consolidation_service.memory_consolidate(scope=scope, force=force)
             return _consolidation_result_to_dict(result)
 
@@ -635,6 +670,49 @@ def _adaptive_merge_floor(trace_count: int) -> int:
 
 def _auto_consolidate_policy() -> str:
     return os.environ.get("LM_AUTO_CONSOLIDATE_POLICY", "fixed").strip().lower()
+
+
+def _decay_sweep_interval_seconds() -> float:
+    raw = os.environ.get("LM_DECAY_SWEEP_INTERVAL_SEC", "3600").strip()
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 3600.0
+
+
+def _format_utc_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _run_decay_sweep(
+    store: MemoryStore,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    sweep_at = now or datetime.now(timezone.utc)
+    result = apply_decay(store, scope=None, now=sweep_at)
+    store.set_last_decay_sweep_at(_format_utc_timestamp(sweep_at))
+    return {"swept": True, "decayed_count": len(result.nodes)}
+
+
+def _decay_sweep_if_due(
+    store: MemoryStore,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    interval_seconds = _decay_sweep_interval_seconds()
+    if interval_seconds <= 0:
+        return None
+
+    sweep_at = now or datetime.now(timezone.utc)
+    last_sweep_at = parse_timestamp(store.get_last_decay_sweep_at())
+    if last_sweep_at is not None:
+        elapsed_seconds = (sweep_at - last_sweep_at).total_seconds()
+        if elapsed_seconds <= interval_seconds:
+            return None
+    return _run_decay_sweep(store, now=sweep_at)
 
 
 def _auto_consolidate_if_due(

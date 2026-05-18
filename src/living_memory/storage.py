@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 import json
@@ -38,8 +39,21 @@ class MemoryStore:
     but trace content is never updated in place.
     """
 
-    def __init__(self, config: MemoryConfig | str | Path | None = None) -> None:
-        if config is None:
+    def __init__(
+        self,
+        config: MemoryConfig | str | Path | None = None,
+        base_config: MemoryConfig | None = None,
+    ) -> None:
+        if base_config is not None and not isinstance(base_config, MemoryConfig):
+            raise TypeError("base_config must be a MemoryConfig")
+        if base_config is not None:
+            if config is None:
+                self.config = base_config
+            elif isinstance(config, MemoryConfig):
+                self.config = config
+            else:
+                self.config = replace(base_config, db_path=Path(config))
+        elif config is None:
             self.config = MemoryConfig()
         elif isinstance(config, MemoryConfig):
             self.config = config
@@ -70,6 +84,33 @@ class MemoryStore:
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    def get_kv(self, key: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT value FROM kv WHERE key = ?",
+            (str(key),),
+        ).fetchone()
+        return str(row["value"]) if row else None
+
+    def set_kv(self, key: str, value: str) -> None:
+        now = _utc_now()
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO kv (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (str(key), str(value), now),
+            )
+
+    def get_last_decay_sweep_at(self) -> str | None:
+        return self.get_kv("last_decay_sweep_at")
+
+    def set_last_decay_sweep_at(self, timestamp: str) -> None:
+        self.set_kv("last_decay_sweep_at", timestamp)
 
     def create_node(
         self,
@@ -867,6 +908,12 @@ class MemoryStore:
                 CREATE TABLE IF NOT EXISTS metadata (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS kv (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS nodes (
