@@ -460,9 +460,9 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
 
         with runtime_lock:
             try:
-                _decay_sweep_if_due(store)
+                auto_decay = _decay_sweep_if_due(store)
             except Exception:
-                pass
+                auto_decay = None
             if alternatives_considered is None:
                 node = store.append_trace(content, context, feedback=feedback)
                 rejected_alternatives: list[Any] | None = None
@@ -481,7 +481,6 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 consolidation_service,
                 node.scope,
             )
-            auto_decay = _maybe_decay_sweep(store)
             response = {
                 "node": node_to_dict(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
