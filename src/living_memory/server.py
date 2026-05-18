@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
-from threading import RLock
+from threading import RLock, Timer
 from typing import Any
+from uuid import uuid4
 import os
 import sys
 
@@ -31,6 +33,9 @@ from living_memory.resources import (
 from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.feedback import apply_pending_recall_feedback
 from living_memory.storage import MemoryStore
+
+_BOOT_ID = uuid4().hex
+_STARTED_AT = datetime.now(timezone.utc)
 
 
 def create_mcp_server(
@@ -70,7 +75,105 @@ def create_mcp_server(
     _register_tools(mcp, store, runtime_lock)
     _register_resources(mcp, store, runtime_lock)
     _register_prompts(mcp, store, runtime_lock)
+    _register_admin_routes(
+        mcp,
+        expected_token=token_value,
+        default_scope=store.config.default_scope,
+    )
     return mcp
+
+
+def _register_admin_routes(
+    mcp: Any,
+    *,
+    expected_token: str,
+    default_scope: str,
+) -> None:
+    """Register /health, /admin/info, /admin/restart on the FastMCP HTTP app."""
+
+    register = getattr(mcp, "custom_route", None)
+    if register is None:
+        return
+    try:
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse
+    except ImportError:
+        return
+
+    def _bearer_token(request: "Request") -> str:
+        auth_header = request.headers.get("authorization", "")
+        scheme, _, token = auth_header.partition(" ")
+        if scheme.lower() != "bearer":
+            return ""
+        return token.strip()
+
+    def _unauthorized() -> "JSONResponse":
+        return JSONResponse(
+            {"ok": False, "error": "unauthorized"}, status_code=401
+        )
+
+    @register("/health", methods=["GET"])
+    async def health(request: "Request") -> "JSONResponse":
+        return JSONResponse(
+            {
+                "ok": True,
+                "service": "living-memory",
+                "boot_id": _BOOT_ID,
+            },
+            status_code=200,
+        )
+
+    @register("/admin/info", methods=["GET"])
+    async def admin_info(request: "Request") -> "JSONResponse":
+        if not expected_token or _bearer_token(request) != expected_token:
+            return _unauthorized()
+        now = datetime.now(timezone.utc)
+        return JSONResponse(
+            {
+                "ok": True,
+                "service": "living-memory",
+                "process_id": os.getpid(),
+                "boot_id": _BOOT_ID,
+                "started_at": _STARTED_AT.isoformat(),
+                "uptime_seconds": (now - _STARTED_AT).total_seconds(),
+                "default_scope": default_scope,
+                "argv": list(sys.argv),
+            },
+            status_code=200,
+        )
+
+    @register("/admin/restart", methods=["POST"])
+    async def admin_restart(request: "Request") -> "JSONResponse":
+        if not expected_token or _bearer_token(request) != expected_token:
+            return _unauthorized()
+        pid_before = os.getpid()
+        restart_at = datetime.now(timezone.utc).isoformat()
+        _schedule_self_exec()
+        return JSONResponse(
+            {
+                "ok": True,
+                "restart_at": restart_at,
+                "pid_before": pid_before,
+                "boot_id": _BOOT_ID,
+            },
+            status_code=202,
+        )
+
+
+def _schedule_self_exec(delay_seconds: float = 0.2) -> None:
+    """Fire os.execv after the current response has time to flush.
+
+    `os.execv` replaces the current process image while preserving the PID;
+    scheduling it on a daemon timer lets the 202 response complete first.
+    """
+
+    def _exec_self() -> None:
+        argv = [sys.executable, "-m", "living_memory.server", *sys.argv[1:]]
+        os.execv(sys.executable, argv)
+
+    timer = Timer(delay_seconds, _exec_self)
+    timer.daemon = True
+    timer.start()
 
 
 def _build_static_token_auth(token: str) -> Any | None:
@@ -261,6 +364,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     db_path = args.db or args.sqlite_file
     default_scope = args.default_scope or os.environ.get("LM_DEFAULT_SCOPE") or os.environ.get("LM_SCOPE")
+    if args.embedding:
+        os.environ["LIVING_MEMORY_EMBEDDING_BACKEND"] = args.embedding
     try:
         run_server(
             db_path=db_path,
@@ -653,6 +758,12 @@ def _build_parser() -> ArgumentParser:
     )
     parser.add_argument("--host", default="127.0.0.1", help="Host for HTTP or SSE transport.")
     parser.add_argument("--port", type=int, default=8000, help="Port for HTTP or SSE transport.")
+    parser.add_argument(
+        "--embedding",
+        dest="embedding",
+        help="Embedding backend override (e.g. 'hash', 'online', 'auto'). "
+             "Sets LIVING_MEMORY_EMBEDDING_BACKEND for the running server.",
+    )
     return parser
 
 
