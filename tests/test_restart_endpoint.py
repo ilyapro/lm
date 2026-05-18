@@ -122,6 +122,81 @@ def _post_restart(port: int, *, token: str | None) -> httpx.Response:
     )
 
 
+def _get(port: int, path: str, *, token: str | None) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
+    return httpx.get(f"http://127.0.0.1:{port}{path}", headers=headers, timeout=5.0)
+
+
+def test_health_endpoint_is_unauthenticated(server: dict[str, Any]) -> None:
+    response = _get(server["port"], "/health", token=None)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["service"] == "living-memory"
+    assert isinstance(body.get("boot_id"), str) and body["boot_id"]
+
+
+def test_admin_info_requires_token_and_reports_runtime(server: dict[str, Any]) -> None:
+    unauth = _get(server["port"], "/admin/info", token=None)
+    assert unauth.status_code == 401
+
+    wrong = _get(server["port"], "/admin/info", token="nope")
+    assert wrong.status_code == 401
+
+    response = _get(server["port"], "/admin/info", token=TOKEN)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["service"] == "living-memory"
+    assert body["process_id"] == server["proc"].pid
+    assert body["default_scope"] == DEFAULT_SCOPE
+    assert isinstance(body.get("boot_id"), str) and body["boot_id"]
+    assert "started_at" in body and body["started_at"]
+    assert float(body["uptime_seconds"]) >= 0.0
+    argv = body.get("argv")
+    assert isinstance(argv, list) and any("living_memory" in a for a in argv)
+
+
+def _wait_for_boot_id_change(
+    port: int, *, current_boot_id: str, deadline: float
+) -> str:
+    last_err: BaseException | None = None
+    while time.monotonic() < deadline:
+        try:
+            data = _get(port, "/health", token=None).json()
+            boot = data.get("boot_id")
+            if isinstance(boot, str) and boot and boot != current_boot_id:
+                return boot
+        except (OSError, httpx.HTTPError, ValueError) as err:
+            last_err = err
+        time.sleep(0.1)
+    raise RuntimeError(
+        f"boot_id did not rotate after restart: last_err={last_err!r}"
+    )
+
+
+def test_admin_info_boot_id_changes_after_restart(server: dict[str, Any]) -> None:
+    port = server["port"]
+    before = _get(port, "/admin/info", token=TOKEN).json()
+    assert before["ok"] is True
+    initial_boot_id = before["boot_id"]
+
+    restart = _post_restart(port, token=TOKEN)
+    assert restart.status_code == 202
+
+    new_boot_id = _wait_for_boot_id_change(
+        port,
+        current_boot_id=initial_boot_id,
+        deadline=time.monotonic() + RESTART_TIMEOUT_SECONDS,
+    )
+
+    after = _get(port, "/admin/info", token=TOKEN).json()
+    assert after["ok"] is True
+    assert after["boot_id"] == new_boot_id
+    # os.execv preserves the OS PID.
+    assert after["process_id"] == before["process_id"]
+
+
 def test_admin_restart_requires_bearer_token(server: dict[str, Any]) -> None:
     no_auth = _post_restart(server["port"], token=None)
     assert no_auth.status_code == 401
