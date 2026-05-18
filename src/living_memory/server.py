@@ -12,7 +12,7 @@ from uuid import uuid4
 import os
 import secrets
 import sys
-import time
+import time as _time
 
 from living_memory.config import MemoryConfig, load_config
 from living_memory.consolidation import (
@@ -98,7 +98,7 @@ def _register_admin_routes(
     expected_token: str,
     default_scope: str,
 ) -> None:
-    """Register health and admin routes on the FastMCP HTTP app."""
+    """Register /health, /admin/info, /admin/restart, /admin/decay-sweep on FastMCP."""
 
     register = getattr(mcp, "custom_route", None)
     if register is None:
@@ -189,17 +189,31 @@ def _register_admin_routes(
     async def admin_decay_sweep(request: "Request") -> "JSONResponse":
         if not _authorized(request):
             return _unauthorized()
-        started = time.perf_counter()
-        with runtime_lock:
-            result = _run_decay_sweep(store)
-        return JSONResponse(
-            {
-                "ok": True,
-                "decayed_count": result["decayed_count"],
-                "duration_ms": round((time.perf_counter() - started) * 1000, 3),
-            },
-            status_code=200,
-        )
+        started = _time.perf_counter()
+        try:
+            with runtime_lock:
+                result = _decay_sweep_if_due(store, force=True)
+        except Exception as exc:
+            duration_ms = int((_time.perf_counter() - started) * 1000)
+            return JSONResponse(
+                {"ok": False, "error": str(exc), "duration_ms": duration_ms},
+                status_code=500,
+            )
+        duration_ms = int((_time.perf_counter() - started) * 1000)
+        payload: dict[str, Any] = {"ok": True, "duration_ms": duration_ms}
+        if result is None:
+            payload.update({"swept": False, "decayed_count": 0})
+        else:
+            payload.update(
+                {
+                    "swept": True,
+                    "decayed_count": result["decayed_count"],
+                    "expired_count": result["expired_count"],
+                    "superseded_count": result["superseded_count"],
+                    "last_decay_sweep_at": result["last_decay_sweep_at"],
+                }
+            )
+        return JSONResponse(payload, status_code=200)
 
 
 def _schedule_self_exec(delay_seconds: float = 0.2) -> None:
@@ -467,10 +481,12 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 consolidation_service,
                 node.scope,
             )
+            auto_decay = _maybe_decay_sweep(store)
             response = {
                 "node": node_to_dict(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
                 "auto_consolidation": auto_consolidation,
+                "auto_decay": auto_decay,
             }
             if rejected_alternatives is not None:
                 response["rejected_alternatives"] = rejected_alternatives
@@ -525,10 +541,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         """Retrieve relevant memory nodes using scope, text, vector, and graph signals."""
 
         with runtime_lock:
-            try:
-                _decay_sweep_if_due(store)
-            except Exception:
-                pass
+            auto_decay = _maybe_decay_sweep(store)
             results = recall_service.memory_recall(
                 query,
                 scope=scope,
@@ -542,6 +555,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 "recall_event_id": recall_service.last_recall_event_id,
                 "count": len(results),
                 "results": [_recall_result_to_dict(result) for result in results],
+                "auto_decay": auto_decay,
             }
 
     @mcp.tool
@@ -549,12 +563,11 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         """Run one consolidation and decay maintenance pass."""
 
         with runtime_lock:
-            try:
-                _decay_sweep_if_due(store)
-            except Exception:
-                pass
+            auto_decay = _maybe_decay_sweep(store)
             result = consolidation_service.memory_consolidate(scope=scope, force=force)
-            return _consolidation_result_to_dict(result)
+            payload = _consolidation_result_to_dict(result)
+            payload["auto_decay"] = auto_decay
+            return payload
 
     @mcp.tool
     def memory_forget(id: str, reason: str | None = None) -> dict[str, Any]:
@@ -672,47 +685,75 @@ def _auto_consolidate_policy() -> str:
     return os.environ.get("LM_AUTO_CONSOLIDATE_POLICY", "fixed").strip().lower()
 
 
-def _decay_sweep_interval_seconds() -> float:
-    raw = os.environ.get("LM_DECAY_SWEEP_INTERVAL_SEC", "3600").strip()
+_DECAY_SWEEP_KV_KEY = "last_decay_sweep_at"
+_DECAY_SWEEP_DEFAULT_INTERVAL_SEC = 3600
+
+
+def _decay_sweep_interval_seconds() -> int:
+    """Read LM_DECAY_SWEEP_INTERVAL_SEC. 0 disables time-based sweep."""
+
+    raw = os.environ.get("LM_DECAY_SWEEP_INTERVAL_SEC")
+    if raw is None or not raw.strip():
+        return _DECAY_SWEEP_DEFAULT_INTERVAL_SEC
     try:
-        return max(0.0, float(raw))
+        value = int(raw.strip())
     except ValueError:
-        return 3600.0
-
-
-def _format_utc_timestamp(value: datetime) -> str:
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _run_decay_sweep(
-    store: MemoryStore,
-    *,
-    now: datetime | None = None,
-) -> dict[str, Any]:
-    sweep_at = now or datetime.now(timezone.utc)
-    result = apply_decay(store, scope=None, now=sweep_at)
-    store.set_last_decay_sweep_at(_format_utc_timestamp(sweep_at))
-    return {"swept": True, "decayed_count": len(result.nodes)}
+        return _DECAY_SWEEP_DEFAULT_INTERVAL_SEC
+    return max(0, value)
 
 
 def _decay_sweep_if_due(
     store: MemoryStore,
     *,
+    force: bool = False,
     now: datetime | None = None,
 ) -> dict[str, Any] | None:
-    interval_seconds = _decay_sweep_interval_seconds()
-    if interval_seconds <= 0:
+    """Run a scope-agnostic decay sweep when the time gate has elapsed.
+
+    Returns a summary dict when a sweep ran, or None when it was skipped
+    (interval disabled, or last sweep too recent). Raises on storage or
+    decay errors — callers decide whether to propagate or swallow.
+    """
+
+    interval = _decay_sweep_interval_seconds()
+    if not force and interval <= 0:
         return None
 
-    sweep_at = now or datetime.now(timezone.utc)
-    last_sweep_at = parse_timestamp(store.get_last_decay_sweep_at())
-    if last_sweep_at is not None:
-        elapsed_seconds = (sweep_at - last_sweep_at).total_seconds()
-        if elapsed_seconds <= interval_seconds:
-            return None
-    return _run_decay_sweep(store, now=sweep_at)
+    current = now or datetime.now(timezone.utc)
+
+    if not force:
+        last_raw = store.get_kv(_DECAY_SWEEP_KV_KEY)
+        if last_raw:
+            last = parse_timestamp(last_raw)
+            if last is not None and (current - last).total_seconds() < interval:
+                return None
+
+    started = _time.perf_counter()
+    result = apply_decay(store, scope=None, now=current)
+    duration_ms = int((_time.perf_counter() - started) * 1000)
+
+    timestamp_iso = current.astimezone(timezone.utc).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
+    store.set_kv(_DECAY_SWEEP_KV_KEY, timestamp_iso)
+
+    return {
+        "swept": True,
+        "decayed_count": len(result.expired) + len(result.superseded),
+        "expired_count": len(result.expired),
+        "superseded_count": len(result.superseded),
+        "duration_ms": duration_ms,
+        "last_decay_sweep_at": timestamp_iso,
+    }
+
+
+def _maybe_decay_sweep(store: MemoryStore) -> dict[str, Any] | None:
+    """Opportunistic time-based sweep that never raises into the caller."""
+
+    try:
+        return _decay_sweep_if_due(store)
+    except Exception:
+        return None
 
 
 def _auto_consolidate_if_due(

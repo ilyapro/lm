@@ -35,6 +35,7 @@ def _clear_lm_policy_env() -> Iterator[None]:
             "LM_AUTH_TOKEN",
             "LM_AUTO_CONSOLIDATE_POLICY",
             "LM_RETRIEVAL_TUNING_POLICY",
+            "LM_DECAY_SWEEP_INTERVAL_SEC",
         )
     }
     try:

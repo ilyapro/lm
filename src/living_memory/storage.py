@@ -1058,6 +1058,30 @@ class MemoryStore:
                 (str(SCHEMA_VERSION),),
             )
 
+    def get_kv(self, key: str) -> str | None:
+        """Read a server-wide kv entry, or None if unset."""
+
+        row = self._conn.execute(
+            "SELECT value FROM kv WHERE key = ?", (key,)
+        ).fetchone()
+        return None if row is None else str(row["value"])
+
+    def set_kv(self, key: str, value: str) -> None:
+        """Upsert a server-wide kv entry with an UTC updated_at stamp."""
+
+        now = _utc_now()
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO kv (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (str(key), str(value), now),
+            )
+
     def _seed_retrieval_weights(self) -> None:
         now = _utc_now()
         with self._conn:
