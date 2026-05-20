@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -762,6 +762,63 @@ class MemoryStore:
             params,
         ).fetchall()
         return [(_node_from_row(row), float(row["score"])) for row in rows]
+
+    def iter_embedding_rows(
+        self,
+        *,
+        scope: str | None = None,
+        level: NodeLevel | None = None,
+        include_decayed: bool = False,
+    ) -> Iterator[tuple[str, str]]:
+        """Yield ``(node_id, embedding_json)`` for embedded nodes only.
+
+        Reads just the two columns required for vector similarity scans, which
+        skips parsing of the much larger ``context``/``provenance`` JSON columns
+        and avoids constructing full Node dataclass instances. Use this for
+        bulk cosine scans and fall back to ``get_node`` for the top matches.
+        """
+
+        clauses: list[str] = ["embedding IS NOT NULL"]
+        params: list[Any] = []
+        if level is not None:
+            self._validate_level(level)
+            clauses.append("level = ?")
+            params.append(level)
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(scope)
+        if not include_decayed:
+            clauses.append("decayed = 0")
+        sql = f"SELECT id, embedding FROM nodes WHERE {' AND '.join(clauses)}"
+        cur = self._conn.execute(sql, params)
+        for row in cur:
+            yield str(row["id"]), str(row["embedding"])
+
+    def list_unembedded_nodes(
+        self,
+        *,
+        scope: str | None = None,
+        level: NodeLevel | None = None,
+        limit: int = 200,
+    ) -> list[Node]:
+        """Return active nodes with no stored embedding (for lazy backfill)."""
+
+        clauses: list[str] = ["embedding IS NULL", "decayed = 0"]
+        params: list[Any] = []
+        if level is not None:
+            self._validate_level(level)
+            clauses.append("level = ?")
+            params.append(level)
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(scope)
+        params.append(int(limit))
+        rows = self._conn.execute(
+            f"SELECT * FROM nodes WHERE {' AND '.join(clauses)}"
+            " ORDER BY timestamp DESC, id DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [_node_from_row(row) for row in rows]
 
     def find_similar_by_embedding(
         self,

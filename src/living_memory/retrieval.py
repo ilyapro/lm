@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import deque
 from dataclasses import dataclass, replace
 from typing import Any
@@ -17,12 +18,18 @@ from living_memory.models import (
 from living_memory.scope import ScopePlan, ScopeResolver
 from living_memory.storage import MemoryStore
 
+try:
+    import numpy as _np  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - numpy is a normal runtime dep
+    _np = None  # type: ignore[assignment]
+
 
 DEFAULT_VECTOR_SCAN_LIMIT = 50_000
 STRONG_VECTOR_MATCH = 0.65
 SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5
 SCHEMA_TRIGGER_BASE_SCORE = 0.95
 SCHEMA_TRIGGER_BOOST = 1.8
+VECTOR_MATCH_THRESHOLD = 0.08
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +103,7 @@ class MemoryRecallService:
         self.scope_resolver = ScopeResolver()
         self.feedback = FeedbackService(store)
         self.last_recall_event_id: str | None = None
+        self._embedding_cache: dict[str, Any] = {}
 
     def memory_recall(
         self,
@@ -300,30 +308,65 @@ class MemoryRecallService:
         max_results: int,
     ) -> None:
         per_scope_limit = max(50, max_results * 12)
-        scoped_nodes: list[Node] = []
+        query_embedding = self.embedder.embed(query)
+
+        # Lazy backfill: ensure every active node in the searched scopes has an
+        # embedding before the scan. In steady state these queries return zero
+        # rows. The loop drains batches until none are left so first-time
+        # recalls populate the full scope just like the previous code did.
         for scope in plan.scopes:
-            scoped_nodes.extend(
-                self.store.list_nodes(
-                    scope=scope,
-                    include_decayed=False,
-                    limit=self.vector_scan_limit,
-                )
-            )
-        if not scoped_nodes:
+            while True:
+                unembedded = self.store.list_unembedded_nodes(scope=scope, limit=500)
+                if not unembedded:
+                    break
+                for node in unembedded:
+                    self._ensure_embedding(node)
+
+        q_arr = _as_query_array(query_embedding)
+        scoped_scores: list[tuple[float, str]] = []
+        for scope in plan.scopes:
+            ids, vectors = self._scan_scope_embeddings(scope)
+            if not ids:
+                continue
+            sims = _batch_similarity(q_arr, query_embedding, vectors)
+            for sim, node_id in zip(sims, ids, strict=True):
+                if sim >= VECTOR_MATCH_THRESHOLD:
+                    scoped_scores.append((sim, node_id))
+
+        if not scoped_scores:
             return
 
-        query_embedding = self.embedder.embed(query)
-        scoped_scores: list[tuple[float, Node]] = []
-        for node in scoped_nodes:
-            embedding = self._ensure_embedding(node)
-            similarity = max(0.0, cosine_similarity(query_embedding, embedding))
-            if similarity >= 0.08:
-                scoped_scores.append((similarity, node))
-
         scoped_scores.sort(key=lambda item: item[0], reverse=True)
-        for similarity, node in scoped_scores[: per_scope_limit * max(1, len(plan.scopes))]:
-            candidate = candidates.setdefault(node.id, _Candidate(node=node))
-            candidate.vector_score = max(candidate.vector_score, similarity)
+        keep_n = per_scope_limit * max(1, len(plan.scopes))
+        for similarity, node_id in scoped_scores[:keep_n]:
+            existing = candidates.get(node_id)
+            if existing is None:
+                node = self.store.get_node(node_id)
+                if node is None or node.decayed or not plan.allows(node.scope):
+                    continue
+                existing = candidates.setdefault(node_id, _Candidate(node=node))
+            existing.vector_score = max(existing.vector_score, similarity)
+
+    def _scan_scope_embeddings(self, scope: str) -> tuple[list[str], list[Any]]:
+        """Return cached (ids, vectors) for active embedded nodes in ``scope``."""
+
+        ids: list[str] = []
+        vectors: list[Any] = []
+        cache = self._embedding_cache
+        for node_id, embedding_json in self.store.iter_embedding_rows(scope=scope):
+            vector = cache.get(node_id)
+            if vector is None:
+                try:
+                    parsed = json.loads(embedding_json)
+                except (TypeError, ValueError):
+                    continue
+                if not parsed:
+                    continue
+                vector = _np.asarray(parsed, dtype=_np.float32) if _np is not None else parsed
+                cache[node_id] = vector
+            ids.append(node_id)
+            vectors.append(vector)
+        return ids, vectors
 
     def _collect_schema_triggers(
         self,
@@ -371,6 +414,11 @@ class MemoryRecallService:
             queue.append((candidate.node.id, seed, 0, (candidate.node.id,)))
             best_seen[candidate.node.id] = seed
 
+        # Cache neighbor lookups across the BFS so a node reached via multiple
+        # paths is fetched at most once. A None entry marks "fetched and
+        # filtered out" so we do not re-issue get_node on revisits.
+        node_cache: dict[str, Node | None] = {}
+
         while queue:
             node_id, activation, depth, path = queue.popleft()
             if depth >= max_depth:
@@ -387,13 +435,23 @@ class MemoryRecallService:
                 neighbor_id, relation_score = traversal
                 if neighbor_id in path:
                     continue
-                neighbor = self.store.get_node(neighbor_id)
-                if neighbor is None or neighbor.decayed or not plan.allows(neighbor.scope):
-                    continue
 
                 next_score = activation * relation_score * (0.72 ** depth)
                 if next_score <= best_seen.get(neighbor_id, 0.0):
                     continue
+
+                if neighbor_id in node_cache:
+                    neighbor = node_cache[neighbor_id]
+                else:
+                    existing_candidate = candidates.get(neighbor_id)
+                    if existing_candidate is not None:
+                        neighbor = existing_candidate.node
+                    else:
+                        neighbor = self.store.get_node(neighbor_id)
+                    node_cache[neighbor_id] = neighbor
+                if neighbor is None or neighbor.decayed or not plan.allows(neighbor.scope):
+                    continue
+
                 best_seen[neighbor_id] = next_score
                 candidate = candidates.setdefault(neighbor_id, _Candidate(node=neighbor))
                 candidate.graph_score = max(candidate.graph_score, min(1.5, next_score))
@@ -600,3 +658,32 @@ def _is_rejected_alternative_connection(connection: Connection) -> bool:
 
 def _is_rejected_alternative_node(node: Node) -> bool:
     return bool(node.context.get("is_rejected_alternative"))
+
+
+def _as_query_array(query_embedding: list[float]) -> Any:
+    """Convert query embedding to a normalized numpy array (or None without numpy)."""
+
+    if _np is None or not query_embedding:
+        return None
+    arr = _np.asarray(query_embedding, dtype=_np.float32)
+    norm = float(_np.linalg.norm(arr))
+    if norm <= 0.0:
+        return None
+    if not 0.999 <= norm <= 1.001:
+        arr = arr / norm
+    return arr
+
+
+def _batch_similarity(
+    q_arr: Any,
+    query_embedding: list[float],
+    vectors: list[Any],
+) -> list[float]:
+    """Vectorized cosine for unit-length stored embeddings, with a pure-Python fallback."""
+
+    if _np is not None and q_arr is not None and vectors and isinstance(vectors[0], _np.ndarray):
+        mat = _np.vstack(vectors)
+        sims = mat @ q_arr
+        sims = _np.clip(sims, 0.0, None)
+        return sims.tolist()
+    return [max(0.0, cosine_similarity(query_embedding, vec)) for vec in vectors]
