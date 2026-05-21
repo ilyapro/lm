@@ -422,16 +422,6 @@ def _server_instructions(default_scope: str) -> str:
         "- Routine actions ('ran the tests') without new insight.\n"
         "- Copies of code — reference file paths instead.\n"
         "- Speculation or unverified plans — store verified facts only.\n"
-        "\n"
-        "## Correction loop — `memory_teach`\n"
-        "\n"
-        "`memory_teach` is how the system grows smarter. When a recalled "
-        "fact turns out wrong, `memory_teach` supersedes it; without it, "
-        "the system accumulates incorrect facts and degrades over time. "
-        "You MUST NOT silently correct a wrong recall — every correction "
-        "is a `memory_teach` call. You MUST NOT skip recall because the "
-        "action feels routine; routine actions are exactly where past "
-        "incidents hide.\n"
     )
 
 
