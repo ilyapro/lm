@@ -389,7 +389,7 @@ def _server_instructions(default_scope: str) -> str:
         "- Include WHY when non-obvious.\n"
         "- Use `depth: 'causal'` on `memory_recall` when debugging.\n"
         "\n"
-        "## What MUST NOT be stored\n"
+        "## What NOT to store\n"
         "\n"
         "- Routine actions ('ran the tests') without new insight.\n"
         "- Copies of code — reference file paths instead.\n"
