@@ -1,9 +1,11 @@
+import hashlib
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from living_memory.config import MemoryConfig, load_config
-from living_memory.storage import MemoryStore
+from living_memory.storage import SCHEMA_VERSION, MemoryStore, _content_fingerprint
 
 
 def test_storage_schema_has_uniform_nodes_fts_edges_indexes_and_weights(tmp_path: Path) -> None:
@@ -55,6 +57,15 @@ def test_storage_schema_has_uniform_nodes_fts_edges_indexes_and_weights(tmp_path
         ]
         assert "idx_nodes_embedded_active_scope" in indexes
         assert "embedding IS NOT NULL" in indexes["idx_nodes_embedded_active_scope"]
+        assert "idx_nodes_dedup" in indexes
+        dedup_sql = indexes["idx_nodes_dedup"]
+        assert "level" in dedup_sql
+        assert "scope" in dedup_sql
+        assert "content_fingerprint" in dedup_sql
+        assert "decayed = 0" in dedup_sql
+        assert "content_fingerprint IS NOT NULL" in dedup_sql
+
+        assert "content_fingerprint" in node_columns
 
         project_weights = store.get_retrieval_weights("project:alpha")
         assert project_weights.scope == "project"
@@ -207,3 +218,121 @@ learning_rate = 0.1
     with MemoryStore(MemoryConfig(db_path=tmp_path / "configured.sqlite3", default_scope="project:test")) as store:
         trace = store.append_trace("stored under configured scope")
         assert trace.scope == "project:test"
+
+
+def test_schema_version_is_three_after_initialize(tmp_path: Path) -> None:
+    assert SCHEMA_VERSION == 3
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        row = store.connection.execute(
+            "SELECT value FROM metadata WHERE key = 'schema_version'"
+        ).fetchone()
+        assert row is not None
+        assert row["value"] == "3"
+
+
+def test_schema_v2_database_migrates_to_v3_with_backfill(tmp_path: Path) -> None:
+    """A pre-v3 fixture DB must gain content_fingerprint + idx_nodes_dedup on open."""
+
+    db = tmp_path / "legacy.sqlite3"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute(
+            "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO metadata (key, value) VALUES ('schema_version', '2')"
+        )
+        conn.execute(
+            """
+            CREATE TABLE nodes (
+                id TEXT PRIMARY KEY,
+                level TEXT NOT NULL,
+                content TEXT NOT NULL,
+                embedding TEXT,
+                scope TEXT NOT NULL DEFAULT 'global',
+                agent TEXT,
+                task TEXT,
+                context TEXT NOT NULL DEFAULT '{}',
+                timestamp TEXT NOT NULL,
+                decayed INTEGER NOT NULL DEFAULT 0,
+                decay_reason TEXT,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                last_accessed TEXT,
+                usefulness_score REAL NOT NULL DEFAULT 0.0,
+                confidence REAL NOT NULL DEFAULT 0.5,
+                unique_agents INTEGER NOT NULL DEFAULT 0,
+                temporal_hint TEXT,
+                source_traces TEXT NOT NULL DEFAULT '[]',
+                corrections TEXT NOT NULL DEFAULT '[]',
+                provenance TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        seeded = []
+        for index in range(50):
+            content = f"legacy trace number {index}"
+            node_id = f"LEGACY{index:020d}"
+            conn.execute(
+                """
+                INSERT INTO nodes (id, level, content, scope, timestamp, created_at, updated_at)
+                VALUES (?, 'trace', ?, 'project:legacy', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')
+                """,
+                (node_id, content),
+            )
+            seeded.append((node_id, content))
+        conn.commit()
+    finally:
+        conn.close()
+
+    with MemoryStore(db) as store:
+        row = store.connection.execute(
+            "SELECT value FROM metadata WHERE key = 'schema_version'"
+        ).fetchone()
+        assert row["value"] == "3"
+
+        columns = {
+            r["name"]
+            for r in store.connection.execute("PRAGMA table_info(nodes)").fetchall()
+        }
+        assert "content_fingerprint" in columns
+
+        indexes = {
+            r["name"]
+            for r in store.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            ).fetchall()
+        }
+        assert "idx_nodes_dedup" in indexes
+
+        for node_id, content in seeded:
+            row = store.connection.execute(
+                "SELECT content_fingerprint FROM nodes WHERE id = ?",
+                (node_id,),
+            ).fetchone()
+            assert row is not None
+            assert row["content_fingerprint"] == hashlib.sha256(
+                content.encode("utf-8")
+            ).hexdigest()
+            assert row["content_fingerprint"] == _content_fingerprint(content)
+
+
+def test_repeated_initialize_does_not_rewrite_existing_fingerprints(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "stable.sqlite3"
+    with MemoryStore(db) as store:
+        trace = store.append_trace(
+            "stable content fixture", {"scope": "project:demo"}
+        )
+        original_fp = store.connection.execute(
+            "SELECT content_fingerprint FROM nodes WHERE id = ?", (trace.id,)
+        ).fetchone()["content_fingerprint"]
+
+    # Reopening triggers _initialize_schema again; backfill must be a no-op.
+    with MemoryStore(db) as store:
+        row = store.connection.execute(
+            "SELECT content_fingerprint FROM nodes WHERE id = ?", (trace.id,)
+        ).fetchone()
+        assert row["content_fingerprint"] == original_fp

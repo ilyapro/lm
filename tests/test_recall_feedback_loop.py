@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import living_memory.storage as storage_module
 from living_memory.retrieval import MemoryRecallService
 from living_memory.server import create_mcp_server
 from living_memory.storage import MemoryStore
@@ -145,3 +146,266 @@ def test_mcp_teach_links_correction_to_prior_recall_without_reinforcing_original
     assert original_id in corrective.provenance["recalled_nodes"]
     assert original_after.usefulness_score <= -0.25
     assert taught["implicit_feedback"]["recall_event_ids"] == [event_id]
+
+
+def test_mcp_remember_consumes_multiple_same_context_recalls(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+    context = {
+        "scope": "project:alpha",
+        "agent": "agent-a",
+        "task": "deploy-42",
+        "session_id": "session-1",
+    }
+
+    mcp.tools["memory_remember"](
+        "checkout deploy migration 42 missing caused payment checkout failure",
+        context,
+    )
+    mcp.tools["memory_remember"](
+        "checkout deploy migration 42 recovery requires restoring the schema",
+        context,
+    )
+    first_recall = mcp.tools["memory_recall"](
+        "checkout deploy migration failure",
+        scope="project:alpha",
+        max_results=3,
+        ambient_context={
+            "agent": "agent-a",
+            "task": "deploy-42",
+            "session_id": "session-1",
+        },
+    )
+    second_recall = mcp.tools["memory_recall"](
+        "checkout deploy migration recovery schema",
+        scope="project:alpha",
+        max_results=3,
+        ambient_context={
+            "agent": "agent-a",
+            "task": "deploy-42",
+            "session_id": "session-1",
+        },
+    )
+    event_ids = [first_recall["recall_event_id"], second_recall["recall_event_id"]]
+
+    remembered = mcp.tools["memory_remember"](
+        "checkout deploy migration 42 failure recovery requires schema restore before retry",
+        context,
+    )
+    new_id = remembered["node"]["id"]
+
+    assert set(remembered["implicit_feedback"]["recall_event_ids"]) == set(event_ids)
+    assert all(store.get_recall_event(event_id).feedback_applied for event_id in event_ids)
+    assert {store.get_recall_event(event_id).feedback_trace_id for event_id in event_ids} == {new_id}
+
+
+def test_mcp_remember_links_partial_metadata_with_same_agent_and_high_similarity(
+    tmp_path: Path,
+) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "inventory reconciliation timeout retry uses batch checkpoint resume",
+        {"scope": "project:inventory", "agent": "agent-a"},
+    )
+    first_recall = mcp.tools["memory_recall"](
+        "inventory reconciliation timeout",
+        scope="project:inventory",
+        max_results=2,
+        ambient_context={"agent": "agent-a"},
+    )
+    second_recall = mcp.tools["memory_recall"](
+        "inventory reconciliation checkpoint retry",
+        scope="project:inventory",
+        max_results=2,
+        ambient_context={"agent": "agent-a"},
+    )
+    event_ids = [first_recall["recall_event_id"], second_recall["recall_event_id"]]
+
+    remembered = mcp.tools["memory_remember"](
+        "inventory reconciliation timeout retry should resume from the checkpoint",
+        {"scope": "project:inventory", "agent": "agent-a"},
+    )
+
+    assert set(remembered["implicit_feedback"]["recall_event_ids"]) == set(event_ids)
+    assert all(store.get_recall_event(event_id).feedback_applied for event_id in event_ids)
+
+
+def test_mcp_remember_caps_unqualified_exact_scope_fallback_at_one(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(storage_module, "_utc_now", lambda: "2026-05-22T09:00:00Z")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "cache warming queue timeout retry policy for catalog refresh",
+        {"scope": "project:catalog"},
+    )
+    first_recall = mcp.tools["memory_recall"](
+        "cache warming queue timeout",
+        scope="project:catalog",
+        max_results=2,
+    )
+    second_recall = mcp.tools["memory_recall"](
+        "cache warming retry policy",
+        scope="project:catalog",
+        max_results=2,
+    )
+
+    remembered = mcp.tools["memory_remember"](
+        "cache warming queue timeout retry policy needs a catalog refresh backoff",
+        {"scope": "project:catalog"},
+    )
+    applied = set(remembered["implicit_feedback"]["recall_event_ids"])
+
+    assert applied == {second_recall["recall_event_id"]}
+    assert store.get_recall_event(second_recall["recall_event_id"]).feedback_applied is True
+    assert store.get_recall_event(first_recall["recall_event_id"]).feedback_applied is False
+
+
+def test_mcp_teach_consumes_multiple_same_context_recalls_without_reinforcement(
+    tmp_path: Path,
+) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+    context = {
+        "scope": "project:billing",
+        "agent": "agent-a",
+        "task": "retry-policy",
+        "session_id": "session-1",
+    }
+
+    original = mcp.tools["memory_remember"](
+        "payment retry limit is 3 attempts for card declines",
+        context,
+        {"confidence": 0.5, "usefulness_score": 0.0},
+    )
+    original_id = original["node"]["id"]
+    first_recall = mcp.tools["memory_recall"](
+        "payment retry limit card declines",
+        scope="project:billing",
+        max_results=2,
+        ambient_context={
+            "agent": "agent-a",
+            "task": "retry-policy",
+            "session_id": "session-1",
+        },
+    )
+    second_recall = mcp.tools["memory_recall"](
+        "payment retry attempts card policy",
+        scope="project:billing",
+        max_results=2,
+        ambient_context={
+            "agent": "agent-a",
+            "task": "retry-policy",
+            "session_id": "session-1",
+        },
+    )
+    event_ids = [first_recall["recall_event_id"], second_recall["recall_event_id"]]
+
+    taught = mcp.tools["memory_teach"](
+        original_id,
+        "payment retry limit is 5 attempts for card declines",
+        context={
+            "agent": "agent-a",
+            "task": "retry-policy",
+            "session_id": "session-1",
+        },
+    )
+    corrective_id = taught["corrective_trace"]["id"]
+    original_after = store.get_node(original_id)
+
+    assert set(taught["implicit_feedback"]["recall_event_ids"]) == set(event_ids)
+    assert {store.get_recall_event(event_id).feedback_trace_id for event_id in event_ids} == {
+        corrective_id
+    }
+    assert original_after.usefulness_score <= -0.25
+
+
+def test_mcp_remember_does_not_link_different_task_or_session(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "search index rebuild timeout fixed by replaying shard checkpoints",
+        {"scope": "project:search", "agent": "agent-a", "task": "search-a"},
+    )
+    task_recall = mcp.tools["memory_recall"](
+        "search index rebuild timeout",
+        scope="project:search",
+        max_results=2,
+        ambient_context={"agent": "agent-a", "task": "search-a"},
+    )
+    task_event_id = task_recall["recall_event_id"]
+    task_write = mcp.tools["memory_remember"](
+        "search index rebuild timeout checkpoint replay procedure",
+        {"scope": "project:search", "agent": "agent-a", "task": "search-b"},
+    )
+
+    mcp.tools["memory_remember"](
+        "orders export cursor timeout fixed by checkpoint resume",
+        {"scope": "project:orders", "agent": "agent-a", "task": "orders-a", "session_id": "s1"},
+    )
+    session_recall = mcp.tools["memory_recall"](
+        "orders export cursor timeout",
+        scope="project:orders",
+        max_results=2,
+        ambient_context={
+            "agent": "agent-a",
+            "task": "orders-a",
+            "session_id": "s1",
+        },
+    )
+    session_event_id = session_recall["recall_event_id"]
+    session_write = mcp.tools["memory_remember"](
+        "orders export cursor timeout checkpoint resume procedure",
+        {"scope": "project:orders", "agent": "agent-a", "task": "orders-a", "session_id": "s2"},
+    )
+
+    assert task_write["implicit_feedback"]["recall_event_ids"] == []
+    assert session_write["implicit_feedback"]["recall_event_ids"] == []
+    assert store.get_recall_event(task_event_id).feedback_applied is False
+    assert store.get_recall_event(session_event_id).feedback_applied is False
+
+
+def test_mcp_remember_does_not_link_project_recall_to_global_write(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "audit export checksum mismatch fixed by replaying manifest chunks",
+        {
+            "scope": "project:exports",
+            "agent": "agent-a",
+            "task": "export-audit",
+            "session_id": "session-1",
+        },
+    )
+    recalled = mcp.tools["memory_recall"](
+        "audit export checksum mismatch manifest",
+        scope="project:exports",
+        max_results=2,
+        ambient_context={
+            "agent": "agent-a",
+            "task": "export-audit",
+            "session_id": "session-1",
+        },
+    )
+    event_id = recalled["recall_event_id"]
+    event = store.get_recall_event(event_id)
+    assert "global" in event.resolved_scopes
+
+    remembered = mcp.tools["memory_remember"](
+        "audit export checksum mismatch manifest replay is generally useful",
+        {
+            "scope": "global",
+            "agent": "agent-a",
+            "task": "export-audit",
+            "session_id": "session-1",
+        },
+    )
+
+    assert remembered["implicit_feedback"]["recall_event_ids"] == []
+    assert store.get_recall_event(event_id).feedback_applied is False

@@ -1,0 +1,148 @@
+{
+  "fixture": {
+    "snapshot_path": "/tmp/lm-baseline-replay.sqlite3",
+    "snapshot_md5": "58fc12fd47c5f71e5b8867ee71590668",
+    "snapshot_size_bytes": 100339712,
+    "snapshot_size_mib": 95.69,
+    "captured_from": "/home/sfx/.local/share/living-memory/global.sqlite3",
+    "captured_at_utc": "2026-05-22T07:53Z",
+    "rationale": "All baseline metrics are read from the read-only snapshot fixture. The snapshot is a byte-for-byte copy of /home/sfx/.local/share/living-memory/global.sqlite3 taken at the captured_at_utc time. Reading the snapshot under file:...?mode=ro gives reproducible, deterministic results without any live external contact or DB writes.",
+    "no_writes_invariant": "The snapshot MD5 is verified before and after every measurement (memory_health, SQL counts, latency replay) and must remain 58fc12fd47c5f71e5b8867ee71590668."
+  },
+  "reproduction": {
+    "sql_command": "python3 - <<'PY'\nimport sqlite3\nconn = sqlite3.connect('file:/tmp/lm-baseline-replay.sqlite3?mode=ro', uri=True)\nconn.row_factory = sqlite3.Row\n# execute queries in artifacts/discovery/baseline-raw.sql\nPY",
+    "memory_health_command": "PYTHONPATH=src python3 - <<'PY'\nfrom pathlib import Path\nfrom living_memory.storage import MemoryStore\nfrom living_memory.resources import memory_health\nwith MemoryStore(Path('/tmp/lm-baseline-replay.sqlite3')) as store:\n    print(memory_health(store, scope=None, window_hours=168, top_stale=5))\nPY",
+    "latency_command": "PYTHONPATH=src python3 - <<'PY'\nimport time\nfrom statistics import median, mean\nfrom pathlib import Path\nfrom living_memory.retrieval import memory_recall\nfrom living_memory.storage import MemoryStore\nQ='Living Memory hot recall latency baseline duplicate density feedback applied'\nA={'task':'memory-quality-root-fixes/discover-baseline-and-root-causes/baseline-live-audit','agent':'claude','benchmark':'local_replay_no_write'}\nwith MemoryStore(Path('/tmp/lm-baseline-replay.sqlite3')) as store:\n    t0=time.perf_counter(); memory_recall(store,Q,scope='project:lm',ambient_context=A,max_results=1,depth=1,log_access=False,log_event=False); warm=(time.perf_counter()-t0)*1000\n    s=[]\n    for _ in range(5):\n        t0=time.perf_counter(); memory_recall(store,Q,scope='project:lm',ambient_context=A,max_results=1,depth=1,log_access=False,log_event=False); s.append((time.perf_counter()-t0)*1000)\n    print({'warmup_ms':round(warm,3),'measured_ms':[round(x,3) for x in s],'summary':{'min_ms':round(min(s),3),'median_ms':round(median(s),3),'mean_ms':round(mean(s),3),'max_ms':round(max(s),3)}})\nPY"
+  },
+  "memory_health_snapshot": {
+    "command": "in-process memory_health(store, scope=None, window_hours=168, top_stale=5) against the snapshot",
+    "generated_at_utc": "2026-05-22T08:03:54Z",
+    "counts": {
+      "total": 5318,
+      "active": 5128,
+      "decayed": 190,
+      "by_level": {
+        "trace": {"active": 5029, "decayed": 190, "total": 5219},
+        "concept": {"active": 12, "decayed": 0, "total": 12},
+        "schema": {"active": 87, "decayed": 0, "total": 87}
+      }
+    },
+    "activity": {
+      "recall_total": 5114,
+      "recall_in_window": 5094,
+      "remember_in_window": 5023,
+      "recall_to_remember_ratio": 1.0141349790961576
+    },
+    "dedup": {
+      "total_traces": 5029,
+      "distinct_contents": 4377,
+      "duplicate_excess": 652,
+      "duplicate_density": 0.12964804136011135
+    },
+    "staleness": {
+      "decay_rate": 0.036405441655489555,
+      "age_seconds_p50": 441365.4847240448,
+      "age_seconds_p90": 491182.4847240448
+    },
+    "retrieval_policy": {
+      "scope": "global",
+      "bm25": 0.833456602600877,
+      "vector": 0.1167588279042129,
+      "graph": 0.04978456949491024,
+      "learning_rate": 0.05,
+      "updated_at": "2026-05-22T07:45:11Z"
+    }
+  },
+  "sql_snapshot": {
+    "generated_at_utc": "2026-05-22T08:04:42Z",
+    "counts_by_level": [
+      {"level": "concept", "decayed": 0, "count": 12},
+      {"level": "schema", "decayed": 0, "count": 87},
+      {"level": "trace", "decayed": 0, "count": 5029},
+      {"level": "trace", "decayed": 1, "count": 190}
+    ],
+    "duplicate_density_overall": {
+      "total_traces": 5029,
+      "distinct_contents": 4377,
+      "duplicate_excess": 652,
+      "duplicate_density": 0.129648
+    },
+    "duplicate_density_by_scope_top": [
+      {"scope": "project:ae", "total_traces": 2647, "distinct_contents": 2022, "duplicate_excess": 625, "duplicate_density": 0.236116},
+      {"scope": "project:online", "total_traces": 223, "distinct_contents": 202, "duplicate_excess": 21, "duplicate_density": 0.09417},
+      {"scope": "project:lm", "total_traces": 316, "distinct_contents": 313, "duplicate_excess": 3, "duplicate_density": 0.009494},
+      {"scope": "project:octopus", "total_traces": 1544, "distinct_contents": 1541, "duplicate_excess": 3, "duplicate_density": 0.001943},
+      {"scope": "global", "total_traces": 158, "distinct_contents": 158, "duplicate_excess": 0, "duplicate_density": 0.0},
+      {"scope": "project:prompt-engine-v3-lm-driven", "total_traces": 10, "distinct_contents": 10, "duplicate_excess": 0, "duplicate_density": 0.0}
+    ],
+    "feedback_applied_ratio_overall": {
+      "recall_events": 5114,
+      "feedback_applied": 1060,
+      "feedback_missing": 4054,
+      "feedback_applied_ratio": 0.207274
+    },
+    "feedback_applied_ratio_by_scope_top": [
+      {"scope": "project:ae", "recall_events": 2544, "feedback_applied": 368, "feedback_applied_ratio": 0.144654},
+      {"scope": "project:octopus", "recall_events": 1399, "feedback_applied": 380, "feedback_applied_ratio": 0.271623},
+      {"scope": "project:online", "recall_events": 573, "feedback_applied": 164, "feedback_applied_ratio": 0.286213},
+      {"scope": "global", "recall_events": 223, "feedback_applied": 13, "feedback_applied_ratio": 0.058296},
+      {"scope": "project:lm", "recall_events": 146, "feedback_applied": 80, "feedback_applied_ratio": 0.547945}
+    ],
+    "never_accessed_overall": [
+      {"population": "active_nodes", "total": 5128, "never_accessed": 3710, "never_accessed_ratio": 0.723479},
+      {"population": "active_traces", "total": 5029, "never_accessed": 3681, "never_accessed_ratio": 0.731955}
+    ],
+    "project_scope_summary": [
+      {"scope": "global", "active_traces": 158, "active_concepts": 1, "active_schemas": 4, "recall_events": 223},
+      {"scope": "project:ae", "active_traces": 2647, "active_concepts": 0, "active_schemas": 27, "recall_events": 2544},
+      {"scope": "project:lm", "active_traces": 316, "active_concepts": 6, "active_schemas": 1, "recall_events": 146},
+      {"scope": "project:octopus", "active_traces": 1544, "active_concepts": 5, "active_schemas": 52, "recall_events": 1399},
+      {"scope": "project:online", "active_traces": 223, "active_concepts": 0, "active_schemas": 1, "recall_events": 573}
+    ]
+  },
+  "scope_leakage_snapshot": {
+    "generated_at_utc": "2026-05-22T08:04:42Z",
+    "summary": {
+      "candidate_scopes": 54,
+      "active_candidate_nodes": 111,
+      "active_candidate_traces": 111,
+      "active_candidate_traces_never_accessed": 111,
+      "active_candidate_trace_never_accessed_ratio": 1.0,
+      "candidate_scopes_with_zero_recall_events": 36
+    },
+    "selected_candidates": [
+      {"scope": "rise", "active_traces": 7, "active_never_accessed": 7, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "rise/_critique", "active_traces": 9, "active_never_accessed": 9, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "rise/_verify", "active_traces": 6, "active_never_accessed": 6, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "breakthrough/gemini-flash-contract", "active_traces": 3, "active_never_accessed": 3, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "breakthrough/programming-capability-loop", "active_traces": 4, "active_never_accessed": 4, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "breakthrough/split-manifests-and-leakage-guard", "active_traces": 4, "active_never_accessed": 4, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "ocpa-generative-action-substrate-v1", "active_traces": 9, "active_never_accessed": 9, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "ocpa-generative-action-substrate-v1/_critique", "active_traces": 2, "active_never_accessed": 2, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "ocpa-generative-action-substrate-v1/untrack-generated-artifacts", "active_traces": 4, "active_never_accessed": 4, "recall_events_as_scope": 0, "recall_events_as_requested_scope": 0},
+      {"scope": "project:rise", "active_traces": 0, "active_never_accessed": 0, "recall_events_as_scope": 6, "recall_events_as_requested_scope": 6},
+      {"scope": "project:breakthrough/gemini-flash-contract", "active_traces": 0, "active_never_accessed": 0, "recall_events_as_scope": 8, "recall_events_as_requested_scope": 8},
+      {"scope": "project:ocpa-generative-action-substrate-v1", "active_traces": 0, "active_never_accessed": 0, "recall_events_as_scope": 7, "recall_events_as_requested_scope": 7}
+    ]
+  },
+  "latency": {
+    "method": "in-process memory_recall against the snapshot, log_access=False, log_event=False",
+    "ordering_note": "Snapshot is read-only; latency probe was executed against the snapshot fixture and the snapshot MD5 was verified unchanged after the run. No writes occurred to either the snapshot or the live DB.",
+    "ran_at_utc": "2026-05-22T08:04:42Z",
+    "query": "Living Memory hot recall latency baseline duplicate density feedback applied",
+    "scope": "project:lm",
+    "max_results": 1,
+    "depth": 1,
+    "warmup_ms": 99.751,
+    "samples_ms": [91.407, 91.322, 92.756, 91.869, 92.612],
+    "summary": {"min_ms": 91.322, "median_ms": 91.869, "mean_ms": 91.993, "max_ms": 92.756},
+    "earlier_replay_run": {
+      "ran_at_utc": "2026-05-22T07:53Z",
+      "warmup_ms": 128.671,
+      "samples_ms": [92.729, 94.171, 92.976, 94.607, 96.607],
+      "summary": {"min_ms": 92.729, "median_ms": 94.171, "mean_ms": 94.218, "max_ms": 96.607},
+      "note": "Recorded earlier on the same snapshot; medians agree within ~2.3 ms run-to-run."
+    },
+    "snapshot_md5_verified_unchanged": true
+  }
+}

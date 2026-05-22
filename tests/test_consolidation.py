@@ -119,15 +119,19 @@ def test_consolidation_clusters_cross_language_traces_into_one_concept(
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         traces = []
         for index in range(50):
+            # Distinct content per insert: schema v3 collapses byte-identical
+            # writes in the same scope, so the cross-language fixture tags
+            # each trace with an incident index to keep all 100 rows active
+            # for the embedding clustering pass.
             traces.append(
                 store.append_trace(
-                    "deployment failed because database migration was missing",
+                    f"deployment {index} failed because database migration was missing",
                     {"scope": "project:alpha", "agent": f"agent-en-{index % 2}"},
                 )
             )
             traces.append(
                 store.append_trace(
-                    "развертывание упало потому что отсутствовала миграция базы данных",
+                    f"развертывание {index} упало потому что отсутствовала миграция базы данных",
                     {"scope": "project:alpha", "agent": f"agent-ru-{index % 2}"},
                 )
             )

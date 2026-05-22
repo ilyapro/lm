@@ -121,12 +121,17 @@ def test_retrieval_context_prompt_formats_top_relevant_concepts(tmp_path: Path) 
 
 def test_memory_health_reports_activity_dedup_and_staleness(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        # Three distinct contents that share a token prefix. Post-fix the write
+        # path auto-dedupes byte-identical content, so the synthetic-duplicate
+        # setup uses distinct content to keep three rows active. The dedup
+        # metric still computes correctly — duplicate_density reads zero, which
+        # is the new steady state after schema v3.
         store.append_trace(
-            "rollback migration release notes",
+            "rollback migration release notes alpha",
             {"scope": "project:alpha", "agent": "agent-a"},
         )
         store.append_trace(
-            "rollback migration release notes",
+            "rollback migration release notes beta",
             {"scope": "project:alpha", "agent": "agent-b"},
         )
         store.append_trace(
@@ -149,14 +154,39 @@ def test_memory_health_reports_activity_dedup_and_staleness(tmp_path: Path) -> N
         assert report["activity"]["recall_in_window"] == 1
         assert report["activity"]["remember_in_window"] == 3
         assert report["activity"]["recall_to_remember_ratio"] > 0
-        # Two identical contents → duplicate_excess=1, density 1/3
+        # Three distinct contents → duplicate_excess=0, density 0.0.
         assert report["dedup"]["total_traces"] == 3
-        assert report["dedup"]["distinct_contents"] == 2
-        assert report["dedup"]["duplicate_excess"] == 1
-        assert report["dedup"]["duplicate_density"] > 0
+        assert report["dedup"]["distinct_contents"] == 3
+        assert report["dedup"]["duplicate_excess"] == 0
+        assert report["dedup"]["duplicate_density"] == 0.0
         assert report["staleness"]["age_seconds_p50"] is not None
         assert len(report["staleness"]["top_stale"]) == 2
         assert "retrieval_policy" in report
+
+
+def test_memory_health_dedup_collapses_identical_writes(tmp_path: Path) -> None:
+    """Two identical writes collapse to one active trace; dedup metric reads 0%."""
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.append_trace(
+            "shared bootstrap content",
+            {"scope": "project:alpha", "agent": "agent-a"},
+        )
+        store.append_trace(
+            "shared bootstrap content",
+            {"scope": "project:alpha", "agent": "agent-b"},
+        )
+
+        report = memory_health(store, scope="project:alpha", top_stale=0)
+
+        # The older identical copy is decayed, so the active trace count is 1
+        # and there is no residual duplicate excess in the active row set.
+        assert report["counts"]["by_level"]["trace"]["active"] == 1
+        assert report["counts"]["by_level"]["trace"]["decayed"] == 1
+        assert report["dedup"]["total_traces"] == 1
+        assert report["dedup"]["distinct_contents"] == 1
+        assert report["dedup"]["duplicate_excess"] == 0
+        assert report["dedup"]["duplicate_density"] == 0.0
 
 
 def test_memory_health_handles_empty_scope(tmp_path: Path) -> None:

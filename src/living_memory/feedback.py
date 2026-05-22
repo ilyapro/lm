@@ -18,6 +18,7 @@ _ADAPTIVE_LR_LADDER: tuple[tuple[int, float], ...] = (
     (500, 0.05),
 )
 _ADAPTIVE_LR_FLOOR = 0.02
+_DEFAULT_PENDING_RECALL_LIMIT = 5
 
 
 def _retrieval_tuning_policy() -> str:
@@ -136,7 +137,7 @@ def apply_pending_recall_feedback(
     store: MemoryStore,
     trace: Node,
     *,
-    limit: int = 1,
+    limit: int = _DEFAULT_PENDING_RECALL_LIMIT,
     reinforce_results: bool = True,
 ) -> ImplicitRecallFeedback:
     """Attach recent recall provenance to a new trace and optionally reinforce hits."""
@@ -144,6 +145,7 @@ def apply_pending_recall_feedback(
     events = store.pending_recall_events(
         scope=trace.scope,
         context=trace.context,
+        content=trace.content,
         limit=limit,
     )
     if not events:

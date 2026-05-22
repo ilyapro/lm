@@ -28,9 +28,13 @@ def _append_procedure_traces(
     ]
     traces = []
     for index in range(count):
+        # Tag the content with the procedure id so two procedure runs in the
+        # same scope produce distinct content (the v3 write path dedupes
+        # byte-identical content per (level, scope)).
+        body = contents[index % len(contents)]
         traces.append(
             store.append_trace(
-                contents[index % len(contents)],
+                f"[{procedure_id}] {body}",
                 {
                     "scope": scope,
                     "agent": agents[index % len(agents)],
@@ -91,7 +95,12 @@ def test_consolidation_skips_schema_below_three_procedural_traces(
 
 
 def test_nodes_table_has_no_new_columns(tmp_path: Path) -> None:
-    """P2: schema persistence adds no new columns to the nodes table."""
+    """P2: schema persistence adds no new columns beyond the documented set.
+
+    Schema v3 adds ``content_fingerprint`` to support write-time dedup of
+    byte-identical traces per ``(level, scope)``. Other columns remain
+    untouched.
+    """
 
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         rows = store.connection.execute("PRAGMA table_info(nodes)").fetchall()
@@ -100,6 +109,7 @@ def test_nodes_table_has_no_new_columns(tmp_path: Path) -> None:
             "id",
             "level",
             "content",
+            "content_fingerprint",
             "embedding",
             "scope",
             "agent",

@@ -1,0 +1,231 @@
+{
+  "metadata": {
+    "purpose": "Sample output from the deterministic memory_health invocation after the fix-health-audit extension. Captures the six required metric keys (duplicate density, feedback_applied ratio, scope leakage candidates, never-accessed ratio, DB size, hot recall latency baseline) for comparison against artifacts/baseline.md.",
+    "source_kind": "live_snapshot_readonly",
+    "source_db_path": "/tmp/lm-baseline-replay.sqlite3",
+    "live_db_path": "/home/sfx/.local/share/living-memory/global.sqlite3",
+    "snapshot_captured_at": "2026-05-22T07:53Z",
+    "read_only_uri": "file:/tmp/lm-baseline-replay.sqlite3?mode=ro",
+    "read_only_store_class": "living_memory.health_audit.ReadOnlyAuditStore",
+    "invocation": "memory_health(store, scope=None, window_hours=168, top_stale=0, top_candidate_scopes=10, latency_samples=5)",
+    "invocation_module": "living_memory.resources.memory_health",
+    "metric_contract": "artifacts/health_audit_contract.md",
+    "baseline_reference": "artifacts/baseline.md",
+    "started_at": "2026-05-22T09:56:11.750188Z",
+    "finished_at": "2026-05-22T09:56:12.509982Z",
+    "replay_evidence": {
+      "snapshot_md5_before": "58fc12fd47c5f71e5b8867ee71590668",
+      "snapshot_md5_after": "58fc12fd47c5f71e5b8867ee71590668",
+      "snapshot_md5_unchanged": true,
+      "snapshot_md5_expected": "58fc12fd47c5f71e5b8867ee71590668",
+      "snapshot_md5_matches_baseline": true,
+      "snapshot_size_bytes": 100339712,
+      "read_only_mode_verified_by": "ReadOnlyAuditStore.open_path opens sqlite3.connect with uri=True and a file:...?mode=ro URI; the read_only_uri field above is the exact URI passed; identical MD5 before/after shows no write reached disk.",
+      "live_db_opened_writable": false,
+      "mcp_server_contacted": false
+    },
+    "redaction_boundary": "top_stale=0 and top_candidate_scopes=10 are chosen so the sample omits trace content previews and limits the scope-hygiene detail list. No raw nodes.content, embeddings, or ambient_context payloads from unrelated tasks appear in this artifact.",
+    "deterministic_fields": "All scalar metric numbers (dedup.*, feedback.*, access.*, scope_hygiene.*, storage.*, counts.*, activity.*, staleness.decay_rate, retrieval_policy.*) are deterministic for the frozen snapshot MD5 above.",
+    "wall_clock_fields": "generated_at, latency.warmup_ms, latency.samples_ms, latency.summary.* (min_ms/median_ms/mean_ms/max_ms), and the pre-existing staleness.age_seconds_p50 / staleness.age_seconds_p90 fields all depend on time.now() and vary across runs against the same snapshot. Only their shape (not their numeric value) is asserted by fixture tests; the six required audit metric scalars are deterministic and reproduce the artifacts/baseline.md numbers exactly.",
+    "required_metric_keys": {
+      "duplicate_density": "dedup.duplicate_density",
+      "feedback_applied_ratio": "feedback.feedback_applied_ratio",
+      "scope_leakage_candidate_scopes": "scope_hygiene.candidate_scopes",
+      "never_accessed_ratio_active_nodes": "access.active_nodes.never_accessed_ratio",
+      "never_accessed_ratio_active_traces": "access.active_traces.never_accessed_ratio",
+      "db_size_bytes": "storage.db_size_bytes",
+      "hot_recall_latency_baseline_ms": "latency.summary.median_ms"
+    }
+  },
+  "required_metric_values": {
+    "duplicate_density": 0.12964804136011135,
+    "feedback_applied_ratio": 0.20727414939382088,
+    "scope_leakage_candidate_scopes": 54,
+    "never_accessed_ratio_active_nodes": 0.7234789391575663,
+    "never_accessed_ratio_active_traces": 0.7319546629548618,
+    "db_size_bytes": 100339712,
+    "hot_recall_latency_median_ms": 95.006
+  },
+  "report": {
+    "scope": "all",
+    "window_hours": 168,
+    "generated_at": "2026-05-22T09:56:11.750486Z",
+    "counts": {
+      "by_level": {
+        "trace": {
+          "active": 5029,
+          "decayed": 190,
+          "total": 5219
+        },
+        "concept": {
+          "active": 12,
+          "decayed": 0,
+          "total": 12
+        },
+        "schema": {
+          "active": 87,
+          "decayed": 0,
+          "total": 87
+        }
+      },
+      "total": 5318,
+      "active": 5128,
+      "decayed": 190
+    },
+    "activity": {
+      "recall_total": 5114,
+      "recall_in_window": 5090,
+      "remember_in_window": 5020,
+      "recall_to_remember_ratio": 1.0139442231075697
+    },
+    "dedup": {
+      "total_traces": 5029,
+      "distinct_contents": 4377,
+      "duplicate_excess": 652,
+      "duplicate_density": 0.12964804136011135
+    },
+    "staleness": {
+      "decay_rate": 0.036405441655489555,
+      "age_seconds_p50": 448102.75048589706,
+      "age_seconds_p90": 497919.75048589706,
+      "top_stale": []
+    },
+    "retrieval_policy": {
+      "scope": "global",
+      "bm25": 0.833456602600877,
+      "vector": 0.1167588279042129,
+      "graph": 0.04978456949491024,
+      "learning_rate": 0.05,
+      "updated_at": "2026-05-22T07:45:11Z"
+    },
+    "feedback": {
+      "recall_events": 5114,
+      "feedback_applied": 1060,
+      "feedback_missing": 4054,
+      "feedback_applied_ratio": 0.20727414939382088
+    },
+    "access": {
+      "active_nodes": {
+        "total": 5128,
+        "never_accessed": 3710,
+        "never_accessed_ratio": 0.7234789391575663
+      },
+      "active_traces": {
+        "total": 5029,
+        "never_accessed": 3681,
+        "never_accessed_ratio": 0.7319546629548618
+      }
+    },
+    "scope_hygiene": {
+      "candidate_scopes": 54,
+      "active_candidate_nodes": 111,
+      "active_candidate_traces": 111,
+      "active_candidate_traces_never_accessed": 111,
+      "active_candidate_trace_never_accessed_ratio": 1.0,
+      "candidate_scopes_with_zero_recall_events": 36,
+      "top_candidate_scopes": [
+        {
+          "scope": "ocpa-generative-action-substrate-v1",
+          "active_traces": 9,
+          "active_candidate_traces_never_accessed": 9,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "rise/_critique",
+          "active_traces": 9,
+          "active_candidate_traces_never_accessed": 9,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "rise",
+          "active_traces": 7,
+          "active_candidate_traces_never_accessed": 7,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "rise/_verify",
+          "active_traces": 6,
+          "active_candidate_traces_never_accessed": 6,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "rise/gemini-comparator-execution/collect-external-review",
+          "active_traces": 6,
+          "active_candidate_traces_never_accessed": 6,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "breakthrough/programming-capability-loop",
+          "active_traces": 4,
+          "active_candidate_traces_never_accessed": 4,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "breakthrough/split-manifests-and-leakage-guard",
+          "active_traces": 4,
+          "active_candidate_traces_never_accessed": 4,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "ocpa-generative-action-substrate-v1/untrack-generated-artifacts",
+          "active_traces": 4,
+          "active_candidate_traces_never_accessed": 4,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "rise/gemini-comparator-execution",
+          "active_traces": 4,
+          "active_candidate_traces_never_accessed": 4,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        },
+        {
+          "scope": "rise/gemini-comparator-execution/execute-frozen-comparator",
+          "active_traces": 4,
+          "active_candidate_traces_never_accessed": 4,
+          "recall_events_as_scope": 0,
+          "recall_events_as_requested_scope": 0
+        }
+      ]
+    },
+    "storage": {
+      "db_path": "/tmp/lm-baseline-replay.sqlite3",
+      "db_size_bytes": 100339712,
+      "page_count": 24497,
+      "page_size": 4096,
+      "page_bytes": 100339712
+    },
+    "latency": {
+      "query": "Living Memory hot recall latency baseline duplicate density feedback applied",
+      "scope": "all",
+      "max_results": 1,
+      "depth": 1,
+      "log_access": false,
+      "log_event": false,
+      "samples": 5,
+      "warmup_ms": 103.197,
+      "samples_ms": [
+        86.692,
+        91.768,
+        95.006,
+        95.341,
+        101.272
+      ],
+      "summary": {
+        "min_ms": 86.692,
+        "median_ms": 95.006,
+        "mean_ms": 94.016,
+        "max_ms": 101.272
+      }
+    },
+    "instructions": null
+  }
+}

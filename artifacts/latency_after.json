@@ -1,0 +1,328 @@
+{
+  "benchmark": "current_code_read_only_snapshot",
+  "cold_helper_compatibility": {
+    "count": 1,
+    "depth": 1,
+    "log_access": false,
+    "log_event": false,
+    "max_results": 1,
+    "query": "Living Memory hot recall latency baseline duplicate density feedback applied",
+    "samples_ms": [
+      87.208,
+      86.688,
+      85.715,
+      86.805,
+      87.929
+    ],
+    "scope": "project:lm",
+    "shape": "artifacts/baseline.md hot recall latency probe",
+    "summary": {
+      "max_ms": 87.929,
+      "mean_ms": 86.869,
+      "median_ms": 86.805,
+      "min_ms": 85.715
+    },
+    "warmup_ms": 92.391
+  },
+  "comparison": {
+    "assessment": {
+      "explanation": "Required same-snapshot comparisons pass: cold-helper median improved 91.869 -> 86.805 ms, and matching hot-service rows from the 2026-05-22 discover snapshot improved or stayed below baseline (project:lm depth=1 max_results=1: 69.830 -> 66.896 ms; project:ae depth=1 max_results=5: 165.326 -> 157.268 ms; project:ae depth=0 max_results=5: 79.738 -> 70.047 ms; project:octopus depth=1 max_results=5: 127.905 -> 114.326 ms). The older 2026-05-20 local-service context probe is higher for the global non-causal query (44-47 ms prior vs 54.8/63.239/65.867 ms current) because it is a different commit, query/scope, and DB state; causal remains comparable/better at 12.382 ms vs prior 13.89 ms. MCP hot latency was not reprobed to avoid live recall_events writes; current project:lm service median 66.896 ms sits in the prior MCP 65-70 ms band.",
+      "material_regression_vs_required_discover_baseline": false,
+      "variance_vs_older_2026_05_20_prior": true
+    },
+    "cold_helper_vs_discover_baseline": {
+      "after_median_ms": 86.805,
+      "before_median_ms": 91.869,
+      "delta_ms": -5.064,
+      "ratio": 0.9449
+    },
+    "older_2026_05_20_context_probe": [
+      {
+        "after_median_ms": 54.8,
+        "delta_ms": 10.61,
+        "prior_median_ms": 44.19,
+        "ratio": 1.2401,
+        "shape": "global max_results=1 older-query probe"
+      },
+      {
+        "after_median_ms": 63.239,
+        "delta_ms": 16.619,
+        "prior_median_ms": 46.62,
+        "ratio": 1.3565,
+        "shape": "global max_results=5 older-query probe"
+      },
+      {
+        "after_median_ms": 65.867,
+        "delta_ms": 19.227,
+        "prior_median_ms": 46.64,
+        "ratio": 1.4122,
+        "shape": "global max_results=20 older-query probe"
+      },
+      {
+        "after_median_ms": 12.382,
+        "delta_ms": -1.508,
+        "prior_median_ms": 13.89,
+        "ratio": 0.8914,
+        "shape": "global causal older-query probe"
+      }
+    ],
+    "same_snapshot_discover_hot_service": [
+      {
+        "after_median_ms": 66.896,
+        "before_median_ms": 69.83,
+        "delta_ms": -2.934,
+        "depth": "1",
+        "max_results": 1,
+        "ratio": 0.958,
+        "scope": "project:lm"
+      },
+      {
+        "after_median_ms": 157.268,
+        "before_median_ms": 165.326,
+        "delta_ms": -8.058,
+        "depth": "1",
+        "max_results": 5,
+        "ratio": 0.9513,
+        "scope": "project:ae"
+      },
+      {
+        "after_median_ms": 114.326,
+        "before_median_ms": 127.905,
+        "delta_ms": -13.579,
+        "depth": "1",
+        "max_results": 5,
+        "ratio": 0.8938,
+        "scope": "project:octopus"
+      },
+      {
+        "after_median_ms": 70.047,
+        "before_median_ms": 79.738,
+        "delta_ms": -9.691,
+        "depth": "0",
+        "max_results": 5,
+        "ratio": 0.8785,
+        "scope": "project:ae"
+      },
+      {
+        "after_median_ms": null,
+        "comparison": "not rerun with this exact row in current matrix",
+        "depth": "causal",
+        "max_results": 5,
+        "median_ms": 84.583,
+        "scope": "project:ae"
+      }
+    ]
+  },
+  "environment": {
+    "LIVING_MEMORY_EMBEDDING_BACKEND": "hash",
+    "PYTHONPATH": "src"
+  },
+  "generated_at": "2026-05-22T10:27:03Z",
+  "hot_service_matrix": [
+    {
+      "count": 1,
+      "depth": "1",
+      "max_results": 1,
+      "median_ms": 66.896,
+      "p95_ms": 70.962,
+      "query": "Living Memory hot recall latency baseline duplicate density feedback applied",
+      "samples_ms": [
+        73.653,
+        66.437,
+        66.214,
+        64.512,
+        67.314,
+        66.859,
+        66.896,
+        70.962,
+        69.365
+      ],
+      "scope": "project:lm"
+    },
+    {
+      "count": 5,
+      "depth": "1",
+      "max_results": 5,
+      "median_ms": 74.434,
+      "p95_ms": 85.532,
+      "query": "Living Memory hot recall latency baseline duplicate density feedback applied",
+      "samples_ms": [
+        72.764,
+        73.362,
+        71.624,
+        75.221,
+        71.083,
+        74.434,
+        88.321,
+        85.532,
+        78.81
+      ],
+      "scope": "project:lm"
+    },
+    {
+      "count": 5,
+      "depth": "1",
+      "max_results": 5,
+      "median_ms": 157.268,
+      "p95_ms": 165.758,
+      "query": "bootstrap file chunk duplicate density feedback applied goal tree",
+      "samples_ms": [
+        166.239,
+        155.62,
+        165.758,
+        162.002,
+        157.669,
+        145.454,
+        157.268,
+        153.4,
+        153.628
+      ],
+      "scope": "project:ae"
+    },
+    {
+      "count": 5,
+      "depth": "0",
+      "max_results": 5,
+      "median_ms": 70.047,
+      "p95_ms": 72.198,
+      "query": "bootstrap file chunk duplicate density feedback applied goal tree",
+      "samples_ms": [
+        69.319,
+        69.728,
+        69.397,
+        70.047,
+        72.198,
+        71.328,
+        80.491,
+        70.35,
+        69.334
+      ],
+      "scope": "project:ae"
+    },
+    {
+      "count": 5,
+      "depth": "1",
+      "max_results": 5,
+      "median_ms": 114.326,
+      "p95_ms": 116.955,
+      "query": "OCPA bilingual lifecycle canary evaluation trainer planner",
+      "samples_ms": [
+        118.533,
+        114.283,
+        113.171,
+        114.326,
+        114.785,
+        116.955,
+        113.65,
+        113.546,
+        114.809
+      ],
+      "scope": "project:octopus"
+    },
+    {
+      "count": 5,
+      "depth": "causal",
+      "max_results": 5,
+      "median_ms": 73.811,
+      "p95_ms": 92.703,
+      "query": "why did lifecycle canary fail root cause trainer planner",
+      "samples_ms": [
+        73.811,
+        72.431,
+        93.329,
+        92.703,
+        73.358,
+        67.425,
+        66.691,
+        75.004,
+        74.848
+      ],
+      "scope": "project:octopus"
+    }
+  ],
+  "prior_2026_05_20_compatible_probe": {
+    "rows": [
+      {
+        "depth": "1",
+        "max_results": 1,
+        "median_ms": 54.8,
+        "query": "Living Memory performance latency recall benchmark storage vector optimization",
+        "samples_ms": [
+          52.723,
+          52.104,
+          53.423,
+          55.005,
+          57.847,
+          57.919,
+          54.8
+        ],
+        "scope": "global"
+      },
+      {
+        "depth": "1",
+        "max_results": 5,
+        "median_ms": 63.239,
+        "query": "Living Memory performance latency recall benchmark storage vector optimization",
+        "samples_ms": [
+          58.455,
+          62.285,
+          69.897,
+          63.981,
+          62.633,
+          63.239,
+          63.731
+        ],
+        "scope": "global"
+      },
+      {
+        "depth": "1",
+        "max_results": 20,
+        "median_ms": 65.867,
+        "query": "Living Memory performance latency recall benchmark storage vector optimization",
+        "samples_ms": [
+          65.867,
+          65.279,
+          70.897,
+          65.525,
+          64.717,
+          71.93,
+          79.985
+        ],
+        "scope": "global"
+      },
+      {
+        "depth": "causal",
+        "max_results": 5,
+        "median_ms": 12.382,
+        "query": "why did Living Memory performance latency recall benchmark happen",
+        "samples_ms": [
+          12.989,
+          12.387,
+          12.651,
+          12.382,
+          12.031,
+          11.887,
+          11.831
+        ],
+        "scope": "global"
+      }
+    ],
+    "source": "Fresh current-code run using the older global benchmark query shape for context only."
+  },
+  "snapshot": {
+    "expected_md5": "58fc12fd47c5f71e5b8867ee71590668",
+    "md5_after": "58fc12fd47c5f71e5b8867ee71590668",
+    "md5_before": "58fc12fd47c5f71e5b8867ee71590668",
+    "path": "/tmp/lm-baseline-replay.sqlite3",
+    "read_only_store": "living_memory.health_audit.ReadOnlyAuditStore.open_path",
+    "size_bytes": 100339712
+  },
+  "worktree": {
+    "changed_files": [
+      "src/living_memory/storage.py",
+      "tests/test_health_audit.py"
+    ],
+    "cwd": "/home/sfx/p/lm/.worktrees/_node_exec_memory-quality-root-fixes_verify-and-record",
+    "head": "deec400"
+  }
+}

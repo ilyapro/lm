@@ -1,0 +1,44 @@
+{
+  "db_policy": "temporary SQLite databases only; no live DB writes",
+  "flows": {
+    "explicit_same_context_bounded": {
+      "applied_count": 5,
+      "blocked_count": 1,
+      "bounded_candidate_window": true,
+      "seeded_recall_events": 6,
+      "write_ms": 2.61
+    },
+    "negative_isolation": {
+      "applied_count": 0,
+      "blocked_count": 3,
+      "different_session_blocked": true,
+      "different_task_blocked": true,
+      "project_to_global_blocked": true,
+      "seeded_recall_events": 3,
+      "write_ms": 0.227
+    },
+    "partial_same_agent_similarity": {
+      "applied_count": 2,
+      "blocked_count": 0,
+      "same_agent": true,
+      "same_scope": true,
+      "seeded_recall_events": 2,
+      "task_metadata_present": false,
+      "write_ms": 1.207
+    },
+    "unqualified_exact_scope_cap": {
+      "applied_count": 1,
+      "blocked_count": 1,
+      "seeded_recall_events": 2,
+      "weak_fallback_cap": 1,
+      "write_ms": 0.785
+    }
+  },
+  "generated_at": "2026-05-22T09:33:55.600247+00:00",
+  "matcher_cap": 5,
+  "summary": {
+    "applied_total": 8,
+    "blocked_total": 5,
+    "max_write_ms": 2.61
+  }
+}

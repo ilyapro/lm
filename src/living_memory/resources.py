@@ -5,6 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from living_memory.health_audit import (
+    DEFAULT_LATENCY_QUERY,
+    DEFAULT_TOP_CANDIDATE_SCOPES,
+    access_metrics,
+    feedback_metrics,
+    hot_recall_latency,
+    instructions_metrics,
+    scope_hygiene_metrics,
+    storage_metrics,
+)
 from living_memory.models import Connection, Node, RecallEvent, RetrievalWeights, string_list
 from living_memory.scope import normalize_scope
 from living_memory.storage import MemoryStore
@@ -326,8 +336,12 @@ def memory_health(
     scope: str | None = None,
     window_hours: int = 168,
     top_stale: int = 5,
+    top_candidate_scopes: int = DEFAULT_TOP_CANDIDATE_SCOPES,
+    latency_samples: int = 0,
+    latency_query: str = DEFAULT_LATENCY_QUERY,
+    instructions_text: str | None = None,
 ) -> dict[str, Any]:
-    """Health report: activity ratios, dedup density, staleness, retrieval policy."""
+    """Health report with additive audit metrics for the existing surface."""
 
     if window_hours < 1:
         raise ValueError("window_hours must be >= 1")
@@ -421,7 +435,7 @@ def memory_health(
     decay_rate = (trace_counts["decayed"] / decay_pool) if decay_pool > 0 else 0.0
 
     policy_scope = normalized_scope or "global"
-    return {
+    report: dict[str, Any] = {
         "scope": normalized_scope or "all",
         "window_hours": window_hours,
         "generated_at": now.isoformat().replace("+00:00", "Z"),
@@ -457,6 +471,28 @@ def memory_health(
         },
         "retrieval_policy": retrieval_policy_for_scope(store, policy_scope),
     }
+    report.update(
+        {
+            "feedback": feedback_metrics(store, scope=normalized_scope),
+            "access": access_metrics(store, scope=normalized_scope),
+            "scope_hygiene": scope_hygiene_metrics(
+                store,
+                top_candidate_scopes=top_candidate_scopes,
+            ),
+            "storage": storage_metrics(store),
+            "latency": hot_recall_latency(
+                store,
+                scope=normalized_scope,
+                samples=latency_samples,
+                query=latency_query,
+            ),
+            "instructions": instructions_metrics(
+                instructions_text,
+                default_scope=store.config.default_scope,
+            ),
+        }
+    )
+    return report
 
 
 def recall_events_summary(

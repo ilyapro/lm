@@ -6,6 +6,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+import hashlib
 import json
 import re
 import secrets
@@ -14,7 +15,7 @@ import time
 from datetime import UTC, datetime
 
 from living_memory.config import MemoryConfig, RetrievalWeightConfig
-from living_memory.embeddings import cosine_similarity
+from living_memory.embeddings import cosine_similarity, tokenize
 from living_memory.models import (
     CONNECTION_TYPES,
     NODE_LEVELS,
@@ -27,9 +28,17 @@ from living_memory.models import (
     RetrievalWeights,
 )
 from living_memory.phase import PhaseManager
+from living_memory.scope import normalize_scope
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+_RECALL_TEXT_SIMILARITY_THRESHOLD = 0.55
+_DUPLICATE_CONTENT_DECAY_REASON = "duplicate_content"
+_DUPLICATE_CONTENT_KIND = "duplicate_content"
+
+
+def _content_fingerprint(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 class MemoryStore:
@@ -158,7 +167,7 @@ class MemoryStore:
         provenance_data = dict(provenance or {})
         now = _utc_now()
         node_timestamp = str(timestamp or context_data.get("timestamp") or now)
-        scope = str(context_data.get("scope") or self.config.default_scope)
+        scope = normalize_scope(str(context_data.get("scope") or self.config.default_scope))
         agent = _optional_str(context_data.get("agent"))
         task = _optional_str(context_data.get("task"))
         context_data["scope"] = scope
@@ -176,21 +185,39 @@ class MemoryStore:
         source_traces = _as_list(provenance_data.pop("source_traces", []))
         corrections = _as_list(provenance_data.pop("corrections", []))
         new_id = node_id or new_ulid()
+        fingerprint = _content_fingerprint(content)
+
+        duplicate_ids: list[str] = []
+        if level == "trace":
+            duplicate_ids = [
+                str(row["id"])
+                for row in self._conn.execute(
+                    """
+                    SELECT id FROM nodes
+                    WHERE level = 'trace'
+                      AND scope = ?
+                      AND content_fingerprint = ?
+                      AND decayed = 0
+                    """,
+                    (scope, fingerprint),
+                ).fetchall()
+            ]
 
         self._conn.execute(
             """
             INSERT INTO nodes (
-                id, level, content, embedding, scope, agent, task, context,
+                id, level, content, content_fingerprint, embedding, scope, agent, task, context,
                 timestamp, decayed, decay_reason, access_count, last_accessed,
                 usefulness_score, confidence, unique_agents, temporal_hint,
                 source_traces, corrections, provenance, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_id,
                 level,
                 content,
+                fingerprint,
                 _json_dumps(list(embedding)) if embedding is not None else None,
                 scope,
                 agent,
@@ -210,6 +237,27 @@ class MemoryStore:
                 now,
             ),
         )
+
+        for old_id in duplicate_ids:
+            self._insert_connection(
+                new_id,
+                old_id,
+                "supersedes",
+                weight=1.0,
+                metadata={
+                    "kind": _DUPLICATE_CONTENT_KIND,
+                    "fingerprint": fingerprint,
+                },
+            )
+            self._conn.execute(
+                """
+                UPDATE nodes
+                SET decayed = 1, decay_reason = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (_DUPLICATE_CONTENT_DECAY_REASON, now, old_id),
+            )
+
         return new_id
 
     def append_trace(
@@ -673,7 +721,7 @@ class MemoryStore:
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.extend([int(limit), int(offset)])
         rows = self._conn.execute(
-            f"SELECT * FROM recall_events {where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM recall_events {where} ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?",
             params,
         ).fetchall()
         return [_recall_event_from_row(row) for row in rows]
@@ -683,6 +731,7 @@ class MemoryStore:
         *,
         scope: str,
         context: Mapping[str, Any] | None = None,
+        content: str | None = None,
         limit: int = 1,
     ) -> list[RecallEvent]:
         """Return recent unconsumed recalls compatible with a new ingest trace."""
@@ -694,18 +743,25 @@ class MemoryStore:
             FROM recall_events
             WHERE feedback_applied = 0
               AND (scope = ? OR requested_scope = ? OR resolved_scopes LIKE ?)
-            ORDER BY created_at DESC, id DESC
+            ORDER BY created_at DESC, rowid DESC
             LIMIT ?
             """,
             (scope, scope, f"%{_json_dumps(scope)}%", max(1, int(limit) * 20)),
         ).fetchall()
         events: list[RecallEvent] = []
+        weak_fallbacks = 0
         for row in rows:
             event = _recall_event_from_row(row)
-            if _recall_event_matches(event, scope, context_data):
-                events.append(event)
-                if len(events) >= limit:
-                    break
+            match_strength = _recall_event_match_strength(event, scope, context_data, content)
+            if match_strength is None:
+                continue
+            if match_strength == "weak":
+                if weak_fallbacks >= 1:
+                    continue
+                weak_fallbacks += 1
+            events.append(event)
+            if len(events) >= limit:
+                break
         return events
 
     def mark_recall_event_feedback(self, event_id: str, trace_id: str) -> RecallEvent:
@@ -960,6 +1016,7 @@ class MemoryStore:
 
     def _initialize_schema(self) -> None:
         with self._conn:
+            self._migrate_pre_v3_schema()
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -977,6 +1034,7 @@ class MemoryStore:
                     id TEXT PRIMARY KEY,
                     level TEXT NOT NULL CHECK (level IN ('trace', 'concept', 'schema')),
                     content TEXT NOT NULL,
+                    content_fingerprint TEXT,
                     embedding TEXT,
                     scope TEXT NOT NULL DEFAULT 'global',
                     agent TEXT,
@@ -1093,6 +1151,10 @@ class MemoryStore:
                     ON nodes(level, scope)
                     WHERE decayed = 0;
 
+                CREATE INDEX IF NOT EXISTS idx_nodes_dedup
+                    ON nodes(level, scope, content_fingerprint)
+                    WHERE decayed = 0 AND content_fingerprint IS NOT NULL;
+
                 CREATE INDEX IF NOT EXISTS idx_connections_source_type
                     ON connections(source_id, type);
 
@@ -1106,6 +1168,7 @@ class MemoryStore:
                     ON recall_events(session_id, feedback_applied, created_at DESC);
                 """
             )
+            self._backfill_missing_content_fingerprints()
             self._conn.execute(
                 """
                 INSERT INTO metadata (key, value)
@@ -1114,6 +1177,47 @@ class MemoryStore:
                 """,
                 (str(SCHEMA_VERSION),),
             )
+
+    def _migrate_pre_v3_schema(self) -> None:
+        """Add content_fingerprint to nodes for DBs created at schema_version <= 2."""
+
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='nodes'"
+        ).fetchone()
+        if row is None:
+            return
+        columns = {
+            r["name"] for r in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
+        }
+        if "content_fingerprint" not in columns:
+            self._conn.execute(
+                "ALTER TABLE nodes ADD COLUMN content_fingerprint TEXT"
+            )
+
+    def _backfill_missing_content_fingerprints(self) -> None:
+        """Compute SHA-256 fingerprints for any rows still missing one.
+
+        Idempotent: only touches rows where content_fingerprint IS NULL. After
+        the schema-v3 migration runs once, fresh inserts populate the column
+        directly and this loop becomes a no-op.
+        """
+
+        rows = self._conn.execute(
+            """
+            SELECT id, content
+            FROM nodes
+            WHERE content_fingerprint IS NULL AND content IS NOT NULL
+            """
+        ).fetchall()
+        if not rows:
+            return
+        updates = [
+            (_content_fingerprint(str(r["content"])), str(r["id"])) for r in rows
+        ]
+        self._conn.executemany(
+            "UPDATE nodes SET content_fingerprint = ? WHERE id = ?",
+            updates,
+        )
 
     def get_kv(self, key: str) -> str | None:
         """Read a server-wide kv entry, or None if unset."""
@@ -1322,16 +1426,55 @@ def _recall_event_matches(
     event: RecallEvent,
     scope: str,
     context: Mapping[str, Any],
+    content: str | None = None,
 ) -> bool:
-    compatible_scopes = {event.scope, event.requested_scope, *event.resolved_scopes}
-    if scope not in compatible_scopes:
-        return False
+    return _recall_event_match_strength(event, scope, context, content) is not None
+
+
+def _recall_event_match_strength(
+    event: RecallEvent,
+    scope: str,
+    context: Mapping[str, Any],
+    content: str | None,
+) -> str | None:
+    exact_scope_match = scope == event.scope or scope == event.requested_scope
+    if not exact_scope_match:
+        return None
 
     context_session = _optional_str(context.get("session_id") or context.get("session"))
-    if event.session_id and context_session and event.session_id != context_session:
-        return False
+    context_task = _optional_str(context.get("task"))
+    context_agent = _optional_str(context.get("agent"))
 
-    return True
+    if event.session_id and context_session and event.session_id != context_session:
+        return None
+    if event.task and context_task and event.task != context_task:
+        return None
+
+    same_session = bool(event.session_id and context_session and event.session_id == context_session)
+    same_task = bool(event.task and context_task and event.task == context_task)
+    if same_session or same_task:
+        return "strong"
+
+    same_agent = bool(event.agent and context_agent and event.agent == context_agent)
+    if event.agent and context_agent and event.agent != context_agent:
+        return None
+
+    text_match = content is None or _recall_event_text_similarity(event, content) >= _RECALL_TEXT_SIMILARITY_THRESHOLD
+    if same_agent and text_match:
+        return "strong"
+    if text_match:
+        return "weak"
+
+    return None
+
+
+def _recall_event_text_similarity(event: RecallEvent, content: str) -> float:
+    query_tokens = set(tokenize(event.query))
+    content_tokens = set(tokenize(content))
+    if not query_tokens or not content_tokens:
+        return 0.0
+    overlap = len(query_tokens & content_tokens)
+    return overlap / max(1, min(len(query_tokens), len(content_tokens)))
 
 
 def _weights_from_row(row: sqlite3.Row) -> RetrievalWeights:

@@ -26,9 +26,10 @@ def _append_procedure_traces(
     ]
     traces = []
     for index in range(count):
+        body = contents[index % len(contents)]
         traces.append(
             store.append_trace(
-                contents[index % len(contents)],
+                f"[{procedure_id}] {body}",
                 {
                     "scope": scope,
                     "agent": agents[index % len(agents)],
@@ -114,6 +115,7 @@ def test_nodes_table_has_no_new_columns(tmp_path: Path) -> None:
             "id",
             "level",
             "content",
+            "content_fingerprint",
             "embedding",
             "scope",
             "agent",

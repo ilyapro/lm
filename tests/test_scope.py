@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from living_memory.retrieval import memory_recall
 from living_memory.scope import resolve_scope
 from living_memory.storage import MemoryStore
@@ -100,3 +102,63 @@ def test_implicit_project_scope_can_be_inferred_from_russian_query(tmp_path: Pat
         ids = {result.node.id for result in results}
         assert alpha.id in ids
         assert beta.id not in ids
+
+
+@pytest.mark.parametrize(
+    ("raw_scope", "expected_scope"),
+    [
+        ("rise/_critique", "project:rise/_critique"),
+        ("breakthrough/gemini-flash-contract", "project:breakthrough/gemini-flash-contract"),
+        (
+            "ocpa-generative-action-substrate-v1",
+            "project:ocpa-generative-action-substrate-v1",
+        ),
+        ("future-goal/implementation-node", "project:future-goal/implementation-node"),
+    ],
+)
+def test_write_path_canonicalizes_bare_project_scopes(
+    tmp_path: Path,
+    raw_scope: str,
+    expected_scope: str,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        trace = store.append_trace(
+            f"Trace stored under {raw_scope}",
+            {"scope": raw_scope, "agent": "agent-a"},
+        )
+
+        assert trace.scope == expected_scope
+        assert trace.context["scope"] == expected_scope
+        assert store.list_nodes(scope=expected_scope) == [trace]
+        assert store.list_nodes(scope=raw_scope) == []
+
+
+def test_write_path_preserves_already_canonical_project_scope(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        trace = store.append_trace(
+            "Trace already scoped to the LM project",
+            {"scope": "project:lm", "agent": "agent-a"},
+        )
+
+        assert trace.scope == "project:lm"
+        assert trace.context["scope"] == "project:lm"
+
+
+def test_write_path_preserves_global_scope_outside_projects(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        trace = store.append_trace(
+            "Universal lesson that should remain global",
+            {"scope": "global", "agent": "agent-a"},
+        )
+
+        assert trace.scope == "global"
+        assert trace.context["scope"] == "global"
+
+
+def test_write_path_rejects_unknown_scope_prefix(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        with pytest.raises(ValueError, match="unsupported scope prefix: external"):
+            store.append_trace(
+                "Unknown prefixes should fail loudly",
+                {"scope": "external:vendor", "agent": "agent-a"},
+            )

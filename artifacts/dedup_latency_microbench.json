@@ -1,0 +1,57 @@
+{
+  "spec_source": "artifacts/discovery/dedup-noise.md §9.2 (write-path micro-bench), §9.3 (read-path budget)",
+  "method": "Per scope, fresh tmp_path MemoryStore, 500 inserts per round, 3 repeats, mean of run totals reported in ms; per-call mean = total / n.",
+  "before": {
+    "label": "write-path master (no dedup)",
+    "branch_commit": "989979b (pre-fix baseline branch tip)",
+    "n_per_run": 500,
+    "runs": 3,
+    "unique_total_ms": {
+      "min": 101.54,
+      "mean": 113.69,
+      "max": 127.65,
+      "per_call_mean_ms": 0.2274
+    },
+    "dup_total_ms": {
+      "min": 108.40,
+      "mean": 126.64,
+      "max": 157.59,
+      "per_call_mean_ms": 0.2533
+    },
+    "note": "On master, the 'duplicate' round is just a second batch of identical-content inserts; no dedup branch fires, every call appends a fresh row."
+  },
+  "after": {
+    "label": "write-path schema_v3 (dedup branch active)",
+    "n_per_run": 500,
+    "runs": 3,
+    "unique_total_ms": {
+      "min": 117.66,
+      "mean": 121.89,
+      "max": 127.67,
+      "per_call_mean_ms": 0.2438
+    },
+    "dup_total_ms": {
+      "min": 195.19,
+      "mean": 200.92,
+      "max": 208.40,
+      "per_call_mean_ms": 0.4018
+    }
+  },
+  "regression": {
+    "unique_per_call_ratio": 1.072,
+    "dup_per_call_ratio": 1.586,
+    "unique_per_call_budget": 1.20,
+    "unique_within_budget": true,
+    "unique_absolute_target_ms": 1.0,
+    "unique_absolute_actual_ms": 0.2438,
+    "duplicate_absolute_target_ms": 2.0,
+    "duplicate_absolute_actual_ms": 0.4018,
+    "duplicate_within_absolute_budget": true
+  },
+  "notes": [
+    "Unique-insert mean regression is 1.07x of master, comfortably within the 1.20x budget set in dedup-noise.md §9.2.",
+    "Duplicate-insert per-call cost increases by 0.149 ms absolute (0.253 -> 0.402); this is the cost of the indexed SELECT, supersedes-edge INSERT, and decay UPDATE inside the same transaction.",
+    "Both absolute means are well under the 1.0 ms (unique) and 2.0 ms (duplicate) targets called out in dedup-noise.md §9.2.",
+    "The read path is unchanged (no code edits in retrieval.py); the canonical read benchmark belongs to verify-and-record (latency_before.json / latency_after.json)."
+  ]
+}

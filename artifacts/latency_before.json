@@ -1,0 +1,96 @@
+{
+  "benchmark": "pre_fix_discover_baseline",
+  "cold_helper_compatibility": {
+    "depth": 1,
+    "log_access": false,
+    "log_event": false,
+    "max_results": 1,
+    "query": "Living Memory hot recall latency baseline duplicate density feedback applied",
+    "samples_ms": [
+      91.407,
+      91.322,
+      92.756,
+      91.869,
+      92.612
+    ],
+    "scope": "project:lm",
+    "shape": "artifacts/baseline.md hot recall latency probe",
+    "summary": {
+      "max_ms": 92.756,
+      "mean_ms": 91.993,
+      "median_ms": 91.869,
+      "min_ms": 91.322
+    },
+    "warmup_ms": 99.751
+  },
+  "discover_hot_service_baseline": {
+    "log_access": false,
+    "log_event": false,
+    "rows": [
+      {
+        "depth": "1",
+        "max_results": 1,
+        "median_ms": 69.83,
+        "scope": "project:lm"
+      },
+      {
+        "depth": "1",
+        "max_results": 5,
+        "median_ms": 165.326,
+        "scope": "project:ae"
+      },
+      {
+        "depth": "1",
+        "max_results": 5,
+        "median_ms": 127.905,
+        "scope": "project:octopus"
+      },
+      {
+        "depth": "0",
+        "max_results": 5,
+        "median_ms": 79.738,
+        "scope": "project:ae"
+      },
+      {
+        "depth": "causal",
+        "max_results": 5,
+        "median_ms": 84.583,
+        "scope": "project:ae"
+      }
+    ],
+    "snapshot": "/tmp/lm-baseline-replay.sqlite3",
+    "source": "artifacts/discovery/recall-speed-usefulness.md additional read-only profiling table"
+  },
+  "generated_at": "2026-05-22T10:27:03Z",
+  "prior_hot_observations": {
+    "causal_max_results_5_median_ms": 13.89,
+    "known_cold_outliers_ms": [
+      462.2,
+      1501.8
+    ],
+    "local_service_hot_medians_ms": {
+      "max_results_1": 44.19,
+      "max_results_20": 46.64,
+      "max_results_5": 46.62
+    },
+    "mcp_memory_recall_hot_median_ms": 66.5,
+    "mcp_memory_recall_hot_range_ms": [
+      65.0,
+      70.0
+    ],
+    "mcp_memory_status_hot_ms": 21.0,
+    "source": "artifacts/discovery/lm-recall-context.md trace 01KS2WDRPJWRZQPQH2T7RE4FKS"
+  },
+  "snapshot": {
+    "md5": "58fc12fd47c5f71e5b8867ee71590668",
+    "path": "/tmp/lm-baseline-replay.sqlite3",
+    "size_bytes": 100339712
+  },
+  "source": {
+    "files": [
+      "artifacts/baseline.md",
+      "artifacts/discovery/lm-recall-context.md"
+    ],
+    "note": "Pre-fix executable code is not rerun here; these are the frozen discover baseline numbers requested by the verify node."
+  }
+}
