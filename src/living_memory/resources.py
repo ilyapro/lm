@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+import json
 
+from living_memory.config import RetrievalSkewThresholds
 from living_memory.health_audit import (
     DEFAULT_LATENCY_QUERY,
     DEFAULT_TOP_CANDIDATE_SCOPES,
@@ -16,11 +18,18 @@ from living_memory.health_audit import (
     storage_metrics,
 )
 from living_memory.models import Connection, Node, RecallEvent, RetrievalWeights, string_list
-from living_memory.scope import normalize_scope
+from living_memory.scope import normalize_scope, scope_family
 from living_memory.storage import MemoryStore
 
 DEFAULT_CONCEPT_LIMIT = 100_000
 DEFAULT_RECENT_LIMIT = 20
+DEFAULT_RETRIEVAL_SKEW_PRESSURE_WINDOW_HOURS = 24
+
+_FALLBACK_RETRIEVAL_POLICY_FLOORS: dict[str, dict[str, float]] = {
+    "project": {"bm25_max": 0.85, "vector_min": 0.15, "graph_min": 0.0},
+    "global": {"bm25_max": 0.75, "vector_min": 0.20, "graph_min": 0.05},
+    "session": {"bm25_max": 0.90, "vector_min": 0.10, "graph_min": 0.0},
+}
 
 
 def global_concepts(store: MemoryStore, *, limit: int = DEFAULT_CONCEPT_LIMIT) -> dict[str, Any]:
@@ -470,6 +479,7 @@ def memory_health(
             ],
         },
         "retrieval_policy": retrieval_policy_for_scope(store, policy_scope),
+        "retrieval_skew": retrieval_skew_metrics(store, scope=normalized_scope),
     }
     report.update(
         {
@@ -493,6 +503,37 @@ def memory_health(
         }
     )
     return report
+
+
+def retrieval_skew_metrics(
+    store: MemoryStore,
+    *,
+    scope: str | None = None,
+    window_hours: int = DEFAULT_RETRIEVAL_SKEW_PRESSURE_WINDOW_HOURS,
+) -> dict[str, Any]:
+    """Return retrieval-weight skew flags and recent feedback pressure."""
+
+    if window_hours < 1:
+        raise ValueError("window_hours must be >= 1")
+
+    normalized_scope = normalize_scope(scope) if scope else None
+    thresholds = store.config.retrieval_skew_thresholds
+    floors = _retrieval_policy_floors_in_effect(store)
+    return {
+        "thresholds": _skew_thresholds_to_dict(thresholds),
+        "floors_in_effect": floors,
+        "scopes_at_risk": _retrieval_scopes_at_risk(
+            store,
+            thresholds=thresholds,
+            floors=floors,
+            scope=normalized_scope,
+        ),
+        "recent_feedback_pressure": _recent_feedback_pressure(
+            store,
+            scope=normalized_scope,
+            window_hours=window_hours,
+        ),
+    }
 
 
 def recall_events_summary(
@@ -591,6 +632,247 @@ def weights_to_dict(weights: RetrievalWeights) -> dict[str, Any]:
         "learning_rate": weights.learning_rate,
         "updated_at": weights.updated_at,
     }
+
+
+def _skew_thresholds_to_dict(thresholds: RetrievalSkewThresholds) -> dict[str, float]:
+    return {
+        "bm25_monoculture": thresholds.bm25_monoculture,
+        "near_zero_vector": thresholds.near_zero_vector,
+        "near_zero_graph": thresholds.near_zero_graph,
+    }
+
+
+def _retrieval_policy_floors_in_effect(store: MemoryStore) -> dict[str, dict[str, float]]:
+    configured = getattr(store.config, "retrieval_policy_floors", None)
+    if configured:
+        return {
+            str(family): _policy_floor_to_dict(floor)
+            for family, floor in configured.items()
+        }
+    return {family: dict(values) for family, values in _FALLBACK_RETRIEVAL_POLICY_FLOORS.items()}
+
+
+def _policy_floor_to_dict(floor: Any) -> dict[str, float]:
+    return {
+        "bm25_max": float(_policy_floor_value(floor, "bm25_max")),
+        "vector_min": float(_policy_floor_value(floor, "vector_min")),
+        "graph_min": float(_policy_floor_value(floor, "graph_min")),
+    }
+
+
+def _policy_floor_value(floor: Any, key: str) -> Any:
+    if isinstance(floor, dict):
+        return floor[key]
+    return getattr(floor, key)
+
+
+def _retrieval_scopes_at_risk(
+    store: MemoryStore,
+    *,
+    thresholds: RetrievalSkewThresholds,
+    floors: dict[str, dict[str, float]],
+    scope: str | None,
+) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = ""
+    if scope is not None:
+        where = "WHERE scope = ?"
+        params.append(scope)
+    rows = store.connection.execute(
+        f"""
+        SELECT scope, bm25, vector, graph, learning_rate, updated_at
+        FROM retrieval_weights
+        {where}
+        ORDER BY scope
+        """,
+        params,
+    ).fetchall()
+
+    risks: list[dict[str, Any]] = []
+    for row in rows:
+        row_scope = str(row["scope"])
+        if row_scope == "default":
+            continue
+        family = scope_family(row_scope)
+        floor = floors.get(family)
+        if floor is None:
+            continue
+
+        raw_weights = RetrievalWeights(
+            scope=row_scope,
+            bm25=float(row["bm25"]),
+            vector=float(row["vector"]),
+            graph=float(row["graph"]),
+            learning_rate=float(row["learning_rate"]),
+            updated_at=str(row["updated_at"]),
+        ).normalized()
+        raw = _weights_triplet(raw_weights)
+        flags = _retrieval_skew_flags(raw, thresholds=thresholds, floor=floor)
+        floor_violation = _retrieval_floor_violation(raw, floor)
+        if not flags and not floor_violation:
+            continue
+
+        risks.append(
+            {
+                "scope": row_scope,
+                "family": family,
+                "raw": raw,
+                "effective_after_floor": _effective_after_floor(raw, floor),
+                "flags": flags,
+                "floor_violation": floor_violation,
+            }
+        )
+    return risks
+
+
+def _weights_triplet(weights: RetrievalWeights) -> dict[str, float]:
+    return {
+        "bm25": weights.bm25,
+        "vector": weights.vector,
+        "graph": weights.graph,
+    }
+
+
+def _retrieval_skew_flags(
+    raw: dict[str, float],
+    *,
+    thresholds: RetrievalSkewThresholds,
+    floor: dict[str, float],
+) -> list[str]:
+    flags: list[str] = []
+    if raw["bm25"] > thresholds.bm25_monoculture:
+        flags.append("bm25_monoculture")
+    if raw["vector"] < thresholds.near_zero_vector:
+        flags.append("near_zero_vector")
+    if floor["graph_min"] > 0.0 and raw["graph"] < thresholds.near_zero_graph:
+        flags.append("near_zero_graph")
+    return flags
+
+
+def _retrieval_floor_violation(
+    raw: dict[str, float],
+    floor: dict[str, float],
+) -> dict[str, dict[str, float]]:
+    violation: dict[str, dict[str, float]] = {}
+    if raw["bm25"] > floor["bm25_max"]:
+        violation["bm25"] = {
+            "current": raw["bm25"],
+            "ceiling": floor["bm25_max"],
+        }
+    if raw["vector"] < floor["vector_min"]:
+        violation["vector"] = {
+            "current": raw["vector"],
+            "floor": floor["vector_min"],
+        }
+    if raw["graph"] < floor["graph_min"]:
+        violation["graph"] = {
+            "current": raw["graph"],
+            "floor": floor["graph_min"],
+        }
+    return violation
+
+
+def _effective_after_floor(
+    raw: dict[str, float],
+    floor: dict[str, float],
+) -> dict[str, float]:
+    weights = dict(raw)
+    minimum = {"bm25": 0.0, "vector": floor["vector_min"], "graph": floor["graph_min"]}
+    for target in ("vector", "graph"):
+        deficit = max(0.0, minimum[target] - weights[target])
+        for donor in ("bm25", "graph", "vector"):
+            if donor == target or deficit <= 1e-12:
+                continue
+            available = max(0.0, weights[donor] - minimum[donor])
+            taken = min(deficit, available)
+            weights[donor] -= taken
+            weights[target] += taken
+            deficit -= taken
+
+    if weights["bm25"] > floor["bm25_max"]:
+        surplus = weights["bm25"] - floor["bm25_max"]
+        weights["bm25"] -= surplus
+        weights["vector"] += surplus
+
+    total = weights["bm25"] + weights["vector"] + weights["graph"]
+    if total <= 0.0:
+        return {"bm25": 1.0, "vector": 0.0, "graph": 0.0}
+    return {key: max(0.0, weights[key]) / total for key in ("bm25", "vector", "graph")}
+
+
+def _recent_feedback_pressure(
+    store: MemoryStore,
+    *,
+    scope: str | None,
+    window_hours: int,
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    cutoff = (now - timedelta(hours=window_hours)).isoformat().replace("+00:00", "Z")
+    clauses = ["feedback_applied = 1", "feedback_applied_at >= ?"]
+    params: list[Any] = [cutoff]
+    if scope is not None:
+        clauses.append("scope = ?")
+        params.append(scope)
+
+    rows = store.connection.execute(
+        f"""
+        SELECT results
+        FROM recall_events
+        WHERE {' AND '.join(clauses)}
+        """,
+        params,
+    ).fetchall()
+
+    counts = {"bm25": 0, "vector": 0, "graph": 0}
+    for row in rows:
+        for result in _json_result_list(row["results"]):
+            dominant = _dominant_result_method(result)
+            if dominant is not None:
+                counts[dominant] += 1
+
+    total = sum(counts.values())
+    return {
+        "window_hours": window_hours,
+        "consumed_recall_events": len(rows),
+        "dominant_method_counts": counts,
+        "bm25_dominance_ratio": (counts["bm25"] / total) if total > 0 else None,
+    }
+
+
+def _json_result_list(value: Any) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [dict(item) for item in parsed if isinstance(item, dict)]
+
+
+def _dominant_result_method(result: dict[str, Any]) -> str | None:
+    scores = {
+        "bm25": _float_value(result.get("bm25_score")),
+        "vector": _float_value(result.get("vector_score")),
+        "graph": _float_value(result.get("graph_score")),
+    }
+    method, score = max(scores.items(), key=lambda item: item[1])
+    if score > 0.0:
+        return method
+
+    methods = result.get("methods")
+    if isinstance(methods, list):
+        for item in methods:
+            method_name = str(item)
+            if method_name in scores:
+                return method_name
+    return None
+
+
+def _float_value(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _string_list(value: Any) -> list[str]:

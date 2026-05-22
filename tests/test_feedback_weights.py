@@ -33,6 +33,114 @@ def test_feedback_moves_retrieval_weights_toward_successful_method(tmp_path: Pat
         assert store.get_node(node.id).usefulness_score == pytest.approx(1.0)
 
 
+def test_weight_update_recovers_project_vector_floor_with_embedding_evidence(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        scope = "project:collapsed"
+        store.create_node(
+            level="trace",
+            content="checkout deploy migration recovery",
+            context={"scope": scope, "agent": "agent-a"},
+            embedding=[1.0, 0.0, 0.0],
+        )
+        store.set_retrieval_weights(
+            scope,
+            bm25=1.0,
+            vector=0.0,
+            graph=0.0,
+            learning_rate=0.05,
+        )
+
+        updated = store.update_retrieval_weights(
+            scope,
+            bm25_signal=1.0,
+            vector_signal=-1.0,
+        ).normalized()
+
+        assert updated.bm25 == pytest.approx(0.85)
+        assert updated.vector == pytest.approx(0.15)
+        assert updated.graph == pytest.approx(0.0)
+
+
+def test_weight_update_lifts_floor_from_bm25_before_other_channels(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        scope = "project:graph-heavy"
+        store.create_node(
+            level="trace",
+            content="causal migration graph note",
+            context={"scope": scope, "agent": "agent-a"},
+            embedding=[0.0, 1.0, 0.0],
+        )
+        store.set_retrieval_weights(
+            scope,
+            bm25=0.10,
+            vector=0.0,
+            graph=0.90,
+            learning_rate=0.05,
+        )
+
+        updated = store.update_retrieval_weights(scope).normalized()
+
+        assert updated.bm25 == pytest.approx(0.0)
+        assert updated.vector == pytest.approx(0.15)
+        assert updated.graph == pytest.approx(0.85)
+
+
+def test_weight_update_enforces_global_graph_floor_when_graph_evidence_exists(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        source = store.create_node(
+            level="trace",
+            content="incident root cause",
+            context={"scope": "global", "agent": "agent-a"},
+            embedding=[1.0, 0.0, 0.0],
+        )
+        target = store.create_node(
+            level="trace",
+            content="incident downstream effect",
+            context={"scope": "global", "agent": "agent-a"},
+            embedding=[0.0, 1.0, 0.0],
+        )
+        store.create_connection(source.id, target.id, "caused")
+        store.set_retrieval_weights(
+            "global",
+            bm25=1.0,
+            vector=0.0,
+            graph=0.0,
+            learning_rate=0.05,
+        )
+
+        updated = store.update_retrieval_weights("global", bm25_signal=1.0).normalized()
+
+        assert updated.bm25 == pytest.approx(0.75)
+        assert updated.vector == pytest.approx(0.20)
+        assert updated.graph == pytest.approx(0.05)
+
+
+def test_weight_update_does_not_apply_policy_floor_without_vector_or_graph_evidence(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        scope = "project:no-evidence"
+        store.set_retrieval_weights(
+            scope,
+            bm25=1.0,
+            vector=0.0,
+            graph=0.0,
+            learning_rate=0.05,
+        )
+
+        updated = store.update_retrieval_weights(scope, bm25_signal=1.0).normalized()
+
+        assert updated.bm25 == pytest.approx(1.0)
+        assert updated.vector == pytest.approx(0.0)
+        assert updated.graph == pytest.approx(0.0)
+
+
 def test_adaptive_tuning_raises_learning_rate_for_young_scope(
     tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
 ) -> None:

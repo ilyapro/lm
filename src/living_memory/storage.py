@@ -35,6 +35,7 @@ _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _RECALL_TEXT_SIMILARITY_THRESHOLD = 0.55
 _DUPLICATE_CONTENT_DECAY_REASON = "duplicate_content"
 _DUPLICATE_CONTENT_KIND = "duplicate_content"
+_WEIGHT_EPSILON = 1e-12
 
 
 def _content_fingerprint(content: str) -> str:
@@ -1006,6 +1007,7 @@ class MemoryStore:
             learning_rate=current.learning_rate,
             updated_at=current.updated_at,
         ).normalized()
+        updated = self.apply_retrieval_weight_floors(scope, updated)
         return self.set_retrieval_weights(
             scope,
             bm25=updated.bm25,
@@ -1013,6 +1015,98 @@ class MemoryStore:
             graph=updated.graph,
             learning_rate=updated.learning_rate,
         )
+
+    def apply_retrieval_weight_floors(
+        self,
+        scope: str,
+        weights: RetrievalWeights,
+    ) -> RetrievalWeights:
+        """Return normalized weights with active scope-family floors applied."""
+
+        normalized = weights.normalized()
+        floors = self.config.retrieval_policy_floors.get(_scope_family(scope))
+        if floors is None:
+            return normalized
+
+        vector_min = floors.vector_min if self._has_vector_evidence(scope) else 0.0
+        graph_min = floors.graph_min if self._has_graph_evidence(scope) else 0.0
+        if vector_min <= 0.0 and graph_min <= 0.0:
+            return normalized
+
+        values = {
+            "bm25": normalized.bm25,
+            "vector": normalized.vector,
+            "graph": normalized.graph,
+        }
+        minimum = {"bm25": 0.0, "vector": vector_min, "graph": graph_min}
+
+        for target in ("vector", "graph"):
+            self._lift_retrieval_weight(values, minimum, target)
+
+        bm25_surplus = max(0.0, values["bm25"] - floors.bm25_max)
+        if bm25_surplus > _WEIGHT_EPSILON:
+            for target in ("vector", "graph"):
+                if minimum[target] <= 0.0:
+                    continue
+                values["bm25"] -= bm25_surplus
+                values[target] += bm25_surplus
+                break
+
+        floored = RetrievalWeights(
+            scope=scope,
+            bm25=max(0.0, values["bm25"]),
+            vector=max(0.0, values["vector"]),
+            graph=max(0.0, values["graph"]),
+            learning_rate=normalized.learning_rate,
+            updated_at=normalized.updated_at,
+        ).normalized()
+        return floored
+
+    @staticmethod
+    def _lift_retrieval_weight(
+        values: dict[str, float],
+        minimum: dict[str, float],
+        target: str,
+    ) -> None:
+        deficit = max(0.0, minimum[target] - values[target])
+        if deficit <= _WEIGHT_EPSILON:
+            return
+        for donor in ("bm25", "graph", "vector"):
+            if donor == target or deficit <= _WEIGHT_EPSILON:
+                continue
+            available = max(0.0, values[donor] - minimum[donor])
+            taken = min(deficit, available)
+            values[donor] -= taken
+            values[target] += taken
+            deficit -= taken
+
+    def _has_vector_evidence(self, scope: str) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1
+            FROM nodes
+            WHERE scope = ? AND decayed = 0 AND embedding IS NOT NULL
+            LIMIT 1
+            """,
+            (scope,),
+        ).fetchone()
+        return row is not None
+
+    def _has_graph_evidence(self, scope: str) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1
+            FROM connections c
+            JOIN nodes source ON source.id = c.source_id
+            JOIN nodes target ON target.id = c.target_id
+            WHERE source.decayed = 0
+              AND target.decayed = 0
+              AND (source.scope = ? OR target.scope = ?)
+            LIMIT 1
+            """,
+            (scope, scope),
+        ).fetchone()
+        return row is not None
 
     def _initialize_schema(self) -> None:
         with self._conn:

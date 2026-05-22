@@ -81,6 +81,58 @@ def test_causal_recall_returns_causes_for_why_queries(tmp_path: Path) -> None:
         assert cause.id in results[0].path
 
 
+def test_causal_recall_preserves_graph_boost_after_global_graph_floor(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        cause_embedding = [1.0] + [0.0] * 383
+        effect_embedding = [0.0, 1.0] + [0.0] * 382
+        cause = store.create_node(
+            level="trace",
+            content="Missing migration file removed alembic revision",
+            context={"scope": "global", "agent": "agent-a"},
+            embedding=cause_embedding,
+        )
+        effect = store.create_node(
+            level="trace",
+            content="Checkout deploy incident happened during release",
+            context={"scope": "global", "agent": "agent-b"},
+            embedding=effect_embedding,
+        )
+        store.create_connection(cause.id, effect.id, "caused", weight=1.0)
+        store.set_retrieval_weights(
+            "global",
+            bm25=1.0,
+            vector=0.0,
+            graph=0.0,
+            learning_rate=0.05,
+        )
+
+        floored = store.update_retrieval_weights(
+            "global",
+            bm25_signal=1.0,
+            vector_signal=-1.0,
+            graph_signal=-1.0,
+        ).normalized()
+        results = memory_recall(
+            store,
+            "why did checkout deploy incident happen",
+            scope="global",
+            depth="causal",
+            max_results=5,
+            log_access=False,
+            log_event=False,
+        )
+
+        assert floored.bm25 == pytest.approx(0.75)
+        assert floored.vector == pytest.approx(0.20)
+        assert floored.graph == pytest.approx(0.05)
+        assert results[0].node.id == cause.id
+        assert results[0].graph_score > 0.0
+        assert "graph" in results[0].methods
+        assert cause.id in results[0].path
+
+
 def test_graph_traverses_supported_edge_types(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         start = store.append_trace("API deploy checklist", {"scope": "project:alpha"})

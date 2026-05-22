@@ -168,6 +168,26 @@ class RetrievalWeights:
 
 
 @dataclass(frozen=True, slots=True)
+class RetrievalPolicyFloors:
+    """Minimum retrieval-channel policy for an active scope family."""
+
+    bm25_max: float
+    vector_min: float
+    graph_min: float
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("bm25_max", self.bm25_max),
+            ("vector_min", self.vector_min),
+            ("graph_min", self.graph_min),
+        ):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be between 0.0 and 1.0")
+        if self.vector_min + self.graph_min > 1.0:
+            raise ValueError("vector_min + graph_min must be at most 1.0")
+
+
+@dataclass(frozen=True, slots=True)
 class PhaseInfo:
     """Detected automatic capability phase for the current trace count."""
 
