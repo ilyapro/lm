@@ -1,0 +1,14 @@
+{
+  "scope": "project:lm",
+  "id": "01KS79A55HYSHRJGEENG9FS57N",
+  "task": "goal-instructions-contract-tests",
+  "agent": "claude-opus-4-7",
+  "recorded_at": "2026-05-22T07:27:13Z",
+  "prior_chain": [
+    "01KS78ZG2N3WH45CJ3VYKFGV1B",
+    "01KS78QDF0AJBS3X6HSNY50SR7",
+    "01KS78J59Q1QSMPRAE37WBTG9H",
+    "01KS78BXEXZEQGDX4SDCNMBNGN"
+  ],
+  "summary": "Recorded the MCP instruction contract test change and verification result. Old failing assertions required literal MUST NOT and a 3500-6500 byte size window. The revised contract validates semantic hard negative policy (MUST NOT | DO NOT | What NOT to store), concrete forbidden storage categories, weak-phrase rejection, and MAX_INSTRUCTION_BYTES=9000. Verification: npm run check passed with 170 tests in 20.15s; instruction contract suite passed with 16 tests in 0.07s; src/living_memory/server.py diff was empty; _server_instructions('global') size = 7630 UTF-8 bytes / 7594 chars."
+}

@@ -1,0 +1,71 @@
+{
+  "verdict": "PASS",
+  "worktree": "/home/sfx/p/lm/.worktrees/goal-instructions-contract-tests",
+  "task": "goal-instructions-contract-tests",
+  "agent": "claude-opus-4-7",
+  "timestamp": "2026-05-22T07:27:13Z",
+  "living_memory_trace": {
+    "scope": "project:lm",
+    "id": "01KS79A55HYSHRJGEENG9FS57N",
+    "prior_chain": [
+      "01KS78ZG2N3WH45CJ3VYKFGV1B",
+      "01KS78QDF0AJBS3X6HSNY50SR7",
+      "01KS78J59Q1QSMPRAE37WBTG9H",
+      "01KS78BXEXZEQGDX4SDCNMBNGN"
+    ]
+  },
+  "checks": [
+    {
+      "name": "npm run check",
+      "command": "npm run check",
+      "status": "passed",
+      "summary": "170 passed in 20.15s"
+    },
+    {
+      "name": "instruction contract suite",
+      "command": "python -m pytest tests/test_instructions_imperative.py -v",
+      "status": "passed",
+      "summary": "16 passed in 0.07s"
+    },
+    {
+      "name": "server instruction source diff",
+      "command": "git diff --stat -- src/living_memory/server.py",
+      "status": "passed",
+      "summary": "no output"
+    },
+    {
+      "name": "instruction size guard",
+      "command": "python -c \"from living_memory.server import _server_instructions; t=_server_instructions('global'); print(len(t.encode('utf-8')))\"",
+      "status": "passed",
+      "summary": "size_bytes=7630, size_chars=7594, MAX_INSTRUCTION_BYTES=9000"
+    }
+  ],
+  "contract": {
+    "negative_policy": "semantic hard-prohibition coverage (MUST NOT | DO NOT | What NOT to store) plus required sections (## Anti-patterns, ## What NOT to store) plus forbidden storage categories plus weak-phrase rejection",
+    "size_guard": "single explicit MAX_INSTRUCTION_BYTES=9000 upper bound",
+    "server_instruction_source_changed": false,
+    "preserved_tests": [
+      "required keywords",
+      "MUST >= 10",
+      "BEFORE >= 4",
+      "AFTER >= 2",
+      "tool-name hooks",
+      "anti-pattern markers",
+      "named failure modes",
+      "weak-language guard",
+      "superintelligence framing",
+      "size within budget",
+      "default-scope substitution",
+      "recall pairs with BEFORE",
+      "remember pairs with AFTER",
+      "memory_teach correction path",
+      "cross-project transfer"
+    ]
+  },
+  "artifacts": [
+    "tests/test_instructions_imperative.py",
+    "result.md",
+    "final_verdict.json",
+    "living_memory_trace_project_lm.json"
+  ]
+}
