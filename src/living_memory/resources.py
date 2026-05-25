@@ -26,7 +26,7 @@ DEFAULT_RECENT_LIMIT = 20
 DEFAULT_RETRIEVAL_SKEW_PRESSURE_WINDOW_HOURS = 24
 
 _FALLBACK_RETRIEVAL_POLICY_FLOORS: dict[str, dict[str, float]] = {
-    "project": {"bm25_max": 0.85, "vector_min": 0.15, "graph_min": 0.0},
+    "project": {"bm25_max": 0.85, "vector_min": 0.15, "graph_min": 0.05},
     "global": {"bm25_max": 0.75, "vector_min": 0.20, "graph_min": 0.05},
     "session": {"bm25_max": 0.90, "vector_min": 0.10, "graph_min": 0.0},
 }
@@ -707,7 +707,13 @@ def _retrieval_scopes_at_risk(
             updated_at=str(row["updated_at"]),
         ).normalized()
         raw = _weights_triplet(raw_weights)
-        flags = _retrieval_skew_flags(raw, thresholds=thresholds, floor=floor)
+        has_graph_evidence = store._has_graph_evidence(row_scope)
+        flags = _retrieval_skew_flags(
+            raw,
+            thresholds=thresholds,
+            floor=floor,
+            has_graph_evidence=has_graph_evidence,
+        )
         floor_violation = _retrieval_floor_violation(raw, floor)
         if not flags and not floor_violation:
             continue
@@ -738,13 +744,15 @@ def _retrieval_skew_flags(
     *,
     thresholds: RetrievalSkewThresholds,
     floor: dict[str, float],
+    has_graph_evidence: bool = False,
 ) -> list[str]:
     flags: list[str] = []
     if raw["bm25"] > thresholds.bm25_monoculture:
         flags.append("bm25_monoculture")
     if raw["vector"] < thresholds.near_zero_vector:
         flags.append("near_zero_vector")
-    if floor["graph_min"] > 0.0 and raw["graph"] < thresholds.near_zero_graph:
+    graph_expected = floor["graph_min"] > 0.0 or has_graph_evidence
+    if graph_expected and raw["graph"] < thresholds.near_zero_graph:
         flags.append("near_zero_graph")
     return flags
 

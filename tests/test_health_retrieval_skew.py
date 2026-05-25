@@ -32,7 +32,7 @@ def test_memory_health_flags_deliberately_skewed_project_scope(tmp_path: Path) -
 
     risk = _risk_by_scope(report, "project:lopsided")
     assert risk["family"] == "project"
-    assert risk["flags"] == ["bm25_monoculture", "near_zero_vector"]
+    assert risk["flags"] == ["bm25_monoculture", "near_zero_vector", "near_zero_graph"]
     assert risk["raw"] == {
         "bm25": pytest.approx(0.98),
         "vector": pytest.approx(0.02),
@@ -42,10 +42,11 @@ def test_memory_health_flags_deliberately_skewed_project_scope(tmp_path: Path) -
     violation = risk["floor_violation"]
     assert violation["bm25"]["ceiling"] == pytest.approx(0.85)
     assert violation["vector"]["floor"] == pytest.approx(0.15)
+    assert violation["graph"]["floor"] == pytest.approx(0.05)
     assert risk["effective_after_floor"] == {
-        "bm25": pytest.approx(0.85),
+        "bm25": pytest.approx(0.80),
         "vector": pytest.approx(0.15),
-        "graph": pytest.approx(0.0),
+        "graph": pytest.approx(0.05),
     }
 
 
@@ -76,7 +77,7 @@ def test_retrieval_skew_reports_thresholds_and_floors_in_effect(tmp_path: Path) 
     assert skew["floors_in_effect"]["project"] == {
         "bm25_max": pytest.approx(0.85),
         "vector_min": pytest.approx(0.15),
-        "graph_min": pytest.approx(0.0),
+        "graph_min": pytest.approx(0.05),
     }
     assert skew["floors_in_effect"]["global"] == {
         "bm25_max": pytest.approx(0.75),
@@ -118,7 +119,7 @@ near_zero_graph = 0.08
         )
         risk = _risk_by_scope(memory_health(store), "project:borderline")
 
-    assert risk["flags"] == ["bm25_monoculture", "near_zero_vector"]
+    assert risk["flags"] == ["bm25_monoculture", "near_zero_vector", "near_zero_graph"]
 
 
 def test_recent_feedback_pressure_counts_dominant_methods(tmp_path: Path) -> None:

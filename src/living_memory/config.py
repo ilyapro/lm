@@ -40,7 +40,7 @@ DEFAULT_RETRIEVAL_WEIGHTS: dict[str, RetrievalWeightConfig] = {
 }
 
 DEFAULT_RETRIEVAL_POLICY_FLOORS: dict[str, RetrievalPolicyFloors] = {
-    "project": RetrievalPolicyFloors(bm25_max=0.85, vector_min=0.15, graph_min=0.0),
+    "project": RetrievalPolicyFloors(bm25_max=0.85, vector_min=0.15, graph_min=0.05),
     "global": RetrievalPolicyFloors(bm25_max=0.75, vector_min=0.20, graph_min=0.05),
     "session": RetrievalPolicyFloors(bm25_max=0.90, vector_min=0.10, graph_min=0.0),
 }

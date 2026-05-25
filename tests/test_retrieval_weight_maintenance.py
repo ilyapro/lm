@@ -24,7 +24,7 @@ def test_reseat_floors_dry_run_reports_audit_without_writing(tmp_path: Path) -> 
     change = result["changes"][0]
     assert change["scope"] == "project:collapsed"
     assert change["family"] == "project"
-    assert change["floor"] == {"bm25_max": 0.85, "graph_min": 0.0, "vector_min": 0.15}
+    assert change["floor"] == {"bm25_max": 0.85, "graph_min": 0.05, "vector_min": 0.15}
     assert change["before"]["bm25"] == pytest.approx(1.0)
     assert change["before"]["vector"] == pytest.approx(0.0)
     assert change["after"]["bm25"] == pytest.approx(0.85)
