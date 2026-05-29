@@ -6,6 +6,22 @@ browsable resources, and one prompt. Create it in Python with
 `npm run server -- ./living_memory.sqlite3`, or run
 `python -m living_memory.server` after installing the package dependencies.
 
+## Transport and TLS
+
+The same tool, resource, and prompt surface is reachable over every transport.
+`python -m living_memory.server` defaults to stdio; `--transport http` (or
+`--transport sse`) with `--host`/`--port` serves the `/mcp` endpoint plus the
+admin routes over the network. By default those transports use plain `http://`.
+
+Set both `--tls-cert`/`LM_TLS_CERT` (PEM certificate) and
+`--tls-key`/`LM_TLS_KEY` (PEM private key) to serve the same endpoints over
+`https://`; the CLI flags take precedence over the environment variables. The
+pair is all-or-nothing — supply both to enable TLS, or neither to keep the
+unchanged plain-HTTP default, and supplying only one stops startup. Bearer
+authentication via `LM_AUTH_TOKEN` is unchanged and keeps gating the admin
+routes over either scheme. See the [README](../README.md#http-transport-and-tls)
+for a runnable example.
+
 ## Tools
 
 ### `memory_remember`

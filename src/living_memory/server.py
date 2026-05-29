@@ -397,6 +397,29 @@ def _server_instructions(default_scope: str) -> str:
     )
 
 
+def _tls_uvicorn_config(
+    tls_cert: str | None, tls_key: str | None
+) -> dict[str, Any] | None:
+    """Translate an optional cert/key pair into uvicorn TLS kwargs.
+
+    Returns None when neither is set (plain HTTP, unchanged behavior). Raises
+    ValueError when exactly one is set, so a half-configured TLS never silently
+    falls back to serving plaintext on the wire. FastMCP forwards these kwargs
+    via ``run`` to ``run_http_async(uvicorn_config=...)`` to ``uvicorn.Config``.
+    """
+
+    cert = (tls_cert or "").strip()
+    key = (tls_key or "").strip()
+    if not cert and not key:
+        return None
+    if not cert or not key:
+        raise ValueError(
+            "TLS needs both a certificate and a key: set --tls-cert/LM_TLS_CERT "
+            "and --tls-key/LM_TLS_KEY together (or neither for plain HTTP)."
+        )
+    return {"ssl_certfile": cert, "ssl_keyfile": key}
+
+
 def run_server(
     db_path: str | Path | None = None,
     *,
@@ -405,6 +428,8 @@ def run_server(
     transport: str = "stdio",
     host: str = "127.0.0.1",
     port: int = 8000,
+    tls_cert: str | None = None,
+    tls_key: str | None = None,
 ) -> None:
     mcp = create_mcp_server(
         db_path=db_path,
@@ -414,8 +439,12 @@ def run_server(
     )
     if transport == "stdio":
         mcp.run()
-    else:
-        mcp.run(transport=transport, host=host, port=port)
+        return
+    run_kwargs: dict[str, Any] = {"transport": transport, "host": host, "port": port}
+    tls_config = _tls_uvicorn_config(tls_cert, tls_key)
+    if tls_config is not None:
+        run_kwargs["uvicorn_config"] = tls_config
+    mcp.run(**run_kwargs)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -423,6 +452,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     db_path = args.db or args.sqlite_file
     default_scope = args.default_scope or os.environ.get("LM_DEFAULT_SCOPE") or os.environ.get("LM_SCOPE")
+    tls_cert = args.tls_cert or os.environ.get("LM_TLS_CERT")
+    tls_key = args.tls_key or os.environ.get("LM_TLS_KEY")
     if args.embedding:
         os.environ["LIVING_MEMORY_EMBEDDING_BACKEND"] = args.embedding
     try:
@@ -433,8 +464,13 @@ def main(argv: list[str] | None = None) -> int:
             transport=args.transport,
             host=args.host,
             port=args.port,
+            tls_cert=tls_cert,
+            tls_key=tls_key,
         )
     except ModuleNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     return 0
@@ -898,6 +934,19 @@ def _build_parser() -> ArgumentParser:
     )
     parser.add_argument("--host", default="127.0.0.1", help="Host for HTTP or SSE transport.")
     parser.add_argument("--port", type=int, default=8000, help="Port for HTTP or SSE transport.")
+    parser.add_argument(
+        "--tls-cert",
+        dest="tls_cert",
+        help="PEM TLS certificate path. When set together with --tls-key, the "
+             "HTTP/SSE transport serves /mcp and admin routes over HTTPS. "
+             "Also reads LM_TLS_CERT (CLI wins). Omit both for plain HTTP.",
+    )
+    parser.add_argument(
+        "--tls-key",
+        dest="tls_key",
+        help="PEM private key path for --tls-cert. Also reads LM_TLS_KEY "
+             "(CLI wins). Required together with --tls-cert to enable TLS.",
+    )
     parser.add_argument(
         "--embedding",
         dest="embedding",

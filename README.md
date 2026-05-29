@@ -51,6 +51,40 @@ Embedding model downloads are opt-in. Set `LIVING_MEMORY_EMBEDDING_BACKEND=onlin
 only in environments where network-backed sentence-transformers loading is
 allowed.
 
+## HTTP transport and TLS
+
+The server speaks the stdio transport by default. Pass `--transport http`
+(or `--transport sse`) with `--host`/`--port` to serve the `/mcp` endpoint and
+the admin routes (`/health`, `/admin/info`, `/admin/restart`,
+`/admin/decay-sweep`) over the network.
+
+Those transports serve plain `http://` unless TLS is configured. To serve
+`https://` instead, supply a PEM certificate and its matching private key:
+
+```sh
+npm run server -- --transport http --host 0.0.0.0 --port 8000 \
+  --tls-cert ./tls/server.crt --tls-key ./tls/server.key
+```
+
+| CLI flag | Environment variable | Purpose |
+| --- | --- | --- |
+| `--tls-cert PATH` | `LM_TLS_CERT` | PEM certificate file. |
+| `--tls-key PATH` | `LM_TLS_KEY` | PEM private key for that certificate. |
+
+The CLI flag takes precedence when both it and the environment variable are
+set. TLS is opt-in, and the certificate and key must be supplied together:
+provide both to serve HTTPS, or omit both to keep the default plain-HTTP
+behavior unchanged. Supplying only one is a configuration error and the server
+exits without starting. The stdio transport ignores these flags. Clients must
+trust the certificate, so a self-signed certificate (handy for local testing)
+requires the client to be pointed at the same cert or told to skip
+verification.
+
+Bearer authentication composes with TLS rather than being replaced by it. When
+`LM_AUTH_TOKEN` is set, the admin routes still reject missing or invalid tokens
+(HTTP 401) over both plain HTTP and HTTPS — and over HTTPS the token is no
+longer sent in cleartext on the wire.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
