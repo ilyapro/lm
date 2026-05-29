@@ -79,6 +79,11 @@ class MemoryStore:
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = NORMAL")
+        # Wait for the write lock instead of erroring when another process holds
+        # it — the server can run as two processes (HTTP on loopback + HTTPS on
+        # all interfaces) against this one WAL database; without this a
+        # concurrent writer would get SQLITE_BUSY.
+        self._conn.execute("PRAGMA busy_timeout = 5000")
         self._initialize_schema()
         self._seed_retrieval_weights()
 
