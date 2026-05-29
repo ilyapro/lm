@@ -79,6 +79,9 @@ def test_local_model_path_loads_under_offline_huggingface_flags(
     )
     monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
     monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    # Exercise the real model-loading path regardless of the ambient default
+    # backend (scripts/test.sh defaults LIVING_MEMORY_EMBEDDING_BACKEND=hash).
+    monkeypatch.delenv("LIVING_MEMORY_EMBEDDING_BACKEND", raising=False)
 
     model = LocalEmbeddingModel(model_name=str(model_dir))
     vector = model.embed("anything")
@@ -125,6 +128,9 @@ def test_default_model_loads_existing_huggingface_cache_snapshot(
     monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)
     monkeypatch.delenv("HF_HUB_CACHE", raising=False)
     monkeypatch.delenv("TRANSFORMERS_CACHE", raising=False)
+    # Exercise the real model-loading path regardless of the ambient default
+    # backend (scripts/test.sh defaults LIVING_MEMORY_EMBEDDING_BACKEND=hash).
+    monkeypatch.delenv("LIVING_MEMORY_EMBEDDING_BACKEND", raising=False)
 
     model = LocalEmbeddingModel()
     vector = model.embed("cached model text")
