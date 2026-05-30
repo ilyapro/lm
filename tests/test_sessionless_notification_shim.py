@@ -71,6 +71,37 @@ def test_sessionless_request_is_not_swallowed(client: TestClient) -> None:
     assert resp.status_code == 400
 
 
+def test_sessionless_initialize_round_trip_returns_result(client: TestClient) -> None:
+    """A session-less ``initialize`` must stream its full result through the shim.
+
+    ``initialize`` is itself a session-less POST (no Mcp-Session-Id yet) carrying an
+    ``id``, so it travels the shim's body-replay path and produces a *streaming*
+    (SSE) response. A regression where the replay returned a synthetic
+    ``http.disconnect`` after the body aborted that stream mid-flight: the client
+    still saw the session-id header but the JSON-RPC ``result`` never arrived
+    ("initialize: request terminated without response"). Assert the result body —
+    not just the header — comes back.
+    """
+    resp = client.post(
+        "/mcp",
+        headers=MCP_HEADERS,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {"roots": {"listChanged": True}},
+                "clientInfo": {"name": "shim-test", "version": "0"},
+            },
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("mcp-session-id")
+    assert '"result"' in resp.text
+    assert '"protocolVersion"' in resp.text
+
+
 def test_is_jsonrpc_notification_classification() -> None:
     assert _is_jsonrpc_notification(b'{"jsonrpc":"2.0","method":"notifications/x"}')
     assert not _is_jsonrpc_notification(b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
