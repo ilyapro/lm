@@ -40,9 +40,9 @@ DEFAULT_RETRIEVAL_WEIGHTS: dict[str, RetrievalWeightConfig] = {
 }
 
 DEFAULT_RETRIEVAL_POLICY_FLOORS: dict[str, RetrievalPolicyFloors] = {
-    "project": RetrievalPolicyFloors(bm25_max=0.85, vector_min=0.15, graph_min=0.05),
-    "global": RetrievalPolicyFloors(bm25_max=0.75, vector_min=0.20, graph_min=0.05),
-    "session": RetrievalPolicyFloors(bm25_max=0.90, vector_min=0.10, graph_min=0.0),
+    "project": RetrievalPolicyFloors(bm25_max=0.85, vector_min=0.15, graph_min=0.05, bm25_min=0.10),
+    "global": RetrievalPolicyFloors(bm25_max=0.75, vector_min=0.20, graph_min=0.05, bm25_min=0.10),
+    "session": RetrievalPolicyFloors(bm25_max=0.90, vector_min=0.10, graph_min=0.0, bm25_min=0.10),
 }
 
 DEFAULT_PHASE_THRESHOLDS: dict[int, int] = {
@@ -122,6 +122,7 @@ def load_config(path: str | Path | None = None) -> MemoryConfig:
             bm25_max=float(values.get("bm25_max", default_floor.bm25_max)),
             vector_min=float(values.get("vector_min", default_floor.vector_min)),
             graph_min=float(values.get("graph_min", default_floor.graph_min)),
+            bm25_min=float(values.get("bm25_min", default_floor.bm25_min)),
         )
 
     retrieval_skew_thresholds = RetrievalSkewThresholds(

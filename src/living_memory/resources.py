@@ -26,9 +26,9 @@ DEFAULT_RECENT_LIMIT = 20
 DEFAULT_RETRIEVAL_SKEW_PRESSURE_WINDOW_HOURS = 24
 
 _FALLBACK_RETRIEVAL_POLICY_FLOORS: dict[str, dict[str, float]] = {
-    "project": {"bm25_max": 0.85, "vector_min": 0.15, "graph_min": 0.05},
-    "global": {"bm25_max": 0.75, "vector_min": 0.20, "graph_min": 0.05},
-    "session": {"bm25_max": 0.90, "vector_min": 0.10, "graph_min": 0.0},
+    "project": {"bm25_max": 0.85, "vector_min": 0.15, "graph_min": 0.05, "bm25_min": 0.10},
+    "global": {"bm25_max": 0.75, "vector_min": 0.20, "graph_min": 0.05, "bm25_min": 0.10},
+    "session": {"bm25_max": 0.90, "vector_min": 0.10, "graph_min": 0.0, "bm25_min": 0.10},
 }
 
 
@@ -657,6 +657,7 @@ def _policy_floor_to_dict(floor: Any) -> dict[str, float]:
         "bm25_max": float(_policy_floor_value(floor, "bm25_max")),
         "vector_min": float(_policy_floor_value(floor, "vector_min")),
         "graph_min": float(_policy_floor_value(floor, "graph_min")),
+        "bm25_min": float(_policy_floor_value(floor, "bm25_min")),
     }
 
 
@@ -767,6 +768,11 @@ def _retrieval_floor_violation(
             "current": raw["bm25"],
             "ceiling": floor["bm25_max"],
         }
+    elif raw["bm25"] < floor.get("bm25_min", 0.0):
+        violation["bm25"] = {
+            "current": raw["bm25"],
+            "floor": floor["bm25_min"],
+        }
     if raw["vector"] < floor["vector_min"]:
         violation["vector"] = {
             "current": raw["vector"],
@@ -785,8 +791,12 @@ def _effective_after_floor(
     floor: dict[str, float],
 ) -> dict[str, float]:
     weights = dict(raw)
-    minimum = {"bm25": 0.0, "vector": floor["vector_min"], "graph": floor["graph_min"]}
-    for target in ("vector", "graph"):
+    minimum = {
+        "bm25": floor.get("bm25_min", 0.0),
+        "vector": floor["vector_min"],
+        "graph": floor["graph_min"],
+    }
+    for target in ("vector", "graph", "bm25"):
         deficit = max(0.0, minimum[target] - weights[target])
         for donor in ("bm25", "graph", "vector"):
             if donor == target or deficit <= 1e-12:

@@ -76,17 +76,20 @@ def test_weight_update_lifts_floor_from_bm25_before_other_channels(
         )
         store.set_retrieval_weights(
             scope,
-            bm25=0.10,
+            bm25=0.20,
             vector=0.0,
-            graph=0.90,
+            graph=0.80,
             learning_rate=0.05,
         )
 
         updated = store.update_retrieval_weights(scope).normalized()
 
-        assert updated.bm25 == pytest.approx(0.0)
+        # bm25 is still the preferred donor for the vector floor, but it is only
+        # drained down to its own floor (bm25_min=0.10) — graph supplies the
+        # remaining deficit instead of bm25 collapsing to 0.
+        assert updated.bm25 == pytest.approx(0.10)
         assert updated.vector == pytest.approx(0.15)
-        assert updated.graph == pytest.approx(0.85)
+        assert updated.graph == pytest.approx(0.75)
 
 
 def test_weight_update_enforces_global_graph_floor_when_graph_evidence_exists(

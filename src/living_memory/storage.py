@@ -1035,7 +1035,12 @@ class MemoryStore:
 
         vector_min = floors.vector_min if self._has_vector_evidence(scope) else 0.0
         graph_min = floors.graph_min if self._has_graph_evidence(scope) else 0.0
-        if vector_min <= 0.0 and graph_min <= 0.0:
+        # bm25 is a lexical channel that is always available, so its floor is
+        # enforced unconditionally (no evidence gate). Without it, winner-take-all
+        # feedback (feedback._method_signals) drives bm25 to 0 and exact-keyword /
+        # identifier recall stops contributing to ranking.
+        bm25_min = floors.bm25_min
+        if vector_min <= 0.0 and graph_min <= 0.0 and bm25_min <= 0.0:
             return normalized
 
         values = {
@@ -1043,9 +1048,9 @@ class MemoryStore:
             "vector": normalized.vector,
             "graph": normalized.graph,
         }
-        minimum = {"bm25": 0.0, "vector": vector_min, "graph": graph_min}
+        minimum = {"bm25": bm25_min, "vector": vector_min, "graph": graph_min}
 
-        for target in ("vector", "graph"):
+        for target in ("vector", "graph", "bm25"):
             self._lift_retrieval_weight(values, minimum, target)
 
         bm25_surplus = max(0.0, values["bm25"] - floors.bm25_max)

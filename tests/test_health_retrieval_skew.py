@@ -78,11 +78,13 @@ def test_retrieval_skew_reports_thresholds_and_floors_in_effect(tmp_path: Path) 
         "bm25_max": pytest.approx(0.85),
         "vector_min": pytest.approx(0.15),
         "graph_min": pytest.approx(0.05),
+        "bm25_min": pytest.approx(0.10),
     }
     assert skew["floors_in_effect"]["global"] == {
         "bm25_max": pytest.approx(0.75),
         "vector_min": pytest.approx(0.20),
         "graph_min": pytest.approx(0.05),
+        "bm25_min": pytest.approx(0.10),
     }
 
 

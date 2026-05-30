@@ -174,17 +174,21 @@ class RetrievalPolicyFloors:
     bm25_max: float
     vector_min: float
     graph_min: float
+    bm25_min: float = 0.0
 
     def __post_init__(self) -> None:
         for name, value in (
             ("bm25_max", self.bm25_max),
             ("vector_min", self.vector_min),
             ("graph_min", self.graph_min),
+            ("bm25_min", self.bm25_min),
         ):
             if not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be between 0.0 and 1.0")
-        if self.vector_min + self.graph_min > 1.0:
-            raise ValueError("vector_min + graph_min must be at most 1.0")
+        if self.bm25_min > self.bm25_max:
+            raise ValueError("bm25_min must not exceed bm25_max")
+        if self.vector_min + self.graph_min + self.bm25_min > 1.0:
+            raise ValueError("vector_min + graph_min + bm25_min must be at most 1.0")
 
 
 @dataclass(frozen=True, slots=True)
