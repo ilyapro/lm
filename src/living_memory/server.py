@@ -9,6 +9,7 @@ from pathlib import Path
 from threading import RLock, Timer
 from typing import Any
 from uuid import uuid4
+import json
 import os
 import secrets
 import sys
@@ -420,6 +421,90 @@ def _tls_uvicorn_config(
     return {"ssl_certfile": cert, "ssl_keyfile": key}
 
 
+def _is_jsonrpc_notification(body: bytes) -> bool:
+    """True when the body is a JSON-RPC notification (has ``method``, no ``id``).
+
+    A batch counts only when every member is a notification. A request (carries
+    ``id``) or an unparseable body returns False, so requests keep their normal
+    handling — and their normal errors.
+    """
+
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        return False
+    if isinstance(data, list):
+        return bool(data) and all(
+            isinstance(m, dict) and "method" in m and "id" not in m for m in data
+        )
+    return isinstance(data, dict) and "method" in data and "id" not in data
+
+
+class _SessionlessNotificationShim:
+    """Answer 202 to a *session-less* JSON-RPC notification POST on ``/mcp``.
+
+    Some MCP clients (notably Antigravity/``agy``) emit
+    ``notifications/roots/list_changed`` before they have echoed back the
+    ``Mcp-Session-Id`` that ``initialize`` returned. On a sub-millisecond loopback
+    the id is already threaded; over a higher-latency path the notification leaves
+    first, and the streamable-http session manager rejects a session-less message
+    with 400 — which such clients treat as fatal and tear the whole connection
+    down. The notification is fire-and-forget and Living Memory ignores client
+    roots, so swallowing it with a 202 is lossless and leaves stateful sessions —
+    and every request/response message — untouched. Requests (which carry an
+    ``id``) are never intercepted, so genuine missing-session errors still surface.
+
+    Implemented as pure ASGI (not ``BaseHTTPMiddleware``) so the SSE response
+    stream is never buffered: only POST request bodies on the MCP path are
+    inspected, and the response ``send`` channel is always passed straight through.
+    """
+
+    def __init__(self, app: Any, mount_path: str = "/mcp") -> None:
+        self.app = app
+        self._mount = mount_path.rstrip("/") or "/"
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http" or scope.get("method") != "POST":
+            await self.app(scope, receive, send)
+            return
+        if (scope.get("path") or "").rstrip("/") != self._mount:
+            await self.app(scope, receive, send)
+            return
+        headers = {k.decode("latin-1").lower(): v for k, v in scope.get("headers", [])}
+        if headers.get("mcp-session-id"):  # already in a session -> leave alone
+            await self.app(scope, receive, send)
+            return
+        # Buffer the request body so we can both inspect and (if needed) replay it.
+        body = b""
+        disconnected = False
+        while True:
+            message = await receive()
+            if message["type"] == "http.request":
+                body += message.get("body", b"")
+                if not message.get("more_body", False):
+                    break
+            else:  # http.disconnect or anything unexpected
+                disconnected = True
+                break
+        if not disconnected and _is_jsonrpc_notification(body):
+            from starlette.responses import Response
+
+            await Response(status_code=202)(scope, receive, send)
+            return
+        replayed = False
+
+        async def replay() -> dict:
+            nonlocal replayed
+            if disconnected:
+                return {"type": "http.disconnect"}
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        await self.app(scope, replay, send)
+
+
 def run_server(
     db_path: str | Path | None = None,
     *,
@@ -444,6 +529,19 @@ def run_server(
     tls_config = _tls_uvicorn_config(tls_cert, tls_key)
     if tls_config is not None:
         run_kwargs["uvicorn_config"] = tls_config
+    # Attach the session-less notification shim as ASGI middleware so a client that
+    # fires notifications/roots/list_changed before it has threaded the session id
+    # (e.g. agy over a higher-latency path) gets 202 instead of a fatal 400. Going
+    # through FastMCP's run() (rather than serving uvicorn by hand) keeps its proper
+    # signal/lifespan shutdown handling.
+    try:
+        from starlette.middleware import Middleware
+
+        run_kwargs["middleware"] = [
+            Middleware(_SessionlessNotificationShim, mount_path="/mcp")
+        ]
+    except ImportError:
+        pass
     mcp.run(**run_kwargs)
 
 
