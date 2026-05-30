@@ -495,12 +495,16 @@ class _SessionlessNotificationShim:
 
         async def replay() -> dict:
             nonlocal replayed
-            if disconnected:
-                return {"type": "http.disconnect"}
             if not replayed:
                 replayed = True
                 return {"type": "http.request", "body": body, "more_body": False}
-            return {"type": "http.disconnect"}
+            # Body already delivered: delegate to the real receive so a streaming
+            # (SSE) response observes genuine client disconnects. Returning a
+            # synthetic http.disconnect here aborts the reply mid-stream, which the
+            # client sees as ``initialize: request terminated without response``.
+            if disconnected:
+                return {"type": "http.disconnect"}
+            return await receive()
 
         await self.app(scope, replay, send)
 
