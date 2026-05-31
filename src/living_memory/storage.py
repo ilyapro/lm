@@ -36,6 +36,15 @@ _RECALL_TEXT_SIMILARITY_THRESHOLD = 0.55
 _DUPLICATE_CONTENT_DECAY_REASON = "duplicate_content"
 _DUPLICATE_CONTENT_KIND = "duplicate_content"
 _WEIGHT_EPSILON = 1e-12
+_CONTEXT_LOOKUP_FIELDS = frozenset(
+    {
+        "task_pattern",
+        "procedure_id",
+        "lesson_kind",
+        "scope",
+        "task",
+    }
+)
 
 
 def _content_fingerprint(content: str) -> str:
@@ -378,6 +387,43 @@ class MemoryStore:
         params.extend([int(limit), int(offset)])
         rows = self._conn.execute(
             f"SELECT * FROM nodes {where} ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?",
+            params,
+        ).fetchall()
+        return [_node_from_row(row) for row in rows]
+
+    def list_nodes_by_context(
+        self,
+        *,
+        scope: str,
+        context_filters: dict[str, str],
+        level: NodeLevel | None = "trace",
+        include_decayed: bool = False,
+        limit: int = 1000,
+    ) -> list[Node]:
+        clauses: list[str] = ["scope = ?"]
+        params: list[Any] = [normalize_scope(scope)]
+        if level is not None:
+            self._validate_level(level)
+            clauses.append("level = ?")
+            params.append(level)
+        if not include_decayed:
+            clauses.append("decayed = 0")
+
+        for field, value in context_filters.items():
+            if field not in _CONTEXT_LOOKUP_FIELDS:
+                raise ValueError(f"unsupported context lookup field: {field}")
+            clauses.append(f"JSON_EXTRACT(context, '$.{field}') = ?")
+            params.append(str(value))
+
+        params.append(int(limit))
+        rows = self._conn.execute(
+            f"""
+            SELECT *
+            FROM nodes
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ?
+            """,
             params,
         ).fetchall()
         return [_node_from_row(row) for row in rows]

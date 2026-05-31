@@ -40,6 +40,7 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
         "memory_teach",
         "memory_connect",
         "memory_recall",
+        "memory_lookup",
         "memory_consolidate",
         "memory_forget",
         "memory_status",
@@ -61,7 +62,11 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
             "memory_remember",
             {
                 "content": "real FastMCP runtime smoke cause",
-                "context": {"scope": "project:runtime", "agent": "test-a"},
+                "context": {
+                    "scope": "project:runtime",
+                    "agent": "test-a",
+                    "task_pattern": "runtime-smoke",
+                },
             },
         )
     )
@@ -97,6 +102,18 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
         )
     )
     assert recalled["count"] >= 1
+
+    looked_up = _structured(
+        await mcp.call_tool(
+            "memory_lookup",
+            {
+                "scope": "project:runtime",
+                "task_pattern": "runtime-smoke",
+            },
+        )
+    )
+    assert looked_up["count"] == 1
+    assert looked_up["results"][0]["id"] == first_id
 
     taught = _structured(
         await mcp.call_tool(

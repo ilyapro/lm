@@ -51,6 +51,7 @@ def test_server_registers_exact_tools_resources_and_prompt(tmp_path: Path) -> No
         "memory_teach",
         "memory_connect",
         "memory_recall",
+        "memory_lookup",
         "memory_consolidate",
         "memory_forget",
         "memory_status",
@@ -70,7 +71,11 @@ def test_mcp_tools_delegate_to_memory_services(tmp_path: Path) -> None:
 
     first = mcp.tools["memory_remember"](
         "deploy incident caused by missing migration",
-        {"scope": "project:alpha", "agent": "agent-a"},
+        {
+            "scope": "project:alpha",
+            "agent": "agent-a",
+            "task_pattern": "deploy-migration",
+        },
     )
     second = mcp.tools["memory_remember"](
         "missing migration requires rollback checklist",
@@ -90,6 +95,12 @@ def test_mcp_tools_delegate_to_memory_services(tmp_path: Path) -> None:
     )
     assert recalled["count"] >= 1
     assert first_id in {result["node"]["id"] for result in recalled["results"]}
+
+    looked_up = mcp.tools["memory_lookup"](
+        scope="project:alpha",
+        task_pattern="deploy-migration",
+    )
+    assert [result["id"] for result in looked_up["results"]] == [first_id]
 
     taught = mcp.tools["memory_teach"](
         first_id,

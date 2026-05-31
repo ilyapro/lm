@@ -35,6 +35,7 @@ from living_memory.resources import (
     recent_interactions,
 )
 from living_memory.retrieval import MemoryRecallService, RecallResult
+from living_memory.scope import normalize_scope
 from living_memory.feedback import apply_pending_recall_feedback
 from living_memory.storage import MemoryStore
 from living_memory.temporal import parse_timestamp
@@ -688,6 +689,47 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 "count": len(results),
                 "results": [_recall_result_to_dict(result) for result in results],
                 "auto_decay": auto_decay,
+            }
+
+    @mcp.tool
+    def memory_lookup(
+        scope: str,
+        task_pattern: str | None = None,
+        procedure_id: str | None = None,
+        lesson_kind: str | None = None,
+        level: str | None = "trace",
+    ) -> dict[str, Any]:
+        """Return memory nodes by exact context-field match without ranked recall."""
+
+        with runtime_lock:
+            normalized_scope = normalize_scope(scope)
+            filters = {
+                key: value
+                for key, value in {
+                    "task_pattern": task_pattern,
+                    "procedure_id": procedure_id,
+                    "lesson_kind": lesson_kind,
+                }.items()
+                if value is not None
+            }
+            if not filters:
+                return {
+                    "error": "at least one exact context filter is required",
+                    "scope": normalized_scope,
+                    "filters": {},
+                    "count": 0,
+                    "results": [],
+                }
+            nodes = store.list_nodes_by_context(
+                scope=normalized_scope,
+                context_filters=filters,
+                level=level,  # type: ignore[arg-type]
+            )
+            return {
+                "scope": normalized_scope,
+                "filters": dict(filters),
+                "count": len(nodes),
+                "results": [node_to_dict(node) for node in nodes],
             }
 
     @mcp.tool
