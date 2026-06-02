@@ -304,6 +304,10 @@ class LocalEmbeddingModel:
             return _normalize(vector)
         return [0.0] * self.dimensions
 
+    def warmup(self) -> None:
+        """Pre-load the underlying model to avoid latency on the first query."""
+        self._sentence_transformer()
+
     def _sentence_transformer(self) -> Any | None:
         if self._backend in _HASH_BACKENDS:
             return None

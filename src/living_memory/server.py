@@ -38,6 +38,7 @@ from living_memory.resources import (
 )
 from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.scope import normalize_scope
+from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.feedback import apply_pending_recall_feedback
 from living_memory.storage import MemoryStore
 from living_memory.temporal import parse_timestamp
@@ -86,6 +87,8 @@ def create_mcp_server(
             default_scope=default_scope,
         )
     )
+    # Pre-warm the embedding model so the first query does not pay the cold-start cost.
+    LocalEmbeddingModel(model_name=store.config.embedding_model).warmup()
     mcp_cls = mcp_factory or _load_fastmcp()
     factory_kwargs: dict[str, Any] = {
         "instructions": _server_instructions(store.config.default_scope),

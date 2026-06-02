@@ -1354,6 +1354,15 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_connections_target_type
                     ON connections(target_id, type);
 
+                -- Type-leading index for the per-recall supersedes scan
+                -- (retrieval._supersedes_sets: SELECT source_id, target_id WHERE
+                -- type = 'supersedes'). The source/target-leading indexes above
+                -- cannot serve a type-only filter, so without this the query is a
+                -- full table scan. Carrying source_id/target_id makes it a
+                -- covering, index-only scan with no per-row table lookups.
+                CREATE INDEX IF NOT EXISTS idx_connections_type
+                    ON connections(type, source_id, target_id);
+
                 CREATE INDEX IF NOT EXISTS idx_recall_events_scope_pending_created
                     ON recall_events(scope, feedback_applied, created_at DESC);
 

@@ -30,6 +30,8 @@ SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5
 SCHEMA_TRIGGER_BASE_SCORE = 0.95
 SCHEMA_TRIGGER_BOOST = 1.8
 VECTOR_MATCH_THRESHOLD = 0.08
+GRAPH_SEED_LIMIT = 50
+MAX_NEIGHBORS_PER_NODE = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,7 +411,16 @@ class MemoryRecallService:
     ) -> None:
         queue: deque[tuple[str, float, int, tuple[str, ...]]] = deque()
         best_seen: dict[str, float] = {}
-        for candidate in list(candidates.values()):
+
+        # Seed BFS only from the top-K pre-graph candidates to avoid
+        # fan-out from low-quality matches that would dilute the graph
+        # signal and waste cycles on super-hub expansions.
+        seed_candidates = sorted(
+            candidates.values(),
+            key=lambda c: max(c.bm25_score, c.vector_score, 0.0),
+            reverse=True,
+        )[:GRAPH_SEED_LIMIT]
+        for candidate in seed_candidates:
             seed = max(candidate.bm25_score, candidate.vector_score, 0.05)
             queue.append((candidate.node.id, seed, 0, (candidate.node.id,)))
             best_seen[candidate.node.id] = seed
@@ -432,11 +443,16 @@ class MemoryRecallService:
             node_ids_at_depth = list({item[0] for item in level_items})
             connections_by_node = self.store.list_connections_for_nodes(node_ids_at_depth)
 
-            # Pre-calculate which neighbor nodes we'll need to fetch
+            # Pre-calculate which neighbor nodes we'll need to fetch.
+            # Apply the same per-node neighbor bound as the processing pass
+            # so super-hubs don't dominate even the pre-fetch phase.
             needed_neighbor_ids = set()
             for item in level_items:
                 node_id, activation, depth, path = item
-                for connection in connections_by_node.get(node_id, []):
+                node_connections = connections_by_node.get(node_id, [])
+                if len(node_connections) > MAX_NEIGHBORS_PER_NODE:
+                    node_connections = node_connections[:MAX_NEIGHBORS_PER_NODE]
+                for connection in node_connections:
                     traversal = _traversal(
                         connection,
                         node_id,
@@ -462,10 +478,14 @@ class MemoryRecallService:
                 for nid in needed_neighbor_ids:
                     node_cache[nid] = fetched_nodes.get(nid)
 
-            # Process the level
+            # Process the level. Bound per-node neighbor fan-out to avoid
+            # super-hubs (nodes with thousands of edges) dominating the BFS.
             for item in level_items:
                 node_id, activation, depth, path = item
-                for connection in connections_by_node.get(node_id, []):
+                node_connections = connections_by_node.get(node_id, [])
+                if len(node_connections) > MAX_NEIGHBORS_PER_NODE:
+                    node_connections = node_connections[:MAX_NEIGHBORS_PER_NODE]
+                for connection in node_connections:
                     traversal = _traversal(
                         connection,
                         node_id,
