@@ -257,6 +257,8 @@ _HASH_BACKENDS = {"hash", "fallback", "local-hash"}
 _ONLINE_BACKENDS = {"online", "remote", "download", "network"}
 _OFFLINE_ENV_VARS = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
 
+_MODEL_CACHE: dict[tuple[str, str], Any] = {}
+
 
 class LocalEmbeddingModel:
     """Lazy local sentence-transformers encoder with a deterministic fallback.
@@ -305,6 +307,16 @@ class LocalEmbeddingModel:
     def _sentence_transformer(self) -> Any | None:
         if self._backend in _HASH_BACKENDS:
             return None
+            
+        cache_key = (self.model_name, self._backend)
+        if cache_key in _MODEL_CACHE:
+            self._model = _MODEL_CACHE[cache_key]
+            self._load_attempted = True
+            dimension = self._model.get_sentence_embedding_dimension()
+            if dimension:
+                self.dimensions = int(dimension)
+            return self._model
+
         if self._load_attempted:
             return self._model
 
@@ -339,6 +351,7 @@ class LocalEmbeddingModel:
             dimension = self._model.get_sentence_embedding_dimension()
             if dimension:
                 self.dimensions = int(dimension)
+            _MODEL_CACHE[cache_key] = self._model
         except Exception as exc:  # pragma: no cover - depends on local model cache/network
             self._warn_fallback(f"could not load embedding model {model_source!r}", exc)
             self._model = None

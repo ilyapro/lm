@@ -362,6 +362,22 @@ class MemoryStore:
         row = self._conn.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
         return _node_from_row(row) if row else None
 
+    def get_nodes(self, node_ids: Iterable[str]) -> dict[str, Node]:
+        ids = list(set(node_ids))
+        if not ids:
+            return {}
+        nodes: dict[str, Node] = {}
+        for i in range(0, len(ids), 999):
+            chunk = ids[i : i + 999]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                f"SELECT * FROM nodes WHERE id IN ({placeholders})", chunk
+            ).fetchall()
+            for row in rows:
+                node = _node_from_row(row)
+                nodes[node.id] = node
+        return nodes
+
     def list_nodes(
         self,
         *,
@@ -682,6 +698,33 @@ class MemoryStore:
             params,
         ).fetchall()
         return [_connection_from_row(row) for row in rows]
+
+    def list_connections_for_nodes(self, node_ids: Iterable[str]) -> dict[str, list[Connection]]:
+        ids = list(set(node_ids))
+        if not ids:
+            return {}
+        
+        connections = []
+        for i in range(0, len(ids), 400):
+            chunk = ids[i : i + 400]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                f"SELECT * FROM connections WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders}) ORDER BY weight DESC, created_at DESC",
+                chunk + chunk
+            ).fetchall()
+            connections.extend([_connection_from_row(row) for row in rows])
+            
+        conns_by_node: dict[str, list[Connection]] = {node_id: [] for node_id in ids}
+        seen = set()
+        for conn in connections:
+            if conn.id in seen:
+                continue
+            seen.add(conn.id)
+            if conn.source_id in conns_by_node:
+                conns_by_node[conn.source_id].append(conn)
+            if conn.target_id in conns_by_node and conn.target_id != conn.source_id:
+                conns_by_node[conn.target_id].append(conn)
+        return conns_by_node
 
     def record_access(self, node_id: str) -> Node:
         if self.get_node(node_id) is None:

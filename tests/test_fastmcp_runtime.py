@@ -50,6 +50,7 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
         "memory://global/concepts",
         "memory://stats",
         "memory://recent",
+        "memory://latency",
     }
     assert templates == {"memory://project/{name}/concepts"}
     assert prompts == {"memory://prompt/retrieval_context"}

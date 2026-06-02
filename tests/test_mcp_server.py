@@ -62,6 +62,7 @@ def test_server_registers_exact_tools_resources_and_prompt(tmp_path: Path) -> No
         "memory://project/{name}/concepts",
         "memory://stats",
         "memory://recent",
+        "memory://latency",
     }
     assert set(mcp.prompts) == {"memory://prompt/retrieval_context"}
 

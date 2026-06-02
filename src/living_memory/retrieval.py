@@ -420,43 +420,86 @@ class MemoryRecallService:
         node_cache: dict[str, Node | None] = {}
 
         while queue:
-            node_id, activation, depth, path = queue.popleft()
-            if depth >= max_depth:
-                continue
-            for connection in self.store.list_connections(node_id=node_id):
-                traversal = _traversal(
-                    connection,
-                    node_id,
-                    causal_mode=causal_mode,
-                    decision_mode=decision_mode,
-                )
-                if traversal is None:
-                    continue
-                neighbor_id, relation_score = traversal
-                if neighbor_id in path:
-                    continue
+            current_depth = queue[0][2]
+            if current_depth >= max_depth:
+                break
+                
+            level_items = []
+            while queue and queue[0][2] == current_depth:
+                level_items.append(queue.popleft())
 
-                next_score = activation * relation_score * (0.72 ** depth)
-                if next_score <= best_seen.get(neighbor_id, 0.0):
-                    continue
+            # Batch fetch connections for this level
+            node_ids_at_depth = list({item[0] for item in level_items})
+            connections_by_node = self.store.list_connections_for_nodes(node_ids_at_depth)
 
-                if neighbor_id in node_cache:
-                    neighbor = node_cache[neighbor_id]
-                else:
-                    existing_candidate = candidates.get(neighbor_id)
-                    if existing_candidate is not None:
-                        neighbor = existing_candidate.node
+            # Pre-calculate which neighbor nodes we'll need to fetch
+            needed_neighbor_ids = set()
+            for item in level_items:
+                node_id, activation, depth, path = item
+                for connection in connections_by_node.get(node_id, []):
+                    traversal = _traversal(
+                        connection,
+                        node_id,
+                        causal_mode=causal_mode,
+                        decision_mode=decision_mode,
+                    )
+                    if traversal is None:
+                        continue
+                    neighbor_id, relation_score = traversal
+                    if neighbor_id in path:
+                        continue
+
+                    next_score = activation * relation_score * (0.72 ** depth)
+                    if next_score <= best_seen.get(neighbor_id, 0.0):
+                        continue
+
+                    if neighbor_id not in node_cache and neighbor_id not in candidates:
+                        needed_neighbor_ids.add(neighbor_id)
+            
+            # Batch fetch missing neighbor nodes
+            if needed_neighbor_ids:
+                fetched_nodes = self.store.get_nodes(needed_neighbor_ids)
+                for nid in needed_neighbor_ids:
+                    node_cache[nid] = fetched_nodes.get(nid)
+
+            # Process the level
+            for item in level_items:
+                node_id, activation, depth, path = item
+                for connection in connections_by_node.get(node_id, []):
+                    traversal = _traversal(
+                        connection,
+                        node_id,
+                        causal_mode=causal_mode,
+                        decision_mode=decision_mode,
+                    )
+                    if traversal is None:
+                        continue
+                    neighbor_id, relation_score = traversal
+                    if neighbor_id in path:
+                        continue
+
+                    next_score = activation * relation_score * (0.72 ** depth)
+                    if next_score <= best_seen.get(neighbor_id, 0.0):
+                        continue
+
+                    if neighbor_id in node_cache:
+                        neighbor = node_cache[neighbor_id]
                     else:
-                        neighbor = self.store.get_node(neighbor_id)
-                    node_cache[neighbor_id] = neighbor
-                if neighbor is None or neighbor.decayed or not plan.allows(neighbor.scope):
-                    continue
+                        existing_candidate = candidates.get(neighbor_id)
+                        if existing_candidate is not None:
+                            neighbor = existing_candidate.node
+                        else:
+                            neighbor = self.store.get_node(neighbor_id)
+                            node_cache[neighbor_id] = neighbor
+                    
+                    if neighbor is None or neighbor.decayed or not plan.allows(neighbor.scope):
+                        continue
 
-                best_seen[neighbor_id] = next_score
-                candidate = candidates.setdefault(neighbor_id, _Candidate(node=neighbor))
-                candidate.graph_score = max(candidate.graph_score, min(1.5, next_score))
-                candidate.path = path + (neighbor_id,)
-                queue.append((neighbor_id, next_score, depth + 1, path + (neighbor_id,)))
+                    best_seen[neighbor_id] = next_score
+                    candidate = candidates.setdefault(neighbor_id, _Candidate(node=neighbor))
+                    candidate.graph_score = max(candidate.graph_score, min(1.5, next_score))
+                    candidate.path = path + (neighbor_id,)
+                    queue.append((neighbor_id, next_score, depth + 1, path + (neighbor_id,)))
 
     def _ensure_embedding(self, node: Node) -> list[float]:
         if node.embedding is not None:
