@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
+from collections import deque
 from dataclasses import replace
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 from threading import RLock, Timer
 from typing import Any
@@ -43,6 +45,25 @@ from living_memory.temporal import parse_timestamp
 _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
 _RESTART_PENDING = False
+
+_TOOL_METRICS: dict[str, dict[str, Any]] = {}
+
+def _track_latency(tool_name: str) -> Any:
+    if tool_name not in _TOOL_METRICS:
+        _TOOL_METRICS[tool_name] = {"count": 0, "latencies": deque(maxlen=1000)}
+
+    def decorator(func: Any) -> Any:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            started = _time.perf_counter()
+            try:
+                return func(*args, **kwargs)
+            finally:
+                elapsed_ms = int((_time.perf_counter() - started) * 1000)
+                _TOOL_METRICS[tool_name]["count"] += 1
+                _TOOL_METRICS[tool_name]["latencies"].append(elapsed_ms)
+        return wrapper
+    return decorator
 
 
 def create_mcp_server(
@@ -142,11 +163,26 @@ def _register_admin_routes(
                 },
                 status_code=503,
             )
+        metrics = {}
+        for tool_name, data in _TOOL_METRICS.items():
+            count = data["count"]
+            if count == 0:
+                continue
+            latencies = sorted(data["latencies"])
+            n = len(latencies)
+            metrics[tool_name] = {
+                "count": count,
+                "p50_ms": latencies[int(n * 0.50)],
+                "p95_ms": latencies[int(n * 0.95)],
+                "p99_ms": latencies[int(n * 0.99)],
+            }
+
         return JSONResponse(
             {
                 "ok": True,
                 "service": "living-memory",
                 "boot_id": _BOOT_ID,
+                "metrics": metrics,
             },
             status_code=200,
         )
@@ -584,6 +620,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
     consolidation_service = ConsolidationService(store)
 
     @mcp.tool
+    @_track_latency("memory_remember")
     def memory_remember(
         content: str,
         context: dict[str, Any] | None = None,
@@ -626,6 +663,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             return response
 
     @mcp.tool
+    @_track_latency("memory_teach")
     def memory_teach(
         trace_id: str,
         correction: str | dict[str, Any],
@@ -644,6 +682,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             return _teach_result_to_dict(taught)
 
     @mcp.tool
+    @_track_latency("memory_connect")
     def memory_connect(
         id_a: str,
         id_b: str,
@@ -664,6 +703,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             return {"connection": connection_to_dict(connection)}
 
     @mcp.tool
+    @_track_latency("memory_recall")
     def memory_recall(
         query: str,
         scope: str | None = None,
@@ -692,6 +732,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             }
 
     @mcp.tool
+    @_track_latency("memory_lookup")
     def memory_lookup(
         scope: str,
         task_pattern: str | None = None,
@@ -733,6 +774,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             }
 
     @mcp.tool
+    @_track_latency("memory_consolidate")
     def memory_consolidate(scope: str | None = None, force: bool = False) -> dict[str, Any]:
         """Run one consolidation and decay maintenance pass."""
 
@@ -744,6 +786,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             return payload
 
     @mcp.tool
+    @_track_latency("memory_forget")
     def memory_forget(id: str, reason: str | None = None) -> dict[str, Any]:
         """Soft-delete a memory node while preserving the stored record."""
 
@@ -752,6 +795,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             return {"node": node_to_dict(node)}
 
     @mcp.tool
+    @_track_latency("memory_status")
     def memory_status(scope: str | None = None) -> dict[str, Any]:
         """Describe current memory phase, coverage, confidence, and policy."""
 
@@ -759,6 +803,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             return status_view(store, scope=scope)
 
     @mcp.tool
+    @_track_latency("memory_health")
     def memory_health(
         scope: str | None = None,
         window_hours: int = 168,

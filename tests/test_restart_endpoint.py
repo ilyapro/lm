@@ -139,6 +139,24 @@ def test_health_endpoint_is_unauthenticated(server: dict[str, Any]) -> None:
     assert body["ok"] is True
     assert body["service"] == "living-memory"
     assert isinstance(body.get("boot_id"), str) and body["boot_id"]
+    assert isinstance(body.get("metrics"), dict)
+
+
+def test_health_endpoint_reports_mcp_tool_latency_metrics(
+    server: dict[str, Any],
+) -> None:
+    asyncio.run(_remember_via_mcp(server["port"], "health-metrics-marker"))
+    asyncio.run(_recall_via_mcp(server["port"], "health-metrics-marker"))
+
+    response = _get(server["port"], "/health", token=None)
+    assert response.status_code == 200
+    body = response.json()
+    for tool_name in ("memory_remember", "memory_recall"):
+        metric = body["metrics"][tool_name]
+        assert metric["count"] >= 1
+        for key in ("p50_ms", "p95_ms", "p99_ms"):
+            assert isinstance(metric[key], int)
+            assert metric[key] >= 0
 
 
 def test_admin_info_requires_token_and_reports_runtime(server: dict[str, Any]) -> None:

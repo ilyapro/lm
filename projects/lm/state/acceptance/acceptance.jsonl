@@ -1,0 +1,1 @@
+{"project":"lm","goal_id":"call-metrics","template_name":"tree","template_version":1,"outcome":"pass","check_results":[{"check_name":"technical_checks_passed","passed":true},{"check_name":"tree_verification_passed","passed":true}],"evidence_brief":"tree goal completed","recorded_at":"2026-06-01T20:22:19.203Z"}
