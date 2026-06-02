@@ -163,26 +163,11 @@ def _register_admin_routes(
                 },
                 status_code=503,
             )
-        metrics = {}
-        for tool_name, data in _TOOL_METRICS.items():
-            count = data["count"]
-            if count == 0:
-                continue
-            latencies = sorted(data["latencies"])
-            n = len(latencies)
-            metrics[tool_name] = {
-                "count": count,
-                "p50_ms": latencies[int(n * 0.50)],
-                "p95_ms": latencies[int(n * 0.95)],
-                "p99_ms": latencies[int(n * 0.99)],
-            }
-
         return JSONResponse(
             {
                 "ok": True,
                 "service": "living-memory",
                 "boot_id": _BOOT_ID,
-                "metrics": metrics,
             },
             status_code=200,
         )
@@ -840,6 +825,23 @@ def _register_resources(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None
     def resource_recent() -> dict[str, Any]:
         with runtime_lock:
             return recent_interactions(store)
+
+    @mcp.resource("memory://latency")
+    def resource_latency() -> dict[str, Any]:
+        metrics = {}
+        for tool_name, data in _TOOL_METRICS.items():
+            count = data["count"]
+            if count == 0:
+                continue
+            latencies = sorted(data["latencies"])
+            n = len(latencies)
+            metrics[tool_name] = {
+                "count": count,
+                "p50_ms": latencies[int(n * 0.50)],
+                "p95_ms": latencies[int(n * 0.95)],
+                "p99_ms": latencies[int(n * 0.99)],
+            }
+        return {"uri": "memory://latency", "metrics": metrics}
 
 
 def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:

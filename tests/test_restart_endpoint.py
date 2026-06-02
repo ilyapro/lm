@@ -139,20 +139,18 @@ def test_health_endpoint_is_unauthenticated(server: dict[str, Any]) -> None:
     assert body["ok"] is True
     assert body["service"] == "living-memory"
     assert isinstance(body.get("boot_id"), str) and body["boot_id"]
-    assert isinstance(body.get("metrics"), dict)
+    assert "metrics" not in body
 
 
-def test_health_endpoint_reports_mcp_tool_latency_metrics(
+def test_latency_resource_reports_mcp_tool_latency_metrics(
     server: dict[str, Any],
 ) -> None:
     asyncio.run(_remember_via_mcp(server["port"], "health-metrics-marker"))
     asyncio.run(_recall_via_mcp(server["port"], "health-metrics-marker"))
 
-    response = _get(server["port"], "/health", token=None)
-    assert response.status_code == 200
-    body = response.json()
+    latency = asyncio.run(_read_resource_via_mcp(server["port"], "memory://latency"))
     for tool_name in ("memory_remember", "memory_recall"):
-        metric = body["metrics"][tool_name]
+        metric = latency["metrics"][tool_name]
         assert metric["count"] >= 1
         for key in ("p50_ms", "p95_ms", "p99_ms"):
             assert isinstance(metric[key], int)
@@ -332,3 +330,17 @@ async def _recall_via_mcp(port: int, query: str) -> list[dict[str, Any]]:
         {"query": query, "max_results": 5},
     )
     return list(payload.get("results", []))
+
+
+async def _read_resource_via_mcp(port: int, uri: str) -> dict[str, Any]:
+    import json
+
+    from fastmcp import Client
+
+    client = Client(f"http://127.0.0.1:{port}/mcp/", auth=TOKEN)
+    async with client:
+        contents = await client.read_resource(uri)
+    for item in contents:
+        if hasattr(item, "text"):
+            return json.loads(item.text)
+    return {}
