@@ -749,7 +749,9 @@ def _merge_cluster_into_concept(
         "usefulness_score": usefulness,
     }
 
-    existing = _find_existing_concept(store, cluster.scope, cluster_key)
+    existing = _find_existing_concept(
+        store, cluster.scope, cluster_key, content=best_trace.content
+    )
     if existing is None:
         concept = store.create_node(
             level="concept",
@@ -1085,17 +1087,25 @@ def _active_promotion_confidence(project_sources: Iterable[Node]) -> float:
     return _promoted_confidence(sources)
 
 
-def _find_existing_concept(store: MemoryStore, scope: str, cluster_key: str) -> Node | None:
+def _find_existing_concept(
+    store: MemoryStore, scope: str, cluster_key: str, content: str | None = None
+) -> Node | None:
     concepts = store.list_nodes(
         level="concept",
         scope=scope,
         include_decayed=False,
         limit=100_000,
     )
+    content_twin: Node | None = None
     for concept in concepts:
         if concept.provenance.get("cluster_key") == cluster_key:
             return concept
-    return None
+        if content is not None and content_twin is None and concept.content == content:
+            content_twin = concept
+    # A concept with byte-identical content is the same concept even when the
+    # cluster key drifted between consolidation runs (cluster membership moved
+    # while the best trace stayed); merge into it instead of creating a twin.
+    return content_twin
 
 
 def _trace_embedding(trace: Node, embedder: LocalEmbeddingModel | None) -> list[float] | None:

@@ -80,6 +80,41 @@ def test_consolidation_creates_concept_from_similar_traces_and_keeps_sources(
         assert store.list_nodes(level="concept", scope="project:alpha") == [second.concepts_updated[0]]
 
 
+def test_consolidation_merges_identical_content_concept_when_cluster_key_drifts(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for index in range(100):
+            store.append_trace(
+                f"gpu backend contract notes shared sample {index}",
+                {
+                    "scope": "project:alpha",
+                    "agent": "agent-a" if index % 2 == 0 else "agent-b",
+                },
+                feedback={"confidence": 0.4, "usefulness_score": 0.2},
+            )
+
+        first = memory_consolidate(store, scope="project:alpha")
+        assert len(first.concepts_created) == 1
+        concept = first.concepts_created[0]
+
+        # Simulate cluster-key drift between consolidation runs: cluster
+        # membership moved while the best trace (and so the content) did not.
+        store.update_node(
+            concept.id,
+            provenance={**concept.provenance, "cluster_key": "drifted key tokens"},
+        )
+
+        second = memory_consolidate(store, scope="project:alpha")
+
+        assert second.concepts_created == []
+        assert any(node.id == concept.id for node in second.concepts_updated)
+        active = store.list_nodes(
+            level="concept", scope="project:alpha", include_decayed=False, limit=100
+        )
+        assert [node.id for node in active] == [concept.id]
+
+
 def test_consolidation_waits_for_one_hundred_similar_traces(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         for index in range(99):
