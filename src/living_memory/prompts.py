@@ -7,7 +7,7 @@ from typing import Any
 import re
 
 from living_memory.models import REJECTED_ALTERNATIVE_KIND, Node
-from living_memory.retrieval import MemoryRecallService
+from living_memory.retrieval import SCOPE_RANK_BOOST_STEP, MemoryRecallService
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
 
@@ -343,7 +343,10 @@ def _policy_score(
     graph_score = min(1.0, 0.1 * node.access_count)
     weighted = bm25_weight * lexical_score + vector_weight * semantic_score + graph_weight * graph_score
 
-    scope_boost = 1.0 + max(0, len(plan.scopes) - plan.rank(node.scope) - 1) * 0.05
+    # Same per-rank scope preference as retrieval.rank_candidates — keep the
+    # context-prompt scorer from drowning requested-scope concepts in
+    # broader-scope ones (shared constant, single tuning point).
+    scope_boost = 1.0 + max(0, len(plan.scopes) - plan.rank(node.scope) - 1) * SCOPE_RANK_BOOST_STEP
     confidence_boost = 0.5 + node.confidence
     usefulness_boost = 1.0 + max(-0.5, min(0.5, node.usefulness_score))
     policy_name = str(policy or "balanced").lower()
