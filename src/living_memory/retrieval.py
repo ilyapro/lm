@@ -27,9 +27,10 @@ except ImportError:  # pragma: no cover - numpy is a normal runtime dep
 DEFAULT_VECTOR_SCAN_LIMIT = 50_000
 # Per-rank multiplier favouring narrower scopes in the plan. Must be large
 # enough that a requested-scope node of comparable relevance outranks a
-# broader-scope node carrying entrenched feedback boosts (usefulness up to
-# x1.55, access up to x1.25), yet stay a soft re-rank: a clearly stronger
-# cross-scope precedent must remain retrievable, never filtered.
+# broader-scope node carrying entrenched feedback boosts (compounded
+# confidence/usefulness/access multiplier, capped at FEEDBACK_MULTIPLIER_CAP),
+# yet stay a soft re-rank: a clearly stronger cross-scope precedent must
+# remain retrievable, never filtered.
 SCOPE_RANK_BOOST_STEP = 0.2
 STRONG_VECTOR_MATCH = 0.65
 SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5

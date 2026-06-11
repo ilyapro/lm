@@ -20,6 +20,21 @@ _ADAPTIVE_LR_LADDER: tuple[tuple[int, float], ...] = (
 _ADAPTIVE_LR_FLOOR = 0.02
 _DEFAULT_PENDING_RECALL_LIMIT = 5
 
+# Ranking feedback multipliers. Confidence is neutral at the storage-default
+# base (0.5): a fresh, unvalidated node must rank on retrieval relevance
+# alone rather than start with an implicit penalty, while confidence above or
+# below the base still moves the boost monotonically around 1.0.
+_BASE_CONFIDENCE = 0.5
+_CONFIDENCE_SLOPE = 0.65
+# Upper bound for the compounded confidence x usefulness x access multiplier.
+# Uncapped, entrenched nodes (up to 1.325 x 1.55 x 1.25 ~= 2.57) bury fresh
+# exact matches: under learned vector-dominant weights (bm25 0.10 / vector
+# 0.85) a just-written trace with an exact lexical hit scores ~0.48 while a
+# weak 0.38 vector match scores ~0.32 — any cap above ~1.45 lets the
+# entrenched node win, so 1.4 keeps fresh writes recallable with margin while
+# still rewarding validated, useful, frequently accessed knowledge.
+FEEDBACK_MULTIPLIER_CAP = 1.4
+
 
 def _retrieval_tuning_policy() -> str:
     return os.environ.get("LM_RETRIEVAL_TUNING_POLICY", "fixed").strip().lower()
@@ -245,13 +260,20 @@ def feedback_weighted_score(
 ) -> float:
     """Apply confidence, usefulness, access, and correction feedback to a score."""
 
-    confidence_boost = 0.45 + 0.65 * max(0.0, min(node.confidence, 1.0))
+    confidence = max(0.0, min(node.confidence, 1.0))
+    confidence_boost = 1.0 + _CONFIDENCE_SLOPE * (confidence - _BASE_CONFIDENCE)
     usefulness = max(-1.0, min(node.usefulness_score, 1.0))
     usefulness_boost = 1.0 + (0.55 * usefulness if usefulness >= 0.0 else 0.45 * usefulness)
     access_boost = 1.0 + min(0.25, 0.04 * _log1p(node.access_count))
+    # Cap covers the compounded positive feedback only; correction signals
+    # (superseding boost, superseded penalty) stay deliberate and uncapped.
+    feedback_multiplier = min(
+        confidence_boost * usefulness_boost * access_boost,
+        FEEDBACK_MULTIPLIER_CAP,
+    )
     correction_boost = 1.2 if superseding else 1.0
     superseded_penalty = 0.2 if superseded else 1.0
-    return base_score * confidence_boost * usefulness_boost * access_boost * correction_boost * superseded_penalty
+    return base_score * feedback_multiplier * correction_boost * superseded_penalty
 
 
 def _method_signals(result: Any, signed_signal: float) -> dict[str, float]:
