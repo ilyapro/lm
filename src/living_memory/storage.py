@@ -1382,6 +1382,19 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_connections_type
                     ON connections(type, source_id, target_id);
 
+                -- Write-path typed-edge derivation (edge_derivation.py):
+                -- bounded candidate lookups on memory_remember. The commit
+                -- expression must match _commit_group_candidates verbatim for
+                -- the probe to be index-served; the files index bounds the
+                -- R4b json_each scan to active file-citing rows.
+                CREATE INDEX IF NOT EXISTS idx_nodes_commit_prefix
+                    ON nodes(substr(lower(trim(json_extract(context, '$.commit'))), 1, 7))
+                    WHERE json_extract(context, '$.commit') IS NOT NULL AND decayed = 0;
+
+                CREATE INDEX IF NOT EXISTS idx_nodes_files_present
+                    ON nodes(id)
+                    WHERE json_extract(context, '$.files') IS NOT NULL AND decayed = 0;
+
                 CREATE INDEX IF NOT EXISTS idx_recall_events_scope_pending_created
                     ON recall_events(scope, feedback_applied, created_at DESC);
 

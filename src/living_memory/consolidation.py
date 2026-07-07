@@ -10,6 +10,7 @@ from typing import Any, Iterable, Mapping
 import re
 
 from living_memory.decay import DecayResult, apply_decay, memory_forget
+from living_memory.edge_derivation import DERIVED_FROM_ANNOTATION
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
 from living_memory.models import Connection, Node, string_list
@@ -673,6 +674,13 @@ def _connect_schema_to_traces(
                 "basis": "procedural",
                 "procedure_key": schema.context.get("procedure_key"),
                 "procedure_id": procedure_pattern,
+                # R5a: schema→source-trace edges are provenance ground truth
+                # (typed-edge-rules.md §R5a). The metadata merge in
+                # _upsert_weighted_connection annotates existing edges on the
+                # next pass without adding rows; the kind drives asymmetric
+                # traversal factors in retrieval._traversal. Concept edges
+                # (cluster/co_access bases) stay unannotated by design.
+                **DERIVED_FROM_ANNOTATION,
             },
         )
 

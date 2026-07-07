@@ -25,6 +25,7 @@ from living_memory.consolidation import (
     TeachResult,
 )
 from living_memory.decay import apply_decay
+from living_memory.edge_derivation import derive_edges_for_new_trace
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.resources import (
     connection_to_dict,
@@ -687,6 +688,14 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 rejected_alternatives = [rejected.id for rejected in rejected_nodes]
             implicit_feedback = apply_pending_recall_feedback(store, node)
             node = implicit_feedback.trace
+            # Typed-edge derivation (edge_derivation.py go-rules) runs after
+            # implicit recall feedback so an R6 reference upsert augments the
+            # implicit related edge for the same pair instead of being
+            # replaced by it. A derivation failure must never lose the write.
+            try:
+                derive_edges_for_new_trace(store, node)
+            except Exception:
+                pass
             auto_consolidation = _auto_consolidate_if_due(
                 store,
                 consolidation_service,

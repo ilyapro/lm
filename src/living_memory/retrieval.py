@@ -7,6 +7,7 @@ from collections import deque
 from dataclasses import dataclass, replace
 from typing import Any
 
+from living_memory.edge_derivation import CONTENT_REFERENCE_KIND, DERIVED_FROM_KIND
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity, tokenize
 from living_memory.feedback import FeedbackService, feedback_weighted_score
 from living_memory.models import (
@@ -700,6 +701,14 @@ def _traversal(
     base = max(0.0, connection.weight)
     if rejected_alternative:
         factor = 1.0
+    elif connection.type == "related" and connection.metadata.get("kind") == DERIVED_FROM_KIND:
+        # Schema→source-trace provenance: an instance strongly surfaces the
+        # distilled schema (backward), drilling schema→exemplar is weaker.
+        factor = 0.5 if forward else 0.95
+    elif connection.type == "related" and connection.metadata.get("kind") == CONTENT_REFERENCE_KIND:
+        # Explicit citation: a matched referee prefers the newer trace that
+        # built on it; the referee is context for the referrer.
+        factor = 0.75 if forward else 0.9
     elif connection.type == "related":
         factor = 0.65
     elif connection.type == "contradicts":

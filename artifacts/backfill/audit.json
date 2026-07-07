@@ -1,0 +1,609 @@
+{
+  "annotate_derived_from": true,
+  "applied": true,
+  "command": "derive-edges",
+  "db_path": "/tmp/lm_bf.sqlite3",
+  "edges_by_type": {
+    "after": {
+      "caused": 4,
+      "contradicts": 3066,
+      "related": 110004,
+      "requires": 0,
+      "supersedes": 248,
+      "total": 113322
+    },
+    "before": {
+      "caused": 0,
+      "contradicts": 3066,
+      "related": 99878,
+      "requires": 0,
+      "supersedes": 239,
+      "total": 103183
+    }
+  },
+  "generated_at": "2026-07-07T20:03:36Z",
+  "guarantees": {
+    "additive_only": "no existing edge deleted, retyped, or reweighted",
+    "idempotent": "second run inserts 0 new rows (pairs already connected)",
+    "marker": {
+      "metadata.basis": "provenance_derivation"
+    }
+  },
+  "mode": "apply",
+  "rollback": "DELETE FROM connections WHERE json_extract(metadata,'$.basis')='provenance_derivation';",
+  "rules": {
+    "R1c": {
+      "derived": 9,
+      "existing_skipped": 0,
+      "net_new_pairs": 8,
+      "new": 9,
+      "samples": [
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_correction",
+            "matched": "Supersedes-progress of design node 01KSTDBPRG8Q04J8NK02664485",
+            "rule": "R1c"
+          },
+          "rules": [
+            "R1c"
+          ],
+          "source_id": "01KSTFQ7FK73Z33YM3ZEM6KMT8",
+          "target_id": "01KSTDBPRG8Q04J8NK02664485",
+          "type": "supersedes",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_correction",
+            "matched": "supersedes the branch-only notes 01KSTPXFGZSE2YSZ75A3PV3TVY",
+            "rule": "R1c"
+          },
+          "rules": [
+            "R1c"
+          ],
+          "source_id": "01KSTWE81WRNQH6Y9QCS63Z7WG",
+          "target_id": "01KSTPXFGZSE2YSZ75A3PV3TVY",
+          "type": "supersedes",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_correction",
+            "matched": "UPDATE/correction to node 01KSWY4SHVS5BCPZ960949XFEK",
+            "rule": "R1c"
+          },
+          "rules": [
+            "R1c"
+          ],
+          "source_id": "01KSWYKDD6GJKTC0DSFJP7043F",
+          "target_id": "01KSWY4SHVS5BCPZ960949XFEK",
+          "type": "supersedes",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_correction",
+            "matched": "UPDATE to nodes [[lm-bm25-floor-fix-landed]] (01KSX0DZQG3RGN17NRZJ1ZS6DF",
+            "rule": "R1c"
+          },
+          "rules": [
+            "R1c"
+          ],
+          "source_id": "01KSX21KBNBX3TECJJ1MXBC8HH",
+          "target_id": "01KSX0DZQG3RGN17NRZJ1ZS6DF",
+          "type": "supersedes",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_correction",
+            "matched": "Supersedes/confirms the analysis-only finding 01KTDYR1CH0QNV8GW4FE6D9YHX",
+            "rule": "R1c"
+          },
+          "rules": [
+            "R1c"
+          ],
+          "source_id": "01KTDZKEXCT8ESWAGEH3H5CGG9",
+          "target_id": "01KTDYR1CH0QNV8GW4FE6D9YHX",
+          "type": "supersedes",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_correction",
+            "matched": "supersedes 'goal left in failed/active state intentionally' from node 01KTRQDVN2PW8D9MA0X47WW99S",
+            "rule": "R1c"
+          },
+          "rules": [
+            "R1c"
+          ],
+          "source_id": "01KTRQYJYPVCT7MNRBFS9XDEQE",
+          "target_id": "01KTRQDVN2PW8D9MA0X47WW99S",
+          "type": "supersedes",
+          "weight": 0.9
+        }
+      ],
+      "type": "supersedes"
+    },
+    "R2a": {
+      "derived": 4,
+      "existing_skipped": 0,
+      "net_new_pairs": 2,
+      "new": 4,
+      "samples": [
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "gap_seconds": 120,
+            "group_key": "task=supervise active AE goals",
+            "kind": "failure_resolution",
+            "rule": "R2a"
+          },
+          "rules": [
+            "R2a"
+          ],
+          "source_id": "01KS541R1NF8XCFRTEN7RDF609",
+          "target_id": "01KS544TQH51F4Z0PK3HSK9WEV",
+          "type": "caused",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "gap_seconds": 210,
+            "group_key": "task=supervise active AE goals",
+            "kind": "failure_resolution",
+            "rule": "R2a"
+          },
+          "rules": [
+            "R2a"
+          ],
+          "source_id": "01KS667G0336Q8Z2N9B2THFETM",
+          "target_id": "01KS66H6ARCK2D2RBA1CFZEEP1",
+          "type": "caused",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "gap_seconds": 30,
+            "group_key": "task=supervise active AE goals",
+            "kind": "failure_resolution",
+            "rule": "R2a"
+          },
+          "rules": [
+            "R2a"
+          ],
+          "source_id": "01KS793CVQCZPBVRV1BQJ84FXB",
+          "target_id": "01KS79403MWJFBBPARY815DWBT",
+          "type": "caused",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "gap_seconds": 120,
+            "group_key": "task=supervise active AE goals",
+            "kind": "failure_resolution",
+            "rule": "R2a"
+          },
+          "rules": [
+            "R2a"
+          ],
+          "source_id": "01KS79WMZXET2WKNYYY74DKYY4",
+          "target_id": "01KS79X6960ZGXPHPNGKYEZM4T",
+          "type": "caused",
+          "weight": 0.9
+        }
+      ],
+      "type": "caused"
+    },
+    "R4a": {
+      "derived": 207,
+      "existing_skipped": 5,
+      "net_new_pairs": 48,
+      "new": 202,
+      "samples": [
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "commit": "d0dd293",
+            "rule": "R4a",
+            "rule_basis": "same_commit"
+          },
+          "rules": [
+            "R4a"
+          ],
+          "source_id": "01KRTM5Q0BCMPF0ZVM36HM7D21",
+          "target_id": "01KRTM88WXB86K0VRBVZQ2M3AH",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "commit": "d0dd293",
+            "rule": "R4a",
+            "rule_basis": "same_commit"
+          },
+          "rules": [
+            "R4a"
+          ],
+          "source_id": "01KRTM5Q0BCMPF0ZVM36HM7D21",
+          "target_id": "01KRTMXCASF8N0YB05DZE0R4CE",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "commit": "d0dd293",
+            "rule": "R4a",
+            "rule_basis": "same_commit"
+          },
+          "rules": [
+            "R4a"
+          ],
+          "source_id": "01KRTM88WXB86K0VRBVZQ2M3AH",
+          "target_id": "01KRTMXCASF8N0YB05DZE0R4CE",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "commit": "be1b9e7",
+            "rule": "R4a",
+            "rule_basis": "same_commit"
+          },
+          "rules": [
+            "R4a"
+          ],
+          "source_id": "01KRTPGQZMB41197JFNMHBJC00",
+          "target_id": "01KRTPNMY10Y1J6T0REPNRRHM7",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "commit": "6d0c6ac",
+            "rule": "R4a",
+            "rule_basis": "same_commit"
+          },
+          "rules": [
+            "R4a"
+          ],
+          "source_id": "01KRVJ3E8G0B4KY4AH99RX6D03",
+          "target_id": "01KRVJ3E8GXHBT3ZV79XCHTF9J",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "commit": "6d0c6ac",
+            "rule": "R4a",
+            "rule_basis": "same_commit"
+          },
+          "rules": [
+            "R4a"
+          ],
+          "source_id": "01KRVJ3E8GGT1657K7QR0YPYC0",
+          "target_id": "01KRVJ3E8GXHBT3ZV79XCHTF9J",
+          "type": "related",
+          "weight": 0.9
+        }
+      ],
+      "type": "related"
+    },
+    "R4b": {
+      "derived": 10089,
+      "existing_skipped": 232,
+      "net_new_pairs": 8942,
+      "new": 9857,
+      "samples": [
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "files": [
+              "packages/desktop/src/shared/api/services/sharingRoute/mock.ts"
+            ],
+            "rule": "R4b",
+            "rule_basis": "shared_files"
+          },
+          "rules": [
+            "R4b"
+          ],
+          "source_id": "01KRNH5WSEBYJRA4P4GJH5K7BX",
+          "target_id": "01KRNK97XB5YY5DZCZ91GMWYR4",
+          "type": "related",
+          "weight": 0.65
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "files": [
+              "packages/desktop/src/shared/lib/request/index.ts"
+            ],
+            "rule": "R4b",
+            "rule_basis": "shared_files"
+          },
+          "rules": [
+            "R4b"
+          ],
+          "source_id": "01KRNH5WSEBYJRA4P4GJH5K7BX",
+          "target_id": "01KT18Z2Y31XZAYEXAG212FFFB",
+          "type": "related",
+          "weight": 0.65
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "files": [
+              "packages/desktop/src/shared/lib/request/index.ts"
+            ],
+            "rule": "R4b",
+            "rule_basis": "shared_files"
+          },
+          "rules": [
+            "R4b"
+          ],
+          "source_id": "01KRNH5WSEBYJRA4P4GJH5K7BX",
+          "target_id": "01KT1A4DX6SAPHF0RBVHXF4XGW",
+          "type": "related",
+          "weight": 0.65
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "files": [
+              "packages/desktop/src/shared/lib/request/index.ts"
+            ],
+            "rule": "R4b",
+            "rule_basis": "shared_files"
+          },
+          "rules": [
+            "R4b"
+          ],
+          "source_id": "01KRNH5WSEBYJRA4P4GJH5K7BX",
+          "target_id": "01KT1AV8Q0YYXWH56HJG0PB5BC",
+          "type": "related",
+          "weight": 0.65
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "files": [
+              "packages/desktop/src/shared/lib/request/index.ts"
+            ],
+            "rule": "R4b",
+            "rule_basis": "shared_files"
+          },
+          "rules": [
+            "R4b"
+          ],
+          "source_id": "01KRNH5WSEBYJRA4P4GJH5K7BX",
+          "target_id": "01KWHX2QHE78HWGTRCJ34KVTCC",
+          "type": "related",
+          "weight": 0.65
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "files": [
+              "packages/desktop/src/modules/directions/containers/directionsList/components/directionCard/index.tsx",
+              "packages/desktop/src/modules/directions/containers/directionsList/components/directionsListItems.tsx",
+              "packages/desktop/src/modules/directions/containers/directionsList/components/directionCard/components/transportRoute/index.tsx",
+              "packages/desktop/src/modules/directions/containers/directionsList/components/directionCard/components/transportRoute/formatter.ts",
+              "packages/desktop/src/modules/directions/containers/directionsList/components/directionCard/__tests__/directionCard.spec.tsx"
+            ],
+            "rule": "R4b",
+            "rule_basis": "shared_files"
+          },
+          "rules": [
+            "R4b"
+          ],
+          "source_id": "01KRNJ589R57EP6REQ6Z7VF70K",
+          "target_id": "01KRNK97XB5YY5DZCZ91GMWYR4",
+          "type": "related",
+          "weight": 0.95
+        }
+      ],
+      "type": "related"
+    },
+    "R5a": {
+      "applied": true,
+      "eligible": 5228,
+      "samples": [
+        {
+          "annotation": {
+            "kind": "derived_from",
+            "rule": "R5a"
+          },
+          "connection_id": "01KRY25E7N1V6C7ND13M8MV0KJ",
+          "source_id": "01KRY25E7NVFJHWA0HHQ77XB6A",
+          "target_id": "01KRY1Y4WQKD1HPVTPBQ887X58"
+        },
+        {
+          "annotation": {
+            "kind": "derived_from",
+            "rule": "R5a"
+          },
+          "connection_id": "01KRY25E7NN5PCFYNEDG34ST4Q",
+          "source_id": "01KRY25E7NVFJHWA0HHQ77XB6A",
+          "target_id": "01KRY1Y4WQCKKV6EKRYY1VBSZ4"
+        },
+        {
+          "annotation": {
+            "kind": "derived_from",
+            "rule": "R5a"
+          },
+          "connection_id": "01KRY25E7NMQ9MVC9ADKD8F0N7",
+          "source_id": "01KRY25E7NVFJHWA0HHQ77XB6A",
+          "target_id": "01KRY1Y4WQ9J5WYSQ23DAM1D87"
+        },
+        {
+          "annotation": {
+            "kind": "derived_from",
+            "rule": "R5a"
+          },
+          "connection_id": "01KRY9XWFTTH6TH4063P04V686",
+          "source_id": "01KRY9XWFT4KYC8J652TS7CX50",
+          "target_id": "01KRY9XWEJK4NYAKMH80F1DCKD"
+        },
+        {
+          "annotation": {
+            "kind": "derived_from",
+            "rule": "R5a"
+          },
+          "connection_id": "01KRY9XWFTKHSBCV6K4WHVS9ES",
+          "source_id": "01KRY9XWFT4KYC8J652TS7CX50",
+          "target_id": "01KRY9XWEJ9J9W715CWCHXM8TX"
+        },
+        {
+          "annotation": {
+            "kind": "derived_from",
+            "rule": "R5a"
+          },
+          "connection_id": "01KRY9XWFTC5JSYC6DJ68NTVKF",
+          "source_id": "01KRY9XWFT4KYC8J652TS7CX50",
+          "target_id": "01KRY9XWEJ8SBV73HT8YX2FKD3"
+        }
+      ],
+      "type": "related/derived_from (annotation, no new rows)"
+    },
+    "R6": {
+      "derived": 199,
+      "existing_skipped": 87,
+      "net_new_pairs": 106,
+      "new": 112,
+      "samples": [
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_reference",
+            "rule": "R6"
+          },
+          "rules": [
+            "R6"
+          ],
+          "source_id": "01KRX9Y5F4SCPPA0X5AG874RB2",
+          "target_id": "01KRW3WEKBQVQ7Q45JWVCB3PWY",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_reference",
+            "rule": "R6"
+          },
+          "rules": [
+            "R6"
+          ],
+          "source_id": "01KRXD4JYNA750H10AS13KPY7G",
+          "target_id": "01KRX9Y5F4SCKSM1S5KH8QAB95",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_reference",
+            "rule": "R6"
+          },
+          "rules": [
+            "R6"
+          ],
+          "source_id": "01KRZNFV3FCG4YP8CPDV52MD6T",
+          "target_id": "01KRNF84R6YCYN84DJMHXKGA7F",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_reference",
+            "rule": "R6"
+          },
+          "rules": [
+            "R6"
+          ],
+          "source_id": "01KRZNFV3FCG4YP8CPDV52MD6T",
+          "target_id": "01KRNJZAFNVMPZNB0TQQWR9NSF",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_reference",
+            "rule": "R6"
+          },
+          "rules": [
+            "R6"
+          ],
+          "source_id": "01KRZNFV3FCG4YP8CPDV52MD6T",
+          "target_id": "01KRNM01VG44HCWW6M1GZY48S1",
+          "type": "related",
+          "weight": 0.9
+        },
+        {
+          "metadata": {
+            "basis": "provenance_derivation",
+            "kind": "content_reference",
+            "rule": "R6"
+          },
+          "rules": [
+            "R6"
+          ],
+          "source_id": "01KRZNFV3FCG4YP8CPDV52MD6T",
+          "target_id": "01KRNQJMBZG6J93E5JY98NK3NN",
+          "type": "related",
+          "weight": 0.9
+        }
+      ],
+      "type": "related"
+    }
+  },
+  "sample_size": 6,
+  "totals": {
+    "multi_rule_rows": 45,
+    "net_new_connectivity": 9098,
+    "new_rows": 10139,
+    "new_rows_by_type": {
+      "caused": 4,
+      "related": 10126,
+      "supersedes": 9
+    },
+    "r5a_annotations": 5228
+  },
+  "typed_share": {
+    "after": {
+      "provenance_derived": 18672,
+      "provenance_derived_share": 0.164769,
+      "strict_typed": 3318,
+      "strict_typed_share": 0.029279,
+      "total_edges": 113322
+    },
+    "before": {
+      "provenance_derived": 3305,
+      "provenance_derived_share": 0.03203,
+      "strict_typed": 3305,
+      "strict_typed_share": 0.03203,
+      "total_edges": 103183
+    },
+    "target_from_rules_artifact": {
+      "note": "artifacts/discovery/typed-edge-rules.md \u00a74",
+      "provenance_derived_share": "~0.157 (with R5a annotations applied)",
+      "strict_typed_share": "~0.030 (3,305 -> 3,318 / 111,689)"
+    }
+  }
+}

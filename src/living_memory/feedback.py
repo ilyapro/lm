@@ -126,7 +126,7 @@ def apply_retrieval_feedback(
     signal: float = 1.0,
     scope: str | None = None,
 ) -> FeedbackUpdate:
-    """Update node usefulness and nudge weights toward the winning method."""
+    """Update node usefulness and nudge weights by each method's evidence share."""
 
     magnitude = max(0.0, min(abs(float(signal)), 5.0))
     signed_signal = magnitude if useful else -magnitude
@@ -277,23 +277,27 @@ def feedback_weighted_score(
 
 
 def _method_signals(result: Any, signed_signal: float) -> dict[str, float]:
+    """Per-method credit proportional to each method's raw score share.
+
+    Positive feedback rewards every method by its share of the recorded raw
+    evidence for the reinforced result; negative feedback assigns blame by
+    the same shares. Shares come from raw scores, not weight-multiplied
+    contributions, so the update is independent of the current weights (a
+    weight-share rule would compound its own bias). With no positive raw
+    evidence there is nothing to attribute: every signal is zero and the
+    weights stay put. The replay harness's ``proportional`` credit rule
+    delegates here — this function is the single source of truth.
+    """
+
     components = {
         "bm25": max(0.0, float(getattr(result, "bm25_score", 0.0) or 0.0)),
         "vector": max(0.0, float(getattr(result, "vector_score", 0.0) or 0.0)),
         "graph": max(0.0, float(getattr(result, "graph_score", 0.0) or 0.0)),
     }
-    dominant = max(components, key=components.get)
-    if components[dominant] <= 0.0:
-        dominant = "bm25"
-
-    if signed_signal >= 0:
-        signals = {method: -0.25 * signed_signal for method in components}
-        signals[dominant] = signed_signal
-    else:
-        positive = abs(signed_signal)
-        signals = {method: 0.15 * positive for method in components}
-        signals[dominant] = -positive
-    return signals
+    total = sum(components.values())
+    if total <= 0.0:
+        return {method: 0.0 for method in components}
+    return {method: signed_signal * value / total for method, value in components.items()}
 
 
 def _result_node(result: Any, store: MemoryStore) -> Node | None:

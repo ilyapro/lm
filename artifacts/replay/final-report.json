@@ -1,0 +1,2200 @@
+{
+  "backfill_provenance": {
+    "audit": "artifacts/backfill/audit.json",
+    "by_type": {
+      "caused": 4,
+      "related": 10126,
+      "supersedes": 9
+    },
+    "live_apply": "operator action, out of tree scope (artifacts/backfill/RUNBOOK.md); the live global.sqlite3 was never written by this tree.",
+    "net_new_connectivity": 9098,
+    "new_rows": 10139,
+    "provenance_derived_share": {
+      "after": 0.164769,
+      "before": 0.03203
+    },
+    "r5a_annotations": 5228,
+    "strict_typed_share": {
+      "after": 0.029279,
+      "before": 0.03203
+    },
+    "total_edges": {
+      "after": 113322,
+      "before": 103183
+    }
+  },
+  "bandaid_decisions": {
+    "floors": {
+      "decision": "KEEP",
+      "disqualifying_numbers": "Narrowing the rails is replay-NEUTRAL-to-slightly-positive (no regression): F1 (graph_min->0) leaves live_weights unchanged and lifts replayed_proportional MRR 0.705265->0.705874; F2 (wide rails bm25_max0.95/vector_min0.05/graph_min0/bm25_min0.05) lifts replayed_proportional hit@5 0.948601->0.949902 and MRR 0.705265->0.705821. So narrowing does NOT improve the holdout metric materially AND the mean-share fixed point already does the real work within the current rails. The exact floor VALUES are pinned by ~9 existing test files (below); changing the defaults would rewrite those assertions, which gate (3) forbids.",
+      "existing_tests_pinning_it": [
+        "tests/test_retrieval_bm25_floor.py (bm25_min 0.10; global 0.75/0.20/0.05)",
+        "tests/test_retrieval_weight_maintenance.py (project 0.85/0.15; global 0.75/0.20/0.05; reseat)",
+        "tests/test_feedback_weights.py (0.85/0.15/0.0; 0.75/0.20/0.05; graph 0.75 donor order)",
+        "tests/test_health_retrieval_skew.py (project 0.85/0.15/0.05; global 0.75/0.20/0.05)",
+        "tests/test_retrieval_semantic_recall.py (vector_min/bm25_max per family; STRONG_VECTOR_MATCH premise)",
+        "tests/test_retrieval_lexical_recall.py (project 0.85/0.15/0.0)",
+        "tests/test_retrieval_feedback_amplification.py (global 0.75/0.20/0.05)",
+        "tests/test_graph_recall.py (graph 0.05)",
+        "tests/test_replay_harness.py (graph 0.05 via _FloorShim)"
+      ],
+      "location": "src/living_memory/config.py:42-46 DEFAULT_RETRIEVAL_POLICY_FLOORS + storage.apply_retrieval_weight_floors",
+      "note": "Floors protect exact-identifier and semantic recall and the graph-floor (properties verified by the pinning tests) that the grounded-holdout metric does not fully exercise; they are retained as narrow guardrails, not compensation for a starved signal.",
+      "operator_path": "maintenance.reseat_retrieval_floors (audited; dry-run is the default; apply writes only rows whose before!=after via per-scope set_retrieval_weights). Operators may narrow rails through this audited path; this tree performs NO automatic weight rewrites.",
+      "reference_R0_floors_current": {
+        "live_weights": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.008557,
+            "dropped_top5": 0.016602,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.9473,
+            "mrr": 0.702441
+          },
+          "hit@1": 0.532206,
+          "hit@10": 0.997398,
+          "hit@5": 0.947951,
+          "mrr": 0.703243,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810317
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810317,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.02,
+                "dropped_top5": 0.013245,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.739104
+              },
+              "hit@1": 0.617284,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.742485,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.867168
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.867168,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.714286
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.714286,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.87037,
+                "mrr": 0.630656
+              },
+              "hit@1": 0.462963,
+              "hit@10": 0.975309,
+              "hit@5": 0.87037,
+              "mrr": 0.630713,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.009188,
+                "dropped_top5": 0.01728,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962963,
+                "mrr": 0.704137
+              },
+              "hit@1": 0.525765,
+              "hit@10": 1.0,
+              "hit@5": 0.962963,
+              "mrr": 0.704902,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        },
+        "replayed_proportional": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.01335,
+            "dropped_top5": 0.01143,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.945999,
+            "mrr": 0.703207
+          },
+          "hit@1": 0.536109,
+          "hit@10": 0.997398,
+          "hit@5": 0.948601,
+          "mrr": 0.705265,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810847
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810847,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.020408,
+                "dropped_top5": 0.02,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.730874
+              },
+              "hit@1": 0.604938,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.734254,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.875
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.874269,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.722222
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.722222,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.004184,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.864198,
+                "mrr": 0.627016
+              },
+              "hit@1": 0.45679,
+              "hit@10": 0.975309,
+              "hit@5": 0.864198,
+              "mrr": 0.626524,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.015129,
+                "dropped_top5": 0.011605,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962158,
+                "mrr": 0.705949
+              },
+              "hit@1": 0.532206,
+              "hit@10": 1.0,
+              "hit@5": 0.964573,
+              "mrr": 0.70835,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        }
+      },
+      "variant_F1_graph_min_zero": {
+        "live_weights": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.008557,
+            "dropped_top5": 0.016602,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.9473,
+            "mrr": 0.702441
+          },
+          "hit@1": 0.532206,
+          "hit@10": 0.997398,
+          "hit@5": 0.947951,
+          "mrr": 0.703243,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810317
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810317,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.02,
+                "dropped_top5": 0.013245,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.739104
+              },
+              "hit@1": 0.617284,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.742485,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.867168
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.867168,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.714286
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.714286,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.87037,
+                "mrr": 0.630656
+              },
+              "hit@1": 0.462963,
+              "hit@10": 0.975309,
+              "hit@5": 0.87037,
+              "mrr": 0.630713,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.009188,
+                "dropped_top5": 0.01728,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962963,
+                "mrr": 0.704137
+              },
+              "hit@1": 0.525765,
+              "hit@10": 1.0,
+              "hit@5": 0.962963,
+              "mrr": 0.704902,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        },
+        "replayed_proportional": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.013301,
+            "dropped_top5": 0.011981,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.945999,
+            "mrr": 0.703532
+          },
+          "hit@1": 0.538061,
+          "hit@10": 0.997398,
+          "hit@5": 0.948601,
+          "mrr": 0.705874,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810847
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810847,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.020408,
+                "dropped_top5": 0.02,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.730874
+              },
+              "hit@1": 0.604938,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.734254,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.875
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.875,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.722222
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.722222,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.864198,
+                "mrr": 0.637819
+              },
+              "hit@1": 0.475309,
+              "hit@10": 0.975309,
+              "hit@5": 0.864198,
+              "mrr": 0.637875,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.015129,
+                "dropped_top5": 0.011609,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962158,
+                "mrr": 0.704942
+              },
+              "hit@1": 0.532206,
+              "hit@10": 1.0,
+              "hit@5": 0.964573,
+              "mrr": 0.707612,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        }
+      },
+      "variant_F2_wide_rails": {
+        "live_weights": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.008557,
+            "dropped_top5": 0.016602,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.9473,
+            "mrr": 0.702441
+          },
+          "hit@1": 0.532206,
+          "hit@10": 0.997398,
+          "hit@5": 0.947951,
+          "mrr": 0.703243,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810317
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810317,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.02,
+                "dropped_top5": 0.013245,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.739104
+              },
+              "hit@1": 0.617284,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.742485,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.867168
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.867168,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.714286
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.714286,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.87037,
+                "mrr": 0.630656
+              },
+              "hit@1": 0.462963,
+              "hit@10": 0.975309,
+              "hit@5": 0.87037,
+              "mrr": 0.630713,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.009188,
+                "dropped_top5": 0.01728,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962963,
+                "mrr": 0.704137
+              },
+              "hit@1": 0.525765,
+              "hit@10": 1.0,
+              "hit@5": 0.962963,
+              "mrr": 0.704902,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        },
+        "replayed_proportional": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.01451,
+            "dropped_top5": 0.011148,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.9473,
+            "mrr": 0.703142
+          },
+          "hit@1": 0.538061,
+          "hit@10": 0.997398,
+          "hit@5": 0.949902,
+          "mrr": 0.705821,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810847
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810847,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.020408,
+                "dropped_top5": 0.013333,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.732932
+              },
+              "hit@1": 0.604938,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.734254,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.875
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.875,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.111111,
+                "dropped_top_max": 0.0,
+                "hit@5": 1.0,
+                "mrr": 0.733333
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 1.0,
+              "mrr": 0.733333,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.008333,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.864198,
+                "mrr": 0.634732
+              },
+              "hit@1": 0.469136,
+              "hit@10": 0.975309,
+              "hit@5": 0.864198,
+              "mrr": 0.634788,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.016616,
+                "dropped_top5": 0.011294,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962963,
+                "mrr": 0.704701
+              },
+              "hit@1": 0.533011,
+              "hit@10": 1.0,
+              "hit@5": 0.965378,
+              "mrr": 0.707922,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        }
+      }
+    },
+    "rescue": {
+      "decision": "KEEP",
+      "disqualifying_numbers": "Removing the rescue (E2) OR restricting it to causal-only (E1) gives IDENTICAL holdout numbers (the causal 0.75 arm changes no holdout useful-result ranking; the value is entirely in the non-causal 0.25 arm) and REGRESSES vs R0: live_weights hit@5 0.947951->0.946649, MRR 0.703243->0.700532; replayed_proportional hit@5 0.948601->0.946649, MRR 0.705265->0.701717. The rescue still adds positive holdout value under honest credit + typed edges, so it is retained on evidence, not merely on test-compatibility.",
+      "existing_tests_pinning_it": [
+        "tests/test_replay_harness.py::test_rerank_uses_real_ranking_path (non-causal 0.25 graph-only survival)",
+        "tests/test_replay_harness.py::test_recorded_scheme_metrics_hand_computed (graph_unique_share/dropped_* == 0.25)",
+        "tests/test_graph_recall.py::test_causal_recall_preserves_graph_boost_after_global_graph_floor (causal 0.75 rank-1)",
+        "tests/test_graph_recall.py::test_causal_recall_returns_causes_for_why_queries",
+        "tests/test_acceptance_contract.py::test_causal_traversal_returns_causes_for_why_queries"
+      ],
+      "location": "src/living_memory/retrieval.py:224-232 (in-rank graph rescue, minimum_graph 0.25 non-causal / 0.75 causal)",
+      "note": "Full removal / causal-only both also break the above existing tests, which gate (3) forbids weakening. Double-disqualified: replay regression + existing-test breakage.",
+      "reference_R0_rescue_on": {
+        "live_weights": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.008557,
+            "dropped_top5": 0.016602,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.9473,
+            "mrr": 0.702441
+          },
+          "hit@1": 0.532206,
+          "hit@10": 0.997398,
+          "hit@5": 0.947951,
+          "mrr": 0.703243,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810317
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810317,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.02,
+                "dropped_top5": 0.013245,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.739104
+              },
+              "hit@1": 0.617284,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.742485,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.867168
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.867168,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.714286
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.714286,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.87037,
+                "mrr": 0.630656
+              },
+              "hit@1": 0.462963,
+              "hit@10": 0.975309,
+              "hit@5": 0.87037,
+              "mrr": 0.630713,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.009188,
+                "dropped_top5": 0.01728,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962963,
+                "mrr": 0.704137
+              },
+              "hit@1": 0.525765,
+              "hit@10": 1.0,
+              "hit@5": 0.962963,
+              "mrr": 0.704902,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        },
+        "replayed_proportional": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.01335,
+            "dropped_top5": 0.01143,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.945999,
+            "mrr": 0.703207
+          },
+          "hit@1": 0.536109,
+          "hit@10": 0.997398,
+          "hit@5": 0.948601,
+          "mrr": 0.705265,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810847
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810847,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.020408,
+                "dropped_top5": 0.02,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.730874
+              },
+              "hit@1": 0.604938,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.734254,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.875
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.874269,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.125,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.722222
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.722222,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.004184,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.864198,
+                "mrr": 0.627016
+              },
+              "hit@1": 0.45679,
+              "hit@10": 0.975309,
+              "hit@5": 0.864198,
+              "mrr": 0.626524,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.015129,
+                "dropped_top5": 0.011605,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962158,
+                "mrr": 0.705949
+              },
+              "hit@1": 0.532206,
+              "hit@10": 1.0,
+              "hit@5": 0.964573,
+              "mrr": 0.70835,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        }
+      },
+      "variant_E1_causal_only": {
+        "live_weights": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.00246,
+            "dropped_top5": 0.004461,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.9473,
+            "mrr": 0.702441
+          },
+          "hit@1": 0.528953,
+          "hit@10": 0.996747,
+          "hit@5": 0.946649,
+          "mrr": 0.700532,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810317
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810317,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.02,
+                "dropped_top5": 0.006667,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.739104
+              },
+              "hit@1": 0.617284,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.742161,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.867168
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.867168,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.714286
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.714286,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.016393,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.87037,
+                "mrr": 0.630656
+              },
+              "hit@1": 0.462963,
+              "hit@10": 0.969136,
+              "hit@5": 0.87037,
+              "mrr": 0.630656,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.001543,
+                "dropped_top5": 0.003555,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962963,
+                "mrr": 0.704137
+              },
+              "hit@1": 0.521739,
+              "hit@10": 1.0,
+              "hit@5": 0.961353,
+              "mrr": 0.701575,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        },
+        "replayed_proportional": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.006127,
+            "dropped_top5": 0.011478,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.945999,
+            "mrr": 0.703207
+          },
+          "hit@1": 0.530904,
+          "hit@10": 0.996747,
+          "hit@5": 0.946649,
+          "mrr": 0.701717,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810847
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810847,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.020408,
+                "dropped_top5": 0.02649,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.730874
+              },
+              "hit@1": 0.604938,
+              "hit@10": 1.0,
+              "hit@5": 0.925926,
+              "mrr": 0.73496,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.875
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.875,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.722222
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.722222,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.008264,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.864198,
+                "mrr": 0.627016
+              },
+              "hit@1": 0.450617,
+              "hit@10": 0.969136,
+              "hit@5": 0.864198,
+              "mrr": 0.623896,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.006116,
+                "dropped_top5": 0.011356,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962158,
+                "mrr": 0.705949
+              },
+              "hit@1": 0.52657,
+              "hit@10": 1.0,
+              "hit@5": 0.961353,
+              "mrr": 0.704245,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        }
+      },
+      "variant_E2_full_removal": {
+        "live_weights": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.00246,
+            "dropped_top5": 0.004461,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.9473,
+            "mrr": 0.702441
+          },
+          "hit@1": 0.528953,
+          "hit@10": 0.996747,
+          "hit@5": 0.946649,
+          "mrr": 0.700532,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810317
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810317,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.02,
+                "dropped_top5": 0.006667,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.739104
+              },
+              "hit@1": 0.617284,
+              "hit@10": 1.0,
+              "hit@5": 0.91358,
+              "mrr": 0.742161,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.867168
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.867168,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.714286
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.714286,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.016393,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.87037,
+                "mrr": 0.630656
+              },
+              "hit@1": 0.462963,
+              "hit@10": 0.969136,
+              "hit@5": 0.87037,
+              "mrr": 0.630656,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.001543,
+                "dropped_top5": 0.003555,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962963,
+                "mrr": 0.704137
+              },
+              "hit@1": 0.521739,
+              "hit@10": 1.0,
+              "hit@5": 0.961353,
+              "mrr": 0.701575,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        },
+        "replayed_proportional": {
+          "events": 2224,
+          "events_with_useful": 1537,
+          "graph_unique_share": 0.010349,
+          "graph_zeroed": {
+            "dropped_entirely": 0.0,
+            "dropped_top1": 0.006127,
+            "dropped_top5": 0.011478,
+            "dropped_top_max": 0.0,
+            "hit@5": 0.945999,
+            "mrr": 0.703207
+          },
+          "hit@1": 0.530904,
+          "hit@10": 0.996747,
+          "hit@5": 0.946649,
+          "mrr": 0.701717,
+          "per_scope": {
+            "_other": {
+              "events": 14,
+              "events_with_useful": 9,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.888889,
+                "mrr": 0.82716
+              },
+              "hit@1": 0.777778,
+              "hit@10": 1.0,
+              "hit@5": 0.888889,
+              "mrr": 0.82716,
+              "useful_results": 23
+            },
+            "global": {
+              "events": 32,
+              "events_with_useful": 21,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.857143,
+                "mrr": 0.810847
+              },
+              "hit@1": 0.761905,
+              "hit@10": 1.0,
+              "hit@5": 0.857143,
+              "mrr": 0.810847,
+              "useful_results": 44
+            },
+            "project:ae": {
+              "events": 135,
+              "events_with_useful": 81,
+              "graph_unique_share": 0.004831,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.020408,
+                "dropped_top5": 0.02649,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.901235,
+                "mrr": 0.730874
+              },
+              "hit@1": 0.604938,
+              "hit@10": 1.0,
+              "hit@5": 0.925926,
+              "mrr": 0.73496,
+              "useful_results": 207
+            },
+            "project:lm": {
+              "events": 23,
+              "events_with_useful": 19,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.947368,
+                "mrr": 0.875
+              },
+              "hit@1": 0.789474,
+              "hit@10": 1.0,
+              "hit@5": 0.947368,
+              "mrr": 0.875,
+              "useful_results": 49
+            },
+            "project:mm": {
+              "events": 3,
+              "events_with_useful": 3,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.0,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.666667,
+                "mrr": 0.722222
+              },
+              "hit@1": 0.666667,
+              "hit@10": 1.0,
+              "hit@5": 0.666667,
+              "mrr": 0.722222,
+              "useful_results": 14
+            },
+            "project:online": {
+              "events": 482,
+              "events_with_useful": 162,
+              "graph_unique_share": 0.0,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.0,
+                "dropped_top5": 0.008264,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.864198,
+                "mrr": 0.627016
+              },
+              "hit@1": 0.450617,
+              "hit@10": 0.969136,
+              "hit@5": 0.864198,
+              "mrr": 0.623896,
+              "useful_results": 352
+            },
+            "project:x": {
+              "events": 1535,
+              "events_with_useful": 1242,
+              "graph_unique_share": 0.011702,
+              "graph_zeroed": {
+                "dropped_entirely": 0.0,
+                "dropped_top1": 0.006116,
+                "dropped_top5": 0.011356,
+                "dropped_top_max": 0.0,
+                "hit@5": 0.962158,
+                "mrr": 0.705949
+              },
+              "hit@1": 0.52657,
+              "hit@10": 1.0,
+              "hit@5": 0.961353,
+              "mrr": 0.704245,
+              "useful_results": 4529
+            }
+          },
+          "useful_results": 5218
+        }
+      }
+    }
+  },
+  "baseline_reference": {
+    "gate_multiplier": 0.99,
+    "gate_thresholds": {
+      "hit@5": 0.938201,
+      "mrr": 0.69915
+    },
+    "hit@5": 0.947678,
+    "mrr": 0.706212,
+    "scheme": "live_weights (== replayed_winner_take_all)",
+    "source": "artifacts/replay/baseline.json",
+    "split": "holdout"
+  },
+  "combined_holdout": {
+    "committed_child_references": {
+      "baseline_live_weights_holdout": {
+        "hit@5": 0.947678,
+        "mrr": 0.706212
+      },
+      "credit_proportional_holdout": {
+        "hit@5": 0.950424,
+        "mrr": 0.707793
+      }
+    },
+    "configs": {
+      "A_baseline_winner_take_all": {
+        "events": 2224,
+        "events_with_useful": 1537,
+        "gate_pass": true,
+        "graph_unique_share": 0.010349,
+        "graph_zeroed_dropped_top5": 0.016598,
+        "graph_zeroed_hit@5": 0.947951,
+        "hit@1": 0.532856,
+        "hit@5": 0.948601,
+        "hit@5_x": 1.000974,
+        "mrr": 0.703801,
+        "mrr_x": 0.996586,
+        "scheme": "replayed_winner_take_all",
+        "snapshot": "nonbackfilled"
+      },
+      "B_new_credit_proportional": {
+        "events": 2224,
+        "events_with_useful": 1537,
+        "gate_pass": true,
+        "graph_unique_share": 0.010349,
+        "graph_zeroed_dropped_top5": 0.011421,
+        "graph_zeroed_hit@5": 0.946649,
+        "hit@1": 0.53676,
+        "hit@5": 0.949252,
+        "hit@5_x": 1.001661,
+        "mrr": 0.705807,
+        "mrr_x": 0.999427,
+        "scheme": "replayed_proportional",
+        "snapshot": "nonbackfilled"
+      },
+      "C_new_credit_plus_typed_backfill": {
+        "events": 2224,
+        "events_with_useful": 1537,
+        "gate_pass": true,
+        "graph_unique_share": 0.010349,
+        "graph_zeroed_dropped_top5": 0.01143,
+        "graph_zeroed_hit@5": 0.945999,
+        "hit@1": 0.536109,
+        "hit@5": 0.948601,
+        "hit@5_x": 1.000974,
+        "mrr": 0.705265,
+        "mrr_x": 0.998659,
+        "scheme": "replayed_proportional",
+        "snapshot": "backfilled"
+      },
+      "live_weights_backfilled": {
+        "events": 2224,
+        "events_with_useful": 1537,
+        "gate_pass": true,
+        "graph_unique_share": 0.010349,
+        "graph_zeroed_dropped_top5": 0.016602,
+        "graph_zeroed_hit@5": 0.9473,
+        "hit@1": 0.532206,
+        "hit@5": 0.947951,
+        "hit@5_x": 1.000288,
+        "mrr": 0.703243,
+        "mrr_x": 0.995796,
+        "scheme": "live_weights",
+        "snapshot": "backfilled"
+      },
+      "live_weights_nonbackfilled": {
+        "events": 2224,
+        "events_with_useful": 1537,
+        "gate_pass": true,
+        "graph_unique_share": 0.010349,
+        "graph_zeroed_dropped_top5": 0.016588,
+        "graph_zeroed_hit@5": 0.947951,
+        "hit@1": 0.532856,
+        "hit@5": 0.948601,
+        "hit@5_x": 1.000974,
+        "mrr": 0.703785,
+        "mrr_x": 0.996563,
+        "scheme": "live_weights",
+        "snapshot": "nonbackfilled"
+      }
+    },
+    "corpus": {
+      "credit_rule": "proportional",
+      "holdout_labeled_events": 2224,
+      "snapshots": {
+        "backfilled": "/tmp/lm_bf.sqlite3",
+        "nonbackfilled": "/tmp/lm_backfill_copy.sqlite3"
+      },
+      "supersedes_mode": "snapshot",
+      "usable_events": 46991
+    },
+    "observations": [
+      "B>A: proportional credit improves on winner-take-all on the same corpus (overall holdout hit@5 +0.000651, MRR +0.002006).",
+      "C~B: the typed-edge backfill's replay delta is tiny by construction; only the 9 new R1c supersedes pairs enter recorded-score ranking (related/caused/R5a edges do not).",
+      "Per-scope wobble (honest): project:lm MRR 0.867->0.874 and project:x both rise under proportional; project:online dips slightly (hit@5 0.870->0.864); global (32 events) dips under backfill (MRR 0.850->0.811) from supersedes reordering. Overall holdout clears the gate for all configs."
+    ],
+    "per_scope_holdout": {
+      "global": {
+        "A_wta": {
+          "events": 32,
+          "hit@5": 0.904762,
+          "mrr": 0.85
+        },
+        "B_prop": {
+          "events": 32,
+          "hit@5": 0.904762,
+          "mrr": 0.850529
+        },
+        "C_prop_backfill": {
+          "events": 32,
+          "hit@5": 0.857143,
+          "mrr": 0.810847
+        }
+      },
+      "project:ae": {
+        "A_wta": {
+          "events": 135,
+          "hit@5": 0.91358,
+          "mrr": 0.742485
+        },
+        "B_prop": {
+          "events": 135,
+          "hit@5": 0.91358,
+          "mrr": 0.734254
+        },
+        "C_prop_backfill": {
+          "events": 135,
+          "hit@5": 0.91358,
+          "mrr": 0.734254
+        }
+      },
+      "project:lm": {
+        "A_wta": {
+          "events": 23,
+          "hit@5": 0.947368,
+          "mrr": 0.867168
+        },
+        "B_prop": {
+          "events": 23,
+          "hit@5": 0.947368,
+          "mrr": 0.874269
+        },
+        "C_prop_backfill": {
+          "events": 23,
+          "hit@5": 0.947368,
+          "mrr": 0.874269
+        }
+      },
+      "project:online": {
+        "A_wta": {
+          "events": 482,
+          "hit@5": 0.87037,
+          "mrr": 0.630713
+        },
+        "B_prop": {
+          "events": 482,
+          "hit@5": 0.864198,
+          "mrr": 0.626524
+        },
+        "C_prop_backfill": {
+          "events": 482,
+          "hit@5": 0.864198,
+          "mrr": 0.626524
+        }
+      },
+      "project:x": {
+        "A_wta": {
+          "events": 1535,
+          "hit@5": 0.962963,
+          "mrr": 0.704902
+        },
+        "B_prop": {
+          "events": 1535,
+          "hit@5": 0.964573,
+          "mrr": 0.70835
+        },
+        "C_prop_backfill": {
+          "events": 1535,
+          "hit@5": 0.964573,
+          "mrr": 0.70835
+        }
+      }
+    }
+  },
+  "cutoff": "2026-06-10T00:00:00Z",
+  "decisions_summary": [
+    "P5 combined holdout: PASS \u2014 A(WTA) 0.948601/0.703801, B(proportional) 0.949252/0.705807, C(proportional+typed-backfill) 0.948601/0.705265; all >= 0.99x committed baseline (0.947678/0.706212). Cutoff 2026-06-10T00:00:00Z uniform across all replay reports.",
+    "P3 rescue: KEEP (documented) \u2014 removal/causal-only regress holdout AND break pinning tests.",
+    "P3 floors: KEEP (documented) \u2014 narrowing is replay-neutral and would weaken ~9 existing test files' exact-value assertions; operators narrow via audited reseat, no automatic rewrites.",
+    "P6 MCP surface unchanged; migration-safe (no weight reset/bulk-rewrite added); latency after <= 1.10x before (worst 1.039x)."
+  ],
+  "gates": {
+    "P3_bandaid_floors": {
+      "decision": "KEEP"
+    },
+    "P3_bandaid_rescue": {
+      "decision": "KEEP"
+    },
+    "P5_combined_holdout": {
+      "detail": "A/B/C and live_weights holdout hit@5 & MRR all >= 0.99x committed baseline on the same 47011-event corpus",
+      "pass": true
+    },
+    "P5_cutoff_uniformity": {
+      "non_reports": {
+        "credit-proportional-weights.json": "trajectory/weights dump (no cutoff field; not a replay report)"
+      },
+      "pass": true,
+      "reports": {
+        "baseline.json": "2026-06-10T00:00:00Z",
+        "combined-holdout-backfilled.json": "2026-06-10T00:00:00Z",
+        "combined-holdout-nonbackfilled.json": "2026-06-10T00:00:00Z",
+        "credit-proportional.json": "2026-06-10T00:00:00Z"
+      }
+    },
+    "P5_graph_unique_share": {
+      "committed_baseline": 0.010391,
+      "current": 0.010349,
+      "not_decreased_within_corpus": true,
+      "note": "Scheme-INVARIANT in recorded-score replay (a property of recorded per-result evidence), so identical across A/B/C; it cannot rise in replay by construction (candidate-selection-bias limitation). The realized graph-value gain is the backfill's +9098 net-new non-redundant edges, exercised at live recall time, not in recorded-candidate replay."
+    },
+    "P6_latency": {
+      "pass": true,
+      "worst_ratio": 1.0393
+    },
+    "P6_mcp_surface": {
+      "pass": true,
+      "signature_drift": "none (server.py diff = 1 import + try/except derive_edges_for_new_trace inside memory_remember; no tool registration/signature change)",
+      "tests": "tests/test_mcp_server.py + tests/test_fastmcp_runtime.py -> 8 passed"
+    },
+    "P6_migration_safety": {
+      "added_by_this_tree": "none (feedback.py changed only _method_signals arithmetic; storage.py added only 2 additive partial indexes; config.py & maintenance.py untouched)",
+      "forbidden_ops_found": "none (no DELETE/REPLACE/bulk-UPDATE/TRUNCATE on retrieval_weights)",
+      "pass": true,
+      "writers_to_retrieval_weights": [
+        "storage.py:1074 set_retrieval_weights (per-scope INSERT..ON CONFLICT(scope) DO UPDATE)",
+        "storage.py:1467 _seed_retrieval_weights (INSERT..ON CONFLICT(scope) DO NOTHING, idempotent)"
+      ]
+    },
+    "full_suite": {
+      "no_assertions_weakened": "only tests/test_feedback_weights.py modified among existing files (import expanded + 5 new tests; the sole -1 is the replaced import line); no existing assertion changed",
+      "pass": true,
+      "result": "npm run check -> 332 passed in 26.78s; 0 failed, 0 skipped, 0 xfailed",
+      "skip_markers": "one inactive @pytest.mark.skipif(not BASELINE_PATH.exists()) in new tests/test_replay_harness.py; baseline.json exists so it does NOT fire (suite reports 0 skipped)"
+    }
+  },
+  "generated_at": "2026-07-07T20:32:44Z",
+  "latency": {
+    "after_src": "this tree HEAD @2d375a6",
+    "aggregate_write_pass_p50_ms": {
+      "after": 123.22,
+      "before": 121.65,
+      "ratio": 1.0129
+    },
+    "before_src": "master @394ad4c (git worktree /tmp/lm-master)",
+    "db_copy": "/tmp/lm-profile-copy.sqlite3 (sqlite backup of live global.sqlite3, read-only source)",
+    "gate": "after <= 1.10x before",
+    "gate_pass": true,
+    "methodology": "artifacts/discovery/profile_recall.py \u2014 real SentenceTransformer backend (as live), 2 warmups + 9 iters, median(total)=p50",
+    "per_scope": [
+      {
+        "after_p50_ms": 106.82,
+        "before_p50_ms": 109.11,
+        "depth": 1,
+        "pass": "no_write",
+        "pass_gate": true,
+        "ratio": 0.979,
+        "scope": "global"
+      },
+      {
+        "after_p50_ms": 151.79,
+        "before_p50_ms": 157.32,
+        "depth": 1,
+        "pass": "no_write",
+        "pass_gate": true,
+        "ratio": 0.9648,
+        "scope": "project:ae"
+      },
+      {
+        "after_p50_ms": 74.32,
+        "before_p50_ms": 71.51,
+        "depth": 1,
+        "pass": "no_write",
+        "pass_gate": true,
+        "ratio": 1.0393,
+        "scope": "project:lm"
+      },
+      {
+        "after_p50_ms": 117.14,
+        "before_p50_ms": 125.36,
+        "depth": 0,
+        "pass": "no_write",
+        "pass_gate": true,
+        "ratio": 0.9344,
+        "scope": "project:octopus"
+      },
+      {
+        "after_p50_ms": 191.96,
+        "before_p50_ms": 188.8,
+        "depth": 1,
+        "pass": "no_write",
+        "pass_gate": true,
+        "ratio": 1.0167,
+        "scope": "project:octopus"
+      },
+      {
+        "after_p50_ms": 107.87,
+        "before_p50_ms": 112.12,
+        "depth": 1,
+        "pass": "write",
+        "pass_gate": true,
+        "ratio": 0.9621,
+        "scope": "global"
+      },
+      {
+        "after_p50_ms": 154.27,
+        "before_p50_ms": 154.78,
+        "depth": 1,
+        "pass": "write",
+        "pass_gate": true,
+        "ratio": 0.9967,
+        "scope": "project:ae"
+      },
+      {
+        "after_p50_ms": 77.41,
+        "before_p50_ms": 79.26,
+        "depth": 1,
+        "pass": "write",
+        "pass_gate": true,
+        "ratio": 0.9767,
+        "scope": "project:lm"
+      },
+      {
+        "after_p50_ms": 123.22,
+        "before_p50_ms": 121.65,
+        "depth": 0,
+        "pass": "write",
+        "pass_gate": true,
+        "ratio": 1.0129,
+        "scope": "project:octopus"
+      },
+      {
+        "after_p50_ms": 197.86,
+        "before_p50_ms": 199.07,
+        "depth": 1,
+        "pass": "write",
+        "pass_gate": true,
+        "ratio": 0.9939,
+        "scope": "project:octopus"
+      }
+    ],
+    "worst_per_scope_ratio": 1.0393
+  },
+  "node": "scope:retrieval-credit-assignment-graph-value / integrate-simplify",
+  "postcondition_targets": [
+    "P3",
+    "P5",
+    "P6"
+  ]
+}

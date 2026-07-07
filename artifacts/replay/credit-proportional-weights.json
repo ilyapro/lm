@@ -1,0 +1,283 @@
+{
+  "final": {
+    "default": {
+      "bm25": 1.0,
+      "graph": 0.0,
+      "learning_rate": 0.05,
+      "vector": 0.0
+    },
+    "global": {
+      "bm25": 0.137338,
+      "graph": 0.05,
+      "learning_rate": 0.05,
+      "vector": 0.812662
+    },
+    "project": {
+      "bm25": 0.7,
+      "graph": 0.0,
+      "learning_rate": 0.05,
+      "vector": 0.3
+    },
+    "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+      "bm25": 0.51645,
+      "graph": 0.13446,
+      "learning_rate": 0.2,
+      "vector": 0.34909
+    },
+    "project:/root/p/lm": {
+      "bm25": 0.704123,
+      "graph": 0.090369,
+      "learning_rate": 0.2,
+      "vector": 0.205508
+    },
+    "project:/root/p/octopus": {
+      "bm25": 0.563526,
+      "graph": 0.066687,
+      "learning_rate": 0.2,
+      "vector": 0.369787
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+      "bm25": 0.653341,
+      "graph": 0.01767,
+      "learning_rate": 0.05,
+      "vector": 0.32899
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_breakthrough_gemini-flash-contract": {
+      "bm25": 0.701303,
+      "graph": 0.0,
+      "learning_rate": 0.05,
+      "vector": 0.298697
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+      "bm25": 0.657724,
+      "graph": 0.024971,
+      "learning_rate": 0.05,
+      "vector": 0.317305
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+      "bm25": 0.680889,
+      "graph": 0.016393,
+      "learning_rate": 0.05,
+      "vector": 0.302717
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+      "bm25": 0.659495,
+      "graph": 0.02241,
+      "learning_rate": 0.05,
+      "vector": 0.318096
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+      "bm25": 0.684183,
+      "graph": 0.022124,
+      "learning_rate": 0.05,
+      "vector": 0.293693
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+      "bm25": 0.680535,
+      "graph": 0.009901,
+      "learning_rate": 0.05,
+      "vector": 0.309564
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+      "bm25": 0.57789,
+      "graph": 0.095608,
+      "learning_rate": 0.05,
+      "vector": 0.326503
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+      "bm25": 0.553781,
+      "graph": 0.123827,
+      "learning_rate": 0.2,
+      "vector": 0.322392
+    },
+    "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+      "bm25": 0.684292,
+      "graph": 0.006188,
+      "learning_rate": 0.05,
+      "vector": 0.309521
+    },
+    "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+      "bm25": 0.672951,
+      "graph": 0.017781,
+      "learning_rate": 0.05,
+      "vector": 0.309267
+    },
+    "project:/root/p/octopus/.worktrees/goal-landing": {
+      "bm25": 0.671291,
+      "graph": 0.025322,
+      "learning_rate": 0.05,
+      "vector": 0.303387
+    },
+    "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+      "bm25": 0.655211,
+      "graph": 0.011772,
+      "learning_rate": 0.05,
+      "vector": 0.333017
+    },
+    "project:/root/p/octopus/.worktrees/goal-rise": {
+      "bm25": 0.667861,
+      "graph": 0.02597,
+      "learning_rate": 0.05,
+      "vector": 0.306169
+    },
+    "project:ae": {
+      "bm25": 0.115506,
+      "graph": 0.077402,
+      "learning_rate": 0.02,
+      "vector": 0.807092
+    },
+    "project:breakthrough/gemini-flash-contract": {
+      "bm25": 0.487135,
+      "graph": 0.152266,
+      "learning_rate": 0.2,
+      "vector": 0.360599
+    },
+    "project:breakthrough/programming-capability-loop": {
+      "bm25": 0.646852,
+      "graph": 0.0,
+      "learning_rate": 0.2,
+      "vector": 0.353148
+    },
+    "project:living-memory": {
+      "bm25": 0.641751,
+      "graph": 0.0,
+      "learning_rate": 0.2,
+      "vector": 0.358249
+    },
+    "project:lm": {
+      "bm25": 0.163727,
+      "graph": 0.057728,
+      "learning_rate": 0.05,
+      "vector": 0.778544
+    },
+    "project:mm": {
+      "bm25": 0.101975,
+      "graph": 0.086908,
+      "learning_rate": 0.1,
+      "vector": 0.811116
+    },
+    "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": {
+      "bm25": 0.590833,
+      "graph": 0.039353,
+      "learning_rate": 0.2,
+      "vector": 0.369814
+    },
+    "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": {
+      "bm25": 0.64624,
+      "graph": 0.0,
+      "learning_rate": 0.2,
+      "vector": 0.35376
+    },
+    "project:natural-flow/shared-organism-training": {
+      "bm25": 0.585324,
+      "graph": 0.0,
+      "learning_rate": 0.2,
+      "vector": 0.414676
+    },
+    "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": {
+      "bm25": 0.603828,
+      "graph": 0.031244,
+      "learning_rate": 0.2,
+      "vector": 0.364927
+    },
+    "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": {
+      "bm25": 0.588417,
+      "graph": 0.0,
+      "learning_rate": 0.2,
+      "vector": 0.411583
+    },
+    "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": {
+      "bm25": 0.500039,
+      "graph": 0.07019,
+      "learning_rate": 0.2,
+      "vector": 0.429771
+    },
+    "project:octopus": {
+      "bm25": 0.104149,
+      "graph": 0.200958,
+      "learning_rate": 0.02,
+      "vector": 0.694892
+    },
+    "project:octopus-capability-stack": {
+      "bm25": 0.443607,
+      "graph": 0.025319,
+      "learning_rate": 0.2,
+      "vector": 0.531074
+    },
+    "project:online": {
+      "bm25": 0.163779,
+      "graph": 0.075587,
+      "learning_rate": 0.02,
+      "vector": 0.760633
+    },
+    "project:prompt-engine-v3-lm-driven": {
+      "bm25": 0.715136,
+      "graph": 0.029833,
+      "learning_rate": 0.1,
+      "vector": 0.255031
+    },
+    "project:repo": {
+      "bm25": 0.387885,
+      "graph": 0.141268,
+      "learning_rate": 0.2,
+      "vector": 0.470847
+    },
+    "project:rise/gemini-comparator-execution": {
+      "bm25": 0.579743,
+      "graph": 0.130335,
+      "learning_rate": 0.2,
+      "vector": 0.289922
+    },
+    "project:x": {
+      "bm25": 0.165943,
+      "graph": 0.112502,
+      "learning_rate": 0.02,
+      "vector": 0.721555
+    },
+    "session": {
+      "bm25": 0.8,
+      "graph": 0.0,
+      "learning_rate": 0.05,
+      "vector": 0.2
+    }
+  },
+  "update_counts": {
+    "global": 761,
+    "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": 43,
+    "project:/root/p/lm": 10,
+    "project:/root/p/octopus": 71,
+    "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": 18,
+    "project:/root/p/octopus/.worktrees/_node_exec_breakthrough_gemini-flash-contract": 5,
+    "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": 8,
+    "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": 6,
+    "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": 10,
+    "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": 5,
+    "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": 8,
+    "project:/root/p/octopus/.worktrees/_node_exec_rise": 25,
+    "project:/root/p/octopus/.worktrees/_node_exec_rise2": 10,
+    "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": 5,
+    "project:/root/p/octopus/.worktrees/goal-breakthrough": 8,
+    "project:/root/p/octopus/.worktrees/goal-landing": 10,
+    "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": 13,
+    "project:/root/p/octopus/.worktrees/goal-rise": 5,
+    "project:ae": 8684,
+    "project:breakthrough/gemini-flash-contract": 20,
+    "project:breakthrough/programming-capability-loop": 5,
+    "project:living-memory": 4,
+    "project:lm": 1758,
+    "project:mm": 552,
+    "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": 8,
+    "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": 5,
+    "project:natural-flow/shared-organism-training": 5,
+    "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": 5,
+    "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": 5,
+    "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": 38,
+    "project:octopus": 12317,
+    "project:octopus-capability-stack": 30,
+    "project:online": 14438,
+    "project:prompt-engine-v3-lm-driven": 25,
+    "project:repo": 21,
+    "project:rise/gemini-comparator-execution": 10,
+    "project:x": 3397
+  }
+}

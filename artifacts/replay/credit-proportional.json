@@ -1,0 +1,2579 @@
+{
+  "corpus": {
+    "empty_results": 20,
+    "first_event_at": "2026-05-15T07:25:32Z",
+    "incomplete_results": 0,
+    "last_event_at": "2026-07-07T19:02:12Z",
+    "total_events": 46985,
+    "usable_events": 46965
+  },
+  "cutoff": "2026-06-10T00:00:00Z",
+  "db_path": "/tmp/lm_credit_snapshot.sqlite3",
+  "generated_at": "2026-07-07T19:03:20Z",
+  "harness": {
+    "credit_rule": "winner_take_all",
+    "evidence_mode": "snapshot",
+    "label": {
+      "min_containment": 0.25,
+      "protocol": "grounded",
+      "reconsume_min_traces": 2,
+      "usefulness_threshold": 0.8
+    },
+    "lr_policy": "snapshot",
+    "min_scope_events": 50,
+    "schemes": [
+      "recorded",
+      "live_weights",
+      "replayed_winner_take_all",
+      "replayed_proportional"
+    ],
+    "supersedes": "none",
+    "version": 1
+  },
+  "label_sensitivity": {
+    "grounded": {
+      "discrimination": {
+        "all_useful_fraction": 0.008581,
+        "mean_useful_share": 0.162934,
+        "multi_result_events": 7575,
+        "none_useful_fraction": 0.524092,
+        "strict_subset_events": 3540,
+        "strict_subset_fraction": 0.467327
+      },
+      "events_with_useful": 3608,
+      "overall_live_weights": {
+        "events": 7596,
+        "events_with_useful": 3608,
+        "graph_unique_share": 0.00788,
+        "graph_zeroed": {
+          "dropped_entirely": 0.00101,
+          "dropped_top1": 0.005543,
+          "dropped_top5": 0.005764,
+          "dropped_top_max": 0.00101,
+          "hit@5": 0.924612,
+          "mrr": 0.675288
+        },
+        "hit@1": 0.5,
+        "hit@10": 0.997228,
+        "hit@5": 0.924335,
+        "mrr": 0.675385,
+        "useful_results": 9899
+      },
+      "useful_results": 9899
+    },
+    "grounded_or_reconsumed": {
+      "discrimination": {
+        "all_useful_fraction": 0.726073,
+        "mean_useful_share": 0.930701,
+        "multi_result_events": 7575,
+        "none_useful_fraction": 0.002376,
+        "strict_subset_events": 2057,
+        "strict_subset_fraction": 0.271551
+      },
+      "events_with_useful": 7574,
+      "overall_live_weights": {
+        "events": 7596,
+        "events_with_useful": 7574,
+        "graph_unique_share": 0.027065,
+        "graph_zeroed": {
+          "dropped_entirely": 0.002285,
+          "dropped_top1": 0.009403,
+          "dropped_top5": 0.011955,
+          "dropped_top_max": 0.002285,
+          "hit@5": 0.996039,
+          "mrr": 0.950212
+        },
+        "hit@1": 0.912728,
+        "hit@10": 0.999868,
+        "hit@5": 0.996303,
+        "mrr": 0.950535,
+        "useful_results": 55569
+      },
+      "useful_results": 55569
+    },
+    "reconsumed": {
+      "discrimination": {
+        "all_useful_fraction": 0.630759,
+        "mean_useful_share": 0.899028,
+        "multi_result_events": 7575,
+        "none_useful_fraction": 0.006997,
+        "strict_subset_events": 2744,
+        "strict_subset_fraction": 0.362244
+      },
+      "events_with_useful": 7539,
+      "overall_live_weights": {
+        "events": 7596,
+        "events_with_useful": 7539,
+        "graph_unique_share": 0.027868,
+        "graph_zeroed": {
+          "dropped_entirely": 0.00233,
+          "dropped_top1": 0.010029,
+          "dropped_top5": 0.012372,
+          "dropped_top_max": 0.00233,
+          "hit@5": 0.993368,
+          "mrr": 0.917897
+        },
+        "hit@1": 0.859663,
+        "hit@10": 0.999867,
+        "hit@5": 0.993898,
+        "mrr": 0.918422,
+        "useful_results": 53645
+      },
+      "useful_results": 53645
+    },
+    "usefulness": {
+      "discrimination": {
+        "all_useful_fraction": 0.165677,
+        "mean_useful_share": 0.627702,
+        "multi_result_events": 7575,
+        "none_useful_fraction": 0.051485,
+        "strict_subset_events": 5930,
+        "strict_subset_fraction": 0.782838
+      },
+      "events_with_useful": 7194,
+      "overall_live_weights": {
+        "events": 7596,
+        "events_with_useful": 7194,
+        "graph_unique_share": 0.009,
+        "graph_zeroed": {
+          "dropped_entirely": 0.002204,
+          "dropped_top1": 0.01541,
+          "dropped_top5": 0.015013,
+          "dropped_top_max": 0.002204,
+          "hit@5": 0.928413,
+          "mrr": 0.620453
+        },
+        "hit@1": 0.423964,
+        "hit@10": 0.998749,
+        "hit@5": 0.928413,
+        "mrr": 0.62012,
+        "useful_results": 38111
+      },
+      "useful_results": 38111
+    }
+  },
+  "labeled_events": 7596,
+  "labeling": {
+    "config": {
+      "min_containment": 0.25,
+      "protocol": "grounded",
+      "reconsume_min_traces": 2,
+      "usefulness_threshold": 0.8
+    },
+    "discrimination": {
+      "all_useful_fraction": 0.008581,
+      "mean_useful_share": 0.162934,
+      "multi_result_events": 7575,
+      "none_useful_fraction": 0.524092,
+      "strict_subset_events": 3540,
+      "strict_subset_fraction": 0.467327
+    },
+    "events_with_useful": 3608,
+    "labeled_events": 7596,
+    "labeled_results": 59895,
+    "missing_consuming_traces": 33,
+    "missing_result_nodes": 21,
+    "useful_results": 9899
+  },
+  "metrics": {
+    "live_weights": {
+      "holdout": {
+        "events": 2220,
+        "events_with_useful": 1533,
+        "graph_unique_share": 0.010371,
+        "graph_zeroed": {
+          "dropped_entirely": 0.0,
+          "dropped_top1": 0.003681,
+          "dropped_top5": 0.004649,
+          "dropped_top_max": 0.0,
+          "hit@5": 0.949119,
+          "mrr": 0.70633
+        },
+        "hit@1": 0.531637,
+        "hit@10": 0.996738,
+        "hit@5": 0.947815,
+        "mrr": 0.706652,
+        "per_scope": {
+          "_other": {
+            "events": 14,
+            "events_with_useful": 9,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.888889,
+              "mrr": 0.768519
+            },
+            "hit@1": 0.666667,
+            "hit@10": 0.888889,
+            "hit@5": 0.888889,
+            "mrr": 0.768519,
+            "useful_results": 23
+          },
+          "global": {
+            "events": 32,
+            "events_with_useful": 21,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.904762,
+              "mrr": 0.846825
+            },
+            "hit@1": 0.809524,
+            "hit@10": 1.0,
+            "hit@5": 0.904762,
+            "mrr": 0.846825,
+            "useful_results": 44
+          },
+          "project:ae": {
+            "events": 135,
+            "events_with_useful": 81,
+            "graph_unique_share": 0.004831,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.888889,
+              "mrr": 0.722389
+            },
+            "hit@1": 0.604938,
+            "hit@10": 1.0,
+            "hit@5": 0.888889,
+            "mrr": 0.72282,
+            "useful_results": 207
+          },
+          "project:lm": {
+            "events": 19,
+            "events_with_useful": 15,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.933333,
+              "mrr": 0.87619
+            },
+            "hit@1": 0.8,
+            "hit@10": 1.0,
+            "hit@5": 0.933333,
+            "mrr": 0.87619,
+            "useful_results": 39
+          },
+          "project:mm": {
+            "events": 3,
+            "events_with_useful": 3,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.666667,
+              "mrr": 0.7
+            },
+            "hit@1": 0.666667,
+            "hit@10": 1.0,
+            "hit@5": 0.666667,
+            "mrr": 0.7,
+            "useful_results": 14
+          },
+          "project:online": {
+            "events": 482,
+            "events_with_useful": 162,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.839506,
+              "mrr": 0.617394
+            },
+            "hit@1": 0.432099,
+            "hit@10": 0.975309,
+            "hit@5": 0.839506,
+            "mrr": 0.61775,
+            "useful_results": 352
+          },
+          "project:x": {
+            "events": 1535,
+            "events_with_useful": 1242,
+            "graph_unique_share": 0.011705,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.004552,
+              "dropped_top5": 0.005356,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.969404,
+              "mrr": 0.712021
+            },
+            "hit@1": 0.530596,
+            "hit@10": 1.0,
+            "hit@5": 0.967794,
+            "mrr": 0.712344,
+            "useful_results": 4528
+          }
+        },
+        "useful_results": 5207
+      },
+      "overall": {
+        "events": 7596,
+        "events_with_useful": 3608,
+        "graph_unique_share": 0.00788,
+        "graph_zeroed": {
+          "dropped_entirely": 0.00101,
+          "dropped_top1": 0.005543,
+          "dropped_top5": 0.005764,
+          "dropped_top_max": 0.00101,
+          "hit@5": 0.924612,
+          "mrr": 0.675288
+        },
+        "hit@1": 0.5,
+        "hit@10": 0.997228,
+        "hit@5": 0.924335,
+        "mrr": 0.675385,
+        "per_scope": {
+          "_other": {
+            "events": 86,
+            "events_with_useful": 41,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.090909,
+              "dropped_top5": 0.009434,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.97561,
+              "mrr": 0.731707
+            },
+            "hit@1": 0.536585,
+            "hit@10": 0.97561,
+            "hit@5": 0.97561,
+            "mrr": 0.727642,
+            "useful_results": 125
+          },
+          "global": {
+            "events": 115,
+            "events_with_useful": 79,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.018265,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.974684,
+              "mrr": 0.848945
+            },
+            "hit@1": 0.746835,
+            "hit@10": 1.0,
+            "hit@5": 0.974684,
+            "mrr": 0.846835,
+            "useful_results": 312
+          },
+          "project:ae": {
+            "events": 1252,
+            "events_with_useful": 384,
+            "graph_unique_share": 0.008759,
+            "graph_zeroed": {
+              "dropped_entirely": 0.007299,
+              "dropped_top1": 0.006579,
+              "dropped_top5": 0.001912,
+              "dropped_top_max": 0.007299,
+              "hit@5": 0.861979,
+              "mrr": 0.575555
+            },
+            "hit@1": 0.395833,
+            "hit@10": 0.992188,
+            "hit@5": 0.859375,
+            "mrr": 0.57599,
+            "useful_results": 685
+          },
+          "project:lm": {
+            "events": 261,
+            "events_with_useful": 118,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.008696,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.966102,
+              "mrr": 0.790264
+            },
+            "hit@1": 0.661017,
+            "hit@10": 1.0,
+            "hit@5": 0.966102,
+            "mrr": 0.789558,
+            "useful_results": 268
+          },
+          "project:mm": {
+            "events": 63,
+            "events_with_useful": 21,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.952381,
+              "mrr": 0.933333
+            },
+            "hit@1": 0.904762,
+            "hit@10": 1.0,
+            "hit@5": 0.952381,
+            "mrr": 0.933333,
+            "useful_results": 46
+          },
+          "project:octopus": {
+            "events": 1546,
+            "events_with_useful": 779,
+            "graph_unique_share": 0.008023,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001416,
+              "dropped_top1": 0.007042,
+              "dropped_top5": 0.010316,
+              "dropped_top_max": 0.001416,
+              "hit@5": 0.912709,
+              "mrr": 0.596311
+            },
+            "hit@1": 0.36457,
+            "hit@10": 0.998716,
+            "hit@5": 0.915276,
+            "mrr": 0.596958,
+            "useful_results": 2119
+          },
+          "project:online": {
+            "events": 2318,
+            "events_with_useful": 760,
+            "graph_unique_share": 0.001377,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001377,
+              "dropped_top1": 0.002597,
+              "dropped_top5": 0.0009,
+              "dropped_top_max": 0.001377,
+              "hit@5": 0.861842,
+              "mrr": 0.650198
+            },
+            "hit@1": 0.506579,
+            "hit@10": 0.993421,
+            "hit@5": 0.861842,
+            "mrr": 0.650369,
+            "useful_results": 1452
+          },
+          "project:x": {
+            "events": 1955,
+            "events_with_useful": 1426,
+            "graph_unique_share": 0.010834,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.004969,
+              "dropped_top5": 0.004845,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.973352,
+              "mrr": 0.734102
+            },
+            "hit@1": 0.564516,
+            "hit@10": 1.0,
+            "hit@5": 0.97195,
+            "mrr": 0.73408,
+            "useful_results": 4892
+          }
+        },
+        "useful_results": 9899
+      },
+      "train": {
+        "events": 5376,
+        "events_with_useful": 2075,
+        "graph_unique_share": 0.005115,
+        "graph_zeroed": {
+          "dropped_entirely": 0.002131,
+          "dropped_top1": 0.007078,
+          "dropped_top5": 0.006887,
+          "dropped_top_max": 0.002131,
+          "hit@5": 0.906506,
+          "mrr": 0.652353
+        },
+        "hit@1": 0.476627,
+        "hit@10": 0.99759,
+        "hit@5": 0.906988,
+        "mrr": 0.652285,
+        "per_scope": {
+          "_other": {
+            "events": 72,
+            "events_with_useful": 32,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.125,
+              "dropped_top5": 0.011236,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.721354
+            },
+            "hit@1": 0.5,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.716146,
+            "useful_results": 102
+          },
+          "global": {
+            "events": 83,
+            "events_with_useful": 58,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.022222,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.849713
+            },
+            "hit@1": 0.724138,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.846839,
+            "useful_results": 268
+          },
+          "project:ae": {
+            "events": 1117,
+            "events_with_useful": 303,
+            "graph_unique_share": 0.01046,
+            "graph_zeroed": {
+              "dropped_entirely": 0.01046,
+              "dropped_top1": 0.009709,
+              "dropped_top5": 0.002688,
+              "dropped_top_max": 0.01046,
+              "hit@5": 0.854785,
+              "mrr": 0.536302
+            },
+            "hit@1": 0.339934,
+            "hit@10": 0.990099,
+            "hit@5": 0.851485,
+            "mrr": 0.536739,
+            "useful_results": 478
+          },
+          "project:lm": {
+            "events": 242,
+            "events_with_useful": 103,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.009901,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.970874,
+              "mrr": 0.777751
+            },
+            "hit@1": 0.640777,
+            "hit@10": 1.0,
+            "hit@5": 0.970874,
+            "mrr": 0.776942,
+            "useful_results": 229
+          },
+          "project:mm": {
+            "events": 60,
+            "events_with_useful": 18,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.972222
+            },
+            "hit@1": 0.944444,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.972222,
+            "useful_results": 32
+          },
+          "project:octopus": {
+            "events": 1546,
+            "events_with_useful": 779,
+            "graph_unique_share": 0.008023,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001416,
+              "dropped_top1": 0.007042,
+              "dropped_top5": 0.010316,
+              "dropped_top_max": 0.001416,
+              "hit@5": 0.912709,
+              "mrr": 0.596311
+            },
+            "hit@1": 0.36457,
+            "hit@10": 0.998716,
+            "hit@5": 0.915276,
+            "mrr": 0.596958,
+            "useful_results": 2119
+          },
+          "project:online": {
+            "events": 1836,
+            "events_with_useful": 598,
+            "graph_unique_share": 0.001818,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001818,
+              "dropped_top1": 0.003175,
+              "dropped_top5": 0.001148,
+              "dropped_top_max": 0.001818,
+              "hit@5": 0.867893,
+              "mrr": 0.659085
+            },
+            "hit@1": 0.526756,
+            "hit@10": 0.998328,
+            "hit@5": 0.867893,
+            "mrr": 0.659205,
+            "useful_results": 1100
+          },
+          "project:x": {
+            "events": 420,
+            "events_with_useful": 184,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.006849,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.883152
+            },
+            "hit@1": 0.793478,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.880797,
+            "useful_results": 364
+          }
+        },
+        "useful_results": 4692
+      }
+    },
+    "recorded": {
+      "holdout": {
+        "events": 2220,
+        "events_with_useful": 1533,
+        "graph_unique_share": 0.010371,
+        "graph_zeroed": {
+          "dropped_entirely": 0.0,
+          "dropped_top1": 0.0,
+          "dropped_top5": 0.0,
+          "dropped_top_max": 0.0,
+          "hit@5": 0.908676,
+          "mrr": 0.612297
+        },
+        "hit@1": 0.412916,
+        "hit@10": 0.998043,
+        "hit@5": 0.908676,
+        "mrr": 0.612297,
+        "per_scope": {
+          "_other": {
+            "events": 14,
+            "events_with_useful": 9,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.888889,
+              "mrr": 0.833333
+            },
+            "hit@1": 0.777778,
+            "hit@10": 1.0,
+            "hit@5": 0.888889,
+            "mrr": 0.833333,
+            "useful_results": 23
+          },
+          "global": {
+            "events": 32,
+            "events_with_useful": 21,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.952381,
+              "mrr": 0.806878
+            },
+            "hit@1": 0.714286,
+            "hit@10": 1.0,
+            "hit@5": 0.952381,
+            "mrr": 0.806878,
+            "useful_results": 44
+          },
+          "project:ae": {
+            "events": 135,
+            "events_with_useful": 81,
+            "graph_unique_share": 0.004831,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.888889,
+              "mrr": 0.679155
+            },
+            "hit@1": 0.530864,
+            "hit@10": 0.987654,
+            "hit@5": 0.888889,
+            "mrr": 0.679155,
+            "useful_results": 207
+          },
+          "project:lm": {
+            "events": 19,
+            "events_with_useful": 15,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.8,
+              "mrr": 0.645635
+            },
+            "hit@1": 0.466667,
+            "hit@10": 1.0,
+            "hit@5": 0.8,
+            "mrr": 0.645635,
+            "useful_results": 39
+          },
+          "project:mm": {
+            "events": 3,
+            "events_with_useful": 3,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.611111
+            },
+            "hit@1": 0.333333,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.611111,
+            "useful_results": 14
+          },
+          "project:online": {
+            "events": 482,
+            "events_with_useful": 162,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.783951,
+              "mrr": 0.541858
+            },
+            "hit@1": 0.358025,
+            "hit@10": 0.993827,
+            "hit@5": 0.783951,
+            "mrr": 0.541858,
+            "useful_results": 352
+          },
+          "project:x": {
+            "events": 1535,
+            "events_with_useful": 1242,
+            "graph_unique_share": 0.011705,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.926731,
+              "mrr": 0.611833
+            },
+            "hit@1": 0.404187,
+            "hit@10": 0.999195,
+            "hit@5": 0.926731,
+            "mrr": 0.611833,
+            "useful_results": 4528
+          }
+        },
+        "useful_results": 5207
+      },
+      "overall": {
+        "events": 7596,
+        "events_with_useful": 3608,
+        "graph_unique_share": 0.00788,
+        "graph_zeroed": {
+          "dropped_entirely": 0.00101,
+          "dropped_top1": 0.0,
+          "dropped_top5": 0.000161,
+          "dropped_top_max": 0.00101,
+          "hit@5": 0.858647,
+          "mrr": 0.538345
+        },
+        "hit@1": 0.327882,
+        "hit@10": 0.992794,
+        "hit@5": 0.858925,
+        "mrr": 0.538535,
+        "per_scope": {
+          "_other": {
+            "events": 86,
+            "events_with_useful": 41,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.95122,
+              "mrr": 0.722997
+            },
+            "hit@1": 0.536585,
+            "hit@10": 1.0,
+            "hit@5": 0.95122,
+            "mrr": 0.722997,
+            "useful_results": 125
+          },
+          "global": {
+            "events": 115,
+            "events_with_useful": 79,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.974684,
+              "mrr": 0.843721
+            },
+            "hit@1": 0.759494,
+            "hit@10": 1.0,
+            "hit@5": 0.974684,
+            "mrr": 0.843721,
+            "useful_results": 312
+          },
+          "project:ae": {
+            "events": 1252,
+            "events_with_useful": 384,
+            "graph_unique_share": 0.008759,
+            "graph_zeroed": {
+              "dropped_entirely": 0.007299,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.007299,
+              "hit@5": 0.817708,
+              "mrr": 0.517562
+            },
+            "hit@1": 0.317708,
+            "hit@10": 0.979167,
+            "hit@5": 0.817708,
+            "mrr": 0.518228,
+            "useful_results": 685
+          },
+          "project:lm": {
+            "events": 261,
+            "events_with_useful": 118,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.940678,
+              "mrr": 0.679775
+            },
+            "hit@1": 0.5,
+            "hit@10": 1.0,
+            "hit@5": 0.940678,
+            "mrr": 0.679775,
+            "useful_results": 268
+          },
+          "project:mm": {
+            "events": 63,
+            "events_with_useful": 21,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.761905,
+              "mrr": 0.604214
+            },
+            "hit@1": 0.428571,
+            "hit@10": 1.0,
+            "hit@5": 0.761905,
+            "mrr": 0.604214,
+            "useful_results": 46
+          },
+          "project:octopus": {
+            "events": 1546,
+            "events_with_useful": 779,
+            "graph_unique_share": 0.008023,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001416,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.000763,
+              "dropped_top_max": 0.001416,
+              "hit@5": 0.852375,
+              "mrr": 0.480234
+            },
+            "hit@1": 0.241335,
+            "hit@10": 0.993582,
+            "hit@5": 0.853659,
+            "mrr": 0.480704,
+            "useful_results": 2119
+          },
+          "project:online": {
+            "events": 2318,
+            "events_with_useful": 760,
+            "graph_unique_share": 0.001377,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001377,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.001377,
+              "hit@5": 0.784211,
+              "mrr": 0.468624
+            },
+            "hit@1": 0.260526,
+            "hit@10": 0.989474,
+            "hit@5": 0.784211,
+            "mrr": 0.468706,
+            "useful_results": 1452
+          },
+          "project:x": {
+            "events": 1955,
+            "events_with_useful": 1426,
+            "graph_unique_share": 0.010834,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.898317,
+              "mrr": 0.577945
+            },
+            "hit@1": 0.368163,
+            "hit@10": 0.996494,
+            "hit@5": 0.898317,
+            "mrr": 0.577945,
+            "useful_results": 4892
+          }
+        },
+        "useful_results": 9899
+      },
+      "train": {
+        "events": 5376,
+        "events_with_useful": 2075,
+        "graph_unique_share": 0.005115,
+        "graph_zeroed": {
+          "dropped_entirely": 0.002131,
+          "dropped_top1": 0.0,
+          "dropped_top5": 0.000337,
+          "dropped_top_max": 0.002131,
+          "hit@5": 0.821687,
+          "mrr": 0.483709
+        },
+        "hit@1": 0.26506,
+        "hit@10": 0.988916,
+        "hit@5": 0.822169,
+        "mrr": 0.484039,
+        "per_scope": {
+          "_other": {
+            "events": 72,
+            "events_with_useful": 32,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.96875,
+              "mrr": 0.691964
+            },
+            "hit@1": 0.46875,
+            "hit@10": 1.0,
+            "hit@5": 0.96875,
+            "mrr": 0.691964,
+            "useful_results": 102
+          },
+          "global": {
+            "events": 83,
+            "events_with_useful": 58,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.982759,
+              "mrr": 0.857061
+            },
+            "hit@1": 0.775862,
+            "hit@10": 1.0,
+            "hit@5": 0.982759,
+            "mrr": 0.857061,
+            "useful_results": 268
+          },
+          "project:ae": {
+            "events": 1117,
+            "events_with_useful": 303,
+            "graph_unique_share": 0.01046,
+            "graph_zeroed": {
+              "dropped_entirely": 0.01046,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.01046,
+              "hit@5": 0.79868,
+              "mrr": 0.474364
+            },
+            "hit@1": 0.260726,
+            "hit@10": 0.976898,
+            "hit@5": 0.79868,
+            "mrr": 0.475208,
+            "useful_results": 478
+          },
+          "project:lm": {
+            "events": 242,
+            "events_with_useful": 103,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.961165,
+              "mrr": 0.684747
+            },
+            "hit@1": 0.504854,
+            "hit@10": 1.0,
+            "hit@5": 0.961165,
+            "mrr": 0.684747,
+            "useful_results": 229
+          },
+          "project:mm": {
+            "events": 60,
+            "events_with_useful": 18,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.722222,
+              "mrr": 0.603064
+            },
+            "hit@1": 0.444444,
+            "hit@10": 1.0,
+            "hit@5": 0.722222,
+            "mrr": 0.603064,
+            "useful_results": 32
+          },
+          "project:octopus": {
+            "events": 1546,
+            "events_with_useful": 779,
+            "graph_unique_share": 0.008023,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001416,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.000763,
+              "dropped_top_max": 0.001416,
+              "hit@5": 0.852375,
+              "mrr": 0.480234
+            },
+            "hit@1": 0.241335,
+            "hit@10": 0.993582,
+            "hit@5": 0.853659,
+            "mrr": 0.480704,
+            "useful_results": 2119
+          },
+          "project:online": {
+            "events": 1836,
+            "events_with_useful": 598,
+            "graph_unique_share": 0.001818,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001818,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.001818,
+              "hit@5": 0.784281,
+              "mrr": 0.448784
+            },
+            "hit@1": 0.234114,
+            "hit@10": 0.988294,
+            "hit@5": 0.784281,
+            "mrr": 0.448889,
+            "useful_results": 1100
+          },
+          "project:x": {
+            "events": 420,
+            "events_with_useful": 184,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.706522,
+              "mrr": 0.349198
+            },
+            "hit@1": 0.125,
+            "hit@10": 0.978261,
+            "hit@5": 0.706522,
+            "mrr": 0.349198,
+            "useful_results": 364
+          }
+        },
+        "useful_results": 4692
+      }
+    },
+    "replayed_proportional": {
+      "holdout": {
+        "events": 2220,
+        "events_with_useful": 1533,
+        "graph_unique_share": 0.010371,
+        "graph_zeroed": {
+          "dropped_entirely": 0.0,
+          "dropped_top1": 0.004884,
+          "dropped_top5": 0.00765,
+          "dropped_top_max": 0.0,
+          "hit@5": 0.949119,
+          "mrr": 0.706634
+        },
+        "hit@1": 0.534247,
+        "hit@10": 0.996738,
+        "hit@5": 0.950424,
+        "mrr": 0.707793,
+        "per_scope": {
+          "_other": {
+            "events": 14,
+            "events_with_useful": 9,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.888889,
+              "mrr": 0.768519
+            },
+            "hit@1": 0.666667,
+            "hit@10": 0.888889,
+            "hit@5": 0.888889,
+            "mrr": 0.768519,
+            "useful_results": 23
+          },
+          "global": {
+            "events": 32,
+            "events_with_useful": 21,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.904762,
+              "mrr": 0.847354
+            },
+            "hit@1": 0.809524,
+            "hit@10": 1.0,
+            "hit@5": 0.904762,
+            "mrr": 0.847354,
+            "useful_results": 44
+          },
+          "project:ae": {
+            "events": 135,
+            "events_with_useful": 81,
+            "graph_unique_share": 0.004831,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.013245,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.888889,
+              "mrr": 0.716216
+            },
+            "hit@1": 0.592593,
+            "hit@10": 1.0,
+            "hit@5": 0.888889,
+            "mrr": 0.716819,
+            "useful_results": 207
+          },
+          "project:lm": {
+            "events": 19,
+            "events_with_useful": 15,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.933333,
+              "mrr": 0.875
+            },
+            "hit@1": 0.8,
+            "hit@10": 1.0,
+            "hit@5": 0.933333,
+            "mrr": 0.875,
+            "useful_results": 39
+          },
+          "project:mm": {
+            "events": 3,
+            "events_with_useful": 3,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.666667,
+              "mrr": 0.7
+            },
+            "hit@1": 0.666667,
+            "hit@10": 1.0,
+            "hit@5": 0.666667,
+            "mrr": 0.7,
+            "useful_results": 14
+          },
+          "project:online": {
+            "events": 482,
+            "events_with_useful": 162,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.839506,
+              "mrr": 0.617086
+            },
+            "hit@1": 0.432099,
+            "hit@10": 0.975309,
+            "hit@5": 0.839506,
+            "mrr": 0.617103,
+            "useful_results": 352
+          },
+          "project:x": {
+            "events": 1535,
+            "events_with_useful": 1242,
+            "graph_unique_share": 0.011705,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.006024,
+              "dropped_top5": 0.008184,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.969404,
+              "mrr": 0.712844
+            },
+            "hit@1": 0.534622,
+            "hit@10": 1.0,
+            "hit@5": 0.971014,
+            "mrr": 0.714233,
+            "useful_results": 4528
+          }
+        },
+        "useful_results": 5207
+      },
+      "overall": {
+        "events": 7596,
+        "events_with_useful": 3608,
+        "graph_unique_share": 0.00788,
+        "graph_zeroed": {
+          "dropped_entirely": 0.00101,
+          "dropped_top1": 0.003939,
+          "dropped_top5": 0.008824,
+          "dropped_top_max": 0.00101,
+          "hit@5": 0.928215,
+          "mrr": 0.670635
+        },
+        "hit@1": 0.492517,
+        "hit@10": 0.997228,
+        "hit@5": 0.928492,
+        "mrr": 0.670369,
+        "per_scope": {
+          "_other": {
+            "events": 86,
+            "events_with_useful": 41,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.028037,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.97561,
+              "mrr": 0.707317
+            },
+            "hit@1": 0.487805,
+            "hit@10": 0.97561,
+            "hit@5": 0.97561,
+            "mrr": 0.707317,
+            "useful_results": 125
+          },
+          "global": {
+            "events": 115,
+            "events_with_useful": 79,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.022321,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.974684,
+              "mrr": 0.862799
+            },
+            "hit@1": 0.78481,
+            "hit@10": 1.0,
+            "hit@5": 0.974684,
+            "mrr": 0.862799,
+            "useful_results": 312
+          },
+          "project:ae": {
+            "events": 1252,
+            "events_with_useful": 384,
+            "graph_unique_share": 0.008759,
+            "graph_zeroed": {
+              "dropped_entirely": 0.007299,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.007648,
+              "dropped_top_max": 0.007299,
+              "hit@5": 0.872396,
+              "mrr": 0.572241
+            },
+            "hit@1": 0.385417,
+            "hit@10": 0.992188,
+            "hit@5": 0.872396,
+            "mrr": 0.572859,
+            "useful_results": 685
+          },
+          "project:lm": {
+            "events": 261,
+            "events_with_useful": 118,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.004444,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.966102,
+              "mrr": 0.765547
+            },
+            "hit@1": 0.627119,
+            "hit@10": 1.0,
+            "hit@5": 0.966102,
+            "mrr": 0.765547,
+            "useful_results": 268
+          },
+          "project:mm": {
+            "events": 63,
+            "events_with_useful": 21,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.952381,
+              "mrr": 0.933333
+            },
+            "hit@1": 0.904762,
+            "hit@10": 1.0,
+            "hit@5": 0.952381,
+            "mrr": 0.933333,
+            "useful_results": 46
+          },
+          "project:octopus": {
+            "events": 1546,
+            "events_with_useful": 779,
+            "graph_unique_share": 0.008023,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001416,
+              "dropped_top1": 0.007273,
+              "dropped_top5": 0.013708,
+              "dropped_top_max": 0.001416,
+              "hit@5": 0.928113,
+              "mrr": 0.595371
+            },
+            "hit@1": 0.353017,
+            "hit@10": 1.0,
+            "hit@5": 0.928113,
+            "mrr": 0.591384,
+            "useful_results": 2119
+          },
+          "project:online": {
+            "events": 2318,
+            "events_with_useful": 760,
+            "graph_unique_share": 0.001377,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001377,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.003663,
+              "dropped_top_max": 0.001377,
+              "hit@5": 0.857895,
+              "mrr": 0.633776
+            },
+            "hit@1": 0.485526,
+            "hit@10": 0.992105,
+            "hit@5": 0.857895,
+            "mrr": 0.634365,
+            "useful_results": 1452
+          },
+          "project:x": {
+            "events": 1955,
+            "events_with_useful": 1426,
+            "graph_unique_share": 0.010834,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.006173,
+              "dropped_top5": 0.007403,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.973352,
+              "mrr": 0.734469
+            },
+            "hit@1": 0.568022,
+            "hit@10": 1.0,
+            "hit@5": 0.974053,
+            "mrr": 0.735492,
+            "useful_results": 4892
+          }
+        },
+        "useful_results": 9899
+      },
+      "train": {
+        "events": 5376,
+        "events_with_useful": 2075,
+        "graph_unique_share": 0.005115,
+        "graph_zeroed": {
+          "dropped_entirely": 0.002131,
+          "dropped_top1": 0.003132,
+          "dropped_top5": 0.010019,
+          "dropped_top_max": 0.002131,
+          "hit@5": 0.912771,
+          "mrr": 0.64404
+        },
+        "hit@1": 0.461687,
+        "hit@10": 0.99759,
+        "hit@5": 0.912289,
+        "mrr": 0.64272,
+        "per_scope": {
+          "_other": {
+            "events": 72,
+            "events_with_useful": 32,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.033333,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.690104
+            },
+            "hit@1": 0.4375,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.690104,
+            "useful_results": 102
+          },
+          "global": {
+            "events": 83,
+            "events_with_useful": 58,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.027027,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.868391
+            },
+            "hit@1": 0.775862,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.868391,
+            "useful_results": 268
+          },
+          "project:ae": {
+            "events": 1117,
+            "events_with_useful": 303,
+            "graph_unique_share": 0.01046,
+            "graph_zeroed": {
+              "dropped_entirely": 0.01046,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.005376,
+              "dropped_top_max": 0.01046,
+              "hit@5": 0.867987,
+              "mrr": 0.533753
+            },
+            "hit@1": 0.330033,
+            "hit@10": 0.990099,
+            "hit@5": 0.867987,
+            "mrr": 0.534375,
+            "useful_results": 478
+          },
+          "project:lm": {
+            "events": 242,
+            "events_with_useful": 103,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.005076,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.970874,
+              "mrr": 0.749607
+            },
+            "hit@1": 0.601942,
+            "hit@10": 1.0,
+            "hit@5": 0.970874,
+            "mrr": 0.749607,
+            "useful_results": 229
+          },
+          "project:mm": {
+            "events": 60,
+            "events_with_useful": 18,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.972222
+            },
+            "hit@1": 0.944444,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.972222,
+            "useful_results": 32
+          },
+          "project:octopus": {
+            "events": 1546,
+            "events_with_useful": 779,
+            "graph_unique_share": 0.008023,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001416,
+              "dropped_top1": 0.007273,
+              "dropped_top5": 0.013708,
+              "dropped_top_max": 0.001416,
+              "hit@5": 0.928113,
+              "mrr": 0.595371
+            },
+            "hit@1": 0.353017,
+            "hit@10": 1.0,
+            "hit@5": 0.928113,
+            "mrr": 0.591384,
+            "useful_results": 2119
+          },
+          "project:online": {
+            "events": 1836,
+            "events_with_useful": 598,
+            "graph_unique_share": 0.001818,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001818,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.004695,
+              "dropped_top_max": 0.001818,
+              "hit@5": 0.862876,
+              "mrr": 0.638297
+            },
+            "hit@1": 0.5,
+            "hit@10": 0.996656,
+            "hit@5": 0.862876,
+            "mrr": 0.639041,
+            "useful_results": 1100
+          },
+          "project:x": {
+            "events": 420,
+            "events_with_useful": 184,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.006849,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.880435
+            },
+            "hit@1": 0.793478,
+            "hit@10": 1.0,
+            "hit@5": 0.994565,
+            "mrr": 0.878986,
+            "useful_results": 364
+          }
+        },
+        "useful_results": 4692
+      }
+    },
+    "replayed_winner_take_all": {
+      "holdout": {
+        "events": 2220,
+        "events_with_useful": 1533,
+        "graph_unique_share": 0.010371,
+        "graph_zeroed": {
+          "dropped_entirely": 0.0,
+          "dropped_top1": 0.003681,
+          "dropped_top5": 0.00465,
+          "dropped_top_max": 0.0,
+          "hit@5": 0.949119,
+          "mrr": 0.70633
+        },
+        "hit@1": 0.531637,
+        "hit@10": 0.996738,
+        "hit@5": 0.947815,
+        "mrr": 0.706652,
+        "per_scope": {
+          "_other": {
+            "events": 14,
+            "events_with_useful": 9,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.888889,
+              "mrr": 0.768519
+            },
+            "hit@1": 0.666667,
+            "hit@10": 0.888889,
+            "hit@5": 0.888889,
+            "mrr": 0.768519,
+            "useful_results": 23
+          },
+          "global": {
+            "events": 32,
+            "events_with_useful": 21,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.904762,
+              "mrr": 0.846825
+            },
+            "hit@1": 0.809524,
+            "hit@10": 1.0,
+            "hit@5": 0.904762,
+            "mrr": 0.846825,
+            "useful_results": 44
+          },
+          "project:ae": {
+            "events": 135,
+            "events_with_useful": 81,
+            "graph_unique_share": 0.004831,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.888889,
+              "mrr": 0.722389
+            },
+            "hit@1": 0.604938,
+            "hit@10": 1.0,
+            "hit@5": 0.888889,
+            "mrr": 0.72282,
+            "useful_results": 207
+          },
+          "project:lm": {
+            "events": 19,
+            "events_with_useful": 15,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.933333,
+              "mrr": 0.87619
+            },
+            "hit@1": 0.8,
+            "hit@10": 1.0,
+            "hit@5": 0.933333,
+            "mrr": 0.87619,
+            "useful_results": 39
+          },
+          "project:mm": {
+            "events": 3,
+            "events_with_useful": 3,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.666667,
+              "mrr": 0.7
+            },
+            "hit@1": 0.666667,
+            "hit@10": 1.0,
+            "hit@5": 0.666667,
+            "mrr": 0.7,
+            "useful_results": 14
+          },
+          "project:online": {
+            "events": 482,
+            "events_with_useful": 162,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.839506,
+              "mrr": 0.617394
+            },
+            "hit@1": 0.432099,
+            "hit@10": 0.975309,
+            "hit@5": 0.839506,
+            "mrr": 0.61775,
+            "useful_results": 352
+          },
+          "project:x": {
+            "events": 1535,
+            "events_with_useful": 1242,
+            "graph_unique_share": 0.011705,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.004552,
+              "dropped_top5": 0.005356,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.969404,
+              "mrr": 0.712021
+            },
+            "hit@1": 0.530596,
+            "hit@10": 1.0,
+            "hit@5": 0.967794,
+            "mrr": 0.712344,
+            "useful_results": 4528
+          }
+        },
+        "useful_results": 5207
+      },
+      "overall": {
+        "events": 7596,
+        "events_with_useful": 3608,
+        "graph_unique_share": 0.00788,
+        "graph_zeroed": {
+          "dropped_entirely": 0.00101,
+          "dropped_top1": 0.002789,
+          "dropped_top5": 0.006228,
+          "dropped_top_max": 0.00101,
+          "hit@5": 0.925721,
+          "mrr": 0.671959
+        },
+        "hit@1": 0.496951,
+        "hit@10": 0.997228,
+        "hit@5": 0.925166,
+        "mrr": 0.672307,
+        "per_scope": {
+          "_other": {
+            "events": 86,
+            "events_with_useful": 41,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.028302,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.97561,
+              "mrr": 0.707317
+            },
+            "hit@1": 0.487805,
+            "hit@10": 0.97561,
+            "hit@5": 0.97561,
+            "mrr": 0.707317,
+            "useful_results": 125
+          },
+          "global": {
+            "events": 115,
+            "events_with_useful": 79,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.022523,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.974684,
+              "mrr": 0.858439
+            },
+            "hit@1": 0.772152,
+            "hit@10": 1.0,
+            "hit@5": 0.974684,
+            "mrr": 0.858439,
+            "useful_results": 312
+          },
+          "project:ae": {
+            "events": 1252,
+            "events_with_useful": 384,
+            "graph_unique_share": 0.008759,
+            "graph_zeroed": {
+              "dropped_entirely": 0.007299,
+              "dropped_top1": 0.006494,
+              "dropped_top5": 0.003861,
+              "dropped_top_max": 0.007299,
+              "hit@5": 0.864583,
+              "mrr": 0.576753
+            },
+            "hit@1": 0.401042,
+            "hit@10": 0.992188,
+            "hit@5": 0.861979,
+            "mrr": 0.578862,
+            "useful_results": 685
+          },
+          "project:lm": {
+            "events": 261,
+            "events_with_useful": 118,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.004405,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.974576,
+              "mrr": 0.769512
+            },
+            "hit@1": 0.627119,
+            "hit@10": 1.0,
+            "hit@5": 0.974576,
+            "mrr": 0.769512,
+            "useful_results": 268
+          },
+          "project:mm": {
+            "events": 63,
+            "events_with_useful": 21,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.952381,
+              "mrr": 0.933333
+            },
+            "hit@1": 0.904762,
+            "hit@10": 1.0,
+            "hit@5": 0.952381,
+            "mrr": 0.933333,
+            "useful_results": 46
+          },
+          "project:octopus": {
+            "events": 1546,
+            "events_with_useful": 779,
+            "graph_unique_share": 0.008023,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001416,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.010417,
+              "dropped_top_max": 0.001416,
+              "hit@5": 0.919127,
+              "mrr": 0.598233
+            },
+            "hit@1": 0.369705,
+            "hit@10": 1.0,
+            "hit@5": 0.920411,
+            "mrr": 0.598719,
+            "useful_results": 2119
+          },
+          "project:online": {
+            "events": 2318,
+            "events_with_useful": 760,
+            "graph_unique_share": 0.001377,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001377,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.000935,
+              "dropped_top_max": 0.001377,
+              "hit@5": 0.857895,
+              "mrr": 0.63603
+            },
+            "hit@1": 0.490789,
+            "hit@10": 0.992105,
+            "hit@5": 0.857895,
+            "mrr": 0.636161,
+            "useful_results": 1452
+          },
+          "project:x": {
+            "events": 1955,
+            "events_with_useful": 1426,
+            "graph_unique_share": 0.010834,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.004975,
+              "dropped_top5": 0.004845,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.973352,
+              "mrr": 0.733752
+            },
+            "hit@1": 0.563815,
+            "hit@10": 1.0,
+            "hit@5": 0.97195,
+            "mrr": 0.733729,
+            "useful_results": 4892
+          }
+        },
+        "useful_results": 9899
+      },
+      "train": {
+        "events": 5376,
+        "events_with_useful": 2075,
+        "graph_unique_share": 0.005115,
+        "graph_zeroed": {
+          "dropped_entirely": 0.002131,
+          "dropped_top1": 0.002045,
+          "dropped_top5": 0.007843,
+          "dropped_top_max": 0.002131,
+          "hit@5": 0.908434,
+          "mrr": 0.646566
+        },
+        "hit@1": 0.471325,
+        "hit@10": 0.99759,
+        "hit@5": 0.908434,
+        "mrr": 0.646933,
+        "per_scope": {
+          "_other": {
+            "events": 72,
+            "events_with_useful": 32,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.033333,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.690104
+            },
+            "hit@1": 0.4375,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.690104,
+            "useful_results": 102
+          },
+          "global": {
+            "events": 83,
+            "events_with_useful": 58,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.027322,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.862644
+            },
+            "hit@1": 0.758621,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.862644,
+            "useful_results": 268
+          },
+          "project:ae": {
+            "events": 1117,
+            "events_with_useful": 303,
+            "graph_unique_share": 0.01046,
+            "graph_zeroed": {
+              "dropped_entirely": 0.01046,
+              "dropped_top1": 0.009524,
+              "dropped_top5": 0.00545,
+              "dropped_top_max": 0.01046,
+              "hit@5": 0.858086,
+              "mrr": 0.53782
+            },
+            "hit@1": 0.346535,
+            "hit@10": 0.990099,
+            "hit@5": 0.854785,
+            "mrr": 0.540379,
+            "useful_results": 478
+          },
+          "project:lm": {
+            "events": 242,
+            "events_with_useful": 103,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.005025,
+              "dropped_top_max": 0.0,
+              "hit@5": 0.980583,
+              "mrr": 0.753976
+            },
+            "hit@1": 0.601942,
+            "hit@10": 1.0,
+            "hit@5": 0.980583,
+            "mrr": 0.753976,
+            "useful_results": 229
+          },
+          "project:mm": {
+            "events": 60,
+            "events_with_useful": 18,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.972222
+            },
+            "hit@1": 0.944444,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.972222,
+            "useful_results": 32
+          },
+          "project:octopus": {
+            "events": 1546,
+            "events_with_useful": 779,
+            "graph_unique_share": 0.008023,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001416,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.010417,
+              "dropped_top_max": 0.001416,
+              "hit@5": 0.919127,
+              "mrr": 0.598233
+            },
+            "hit@1": 0.369705,
+            "hit@10": 1.0,
+            "hit@5": 0.920411,
+            "mrr": 0.598719,
+            "useful_results": 2119
+          },
+          "project:online": {
+            "events": 1836,
+            "events_with_useful": 598,
+            "graph_unique_share": 0.001818,
+            "graph_zeroed": {
+              "dropped_entirely": 0.001818,
+              "dropped_top1": 0.0,
+              "dropped_top5": 0.001205,
+              "dropped_top_max": 0.001818,
+              "hit@5": 0.862876,
+              "mrr": 0.641079
+            },
+            "hit@1": 0.506689,
+            "hit@10": 0.996656,
+            "hit@5": 0.862876,
+            "mrr": 0.641148,
+            "useful_results": 1100
+          },
+          "project:x": {
+            "events": 420,
+            "events_with_useful": 184,
+            "graph_unique_share": 0.0,
+            "graph_zeroed": {
+              "dropped_entirely": 0.0,
+              "dropped_top1": 0.006897,
+              "dropped_top5": 0.0,
+              "dropped_top_max": 0.0,
+              "hit@5": 1.0,
+              "mrr": 0.880435
+            },
+            "hit@1": 0.788043,
+            "hit@10": 1.0,
+            "hit@5": 1.0,
+            "mrr": 0.87808,
+            "useful_results": 364
+          }
+        },
+        "useful_results": 4692
+      }
+    }
+  },
+  "split": {
+    "holdout": {
+      "event_share_of_usable": 0.190546,
+      "events": 8949,
+      "labeled_events": 2220,
+      "labeled_share_of_labeled": 0.292259
+    },
+    "train": {
+      "events": 38016,
+      "labeled_events": 5376
+    }
+  },
+  "weights": {
+    "live": {
+      "default": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.0
+      },
+      "global": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.85
+      },
+      "project": {
+        "bm25": 0.7,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.3
+      },
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+        "bm25": 0.659519,
+        "graph": 0.11439,
+        "learning_rate": 0.2,
+        "vector": 0.22609
+      },
+      "project:/root/p/lm": {
+        "bm25": 0.904655,
+        "graph": 0.040615,
+        "learning_rate": 0.2,
+        "vector": 0.054731
+      },
+      "project:/root/p/octopus": {
+        "bm25": 0.853624,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.146376
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+        "bm25": 0.540327,
+        "graph": 0.285677,
+        "learning_rate": 0.2,
+        "vector": 0.173996
+      },
+      "project:ae": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.85
+      },
+      "project:breakthrough/gemini-flash-contract": {
+        "bm25": 0.597436,
+        "graph": 0.253816,
+        "learning_rate": 0.2,
+        "vector": 0.148748
+      },
+      "project:breakthrough/programming-capability-loop": {
+        "bm25": 0.695461,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.304539
+      },
+      "project:flamp": {
+        "bm25": 0.306563,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.643437
+      },
+      "project:flamp4": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.85
+      },
+      "project:id-2gis-com": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.85
+      },
+      "project:living-memory": {
+        "bm25": 0.741593,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.258407
+      },
+      "project:lm": {
+        "bm25": 0.102327,
+        "graph": 0.056218,
+        "learning_rate": 0.05,
+        "vector": 0.841456
+      },
+      "project:mm": {
+        "bm25": 0.127897,
+        "graph": 0.082201,
+        "learning_rate": 0.1,
+        "vector": 0.789902
+      },
+      "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": {
+        "bm25": 0.703605,
+        "graph": 0.055231,
+        "learning_rate": 0.2,
+        "vector": 0.241164
+      },
+      "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": {
+        "bm25": 0.828215,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.171785
+      },
+      "project:natural-flow/shared-organism-training": {
+        "bm25": 0.59183,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.40817
+      },
+      "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": {
+        "bm25": 0.630682,
+        "graph": 0.050968,
+        "learning_rate": 0.2,
+        "vector": 0.31835
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": {
+        "bm25": 0.59183,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.40817
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": {
+        "bm25": 0.725366,
+        "graph": 0.06695,
+        "learning_rate": 0.2,
+        "vector": 0.207684
+      },
+      "project:octopus": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.85
+      },
+      "project:octopus-capability-stack": {
+        "bm25": 0.418602,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.581398
+      },
+      "project:online": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.85
+      },
+      "project:online-beautyshare": {
+        "bm25": 0.327413,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.622587
+      },
+      "project:online-sitemaps": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.85
+      },
+      "project:prompt-engine-v3-lm-driven": {
+        "bm25": 0.962527,
+        "graph": 0.017671,
+        "learning_rate": 0.1,
+        "vector": 0.019802
+      },
+      "project:repo": {
+        "bm25": 0.515179,
+        "graph": 0.163461,
+        "learning_rate": 0.2,
+        "vector": 0.321361
+      },
+      "project:rise/gemini-comparator-execution": {
+        "bm25": 0.804154,
+        "graph": 0.182043,
+        "learning_rate": 0.2,
+        "vector": 0.013804
+      },
+      "project:sfx": {
+        "bm25": 0.132784,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.817216
+      },
+      "project:x": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.85
+      },
+      "session": {
+        "bm25": 0.8,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      }
+    },
+    "replayed_final": {
+      "default": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.0
+      },
+      "global": {
+        "bm25": 0.137338,
+        "graph": 0.05,
+        "learning_rate": 0.05,
+        "vector": 0.812662
+      },
+      "project": {
+        "bm25": 0.7,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.3
+      },
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+        "bm25": 0.51645,
+        "graph": 0.13446,
+        "learning_rate": 0.2,
+        "vector": 0.34909
+      },
+      "project:/root/p/lm": {
+        "bm25": 0.704123,
+        "graph": 0.090369,
+        "learning_rate": 0.2,
+        "vector": 0.205508
+      },
+      "project:/root/p/octopus": {
+        "bm25": 0.563526,
+        "graph": 0.066687,
+        "learning_rate": 0.2,
+        "vector": 0.369787
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+        "bm25": 0.653341,
+        "graph": 0.01767,
+        "learning_rate": 0.05,
+        "vector": 0.32899
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough_gemini-flash-contract": {
+        "bm25": 0.701303,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.298697
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+        "bm25": 0.657724,
+        "graph": 0.024971,
+        "learning_rate": 0.05,
+        "vector": 0.317305
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+        "bm25": 0.680889,
+        "graph": 0.016393,
+        "learning_rate": 0.05,
+        "vector": 0.302717
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+        "bm25": 0.659495,
+        "graph": 0.02241,
+        "learning_rate": 0.05,
+        "vector": 0.318096
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+        "bm25": 0.684183,
+        "graph": 0.022124,
+        "learning_rate": 0.05,
+        "vector": 0.293693
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+        "bm25": 0.680535,
+        "graph": 0.009901,
+        "learning_rate": 0.05,
+        "vector": 0.309564
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+        "bm25": 0.57789,
+        "graph": 0.095608,
+        "learning_rate": 0.05,
+        "vector": 0.326503
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+        "bm25": 0.553781,
+        "graph": 0.123827,
+        "learning_rate": 0.2,
+        "vector": 0.322392
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+        "bm25": 0.684292,
+        "graph": 0.006188,
+        "learning_rate": 0.05,
+        "vector": 0.309521
+      },
+      "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+        "bm25": 0.672951,
+        "graph": 0.017781,
+        "learning_rate": 0.05,
+        "vector": 0.309267
+      },
+      "project:/root/p/octopus/.worktrees/goal-landing": {
+        "bm25": 0.671291,
+        "graph": 0.025322,
+        "learning_rate": 0.05,
+        "vector": 0.303387
+      },
+      "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+        "bm25": 0.655211,
+        "graph": 0.011772,
+        "learning_rate": 0.05,
+        "vector": 0.333017
+      },
+      "project:/root/p/octopus/.worktrees/goal-rise": {
+        "bm25": 0.667861,
+        "graph": 0.02597,
+        "learning_rate": 0.05,
+        "vector": 0.306169
+      },
+      "project:ae": {
+        "bm25": 0.115506,
+        "graph": 0.077402,
+        "learning_rate": 0.02,
+        "vector": 0.807092
+      },
+      "project:breakthrough/gemini-flash-contract": {
+        "bm25": 0.487135,
+        "graph": 0.152266,
+        "learning_rate": 0.2,
+        "vector": 0.360599
+      },
+      "project:breakthrough/programming-capability-loop": {
+        "bm25": 0.646852,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.353148
+      },
+      "project:living-memory": {
+        "bm25": 0.641751,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.358249
+      },
+      "project:lm": {
+        "bm25": 0.163727,
+        "graph": 0.057728,
+        "learning_rate": 0.05,
+        "vector": 0.778544
+      },
+      "project:mm": {
+        "bm25": 0.101975,
+        "graph": 0.086908,
+        "learning_rate": 0.1,
+        "vector": 0.811116
+      },
+      "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": {
+        "bm25": 0.590833,
+        "graph": 0.039353,
+        "learning_rate": 0.2,
+        "vector": 0.369814
+      },
+      "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": {
+        "bm25": 0.64624,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.35376
+      },
+      "project:natural-flow/shared-organism-training": {
+        "bm25": 0.585324,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.414676
+      },
+      "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": {
+        "bm25": 0.603828,
+        "graph": 0.031244,
+        "learning_rate": 0.2,
+        "vector": 0.364927
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": {
+        "bm25": 0.588417,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.411583
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": {
+        "bm25": 0.500039,
+        "graph": 0.07019,
+        "learning_rate": 0.2,
+        "vector": 0.429771
+      },
+      "project:octopus": {
+        "bm25": 0.104149,
+        "graph": 0.200958,
+        "learning_rate": 0.02,
+        "vector": 0.694892
+      },
+      "project:octopus-capability-stack": {
+        "bm25": 0.443607,
+        "graph": 0.025319,
+        "learning_rate": 0.2,
+        "vector": 0.531074
+      },
+      "project:online": {
+        "bm25": 0.163779,
+        "graph": 0.075587,
+        "learning_rate": 0.02,
+        "vector": 0.760633
+      },
+      "project:prompt-engine-v3-lm-driven": {
+        "bm25": 0.715136,
+        "graph": 0.029833,
+        "learning_rate": 0.1,
+        "vector": 0.255031
+      },
+      "project:repo": {
+        "bm25": 0.387885,
+        "graph": 0.141268,
+        "learning_rate": 0.2,
+        "vector": 0.470847
+      },
+      "project:rise/gemini-comparator-execution": {
+        "bm25": 0.579743,
+        "graph": 0.130335,
+        "learning_rate": 0.2,
+        "vector": 0.289922
+      },
+      "project:x": {
+        "bm25": 0.165943,
+        "graph": 0.112502,
+        "learning_rate": 0.02,
+        "vector": 0.721555
+      },
+      "session": {
+        "bm25": 0.8,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      }
+    },
+    "replayed_update_counts": {
+      "global": 761,
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": 43,
+      "project:/root/p/lm": 10,
+      "project:/root/p/octopus": 71,
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": 18,
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough_gemini-flash-contract": 5,
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": 8,
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": 6,
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": 10,
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": 5,
+      "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": 8,
+      "project:/root/p/octopus/.worktrees/_node_exec_rise": 25,
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": 10,
+      "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": 5,
+      "project:/root/p/octopus/.worktrees/goal-breakthrough": 8,
+      "project:/root/p/octopus/.worktrees/goal-landing": 10,
+      "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": 13,
+      "project:/root/p/octopus/.worktrees/goal-rise": 5,
+      "project:ae": 8684,
+      "project:breakthrough/gemini-flash-contract": 20,
+      "project:breakthrough/programming-capability-loop": 5,
+      "project:living-memory": 4,
+      "project:lm": 1758,
+      "project:mm": 552,
+      "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": 8,
+      "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": 5,
+      "project:natural-flow/shared-organism-training": 5,
+      "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": 5,
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": 5,
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": 38,
+      "project:octopus": 12317,
+      "project:octopus-capability-stack": 30,
+      "project:online": 14438,
+      "project:prompt-engine-v3-lm-driven": 25,
+      "project:repo": 21,
+      "project:rise/gemini-comparator-execution": 10,
+      "project:x": 3397
+    }
+  }
+}

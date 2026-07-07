@@ -1,10 +1,73 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from living_memory.feedback import apply_retrieval_feedback
+from living_memory.feedback import _method_signals, apply_retrieval_feedback
 from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.storage import MemoryStore
+
+
+def test_method_signals_split_positive_credit_by_raw_score_share() -> None:
+    result = SimpleNamespace(bm25_score=0.3, vector_score=0.9, graph_score=0.0)
+    signals = _method_signals(result, 1.0)
+    assert signals["bm25"] == pytest.approx(0.25)
+    assert signals["vector"] == pytest.approx(0.75)
+    assert signals["graph"] == pytest.approx(0.0)
+    # Contributing methods share exactly the signal; nobody is penalized for
+    # a useful result (the old winner-take-all rule gave bm25/graph -0.25).
+    assert sum(signals.values()) == pytest.approx(1.0)
+    assert all(value >= 0.0 for value in signals.values())
+
+
+def test_method_signals_split_negative_blame_by_raw_score_share() -> None:
+    result = SimpleNamespace(bm25_score=0.2, vector_score=0.2, graph_score=0.6)
+    signals = _method_signals(result, -2.0)
+    assert signals["bm25"] == pytest.approx(-0.4)
+    assert signals["vector"] == pytest.approx(-0.4)
+    assert signals["graph"] == pytest.approx(-1.2)
+    # No method is compensated for a bad result (the old rule gave +0.15).
+    assert all(value <= 0.0 for value in signals.values())
+
+
+def test_method_signals_clamp_negative_raw_scores_to_zero_evidence() -> None:
+    result = SimpleNamespace(bm25_score=0.5, vector_score=-0.4, graph_score=0.0)
+    signals = _method_signals(result, 1.0)
+    assert signals["bm25"] == pytest.approx(1.0)
+    assert signals["vector"] == 0.0
+    assert signals["graph"] == 0.0
+
+
+def test_method_signals_zero_evidence_yields_no_signals() -> None:
+    result = SimpleNamespace(bm25_score=0.0, vector_score=0.0, graph_score=-0.1)
+    # No bm25-dominant fallback in either direction: nothing to attribute.
+    assert _method_signals(result, 1.0) == {"bm25": 0.0, "vector": 0.0, "graph": 0.0}
+    assert _method_signals(result, -1.0) == {"bm25": 0.0, "vector": 0.0, "graph": 0.0}
+
+
+def test_zero_evidence_feedback_leaves_weights_unchanged(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        node = store.append_trace(
+            "zero evidence probe",
+            {"scope": "project:zero", "agent": "agent-a"},
+        )
+        result = RecallResult(
+            node=node,
+            score=0.0,
+            bm25_score=0.0,
+            vector_score=0.0,
+            graph_score=0.0,
+            methods=(),
+        )
+        # Settle normalization/floors once so the assertion isolates the
+        # credit signals from the floor pass both updates share.
+        before = store.update_retrieval_weights("project:zero")
+
+        update = apply_retrieval_feedback(store, result, useful=True, signal=1.0)
+
+        assert update.weights.bm25 == pytest.approx(before.bm25)
+        assert update.weights.vector == pytest.approx(before.vector)
+        assert update.weights.graph == pytest.approx(before.graph)
 
 
 def test_feedback_moves_retrieval_weights_toward_successful_method(tmp_path: Path) -> None:
