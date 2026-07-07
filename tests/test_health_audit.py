@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +27,11 @@ from living_memory.health_audit import (
     open_read_only_store,
     scope_hygiene_metrics,
 )
-from living_memory.resources import memory_health
+from living_memory.resources import (
+    feedback_closure_metrics,
+    memory_health,
+    recall_events_summary,
+)
 from living_memory.storage import MemoryStore
 
 
@@ -216,6 +221,9 @@ _LIVE_CANDIDATE_SCOPES = 54
 _LIVE_ACTIVE_CANDIDATE_TRACES = 111
 _LIVE_CANDIDATE_ZERO_RECALL = 36
 _LIVE_DB_SIZE_BYTES = 100339712
+_LIVE_CLOSURE_RATIO = 0.16
+_LIVE_EXPLICIT_CLASS_CLOSURE = 0.79
+_LIVE_IDENTITYLESS_CLOSURE = 0.12
 
 
 def _strip_time_varying_fields(report: dict[str, Any]) -> dict[str, Any]:
@@ -741,3 +749,265 @@ def test_memory_health_surface_includes_audit_sections(tmp_path: Path) -> None:
     assert report["scope_hygiene"] == direct["scope_hygiene"]
     assert report["storage"]["db_size_bytes"] == direct["storage"]["db_size_bytes"]
     assert report["storage"]["page_count"] == direct["storage"]["page_count"]
+
+
+# ---------------------------------------------------------------------------
+# Feedback closure (windowed closure ratio per identity class)
+# ---------------------------------------------------------------------------
+
+
+def _record_closure_event(
+    store: MemoryStore,
+    *,
+    scope: str,
+    ambient: dict[str, Any],
+    closed_by: str | None = None,
+    query: str = "closure-query",
+) -> str:
+    """Record one recall event through the real write path; optionally close it."""
+
+    event = store.record_recall_event(
+        query=query,
+        scope=scope,
+        ambient_context=ambient,
+        results=[],
+    )
+    if closed_by is not None:
+        store.mark_recall_event_feedback(event.id, closed_by)
+    return event.id
+
+
+def _rewrite_event_created_at(store: MemoryStore, event_id: str, *, days_ago: int) -> None:
+    stale_created = (
+        (datetime.now(UTC) - timedelta(days=days_ago))
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+    with store.connection:
+        store.connection.execute(
+            "UPDATE recall_events SET created_at = ? WHERE id = ?",
+            (stale_created, event_id),
+        )
+
+
+def test_feedback_closure_counts_and_ratios_per_identity_class(tmp_path: Path) -> None:
+    """Each event lands in exactly one class by precedence, with exact ratios.
+
+    explicit: 4 events / 3 closed (one also carries a transport id, proving
+    explicit precedence). transport_only: 3 events / 1 closed (one carries a
+    partial agent-only identity, proving partial identity is not explicit).
+    none: 2 events / 0 closed (one carries agent-only without transport).
+    """
+
+    explicit_ambient = {"agent": "agent-x", "task": "task-x", "session_id": "sess-x"}
+    with MemoryStore(tmp_path / "closure.sqlite3") as store:
+        target = store.append_trace(
+            "closure feedback target", {"scope": "project:alpha"}
+        )
+        _record_closure_event(
+            store,
+            scope="project:alpha",
+            ambient={**explicit_ambient, "transport_session_id": "tsid-precedence"},
+            closed_by=target.id,
+        )
+        for index in range(2):
+            _record_closure_event(
+                store,
+                scope="project:alpha",
+                ambient=explicit_ambient,
+                closed_by=target.id,
+                query=f"explicit-{index}",
+            )
+        _record_closure_event(store, scope="project:alpha", ambient=explicit_ambient)
+
+        _record_closure_event(
+            store,
+            scope="project:alpha",
+            ambient={"transport_session_id": "tsid-1"},
+            closed_by=target.id,
+        )
+        _record_closure_event(
+            store, scope="project:alpha", ambient={"transport_session_id": "tsid-1"}
+        )
+        _record_closure_event(
+            store,
+            scope="project:alpha",
+            ambient={"agent": "agent-x", "transport_session_id": "tsid-2"},
+        )
+
+        _record_closure_event(store, scope="project:alpha", ambient={})
+        _record_closure_event(store, scope="project:alpha", ambient={"agent": "only-agent"})
+
+        block = feedback_closure_metrics(store, window_hours=24)
+
+    assert block["window_hours"] == 24
+    assert block["recall_events_in_window"] == 9
+    assert block["feedback_applied_in_window"] == 4
+    assert block["closure_ratio"] == pytest.approx(4 / 9, abs=1e-9)
+
+    coverage = block["identity_coverage"]
+    assert set(coverage) == {"explicit", "transport_only", "none"}
+    assert coverage["explicit"]["events"] == 4
+    assert coverage["explicit"]["closed"] == 3
+    assert coverage["explicit"]["closure_ratio"] == pytest.approx(0.75, abs=1e-9)
+    assert coverage["transport_only"]["events"] == 3
+    assert coverage["transport_only"]["closed"] == 1
+    assert coverage["transport_only"]["closure_ratio"] == pytest.approx(1 / 3, abs=1e-9)
+    assert coverage["none"]["events"] == 2
+    assert coverage["none"]["closed"] == 0
+    assert coverage["none"]["closure_ratio"] == 0.0
+
+    # The classes partition the window: per-class counts sum to the totals.
+    assert sum(item["events"] for item in coverage.values()) == 9
+    assert sum(item["closed"] for item in coverage.values()) == 4
+
+    assert block["closure_ratio"] != pytest.approx(_LIVE_CLOSURE_RATIO, abs=1e-2)
+    assert coverage["explicit"]["closure_ratio"] != pytest.approx(
+        _LIVE_EXPLICIT_CLASS_CLOSURE, abs=1e-2
+    )
+    assert coverage["none"]["closure_ratio"] != pytest.approx(
+        _LIVE_IDENTITYLESS_CLOSURE, abs=1e-2
+    )
+
+
+def test_feedback_closure_excludes_events_older_than_window(tmp_path: Path) -> None:
+    """A closed event rewritten to 10 days ago drops out of a 24h window."""
+
+    with MemoryStore(tmp_path / "closure-window.sqlite3") as store:
+        target = store.append_trace("closure window target", {"scope": "project:alpha"})
+        _record_closure_event(
+            store, scope="project:alpha", ambient={}, closed_by=target.id
+        )
+        _record_closure_event(store, scope="project:alpha", ambient={})
+        stale_id = _record_closure_event(
+            store, scope="project:alpha", ambient={}, closed_by=target.id
+        )
+        _rewrite_event_created_at(store, stale_id, days_ago=10)
+
+        block = feedback_closure_metrics(store, window_hours=24)
+
+    assert block["recall_events_in_window"] == 2
+    assert block["feedback_applied_in_window"] == 1
+    assert block["closure_ratio"] == pytest.approx(0.5, abs=1e-9)
+    assert block["identity_coverage"]["none"]["events"] == 2
+    assert block["identity_coverage"]["none"]["closed"] == 1
+
+
+def test_feedback_closure_honors_scope_filter(tmp_path: Path) -> None:
+    """Only ``recall_events.scope = ?`` matches; requested_scope must not bleed."""
+
+    with MemoryStore(tmp_path / "closure-scope.sqlite3") as store:
+        target = store.append_trace("closure scope target", {"scope": "project:alpha"})
+        _record_closure_event(
+            store,
+            scope="project:alpha",
+            ambient={"transport_session_id": "tsid-a"},
+            closed_by=target.id,
+        )
+        _record_closure_event(store, scope="project:alpha", ambient={})
+        _record_closure_event(store, scope="project:beta", ambient={})
+        store.record_recall_event(
+            query="beta-scope-alpha-requested",
+            scope="project:beta",
+            requested_scope="project:alpha",
+            ambient_context={},
+            results=[],
+        )
+
+        alpha = feedback_closure_metrics(store, scope="project:alpha", window_hours=24)
+        beta = feedback_closure_metrics(store, scope="project:beta", window_hours=24)
+        overall = feedback_closure_metrics(store, window_hours=24)
+
+    assert alpha["recall_events_in_window"] == 2
+    assert alpha["feedback_applied_in_window"] == 1
+    assert alpha["closure_ratio"] == pytest.approx(0.5, abs=1e-9)
+    assert alpha["identity_coverage"]["transport_only"] == {
+        "events": 1,
+        "closed": 1,
+        "closure_ratio": 1.0,
+    }
+
+    assert beta["recall_events_in_window"] == 2
+    assert beta["feedback_applied_in_window"] == 0
+    assert beta["closure_ratio"] == 0.0
+
+    assert overall["recall_events_in_window"] == 4
+    assert overall["feedback_applied_in_window"] == 1
+
+
+def test_feedback_closure_ratio_is_none_on_empty_window(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "closure-empty.sqlite3") as store:
+        empty = feedback_closure_metrics(store, window_hours=24)
+
+        target = store.append_trace("closure empty target", {"scope": "project:alpha"})
+        stale_id = _record_closure_event(
+            store, scope="project:alpha", ambient={}, closed_by=target.id
+        )
+        _rewrite_event_created_at(store, stale_id, days_ago=10)
+        aged_out = feedback_closure_metrics(store, window_hours=24)
+
+    for block in (empty, aged_out):
+        assert block["recall_events_in_window"] == 0
+        assert block["feedback_applied_in_window"] == 0
+        assert block["closure_ratio"] is None
+        for name in ("explicit", "transport_only", "none"):
+            assert block["identity_coverage"][name] == {
+                "events": 0,
+                "closed": 0,
+                "closure_ratio": None,
+            }
+
+
+def test_memory_health_payload_includes_feedback_closure_block(tmp_path: Path) -> None:
+    """``memory_health`` surfaces the block; scope and window_hours flow through."""
+
+    with MemoryStore(tmp_path / "closure-health.sqlite3") as store:
+        target = store.append_trace("closure health target", {"scope": "project:alpha"})
+        _record_closure_event(
+            store,
+            scope="project:alpha",
+            ambient={"agent": "a", "task": "t", "session_id": "s"},
+            closed_by=target.id,
+        )
+        _record_closure_event(
+            store, scope="project:alpha", ambient={"transport_session_id": "tsid-h"}
+        )
+
+        report = memory_health(store, scope="project:alpha", window_hours=24, top_stale=0)
+        direct = feedback_closure_metrics(store, scope="project:alpha", window_hours=24)
+        default_report = memory_health(store, top_stale=0)
+
+    closure = report["feedback_closure"]
+    assert closure == direct
+    assert closure["window_hours"] == 24
+    assert closure["recall_events_in_window"] == 2
+    assert closure["feedback_applied_in_window"] == 1
+    assert closure["closure_ratio"] == pytest.approx(0.5, abs=1e-9)
+    assert closure["identity_coverage"]["explicit"]["events"] == 1
+    assert closure["identity_coverage"]["explicit"]["closed"] == 1
+    assert closure["identity_coverage"]["transport_only"]["events"] == 1
+    assert closure["identity_coverage"]["transport_only"]["closed"] == 0
+
+    assert default_report["feedback_closure"]["window_hours"] == 168
+
+
+def test_recall_events_summary_exposes_transport_session_id(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "closure-summary.sqlite3") as store:
+        store.record_recall_event(
+            query="with-transport",
+            scope="project:alpha",
+            ambient_context={"transport_session_id": "tsid-visible"},
+            results=[],
+        )
+        store.record_recall_event(
+            query="without-transport",
+            scope="project:alpha",
+            ambient_context={},
+            results=[],
+        )
+
+        summary = recall_events_summary(store, scope="project:alpha")
+
+    recent = {item["query"]: item for item in summary["recent"]}
+    assert recent["with-transport"]["transport_session_id"] == "tsid-visible"
+    assert recent["without-transport"]["transport_session_id"] is None

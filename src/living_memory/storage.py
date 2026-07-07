@@ -30,7 +30,7 @@ from living_memory.models import (
 from living_memory.phase import PhaseManager
 from living_memory.scope import normalize_scope
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _RECALL_TEXT_SIMILARITY_THRESHOLD = 0.55
 _DUPLICATE_CONTENT_DECAY_REASON = "duplicate_content"
@@ -762,15 +762,17 @@ class MemoryStore:
         agent = _optional_str(ambient.get("agent"))
         task = _optional_str(ambient.get("task"))
         session_id = _optional_str(ambient.get("session_id") or ambient.get("session"))
+        transport_session_id = _optional_str(ambient.get("transport_session_id"))
         with self._conn:
             self._conn.execute(
                 """
                 INSERT INTO recall_events (
                     id, query, scope, requested_scope, resolved_scopes, ambient_context,
                     depth, max_results, results, agent, task, session_id,
-                    feedback_applied, feedback_trace_id, feedback_applied_at, created_at
+                    transport_session_id, feedback_applied, feedback_trace_id,
+                    feedback_applied_at, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?)
                 """,
                 (
                     event_id,
@@ -785,6 +787,7 @@ class MemoryStore:
                     agent,
                     task,
                     session_id,
+                    transport_session_id,
                     now,
                 ),
             )
@@ -832,16 +835,30 @@ class MemoryStore:
         """Return recent unconsumed recalls compatible with a new ingest trace."""
 
         context_data = dict(context or {})
+        # Same-transport events are candidates regardless of scope so equal
+        # stamps can close across the recall/ingest default-scope divergence;
+        # `transport_session_id = NULL` never matches, so unstamped traces
+        # keep the exact-scope candidate set.
+        context_transport = _optional_str(context_data.get("transport_session_id"))
         rows = self._conn.execute(
             """
             SELECT *
             FROM recall_events
             WHERE feedback_applied = 0
-              AND (scope = ? OR requested_scope = ? OR resolved_scopes LIKE ?)
+              AND (
+                scope = ? OR requested_scope = ? OR resolved_scopes LIKE ?
+                OR transport_session_id = ?
+              )
             ORDER BY created_at DESC, rowid DESC
             LIMIT ?
             """,
-            (scope, scope, f"%{_json_dumps(scope)}%", max(1, int(limit) * 20)),
+            (
+                scope,
+                scope,
+                f"%{_json_dumps(scope)}%",
+                context_transport,
+                max(1, int(limit) * 20),
+            ),
         ).fetchall()
         events: list[RecallEvent] = []
         weak_fallbacks = 0
@@ -1210,6 +1227,7 @@ class MemoryStore:
     def _initialize_schema(self) -> None:
         with self._conn:
             self._migrate_pre_v3_schema()
+            self._migrate_pre_v4_schema()
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -1305,6 +1323,7 @@ class MemoryStore:
                     agent TEXT,
                     task TEXT,
                     session_id TEXT,
+                    transport_session_id TEXT,
                     feedback_applied INTEGER NOT NULL DEFAULT 0 CHECK (feedback_applied IN (0, 1)),
                     feedback_trace_id TEXT REFERENCES nodes(id),
                     feedback_applied_at TEXT,
@@ -1394,6 +1413,23 @@ class MemoryStore:
         if "content_fingerprint" not in columns:
             self._conn.execute(
                 "ALTER TABLE nodes ADD COLUMN content_fingerprint TEXT"
+            )
+
+    def _migrate_pre_v4_schema(self) -> None:
+        """Add transport_session_id to recall_events for DBs created at schema_version <= 3."""
+
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='recall_events'"
+        ).fetchone()
+        if row is None:
+            return
+        columns = {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(recall_events)").fetchall()
+        }
+        if "transport_session_id" not in columns:
+            self._conn.execute(
+                "ALTER TABLE recall_events ADD COLUMN transport_session_id TEXT"
             )
 
     def _backfill_missing_content_fingerprints(self) -> None:
@@ -1617,6 +1653,7 @@ def _recall_event_from_row(row: sqlite3.Row) -> RecallEvent:
         agent=row["agent"],
         task=row["task"],
         session_id=row["session_id"],
+        transport_session_id=row["transport_session_id"],
         feedback_applied=bool(row["feedback_applied"]),
         feedback_trace_id=row["feedback_trace_id"],
         feedback_applied_at=row["feedback_applied_at"],
@@ -1639,13 +1676,25 @@ def _recall_event_match_strength(
     context: Mapping[str, Any],
     content: str | None,
 ) -> str | None:
-    exact_scope_match = scope == event.scope or scope == event.requested_scope
-    if not exact_scope_match:
-        return None
-
     context_session = _optional_str(context.get("session_id") or context.get("session"))
     context_task = _optional_str(context.get("task"))
     context_agent = _optional_str(context.get("agent"))
+    context_transport = _optional_str(context.get("transport_session_id"))
+
+    # Equal transport ids are same-connection evidence strong enough to span
+    # the recall/ingest default-scope divergence (a scope-less recall plans
+    # requested_scope='global' while a scope-less trace lands on the
+    # configured default scope). The text fallbacks below never gain that
+    # bypass: without both transport ids present, candidacy still requires
+    # the exact scope match.
+    transport_equal = bool(
+        event.transport_session_id
+        and context_transport
+        and event.transport_session_id == context_transport
+    )
+    exact_scope_match = scope == event.scope or scope == event.requested_scope
+    if not exact_scope_match and not transport_equal:
+        return None
 
     if event.session_id and context_session and event.session_id != context_session:
         return None
@@ -1659,6 +1708,14 @@ def _recall_event_match_strength(
 
     same_agent = bool(event.agent and context_agent and event.agent == context_agent)
     if event.agent and context_agent and event.agent != context_agent:
+        return None
+
+    # Transport identity ranks below explicit context (the rejects/strongs
+    # above) but above the text fallbacks; one-sided stamping falls through
+    # to the legacy rules unchanged.
+    if event.transport_session_id and context_transport:
+        if transport_equal:
+            return "strong"
         return None
 
     text_match = content is None or _recall_event_text_similarity(event, content) >= _RECALL_TEXT_SIMILARITY_THRESHOLD

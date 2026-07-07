@@ -1,0 +1,135 @@
+{
+  "source": "/home/sfx/.local/share/living-memory/global.sqlite3",
+  "copy": "/tmp/lm-migration-check-yeco6jm8/global-migration-check.sqlite3",
+  "copy_seconds": 0.556,
+  "migrate_open_seconds": 0.012,
+  "schema_version": {
+    "pre": "3",
+    "post": "4"
+  },
+  "pre": {
+    "schema_version": "3",
+    "recall_events_columns": [
+      "id",
+      "query",
+      "scope",
+      "requested_scope",
+      "resolved_scopes",
+      "ambient_context",
+      "depth",
+      "max_results",
+      "results",
+      "agent",
+      "task",
+      "session_id",
+      "feedback_applied",
+      "feedback_trace_id",
+      "feedback_applied_at",
+      "created_at"
+    ],
+    "recall_events_ddl": "CREATE TABLE recall_events (\n                    id TEXT PRIMARY KEY,\n                    query TEXT NOT NULL,\n                    scope TEXT NOT NULL DEFAULT 'global',\n                    requested_scope TEXT NOT NULL DEFAULT 'global',\n                    resolved_scopes TEXT NOT NULL DEFAULT '[]',\n                    ambient_context TEXT NOT NULL DEFAULT '{}',\n                    depth TEXT,\n                    max_results INTEGER NOT NULL DEFAULT 10,\n                    results TEXT NOT NULL DEFAULT '[]',\n                    agent TEXT,\n                    task TEXT,\n                    session_id TEXT,\n                    feedback_applied INTEGER NOT NULL DEFAULT 0 CHECK (feedback_applied IN (0, 1)),\n                    feedback_trace_id TEXT REFERENCES nodes(id),\n                    feedback_applied_at TEXT,\n                    created_at TEXT NOT NULL\n                )",
+    "nodes": 14158,
+    "connections": 103162,
+    "recall_events": 47001,
+    "feedback_applied": 7606,
+    "identity_classes": {
+      "explicit": 2745,
+      "transport_only": 0,
+      "none": 44256
+    }
+  },
+  "post": {
+    "schema_version": "4",
+    "recall_events_columns": [
+      "id",
+      "query",
+      "scope",
+      "requested_scope",
+      "resolved_scopes",
+      "ambient_context",
+      "depth",
+      "max_results",
+      "results",
+      "agent",
+      "task",
+      "session_id",
+      "feedback_applied",
+      "feedback_trace_id",
+      "feedback_applied_at",
+      "created_at",
+      "transport_session_id"
+    ],
+    "recall_events_ddl": "CREATE TABLE recall_events (\n                    id TEXT PRIMARY KEY,\n                    query TEXT NOT NULL,\n                    scope TEXT NOT NULL DEFAULT 'global',\n                    requested_scope TEXT NOT NULL DEFAULT 'global',\n                    resolved_scopes TEXT NOT NULL DEFAULT '[]',\n                    ambient_context TEXT NOT NULL DEFAULT '{}',\n                    depth TEXT,\n                    max_results INTEGER NOT NULL DEFAULT 10,\n                    results TEXT NOT NULL DEFAULT '[]',\n                    agent TEXT,\n                    task TEXT,\n                    session_id TEXT,\n                    feedback_applied INTEGER NOT NULL DEFAULT 0 CHECK (feedback_applied IN (0, 1)),\n                    feedback_trace_id TEXT REFERENCES nodes(id),\n                    feedback_applied_at TEXT,\n                    created_at TEXT NOT NULL\n                , transport_session_id TEXT)",
+    "nodes": 14158,
+    "connections": 103162,
+    "recall_events": 47001,
+    "feedback_applied": 7606,
+    "identity_classes": {
+      "explicit": 2745,
+      "transport_only": 0,
+      "none": 44256
+    }
+  },
+  "integrity_check": "ok",
+  "feedback_closure_all_history": {
+    "window_hours": 175200,
+    "recall_events_in_window": 47001,
+    "feedback_applied_in_window": 7606,
+    "closure_ratio": 0.16182634412033786,
+    "identity_coverage": {
+      "explicit": {
+        "events": 2745,
+        "closed": 2158,
+        "closure_ratio": 0.7861566484517304
+      },
+      "transport_only": {
+        "events": 0,
+        "closed": 0,
+        "closure_ratio": null
+      },
+      "none": {
+        "events": 44256,
+        "closed": 5448,
+        "closure_ratio": 0.12310195227765727
+      }
+    }
+  },
+  "feedback_closure_recent": {
+    "window_hours": 168,
+    "recall_events_in_window": 1288,
+    "feedback_applied_in_window": 220,
+    "closure_ratio": 0.17080745341614906,
+    "identity_coverage": {
+      "explicit": {
+        "events": 39,
+        "closed": 25,
+        "closure_ratio": 0.6410256410256411
+      },
+      "transport_only": {
+        "events": 0,
+        "closed": 0,
+        "closure_ratio": null
+      },
+      "none": {
+        "events": 1249,
+        "closed": 195,
+        "closure_ratio": 0.15612489991993594
+      }
+    }
+  },
+  "checks": {
+    "schema_version_current": true,
+    "transport_column_present": true,
+    "column_change_additive_only": true,
+    "ddl_extended_not_rebuilt": true,
+    "nodes_preserved": true,
+    "connections_preserved": true,
+    "recall_events_preserved": true,
+    "feedback_flags_preserved": true,
+    "identity_partition_preserved": true,
+    "no_legacy_row_stamped": true,
+    "integrity_ok": true,
+    "closure_metric_computes": true
+  },
+  "ok": true
+}

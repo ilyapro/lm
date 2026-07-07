@@ -480,6 +480,11 @@ def memory_health(
         },
         "retrieval_policy": retrieval_policy_for_scope(store, policy_scope),
         "retrieval_skew": retrieval_skew_metrics(store, scope=normalized_scope),
+        "feedback_closure": feedback_closure_metrics(
+            store,
+            scope=normalized_scope,
+            window_hours=window_hours,
+        ),
     }
     report.update(
         {
@@ -533,6 +538,82 @@ def retrieval_skew_metrics(
             scope=normalized_scope,
             window_hours=window_hours,
         ),
+    }
+
+
+_FEEDBACK_CLOSURE_IDENTITY_CLASSES = ("explicit", "transport_only", "none")
+
+
+def feedback_closure_metrics(
+    store: MemoryStore,
+    *,
+    scope: str | None = None,
+    window_hours: int,
+) -> dict[str, Any]:
+    """Windowed feedback-closure ratio partitioned by recall identity class.
+
+    Each recall event lands in exactly one class, by precedence: ``explicit``
+    carries agent+task+session_id, ``transport_only`` carries only a
+    transport-derived session id, ``none`` carries neither. An event counts as
+    closed when ``feedback_applied = 1`` and its ``created_at`` is inside the
+    window (feedback timing is not windowed separately).
+    """
+
+    if window_hours < 1:
+        raise ValueError("window_hours must be >= 1")
+
+    normalized_scope = normalize_scope(scope) if scope else None
+    cutoff = (
+        (datetime.now(UTC) - timedelta(hours=window_hours))
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+    clauses = ["created_at >= ?"]
+    params: list[Any] = [cutoff]
+    if normalized_scope:
+        clauses.append("scope = ?")
+        params.append(normalized_scope)
+
+    rows = store.connection.execute(
+        f"""
+        SELECT
+            CASE
+                WHEN agent IS NOT NULL AND task IS NOT NULL AND session_id IS NOT NULL
+                    THEN 'explicit'
+                WHEN transport_session_id IS NOT NULL THEN 'transport_only'
+                ELSE 'none'
+            END AS identity_class,
+            COUNT(*) AS events,
+            SUM(CASE WHEN feedback_applied = 1 THEN 1 ELSE 0 END) AS closed
+        FROM recall_events
+        WHERE {' AND '.join(clauses)}
+        GROUP BY identity_class
+        """,
+        params,
+    ).fetchall()
+
+    identity_coverage: dict[str, dict[str, Any]] = {
+        name: {"events": 0, "closed": 0, "closure_ratio": None}
+        for name in _FEEDBACK_CLOSURE_IDENTITY_CLASSES
+    }
+    for row in rows:
+        events = int(row["events"])
+        closed = int(row["closed"] or 0)
+        identity_coverage[str(row["identity_class"])] = {
+            "events": events,
+            "closed": closed,
+            "closure_ratio": (closed / events) if events > 0 else None,
+        }
+
+    total_events = sum(item["events"] for item in identity_coverage.values())
+    total_closed = sum(item["closed"] for item in identity_coverage.values())
+    return {
+        "window_hours": window_hours,
+        "recall_events_in_window": total_events,
+        "feedback_applied_in_window": total_closed,
+        "closure_ratio": (total_closed / total_events) if total_events > 0 else None,
+        "identity_coverage": identity_coverage,
     }
 
 
@@ -607,6 +688,7 @@ def recall_event_to_dict(event: RecallEvent) -> dict[str, Any]:
         "query": event.query,
         "scope": event.scope,
         "requested_scope": event.requested_scope,
+        "transport_session_id": event.transport_session_id,
         "result_count": len(event.results),
         "feedback_applied": event.feedback_applied,
         "created_at": event.created_at,

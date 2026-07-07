@@ -106,6 +106,7 @@ class RecallEvent:
     agent: str | None = None
     task: str | None = None
     session_id: str | None = None
+    transport_session_id: str | None = None
     feedback_applied: bool = False
     feedback_trace_id: str | None = None
     feedback_applied_at: str | None = None
@@ -135,6 +136,7 @@ class RecallEvent:
             "agent": self.agent,
             "task": self.task,
             "session_id": self.session_id,
+            "transport_session_id": self.transport_session_id,
             "feedback_applied": self.feedback_applied,
             "feedback_trace_id": self.feedback_trace_id,
             "feedback_applied_at": self.feedback_applied_at,

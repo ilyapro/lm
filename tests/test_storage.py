@@ -220,18 +220,22 @@ learning_rate = 0.1
         assert trace.scope == "project:test"
 
 
-def test_schema_version_is_three_after_initialize(tmp_path: Path) -> None:
-    assert SCHEMA_VERSION == 3
+def test_schema_version_is_four_after_initialize(tmp_path: Path) -> None:
+    assert SCHEMA_VERSION == 4
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         row = store.connection.execute(
             "SELECT value FROM metadata WHERE key = 'schema_version'"
         ).fetchone()
         assert row is not None
-        assert row["value"] == "3"
+        assert row["value"] == "4"
 
 
 def test_schema_v2_database_migrates_to_v3_with_backfill(tmp_path: Path) -> None:
-    """A pre-v3 fixture DB must gain content_fingerprint + idx_nodes_dedup on open."""
+    """A pre-v3 fixture DB must gain content_fingerprint + idx_nodes_dedup on open.
+
+    The version stamp lands on the current SCHEMA_VERSION because every
+    migration in the chain runs on open.
+    """
 
     db = tmp_path / "legacy.sqlite3"
     conn = sqlite3.connect(str(db))
@@ -290,7 +294,7 @@ def test_schema_v2_database_migrates_to_v3_with_backfill(tmp_path: Path) -> None
         row = store.connection.execute(
             "SELECT value FROM metadata WHERE key = 'schema_version'"
         ).fetchone()
-        assert row["value"] == "3"
+        assert row["value"] == str(SCHEMA_VERSION)
 
         columns = {
             r["name"]
@@ -316,6 +320,110 @@ def test_schema_v2_database_migrates_to_v3_with_backfill(tmp_path: Path) -> None
                 content.encode("utf-8")
             ).hexdigest()
             assert row["content_fingerprint"] == _content_fingerprint(content)
+
+
+def test_schema_v3_database_migrates_to_v4_with_transport_column(tmp_path: Path) -> None:
+    """A pre-v4 fixture DB must gain recall_events.transport_session_id on open."""
+
+    db = tmp_path / "legacy.sqlite3"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute(
+            "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO metadata (key, value) VALUES ('schema_version', '3')"
+        )
+        conn.execute(
+            """
+            CREATE TABLE recall_events (
+                id TEXT PRIMARY KEY,
+                query TEXT NOT NULL,
+                scope TEXT NOT NULL DEFAULT 'global',
+                requested_scope TEXT NOT NULL DEFAULT 'global',
+                resolved_scopes TEXT NOT NULL DEFAULT '[]',
+                ambient_context TEXT NOT NULL DEFAULT '{}',
+                depth TEXT,
+                max_results INTEGER NOT NULL DEFAULT 10,
+                results TEXT NOT NULL DEFAULT '[]',
+                agent TEXT,
+                task TEXT,
+                session_id TEXT,
+                feedback_applied INTEGER NOT NULL DEFAULT 0 CHECK (feedback_applied IN (0, 1)),
+                feedback_trace_id TEXT REFERENCES nodes(id),
+                feedback_applied_at TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        seeded = (
+            ("LEGACYEVENT01", "alpha bravo charlie delta", 0, None),
+            ("LEGACYEVENT02", "echo foxtrot golf hotel", 1, "2026-01-01T00:00:01Z"),
+            ("LEGACYEVENT03", "india juliett kilo lima", 0, None),
+        )
+        for index, (event_id, query, feedback_applied, applied_at) in enumerate(seeded):
+            conn.execute(
+                """
+                INSERT INTO recall_events (
+                    id, query, scope, requested_scope, resolved_scopes,
+                    ambient_context, feedback_applied, feedback_applied_at, created_at
+                )
+                VALUES (?, ?, 'project:legacy', 'project:legacy',
+                        '["project:legacy"]', '{"note":"legacy"}', ?, ?, ?)
+                """,
+                (event_id, query, feedback_applied, applied_at, f"2026-01-01T00:00:0{index}Z"),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    with MemoryStore(db) as store:
+        row = store.connection.execute(
+            "SELECT value FROM metadata WHERE key = 'schema_version'"
+        ).fetchone()
+        assert row["value"] == "4"
+
+        columns = {
+            r["name"]
+            for r in store.connection.execute(
+                "PRAGMA table_info(recall_events)"
+            ).fetchall()
+        }
+        assert "transport_session_id" in columns
+
+        by_id = {event.id: event for event in store.list_recall_events(scope="project:legacy")}
+        assert set(by_id) == {"LEGACYEVENT01", "LEGACYEVENT02", "LEGACYEVENT03"}
+        assert by_id["LEGACYEVENT01"].feedback_applied is False
+        assert by_id["LEGACYEVENT02"].feedback_applied is True
+        assert by_id["LEGACYEVENT03"].feedback_applied is False
+        assert all(event.transport_session_id is None for event in by_id.values())
+        assert by_id["LEGACYEVENT02"].ambient_context == {"note": "legacy"}
+
+        recorded = store.record_recall_event(
+            query="mike november oscar papa",
+            scope="project:fresh",
+            ambient_context={"transport_session_id": "transport-1"},
+        )
+        fetched = store.get_recall_event(recorded.id)
+        assert fetched is not None
+        assert fetched.transport_session_id == "transport-1"
+        assert fetched.ambient_context == {"transport_session_id": "transport-1"}
+
+        # Equal transport ids match strongly even with zero text overlap...
+        pending = store.pending_recall_events(
+            scope="project:fresh",
+            context={"transport_session_id": "transport-1"},
+            content="quebec romeo sierra tango",
+        )
+        assert [event.id for event in pending] == [recorded.id]
+
+        # ...while differing transport ids reject despite full text overlap.
+        mismatched = store.pending_recall_events(
+            scope="project:fresh",
+            context={"transport_session_id": "transport-2"},
+            content="mike november oscar papa exact overlap",
+        )
+        assert mismatched == []
 
 
 def test_repeated_initialize_does_not_rewrite_existing_fingerprints(

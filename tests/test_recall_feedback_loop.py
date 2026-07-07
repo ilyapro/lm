@@ -409,3 +409,284 @@ def test_mcp_remember_does_not_link_project_recall_to_global_write(tmp_path: Pat
 
     assert remembered["implicit_feedback"]["recall_event_ids"] == []
     assert store.get_recall_event(event_id).feedback_applied is False
+
+
+def test_mcp_remember_links_same_transport_session_without_explicit_context(
+    tmp_path: Path,
+) -> None:
+    """Equal transport ids close an event with no agent/task/session and zero text overlap."""
+
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "billing invoice export uses chunked manifest uploads",
+        {"scope": "project:transport"},
+    )
+    recalled = mcp.tools["memory_recall"](
+        "billing invoice export manifest",
+        scope="project:transport",
+        max_results=2,
+        ambient_context={"transport_session_id": "mcp-session-1"},
+    )
+    event_id = recalled["recall_event_id"]
+    assert store.get_recall_event(event_id).transport_session_id == "mcp-session-1"
+
+    remembered = mcp.tools["memory_remember"](
+        "warehouse restock threshold defaults were tuned yesterday",
+        {"scope": "project:transport", "transport_session_id": "mcp-session-1"},
+    )
+
+    assert remembered["implicit_feedback"]["recall_event_ids"] == [event_id]
+    assert store.get_recall_event(event_id).feedback_applied is True
+
+
+def test_mcp_remember_does_not_link_differing_transport_sessions_despite_text_overlap(
+    tmp_path: Path,
+) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "gateway timeout retries use exponential backoff with jitter",
+        {"scope": "project:gateway"},
+    )
+    recalled = mcp.tools["memory_recall"](
+        "gateway timeout retries backoff",
+        scope="project:gateway",
+        max_results=2,
+        ambient_context={"transport_session_id": "mcp-session-a"},
+    )
+    event_id = recalled["recall_event_id"]
+
+    remembered = mcp.tools["memory_remember"](
+        "gateway timeout retries backoff needs jitter tuning",
+        {"scope": "project:gateway", "transport_session_id": "mcp-session-b"},
+    )
+
+    assert remembered["implicit_feedback"]["recall_event_ids"] == []
+    assert store.get_recall_event(event_id).feedback_applied is False
+
+
+def test_mcp_remember_explicit_session_or_task_match_overrides_differing_transport_ids(
+    tmp_path: Path,
+) -> None:
+    """Explicit session/task identity wins over a transport mismatch (dissimilar text)."""
+
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "orders export cursor timeout fixed by checkpoint resume",
+        {"scope": "project:orders"},
+    )
+    session_recall = mcp.tools["memory_recall"](
+        "orders export cursor timeout",
+        scope="project:orders",
+        max_results=2,
+        ambient_context={"session_id": "s1", "transport_session_id": "mcp-a"},
+    )
+    session_write = mcp.tools["memory_remember"](
+        "orders ledger reconciliation happens nightly",
+        {"scope": "project:orders", "session_id": "s1", "transport_session_id": "mcp-b"},
+    )
+
+    mcp.tools["memory_remember"](
+        "search index rebuild timeout fixed by replaying shard checkpoints",
+        {"scope": "project:search"},
+    )
+    task_recall = mcp.tools["memory_recall"](
+        "search index rebuild timeout",
+        scope="project:search",
+        max_results=2,
+        ambient_context={"task": "reindex", "transport_session_id": "mcp-c"},
+    )
+    task_write = mcp.tools["memory_remember"](
+        "search relevance experiments look promising",
+        {"scope": "project:search", "task": "reindex", "transport_session_id": "mcp-d"},
+    )
+
+    assert session_write["implicit_feedback"]["recall_event_ids"] == [
+        session_recall["recall_event_id"]
+    ]
+    assert task_write["implicit_feedback"]["recall_event_ids"] == [
+        task_recall["recall_event_id"]
+    ]
+    assert store.get_recall_event(session_recall["recall_event_id"]).feedback_applied is True
+    assert store.get_recall_event(task_recall["recall_event_id"]).feedback_applied is True
+
+
+def test_mcp_remember_event_only_transport_stamp_keeps_weak_text_fallback(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Events stamped but trace unstamped: legacy weak fallback, still capped at one."""
+
+    monkeypatch.setattr(storage_module, "_utc_now", lambda: "2026-05-22T09:00:00Z")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "cache warming queue timeout retry policy for catalog refresh",
+        {"scope": "project:catalog"},
+    )
+    first_recall = mcp.tools["memory_recall"](
+        "cache warming queue timeout",
+        scope="project:catalog",
+        max_results=2,
+        ambient_context={"transport_session_id": "mcp-a"},
+    )
+    second_recall = mcp.tools["memory_recall"](
+        "cache warming retry policy",
+        scope="project:catalog",
+        max_results=2,
+        ambient_context={"transport_session_id": "mcp-a"},
+    )
+
+    remembered = mcp.tools["memory_remember"](
+        "cache warming queue timeout retry policy needs a catalog refresh backoff",
+        {"scope": "project:catalog"},
+    )
+    applied = set(remembered["implicit_feedback"]["recall_event_ids"])
+
+    assert applied == {second_recall["recall_event_id"]}
+    assert store.get_recall_event(second_recall["recall_event_id"]).feedback_applied is True
+    assert store.get_recall_event(first_recall["recall_event_id"]).feedback_applied is False
+
+
+def test_mcp_remember_trace_only_transport_stamp_keeps_weak_text_fallback(
+    tmp_path: Path,
+) -> None:
+    """Trace stamped but event unstamped: legacy text-similarity fallback still links."""
+
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "inventory reconciliation timeout retry uses batch checkpoint resume",
+        {"scope": "project:inventory"},
+    )
+    recalled = mcp.tools["memory_recall"](
+        "inventory reconciliation timeout retry",
+        scope="project:inventory",
+        max_results=2,
+    )
+    event_id = recalled["recall_event_id"]
+    assert store.get_recall_event(event_id).transport_session_id is None
+
+    remembered = mcp.tools["memory_remember"](
+        "inventory reconciliation timeout retry should resume from the checkpoint",
+        {"scope": "project:inventory", "transport_session_id": "mcp-b"},
+    )
+
+    assert remembered["implicit_feedback"]["recall_event_ids"] == [event_id]
+    assert store.get_recall_event(event_id).feedback_applied is True
+
+
+def test_mcp_remember_explicit_mismatch_rejects_despite_equal_transport_ids(
+    tmp_path: Path,
+) -> None:
+    """Equal transport ids cannot resurrect an explicitly mismatched session/task pair."""
+
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store: MemoryStore = mcp.memory_store
+
+    mcp.tools["memory_remember"](
+        "orders export cursor timeout fixed by checkpoint resume",
+        {"scope": "project:orders"},
+    )
+    session_recall = mcp.tools["memory_recall"](
+        "orders export cursor timeout",
+        scope="project:orders",
+        max_results=2,
+        ambient_context={"session_id": "s1", "transport_session_id": "mcp-same"},
+    )
+    session_write = mcp.tools["memory_remember"](
+        "orders export cursor timeout checkpoint resume procedure",
+        {"scope": "project:orders", "session_id": "s2", "transport_session_id": "mcp-same"},
+    )
+
+    mcp.tools["memory_remember"](
+        "search index rebuild timeout fixed by replaying shard checkpoints",
+        {"scope": "project:search"},
+    )
+    task_recall = mcp.tools["memory_recall"](
+        "search index rebuild timeout",
+        scope="project:search",
+        max_results=2,
+        ambient_context={"task": "task-a", "transport_session_id": "mcp-same-2"},
+    )
+    task_write = mcp.tools["memory_remember"](
+        "search index rebuild timeout checkpoint replay procedure",
+        {"scope": "project:search", "task": "task-b", "transport_session_id": "mcp-same-2"},
+    )
+
+    assert session_write["implicit_feedback"]["recall_event_ids"] == []
+    assert task_write["implicit_feedback"]["recall_event_ids"] == []
+    assert store.get_recall_event(session_recall["recall_event_id"]).feedback_applied is False
+    assert store.get_recall_event(task_recall["recall_event_id"]).feedback_applied is False
+
+
+def test_mcp_remember_equal_transport_ids_close_across_default_scope_divergence(
+    tmp_path: Path,
+) -> None:
+    """Identity-less flows on a non-global default scope still close via transport ids.
+
+    A scope-less recall plans ``requested_scope='global'`` while a scope-less
+    remember lands on the configured default scope; equal transport stamps must
+    span that divergence with dissimilar text and no explicit identity, or
+    feedback closure silently dies on every non-global-default deployment.
+    """
+
+    mcp = create_mcp_server(
+        tmp_path / "memory.sqlite3",
+        default_scope="project:divergence",
+        mcp_factory=FakeMCP,
+    )
+    store: MemoryStore = mcp.memory_store
+
+    recalled = mcp.tools["memory_recall"](
+        "boreal quasar lattice drift",
+        max_results=2,
+        ambient_context={"transport_session_id": "mcp-span"},
+    )
+    event = store.get_recall_event(recalled["recall_event_id"])
+    assert event.requested_scope == "global"  # the divergence precondition
+
+    remembered = mcp.tools["memory_remember"](
+        "carbide flywheel manifold spline",
+        {"transport_session_id": "mcp-span"},
+    )
+
+    assert remembered["node"]["scope"] == "project:divergence"
+    assert remembered["implicit_feedback"]["recall_event_ids"] == [event.id]
+    assert store.get_recall_event(event.id).feedback_applied is True
+
+
+def test_mcp_remember_scope_divergence_stays_open_without_transport_ids(
+    tmp_path: Path,
+) -> None:
+    """Control: the same divergence with unstamped or differing ids never closes."""
+
+    mcp = create_mcp_server(
+        tmp_path / "memory.sqlite3",
+        default_scope="project:divergence",
+        mcp_factory=FakeMCP,
+    )
+    store: MemoryStore = mcp.memory_store
+
+    unstamped = mcp.tools["memory_recall"]("boreal quasar lattice drift", max_results=2)
+    stamped = mcp.tools["memory_recall"](
+        "zephyr mangrove citadel prism",
+        max_results=2,
+        ambient_context={"transport_session_id": "mcp-one"},
+    )
+
+    remembered = mcp.tools["memory_remember"](
+        "carbide flywheel manifold spline",
+        {"transport_session_id": "mcp-other"},
+    )
+
+    assert remembered["node"]["scope"] == "project:divergence"
+    assert remembered["implicit_feedback"]["recall_event_ids"] == []
+    assert store.get_recall_event(unstamped["recall_event_id"]).feedback_applied is False
+    assert store.get_recall_event(stamped["recall_event_id"]).feedback_applied is False

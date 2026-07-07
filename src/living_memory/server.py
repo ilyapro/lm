@@ -278,6 +278,49 @@ def _build_static_token_auth(token: str) -> Any | None:
     )
 
 
+_TRANSPORT_SESSION_KEY = "transport_session_id"
+
+
+def _transport_session_id() -> str | None:
+    """Derive the MCP transport session id for the current request, or None.
+
+    FastMCP's ambient request context yields the client-echoed
+    ``mcp-session-id`` header on streamable-HTTP and a stable per-connection
+    UUID on stdio/SSE/in-memory transports. Outside a request context —
+    direct tool-function calls, custom ``mcp_factory`` fakes — there is
+    nothing to derive, so any failure degrades to None.
+    """
+
+    try:
+        from fastmcp.server.dependencies import get_context
+
+        session_id = get_context().session_id
+    except Exception:
+        return None
+    if not session_id:
+        return None
+    return str(session_id)
+
+
+def _with_transport_identity(data: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Stamp the derived transport session id into a context mapping.
+
+    Returns the input unchanged when no transport identity is available;
+    otherwise returns a copy (never mutates the caller's dict) with
+    ``transport_session_id`` filled in only if the caller did not pass one —
+    an explicit value always wins. The reserved key is deliberately NOT
+    ``session_id``: scope resolution derives a ``session:<id>`` scope from
+    that key, and the transport stamp must never perturb scope resolution.
+    """
+
+    session_id = _transport_session_id()
+    if session_id is None:
+        return data
+    stamped = dict(data or {})
+    stamped.setdefault(_TRANSPORT_SESSION_KEY, session_id)
+    return stamped
+
+
 def _server_instructions(default_scope: str) -> str:
     return (
         "You and Living Memory form ONE cognitive system. You supply "
@@ -401,15 +444,19 @@ def _server_instructions(default_scope: str) -> str:
         "explicit is better.\n"
         f"Your default scope is {default_scope}.\n"
         "\n"
-        "## Structured context — required fields\n"
+        "## Structured context — correlation identity\n"
         "\n"
-        "`memory_recall.ambient_context` and `memory_remember.context` MUST "
-        "pass matching structured metadata:\n"
+        "Correlation identity is derived automatically: the server stamps "
+        "every recall/remember/teach with `transport_session_id` taken "
+        "from the MCP transport session, so same-session feedback linking "
+        "works with no client metadata. An explicit value always "
+        "overrides the derived one. Explicit `task`, `agent`, and "
+        "`session_id` in `memory_recall.ambient_context` and "
+        "`memory_remember.context` remain recommended: they link work "
+        "across sessions and reconnects, beyond one transport session:\n"
         "```json\n"
         '{"scope": "project:online", "task": "EZ-13771", "agent": "codex", "session_id": "run-2026-05-22"}\n'
         "```\n"
-        "Without matching `task`, `agent`, and `session_id`, recalls "
-        "cannot reliably link to later remember/teach feedback.\n"
         "\n"
         "## How to write good traces\n"
         "\n"
@@ -621,6 +668,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
     ) -> dict[str, Any]:
         """Store a new append-only trace."""
 
+        context = _with_transport_identity(context)
         with runtime_lock:
             try:
                 auto_decay = _decay_sweep_if_due(store)
@@ -664,6 +712,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
     ) -> dict[str, Any]:
         """Store a corrective trace and connect it to the original."""
 
+        context = _with_transport_identity(context)
         with runtime_lock:
             taught = consolidation_service.memory_teach(
                 trace_id,
@@ -705,6 +754,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
     ) -> dict[str, Any]:
         """Retrieve relevant memory nodes using scope, text, vector, and graph signals."""
 
+        ambient_context = _with_transport_identity(ambient_context)
         with runtime_lock:
             auto_decay = _maybe_decay_sweep(store)
             results = recall_service.memory_recall(

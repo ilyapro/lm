@@ -1,6 +1,6 @@
 # Living Memory MCP Interface
 
-The MCP server exposes four core operations through seven tools, four
+The MCP server exposes four core operations through nine tools, four
 browsable resources, and one prompt. Create it in Python with
 `living_memory.server:create_mcp_server`, run it from the repository with
 `npm run server -- ./living_memory.sqlite3`, or run
@@ -21,6 +21,44 @@ unchanged plain-HTTP default, and supplying only one stops startup. Bearer
 authentication via `LM_AUTH_TOKEN` is unchanged and keeps gating the admin
 routes over either scheme. See the [README](../README.md#http-transport-and-tls)
 for a runnable example.
+
+## Correlation identity and feedback closure
+
+Retrieval-policy learning depends on recall events being *closed* — consumed
+as implicit feedback by a later `memory_remember`/`memory_teach`. Clients
+rarely send the explicit `agent`/`task`/`session_id` identity that used to be
+the only reliable closing signal, so the server derives one itself: every
+`memory_recall`, `memory_remember`, and `memory_teach` request is stamped with
+a reserved `transport_session_id` context key taken from the MCP transport
+session (the streamable-HTTP session id; a stable per-connection UUID on
+stdio, SSE, and in-memory transports).
+
+* The stamp lands in `memory_recall.ambient_context`,
+  `memory_remember.context`, and `memory_teach.context`; an explicit caller
+  value for the key always wins verbatim.
+* Tool schemas are unchanged and the key is deliberately *not* `session_id`:
+  scope resolution derives a `session:<id>` scope from `session_id`, and the
+  transport stamp never perturbs scope resolution.
+* Pending-recall matching uses identity precedence: explicit
+  `session_id`/`task` matches and mismatches always decide first; equal
+  transport ids link strongly — including across the divergence between
+  scope-less recalls (which plan the `global` scope) and scope-less traces
+  (which land on the configured default scope); differing transport ids
+  reject; with a stamp on only one side, the legacy text-similarity fallback
+  applies, and only within the exact scope.
+* Outside a request context (direct tool-function calls, embedding servers
+  without FastMCP) nothing is stamped and behaviour degrades to the legacy
+  rules. Explicit `agent`/`task`/`session_id` remain recommended: they link
+  work across reconnects, beyond one transport session.
+
+The effect is that an identity-less client gets its recall events closed by
+its own subsequent remembers — and never by another connection's — with no
+client-side changes. `memory_health.feedback_closure` (below) makes the
+closure rate observable. End-to-end behaviour over real TLS streamable-HTTP,
+stdio, and in-memory transports is pinned by
+`tests/test_transport_feedback_closure_e2e.py`, and
+`scripts/verify_live_db_migration.py` verifies the additive `recall_events`
+schema migration against a copy of a live database.
 
 ## Tools
 
@@ -66,7 +104,10 @@ Output includes the stored node and an `auto_consolidation` summary when the
 scope reaches a consolidation boundary. If a compatible prior `memory_recall`
 is pending, the new trace also records that recall under
 `provenance.prior_recalls`, links to recalled nodes, and returns an
-`implicit_feedback` summary.
+`implicit_feedback` summary. Requests arriving over an MCP transport are
+stamped with the reserved `transport_session_id` context key (explicit values
+win) so the pending-recall link works without any explicit identity — see
+[Correlation identity and feedback closure](#correlation-identity-and-feedback-closure).
 
 When `alternatives_considered` is supplied, ingest also creates one ordinary
 trace node per rejected alternative and connects each rejected trace to the
@@ -149,7 +190,30 @@ their rejected alternatives by following only `contradicts` edges with
 filter rejected-alternative traces from results.
 
 Output includes a `recall_event_id` at the top level and on each returned
-result so later provenance can refer to the exact retrieval interaction.
+result so later provenance can refer to the exact retrieval interaction. The
+persisted event also stores the transport-derived `transport_session_id`
+stamped into `ambient_context` (explicit values win), which later
+remembers/teaches from the same connection use to close the event as
+feedback.
+
+### `memory_lookup`
+
+Core operation: retrieve (exact match).
+
+Input:
+
+```json
+{
+  "scope": "project:alpha",
+  "level": "trace | concept | schema",
+  "lesson_kind": "optional context.type filter",
+  "procedure_id": "optional procedural pattern id",
+  "task_pattern": "optional task pattern"
+}
+```
+
+Returns active nodes whose context fields match exactly, without ranked
+recall, and does not record a recall event.
 
 ### `memory_consolidate`
 
@@ -203,6 +267,48 @@ Input:
 
 Output reports phase, counts, confidence summary, coverage, and active
 retrieval policy.
+
+### `memory_health`
+
+Core operation: reflect (operational metrics).
+
+Input:
+
+```json
+{
+  "scope": "project:alpha",
+  "window_hours": 168,
+  "top_stale": 5
+}
+```
+
+Output is a metrics report with `activity`, `counts`, `dedup`, `staleness`,
+`retrieval_policy`, `retrieval_skew`, `feedback`, `feedback_closure`,
+`access`, `scope_hygiene`, `storage`, `latency`, and `instructions` blocks.
+`feedback_closure` is the first-class view of the implicit feedback loop: the
+windowed share of recall events that a later ingest consumed, partitioned by
+the identity each event carried:
+
+```json
+{
+  "window_hours": 168,
+  "recall_events_in_window": 1268,
+  "feedback_applied_in_window": 219,
+  "closure_ratio": 0.173,
+  "identity_coverage": {
+    "explicit": {"events": 120, "closed": 95, "closure_ratio": 0.792},
+    "transport_only": {"events": 900, "closed": 850, "closure_ratio": 0.944},
+    "none": {"events": 248, "closed": 30, "closure_ratio": 0.121}
+  }
+}
+```
+
+`explicit` events carry `agent`+`task`+`session_id`, `transport_only` events
+carry only the transport-derived stamp, and `none` events carry neither
+(legacy rows and non-request calls). A rising `transport_only` share with a
+high closure ratio is the observable effect of server-side identity
+derivation; regressions show up as events sliding back into `none` or the
+ratio dropping.
 
 ## Resources
 

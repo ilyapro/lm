@@ -41,7 +41,7 @@ npm run server -- ./living_memory.sqlite3
 `npm run check` installs the Python test/runtime dependencies into the ignored
 `.cache/python-deps` directory and runs the Python test suite through
 `scripts/check.sh`. The suite includes a real FastMCP integration smoke test
-that instantiates the server and exercises the seven registered tools locally.
+that instantiates the server and exercises the nine registered tools locally.
 
 FastMCP and sentence-transformers are declared runtime dependencies. When
 sentence-transformers is absent in a source checkout or a model is unavailable

@@ -11,7 +11,7 @@ The server is a Python package under `src/living_memory`.
 
 | Layer | Modules | Responsibility |
 | --- | --- | --- |
-| MCP surface | `server.py` | Registers the seven tools, four resources, and retrieval-context prompt. |
+| MCP surface | `server.py` | Registers the nine tools, four resources, and retrieval-context prompt; stamps transport-derived correlation identity into recall/remember/teach. |
 | Storage | `storage.py`, `models.py` | Owns SQLite schema, uniform node CRUD, connections, FTS5, and retrieval weights. |
 | Retrieval | `retrieval.py`, `scope.py`, `embeddings.py`, `feedback.py` | Resolves scope, searches FTS5, computes multilingual embeddings, traverses graph edges, reranks, logs access, stores recall events, and tunes weights. |
 | Learning loop | `consolidation.py`, `decay.py`, `temporal.py` | Clusters similar traces into concepts, computes consensus and temporal hints, updates edge weights, records corrections, and soft-deletes expired or superseded records. |
@@ -31,10 +31,19 @@ The server is a Python package under `src/living_memory`.
    embeddings, optionally traverses graph edges, reranks by feedback and
    confidence, records access on returned nodes, and stores a `recall_events`
    row containing the query, resolved scopes, method scores, and result IDs.
+   When the call arrives over an MCP transport, the server first stamps a
+   transport-derived `transport_session_id` into the ambient context (an
+   explicit caller value always wins), and the row keeps that identity in its
+   own column.
 5. The next compatible `memory_remember` consumes the pending recall event,
    records it in the new trace provenance, creates `related` edges to recalled
    nodes, and applies implicit positive feedback to the recalled results and
-   retrieval weights.
+   retrieval weights. Compatibility follows identity precedence: explicit
+   `session_id`/`task` matches and mismatches always decide first, equal
+   transport session ids link strongly — including across the divergence
+   between scope-less recalls (which plan `global`) and scope-less traces
+   (which land on the configured default scope) — and the legacy
+   text-similarity fallbacks apply only within the exact scope.
 6. `memory_teach` appends a corrective trace and creates a `supersedes` edge
    from the correction to the original.
 7. `memory_consolidate` clusters recent active traces, creates or updates
@@ -98,6 +107,15 @@ requested and resolved scopes, ambient agent/session context, result IDs,
 component scores, and whether a later ingest trace consumed the event as
 feedback. Consumed events point back to the ingest trace through
 `feedback_trace_id`.
+
+`transport_session_id` (schema v4) carries the transport-derived session
+identity so feedback closure works for clients that send no explicit
+`agent`/`task`/`session_id`. Databases created before v4 are upgraded by an
+idempotent additive `ALTER TABLE ... ADD COLUMN` migration that preserves
+every row and feedback flag; `scripts/verify_live_db_migration.py` proves this
+against a backup-API copy of a live database. `memory_health` reports the
+windowed closure ratio per identity class (`explicit`, `transport_only`,
+`none`) under `feedback_closure`.
 
 ### `nodes_fts`
 
@@ -186,4 +204,4 @@ npm run server -- --config ./memory.toml --transport stdio
 `.cache/python-deps`, then delegates to the Python test suite through
 `scripts/check.sh` and `scripts/test.sh`. This check path includes a real
 FastMCP server smoke test that verifies the documented runtime can instantiate
-the server surface and exercise the seven registered tools locally.
+the server surface and exercise the nine registered tools locally.
