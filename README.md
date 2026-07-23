@@ -55,7 +55,7 @@ allowed.
 
 The server speaks the stdio transport by default. Pass `--transport http`
 (or `--transport sse`) with `--host`/`--port` to serve the `/mcp` endpoint and
-the admin routes (`/health`, `/admin/info`, `/admin/restart`,
+the admin routes (`/health`, `/admin/info`, `/admin/token`, `/admin/restart`,
 `/admin/decay-sweep`) over the network.
 
 Those transports serve plain `http://` unless TLS is configured. To serve
@@ -84,6 +84,16 @@ Bearer authentication composes with TLS rather than being replaced by it. When
 `LM_AUTH_TOKEN` is set, the admin routes still reject missing or invalid tokens
 (HTTP 401) over both plain HTTP and HTTPS — and over HTTPS the token is no
 longer sent in cleartext on the wire.
+
+`POST /admin/token` rotates that bearer token in place. A request authorized by
+the *current* token supplies the replacement as JSON (`{"token": "<new>"}`);
+the server then accepts only the new token on both the admin routes and the
+`/mcp` surface, with no restart required. The new value is persisted to the
+SQLite state file, so it survives a restart and takes precedence over
+`LM_AUTH_TOKEN` on the next start — `LM_AUTH_TOKEN` only seeds the token before
+the first rotation. The token value never appears in the response, logs, or any
+tracked file. (Send the rotation over HTTPS so the new token is not exposed on
+the wire.)
 
 ## Documentation
 

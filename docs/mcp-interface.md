@@ -22,6 +22,13 @@ authentication via `LM_AUTH_TOKEN` is unchanged and keeps gating the admin
 routes over either scheme. See the [README](../README.md#http-transport-and-tls)
 for a runnable example.
 
+That bearer token can be rotated at runtime: `POST /admin/token`, authorized by
+the current token, accepts `{"token": "<new>"}` and thereafter accepts only the
+new token on both the admin routes and `/mcp`. The rotation is persisted to the
+SQLite state file (so it survives a restart and outranks the `LM_AUTH_TOKEN`
+seed on the next start) and the token value never appears in the response,
+logs, or any tracked file.
+
 ## Correlation identity and feedback closure
 
 Retrieval-policy learning depends on recall events being *closed* — consumed

@@ -48,6 +48,13 @@ _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
 _RESTART_PENDING = False
 
+# Server-wide KV key holding the persisted (rotated) bearer token. A value here
+# takes precedence over the LM_AUTH_TOKEN env seed at startup, so a rotation via
+# POST /admin/token survives a restart. The token lives only in the git-ignored
+# SQLite state file — never logged, echoed in a response, or written to a tracked
+# file, so it stays out of logs, diffs, and traces.
+_AUTH_TOKEN_KV_KEY = "auth_token"
+
 _TOOL_METRICS: dict[str, dict[str, Any]] = {}
 
 def _track_latency(tool_name: str) -> Any:
@@ -94,16 +101,21 @@ def create_mcp_server(
     factory_kwargs: dict[str, Any] = {
         "instructions": _server_instructions(store.config.default_scope),
     }
-    token_value = auth_token or ""
-    token_value = token_value.strip()
+    # A token rotated earlier via POST /admin/token and persisted to the store
+    # KV wins over the LM_AUTH_TOKEN env seed, so a rotation survives restart;
+    # the env value only seeds the very first boot before any rotation.
+    token_value = (store.get_kv(_AUTH_TOKEN_KV_KEY) or auth_token or "").strip()
+    auth_provider = None
     # Only wire auth on the real FastMCP — custom test factories don't accept it.
     if token_value and mcp_factory is None:
         auth_provider = _build_static_token_auth(token_value)
         if auth_provider is not None:
             factory_kwargs["auth"] = auth_provider
     mcp = mcp_cls(name, **factory_kwargs)
+    auth_state = _AuthTokenState(token_value, auth_provider)
     runtime_lock = RLock()
     _attach(mcp, "memory_store", store)
+    _attach(mcp, "auth_token_state", auth_state)
     _register_tools(mcp, store, runtime_lock)
     _register_resources(mcp, store, runtime_lock)
     _register_prompts(mcp, store, runtime_lock)
@@ -111,7 +123,7 @@ def create_mcp_server(
         mcp,
         store=store,
         runtime_lock=runtime_lock,
-        expected_token=token_value,
+        auth_state=auth_state,
         default_scope=store.config.default_scope,
     )
     return mcp
@@ -122,10 +134,10 @@ def _register_admin_routes(
     *,
     store: MemoryStore,
     runtime_lock: Any,
-    expected_token: str,
+    auth_state: "_AuthTokenState",
     default_scope: str,
 ) -> None:
-    """Register /health, /admin/info, /admin/restart, /admin/decay-sweep on FastMCP."""
+    """Register /health, /admin/info, /admin/token, /admin/restart, /admin/decay-sweep."""
 
     register = getattr(mcp, "custom_route", None)
     if register is None:
@@ -149,9 +161,10 @@ def _register_admin_routes(
         )
 
     def _authorized(request: "Request") -> bool:
-        return bool(expected_token) and secrets.compare_digest(
+        expected = auth_state.token
+        return bool(expected) and secrets.compare_digest(
             _bearer_token(request),
-            expected_token,
+            expected,
         )
 
     @register("/health", methods=["GET"])
@@ -192,6 +205,43 @@ def _register_admin_routes(
                 "default_scope": default_scope,
                 "argv": list(sys.argv),
             },
+            status_code=200,
+        )
+
+    @register("/admin/token", methods=["POST"])
+    async def admin_token(request: "Request") -> "JSONResponse":
+        """Rotate the static bearer token (authorized by the *current* token).
+
+        Persists the new token to the store KV (so the rotation survives a
+        restart) and swaps it live on both the admin routes and the MCP
+        StaticTokenVerifier, so the server immediately accepts only the new
+        token. The token value is never echoed in the response.
+        """
+
+        if not _authorized(request):
+            return _unauthorized()
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = None
+        new_token = ""
+        if isinstance(payload, dict) and isinstance(payload.get("token"), str):
+            new_token = payload["token"].strip()
+        if not new_token:
+            # Reject empty/missing tokens: an empty token would silently disable
+            # bearer auth. The rejected value is never echoed back.
+            return JSONResponse(
+                {"ok": False, "error": "missing or empty token"},
+                status_code=400,
+            )
+        rotated_at = datetime.now(timezone.utc).isoformat()
+        with runtime_lock:
+            # Persist first: if the process dies between persist and live-apply,
+            # the durable value is still authoritative on the next startup.
+            store.set_kv(_AUTH_TOKEN_KV_KEY, new_token)
+            auth_state.rotate(new_token)
+        return JSONResponse(
+            {"ok": True, "rotated_at": rotated_at, "boot_id": _BOOT_ID},
             status_code=200,
         )
 
@@ -267,6 +317,12 @@ def _schedule_self_exec(delay_seconds: float = 0.2) -> None:
     timer.start()
 
 
+def _token_entry(token: str) -> dict[str, dict[str, Any]]:
+    """StaticTokenVerifier ``tokens`` mapping accepting exactly one bearer token."""
+
+    return {token: {"client_id": "living-memory", "scopes": []}}
+
+
 def _build_static_token_auth(token: str) -> Any | None:
     """Return a FastMCP static-token verifier or None if unsupported by factory."""
 
@@ -274,9 +330,38 @@ def _build_static_token_auth(token: str) -> Any | None:
         from fastmcp.server.auth import StaticTokenVerifier
     except ImportError:
         return None
-    return StaticTokenVerifier(
-        tokens={token: {"client_id": "living-memory", "scopes": []}},
-    )
+    return StaticTokenVerifier(tokens=_token_entry(token))
+
+
+class _AuthTokenState:
+    """Mutable holder for the server's single static bearer token.
+
+    Shared by the admin-route authorizer and, when present, the FastMCP
+    ``StaticTokenVerifier`` so a rotation via ``POST /admin/token`` takes effect
+    live on both the admin routes and the MCP surface without a restart. The
+    rotated value is persisted separately to the store KV so it also survives a
+    restart. The token is never logged, echoed in a response, or written to a
+    tracked file.
+    """
+
+    def __init__(self, token: str, verifier: Any | None = None) -> None:
+        self._token = token
+        self._verifier = verifier
+
+    @property
+    def token(self) -> str:
+        return self._token
+
+    def rotate(self, new_token: str) -> None:
+        """Swap the accepted token on every live surface this holder feeds."""
+
+        self._token = new_token
+        verifier = self._verifier
+        if verifier is not None:
+            # StaticTokenVerifier.verify_token reads ``self.tokens.get(token)``
+            # per request, so replacing the mapping rejects the old token and
+            # accepts the new one on the MCP surface immediately.
+            verifier.tokens = _token_entry(new_token)
 
 
 _TRANSPORT_SESSION_KEY = "transport_session_id"
