@@ -30,6 +30,7 @@ first-class metric reflects the closures it claims to measure.
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -148,6 +149,18 @@ def _fetch_events_by_query(db_path: Path) -> dict[str, sqlite3.Row]:
     return {str(row["query"]): row for row in rows}
 
 
+def _fetch_node_context(db_path: Path, node_id: str) -> dict[str, Any]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute(
+            "SELECT context FROM nodes WHERE id = ?", (node_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    return json.loads(row[0])
+
+
 def _assert_isolated_closure(db_path: Path, outcome: dict[str, Any]) -> None:
     """Ground-truth column assertions: distinct ids, own-trace-only closure."""
 
@@ -171,8 +184,12 @@ def _assert_isolated_closure(db_path: Path, outcome: dict[str, Any]) -> None:
 
     # The stamp travelled to the remember trace over the wire and matches the
     # column value extracted on the recall side of the same connection.
-    trace_stamp_a = outcome["trace_a"]["context"]["transport_session_id"]
-    trace_stamp_b = outcome["trace_b"]["context"]["transport_session_id"]
+    trace_stamp_a = _fetch_node_context(db_path, outcome["trace_a"]["id"])[
+        "transport_session_id"
+    ]
+    trace_stamp_b = _fetch_node_context(db_path, outcome["trace_b"]["id"])[
+        "transport_session_id"
+    ]
     assert trace_stamp_a == event_a["transport_session_id"]
     assert trace_stamp_b == event_b["transport_session_id"]
 
@@ -258,7 +275,8 @@ def test_stdio_client_closes_own_event_via_transport_identity(tmp_path: Path) ->
     assert event["transport_session_id"]
     assert event["feedback_applied"] == 1
     assert event["feedback_trace_id"] == trace["id"]
-    assert trace["context"]["transport_session_id"] == event["transport_session_id"]
+    trace_context = _fetch_node_context(db_path, trace["id"])
+    assert trace_context["transport_session_id"] == event["transport_session_id"]
 
 
 # --- Explicit identity still outranks an equal transport stamp --------------
@@ -329,11 +347,11 @@ def test_tls_explicit_session_precedence_survives_transport_match(
     assert isinstance(event["transport_session_id"], str)
     assert event["transport_session_id"]
     assert (
-        mismatched_trace["context"]["transport_session_id"]
+        _fetch_node_context(db_path, mismatched_trace["id"])["transport_session_id"]
         == event["transport_session_id"]
     )
     assert (
-        matched_trace["context"]["transport_session_id"]
+        _fetch_node_context(db_path, matched_trace["id"])["transport_session_id"]
         == event["transport_session_id"]
     )
 

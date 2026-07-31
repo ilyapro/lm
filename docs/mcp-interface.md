@@ -107,13 +107,44 @@ same identifier. Once three or more traces share an id, `memory_consolidate`
 materializes a `level='schema'` node carrying a normalized `trigger` and an
 ordered `procedure` list of step descriptions.
 
-Output includes the stored node and an `auto_consolidation` summary when the
-scope reaches a consolidation boundary. If a compatible prior `memory_recall`
-is pending, the new trace also records that recall under
-`provenance.prior_recalls`, links to recalled nodes, and returns an
-`implicit_feedback` summary. Requests arriving over an MCP transport are
-stamped with the reserved `transport_session_id` context key (explicit values
-win) so the pending-recall link works without any explicit identity — see
+Output is a compact, size-bounded write confirmation — the writer already
+holds the content it just stored, so nothing bulky is echoed back:
+
+```json
+{
+  "node": {
+    "id": "ulid",
+    "level": "trace",
+    "scope": "project:alpha",
+    "created_at": "ISO-8601",
+    "prior_recall_count": 2,
+    "linked_node_count": 3,
+    "source_trace_count": 0
+  },
+  "implicit_feedback": {
+    "recall_event_ids": ["recall event id"],
+    "linked_node_ids": ["node id"],
+    "feedback_applied": true
+  },
+  "auto_consolidation": null,
+  "auto_decay": null
+}
+```
+
+`node` carries identity and counters instead of the full
+[node payload](#node-payload-contract); fetch the complete node — content,
+context, provenance bodies — with `memory_lookup(node_id=...)`. When the
+scope reaches a consolidation boundary, `auto_consolidation` reports the
+pass as id lists plus counters (`concepts_created`, `concepts_updated`,
+`concepts_promoted`, `schemas_created`, `schemas_updated`, `decayed`,
+`clusters_considered`, `traces_considered`); only a direct
+`memory_consolidate` call returns full node dicts. If a compatible prior
+`memory_recall` is pending, the new trace records that recall under
+`provenance.prior_recalls`, links to recalled nodes, and `implicit_feedback`
+lists the consumed event and node ids. Requests arriving over an MCP
+transport are stamped with the reserved `transport_session_id` context key
+(explicit values win) so the pending-recall link works without any explicit
+identity — see
 [Correlation identity and feedback closure](#correlation-identity-and-feedback-closure).
 
 When `alternatives_considered` is supplied, ingest also creates one ordinary
@@ -175,7 +206,7 @@ Input:
   "query": "natural language query",
   "scope": "project:alpha",
   "depth": "causal | decision",
-  "max_results": 10,
+  "max_results": 5,
   "ambient_context": {
     "session_id": "s1",
     "project": "alpha",
@@ -183,6 +214,10 @@ Input:
   }
 }
 ```
+
+`max_results` defaults to 5: first deliveries carry full content, so the
+tighter default keeps responses lean — pass a larger value when the task
+needs more breadth.
 
 Retrieval searches `session -> project -> global` when applicable, combines
 BM25, local vector, and graph scores, reranks by feedback/confidence/access,
@@ -203,6 +238,59 @@ stamped into `ambient_context` (explicit values win), which later
 remembers/teaches from the same connection use to close the event as
 feedback.
 
+#### Delivery shaping
+
+Ranked results are shaped before serialization so repeated and oversized
+content is not delivered again and again. Every result carries a `delivery`
+class:
+
+* `full` — the node dict exactly as in the
+  [payload contract](#node-payload-contract).
+* `snippet` — content longer than the snippet limit, truncated inline at a
+  clean boundary with a trailing `…`.
+* `session_duplicate` — the node's full content was already delivered on
+  this transport session; `content` is a one-line preview (~160 chars).
+* `twin_duplicate` — the content is byte-identical to a higher-ranked result
+  in the same response (typically a legacy concept and its verbatim source
+  trace): exactly one twin bears the content, the rest are stubs.
+
+Stubs and snippets keep every key of the full node dict — `content` is never
+absent, and only the bulky `provenance.prior_recalls` list is summarized to
+`{"count": n}`. Every non-full result additionally carries a `content_ref`
+naming the re-fetch call:
+
+```json
+{
+  "node_id": "ulid",
+  "fetch": "memory_lookup(node_id=\"ulid\")",
+  "full_content_chars": 5120,
+  "duplicate_of": "bearer ulid — twin stubs only"
+}
+```
+
+Session dedup is keyed by the transport-derived `transport_session_id` and
+consults the node ids recorded in that session's recent recall events (a
+bounded window of the 200 most recent) *before* the current call's event is
+written, so a response never stubs itself. A new connection is a new
+transport session and receives full content again. Without a transport
+session id (direct in-process calls, servers embedded without a request
+context) session dedup degrades to legacy behaviour — every recall delivers
+full content every time; twin dedup and snippeting still apply, being
+per-response and deterministic. The persisted recall event always records
+the unshaped result ids: delivery shaping changes the wire response only and
+never perturbs feedback closure.
+
+Env knobs:
+
+* `LM_DELIVERY_SNIPPET_CHARS` — max content chars delivered inline
+  (default 1200; `0` disables snippeting).
+* `LM_DELIVERY_SESSION_DEDUP` — session-dedup rollback valve (default on;
+  `0`/`false`/`no`/`off` disable).
+
+`tests/test_delivery_diet_e2e.py` pins the wire-level behaviour — dedup,
+degradation, snippet re-fetch, and closure invariance — over a real MCP
+client.
+
 ### `memory_lookup`
 
 Core operation: retrieve (exact match).
@@ -215,12 +303,23 @@ Input:
   "level": "trace | concept | schema",
   "lesson_kind": "optional context.type filter",
   "procedure_id": "optional procedural pattern id",
-  "task_pattern": "optional task pattern"
+  "task_pattern": "optional task pattern",
+  "node_id": "optional node id",
+  "node_ids": ["optional", "node", "ids"]
 }
 ```
 
 Returns active nodes whose context fields match exactly, without ranked
 recall, and does not record a recall event.
+
+`node_id`/`node_ids` switch the tool to direct id fetch — the re-fetch path
+that recall stub and snippet `content_ref`s advertise. Id fetches return
+complete node dicts in request order under `results`, list unknown ids under
+`missing`, ignore `level`, and return decayed nodes with their `decayed`
+flag set. A `scope` passed alongside ids verifies instead of filtering:
+mismatching nodes stay in `results` and are reported under
+`scope_mismatches`. Combining ids with context filters is rejected with an
+`error`.
 
 ### `memory_consolidate`
 
@@ -237,7 +336,14 @@ Input:
 
 The tool clusters similar recent traces, creates or updates concept nodes,
 records source trace IDs, computes consensus confidence and weekly temporal
-hints, updates related-edge weights, and applies decay. Procedural traces
+hints, updates related-edge weights, and applies decay. Concept content is a
+deterministic extractive digest of the cluster — the strongest source's lead
+plus the most distinctive sentence from each remaining source, capped at
+1200 chars — not a verbatim copy of one trace: whenever the cluster holds
+two or more distinct contents, the digest is byte-distinct from every source
+trace. The direct `memory_consolidate` response reports created/updated
+nodes as full node dicts (unlike the id-only `auto_consolidation` summary in
+`memory_remember`). Procedural traces
 (those tagged with `context.procedure_id` or `context.task_pattern`) are
 grouped by normalized trigger and materialized as `level='schema'` nodes once
 three traces share the pattern. The schema's `context` stores `procedure_key`,

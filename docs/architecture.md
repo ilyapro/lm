@@ -11,7 +11,7 @@ The server is a Python package under `src/living_memory`.
 
 | Layer | Modules | Responsibility |
 | --- | --- | --- |
-| MCP surface | `server.py` | Registers the nine tools, four resources, and retrieval-context prompt; stamps transport-derived correlation identity into recall/remember/teach. |
+| MCP surface | `server.py`, `delivery.py` | Registers the nine tools, four resources, and retrieval-context prompt; stamps transport-derived correlation identity into recall/remember/teach; shapes recall responses (session/twin dedup, snippets) before serialization. |
 | Storage | `storage.py`, `models.py` | Owns SQLite schema, uniform node CRUD, connections, FTS5, and retrieval weights. |
 | Retrieval | `retrieval.py`, `scope.py`, `embeddings.py`, `feedback.py` | Resolves scope, searches FTS5, computes multilingual embeddings, traverses graph edges, reranks, logs access, stores recall events, and tunes weights. |
 | Learning loop | `consolidation.py`, `decay.py`, `temporal.py` | Clusters similar traces into concepts, computes consensus and temporal hints, updates edge weights, records corrections, and soft-deletes expired or superseded records. |
@@ -35,7 +35,19 @@ The server is a Python package under `src/living_memory`.
    transport-derived `transport_session_id` into the ambient context (an
    explicit caller value always wins), and the row keeps that identity in its
    own column.
-5. The next compatible `memory_remember` consumes the pending recall event,
+5. The ranked results then pass through the pure delivery-shaping stage
+   (`delivery.shape_recall_results`) on their way to the wire: a result
+   byte-identical to a higher-ranked one becomes a `twin_duplicate` stub, a
+   node id already delivered on the same transport session becomes a
+   `session_duplicate` stub (the delivered-id set is read from the session's
+   recent recall events *before* this call's row is written, so a response
+   never stubs itself), and content over the snippet limit is truncated
+   inline. Stubs and snippets keep the full node key set and carry a
+   `content_ref` pointing at `memory_lookup(node_id=...)`. Shaping changes
+   the serialized response only — the recorded event keeps the unshaped
+   result IDs, and without a transport session id the session-dedup stage is
+   skipped entirely (legacy full delivery).
+6. The next compatible `memory_remember` consumes the pending recall event,
    records it in the new trace provenance, creates `related` edges to recalled
    nodes, and applies implicit positive feedback to the recalled results and
    retrieval weights. Compatibility follows identity precedence: explicit
@@ -43,17 +55,32 @@ The server is a Python package under `src/living_memory`.
    transport session ids link strongly — including across the divergence
    between scope-less recalls (which plan `global`) and scope-less traces
    (which land on the configured default scope) — and the legacy
-   text-similarity fallbacks apply only within the exact scope.
-6. `memory_teach` appends a corrective trace and creates a `supersedes` edge
+   text-similarity fallbacks apply only within the exact scope. Positive
+   usefulness reinforcement carries diminishing returns: each increment is
+   scaled by the node's remaining usefulness headroom (floored, never
+   zeroed) and divided by a logarithm of its access count, so entrenched,
+   frequently delivered nodes re-earn rank far more slowly than fresh ones
+   and the delivery → reinforcement → delivery loop stops concentrating
+   deliveries on a handful of saturated nodes. Explicit negative feedback
+   (corrections) is exempt and always applies at full strength.
+7. `memory_teach` appends a corrective trace and creates a `supersedes` edge
    from the correction to the original.
-7. `memory_consolidate` clusters recent active traces, creates or updates
+8. `memory_consolidate` clusters recent active traces, creates or updates
    concept nodes, computes consensus confidence and weekly temporal hints,
-   refreshes related-edge weights, and applies decay. It additionally groups
+   refreshes related-edge weights, and applies decay. Concept content is a
+   deterministic extractive digest — the strongest source's lead sentences
+   plus the most distinctive sentence of each remaining source in
+   cluster-centrality order, capped at 1200 chars — rather than a verbatim
+   copy of one trace: for clusters holding two or more distinct contents the
+   digest is byte-distinct from every source, and it is idempotent across
+   passes (an unchanged cluster re-digests to the same bytes, and the
+   duplicate-concept guard merges byte-identical twins instead of creating
+   copies). It additionally groups
    traces by normalized `context.procedure_id` (or `context.task_pattern`) and
    materializes one `level='schema'` node per group of three or more
    procedural traces, storing the normalized trigger and ordered procedure
    steps in `context`.
-8. `memory_status`, resources, and the retrieval-context prompt read the same
+9. `memory_status`, resources, and the retrieval-context prompt read the same
    store without requiring external services.
 
 ## SQLite Schema
@@ -116,6 +143,12 @@ every row and feedback flag; `scripts/verify_live_db_migration.py` proves this
 against a backup-API copy of a live database. `memory_health` reports the
 windowed closure ratio per identity class (`explicit`, `transport_only`,
 `none`) under `feedback_closure`.
+
+The same column also feeds recall delivery shaping: an idempotent
+`idx_recall_events_transport_created` index supports
+`MemoryStore.delivered_node_ids`, the bounded per-session query (node ids in
+the 200 most recent events of one transport session) that session dedup
+consults before delivering full content twice on the same connection.
 
 ### `nodes_fts`
 

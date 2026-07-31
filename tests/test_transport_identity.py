@@ -59,7 +59,8 @@ def test_recall_and_remember_stamped_with_one_session_id(tmp_path: Path) -> None
         assert len(events) == 1
         stamp = events[0].ambient_context.get("transport_session_id")
         assert isinstance(stamp, str) and stamp
-        assert remembered["node"]["context"]["transport_session_id"] == stamp
+        trace = store.get_node(remembered["node"]["id"])
+        assert trace.context["transport_session_id"] == stamp
 
     asyncio.run(scenario())
 
@@ -101,7 +102,8 @@ def test_explicit_transport_session_id_survives_verbatim(tmp_path: Path) -> None
             )
         event = store.list_recall_events()[0]
         assert event.ambient_context["transport_session_id"] == "explicit-x"
-        assert remembered["node"]["context"]["transport_session_id"] == "explicit-x"
+        trace = store.get_node(remembered["node"]["id"])
+        assert trace.context["transport_session_id"] == "explicit-x"
 
     asyncio.run(scenario())
 
@@ -198,10 +200,10 @@ def test_fake_factory_direct_calls_stay_unstamped(tmp_path: Path) -> None:
     remembered = mcp.tools["memory_remember"](
         "degradation trace", {"scope": "project:degrade"}
     )
-    assert "transport_session_id" not in remembered["node"]["context"]
+    assert "transport_session_id" not in store.get_node(remembered["node"]["id"]).context
 
     bare = mcp.tools["memory_remember"]("degradation trace without context")
-    assert "transport_session_id" not in bare["node"]["context"]
+    assert "transport_session_id" not in store.get_node(bare["node"]["id"]).context
 
     recalled = mcp.tools["memory_recall"]("degradation trace")
     assert recalled["count"] >= 0

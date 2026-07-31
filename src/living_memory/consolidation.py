@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from math import log1p
-from typing import Any, Iterable, Mapping
+from typing import Any, Collection, Iterable, Mapping, Sequence
 import re
 
 from living_memory.decay import DecayResult, apply_decay, memory_forget
@@ -25,6 +25,12 @@ CROSS_SCOPE_PROMOTION_PHASE = 4
 CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
 GLOBAL_PROMOTION_DEDUP_THRESHOLD = 0.8
 PROCEDURAL_MIN_CLUSTER_SIZE = 3
+DIGEST_MAX_CHARS = 1200
+DIGEST_LEAD_MAX_CHARS = 600
+DIGEST_FACT_MAX_CHARS = 280
+DIGEST_FACT_PREFIX = "• "
+DIGEST_NEAR_DUPLICATE_JACCARD = 0.75
+DIGEST_FRAGMENT_MAX_TOKENS = 12
 
 _STOP_WORDS = {
     "a",
@@ -737,8 +743,9 @@ def _merge_cluster_into_concept(
     unique_agents = _unique_agent_count(cluster.traces)
     confidence = _consensus_confidence(cluster.traces, unique_agents)
     temporal_hint = detect_temporal_hint(cluster.traces)
-    best_trace = max(cluster.traces, key=_trace_quality)
+    best_trace = max(cluster.traces, key=lambda trace: (_trace_quality(trace), trace.id))
     concept_embedding = cluster.embedding_for(best_trace) or cluster.representative_embedding
+    digest = _synthesize_digest(cluster.traces, best=best_trace)
     usefulness = sum(max(0.0, trace.usefulness_score) for trace in cluster.traces) / len(
         cluster.traces
     )
@@ -758,12 +765,15 @@ def _merge_cluster_into_concept(
     }
 
     existing = _find_existing_concept(
-        store, cluster.scope, cluster_key, content=best_trace.content
+        store,
+        cluster.scope,
+        cluster_key,
+        candidate_contents={digest, *(trace.content for trace in cluster.traces)},
     )
     if existing is None:
         concept = store.create_node(
             level="concept",
-            content=best_trace.content,
+            content=digest,
             context={
                 "scope": cluster.scope,
                 "agent": "memory_consolidate",
@@ -778,14 +788,189 @@ def _merge_cluster_into_concept(
     merged_sources = sorted({*existing.source_traces, *source_traces})
     provenance["source_traces"] = merged_sources
     provenance["cluster_size"] = len(merged_sources)
+    content_update = (
+        digest
+        if digest != existing.content
+        and _trace_quality(best_trace) >= _node_quality(existing)
+        else None
+    )
     concept = store.update_node(
         existing.id,
-        content=best_trace.content if _trace_quality(best_trace) >= _node_quality(existing) else None,
+        content=content_update,
         embedding=concept_embedding,
         stats=stats,
         provenance={**existing.provenance, **provenance},
     )
     return concept, False
+
+
+def _synthesize_digest(
+    sources: Sequence[Node],
+    *,
+    best: Node,
+    max_chars: int = DIGEST_MAX_CHARS,
+) -> str:
+    """Build a deterministic extractive digest of the sources' contents.
+
+    Leads with the best source's opening sentences, then folds in the most
+    distinctive sentence of each remaining source in cluster-centrality order,
+    skipping near-duplicate sentences. Single-source and all-identical-content
+    inputs keep the sole content — that already is the digest. For inputs with
+    two or more distinct contents the result is byte-distinct from every
+    source content and strictly shorter than their concatenation, except for
+    degenerate corners (formatting-only variants with no novel token, or
+    sources too tiny to fit any distinctive line) where the strongest single
+    content is kept.
+    """
+
+    distinct_contents = {source.content for source in sources}
+    if len(distinct_contents) <= 1:
+        return best.content
+
+    budget = min(max_chars, sum(len(content) for content in distinct_contents) - 1)
+    lead = _digest_lead(best.content)
+    if len(lead) + len(DIGEST_FACT_PREFIX) + 2 > budget:
+        return best.content
+
+    token_counts: Counter[str] = Counter()
+    for source in sources:
+        token_counts.update(_significant_tokens(source.content))
+
+    covered_significant = _significant_tokens(lead)
+    covered_raw = set(_raw_tokens(lead))
+    included_sentences = [frozenset(_raw_tokens(part)) for part in _split_sentences(lead)]
+    ordered_others = sorted(
+        (source for source in sources if source.id != best.id),
+        key=lambda source: (-_token_centrality(source, token_counts), source.id),
+    )
+
+    lines = [lead]
+    length = len(lead)
+    for source in ordered_others:
+        sentence = _most_distinctive_sentence(
+            source.content, covered_significant, covered_raw, included_sentences
+        )
+        if sentence is None:
+            continue
+        line = DIGEST_FACT_PREFIX + sentence
+        if length + 1 + len(line) > budget:
+            continue
+        lines.append(line)
+        length += 1 + len(line)
+        covered_significant |= _significant_tokens(sentence)
+        raw = frozenset(_raw_tokens(sentence))
+        covered_raw |= raw
+        included_sentences.append(raw)
+
+    if len(lines) == 1:
+        # Every non-lead sentence was redundant (near-identical cluster). A
+        # novel-token fragment keeps the digest byte-distinct from each source
+        # and covering more than one of them without echoing whole variants.
+        fragment = _novel_fragment_line(ordered_others, covered_raw, budget - length - 1)
+        if fragment is None:
+            return best.content
+        lines.append(fragment)
+
+    digest = "\n".join(lines)
+    if digest in distinct_contents:
+        # A source already contains these exact bytes (e.g. a re-remembered
+        # digest); byte-distinctness is unattainable without fabricating text.
+        return best.content
+    return digest
+
+
+def _digest_lead(content: str) -> str:
+    text = content.strip()
+    if len(text) <= DIGEST_LEAD_MAX_CHARS:
+        return text
+    sentences = _split_sentences(text)
+    lead = sentences[0]
+    if len(lead) > DIGEST_LEAD_MAX_CHARS:
+        return lead[: DIGEST_LEAD_MAX_CHARS - 1].rstrip() + "…"
+    for sentence in sentences[1:]:
+        if len(lead) + 1 + len(sentence) > DIGEST_LEAD_MAX_CHARS:
+            break
+        lead = f"{lead} {sentence}"
+    return lead
+
+
+def _most_distinctive_sentence(
+    content: str,
+    covered_significant: set[str],
+    covered_raw: set[str],
+    included_sentences: list[frozenset[str]],
+) -> str | None:
+    best_sentence: str | None = None
+    best_rank: tuple[int, int, int] | None = None
+    for index, sentence in enumerate(_split_sentences(content)):
+        significant_novelty = len(_significant_tokens(sentence) - covered_significant)
+        if significant_novelty < 1:
+            continue
+        raw = frozenset(_raw_tokens(sentence))
+        if any(
+            _jaccard(raw, included) >= DIGEST_NEAR_DUPLICATE_JACCARD
+            for included in included_sentences
+        ):
+            continue
+        rank = (-significant_novelty, -len(raw - covered_raw), index)
+        if best_rank is None or rank < best_rank:
+            best_rank = rank
+            best_sentence = sentence
+    if best_sentence is not None and len(best_sentence) > DIGEST_FACT_MAX_CHARS:
+        best_sentence = best_sentence[: DIGEST_FACT_MAX_CHARS - 1].rstrip() + "…"
+    return best_sentence
+
+
+def _novel_fragment_line(
+    ordered_others: Sequence[Node],
+    covered_raw: set[str],
+    budget_left: int,
+) -> str | None:
+    for source in ordered_others:
+        novel = _novel_tokens_in_order(source.content, covered_raw)
+        if not novel:
+            continue
+        line = DIGEST_FACT_PREFIX + " ".join(novel)
+        while novel and len(line) > budget_left:
+            novel.pop()
+            line = DIGEST_FACT_PREFIX + " ".join(novel)
+        if novel:
+            return line
+    return None
+
+
+def _novel_tokens_in_order(content: str, covered_raw: set[str]) -> list[str]:
+    preferred: list[str] = []
+    fallback: list[str] = []
+    for token in _raw_tokens(content):
+        if token in covered_raw:
+            continue
+        bucket = (
+            preferred
+            if len(token) >= 3 and not token.isdigit() and token not in _STOP_WORDS
+            else fallback
+        )
+        if len(bucket) < DIGEST_FRAGMENT_MAX_TOKENS and token not in bucket:
+            bucket.append(token)
+        if len(preferred) >= DIGEST_FRAGMENT_MAX_TOKENS:
+            break
+    return preferred or fallback
+
+
+def _token_centrality(node: Node, token_counts: Counter[str]) -> float:
+    tokens = _significant_tokens(node.content)
+    if not tokens:
+        return 0.0
+    return sum(token_counts[token] for token in tokens) / len(tokens)
+
+
+def _split_sentences(content: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?;])\s+|\n+", content.strip())
+    return [part.strip() for part in parts if part and part.strip()]
+
+
+def _raw_tokens(text: str) -> list[str]:
+    return re.findall(r"\w+", text.lower().replace("ё", "е"))
 
 
 def _cross_scope_promotion(
@@ -850,6 +1035,7 @@ def _create_global_promoted_concept(
     similarities: Mapping[str, float],
 ) -> Node:
     best_source = _highest_confidence_source(project_sources)
+    digest = _synthesize_digest(project_sources, best=best_source)
     source_scopes = _source_scopes(project_sources)
     source_concepts = _source_concept_ids(project_sources)
     source_traces = _source_trace_ids(project_sources)
@@ -866,7 +1052,7 @@ def _create_global_promoted_concept(
     }
     global_concept = store.create_node(
         level="concept",
-        content=best_source.content,
+        content=digest,
         context={
             "scope": "global",
             "agent": "memory_consolidate",
@@ -1096,7 +1282,11 @@ def _active_promotion_confidence(project_sources: Iterable[Node]) -> float:
 
 
 def _find_existing_concept(
-    store: MemoryStore, scope: str, cluster_key: str, content: str | None = None
+    store: MemoryStore,
+    scope: str,
+    cluster_key: str,
+    *,
+    candidate_contents: Collection[str] = (),
 ) -> Node | None:
     concepts = store.list_nodes(
         level="concept",
@@ -1104,15 +1294,17 @@ def _find_existing_concept(
         include_decayed=False,
         limit=100_000,
     )
+    contents = frozenset(candidate_contents)
     content_twin: Node | None = None
     for concept in concepts:
         if concept.provenance.get("cluster_key") == cluster_key:
             return concept
-        if content is not None and content_twin is None and concept.content == content:
+        if content_twin is None and concept.content in contents:
             content_twin = concept
-    # A concept with byte-identical content is the same concept even when the
-    # cluster key drifted between consolidation runs (cluster membership moved
-    # while the best trace stayed); merge into it instead of creating a twin.
+    # cluster_key is the primary identity; the content twin covers key drift
+    # between runs for both digest concepts (an unchanged cluster re-digests to
+    # the same bytes) and legacy concepts that copied a source trace verbatim
+    # before digests existed. Merge into the twin instead of duplicating it.
     return content_twin
 
 

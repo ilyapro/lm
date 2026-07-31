@@ -391,6 +391,16 @@ def test_schema_v3_database_migrates_to_v4_with_transport_column(tmp_path: Path)
         }
         assert "transport_session_id" in columns
 
+        # The transport index lands on the same open: the pre-v4 column
+        # migration must run before the unconditional CREATE INDEX.
+        index_names = {
+            r["name"]
+            for r in store.connection.execute(
+                "PRAGMA index_list('recall_events')"
+            ).fetchall()
+        }
+        assert "idx_recall_events_transport_created" in index_names
+
         by_id = {event.id: event for event in store.list_recall_events(scope="project:legacy")}
         assert set(by_id) == {"LEGACYEVENT01", "LEGACYEVENT02", "LEGACYEVENT03"}
         assert by_id["LEGACYEVENT01"].feedback_applied is False
@@ -444,3 +454,114 @@ def test_repeated_initialize_does_not_rewrite_existing_fingerprints(
             "SELECT content_fingerprint FROM nodes WHERE id = ?", (trace.id,)
         ).fetchone()
         assert row["content_fingerprint"] == original_fp
+
+
+def test_delivered_node_ids_accumulates_per_transport_session(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.record_recall_event(
+            query="alpha query",
+            scope="project:alpha",
+            ambient_context={"transport_session_id": "transport-1"},
+            results=[
+                {"rank": 1, "node_id": "NODE-A"},
+                {"rank": 2, "node_id": "NODE-B"},
+            ],
+        )
+        store.record_recall_event(
+            query="bravo query",
+            scope="project:alpha",
+            ambient_context={"transport_session_id": "transport-1"},
+            results=[
+                {"rank": 1, "node_id": "NODE-B"},
+                {"rank": 2, "node_id": "NODE-C"},
+                {"rank": 3, "note": "entry without a node id is skipped"},
+            ],
+        )
+        # Same transport on another scope still accumulates: delivery history
+        # follows the connection, not the scope.
+        store.record_recall_event(
+            query="charlie query",
+            scope="project:beta",
+            ambient_context={"transport_session_id": "transport-1"},
+            results=[{"rank": 1, "node_id": "NODE-D"}],
+        )
+        store.record_recall_event(
+            query="delta query",
+            scope="project:alpha",
+            ambient_context={"transport_session_id": "transport-2"},
+            results=[{"rank": 1, "node_id": "NODE-E"}],
+        )
+        # Unstamped event: transport_session_id stays NULL.
+        store.record_recall_event(
+            query="echo query",
+            scope="project:alpha",
+            results=[{"rank": 1, "node_id": "NODE-F"}],
+        )
+
+        assert store.delivered_node_ids("transport-1") == {
+            "NODE-A",
+            "NODE-B",
+            "NODE-C",
+            "NODE-D",
+        }
+        assert store.delivered_node_ids("transport-2") == {"NODE-E"}
+        assert store.delivered_node_ids("transport-unknown") == set()
+
+
+def test_delivered_node_ids_none_or_empty_transport_returns_empty(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.record_recall_event(
+            query="alpha query",
+            scope="project:alpha",
+            ambient_context={"transport_session_id": "transport-1"},
+            results=[{"rank": 1, "node_id": "NODE-A"}],
+        )
+        assert store.delivered_node_ids(None) == set()
+        assert store.delivered_node_ids("") == set()
+
+
+def test_delivered_node_ids_caps_window_to_most_recent_events(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for index in range(5):
+            store.record_recall_event(
+                query=f"query {index}",
+                scope="project:alpha",
+                ambient_context={"transport_session_id": "transport-1"},
+                results=[{"rank": 1, "node_id": f"NODE-{index}"}],
+            )
+
+        assert store.delivered_node_ids("transport-1") == {
+            f"NODE-{index}" for index in range(5)
+        }
+        # created_at ties break by rowid, matching list_recall_events
+        # ordering: the window keeps the newest inserts.
+        assert store.delivered_node_ids("transport-1", max_events=2) == {
+            "NODE-3",
+            "NODE-4",
+        }
+        assert store.delivered_node_ids("transport-1", max_events=0) == set()
+
+
+def test_recall_events_transport_index_exists_and_serves_the_probe(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        index_names = {
+            row["name"]
+            for row in store.connection.execute(
+                "PRAGMA index_list('recall_events')"
+            ).fetchall()
+        }
+        assert "idx_recall_events_transport_created" in index_names
+
+        plan = " ".join(
+            row["detail"]
+            for row in store.connection.execute(
+                """
+                EXPLAIN QUERY PLAN
+                SELECT results FROM recall_events
+                WHERE transport_session_id = 'transport-1'
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT 200
+                """
+            ).fetchall()
+        )
+        assert "idx_recall_events_transport_created" in plan

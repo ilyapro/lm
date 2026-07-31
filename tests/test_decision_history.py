@@ -71,7 +71,8 @@ def test_memory_remember_returns_rejected_alternative_ids_only_when_supplied(tmp
         ],
     )
 
-    assert remembered["node"]["content"] == "Used /api/goals/create after /api/switch"
+    stored = mcp.memory_store.get_node(remembered["node"]["id"])
+    assert stored.content == "Used /api/goals/create after /api/switch"
     assert len(remembered["rejected_alternatives"]) == 2
     assert all(remembered["rejected_alternatives"])
 

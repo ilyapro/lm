@@ -108,13 +108,13 @@ def test_mcp_remember_automatically_creates_concept_with_temporal_consensus_and_
     auto = final_remember["auto_consolidation"]
     assert auto is not None
     assert len(auto["concepts_created"]) == 1
-    concept = auto["concepts_created"][0]
-    assert concept["level"] == "concept"
-    assert concept["scope"] == "project:alpha"
-    assert len(concept["provenance"]["source_traces"]) == 100
-    assert concept["stats"]["unique_agents"] == 2
-    assert concept["stats"]["confidence"] > 0.5
-    assert concept["stats"]["temporal_hint"] == "weekly:mon"
+    concept = mcp.memory_store.get_node(auto["concepts_created"][0])
+    assert concept.level == "concept"
+    assert concept.scope == "project:alpha"
+    assert len(concept.source_traces) == 100
+    assert concept.stats["unique_agents"] == 2
+    assert concept.stats["confidence"] > 0.5
+    assert concept.stats["temporal_hint"] == "weekly:mon"
 
     block = mcp.prompts["memory://prompt/retrieval_context"](
         task="deploy rollback migration",
@@ -124,7 +124,7 @@ def test_mcp_remember_automatically_creates_concept_with_temporal_consensus_and_
         retrieval_policy="confidence",
     )
     assert block.startswith("BEGIN ACTIVE MEMORY CONTEXT")
-    assert concept["id"] in block
+    assert concept.id in block
     assert "scope_plan: project:alpha > global" in block
     assert "retrieval_policy: confidence" in block
     assert block.endswith("END ACTIVE MEMORY CONTEXT")
@@ -156,11 +156,13 @@ def test_adaptive_policy_consolidates_young_scope_at_low_thresholds(
     # Adaptive ladder: trigger at count = 5, 10, 15 (step=5 while count<50).
     assert triggers == [5, 10, 15]
     assert last_with_concept is not None
-    concept = last_with_concept["auto_consolidation"]["concepts_created"][0]
+    concept = mcp.memory_store.get_node(
+        last_with_concept["auto_consolidation"]["concepts_created"][0]
+    )
     # Merge floor for trace_count<25 is 3; cluster of similar traces meets it.
-    assert concept["level"] == "concept"
-    assert concept["scope"] == "project:young"
-    assert len(concept["provenance"]["source_traces"]) >= 3
+    assert concept.level == "concept"
+    assert concept.scope == "project:young"
+    assert len(concept.source_traces) >= 3
 
 
 def test_fixed_policy_remains_default_and_skips_low_volume_consolidation(

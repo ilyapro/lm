@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from living_memory.resources import node_to_dict
 from living_memory.server import create_mcp_server
 from living_memory.storage import MemoryStore
 
@@ -261,3 +262,113 @@ def test_memory_lookup_tool_is_registered_and_deterministic(tmp_path: Path) -> N
     no_filters = mcp.tools["memory_lookup"](scope="project:mcp-lookup")
     assert no_filters["error"] == "at least one exact context filter is required"
     assert no_filters["results"] == []
+
+
+# --- Fetch-by-id: the re-fetch path for snippet/duplicate recall stubs ------
+
+
+def test_memory_lookup_by_id_round_trips_full_content(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    long_content = (
+        "лунный трактор пересекает ρ-многообразие — unicode survives\n"
+        "line two: exact bytes preserved, including trailing spaces  \n"
+        + "z" * 2000
+    )
+    remembered = mcp.tools["memory_remember"](long_content, {"scope": "project:idfetch"})
+    target_id = remembered["node"]["id"]
+
+    fetched = mcp.tools["memory_lookup"](node_id=target_id)
+    assert "error" not in fetched
+    assert fetched["scope"] is None
+    assert fetched["filters"] == {}
+    assert fetched["count"] == 1
+    assert fetched["missing"] == []
+    node = fetched["results"][0]
+    assert node["id"] == target_id
+    assert node["content"] == long_content  # byte-identical, never snippeted
+    assert set(node) == set(node_to_dict(mcp.memory_store.get_node(target_id)))
+
+    # `level` defaults to "trace" but is an exact-context concern; id fetch
+    # ignores it, so a mismatching level cannot hide the node.
+    by_level = mcp.tools["memory_lookup"](node_id=target_id, level="concept")
+    assert [entry["id"] for entry in by_level["results"]] == [target_id]
+
+
+def test_memory_lookup_by_ids_preserves_order_and_lists_missing(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    first = mcp.tools["memory_remember"]("id-fetch first", {"scope": "project:idfetch"})
+    second = mcp.tools["memory_remember"]("id-fetch second", {"scope": "project:idfetch"})
+    first_id = first["node"]["id"]
+    second_id = second["node"]["id"]
+
+    fetched = mcp.tools["memory_lookup"](
+        node_ids=[second_id, "01NOPEnotarealnodeid000000", first_id]
+    )
+    assert fetched["count"] == 2
+    assert [entry["id"] for entry in fetched["results"]] == [second_id, first_id]
+    assert fetched["missing"] == ["01NOPEnotarealnodeid000000"]
+
+    # node_id combines with node_ids, deduplicated in request order.
+    combined = mcp.tools["memory_lookup"](node_id=first_id, node_ids=[second_id, first_id])
+    assert [entry["id"] for entry in combined["results"]] == [first_id, second_id]
+    assert combined["missing"] == []
+
+
+def test_memory_lookup_id_with_scope_verifies_instead_of_filtering(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    remembered = mcp.tools["memory_remember"](
+        "scoped id-fetch trace", {"scope": "project:alpha"}
+    )
+    target_id = remembered["node"]["id"]
+
+    matching = mcp.tools["memory_lookup"](scope="project:alpha", node_id=target_id)
+    assert [entry["id"] for entry in matching["results"]] == [target_id]
+    assert matching["scope_mismatches"] == []
+
+    crossed = mcp.tools["memory_lookup"](scope="project:beta", node_id=target_id)
+    assert [entry["id"] for entry in crossed["results"]] == [target_id]  # not filtered
+    assert crossed["scope_mismatches"] == [{"id": target_id, "scope": "project:alpha"}]
+
+
+def test_memory_lookup_by_id_returns_decayed_nodes(tmp_path: Path) -> None:
+    """Exact refs must survive decay: a content_ref handed out before a sweep
+    still resolves, with the decayed flag visible to the caller."""
+
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    remembered = mcp.tools["memory_remember"](
+        "decay-surviving id-fetch trace", {"scope": "project:idfetch"}
+    )
+    target_id = remembered["node"]["id"]
+    mcp.tools["memory_forget"](target_id, "test decay")
+
+    fetched = mcp.tools["memory_lookup"](node_id=target_id)
+    assert fetched["count"] == 1
+    assert fetched["results"][0]["decayed"] is True
+    assert fetched["results"][0]["content"] == "decay-surviving id-fetch trace"
+
+
+def test_memory_lookup_ids_cannot_combine_with_context_filters(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    remembered = mcp.tools["memory_remember"](
+        "combination probe trace",
+        {"scope": "project:idfetch", "task_pattern": "combo-pattern"},
+    )
+
+    combined = mcp.tools["memory_lookup"](
+        node_id=remembered["node"]["id"], task_pattern="combo-pattern"
+    )
+    assert combined["error"] == "node_id/node_ids cannot be combined with context filters"
+    assert combined["count"] == 0
+    assert combined["results"] == []
+
+
+def test_memory_lookup_scope_optional_only_for_id_fetch(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+
+    filters_without_scope = mcp.tools["memory_lookup"](task_pattern="some-pattern")
+    assert filters_without_scope["error"] == "scope is required with context filters"
+    assert filters_without_scope["results"] == []
+
+    nothing = mcp.tools["memory_lookup"]()
+    assert nothing["error"] == "at least one exact context filter is required"
+    assert nothing["results"] == []

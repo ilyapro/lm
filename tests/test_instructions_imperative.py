@@ -9,6 +9,8 @@ advisory tone without requiring every prohibition to use one exact phrase.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from living_memory.server import _server_instructions
@@ -245,4 +247,166 @@ def test_cross_project_transfer_explicit(text: str) -> None:
     lowered = text.lower()
     assert "broaden recall" in lowered or "across projects" in lowered or "across scopes" in lowered, (
         "cross-project section must instruct broadening recall across scopes"
+    )
+
+
+def test_write_diet_remember_only_non_derivable(text: str) -> None:
+    """memory_remember must be gated hard on re-derivation from code/git.
+
+    Keeps its name from the binary-gate era; the criterion itself is economic
+    now (test_write_guidance_economic_criterion) while the hard ONLY framing,
+    the storable categories, and the What-NOT-to-store backstop pinned here
+    remain.
+    """
+
+    assert "ONLY for what is expensive to re-derive" in text, (
+        "write policy must gate memory_remember on the cost of re-deriving, "
+        "as a hard ONLY rule rather than advice"
+    )
+    assert "git history" in text
+    lowered = text.lower()
+    categories = ["recipes", "pitfalls", "refutations", "external contracts"]
+    missing = [c for c in categories if c not in lowered]
+    assert not missing, (
+        f"the write gate must name the storable categories, missing: {missing}"
+    )
+    assert "re-derivable" in lowered, (
+        "What NOT to store must forbid cheaply re-derivable facts explicitly"
+    )
+
+
+def test_write_diet_procedure_form_triple(text: str) -> None:
+    """Reusable know-how must be prescribed as trigger/task_pattern/procedure."""
+
+    idx = text.find("procedure form")
+    assert idx != -1, "write policy must prescribe procedure form for know-how"
+    window = text[idx : idx + 400]
+    for token in ("trigger", "task_pattern", "procedure"):
+        assert token in window, (
+            f"procedure form must name {token!r} next to the prescription"
+        )
+    assert "context.task_pattern" in text and "context.procedure_id" in text, (
+        "procedure form must point at the real writable context fields"
+    )
+
+
+def test_write_diet_closure_note_not_journal(text: str) -> None:
+    """Closing work = one short note of the non-derivable, never a journal."""
+
+    idx = text.find("## Closing out work")
+    assert idx != -1, "instructions must keep a Closing out work section"
+    closure = text[idx:].split("\n## ")[0].lower()
+    assert "closure note" in closure
+    assert "diff" in closure and "git history" in closure and "cannot show" in closure, (
+        "closure guidance must be the universal criterion — the note carries "
+        "only what the diff and git history cannot show"
+    )
+    for example in ("invariant", "pitfall"):
+        assert example in closure, (
+            f"the closure criterion must keep {example!r} as a short "
+            "parenthetical example"
+        )
+    assert "done-journal-dump" in text, (
+        "the DONE-journal dump must be a NAMED anti-pattern"
+    )
+    anti_section = text[text.find("## Anti-patterns") :].split("\n## ")[0]
+    assert "done-journal-dump" in anti_section, (
+        "done-journal-dump must live inside the Anti-patterns section"
+    )
+    assert "node X DONE" in text, (
+        "the journal anti-pattern must show the concrete 'node X DONE' shape"
+    )
+    journal_entry = anti_section[anti_section.find("done-journal-dump") :].lower()
+    assert "recall" in journal_entry, (
+        "the journal anti-pattern must state its recall consequence in "
+        "universal terms"
+    )
+
+
+def test_closure_redaction_no_what_changed_element(text: str) -> None:
+    """The closure note stays the criterion redaction, never an element formula.
+
+    Operator-final (2026-07-31): the note's content derives from the same
+    expensive-to-re-derive criterion as the rest of the write policy, so a
+    what-changed element — derivable from the diff — must not come back, with
+    or without plus-joins.
+    """
+
+    idx = text.find("## Closing out work")
+    assert idx != -1, "instructions must keep a Closing out work section"
+    closure = text[idx:].split("\n## ")[0]
+    assert (
+        "closure note carrying only what the diff and git history cannot show"
+        in closure
+    ), "the closure guidance must keep the endorsed criterion redaction"
+    assert "(e.g. the invariant to preserve, the pitfall that cost time)" in closure, (
+        "the criterion must keep its short parenthetical examples"
+    )
+    assert "what changed" not in closure.lower(), (
+        "the closure guidance must not require a what-changed element — it is "
+        "derivable from the diff"
+    )
+
+
+def test_write_guidance_register_no_measurement_artifacts(text: str) -> None:
+    """Guidance is universal criteria; diagnosis measurements must not leak in."""
+
+    assert "%" not in text, (
+        "no storage/delivery percentages — measurement numbers do not belong "
+        "in the instruction register"
+    )
+    assert " + " not in text, (
+        "no plus-joined report formulas — closing-out guidance is a universal "
+        "criterion with short parenthetical examples, not a template"
+    )
+    assert re.search(r"\b\d+(?:\.\d+)?x\b", text) is None, (
+        "no redundancy multipliers — measurement ratios do not belong in the "
+        "instruction register"
+    )
+
+
+def test_write_guidance_economic_criterion(text: str) -> None:
+    """The remember-gate is economic — the cost of re-derivation, not its
+    possibility.
+
+    The highest-value stored knowledge IS derivable from code/git, just
+    expensively; the gate must show derivable-but-expensive positives and
+    pair them, in the same section, with the trivially re-derivable
+    execution-journal counter-example.
+    """
+
+    idx = text.find("## Write policy")
+    assert idx != -1, "instructions must keep a Write policy section"
+    policy = text[idx:].split("\n## ")[0]
+    lowered = policy.lower()
+
+    assert "expensive to re-derive" in lowered, (
+        "the remember-gate must be the COST of re-deriving from code/git "
+        "history, not binary derivability"
+    )
+    assert "cannot be re-derived" not in text and "non-derivable" not in text, (
+        "the superseded binary non-derivability phrasing must not survive "
+        "anywhere in the instructions"
+    )
+
+    positives = [
+        "contract smeared across thousands of lines",
+        "measurement findings",
+        "refuted hypothesis",
+    ]
+    missing = [p for p in positives if p not in lowered]
+    assert not missing, (
+        "derivable-but-expensive knowledge must appear as short parenthetical "
+        f"positive examples, missing: {missing}"
+    )
+
+    assert "execution journal" in lowered and "trivially" in lowered, (
+        "the economic gate must pair, in the same section, the counter-example "
+        "of an execution journal that re-derives trivially from git history"
+    )
+    assert "'did x'" in lowered and "'node n done'" in lowered, (
+        "the journal counter-example must show its concrete shapes"
+    )
+    assert "do not store" in lowered, (
+        "the trivially re-derivable case must end in a hard prohibition"
     )

@@ -25,6 +25,11 @@ from living_memory.consolidation import (
     TeachResult,
 )
 from living_memory.decay import apply_decay
+from living_memory.delivery import (
+    session_dedup_enabled_from_env,
+    shape_recall_results,
+    snippet_max_chars_from_env,
+)
 from living_memory.edge_derivation import derive_edges_for_new_trace
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.resources import (
@@ -37,7 +42,7 @@ from living_memory.resources import (
     project_concepts,
     recent_interactions,
 )
-from living_memory.retrieval import MemoryRecallService, RecallResult
+from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import normalize_scope
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.feedback import apply_pending_recall_feedback
@@ -475,9 +480,9 @@ def _server_instructions(default_scope: str) -> str:
         "repeat an entire debugging cycle.\n"
         "\n"
         "### Default: when you learn something, remember\n"
-        "Any durable insight warrants `memory_remember`. If you think "
-        "'I wish I had known this earlier', store it now. Do not wait "
-        "for end-of-task.\n"
+        "Any insight that passes the write policy below warrants "
+        "`memory_remember`. If you think 'I wish I had known this "
+        "earlier', store it now. Do not wait for end-of-task.\n"
         "\n"
         "### Default: when a belief changes, teach\n"
         "`memory_teach` is not only for correcting recalled facts. Any "
@@ -514,6 +519,11 @@ def _server_instructions(default_scope: str) -> str:
         "project-local note makes the system re-invent it. Store "
         "universal rules in `global` and let `memory_consolidate` promote "
         "schemas.\n"
+        "6. **done-journal-dump**: closing work by storing a 'node X "
+        "DONE' journal (restated goal, step log, test output) is "
+        "wrong: the diff and git history already show all of it, and "
+        "journal noise drowns the rare real lesson in recall. Write "
+        "the short closure note instead.\n"
         "\n"
         "## Cross-project knowledge transfer\n"
         "\n"
@@ -544,6 +554,25 @@ def _server_instructions(default_scope: str) -> str:
         '{"scope": "project:online", "task": "EZ-13771", "agent": "codex", "session_id": "run-2026-05-22"}\n'
         "```\n"
         "\n"
+        "## Write policy — remember what is expensive to re-derive\n"
+        "\n"
+        "`memory_remember` is ONLY for what is expensive to re-derive "
+        "from the code or git history (recipes, pitfalls, refutations "
+        "of prior beliefs, external contracts). The test is cost, not "
+        "possibility: the most valuable knowledge IS derivable, just "
+        "expensive to rediscover (a contract smeared across thousands "
+        "of lines, recon or measurement findings, a refuted "
+        "hypothesis). An execution journal ('did X', 'node N done') "
+        "re-derives trivially from git history and fails the test — "
+        "DO NOT store it.\n"
+        "\n"
+        "Reusable know-how MUST take procedure form — trigger (when it "
+        "fires) / task_pattern (the recurring task class) / procedure "
+        "(the steps). Set `context.task_pattern` and "
+        "`context.procedure_id` so consolidation can promote the trace "
+        "into a `level:schema` skill whose trigger future recalls "
+        "match directly (the `trigger_score` channel).\n"
+        "\n"
         "## How to write good traces\n"
         "\n"
         "- Concrete: prefer 'file X exports Y, not Z' over vague notes.\n"
@@ -552,11 +581,20 @@ def _server_instructions(default_scope: str) -> str:
         "- Include WHY when non-obvious.\n"
         "- Use `depth: 'causal'` on `memory_recall` when debugging.\n"
         "\n"
+        "## Closing out work\n"
+        "\n"
+        "A finished task earns ONE short closure note carrying only "
+        "what the diff and git history cannot show (e.g. the "
+        "invariant to preserve, the pitfall that cost time). NEVER "
+        "dump a full 'node X DONE' journal (anti-pattern 6).\n"
+        "\n"
         "## What NOT to store\n"
         "\n"
         "- Routine actions ('ran the tests') without new insight.\n"
         "- Copies of code — reference file paths instead.\n"
         "- Speculation or unverified plans — store verified facts only.\n"
+        "- Anything cheaply re-derivable from the code or git history.\n"
+        "- Task-closure journals — write the short closure note instead.\n"
     )
 
 
@@ -752,7 +790,11 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         feedback: dict[str, Any] | None = None,
         alternatives_considered: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Store a new append-only trace."""
+        """Store a new append-only trace.
+
+        Returns a compact confirmation — node id/level/scope plus feedback and
+        consolidation counters. Fetch full nodes via memory_lookup(node_id=...).
+        """
 
         context = _with_transport_identity(context)
         with runtime_lock:
@@ -787,7 +829,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 node.scope,
             )
             response = {
-                "node": node_to_dict(node),
+                "node": _remember_node_confirmation(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
                 "auto_consolidation": auto_consolidation,
                 "auto_decay": auto_decay,
@@ -843,14 +885,34 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         query: str,
         scope: str | None = None,
         depth: int | str | None = 1,
-        max_results: int = 10,
+        max_results: int = 5,
         ambient_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Retrieve relevant memory nodes using scope, text, vector, and graph signals."""
+        """Retrieve relevant memory nodes using scope, text, vector, and graph signals.
+
+        Each result carries a ``delivery`` class: ``full``, ``snippet`` (long
+        content truncated inline), ``session_duplicate`` (already delivered on
+        this transport session), or ``twin_duplicate`` (byte-identical to a
+        higher-ranked result). Non-full results keep every node field and add
+        a ``content_ref`` naming the ``memory_lookup(node_id=...)`` call that
+        returns the complete content.
+        """
 
         ambient_context = _with_transport_identity(ambient_context)
+        raw_transport_id = (ambient_context or {}).get(_TRANSPORT_SESSION_KEY)
+        # Mirror storage's stamping (str() of any non-None value) so the dedup
+        # probe compares equal to the recall_events.transport_session_id column.
+        transport_session_id = str(raw_transport_id) if raw_transport_id is not None else None
+        session_dedup = bool(transport_session_id) and session_dedup_enabled_from_env()
         with runtime_lock:
             auto_decay = _maybe_decay_sweep(store)
+            # Snapshot delivered ids BEFORE the service records this call's
+            # recall_event, so the current response cannot stub itself.
+            already_delivered = (
+                store.delivered_node_ids(transport_session_id)
+                if session_dedup
+                else set()
+            )
             results = recall_service.memory_recall(
                 query,
                 scope=scope,
@@ -863,23 +925,38 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 "scope": scope,
                 "recall_event_id": recall_service.last_recall_event_id,
                 "count": len(results),
-                "results": [_recall_result_to_dict(result) for result in results],
+                "results": shape_recall_results(
+                    results,
+                    already_delivered_ids=already_delivered,
+                    snippet_max_chars=snippet_max_chars_from_env(),
+                    session_dedup=session_dedup,
+                ),
                 "auto_decay": auto_decay,
             }
 
     @mcp.tool
     @_track_latency("memory_lookup")
     def memory_lookup(
-        scope: str,
+        scope: str | None = None,
         task_pattern: str | None = None,
         procedure_id: str | None = None,
         lesson_kind: str | None = None,
         level: str | None = "trace",
+        node_id: str | None = None,
+        node_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Return memory nodes by exact context-field match without ranked recall."""
+        """Return memory nodes by exact context-field match, or full nodes by id.
+
+        ``node_id``/``node_ids`` fetch complete nodes directly — the re-fetch
+        path for snippet/duplicate recall stubs. Missing ids are skipped and
+        listed under ``missing``; decayed nodes are returned with their
+        ``decayed`` flag set; ``level`` is ignored for id fetches. A ``scope``
+        passed alongside ids verifies instead of filtering: mismatching nodes
+        stay in ``results`` and are reported in ``scope_mismatches``.
+        """
 
         with runtime_lock:
-            normalized_scope = normalize_scope(scope)
+            normalized_scope = normalize_scope(scope) if scope is not None else None
             filters = {
                 key: value
                 for key, value in {
@@ -889,11 +966,56 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 }.items()
                 if value is not None
             }
+            requested_ids: list[str] = []
+            for candidate in [node_id, *(node_ids or [])]:
+                if candidate and candidate not in requested_ids:
+                    requested_ids.append(candidate)
+
+            if requested_ids:
+                if filters:
+                    return {
+                        "error": "node_id/node_ids cannot be combined with context filters",
+                        "scope": normalized_scope,
+                        "filters": dict(filters),
+                        "count": 0,
+                        "results": [],
+                    }
+                found = store.get_nodes(requested_ids)
+                results = [
+                    node_to_dict(found[requested])
+                    for requested in requested_ids
+                    if requested in found
+                ]
+                response: dict[str, Any] = {
+                    "scope": normalized_scope,
+                    "filters": {},
+                    "count": len(results),
+                    "results": results,
+                    "missing": [
+                        requested for requested in requested_ids if requested not in found
+                    ],
+                }
+                if normalized_scope is not None:
+                    response["scope_mismatches"] = [
+                        {"id": entry["id"], "scope": entry["scope"]}
+                        for entry in results
+                        if entry["scope"] != normalized_scope
+                    ]
+                return response
+
             if not filters:
                 return {
                     "error": "at least one exact context filter is required",
                     "scope": normalized_scope,
                     "filters": {},
+                    "count": 0,
+                    "results": [],
+                }
+            if normalized_scope is None:
+                return {
+                    "error": "scope is required with context filters",
+                    "scope": None,
+                    "filters": dict(filters),
                     "count": 0,
                     "results": [],
                 }
@@ -1147,7 +1269,7 @@ def _auto_consolidate_if_due(
         step = _adaptive_trigger_step(trace_count)
         if step is None or trace_count % step != 0:
             return None
-        return _consolidation_result_to_dict(
+        return _compact_consolidation_summary(
             consolidation_service.memory_consolidate(
                 scope=scope,
                 force=False,
@@ -1157,7 +1279,7 @@ def _auto_consolidate_if_due(
 
     if trace_count < DEFAULT_MIN_CLUSTER_SIZE or trace_count % DEFAULT_MIN_CLUSTER_SIZE != 0:
         return None
-    return _consolidation_result_to_dict(
+    return _compact_consolidation_summary(
         consolidation_service.memory_consolidate(scope=scope, force=False)
     )
 
@@ -1192,21 +1314,6 @@ def _load_fastmcp() -> Any:
     return FastMCP
 
 
-def _recall_result_to_dict(result: RecallResult) -> dict[str, Any]:
-    return {
-        "node": node_to_dict(result.node),
-        "score": result.score,
-        "bm25_score": result.bm25_score,
-        "vector_score": result.vector_score,
-        "graph_score": result.graph_score,
-        "trigger_score": result.trigger_score,
-        "scope_rank": result.scope_rank,
-        "methods": list(result.methods),
-        "path": list(result.path),
-        "recall_event_id": result.recall_event_id,
-    }
-
-
 def _consolidation_result_to_dict(result: ConsolidationResult) -> dict[str, Any]:
     return {
         "concepts_created": [node_to_dict(node) for node in result.concepts_created],
@@ -1217,6 +1324,44 @@ def _consolidation_result_to_dict(result: ConsolidationResult) -> dict[str, Any]
         "decayed": [node_to_dict(node) for node in result.decayed],
         "clusters_considered": result.clusters_considered,
         "traces_considered": result.traces_considered,
+    }
+
+
+def _compact_consolidation_summary(result: ConsolidationResult) -> dict[str, Any]:
+    """Id-only consolidation report for the memory_remember auto pass.
+
+    memory_consolidate keeps returning full node dicts via
+    _consolidation_result_to_dict; ids here resolve through memory_lookup.
+    """
+
+    return {
+        "concepts_created": [node.id for node in result.concepts_created],
+        "concepts_updated": [node.id for node in result.concepts_updated],
+        "concepts_promoted": [node.id for node in result.concepts_promoted],
+        "schemas_created": [node.id for node in result.schemas_created],
+        "schemas_updated": [node.id for node in result.schemas_updated],
+        "decayed": [node.id for node in result.decayed],
+        "clusters_considered": result.clusters_considered,
+        "traces_considered": result.traces_considered,
+    }
+
+
+def _remember_node_confirmation(node: Any) -> dict[str, Any]:
+    """Compact write confirmation: identity and counters, no content echo.
+
+    The writer already holds the content it just stored; provenance bodies
+    (prior recall query texts) stay retrievable via memory_lookup(node_id=...).
+    """
+
+    provenance = node.provenance or {}
+    return {
+        "id": node.id,
+        "level": node.level,
+        "scope": node.scope,
+        "created_at": node.created_at,
+        "prior_recall_count": len(provenance.get("prior_recalls") or []),
+        "linked_node_count": len(provenance.get("recalled_nodes") or []),
+        "source_trace_count": len(node.source_traces or []),
     }
 
 

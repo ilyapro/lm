@@ -824,6 +824,46 @@ class MemoryStore:
         ).fetchall()
         return [_recall_event_from_row(row) for row in rows]
 
+    def delivered_node_ids(
+        self,
+        transport_session_id: str | None,
+        *,
+        max_events: int = 200,
+    ) -> set[str]:
+        """Node ids already delivered to one transport session.
+
+        Unions the ``node_id`` entries (same key semantics as
+        ``RecallEvent.result_ids``: falsy ids skipped) from the ``results``
+        JSON of the most recent ``max_events`` recall_events stamped with
+        ``transport_session_id``. The window bounds per-call work on
+        long-lived sessions: events older than the ``max_events`` most
+        recent ones fall outside the dedup horizon, so their nodes count as
+        undelivered again. A ``None`` or empty transport id identifies no
+        session and returns an empty set without touching the database.
+        """
+
+        if not transport_session_id or max_events <= 0:
+            return set()
+        rows = self._conn.execute(
+            """
+            SELECT results
+            FROM recall_events
+            WHERE transport_session_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT ?
+            """,
+            (transport_session_id, int(max_events)),
+        ).fetchall()
+        delivered: set[str] = set()
+        for row in rows:
+            for item in _json_loads(row["results"], []):
+                if not isinstance(item, Mapping):
+                    continue
+                node_id = item.get("node_id")
+                if node_id:
+                    delivered.add(str(node_id))
+        return delivered
+
     def pending_recall_events(
         self,
         *,
@@ -1400,6 +1440,13 @@ class MemoryStore:
 
                 CREATE INDEX IF NOT EXISTS idx_recall_events_session_pending_created
                     ON recall_events(session_id, feedback_applied, created_at DESC);
+
+                -- Session-delivery dedup (delivered_node_ids): equality probe
+                -- on transport_session_id plus the most-recent-events window,
+                -- instead of scanning every session's events. Runs after
+                -- _migrate_pre_v4_schema, so the column exists on legacy DBs.
+                CREATE INDEX IF NOT EXISTS idx_recall_events_transport_created
+                    ON recall_events(transport_session_id, created_at DESC);
                 """
             )
             self._backfill_missing_content_fingerprints()

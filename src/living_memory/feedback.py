@@ -35,6 +35,37 @@ _CONFIDENCE_SLOPE = 0.65
 # still rewarding validated, useful, frequently accessed knowledge.
 FEEDBACK_MULTIPLIER_CAP = 1.4
 
+# Diminishing returns for positive usefulness reinforcement.
+#
+# The cap above bounds how hard feedback can boost a score, but not how fast
+# a node accumulates the usefulness feeding that boost. Every delivered
+# recall result is implicitly reinforced by the next compatible remember
+# (apply_pending_recall_feedback), so delivery itself breeds rank advantage:
+# boosted nodes get delivered more, deliveries reinforce them further, and a
+# handful of saturated nodes end up collecting most deliveries (measured
+# 2026-07-31: ~76% of deliveries went to a few usefulness=1.0 nodes). To
+# damp that loop at its source, a positive usefulness increment is scaled by
+#
+#     max(HEADROOM_FLOOR, 1 - usefulness) / (1 + ACCESS_DAMPING * ln(1 + accesses))
+#
+# so a node near saturation, or one that has already been delivered many
+# times, needs disproportionately more fresh evidence per unit of further
+# boost than an unproven node (an entrenched node at usefulness 1.0 with
+# ~600 accesses gains ~30x slower than a fresh one). The headroom factor is
+# floored, never zeroed, so usefulness 1.0 stays exactly reachable via the
+# clamp; a node corrected into negative usefulness recovers with full
+# headroom (factor 1.0), though the access divisor still applies — a
+# heavily-delivered node re-earns its boost slowly no matter where it
+# starts. Explicit negative feedback is exempt: corrections always apply at
+# full strength. The cap's semantics are unchanged — it still bounds the
+# compounded boost at 1.4 protecting fresh exact-match writes; these knobs
+# only slow how fast entrenchment approaches that ceiling. Neutral values
+# (floor 1.0, damping 0.0) reproduce the legacy flat 0.1 * signal increment
+# exactly; tests/test_feedback_delivery_concentration.py runs a closed-loop
+# simulation under both settings and pins the concentration reduction.
+USEFULNESS_GAIN_HEADROOM_FLOOR = 0.25
+USEFULNESS_GAIN_ACCESS_DAMPING = 1.0
+
 
 def _retrieval_tuning_policy() -> str:
     return os.environ.get("LM_RETRIEVAL_TUNING_POLICY", "fixed").strip().lower()
@@ -133,7 +164,10 @@ def apply_retrieval_feedback(
 
     node = _result_node(result, store)
     if node is not None:
-        updated_usefulness = max(-1.0, min(1.0, node.usefulness_score + 0.1 * signed_signal))
+        increment = 0.1 * signed_signal
+        if signed_signal > 0.0:
+            increment *= _positive_reinforcement_gain(node)
+        updated_usefulness = max(-1.0, min(1.0, node.usefulness_score + increment))
         node = store.update_node(node.id, stats={"usefulness_score": updated_usefulness})
 
     target_scope = scope or (node.scope if node is not None else "global")
@@ -274,6 +308,24 @@ def feedback_weighted_score(
     correction_boost = 1.2 if superseding else 1.0
     superseded_penalty = 0.2 if superseded else 1.0
     return base_score * feedback_multiplier * correction_boost * superseded_penalty
+
+
+def _positive_reinforcement_gain(node: Node) -> float:
+    """Diminishing-returns factor for a positive usefulness increment.
+
+    See the rationale at USEFULNESS_GAIN_HEADROOM_FLOOR: headroom shrinks
+    gains as usefulness approaches saturation (floored so the 1.0 ceiling
+    stays reachable; negative usefulness gets full headroom), and log-access
+    crowding makes frequently delivered nodes need more evidence per unit of
+    boost regardless of where their usefulness sits. Knobs are read at call
+    time so the legacy rule is recoverable by setting them to their neutral
+    values (floor 1.0, damping 0.0).
+    """
+
+    headroom = 1.0 - min(max(node.usefulness_score, 0.0), 1.0)
+    saturation = max(USEFULNESS_GAIN_HEADROOM_FLOOR, headroom)
+    crowding = 1.0 + USEFULNESS_GAIN_ACCESS_DAMPING * _log1p(node.access_count)
+    return saturation / crowding
 
 
 def _method_signals(result: Any, signed_signal: float) -> dict[str, float]:

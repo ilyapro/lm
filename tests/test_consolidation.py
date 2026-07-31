@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 
 from living_memory.config import MemoryConfig
-from living_memory.consolidation import _cross_scope_promotion, memory_consolidate
+from living_memory.consolidation import (
+    DIGEST_MAX_CHARS,
+    _cross_scope_promotion,
+    _synthesize_digest,
+    memory_consolidate,
+)
 from living_memory.resources import memory_status
 from living_memory.storage import MemoryStore
 
@@ -321,6 +326,250 @@ def test_cross_scope_promotion_skips_concept_without_embedding(tmp_path: Path) -
 
         assert promoted is None
         assert store.list_nodes(level="concept", scope="global") == []
+
+
+_DIGEST_CORE = (
+    "Deploy rollback requires migration guard checklist verification "
+    "covering database schema state plus release gating rules "
+    "across regional failover clusters gateway"
+)
+
+# Each fact adds exactly two significant tokens so every trace stays above the
+# Jaccard clustering threshold against the growing cluster representative.
+_DIGEST_FACTS = [
+    "Ledger corrupted",
+    "Predeploy enforcement",
+    "Nightly audit",
+    "Canary validates",
+    "Oncall paged",
+    "Lockfile ordering",
+    "Rehearsal quarterly",
+    "Postmortem overrides",
+    "Flags decouple",
+]
+
+
+def _append_digest_fixture(store: MemoryStore, scope: str) -> list:
+    traces = [
+        store.append_trace(
+            f"{_DIGEST_CORE}.",
+            {"scope": scope, "agent": "agent-a"},
+            feedback={"confidence": 0.4, "usefulness_score": 0.2},
+        )
+    ]
+    for index, fact in enumerate(_DIGEST_FACTS):
+        traces.append(
+            store.append_trace(
+                f"{_DIGEST_CORE}. {fact}.",
+                {"scope": scope, "agent": "agent-a" if index % 2 == 0 else "agent-b"},
+                feedback={"confidence": 0.4, "usefulness_score": 0.2},
+            )
+        )
+    return traces
+
+
+def test_consolidation_digest_covers_multiple_traces_without_verbatim_copy(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        traces = _append_digest_fixture(store, "project:alpha")
+
+        result = memory_consolidate(store, scope="project:alpha", min_cluster_size=10)
+
+        assert len(result.concepts_created) == 1
+        concept = result.concepts_created[0]
+        trace_contents = [trace.content for trace in traces]
+        assert all(concept.content != content for content in trace_contents)
+        assert len(concept.content) < sum(len(content) for content in trace_contents)
+        assert len(concept.content) <= DIGEST_MAX_CHARS
+        # Lead comes from the best trace (equal quality resolves to max id);
+        # distinctive facts from other traces are folded in behind it rather
+        # than the concept copying one trace.
+        best = max(traces, key=lambda trace: trace.id)
+        assert concept.content.startswith(best.content)
+        other_markers = [
+            fact.split()[0]
+            for fact in _DIGEST_FACTS
+            if fact.split()[0] not in best.content and fact.split()[0] in concept.content
+        ]
+        assert len(other_markers) >= 2
+
+
+def test_consolidation_digest_is_idempotent_across_passes(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        _append_digest_fixture(store, "project:alpha")
+
+        first = memory_consolidate(store, scope="project:alpha", min_cluster_size=10)
+        assert len(first.concepts_created) == 1
+        concept = first.concepts_created[0]
+
+        second = memory_consolidate(store, scope="project:alpha", min_cluster_size=10)
+
+        assert second.concepts_created == []
+        assert [node.id for node in second.concepts_updated] == [concept.id]
+        assert second.concepts_updated[0].content == concept.content
+        active = store.list_nodes(level="concept", scope="project:alpha", limit=100)
+        assert [node.id for node in active] == [concept.id]
+        assert active[0].content == concept.content
+
+
+def test_consolidation_single_trace_cluster_keeps_trace_content(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        trace = store.append_trace(
+            "solo insight about the gateway retry budget",
+            {"scope": "project:alpha", "agent": "agent-a"},
+        )
+
+        result = memory_consolidate(store, scope="project:alpha", min_cluster_size=1)
+
+        assert len(result.concepts_created) == 1
+        assert result.concepts_created[0].content == trace.content
+
+
+def test_consolidation_near_identical_cluster_digest_stays_compact_and_distinct(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        traces = []
+        for index in range(100):
+            traces.append(
+                store.append_trace(
+                    f"gpu cache warmup requires pinned driver version build sample {index}",
+                    {"scope": "project:alpha", "agent": "agent-a"},
+                )
+            )
+
+        result = memory_consolidate(store, scope="project:alpha")
+
+        assert len(result.concepts_created) == 1
+        concept = result.concepts_created[0]
+        assert all(concept.content != trace.content for trace in traces)
+        assert "\n• " in concept.content
+        # Index-only variants must not be echoed as a pile of bullets: the
+        # digest stays a hair longer than one trace, not proportional to 100.
+        longest = max(len(trace.content) for trace in traces)
+        assert len(concept.content) <= longest + 40
+
+
+def test_consolidation_merges_legacy_verbatim_copy_concept_into_digest(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        traces = _append_digest_fixture(store, "project:beta")
+        best_content = traces[-1].content
+        legacy = store.create_node(
+            level="concept",
+            content=best_content,
+            context={"scope": "project:beta", "agent": "memory_consolidate"},
+            stats={"confidence": 0.3, "unique_agents": 2, "usefulness_score": 0.0},
+            provenance={"cluster_key": "legacy drifted key tokens", "source_traces": []},
+        )
+
+        result = memory_consolidate(store, scope="project:beta", min_cluster_size=10)
+
+        assert result.concepts_created == []
+        assert [node.id for node in result.concepts_updated] == [legacy.id]
+        updated = result.concepts_updated[0]
+        assert updated.content != best_content
+        assert all(updated.content != trace.content for trace in traces)
+        active = store.list_nodes(level="concept", scope="project:beta", limit=100)
+        assert [node.id for node in active] == [legacy.id]
+
+
+def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(_phase4_config(tmp_path / "memory.sqlite3")) as store:
+        shared = "Database timeout retry budget tuned for pool exhaustion."
+        alpha = store.create_node(
+            level="concept",
+            content=f"{shared} Alpha keeps jitter backoff enabled.",
+            context={"scope": "project:alpha"},
+            embedding=[1.0, 0.0],
+            stats={"confidence": 0.9, "unique_agents": 2, "usefulness_score": 0.5},
+            provenance={"source_traces": ["trace-alpha"]},
+        )
+        beta = store.create_node(
+            level="concept",
+            content=f"{shared} Beta caps retries at seven attempts.",
+            context={"scope": "project:beta"},
+            embedding=[1.0, 0.0],
+            stats={"confidence": 0.8, "unique_agents": 2, "usefulness_score": 0.5},
+            provenance={"source_traces": ["trace-beta"]},
+        )
+        gamma = store.create_node(
+            level="concept",
+            content=f"{shared} Gamma alerts when saturation persists.",
+            context={"scope": "project:gamma"},
+            embedding=[1.0, 0.0],
+            stats={"confidence": 0.7, "unique_agents": 2, "usefulness_score": 0.5},
+            provenance={"source_traces": ["trace-gamma"]},
+        )
+
+        promoted = _cross_scope_promotion(store, alpha, phase_number=4)
+
+        assert promoted is not None
+        sources = [alpha, beta, gamma]
+        assert all(promoted.content != source.content for source in sources)
+        assert len(promoted.content) < sum(len(source.content) for source in sources)
+        assert promoted.content.startswith(alpha.content)
+        assert "seven attempts" in promoted.content
+        assert "saturation persists" in promoted.content
+
+
+def test_synthesize_digest_identical_contents_keep_single_content(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        first = store.create_node(
+            level="concept", content="same body of knowledge", context={"scope": "global"}
+        )
+        second = store.create_node(
+            level="concept", content="same body of knowledge", context={"scope": "global"}
+        )
+
+        assert _synthesize_digest([first, second], best=first) == "same body of knowledge"
+
+
+def test_synthesize_digest_two_short_sources_stay_under_concatenation(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        first = store.create_node(
+            level="concept",
+            content="deploy guard requires migration checklist before release",
+            context={"scope": "global"},
+        )
+        second = store.create_node(
+            level="concept",
+            content="deploy guard requires migration checklist before release plus ledger audit",
+            context={"scope": "global"},
+        )
+
+        digest = _synthesize_digest([first, second], best=first)
+
+        assert digest not in {first.content, second.content}
+        assert len(digest) < len(first.content) + len(second.content)
+        assert "ledger" in digest
+        assert "audit" in digest
+
+
+def test_synthesize_digest_caps_total_length(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        sources = []
+        for index in range(30):
+            details = " ".join(f"detail{index}word{position}" for position in range(15))
+            sources.append(
+                store.create_node(
+                    level="concept",
+                    content=f"Shared kernel invariant description. Fact {index}: {details}.",
+                    context={"scope": "global"},
+                )
+            )
+
+        digest = _synthesize_digest(sources, best=sources[0])
+
+        assert len(digest) <= DIGEST_MAX_CHARS
+        assert digest.count("\n• ") >= 2
+        assert all(digest != source.content for source in sources)
 
 
 def test_cross_scope_promotion_ignores_dissimilar_project_concepts(
