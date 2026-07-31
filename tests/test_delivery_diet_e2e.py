@@ -17,6 +17,11 @@ them on the wire:
 * Snippets — content longer than the snippet limit arrives truncated with a
   ``content_ref``, and ``memory_lookup(node_id=...)`` returns the stored
   bytes unchanged (the re-fetch path).
+* Context diet — a procedural schema node whose ``context.procedure``
+  duplicates its multi-KB content arrives with that value compacted to
+  ``{"count", "chars"}`` on both snippet and stub deliveries, keeping whole
+  responses bounded, while ``memory_lookup(node_id=...)`` still returns the
+  stored context complete.
 * Remember diet — the ``memory_remember`` wire response stays bounded while
   the trace itself is durably stored and recallable.
 * Feedback closure — recall -> stub recall -> remember on one connection
@@ -59,6 +64,7 @@ def _default_delivery_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
     for env in (
         "LM_DELIVERY_SNIPPET_CHARS",
         "LM_DELIVERY_SESSION_DEDUP",
+        "LM_DELIVERY_CONTEXT_VALUE_CHARS",
         "LM_AUTO_CONSOLIDATE_POLICY",
     ):
         monkeypatch.delenv(env, raising=False)
@@ -269,6 +275,71 @@ def test_long_content_snippet_and_lookup_refetch(tmp_path: Path) -> None:
     assert looked_up["missing"] == []
     assert looked_up["results"][0]["id"] == node_id
     assert looked_up["results"][0]["content"] == long_content
+
+
+# --- Context diet: bulky context values compacted on non-full deliveries ----
+
+
+def test_bulky_context_procedure_compacted_on_non_full_deliveries(tmp_path: Path) -> None:
+    scope = "project:dietcontext"
+    steps = [
+        f"voltaic pergola rite step {index}: "
+        + "hold the calibration clause ledger for this rehearsal pass. " * 25
+        for index in range(4)
+    ]
+    # Procedural schemas store their content twice: joined as ``content`` and
+    # step-by-step as ``context.procedure`` — the exact shape that leaked.
+    body = "Procedure: voltaic pergola rite\n" + "\n".join(
+        f"{index + 1}. {step}" for index, step in enumerate(steps)
+    )
+    context = {
+        "scope": scope,
+        "agent": "memory_consolidate",
+        "procedure": steps,
+        "procedure_key": "voltaic pergola rite",
+        "task_pattern": "voltaic-pergola-rite",
+        "trigger": "voltaic pergola rite",
+    }
+
+    async def scenario() -> tuple[str, dict[str, Any], dict[str, Any], dict[str, Any]]:
+        mcp, store = _server(tmp_path)
+        node = store.create_node(
+            level="schema",
+            content=body,
+            context=dict(context),
+            provenance={"strategy": "procedural"},
+        )
+        async with Client(mcp) as client:
+            first = await _recall(client, "voltaic pergola rite", scope=scope)
+            second = await _recall(client, "voltaic pergola rite", scope=scope)
+            looked_up = _structured(
+                await client.call_tool("memory_lookup", {"node_id": node.id})
+            )
+        return node.id, first, second, looked_up
+
+    node_id, first, second, looked_up = asyncio.run(scenario())
+
+    procedure_chars = len(json.dumps(steps, ensure_ascii=False))
+    assert procedure_chars > 4096  # the leak this diet closes dwarfs the bound below
+
+    stored_context = looked_up["results"][0]["context"]
+    assert stored_context["procedure"] == steps  # the re-fetch hatch stays complete
+
+    first_entry = _by_id(first)[node_id]
+    second_entry = _by_id(second)[node_id]
+    assert first_entry["delivery"] == "snippet"  # long body: non-full from the start
+    assert second_entry["delivery"] == "session_duplicate"
+
+    for entry in (first_entry, second_entry):
+        shaped = entry["node"]["context"]
+        assert set(shaped) == set(stored_context)  # every context key survives
+        assert shaped["procedure"] == {"count": len(steps), "chars": procedure_chars}
+        assert shaped["trigger"] == "voltaic pergola rite"
+        assert shaped["task_pattern"] == "voltaic-pergola-rite"
+
+    # With context.procedure compacted, whole responses stay bounded on the wire.
+    assert _wire_bytes(first) < 4096
+    assert _wire_bytes(second) < 4096
 
 
 # --- Remember diet: bounded confirmation, durable and recallable write ------

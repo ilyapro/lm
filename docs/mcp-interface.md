@@ -255,9 +255,14 @@ class:
   trace): exactly one twin bears the content, the rest are stubs.
 
 Stubs and snippets keep every key of the full node dict — `content` is never
-absent, and only the bulky `provenance.prior_recalls` list is summarized to
-`{"count": n}`. Every non-full result additionally carries a `content_ref`
-naming the re-fetch call:
+absent, the bulky `provenance.prior_recalls` list is summarized to
+`{"count": n}`, and oversized `context` values are compacted per key:
+strings are truncated at a clean boundary with a trailing `…`, lists and
+objects collapse to `{"count": n, "chars": m}` (a procedural schema's
+`context.procedure` would otherwise re-ship the node's whole content
+alongside a one-line stub). Every non-full result additionally carries a
+`content_ref` naming the re-fetch call, which also restores the complete
+`context`:
 
 ```json
 {
@@ -286,10 +291,12 @@ Env knobs:
   (default 1200; `0` disables snippeting).
 * `LM_DELIVERY_SESSION_DEDUP` — session-dedup rollback valve (default on;
   `0`/`false`/`no`/`off` disable).
+* `LM_DELIVERY_CONTEXT_VALUE_CHARS` — max chars a single `context` value may
+  occupy on non-full results (default 240; `0` disables context compaction).
 
 `tests/test_delivery_diet_e2e.py` pins the wire-level behaviour — dedup,
-degradation, snippet re-fetch, and closure invariance — over a real MCP
-client.
+degradation, snippet re-fetch, context compaction, and closure invariance —
+over a real MCP client.
 
 ### `memory_lookup`
 

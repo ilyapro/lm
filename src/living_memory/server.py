@@ -26,6 +26,7 @@ from living_memory.consolidation import (
 )
 from living_memory.decay import apply_decay
 from living_memory.delivery import (
+    context_value_max_chars_from_env,
     session_dedup_enabled_from_env,
     shape_recall_results,
     snippet_max_chars_from_env,
@@ -895,7 +896,9 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         this transport session), or ``twin_duplicate`` (byte-identical to a
         higher-ranked result). Non-full results keep every node field and add
         a ``content_ref`` naming the ``memory_lookup(node_id=...)`` call that
-        returns the complete content.
+        returns the complete content; their oversized context values (e.g. a
+        procedural schema's ``context.procedure``) arrive compacted to
+        counts/truncations, restored in full by the same lookup.
         """
 
         ambient_context = _with_transport_identity(ambient_context)
@@ -929,6 +932,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                     results,
                     already_delivered_ids=already_delivered,
                     snippet_max_chars=snippet_max_chars_from_env(),
+                    context_value_max_chars=context_value_max_chars_from_env(),
                     session_dedup=session_dedup,
                 ),
                 "auto_decay": auto_decay,

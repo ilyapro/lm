@@ -11,7 +11,7 @@ The server is a Python package under `src/living_memory`.
 
 | Layer | Modules | Responsibility |
 | --- | --- | --- |
-| MCP surface | `server.py`, `delivery.py` | Registers the nine tools, four resources, and retrieval-context prompt; stamps transport-derived correlation identity into recall/remember/teach; shapes recall responses (session/twin dedup, snippets) before serialization. |
+| MCP surface | `server.py`, `delivery.py` | Registers the nine tools, four resources, and retrieval-context prompt; stamps transport-derived correlation identity into recall/remember/teach; shapes recall responses (session/twin dedup, snippets, context compaction) before serialization. |
 | Storage | `storage.py`, `models.py` | Owns SQLite schema, uniform node CRUD, connections, FTS5, and retrieval weights. |
 | Retrieval | `retrieval.py`, `scope.py`, `embeddings.py`, `feedback.py` | Resolves scope, searches FTS5, computes multilingual embeddings, traverses graph edges, reranks, logs access, stores recall events, and tunes weights. |
 | Learning loop | `consolidation.py`, `decay.py`, `temporal.py` | Clusters similar traces into concepts, computes consensus and temporal hints, updates edge weights, records corrections, and soft-deletes expired or superseded records. |
@@ -42,11 +42,15 @@ The server is a Python package under `src/living_memory`.
    `session_duplicate` stub (the delivered-id set is read from the session's
    recent recall events *before* this call's row is written, so a response
    never stubs itself), and content over the snippet limit is truncated
-   inline. Stubs and snippets keep the full node key set and carry a
-   `content_ref` pointing at `memory_lookup(node_id=...)`. Shaping changes
-   the serialized response only — the recorded event keeps the unshaped
-   result IDs, and without a transport session id the session-dedup stage is
-   skipped entirely (legacy full delivery).
+   inline. Stubs and snippets keep the full node key set, compact oversized
+   `context` values (strings truncate at a clean boundary; lists/objects —
+   e.g. a procedural schema's `context.procedure`, which duplicates the whole
+   content — collapse to `{"count", "chars"}`), and carry a `content_ref`
+   pointing at `memory_lookup(node_id=...)`, which restores content and
+   context complete. Shaping changes the serialized response only — the
+   recorded event keeps the unshaped result IDs, and without a transport
+   session id the session-dedup stage is skipped entirely (legacy full
+   delivery).
 6. The next compatible `memory_remember` consumes the pending recall event,
    records it in the new trace provenance, creates `related` edges to recalled
    nodes, and applies implicit positive feedback to the recalled results and

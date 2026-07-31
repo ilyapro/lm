@@ -209,6 +209,7 @@ def _structured(result: Any) -> dict[str, Any]:
 def _clear_delivery_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LM_DELIVERY_SNIPPET_CHARS", raising=False)
     monkeypatch.delenv("LM_DELIVERY_SESSION_DEDUP", raising=False)
+    monkeypatch.delenv("LM_DELIVERY_CONTEXT_VALUE_CHARS", raising=False)
 
 
 DEDUP_CONTENT = (

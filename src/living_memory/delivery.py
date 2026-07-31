@@ -23,19 +23,26 @@ Rules, applied in this order per ranked result:
 Backward compatibility: stubs and snippets preserve every key of the full node
 dict (``resources.node_to_dict``). ``content`` is never absent — stubs carry a
 one-line preview (~160 chars), snippets the truncated text. Non-full results
-gain a ``content_ref`` hint for re-fetching the full node, and their bulky
+gain a ``content_ref`` hint for re-fetching the full node, their bulky
 ``provenance.prior_recalls`` list is summarized to a count (the ``provenance``
-key itself always remains).
+key itself always remains), and oversized ``context`` values are compacted per
+key — strings truncated at a clean boundary, lists/objects replaced by
+``{"count": n, "chars": m}`` (a procedural schema's ``context.procedure``
+would otherwise re-ship the node's whole content alongside a 31-char stub).
+Full deliveries and the ``memory_lookup`` re-fetch path stay byte-untouched.
 
 Env knobs (read by the server wiring, not by the pure function):
 
 - ``LM_DELIVERY_SNIPPET_CHARS`` — max chars delivered inline (default 1200,
   ``0`` disables snippeting).
 - ``LM_DELIVERY_SESSION_DEDUP`` — default on; ``"0"`` disables (rollback valve).
+- ``LM_DELIVERY_CONTEXT_VALUE_CHARS`` — max chars a single context value may
+  occupy on non-full results (default 240, ``0`` disables context compaction).
 """
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
@@ -52,8 +59,12 @@ DELIVERY_TWIN_DUPLICATE = "twin_duplicate"
 
 SNIPPET_CHARS_ENV = "LM_DELIVERY_SNIPPET_CHARS"
 SESSION_DEDUP_ENV = "LM_DELIVERY_SESSION_DEDUP"
+CONTEXT_VALUE_CHARS_ENV = "LM_DELIVERY_CONTEXT_VALUE_CHARS"
 
 DEFAULT_SNIPPET_MAX_CHARS = 1200
+# 240 keeps typical files/related lists verbatim while collapsing multi-KB
+# procedure lists to a counter.
+DEFAULT_CONTEXT_VALUE_MAX_CHARS = 240
 PREVIEW_MAX_CHARS = 160
 ELLIPSIS = "…"
 
@@ -64,13 +75,23 @@ _CLEAN_BOUNDARIES = ("\n\n", "\n", ". ", " ")
 def snippet_max_chars_from_env() -> int:
     """Read ``LM_DELIVERY_SNIPPET_CHARS`` (0 disables snippeting, invalid -> default)."""
 
-    raw = os.environ.get(SNIPPET_CHARS_ENV, "").strip()
+    return _chars_from_env(SNIPPET_CHARS_ENV, DEFAULT_SNIPPET_MAX_CHARS)
+
+
+def context_value_max_chars_from_env() -> int:
+    """Read ``LM_DELIVERY_CONTEXT_VALUE_CHARS`` (0 disables compaction, invalid -> default)."""
+
+    return _chars_from_env(CONTEXT_VALUE_CHARS_ENV, DEFAULT_CONTEXT_VALUE_MAX_CHARS)
+
+
+def _chars_from_env(env_var: str, default: int) -> int:
+    raw = os.environ.get(env_var, "").strip()
     if not raw:
-        return DEFAULT_SNIPPET_MAX_CHARS
+        return default
     try:
         value = int(raw)
     except ValueError:
-        return DEFAULT_SNIPPET_MAX_CHARS
+        return default
     return max(0, value)
 
 
@@ -88,9 +109,14 @@ def shape_recall_results(
     *,
     already_delivered_ids: set[str],
     snippet_max_chars: int,
+    context_value_max_chars: int,
     session_dedup: bool,
 ) -> list[dict[str, Any]]:
     """Render ranked recall results, deduplicating and snippeting delivered content.
+
+    Non-full results also compact each ``context`` value longer than
+    ``context_value_max_chars`` (>0): strings are truncated at a clean
+    boundary, lists/objects summarized to ``{"count", "chars"}``.
 
     Pure: never mutates ``results``, their nodes, or ``already_delivered_ids``;
     identical inputs produce identical output. Output order matches input order.
@@ -126,6 +152,7 @@ def shape_recall_results(
 
         if delivery != DELIVERY_FULL:
             node_dict["provenance"] = _summarize_provenance(node_dict["provenance"])
+            node_dict["context"] = _summarize_context(node_dict["context"], context_value_max_chars)
 
         entry: dict[str, Any] = {
             "node": node_dict,
@@ -164,6 +191,31 @@ def _summarize_provenance(provenance: dict[str, Any]) -> dict[str, Any]:
     if isinstance(prior, list) and prior:
         return {**provenance, "prior_recalls": {"count": len(prior)}}
     return provenance
+
+
+def _summarize_context(context: dict[str, Any], max_value_chars: int) -> dict[str, Any]:
+    if max_value_chars <= 0:  # rollback valve: deliver context unshaped
+        return context
+    return {key: _summarize_context_value(value, max_value_chars) for key, value in context.items()}
+
+
+def _summarize_context_value(value: Any, max_chars: int) -> Any:
+    if isinstance(value, str):
+        if len(value) <= max_chars:
+            return value
+        return _truncate_at_boundary(value, max_chars)
+    if isinstance(value, (list, dict)):
+        chars = _json_chars(value)
+        if chars <= max_chars:
+            return value
+        return {"count": len(value), "chars": chars}
+    return value
+
+
+def _json_chars(value: Any) -> int:
+    # ensure_ascii=False measures the UTF-8 wire text; \u-escapes would count
+    # non-ASCII context (e.g. Cyrillic) ~6x over its delivered size.
+    return len(json.dumps(value, ensure_ascii=False, default=str))
 
 
 def _one_line_preview(content: str, max_chars: int = PREVIEW_MAX_CHARS) -> str:

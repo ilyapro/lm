@@ -1,11 +1,14 @@
 """Unit tests for the pure recall-delivery shaping module."""
 
 import copy
+import json
 from typing import Any
 
 import pytest
 
 from living_memory.delivery import (
+    CONTEXT_VALUE_CHARS_ENV,
+    DEFAULT_CONTEXT_VALUE_MAX_CHARS,
     DEFAULT_SNIPPET_MAX_CHARS,
     DELIVERY_FULL,
     DELIVERY_SESSION_DUPLICATE,
@@ -15,6 +18,7 @@ from living_memory.delivery import (
     PREVIEW_MAX_CHARS,
     SESSION_DEDUP_ENV,
     SNIPPET_CHARS_ENV,
+    context_value_max_chars_from_env,
     session_dedup_enabled_from_env,
     shape_recall_results,
     snippet_max_chars_from_env,
@@ -84,11 +88,13 @@ def shape(
     delivered: set[str] | None = None,
     snippet_max: int = DEFAULT_SNIPPET_MAX_CHARS,
     dedup: bool = True,
+    context_max: int = DEFAULT_CONTEXT_VALUE_MAX_CHARS,
 ) -> list[dict[str, Any]]:
     return shape_recall_results(
         results,
         already_delivered_ids=delivered or set(),
         snippet_max_chars=snippet_max,
+        context_value_max_chars=context_max,
         session_dedup=dedup,
     )
 
@@ -480,6 +486,146 @@ def test_prior_recalls_absent_or_empty_left_untouched_on_stubs() -> None:
     assert shaped[1]["node"]["provenance"]["prior_recalls"] == []
 
 
+# --- context shaping ------------------------------------------------------
+
+PROCEDURE_STEPS = [
+    "step one: " + "recalibrate the torque flange before every ledger sync. " * 20,
+    "step two: " + "verify the manifold seal against the archived checklist. " * 20,
+]
+
+
+def procedural_context() -> dict[str, Any]:
+    return {
+        "scope": "project:test",
+        "agent": "memory_consolidate",
+        "procedure": list(PROCEDURE_STEPS),
+        "procedure_key": "torque flange sync",
+        "task_pattern": "torque-flange-sync",
+        "trigger": "torque flange sync",
+    }
+
+
+def test_full_delivery_keeps_bulky_context_untouched() -> None:
+    node = make_node("proc-full", "short procedural summary", context=procedural_context())
+
+    shaped = shape([make_result(node)])
+
+    assert shaped[0]["delivery"] == DELIVERY_FULL
+    assert shaped[0]["node"]["context"] == procedural_context()
+    assert shaped[0]["node"]["context"]["procedure"] == PROCEDURE_STEPS
+
+
+def test_stub_compacts_oversized_procedure_list_to_counter() -> None:
+    node = make_node("proc-seen", "Procedure: torque flange sync\nbody", context=procedural_context())
+
+    shaped = shape([make_result(node)], delivered={"proc-seen"})
+
+    entry = shaped[0]
+    assert entry["delivery"] == DELIVERY_SESSION_DUPLICATE
+    context = entry["node"]["context"]
+    measured = len(json.dumps(PROCEDURE_STEPS, ensure_ascii=False))
+    assert context["procedure"] == {"count": len(PROCEDURE_STEPS), "chars": measured}
+    assert context["procedure_key"] == "torque flange sync"
+    assert context["task_pattern"] == "torque-flange-sync"
+    assert context["trigger"] == "torque flange sync"
+    assert set(context) == set(procedural_context())  # key set preserved
+
+
+def test_snippet_and_twin_compact_oversized_context_too() -> None:
+    long_content = "torque flange procedure body\n" + "x" * 3000
+    twin_content = "twin procedural content"
+    results = [
+        make_result(make_node("long", long_content, context=procedural_context()), score=0.9),
+        make_result(make_node("bearer", twin_content), score=0.8),
+        make_result(make_node("twin", twin_content, context=procedural_context()), score=0.7),
+    ]
+
+    shaped = shape(results, snippet_max=1200)
+
+    assert deliveries(shaped) == [DELIVERY_SNIPPET, DELIVERY_FULL, DELIVERY_TWIN_DUPLICATE]
+    for entry in (shaped[0], shaped[2]):
+        assert entry["node"]["context"]["procedure"]["count"] == len(PROCEDURE_STEPS)
+
+
+def test_oversized_string_context_value_truncated_at_boundary() -> None:
+    notes = "n" * 200 + ". " + "m" * 400
+    node = make_node("seen-str", "content", context={"scope": "project:test", "notes": notes})
+
+    shaped = shape([make_result(node)], delivered={"seen-str"})
+
+    shaped_notes = shaped[0]["node"]["context"]["notes"]
+    assert shaped_notes == "n" * 200 + ELLIPSIS
+    assert len(shaped_notes) <= DEFAULT_CONTEXT_VALUE_MAX_CHARS
+
+
+def test_small_context_values_kept_verbatim_on_stubs() -> None:
+    context = {
+        "scope": "project:test",
+        "files": ["src/a.py", "src/b.py"],
+        "attempt": 3,
+        "flaky": False,
+        "note": None,
+        "meta": {"kind": "closure"},
+    }
+    node = make_node("seen-small", "content", context=dict(context))
+
+    shaped = shape([make_result(node)], delivered={"seen-small"})
+
+    assert shaped[0]["delivery"] == DELIVERY_SESSION_DUPLICATE
+    assert shaped[0]["node"]["context"] == context
+
+
+def test_oversized_dict_context_value_compacted_with_entry_count() -> None:
+    blob = {f"key_{index}": "v" * 120 for index in range(4)}
+    node = make_node("seen-dict", "content", context={"scope": "project:test", "blob": blob})
+
+    shaped = shape([make_result(node)], delivered={"seen-dict"})
+
+    measured = len(json.dumps(blob, ensure_ascii=False))
+    assert shaped[0]["node"]["context"]["blob"] == {"count": 4, "chars": measured}
+
+
+def test_context_value_exactly_at_limit_stays_verbatim() -> None:
+    value = "v" * DEFAULT_CONTEXT_VALUE_MAX_CHARS
+    node = make_node("seen-edge", "content", context={"scope": "project:test", "edge": value})
+
+    shaped = shape([make_result(node)], delivered={"seen-edge"})
+
+    assert shaped[0]["node"]["context"]["edge"] == value
+
+
+def test_context_chars_measured_without_ascii_escapes() -> None:
+    # ~110 chars as UTF-8 text, ~5x that if measured via \u-escapes.
+    steps = ["шаг проверки данных"] * 5
+    node = make_node("seen-cyr", "content", context={"scope": "project:test", "шаги": steps})
+
+    shaped = shape([make_result(node)], delivered={"seen-cyr"})
+
+    assert shaped[0]["node"]["context"]["шаги"] == steps
+
+
+def test_context_shaping_disabled_when_zero() -> None:
+    node = make_node("seen-off", "content", context=procedural_context())
+
+    shaped = shape([make_result(node)], delivered={"seen-off"}, context_max=0)
+
+    assert shaped[0]["delivery"] == DELIVERY_SESSION_DUPLICATE
+    assert shaped[0]["node"]["context"]["procedure"] == PROCEDURE_STEPS
+
+
+def test_context_not_mutated_and_shaping_deterministic() -> None:
+    node = make_node("seen-pure", "content", context=procedural_context())
+    result = make_result(node)
+    before = copy.deepcopy(node.context)
+
+    first = shape([result], delivered={"seen-pure"})
+    second = shape([result], delivered={"seen-pure"})
+
+    assert node.context == before
+    assert first == second
+    assert first[0]["node"]["context"]["procedure"]["count"] == len(PROCEDURE_STEPS)
+
+
 # --- purity and determinism -----------------------------------------------
 
 
@@ -498,10 +644,18 @@ def test_inputs_not_mutated_and_output_deterministic() -> None:
     provenance_before = copy.deepcopy(long_node.provenance)
 
     first = shape_recall_results(
-        results, already_delivered_ids=delivered, snippet_max_chars=1200, session_dedup=True
+        results,
+        already_delivered_ids=delivered,
+        snippet_max_chars=1200,
+        context_value_max_chars=240,
+        session_dedup=True,
     )
     second = shape_recall_results(
-        results, already_delivered_ids=delivered, snippet_max_chars=1200, session_dedup=True
+        results,
+        already_delivered_ids=delivered,
+        snippet_max_chars=1200,
+        context_value_max_chars=240,
+        session_dedup=True,
     )
 
     assert first == second
@@ -543,6 +697,26 @@ def test_snippet_chars_env_default_and_parsing(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setenv(SNIPPET_CHARS_ENV, "not-a-number")
     assert snippet_max_chars_from_env() == DEFAULT_SNIPPET_MAX_CHARS
+
+
+def test_context_value_chars_env_default_and_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(CONTEXT_VALUE_CHARS_ENV, raising=False)
+    assert context_value_max_chars_from_env() == DEFAULT_CONTEXT_VALUE_MAX_CHARS == 240
+
+    monkeypatch.setenv(CONTEXT_VALUE_CHARS_ENV, "500")
+    assert context_value_max_chars_from_env() == 500
+
+    monkeypatch.setenv(CONTEXT_VALUE_CHARS_ENV, "  64  ")
+    assert context_value_max_chars_from_env() == 64
+
+    monkeypatch.setenv(CONTEXT_VALUE_CHARS_ENV, "0")
+    assert context_value_max_chars_from_env() == 0
+
+    monkeypatch.setenv(CONTEXT_VALUE_CHARS_ENV, "-3")
+    assert context_value_max_chars_from_env() == 0
+
+    monkeypatch.setenv(CONTEXT_VALUE_CHARS_ENV, "not-a-number")
+    assert context_value_max_chars_from_env() == DEFAULT_CONTEXT_VALUE_MAX_CHARS
 
 
 def test_session_dedup_env_default_and_rollback_valve(monkeypatch: pytest.MonkeyPatch) -> None:
