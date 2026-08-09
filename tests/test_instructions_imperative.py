@@ -137,6 +137,11 @@ def test_instructions_bootstrap_directive(instructions: str) -> None:
     assert "load the living memory tools now" in lowered, (
         "the bootstrap directive must be an immediate imperative, not advice"
     )
+    assert "recall the task at hand" in lowered, (
+        "loading and the first recall are one prescribed step — otherwise "
+        "the first-call slot goes to the task and recall never happens "
+        "(cold-start miss measured 2026-08-09 in two sessions)"
+    )
     assert "as protocol" in lowered
 
 
@@ -204,18 +209,25 @@ def test_no_measurement_artifacts(union: str) -> None:
 
 
 def test_named_anti_patterns_all_present(union: str) -> None:
-    """All six named failure modes survive the move onto the tools."""
+    """Every named failure mode survives — command-free (operator decision
+    2026-08-09): grep-before-recall, mkdir-vs-API and shell-watchdog-vs-loop
+    are retired as names and subsumed by universal classes —
+    world-before-memory (memory before searching/measuring the world) and
+    the inventing-a-mechanism clause of the state trigger."""
 
     named_failures = [
-        "mkdir-vs-API",
-        "shell-watchdog-vs-loop",
-        "grep-before-recall",
+        "world-before-memory",
         "silent-correction",
         "lookup-table-as-learning",
         "done-journal-dump",
     ]
     missing = [name for name in named_failures if name not in union]
     assert not missing, f"named anti-patterns lost in compression: {missing}"
+    for retired in ("grep-before-recall", "mkdir-vs-API", "shell-watchdog-vs-loop"):
+        assert retired not in union, (
+            f"retired command-bound name {retired!r} crept back — its class "
+            "already covers it"
+        )
 
 
 def test_cross_project_transfer_explicit(union: str) -> None:
@@ -232,31 +244,43 @@ def test_cross_project_transfer_explicit(union: str) -> None:
 # ── memory_recall description: the BEFORE hooks ─────────────────────────────
 
 
-def test_recall_hooks_concrete_triggers() -> None:
-    """The compressed BEFORE hooks must keep concrete, recognisable triggers."""
+def test_recall_hooks_universal_action_classes() -> None:
+    """The BEFORE hooks are command-free action classes (operator decision
+    2026-08-09): every trigger names a universal shape of action, so unlisted
+    concrete commands (curl, ALTER, a benchmark, a UI click) are covered by
+    construction instead of falling through an enumeration."""
 
     text = _RECALL_DESCRIPTION
-    assert "You MUST recall BEFORE" in text
-    triggers = [
-        "editing any file",
-        "writes state",
-        "git push",
-        "DROP",
-        "grep",
-        "watchdog",
-        "architecture",
-        "cold start",
-        "'how does X work'",
+    assert "You MUST recall BEFORE acting" in text
+    classes = [
+        "changing any artifact",
+        "creating or mutating state",
+        "irreversible or outward-facing",
+        "pulling knowledge from the world",
+        "measuring",
+        "choosing a design or approach",
+        "entering anything new",
+        "thought, or direction",
     ]
-    missing = [t for t in triggers if t not in text]
-    assert not missing, f"BEFORE triggers lost in compression: {missing}"
+    missing = [c for c in classes if c not in text]
+    assert not missing, f"universal action classes lost: {missing}"
+    for command in ("grep", "mkdir", "git push", "DROP", "Bash", "rm "):
+        assert command not in text, (
+            f"command-bound trigger {command!r} crept back — triggers must "
+            "stay universal action classes"
+        )
 
 
 def test_recall_default_and_economics() -> None:
     text = _RECALL_DESCRIPTION.lower()
     assert "when uncertain, recall" in text
-    assert "grep only after recall returns nothing" in text, (
-        "grep-before-recall must keep its ordering rule, not just its name"
+    assert "only after recall returns nothing" in text, (
+        "world-before-memory must keep its ordering rule, not just its name"
+    )
+    assert "memory first" in text, (
+        "the world-vs-memory ordering must be stated as a hard default "
+        "(cold-start miss measured 2026-08-09: a fresh session re-measured "
+        "the 2048 limit and answered falsely while the fact sat in memory)"
     )
 
 
@@ -402,11 +426,18 @@ def test_legacy_protocol_abstract_coverage(instructions: str, union: str) -> Non
     carried their point; the rest are intentionally absent, each subsumed
     by a phrase that generalises it:
 
-    - mkdir/echo>/sed -i/tee, 'goals state' examples  -> "Bash that writes
-      state ... recall the domain noun, not mkdir/echo"
-    - curl POST / gh pr merge / ALTER / 'git push origin master'
-      -> "destructive or external commands (rm, git push, DROP, migrate
-      ... verb plus target)"
+    - mkdir/echo>/sed -i/tee, 'goals state' examples  -> "creating or
+      mutating state ... recall the domain concept before inventing one"
+      (also subsumes the watchdog/poll-loop hook)
+    - rm / curl POST / gh pr merge / DROP / ALTER / 'git push origin
+      master' -> "any irreversible or outward-facing step (recall the
+      action plus its target)"
+    - grep/rg/find, fresh measurements, probes -> "pulling knowledge from
+      the world — searching, measuring, probing (memory first ...
+      anti-pattern: world-before-memory)"
+    - CLAUDE.md's "recall for every new thought/direction/message"
+      -> "entering anything new — a session, task, message, thought, or
+      turn of direction" (the client file now only draws attention)
     - "domain answers are invented instead of retrieved", "act blind"
       -> "Without recall you act blind — inventing what memory already
       holds" (now covers actions AND answers)
@@ -466,10 +497,11 @@ def test_legacy_protocol_abstract_coverage(instructions: str, union: str) -> Non
 
     # The abstractions the mapping above relies on must themselves stay:
     for anchor in (
-        "not mkdir/echo",
-        "verb plus target",
+        "before inventing one",
+        "action plus target",
+        "world-before-memory",
         "cost, not possibility",
-        "recall cross-project first",
+        "recall cross-project",
         "One concrete fact per trace",
         "binding procedure",
         "non-obvious discovery",
