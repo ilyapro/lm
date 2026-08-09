@@ -414,190 +414,131 @@ def _with_transport_identity(data: dict[str, Any] | None) -> dict[str, Any] | No
 
 
 def _server_instructions(default_scope: str) -> str:
+    # Delivery contract (measured live 2026-08-09, claude-code 2.1.217):
+    # clients clip MCP server instructions at 2048 chars (and GigaCode drops
+    # them entirely), so this text carries only what must be visible before
+    # any tool is considered — identity framing, the three laws, and the
+    # bootstrap directive. The detailed binding hooks live in the tool
+    # descriptions below (_RECALL_DESCRIPTION etc.), which survive as long
+    # as each stays within the per-tool client budgets (1024 chars for
+    # OpenAI-compatible clients such as codex). Budgets are pinned by
+    # tests/test_instructions_imperative.py.
     return (
         "You and Living Memory form ONE cognitive system. You supply "
         "ephemeral reasoning; LM supplies durable memory. `memory_recall` "
         "is perception, `memory_remember` is learning, and `memory_teach` "
-        "is self-correction. Without recall you act blind to prior "
-        "experience; without remember you lose what you just learned. "
-        "The system grows ONLY through consistent recall/remember/teach "
-        "cycles.\n"
+        "is self-correction. Without recall you act blind — inventing "
+        "what memory already holds; without remember you lose what you "
+        "just learned; without teach the system repeats corrected "
+        "mistakes. This is not a tool for when convenient — it is how "
+        "you think: recall is perception, not an extra step.\n"
         "\n"
-        "This is not a tool you reach for when convenient. It is part of "
-        "how you think. Treat recall as perception, not an extra step.\n"
+        "## Three laws — always in force\n"
         "\n"
-        "## Imperative protocol — action-lifecycle hooks\n"
+        "1. You MUST recall BEFORE you act. Every file edit, state-writing "
+        "or destructive command, codebase search, architectural choice, "
+        "and new task has history here. When uncertain, recall: a miss "
+        "costs one tool call; skipping can repeat an entire debugging "
+        "cycle.\n"
+        "2. You MUST remember at the moment of insight, before your next "
+        "action. Sessions end without warning — a deferred remember is "
+        "usually lost. One concrete fact per trace.\n"
+        "3. You MUST teach the moment a belief changes. When a recalled "
+        "fact proves wrong, call `memory_teach` immediately — only teach "
+        "creates the supersedes edge; a correction stored as a remember "
+        "trace keeps losing to the stale node in every future recall.\n"
         "\n"
-        "### BEFORE Edit / Write / NotebookEdit on any file\n"
-        "You MUST recall before touching a file. Pass the file path, "
-        "module name, or feature name to `memory_recall`. Prior edits, "
-        "conventions, and rejected approaches are stored.\n"
+        "## The full protocol lives on the tools\n"
         "\n"
-        "### BEFORE Bash that writes state (mkdir, echo > file, sed -i, tee)\n"
-        "You MUST recall before creating directories or files that hold "
-        "state. If a service API owns the state, recall the domain noun "
-        "(e.g. 'goals state', 'session metadata') first.\n"
+        "The binding trigger protocol is in the tool descriptions "
+        "themselves: `memory_recall` (exact BEFORE triggers), "
+        "`memory_remember` (write policy and closure notes), `memory_teach` "
+        "(correction rules), `memory_consolidate` (promotion to schemas). "
+        "If this session defers or hides tool schemas behind a search "
+        "step, you MUST load the Living Memory tools NOW, at session "
+        "start, and follow their descriptions as protocol, not as "
+        "reference.\n"
         "\n"
-        "### BEFORE destructive or external Bash (rm, git push, curl POST, "
-        "gh pr merge, DROP, ALTER, migrate)\n"
-        "You MUST recall before executing — pass the verb plus target "
-        "(e.g. 'git push origin master', 'DROP TABLE users'). Past "
-        "incidents on the same operation live in LM.\n"
+        "## Scope and context\n"
         "\n"
-        "### BEFORE codebase grep / find / rg / ast-grep for project knowledge\n"
-        "You MUST recall before grepping. LM answers domain questions "
-        "and records prior reasoning the code does not show. Grep only "
-        "after recall returns nothing.\n"
-        "\n"
-        "### BEFORE proposing an architectural decision or approach\n"
-        "You MUST recall cross-project for the same problem class. "
-        "Patterns from `project:alpha` apply to `project:beta`; find the "
-        "precedent before designing from scratch.\n"
-        "\n"
-        "### BEFORE starting a new task or answering a domain question\n"
-        "You MUST recall project and task context at session cold start "
-        "and before answering 'how does X work?' questions. Without this, "
-        "domain answers are invented instead of retrieved.\n"
-        "\n"
-        "### AFTER discovering non-obvious behaviour, a root cause, or a "
-        "working fix\n"
-        "You MUST remember after the discovery, at the moment of insight. "
-        "Deferred remembers are usually lost. Store one concrete fact per "
-        "trace, with file paths and identifiers.\n"
-        "\n"
-        "### AFTER a failure resolution or pattern recognition\n"
-        "You MUST remember after resolving the failure — store the "
-        "failure mode and fix. If a recalled fact was wrong, you MUST "
-        "call `memory_teach` with the original trace ID and correction.\n"
-        "\n"
-        "### AFTER a user correction or preference statement\n"
-        "When the user overrides your approach or states a preference, "
-        "you MUST remember it immediately. Store the corrected behaviour "
-        "and the triggering context.\n"
-        "\n"
-        "### Default: when uncertain, recall\n"
-        "The hooks above are a minimum, not a ceiling. When uncertain, "
-        "recall. A recall miss costs one tool call; skipping recall can "
-        "repeat an entire debugging cycle.\n"
-        "\n"
-        "### Default: when you learn something, remember\n"
-        "Any insight that passes the write policy below warrants "
-        "`memory_remember`. If you think 'I wish I had known this "
-        "earlier', store it now. Do not wait for end-of-task.\n"
-        "\n"
-        "### Default: when a belief changes, teach\n"
-        "`memory_teach` is not only for correcting recalled facts. Any "
-        "time your understanding shifts and a prior trace reflects the "
-        "old belief, teach the correction. The system cannot self-correct "
-        "silently. NEVER record a correction as a plain `memory_remember` "
-        "trace with UPDATE/CORRECTION wording: only `memory_teach` "
-        "creates the supersedes edge, and without that edge the stale "
-        "node keeps outranking your correction in future recalls.\n"
-        "\n"
-        "## Procedural skill activation (`level:schema`)\n"
-        "\n"
-        "When `memory_recall` returns a trace tagged `level:schema`, it "
-        "is a procedural skill, not a suggestion. You MUST follow the "
-        "procedure literally; schemas exist to prevent repeated failure "
-        "modes.\n"
-        "\n"
-        "## Anti-patterns — DO NOT repeat these mistakes\n"
-        "\n"
-        "1. **mkdir-vs-API**: writing state with `mkdir` / `echo >` / "
-        "`tee` when a service API exists is wrong; recall first and use "
-        "the API endpoint.\n"
-        "2. **shell-watchdog-vs-loop**: do not write a `*_watchdog.sh` "
-        "loop when a structured loop primitive exists; recall the "
-        "watch/poll pattern and use the primitive.\n"
-        "3. **grep-before-recall**: running `grep` / `rg` / `find` for "
-        "domain knowledge before `memory_recall` is a mistake; recall "
-        "first.\n"
-        "4. **silent-correction**: fixing a wrong assumption without "
-        "`memory_teach` leaves stale memory active — a `memory_remember` "
-        "trace with UPDATE/CORRECTION wording does not count. Every wrong "
-        "recall MUST trigger `memory_teach` with the corrected fact.\n"
-        "5. **lookup-table-as-learning**: storing a universal rule as a "
-        "project-local note makes the system re-invent it. Store "
-        "universal rules in `global` and let `memory_consolidate` promote "
-        "schemas.\n"
-        "6. **done-journal-dump**: closing work by storing a 'node X "
-        "DONE' journal (restated goal, step log, test output) is "
-        "wrong: the diff and git history already show all of it, and "
-        "journal noise drowns the rare real lesson in recall. Write "
-        "the short closure note instead.\n"
-        "\n"
-        "## Cross-project knowledge transfer\n"
-        "\n"
-        "Patterns generalise across scopes. You MUST broaden recall "
-        "(omit `scope` or pass a wildcard) when investigating a class of "
-        "problem so cross-project lessons transfer. Keep write-time "
-        "scope specific; keep read-time recall broad.\n"
-        "\n"
-        "## Scope at write time\n"
-        "\n"
-        "Set `context.scope` to `'project:<name>'` for project-specific "
-        "facts. Use `global` for universal debugging patterns, coding "
-        "rules, and procedural schemas. Scope is inferred when omitted; "
-        "explicit is better.\n"
+        "Write with a specific scope: `context.scope='project:<name>'` for "
+        "project facts, `global` for universal rules and procedural "
+        "schemas. Read broad: omit `scope` when investigating, so "
+        "cross-project lessons transfer. Set `task`, `agent`, and "
+        "`session_id` in context to link work across sessions.\n"
         f"Your default scope is {default_scope}.\n"
-        "\n"
-        "## Structured context — correlation identity\n"
-        "\n"
-        "Correlation identity is derived automatically: the server stamps "
-        "every recall/remember/teach with `transport_session_id` taken "
-        "from the MCP transport session, so same-session feedback linking "
-        "works with no client metadata. An explicit value always "
-        "overrides the derived one. Explicit `task`, `agent`, and "
-        "`session_id` in `memory_recall.ambient_context` and "
-        "`memory_remember.context` remain recommended: they link work "
-        "across sessions and reconnects, beyond one transport session:\n"
-        "```json\n"
-        '{"scope": "project:online", "task": "EZ-13771", "agent": "codex", "session_id": "run-2026-05-22"}\n'
-        "```\n"
-        "\n"
-        "## Write policy — remember what is expensive to re-derive\n"
-        "\n"
-        "`memory_remember` is ONLY for what is expensive to re-derive "
-        "from the code or git history (recipes, pitfalls, refutations "
-        "of prior beliefs, external contracts). The test is cost, not "
-        "possibility: the most valuable knowledge IS derivable, just "
-        "expensive to rediscover (a contract smeared across thousands "
-        "of lines, recon or measurement findings, a refuted "
-        "hypothesis). An execution journal ('did X', 'node N done') "
-        "re-derives trivially from git history and fails the test — "
-        "DO NOT store it.\n"
-        "\n"
-        "Reusable know-how MUST take procedure form — trigger (when it "
-        "fires) / task_pattern (the recurring task class) / procedure "
-        "(the steps). Set `context.task_pattern` and "
-        "`context.procedure_id` so consolidation can promote the trace "
-        "into a `level:schema` skill whose trigger future recalls "
-        "match directly (the `trigger_score` channel).\n"
-        "\n"
-        "## How to write good traces\n"
-        "\n"
-        "- Concrete: prefer 'file X exports Y, not Z' over vague notes.\n"
-        "- Specific: include file paths, function names, config keys.\n"
-        "- One fact per trace. Short beats long.\n"
-        "- Include WHY when non-obvious.\n"
-        "- Use `depth: 'causal'` on `memory_recall` when debugging.\n"
-        "\n"
-        "## Closing out work\n"
-        "\n"
-        "A finished task earns ONE short closure note carrying only "
-        "what the diff and git history cannot show (e.g. the "
-        "invariant to preserve, the pitfall that cost time). NEVER "
-        "dump a full 'node X DONE' journal (anti-pattern 6).\n"
-        "\n"
-        "## What NOT to store\n"
-        "\n"
-        "- Routine actions ('ran the tests') without new insight.\n"
-        "- Copies of code — reference file paths instead.\n"
-        "- Speculation or unverified plans — store verified facts only.\n"
-        "- Anything cheaply re-derivable from the code or git history.\n"
-        "- Task-closure journals — write the short closure note instead.\n"
     )
 
+
+# MCP-visible tool descriptions. These are the binding protocol channel:
+# unlike server instructions they reach every client that can call tools
+# at all (including GigaCode, which drops instructions). Each MUST stay
+# within 1024 chars — OpenAI-compatible clients (codex) enforce that per
+# function description; claude-code clips around 2048. Front-load the
+# imperative triggers: anything past the budget is the first to be lost.
+
+_RECALL_DESCRIPTION = (
+    "Retrieve relevant memories by text, vector, and graph signals. "
+    "You MUST recall BEFORE: editing any file (pass path/module/feature — "
+    "prior edits, conventions, rejected approaches are stored); "
+    "Bash that writes state — if a service API owns the state, recall the "
+    "domain noun, not mkdir/echo (anti-pattern: mkdir-vs-API); "
+    "destructive or external commands (rm, git push, DROP, migrate — recall "
+    "the verb plus target, past incidents live here); grep/rg/find for "
+    "domain knowledge — grep only after recall returns nothing "
+    "(anti-pattern: grep-before-recall); writing a watchdog/poll loop — "
+    "a structured primitive may exist (anti-pattern: "
+    "shell-watchdog-vs-loop); proposing an architecture (recall "
+    "cross-project first); starting a task, cold start, answering 'how "
+    "does X work'. Default: when uncertain, recall. Read broad: omit scope "
+    "so lessons transfer across scopes. Depth 'causal' when debugging. A "
+    "level:schema result is a binding procedure — follow it literally. "
+    "Non-full results carry a content_ref — refetch via memory_lookup."
+)
+
+_REMEMBER_DESCRIPTION = (
+    "memory_remember is ONLY for what is expensive to re-derive from "
+    "code or git history: recipes, pitfalls, refutations, external "
+    "contracts, measurement findings, a contract smeared across thousands "
+    "of lines. The gate: cost, not possibility. You MUST remember at "
+    "the moment of insight, before your next action — deferred remembers "
+    "are usually lost; 'I wish I had known this earlier' means store it "
+    "now. Triggers: non-obvious discovery, resolved failure and fix, "
+    "a user correction or preference. One concrete fact per trace — "
+    "paths, identifiers, the WHY; verified facts only — never routine "
+    "actions, copies of code, speculation, unverified plans. An execution "
+    "journal ('did X', 'node N done') re-derives trivially from git "
+    "history — DO NOT store it: its noise drowns the rare real lesson "
+    "in recall (done-journal-dump). A finished task earns "
+    "ONE short closure note carrying only what the diff and git history "
+    "cannot show (e.g. the invariant to preserve, the pitfall that cost "
+    "time). Corrections NEVER go here — use memory_teach."
+)
+
+_TEACH_DESCRIPTION = (
+    "Store a corrective trace and connect it to the original via a "
+    "supersedes edge. You MUST teach the moment a belief changes: a "
+    "recalled fact proved wrong, or your understanding shifted and a prior "
+    "trace reflects the old belief. Pass the original trace_id plus the "
+    "corrected fact. Only memory_teach creates the supersedes edge — a "
+    "memory_remember trace with UPDATE/CORRECTION wording does NOT count, "
+    "and the stale node keeps outranking the correction in every future "
+    "recall. Fixing a wrong assumption without teach (anti-pattern: "
+    "silent-correction) leaves stale memory active: the system cannot "
+    "self-correct silently."
+)
+
+_CONSOLIDATE_DESCRIPTION = (
+    "Run one consolidation and decay maintenance pass. Consolidation "
+    "promotes repeated know-how into level:schema procedural skills. "
+    "Reusable know-how MUST take procedure form — trigger (when it fires), "
+    "task_pattern (the recurring task class), procedure (the steps): set "
+    "context.task_pattern and context.procedure_id on remember so "
+    "promotion can match future recalls directly (the trigger_score "
+    "channel). Store universal rules in global so they can become schemas "
+    "— a universal rule stored as a project-local note gets re-invented "
+    "elsewhere (anti-pattern: lookup-table-as-learning)."
+)
 
 def _tls_uvicorn_config(
     tls_cert: str | None, tls_key: str | None
@@ -783,7 +724,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
     recall_service = MemoryRecallService(store)
     consolidation_service = ConsolidationService(store)
 
-    @mcp.tool
+    @mcp.tool(description=_REMEMBER_DESCRIPTION)
     @_track_latency("memory_remember")
     def memory_remember(
         content: str,
@@ -839,7 +780,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 response["rejected_alternatives"] = rejected_alternatives
             return response
 
-    @mcp.tool
+    @mcp.tool(description=_TEACH_DESCRIPTION)
     @_track_latency("memory_teach")
     def memory_teach(
         trace_id: str,
@@ -880,7 +821,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             )
             return {"connection": connection_to_dict(connection)}
 
-    @mcp.tool
+    @mcp.tool(description=_RECALL_DESCRIPTION)
     @_track_latency("memory_recall")
     def memory_recall(
         query: str,
@@ -1035,7 +976,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 "results": [node_to_dict(node) for node in nodes],
             }
 
-    @mcp.tool
+    @mcp.tool(description=_CONSOLIDATE_DESCRIPTION)
     @_track_latency("memory_consolidate")
     def memory_consolidate(scope: str | None = None, force: bool = False) -> dict[str, Any]:
         """Run one consolidation and decay maintenance pass."""
