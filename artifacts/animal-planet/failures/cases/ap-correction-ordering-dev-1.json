@@ -1,0 +1,322 @@
+{
+  "description": "At-risk supersedes pair in dev: node 01KZMWPV8PH86T35EA5ZETDQPZ (created 2026-08-10T03:50:50Z, 2270 content chars) was later superseded by correction 01KZQWE1H0P3W0P0DDQJ9H1W4V (created 2026-08-11T07:43:45Z, 1163 chars). The recorded events delivered the superseded node 23 times (8 times at rank 1; best rank 1 score 0.8696), every time BEFORE the correction existed; after the correction was created the split records 3 correction deliveries and zero further superseded deliveries, and no recorded event contains both endpoints. Recorded-corpus honesty note: across the whole dev/eval corpus there are ZERO ordering violations and ZERO events where a superseded node and its correction co-occur as candidates; this case therefore encodes the recorded at-risk surface (observed superseded-delivery ranks plus the live edge) rather than an observed inversion.",
+  "event_ids": [
+    "01KZN1TA6NZ87PJJ2TQDVWKXS5",
+    "01KZN5X2A2YQTQ1M51W2MCBT11",
+    "01KZN9MCJ95FY2TCE79CKM0CXT",
+    "01KZN9MCY74E9MYA0WBKH534PK",
+    "01KZNC4H5260102K7ZXVJEKDFZ",
+    "01KZNCE7TCD38DG3HBTN6VVBND",
+    "01KZNNDF5HXQBCEPQZE1P3VD38",
+    "01KZNNDFJDZ5MHSTRF86CKCB5C",
+    "01KZNPEN088TM21Y8XGTFRSS94",
+    "01KZNZQNN6QREEYB7J9KTXC8GP",
+    "01KZP0RPFJZEKRMKVBV490EC7J",
+    "01KZP6FR0SSX1MJ85R7QWNTV3D",
+    "01KZPB2GTKRDWDQRFXJC19AWAA",
+    "01KZPBN33949XZ30A52NBQG62W",
+    "01KZPR140852G0WZ8EWW021XXK",
+    "01KZPS8XXC4Q1A650JHB7ZK35D",
+    "01KZPZK6XE4S0ZRSNKH038Q17Z",
+    "01KZQ4C5TQABZNTHY3J37KC1Q0",
+    "01KZQ4C6M4NZDDJQY4NS7X2ZRV",
+    "01KZQDK5MDC0M9437GRH7PFC31",
+    "01KZQNRK4FH8930BWRMMYAY6WA",
+    "01KZQNS2MTTDM180TDC5549GEV",
+    "01KZQT1YKACRC9SHN0KBTVDVDK"
+  ],
+  "evidence": {
+    "all_superseded_deliveries_precede_correction": true,
+    "correction_deliveries": [
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T08:19:52Z",
+        "event_id": "01KZQYG5R1GNBAY0NEH8YGFAZM",
+        "feedback_applied": 0,
+        "rank": 4,
+        "scope": "project:game",
+        "score": 0.4777,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T08:19:55Z",
+        "event_id": "01KZQYG8NN1D5YMJ69KYF7SVBQ",
+        "feedback_applied": 0,
+        "rank": 4,
+        "scope": "project:game",
+        "score": 0.5058,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T08:46:04Z",
+        "event_id": "01KZR0050P71JB0CDCK7M3PFFR",
+        "feedback_applied": 0,
+        "rank": 4,
+        "scope": "project:game",
+        "score": 0.5058,
+        "template_id": null
+      }
+    ],
+    "pair": {
+      "correction": {
+        "content_chars": 1163,
+        "created_at": "2026-08-11T07:43:45Z",
+        "id": "01KZQWE1H0P3W0P0DDQJ9H1W4V",
+        "scope": "project:game"
+      },
+      "superseded": {
+        "content_chars": 2270,
+        "created_at": "2026-08-10T03:50:50Z",
+        "id": "01KZMWPV8PH86T35EA5ZETDQPZ",
+        "scope": "global"
+      }
+    },
+    "recorded_both_present_events_in_split": 0,
+    "recorded_violations_in_split": 0,
+    "superseded_deliveries": [
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T05:20:07Z",
+        "event_id": "01KZN1TA6NZ87PJJ2TQDVWKXS5",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "global",
+        "score": 0.6045,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T06:31:31Z",
+        "event_id": "01KZN5X2A2YQTQ1M51W2MCBT11",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "global",
+        "score": 0.6089,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T07:36:41Z",
+        "event_id": "01KZN9MCJ95FY2TCE79CKM0CXT",
+        "feedback_applied": 1,
+        "rank": 8,
+        "scope": "project:game",
+        "score": 0.4486,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T07:36:42Z",
+        "event_id": "01KZN9MCY74E9MYA0WBKH534PK",
+        "feedback_applied": 1,
+        "rank": 4,
+        "scope": "global",
+        "score": 0.3746,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T08:20:27Z",
+        "event_id": "01KZNC4H5260102K7ZXVJEKDFZ",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "global",
+        "score": 0.6434,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T08:25:46Z",
+        "event_id": "01KZNCE7TCD38DG3HBTN6VVBND",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "global",
+        "score": 0.5951,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T11:02:38Z",
+        "event_id": "01KZNNDF5HXQBCEPQZE1P3VD38",
+        "feedback_applied": 0,
+        "rank": 3,
+        "scope": "global",
+        "score": 0.5039,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T11:02:38Z",
+        "event_id": "01KZNNDFJDZ5MHSTRF86CKCB5C",
+        "feedback_applied": 1,
+        "rank": 5,
+        "scope": "global",
+        "score": 0.3934,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T11:20:45Z",
+        "event_id": "01KZNPEN088TM21Y8XGTFRSS94",
+        "feedback_applied": 1,
+        "rank": 2,
+        "scope": "global",
+        "score": 0.4745,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T14:02:58Z",
+        "event_id": "01KZNZQNN6QREEYB7J9KTXC8GP",
+        "feedback_applied": 1,
+        "rank": 3,
+        "scope": "global",
+        "score": 0.5037,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T14:21:00Z",
+        "event_id": "01KZP0RPFJZEKRMKVBV490EC7J",
+        "feedback_applied": 1,
+        "rank": 2,
+        "scope": "global",
+        "score": 0.4845,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T16:00:58Z",
+        "event_id": "01KZP6FR0SSX1MJ85R7QWNTV3D",
+        "feedback_applied": 1,
+        "rank": 5,
+        "scope": "project:game",
+        "score": 0.4949,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T17:21:07Z",
+        "event_id": "01KZPB2GTKRDWDQRFXJC19AWAA",
+        "feedback_applied": 1,
+        "rank": 5,
+        "scope": "global",
+        "score": 0.373,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T17:31:16Z",
+        "event_id": "01KZPBN33949XZ30A52NBQG62W",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "global",
+        "score": 0.8696,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T21:07:33Z",
+        "event_id": "01KZPR140852G0WZ8EWW021XXK",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "global",
+        "score": 0.7178,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T21:29:17Z",
+        "event_id": "01KZPS8XXC4Q1A650JHB7ZK35D",
+        "feedback_applied": 1,
+        "rank": 3,
+        "scope": "global",
+        "score": 0.5567,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-10T23:19:46Z",
+        "event_id": "01KZPZK6XE4S0ZRSNKH038Q17Z",
+        "feedback_applied": 1,
+        "rank": 2,
+        "scope": "project:game",
+        "score": 0.776,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T00:43:18Z",
+        "event_id": "01KZQ4C5TQABZNTHY3J37KC1Q0",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "global",
+        "score": 0.6754,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T00:43:19Z",
+        "event_id": "01KZQ4C6M4NZDDJQY4NS7X2ZRV",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "global",
+        "score": 0.7858,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T03:24:25Z",
+        "event_id": "01KZQDK5MDC0M9437GRH7PFC31",
+        "feedback_applied": 1,
+        "rank": 4,
+        "scope": "global",
+        "score": 0.3893,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T05:47:11Z",
+        "event_id": "01KZQNRK4FH8930BWRMMYAY6WA",
+        "feedback_applied": 0,
+        "rank": 8,
+        "scope": "project:game",
+        "score": 0.4479,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T05:47:27Z",
+        "event_id": "01KZQNS2MTTDM180TDC5549GEV",
+        "feedback_applied": 1,
+        "rank": 2,
+        "scope": "global",
+        "score": 0.4749,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-11T07:02:12Z",
+        "event_id": "01KZQT1YKACRC9SHN0KBTVDVDK",
+        "feedback_applied": 1,
+        "rank": 5,
+        "scope": "global",
+        "score": 0.331,
+        "template_id": null
+      }
+    ],
+    "superseded_rank1_deliveries": 8
+  },
+  "expected_behavior": "Whenever both endpoints of a supersedes edge are candidates for the same recall, the correction must rank above the superseded node (hard ordering, not just a relative score multiplier — see the 0.2x/1.2x relative-weight hole), and a delivered superseded node should carry its supersession/correction reference so the recorded rank-1 stale deliveries cannot repeat silently once a correction exists.",
+  "family": "correction_ordering",
+  "id": "ap-correction-ordering-dev-1",
+  "metric_hook": "correction_dominance",
+  "node_ids": [
+    "01KZQWE1H0P3W0P0DDQJ9H1W4V",
+    "01KZMWPV8PH86T35EA5ZETDQPZ"
+  ],
+  "selection_rule": "supersedes pairs (correction, superseded) from same-file typed relations with >=1 recorded delivery of the superseded node; top 2 per split by (superseded delivery count desc, pair ids)",
+  "split": "dev"
+}

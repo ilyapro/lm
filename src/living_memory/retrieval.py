@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -16,7 +17,7 @@ from living_memory.models import (
     ConnectionType,
     Node,
 )
-from living_memory.scope import ScopePlan, ScopeResolver
+from living_memory.scope import GLOBAL_SCOPE, ScopePlan, ScopeResolver, scope_family
 from living_memory.storage import MemoryStore
 
 try:
@@ -34,6 +35,37 @@ DEFAULT_VECTOR_SCAN_LIMIT = 50_000
 # remain retrievable, never filtered.
 SCOPE_RANK_BOOST_STEP = 0.2
 STRONG_VECTOR_MATCH = 0.65
+# Admission gate for candidates outside the plan's narrow scopes: without
+# it the broad tail of a narrow-scope plan crowds out max_results, because
+# _collect_bm25 normalizes rank scores per scope and therefore mints
+# bm25 = 1.0 for the broadest scope's top FTS hit however weak the lexical
+# match really is — which is why bm25 evidence deliberately does NOT admit a
+# cross-scope candidate. Deliberate evidence does: a schema trigger, a strong
+# graph connection, or vector similarity that is strong in absolute terms or
+# comparable to the best ungated match. Requested-scope candidates are never
+# gated (structural retention guarantee), and under a session plan neither
+# are candidates from the plan's own project scope — that scope enters the
+# plan only through the caller's ambient project declaration, a deliberate
+# association unlike the global fallback. When an event has no candidate in
+# any ungated scope the gate stays open: a cross-scope answer is then the
+# only answer, so the gate can never empty a recall on its own. This keeps
+# the promise above: a clearly stronger cross-scope precedent remains
+# retrievable; only the weak-evidence tail is dropped.
+#
+# Graph activation strong enough to witness a deliberate connection: about a
+# first-hop edge over a high-weight relation from a solid seed. Multi-hop
+# chains decay by 0.72 per hop and weak-seed fan-out starts far below 1.0,
+# so both fall under the bar unless the path is genuinely strong.
+CROSS_SCOPE_GRAPH_ADMIT = 0.75
+# A vector match that could stand on raw similarity alone (the
+# STRONG_VECTOR_MATCH override above) is deliberate evidence wherever the
+# node lives; keep the two coupled so "strong match" means one thing.
+CROSS_SCOPE_VECTOR_ADMIT = STRONG_VECTOR_MATCH
+# Below the absolute bar, a cross-scope candidate must be comparably relevant
+# to the best ungated vector match: within this share of it. Applies only
+# when the ungated scopes have vector evidence at all — with none, weak
+# cross-scope vectors would trivially clear a zero bar.
+CROSS_SCOPE_RELATIVE_VECTOR = 0.9
 SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5
 SCHEMA_TRIGGER_BASE_SCORE = 0.95
 SCHEMA_TRIGGER_BOOST = 1.8
@@ -56,6 +88,10 @@ class RecallResult:
     methods: tuple[str, ...] = ()
     path: tuple[str, ...] = ()
     recall_event_id: str | None = None
+    # True when some supersedes edge targets this node: a correction exists,
+    # whether or not it qualified for this recall. Consumers get the staleness
+    # signal even when the correction itself is decayed or absent.
+    superseded: bool = False
 
     @property
     def node_id(self) -> str:
@@ -72,6 +108,7 @@ class RecallResult:
             "methods": list(self.methods),
             "path": list(self.path),
             "recall_event_id": self.recall_event_id,
+            "superseded": self.superseded,
         }
 
 
@@ -209,12 +246,22 @@ class MemoryRecallService:
         decision_mode: bool = False,
     ) -> list[RecallResult]:
         results: list[RecallResult] = []
-        superseded_ids, superseding_ids = self._supersedes_sets()
+        corrections_by_superseded, superseding_ids = self._supersedes_sets()
+        ungated_scopes = _ungated_scopes(plan)
+        narrow_present, best_narrow_vector = _ungated_scope_profile(
+            candidates, ungated_scopes, decision_mode=decision_mode
+        )
         for candidate in candidates.values():
             node = candidate.node
             if node.decayed or not plan.allows(node.scope):
                 continue
             if _is_rejected_alternative_node(node) and not decision_mode:
+                continue
+            if (
+                narrow_present
+                and node.scope not in ungated_scopes
+                and not _cross_scope_admissible(candidate, best_narrow_vector)
+            ):
                 continue
 
             weights = self.store.get_retrieval_weights(node.scope).normalized()
@@ -250,7 +297,7 @@ class MemoryRecallService:
             adjusted = feedback_weighted_score(
                 node,
                 base_score * scope_boost,
-                superseded=node.id in superseded_ids,
+                superseded=node.id in corrections_by_superseded,
                 superseding=node.id in superseding_ids,
             )
             if causal_mode and candidate.graph_score > 0.0:
@@ -268,10 +315,15 @@ class MemoryRecallService:
                     scope_rank=plan.rank(node.scope),
                     methods=candidate.methods(),
                     path=candidate.path,
+                    superseded=node.id in corrections_by_superseded,
                 )
             )
 
-        return sorted(
+        # The 0.2x/1.2x correction multipliers above are a soft prior only: a
+        # stale node whose compounded feedback multiplier sits at the cap can
+        # still outscore its own correction. The dominance pass below turns
+        # the ordering into a structural guarantee.
+        ordered = sorted(
             results,
             key=lambda result: (
                 result.score,
@@ -282,6 +334,7 @@ class MemoryRecallService:
             ),
             reverse=True,
         )
+        return _enforce_correction_dominance(ordered, corrections_by_superseded)
 
     def submit_feedback(
         self,
@@ -544,13 +597,36 @@ class MemoryRecallService:
         updated_node = self.store.record_access(result.node.id)
         return replace(result, node=updated_node)
 
-    def _supersedes_sets(self) -> tuple[set[str], set[str]]:
+    def _supersedes_sets(self) -> tuple[dict[str, tuple[str, ...]], set[str]]:
+        """Supersedes edges as (superseded -> corrections, superseding ids).
+
+        One query feeds every ranking consumer: membership behind the soft
+        0.2x/1.2x prior and the ``RecallResult.superseded`` flag (mapping
+        keys / the superseding set), and the mapping the dominance pass
+        enforces. The SQL text is a load-bearing contract — the replay shim
+        (``replay._SchemeStore``) recognizes and serves exactly this
+        statement with exactly these columns, which is how replay reranks
+        recorded candidates through this same code path — so consume richer
+        structure from the same rows rather than issuing new queries here.
+        """
+
         rows = self.store.connection.execute(
             "SELECT source_id, target_id FROM connections WHERE type = 'supersedes'"
         ).fetchall()
-        superseding = {str(row["source_id"]) for row in rows}
-        superseded = {str(row["target_id"]) for row in rows}
-        return superseded, superseding
+        corrections_by_superseded: dict[str, set[str]] = {}
+        superseding: set[str] = set()
+        for row in rows:
+            source = str(row["source_id"])
+            target = str(row["target_id"])
+            superseding.add(source)
+            corrections_by_superseded.setdefault(target, set()).add(source)
+        return (
+            {
+                target: tuple(sorted(sources))
+                for target, sources in corrections_by_superseded.items()
+            },
+            superseding,
+        )
 
 
 MemoryRetrievalService = MemoryRecallService
@@ -602,6 +678,98 @@ def feedback_aware_rank(
     plan: ScopePlan,
 ) -> list[RecallResult]:
     return MemoryRecallService(store).rank_candidates(candidates, plan)
+
+
+# DFS colors for the correction-dominance pass.
+_UNSEEN, _ACTIVE, _DONE = 0, 1, 2
+
+
+def _enforce_correction_dominance(
+    ordered: list[RecallResult],
+    corrections_by_superseded: dict[str, tuple[str, ...]],
+) -> list[RecallResult]:
+    """Reorder so every present correction outranks the node it supersedes.
+
+    Invariant: for every supersedes edge whose correction and superseded node
+    both appear in ``ordered``, the correction ends up strictly above the
+    stale node — feedback multipliers, mode boosts, and scope boosts already
+    happened and get no say. Presence in ``ordered`` is the liveness test
+    (decayed, gated, and zero-scored candidates never reach it): with the
+    correction absent, the stale node keeps surfacing at its scored position,
+    flagged but never filtered. Chains lift transitively (A over B over C);
+    a supersedes cycle among present nodes is bad data that cannot be fully
+    satisfied, so exactly the edges that close a cycle are deterministically
+    skipped instead of hanging the sort. Results on no enforced edge keep
+    their relative order.
+
+    Mechanically each correction inherits the best (smallest) base rank among
+    the nodes it transitively supersedes, ties broken so deeper correction
+    chains sort first and everything else stays in base order: a lifted
+    correction lands directly above the best-ranked node it corrects, and
+    unrelated results never trade places.
+    """
+
+    if not corrections_by_superseded:
+        return ordered
+    base_index = {result.node.id: position for position, result in enumerate(ordered)}
+    successors: dict[str, list[str]] = {}
+    for superseded_id, correction_ids in corrections_by_superseded.items():
+        if superseded_id not in base_index:
+            continue
+        for correction_id in correction_ids:
+            if correction_id != superseded_id and correction_id in base_index:
+                successors.setdefault(correction_id, []).append(superseded_id)
+    if not successors:
+        return ordered
+    for targets in successors.values():
+        targets.sort(key=base_index.__getitem__)
+
+    state: dict[str, int] = {}
+    effective_rank: dict[str, int] = {}
+    chain_depth: dict[str, int] = {}
+    for seed in ordered:
+        seed_id = seed.node.id
+        if seed_id not in successors or state.get(seed_id, _UNSEEN) != _UNSEEN:
+            continue
+        state[seed_id] = _ACTIVE
+        stack: list[tuple[str, Iterator[str]]] = [(seed_id, iter(successors[seed_id]))]
+        while stack:
+            node_id, pending = stack[-1]
+            descended = False
+            for successor_id in pending:
+                if state.get(successor_id, _UNSEEN) == _UNSEEN and successor_id in successors:
+                    state[successor_id] = _ACTIVE
+                    stack.append((successor_id, iter(successors[successor_id])))
+                    descended = True
+                    break
+            if descended:
+                continue
+            stack.pop()
+            state[node_id] = _DONE
+            # An _ACTIVE successor here is an ancestor still on the stack, so
+            # this edge closes a cycle: skipping it (consistently with the
+            # descent above) is the deterministic cycle break. Everything else
+            # is final — _DONE, or a leaf with no outgoing edges of its own.
+            lifted_rank = base_index[node_id]
+            depth = 0
+            for successor_id in successors[node_id]:
+                if state.get(successor_id, _UNSEEN) == _ACTIVE:
+                    continue
+                lifted_rank = min(
+                    lifted_rank, effective_rank.get(successor_id, base_index[successor_id])
+                )
+                depth = max(depth, chain_depth.get(successor_id, 0) + 1)
+            effective_rank[node_id] = lifted_rank
+            chain_depth[node_id] = depth
+
+    return sorted(
+        ordered,
+        key=lambda result: (
+            effective_rank.get(result.node.id, base_index[result.node.id]),
+            -chain_depth.get(result.node.id, 0),
+            base_index[result.node.id],
+        ),
+    )
 
 
 def _recall_result_summary(index: int, result: RecallResult) -> dict[str, Any]:
@@ -729,6 +897,80 @@ def _traversal(
     if score <= 0.0:
         return None
     return neighbor, score
+
+
+def _ungated_scopes(plan: ScopePlan) -> tuple[str, ...]:
+    """Scopes whose candidates bypass the cross-scope admission gate.
+
+    The requested scope always does. A session plan additionally shields the
+    project scope it carries: that scope is in the plan only because the
+    caller's ambient context declared it as the current project — a
+    deliberate association — and a session's few notes must not gate the
+    project's knowledge behind similarity to themselves.
+
+    A global-requested plan shields every scope it carries for the same
+    reason: the resolver widens a global request only with the deployment's
+    configured default project scope — a deliberate operator declaration,
+    never a similarity inference — so such a plan holds no cross-scope guess
+    to gate.
+    """
+
+    if plan.requested_scope == GLOBAL_SCOPE:
+        return plan.scopes
+    if scope_family(plan.requested_scope) != "session":
+        return (plan.requested_scope,)
+    return (plan.requested_scope,) + tuple(
+        scope
+        for scope in plan.scopes
+        if scope != plan.requested_scope and scope_family(scope) == "project"
+    )
+
+
+def _ungated_scope_profile(
+    candidates: dict[str, _Candidate],
+    ungated_scopes: tuple[str, ...],
+    *,
+    decision_mode: bool = False,
+) -> tuple[bool, float]:
+    """Whether any rankable ungated-scope candidate exists, and its best vector.
+
+    Only candidates that survive the same pre-score skips as the ranking loop
+    (decayed, rejected-alternative outside decision mode) count: a candidate
+    that can never rank must not arm the cross-scope gate, or the gate could
+    empty a recall whose only real answers are cross-scope.
+    """
+
+    present = False
+    best_vector = 0.0
+    for candidate in candidates.values():
+        node = candidate.node
+        if node.scope not in ungated_scopes or node.decayed:
+            continue
+        if _is_rejected_alternative_node(node) and not decision_mode:
+            continue
+        present = True
+        if candidate.vector_score > best_vector:
+            best_vector = candidate.vector_score
+    return present, best_vector
+
+
+def _cross_scope_admissible(candidate: _Candidate, best_narrow_vector: float) -> bool:
+    """Deliberate evidence that admits a candidate from outside the ungated scopes.
+
+    bm25 rank scores never qualify (per-scope normalization makes them
+    incomparable across scopes; see the gate constants above).
+    """
+
+    if candidate.trigger_score > 0.0:
+        return True
+    if candidate.graph_score >= CROSS_SCOPE_GRAPH_ADMIT:
+        return True
+    if candidate.vector_score >= CROSS_SCOPE_VECTOR_ADMIT:
+        return True
+    return (
+        best_narrow_vector > 0.0
+        and candidate.vector_score >= CROSS_SCOPE_RELATIVE_VECTOR * best_narrow_vector
+    )
 
 
 def _is_rejected_alternative_connection(connection: Connection) -> bool:

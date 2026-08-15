@@ -1,0 +1,426 @@
+{
+  "schema_version": 1,
+  "record_id": "v4-campaign-status",
+  "record_kind": "aggregate-only-status",
+  "generated_at": "2026-08-15T07:38:06Z",
+  "namespace": "confirmatory-holdout-v4",
+  "protocol_id": "confirmatory-holdout-v4-protocol-v1",
+  "not_observed_sentinel": "not observed",
+  "record_contract": {
+    "aggregate_only": true,
+    "is_not_a_confirmatory_result": true,
+    "states_no_floor_result": true,
+    "states_no_readiness_status": true,
+    "states_no_packet_seal": true,
+    "lives_outside_frozen_namespace": true,
+    "frozen_namespace_unmodified_by_this_record": true,
+    "zero_as_a_measurement_forbidden": "A count of actions the campaign never took is 0. A quantity the campaign never measured is the sentinel string, never 0. These two are kept in separate blocks and must not be read as one kind.",
+    "unobserved_quantities_never_inferred_estimated_or_fabricated": true,
+    "supersedes": "the unreachable seal-or-floor-gap contract, which required a sealed packet or a measured floor gap that no executed slot exists to produce"
+  },
+  "campaign_execution": {
+    "state": "rendered-not-armed-not-started",
+    "plan_declared_status": "preregistered-source-unprobed-accruable-unsealed",
+    "basis": "No accrual ledger, marker directory, segment, or probe artifact exists anywhere in this repository, and no work directory has been created. Every count below is an action count settled by that absence, not an estimate.",
+    "action_counts_are_not_measurements": true,
+    "slots_executed": 0,
+    "sources_opened": 0,
+    "authorities_consumed": 0,
+    "probe_receipts_produced": 0,
+    "ledger_entries_written": 0,
+    "floor_evaluations_performed": 0,
+    "snapshots_captured": 0,
+    "packet_publication_attempts": 0,
+    "seal_process_launches": 0,
+    "semantic_reads": 0,
+    "ledger": {
+      "exists": false,
+      "entry_count": 0,
+      "head_sha256": null,
+      "entry_path_convention": "<work-dir>/ledger/NNNNNNNN.json",
+      "marker_path_convention": "<work-dir>/markers/",
+      "work_directory_created": false,
+      "work_directory_is_operator_chosen_and_outside_this_repository": true,
+      "claim": "no ledger exists on disk"
+    },
+    "reserved_reader_authorities_unconsumed": [
+      "confirmatory-shadow-v4-eval",
+      "confirmatory-holdout-v4-eval"
+    ],
+    "seal_authority_unconsumed": "confirmatory-holdout-v4-seal"
+  },
+  "campaign_observations_are_all_unobserved": true,
+  "campaign_observations": {
+    "holdout_floor": {
+      "unseen_in_dev_repeated_automatic_families_min": "not observed",
+      "unseen_in_dev_repeated_automatic_events_min": "not observed",
+      "distinct_components_containing_qualifying_unseen_automatic_family_min": "not observed",
+      "organic_events_min": "not observed",
+      "distinct_nonempty_source_qualified_organic_sessions_min": "not observed",
+      "distinct_components_containing_organic_event_min": "not observed",
+      "distinct_requested_project_scopes_min": "not observed"
+    },
+    "shadow_floor": {
+      "genuine_nonsynthetic_real_workflows_min": "not observed",
+      "unique_replayable_logical_calls_min": "not observed",
+      "distinct_components_containing_counted_workflow_min": "not observed",
+      "distinct_requested_project_scopes_min": "not observed"
+    },
+    "readiness_status": "not observed",
+    "probe_receipt_status": "not observed",
+    "floor_gap": "not observed",
+    "snapshot_set_digest": "not observed",
+    "active_services_tuple": "not observed",
+    "source_binding_core": "not observed",
+    "segment_identity": "not observed",
+    "packet_manifest_sha256": "not observed",
+    "packet_seal_state": "not observed"
+  },
+  "preregistered_floor_thresholds": {
+    "role": "requirements copied verbatim from the frozen analysis plan, never measurements",
+    "source": "artifacts/animal-planet/evaluation/confirmatory-holdout-v4/analysis-plan.json",
+    "source_pointer": "readiness",
+    "source_sha256": "bb049d1b5a237b345a5f94957e5cd82f37bd4940b14011e68e30dfb7aa7c8d70",
+    "initial_status": "unprobed",
+    "holdout_floor": {
+      "unseen_in_dev_repeated_automatic_families_min": 30,
+      "unseen_in_dev_repeated_automatic_events_min": 150,
+      "distinct_components_containing_qualifying_unseen_automatic_family_min": 30,
+      "organic_events_min": 200,
+      "distinct_nonempty_source_qualified_organic_sessions_min": 30,
+      "distinct_components_containing_organic_event_min": 30,
+      "distinct_requested_project_scopes_min": 2
+    },
+    "shadow_floor": {
+      "genuine_nonsynthetic_real_workflows_min": 30,
+      "unique_replayable_logical_calls_min": 100,
+      "distinct_components_containing_counted_workflow_min": 30,
+      "distinct_requested_project_scopes_min": 2
+    }
+  },
+  "schedule": {
+    "source": "artifacts/animal-planet/evaluation/confirmatory-holdout-v4/analysis-plan.json",
+    "source_pointer": "schedule",
+    "basis": "calendar-only source-blind allocation; not derived from source availability or outcomes",
+    "anchor_at": "2026-08-17T00:00:00Z",
+    "first_slot_at": "2026-08-17T00:00:00Z",
+    "first_slot_closes_at": "2026-08-17T06:00:00Z",
+    "cadence_seconds": 86400,
+    "grace_seconds": 21600,
+    "window": "half-open [opens, opens + grace_seconds)",
+    "first_slot_index": 0,
+    "last_slot_index": 28,
+    "slot_count": 29,
+    "final_selection_slot_at": "2026-09-14T00:00:00Z",
+    "absolute_horizon_expires_at": "2026-09-14T06:00:00Z",
+    "slot_formula": "anchor_at + slot_index * cadence_seconds as exact UTC seconds",
+    "backfill_allowed": false,
+    "catch_up_allowed": false,
+    "slot_replacement_allowed": false,
+    "slot_skipping_allowed": false
+  },
+  "missed_slot_consequence": {
+    "applies_to_slot_0_exactly_as_to_slot_28": true,
+    "outcome": "terminal schedule-integrity-failure",
+    "catch_up": false,
+    "backfill": false,
+    "interpolation": false,
+    "replacement_snapshot": false,
+    "late_launch": false,
+    "discretionary_skip": false,
+    "later_probe_or_seal_authorized_after_a_miss": false,
+    "correction_path": "parent escalation only; if authorized at all it requires an entirely new namespace, because the v4 identifiers, reader IDs, and sealing authority are permanently consumed",
+    "statement": "Missing any due slot ends the v4 namespace terminally. If slot 0 is missed -- the campaign armed late, the host asleep at 2026-08-17T00:00:00Z, or the work directory not writable at that moment -- the whole v4 namespace is finished before it opened a single source.",
+    "driver_exit_status_for_terminal_failure": 4
+  },
+  "machinery": {
+    "role": "the campaign machinery that now exists on disk, enumerated by path and sha256",
+    "all_bound_in_packet_manifest": true,
+    "packet_manifest_binding_key": "runtime_observer_aggregate_probe_and_accrual_ledger_with_tests",
+    "packet_manifest_binds_by": [
+      "path",
+      "sha256",
+      "bytes"
+    ],
+    "verifier_settles_binding_against_disk": true,
+    "unbound_or_drifted_tool_fails_closed_as": "pin",
+    "this_records_own_test": "tests/test_campaign_status_v4.py",
+    "this_records_own_test_is_a_campaign_tool": false,
+    "this_records_own_test_naming_note": "The packet builder discovers campaign tools by name shape -- scripts/ap_confirmatory_*_v4.py, scripts/v4_*.py, tests/test_ap_confirmatory_*_v4.py, tests/test_v4_*.py -- and fails closed with campaign_tool_enumeration_not_closed on any it finds unenumerated. That rule is a deliberately conservative net for evidence-touching v4 tooling. This record's test touches no evidence: it reads tracked artifacts, scans for absence, and runs the release validator. It is therefore named tests/test_campaign_status_v4.py, outside the campaign-tool shape, rather than being enumerated as a campaign tool it is not.",
+    "entries": [
+      {
+        "path": "scripts/ap_confirmatory_snapshot_v4.py",
+        "role": "read-only source snapshot launcher",
+        "sha256": "de5214d4c6c0a979c59c6376754f0e90fccf7d8eae7ec2ee6973339c61427a43",
+        "bytes": 30770
+      },
+      {
+        "path": "scripts/ap_confirmatory_slot_v4.py",
+        "role": "one-shot-per-slot accrual driver",
+        "sha256": "bcc99f9ae646775e1be5e2fdc8aa852943dcf8e29e2067044e4f0572cdb2d418",
+        "bytes": 37286
+      },
+      {
+        "path": "scripts/v4_cadence.py",
+        "role": "cadence renderer and verifier; never arms the campaign",
+        "sha256": "0511c2bcdad960259d253931b065e650f0a6fa88fe9130f8b152e2eacd81c70b",
+        "bytes": 41065
+      },
+      {
+        "path": "scripts/ap_confirmatory_probe_v4.py",
+        "role": "frozen aggregate probe",
+        "sha256": "c6b308b11126416617d09cb0e555367137269a3f7afc7602cd538c18eff664d6",
+        "bytes": 109460
+      },
+      {
+        "path": "scripts/ap_confirmatory_accrual_v4.py",
+        "role": "append-only accrual ledger",
+        "sha256": "aa918a42ff5f6b31dc621f168341cb357a08720a225c77450f5053c79cd18765",
+        "bytes": 132307
+      },
+      {
+        "path": "scripts/ap_confirmatory_runtime_v4.py",
+        "role": "runtime observer",
+        "sha256": "b6026afd3188fc64f6a05a92f8d7918cf0a8881a16cb2e5371ebf3cb4425fb6f",
+        "bytes": 127229
+      },
+      {
+        "path": "scripts/ap_confirmatory_seal_v4.py",
+        "role": "no-overwrite seal launcher",
+        "sha256": "0fa22d190fcc815053820f51f16af16511666e1d3e571a0d4b0347fa2c746082",
+        "bytes": 113952
+      },
+      {
+        "path": "tests/test_ap_confirmatory_snapshot_v4.py",
+        "role": "snapshot launcher suite",
+        "sha256": "a2cfd3ba9b36e4b9f2a8414342178078fb82c676bdf83e89f7fef7ae01d7b183",
+        "bytes": 52066
+      },
+      {
+        "path": "tests/test_ap_confirmatory_slot_v4.py",
+        "role": "slot driver suite",
+        "sha256": "1d7cdf525fbcc69d4d3c853ac674457bdac5109da1a4ed328d3f171fe60d1ced",
+        "bytes": 46272
+      },
+      {
+        "path": "tests/test_v4_cadence.py",
+        "role": "cadence renderer suite",
+        "sha256": "0845456875357cd6d79872b4b5bab97c6924fd11bcc5a0ed90dac5af465a2f98",
+        "bytes": 37047
+      }
+    ],
+    "packet_manifest_recipe": [
+      {
+        "path": "artifacts/animal-planet/evaluation/confirmatory-holdout-v4/recipe/build.py",
+        "role": "packet builder; enumerates and hash-binds the campaign tools",
+        "sha256": "e2932b3ad77a5540e2009d7370964527dd67bfbfd217b6313ff9ade23ed0773b",
+        "bytes": 157965
+      },
+      {
+        "path": "artifacts/animal-planet/evaluation/confirmatory-holdout-v4/recipe/verify.py",
+        "role": "independent verifier; settles the tool set against disk",
+        "sha256": "475f8bc8161629857f780bacc53b2b5731672448cdcdbccd2b2ee411415c6df1",
+        "bytes": 105290
+      }
+    ]
+  },
+  "cadence_unit": {
+    "rendered": true,
+    "activated": false,
+    "installed": false,
+    "armed": false,
+    "statement": "The cadence unit is rendered and verified, and deliberately NOT activated. Nothing in this repository arms the campaign; arming is an operator decision and a one-way door.",
+    "example_render_directory": "scripts/v4-cadence/",
+    "example_render_is_not_armable": true,
+    "example_render_paths_point_at": "/nonexistent/EXAMPLE-*",
+    "systemd_timer_units_rendered": 29,
+    "systemd_service_template_units_rendered": 1,
+    "crontab_fallbacks_rendered": 1,
+    "one_fresh_process_per_slot": true,
+    "no_process_sleeps_or_polls_across_slots": true,
+    "refuse_manual_start": true,
+    "persistent_replay_on_resume": false,
+    "persistent_false_rationale": "replaying a missed firing on resume would be backfill, which the protocol forbids"
+  },
+  "operator_arming_procedure": {
+    "source": "docs/v4-campaign-runbook.md",
+    "source_sha256": "f1280d015ab5950840bd4190d73d976e06230d09ab5d8b49307247d681f8c654",
+    "source_bytes": 11736,
+    "arming_is_an_operator_decision_not_taken_here": true,
+    "read_the_runbook_in_full_before_running_anything": true,
+    "steps": [
+      {
+        "step": 1,
+        "name": "choose a durable work directory outside the frozen namespace",
+        "detail": "--work-dir is required and must resolve outside artifacts/animal-planet/evaluation/confirmatory-holdout-v4/, and outside any disposable checkout: the append-only ledger must survive 29 days of merges, branch deletions, and worktree cleanup.",
+        "command": "mkdir -p \"$HOME/v4-campaign\""
+      },
+      {
+        "step": 2,
+        "name": "provide the operator-private campaign module",
+        "detail": "--campaign-module supplies alias locators, database observations, and the runtime observer. It is deliberately untracked: no tracked file may name a source. Place it outside the repository.",
+        "command": null
+      },
+      {
+        "step": 3,
+        "name": "render your own cadence unit",
+        "detail": "scripts/v4-cadence/ is an example render whose paths point at /nonexistent/EXAMPLE-*. Never arm it. Rendering installs nothing.",
+        "command": "python3 -B scripts/v4_cadence.py render --out-dir \"$HOME/v4-cadence\" --repo-root \"$(pwd)\" --work-dir \"$HOME/v4-campaign\" --campaign-module \"$HOME/v4-campaign-private/campaign.py\" --cron-timezone \"$(cat /etc/timezone)\""
+      },
+      {
+        "step": 4,
+        "name": "verify and preflight",
+        "detail": "verify re-derives the schedule from the frozen constants and proves the units match it. preflight additionally checks this host: interpreter, driver, campaign module, and work directory all exist; the crontab was rendered for the timezone the cron daemon actually runs in; and slot 0 has not already opened. Both must report \"ok\": true before continuing; they exit non-zero otherwise.",
+        "command": "python3 -B scripts/v4_cadence.py verify --unit-dir \"$HOME/v4-cadence\" && python3 -B scripts/v4_cadence.py preflight --unit-dir \"$HOME/v4-cadence\""
+      },
+      {
+        "step": 5,
+        "name": "install the units",
+        "detail": "systemd user timer is preferred; the crontab fallback is strictly worse because cron discards each firing's output unless an MTA is configured.",
+        "command": "install -d \"$HOME/.config/systemd/user\" && install -m 0644 \"$HOME/v4-cadence/systemd/\"ap-confirmatory-v4-slot@*.{service,timer} \"$HOME/.config/systemd/user/\""
+      },
+      {
+        "step": 6,
+        "name": "enable lingering",
+        "detail": "A user manager is stopped when your last session ends. Without lingering the timers do not run while you are logged out and every slot in between is lost.",
+        "command": "loginctl enable-linger \"$USER\""
+      },
+      {
+        "step": 7,
+        "name": "arm",
+        "detail": "This is the command that begins the operation. It is a one-way door.",
+        "command": "systemctl --user daemon-reload && systemctl enable --now --user ap-confirmatory-v4-slot@{0..28}.timer"
+      },
+      {
+        "step": 8,
+        "name": "confirm all 29 firings are scheduled and the first is 2026-08-17T00:00:00Z",
+        "detail": "Watch, but do not intervene. Do not restart, re-run, or retry a slot: an orchestration retry is not a cadence event, and the units refuse a manual start for exactly that reason.",
+        "command": "systemctl --user list-timers --all 'ap-confirmatory-v4-slot@*'"
+      }
+    ],
+    "crontab_fallback_command": "crontab \"$HOME/v4-cadence/cron/ap-confirmatory-v4.crontab\"",
+    "crontab_fallback_warnings": [
+      "installing a crontab replaces your entire existing crontab; back it up with crontab -l first and install a merged file",
+      "Debian cron has no per-crontab timezone (CRON_TZ is ignored, crontab(5) LIMITATIONS), so entries are written in the cron daemon's local time; re-render if the host timezone changes",
+      "cron has no year field, so every entry carries an explicit UTC guard admitting exactly one hour of exactly one day"
+    ],
+    "driver_exit_statuses": {
+      "0": "the slot resolved, or handed off to the sealer",
+      "1": "integrity failure",
+      "2": "usage error",
+      "3": "the work directory resolved inside the frozen namespace",
+      "4": "terminal schedule-integrity failure -- the campaign is over",
+      "5": "launched before the slot opened; nothing was touched",
+      "6": "the slot already had a validator-valid resolution"
+    },
+    "keep_the_machine_awake": "A suspended or powered-off host at a slot instant is a missed slot, and Persistent=false means systemd will not replay it on resume.",
+    "disarming": {
+      "before_slot_0_opens": "costs nothing: systemctl disable --now --user ap-confirmatory-v4-slot@{0..28}.timer",
+      "after_slot_0_opens": "ends the campaign terminally, exactly as a missed slot does; there is no pause"
+    },
+    "do_not_arm_unless": "you are certain the host will be awake, powered, and reachable for 29 consecutive days"
+  },
+  "deferral": {
+    "targets": [
+      "P6",
+      "P7"
+    ],
+    "target_numbering": "parent goal targets as recorded in artifacts/animal-planet/evaluation/final-report.json overall.parent_targets; not the path SPEC item numbering of this scope",
+    "status": "unconfirmed",
+    "scope_of_deferral": "the automatic recall lane only",
+    "automatic_versus_agent_repair": {
+      "implemented": false,
+      "confirmed": false,
+      "statement": "The automatic-versus-agent repair is unimplemented and unconfirmed. No evidence exists that would confirm it, and none is claimed."
+    },
+    "flags_remain_default_off": {
+      "LM_RECALL_REPEAT_GATING": "default-off",
+      "LM_RECALL_REPEAT_DROP_TRAILING_STUBS": "default-off"
+    },
+    "default_off_release_retained": true,
+    "promotion": "none",
+    "operational_promotion": false,
+    "escalated": true,
+    "plan_action": "retain default-off release and escalate; no operational promotion",
+    "plan_action_source": "artifacts/animal-planet/evaluation/confirmatory-holdout-v4/analysis-plan.json",
+    "plan_action_pointer": "promotion.negative_invalid_inconclusive_timeout_or_missing_gate_action",
+    "plan_promotion_context": {
+      "default_off_release_remains_shippable": true,
+      "promotion_requires_all_confirmation_gates_conjunctively_pass": true,
+      "serving_accrual_build_is_promotable_candidate": false
+    },
+    "prior_authorization": {
+      "replacement_p6_evaluation_authorization_consumed": true,
+      "retry_permitted": false,
+      "source": "artifacts/animal-planet/evaluation/final-report.json"
+    },
+    "why_this_is_a_deferral_and_not_a_failure_of_the_whole_goal": "The deferral is scoped to the automatic lane. The confirmed outcomes below stand on held-out evidence and are unaffected."
+  },
+  "confirmed_on_held_out_evidence": {
+    "source": "artifacts/animal-planet/evaluation/final-report.json",
+    "these_are_measurements_not_sentinels": true,
+    "payload_original_holdout": {
+      "median_ratio": 0.5173233695652174,
+      "p90_ratio": 0.4971762635865709,
+      "top_result_retention": 1.0,
+      "useful_feedback_retention": 1.0,
+      "gate": "payload-generalization",
+      "gate_status": "pass",
+      "source_pointer": "measurements.payload.original_holdout"
+    },
+    "cross_scope_original_holdout": {
+      "admission_reduction_ratio": 0.59846044,
+      "same_scope_retention_ratio": 0.9571535,
+      "gate": "cross-scope-generalization",
+      "gate_status": "pass",
+      "source_pointer": "measurements.cross_scope.original_holdout"
+    },
+    "correction_dominance": {
+      "eval_replay_violations": 0,
+      "original_holdout_replay_violations": 0,
+      "focused_tests_passed": 26,
+      "focused_tests_failed": 0,
+      "gate": "correction-dominance",
+      "gate_status": "pass",
+      "source_pointer": "measurements.correction_dominance"
+    },
+    "era_safety": {
+      "focused_tests_passed": 45,
+      "focused_tests_failed": 0,
+      "gate": "era-safety",
+      "gate_status": "pass",
+      "source_pointer": "measurements.era_safety"
+    },
+    "shadow_latency": {
+      "latency_p50_degradation_ratio": 0.019807,
+      "latency_p95_degradation_ratio": -0.075293,
+      "measured_requests_per_version": 35,
+      "gate": "shadow-latency",
+      "gate_status": "pass",
+      "threshold": "p50 and p95 degradation ratios <= 0.10",
+      "source_pointer": "measurements.shadow"
+    },
+    "fidelity_limits": [
+      "The preserved payload comparison has 48 transcript-matched original-holdout events and uses the frozen cited field payload as its denominator.",
+      "Correction replay contains zero candidate pairs; the focused regression suite is the substantive dominance evidence.",
+      "Shadow latency is a heterogeneous 35-call workflow sample per version."
+    ]
+  },
+  "control_arm": {
+    "statement": "The hash-pinned gating-off control arm is intact and unmodified.",
+    "validator": "python3 -B scripts/ap_release.py validate",
+    "exit_status": 0,
+    "release_id_root": "artifacts/animal-planet/evaluation/release-v1",
+    "pinned_living_memory_module_count": 21,
+    "src_living_memory_modified_by_this_record": false
+  },
+  "privacy": {
+    "aggregate_only": true,
+    "case_level_inspection": false,
+    "case_level_output": false,
+    "identity_values_emitted": false,
+    "source_named": false,
+    "absolute_source_paths_emitted": false,
+    "private_raw_io_committed": false
+  }
+}

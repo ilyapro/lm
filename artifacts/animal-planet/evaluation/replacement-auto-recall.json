@@ -1,0 +1,127 @@
+{
+  "corpus_root": "sealed-cross-build-packet",
+  "delivery_defaults": {
+    "context_value_max_chars": 160,
+    "full_node_diet": true,
+    "provenance_value_max_chars": 160,
+    "session_dedup": true,
+    "snippet_ladder": [
+      0,
+      1000,
+      700,
+      500,
+      300,
+      200
+    ],
+    "snippet_max_chars": 1200,
+    "sparse_entries": true,
+    "stats_compaction": true
+  },
+  "fidelity_limits": [
+    "BM25/vector/graph re-execution out of scope: reranks re-mix recorded candidate scores only",
+    "node stats and supersedes edges are snapshot-time, not event-time",
+    "content fields are surrogates: snippet boundaries and causal-query detection are approximate",
+    "AFTER payload reconstructs the current server envelope (scope=requested_scope, auto_decay=null), ensure_ascii=False",
+    "provenance is a shape-filler padded to recorded serialized_chars; small escape residuals counted",
+    "session replay sees only this split's slice of each transport session (before and after equally)"
+  ],
+  "metrics": {
+    "auto_recall": {
+      "after": {
+        "content_bearing_duplicate_share": 0.0,
+        "content_bearing_duplicates": 0,
+        "deliveries": 1935,
+        "delivery_classes": {
+          "full": 596,
+          "session_duplicate": 27,
+          "snippet": 1266,
+          "twin_duplicate": 46
+        },
+        "duplicate_deliveries": 27
+      },
+      "before": {
+        "content_bearing_duplicates": 27,
+        "deliveries": 1935,
+        "duplicate_deliveries": 27,
+        "duplicate_share": 0.013953
+      },
+      "delta": {
+        "content_bearing_duplicates": -27
+      },
+      "population": {
+        "automatic_events_with_transport_session": 332,
+        "note": "duplicates = result node ids already delivered by an earlier event of the same transport session (200-event horizon, mirroring storage.delivered_node_ids); before ships every result full, after classifies repeats via current delivery",
+        "repeated_fingerprint_events": 0,
+        "transport_sessions": 324
+      },
+      "repeat_gating": {
+        "chars": {
+          "automatic_nonrepeated": {
+            "delta_pct": 0.0
+          },
+          "organic": {
+            "delta_pct": -33.039,
+            "gated_total": 5830607,
+            "ungated_total": 8707462
+          },
+          "repeated_automatic": {
+            "gated_median": 158.0,
+            "gated_total": 3953526,
+            "reduction_ratio": 0.212469,
+            "ungated_median": 10008.0,
+            "ungated_total": 5020154
+          }
+        },
+        "policy": {
+          "drop_trailing_stubs": true,
+          "enabled": true,
+          "max_link_rate": 0.2,
+          "min_sessions": 2,
+          "min_unlinked": 5,
+          "probe_every": 25
+        },
+        "population": {
+          "gated_events": 334,
+          "note": "a repeated fingerprint is a production-normalized native or opaque cross-build identity with >=3 automatic events in the split (>=2 distinct transport sessions); gated_events counts replay events where the class-blind online rule fired. chars cover ALL events of repeated fingerprints — warmup deliveries made before the rule can fire dilute the reduction honestly",
+          "repeated_fingerprint_events": 238,
+          "repeated_fingerprints": 18
+        },
+        "retention": {
+          "organic_content_access": {
+            "delta_pct": -45.5378,
+            "gated_share": 0.544622,
+            "ungated_share": 1.0
+          }
+        },
+        "unseen_in_dev": {
+          "chars": {
+            "repeated_automatic": {
+              "gated_total": 3787272,
+              "reduction_ratio": 0.040904,
+              "ungated_total": 3948795
+            }
+          },
+          "population": {
+            "automatic_events_in_dev": 732,
+            "automatic_fingerprints_in_dev": 353,
+            "gated_events": 21,
+            "repeated_fingerprint_events": 113,
+            "repeated_fingerprints": 16
+          },
+          "reference_split": "dev",
+          "retention": {
+            "repeated_automatic_content_access": {
+              "delta_pct": -18.5841,
+              "events": 113,
+              "gated_retained": 92,
+              "gated_share": 0.814159,
+              "ungated_retained": 113,
+              "ungated_share": 1.0
+            }
+          }
+        }
+      }
+    }
+  },
+  "split": "holdout"
+}

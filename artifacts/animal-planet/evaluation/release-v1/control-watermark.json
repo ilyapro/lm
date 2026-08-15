@@ -1,0 +1,264 @@
+{
+  "privacy": {
+    "aggregates_and_hashes_only": true,
+    "private_paths_included": false,
+    "queries_included": false,
+    "raw_outcomes_included": false,
+    "raw_service_identities_included": false,
+    "rows_included": false
+  },
+  "release_id": "animal-planet-release-v1",
+  "release_manifest": {
+    "bytes": 16970,
+    "name": "release-manifest.json",
+    "sha256": "dd1208d4f5196460428d7049fa9e33ca74ef71be77d074c2b479876653c61768"
+  },
+  "replay_code_control": {
+    "commit": "46a9951842512333b0896370056d07a9e1c25bdf",
+    "role": "replay_code_control_only",
+    "tree": "c1606671b9d13bed78c21b7d2f9a4bb75a3d1c1c"
+  },
+  "runtime_provenance": {
+    "all_event_producing_services_attested": true,
+    "identity_derivation": {
+      "algorithm": "SHA-256",
+      "boot_identity_input": [
+        "living-memory-boot-identity-v1",
+        "raw_per_service_process_invocation_identity"
+      ],
+      "encoding": "canonical-json-utf8",
+      "per_service_process_invocation_identity_high_entropy": true,
+      "schema": "living-memory-service-boot-identity-v1",
+      "service_identity_input": [
+        "living-memory-service-identity-v1",
+        "raw_service_identity",
+        "raw_per_service_process_invocation_identity"
+      ]
+    },
+    "observation": {
+      "method": "read_only_pre_post_canonical_services_sha256",
+      "post_observed_at": "2026-08-14T15:03:47.736042Z",
+      "post_runtime_state_sha256": "84b53e60f899afa18c7ab401f8e992e754f80e2b3b6dbddac7b94e95fe070449",
+      "pre_observed_at": "2026-08-14T15:02:28.861295Z",
+      "pre_runtime_state_sha256": "84b53e60f899afa18c7ab401f8e992e754f80e2b3b6dbddac7b94e95fe070449"
+    },
+    "services": [
+      {
+        "boot_identity_sha256": "fc61ac0cc251b2eeb8f9affd1ed0aa308987f7f9e3dc1bd067328b578e4cfc59",
+        "boot_started_at": "2026-08-13T08:17:12.881068Z",
+        "effective_legacy_repeat_controls": {
+          "LM_RECALL_REPEAT_DROP_TRAILING_STUBS": false,
+          "LM_RECALL_REPEAT_GATING": false
+        },
+        "sanitized_configuration": {
+          "bytes": 2649,
+          "encoding": "canonical-json-utf8",
+          "schema": "living-memory-effective-runtime-configuration-v1",
+          "sha256": "36c839970c4b4f29d08e891b9193272dfbc026b664f05e19d8b79d5c3df2c3a0"
+        },
+        "service_identity_sha256": "2d91bae2d25542b2cf09d4ff31395e56595923a0ab4fcdaa97f34cfa860d4fda",
+        "serving_build": {
+          "commit": "3b2f5782baf0f3f128d4cf31b4c0989e8208472d",
+          "implementation": {
+            "__init__": {
+              "bytes": 1576,
+              "sha256": "860b4bcc9e1ece2474178ab08200b05dc7c0de3ec0f9a634c7f7457a7fc0b88d"
+            },
+            "config": {
+              "bytes": 6407,
+              "sha256": "e378455e14e47c10f897aa50e4c0328e31c2b5df2f473715422aada47d2ff979"
+            },
+            "consolidation": {
+              "bytes": 49812,
+              "sha256": "677c11077343d570d314ab4558d681fdf285cf96cf9084a2d2131c263bf58a9e"
+            },
+            "decay": {
+              "bytes": 3242,
+              "sha256": "7fed798aa9d63ec44f8706abcd89b47fcb9fb364427094f3fd3ea827cd7dd5e5"
+            },
+            "delivery": {
+              "bytes": 9230,
+              "sha256": "be1a6a0ba82f223e119581ea433c1c2557c9fb25338615e1c4a1cf99dd180a0d"
+            },
+            "edge_backfill": {
+              "bytes": 30247,
+              "sha256": "3524d370a334b0eda2144c7497acda2bc5938672064a3d54e1efab3b29dfd1f0"
+            },
+            "edge_derivation": {
+              "bytes": 22834,
+              "sha256": "e7e43f165e5172ccea34c70a377c62b44f3efdf2d71e2caf750ac8100ed211ee"
+            },
+            "embeddings": {
+              "bytes": 18320,
+              "sha256": "d8b326f9594b6c781afa0a9fb3ed002ba7a18eef5118c200af5d3f16938c5c41"
+            },
+            "feedback": {
+              "bytes": 13826,
+              "sha256": "f46983ba62e3f77c8c9993da86a160e99f2d1850a6bc41b76ce141d661db947b"
+            },
+            "health_audit": {
+              "bytes": 20824,
+              "sha256": "f0826841d6553f8c23d8e4c493400c86ce34b1ea67ee6a429381de7d1bb2cd3c"
+            },
+            "maintenance": {
+              "bytes": 6019,
+              "sha256": "3dc5f6a44bfd4a1b1f4847bbc157336ec455ff4a22aeda966a68a038dc8d8323"
+            },
+            "models": {
+              "bytes": 6650,
+              "sha256": "682dad7894d7d2d9d89655325454ee45fcc195d5b8dc6d9f38a9f30e17c0867b"
+            },
+            "phase": {
+              "bytes": 2121,
+              "sha256": "0c6700587e5985ed6567b5fe67d7f83b64a8952a1eea58387fa4fdb67a92ec20"
+            },
+            "prompts": {
+              "bytes": 12632,
+              "sha256": "3c0be6d9f5de777a2eef627372a89cb221df61c1859652855322863bacc9e9af"
+            },
+            "replay": {
+              "bytes": 62391,
+              "sha256": "84564747042e57215b5d3294afee575963ba7766aa6111fad55d566e05a8b15a"
+            },
+            "resources": {
+              "bytes": 31851,
+              "sha256": "8b3bcada5f3b97233b90afd5b90ac4979ee41cee6e8d25d867886bfa4070ed20"
+            },
+            "retrieval": {
+              "bytes": 27835,
+              "sha256": "fa3f1b70fb32bd94e1c8ab1dc38db909d5d9fdd6d26a316be6e697630f60094f"
+            },
+            "scope": {
+              "bytes": 6798,
+              "sha256": "8c35d6496bbf9cf224054ab31a07aa9e89831d6c1d7df5e85be4b2a54afc1121"
+            },
+            "server": {
+              "bytes": 54395,
+              "sha256": "7192c0620de979f71bd49640c597f9b306d6308f39ba4235a2d43d7f06baf719"
+            },
+            "storage": {
+              "bytes": 67303,
+              "sha256": "d5a35abd61a13fa06617237b7e0682263119bd15cbed86f24b12bf9cae2baabd"
+            },
+            "temporal": {
+              "bytes": 1858,
+              "sha256": "947260b1b21544b9e564ccabc1cc8c679a08cf807b11b318effc8ae203ccc6c6"
+            }
+          },
+          "tree": "15a974faa8e3440382b0b407f6a06bce169a6d7e"
+        }
+      },
+      {
+        "boot_identity_sha256": "128c3efa2b23f9154d304f049505abc3f5d60a58d1a08c326e24e675e4946894",
+        "boot_started_at": "2026-08-09T11:34:16.227042Z",
+        "effective_legacy_repeat_controls": {
+          "LM_RECALL_REPEAT_DROP_TRAILING_STUBS": false,
+          "LM_RECALL_REPEAT_GATING": false
+        },
+        "sanitized_configuration": {
+          "bytes": 2649,
+          "encoding": "canonical-json-utf8",
+          "schema": "living-memory-effective-runtime-configuration-v1",
+          "sha256": "36c839970c4b4f29d08e891b9193272dfbc026b664f05e19d8b79d5c3df2c3a0"
+        },
+        "service_identity_sha256": "316dcfd3d60b9a00d676688186ecd8e3ab30c8a5cb529faa509dcbde304458de",
+        "serving_build": {
+          "commit": "3b2f5782baf0f3f128d4cf31b4c0989e8208472d",
+          "implementation": {
+            "__init__": {
+              "bytes": 1576,
+              "sha256": "860b4bcc9e1ece2474178ab08200b05dc7c0de3ec0f9a634c7f7457a7fc0b88d"
+            },
+            "config": {
+              "bytes": 6407,
+              "sha256": "e378455e14e47c10f897aa50e4c0328e31c2b5df2f473715422aada47d2ff979"
+            },
+            "consolidation": {
+              "bytes": 49812,
+              "sha256": "677c11077343d570d314ab4558d681fdf285cf96cf9084a2d2131c263bf58a9e"
+            },
+            "decay": {
+              "bytes": 3242,
+              "sha256": "7fed798aa9d63ec44f8706abcd89b47fcb9fb364427094f3fd3ea827cd7dd5e5"
+            },
+            "delivery": {
+              "bytes": 9230,
+              "sha256": "be1a6a0ba82f223e119581ea433c1c2557c9fb25338615e1c4a1cf99dd180a0d"
+            },
+            "edge_backfill": {
+              "bytes": 30247,
+              "sha256": "3524d370a334b0eda2144c7497acda2bc5938672064a3d54e1efab3b29dfd1f0"
+            },
+            "edge_derivation": {
+              "bytes": 22834,
+              "sha256": "e7e43f165e5172ccea34c70a377c62b44f3efdf2d71e2caf750ac8100ed211ee"
+            },
+            "embeddings": {
+              "bytes": 18320,
+              "sha256": "d8b326f9594b6c781afa0a9fb3ed002ba7a18eef5118c200af5d3f16938c5c41"
+            },
+            "feedback": {
+              "bytes": 13826,
+              "sha256": "f46983ba62e3f77c8c9993da86a160e99f2d1850a6bc41b76ce141d661db947b"
+            },
+            "health_audit": {
+              "bytes": 20824,
+              "sha256": "f0826841d6553f8c23d8e4c493400c86ce34b1ea67ee6a429381de7d1bb2cd3c"
+            },
+            "maintenance": {
+              "bytes": 6019,
+              "sha256": "3dc5f6a44bfd4a1b1f4847bbc157336ec455ff4a22aeda966a68a038dc8d8323"
+            },
+            "models": {
+              "bytes": 6650,
+              "sha256": "682dad7894d7d2d9d89655325454ee45fcc195d5b8dc6d9f38a9f30e17c0867b"
+            },
+            "phase": {
+              "bytes": 2121,
+              "sha256": "0c6700587e5985ed6567b5fe67d7f83b64a8952a1eea58387fa4fdb67a92ec20"
+            },
+            "prompts": {
+              "bytes": 12632,
+              "sha256": "3c0be6d9f5de777a2eef627372a89cb221df61c1859652855322863bacc9e9af"
+            },
+            "replay": {
+              "bytes": 62391,
+              "sha256": "84564747042e57215b5d3294afee575963ba7766aa6111fad55d566e05a8b15a"
+            },
+            "resources": {
+              "bytes": 31851,
+              "sha256": "8b3bcada5f3b97233b90afd5b90ac4979ee41cee6e8d25d867886bfa4070ed20"
+            },
+            "retrieval": {
+              "bytes": 27835,
+              "sha256": "fa3f1b70fb32bd94e1c8ab1dc38db909d5d9fdd6d26a316be6e697630f60094f"
+            },
+            "scope": {
+              "bytes": 6798,
+              "sha256": "8c35d6496bbf9cf224054ab31a07aa9e89831d6c1d7df5e85be4b2a54afc1121"
+            },
+            "server": {
+              "bytes": 54395,
+              "sha256": "7192c0620de979f71bd49640c597f9b306d6308f39ba4235a2d43d7f06baf719"
+            },
+            "storage": {
+              "bytes": 67303,
+              "sha256": "d5a35abd61a13fa06617237b7e0682263119bd15cbed86f24b12bf9cae2baabd"
+            },
+            "temporal": {
+              "bytes": 1858,
+              "sha256": "947260b1b21544b9e564ccabc1cc8c679a08cf807b11b318effc8ae203ccc6c6"
+            }
+          },
+          "tree": "15a974faa8e3440382b0b407f6a06bce169a6d7e"
+        }
+      }
+    ]
+  },
+  "schema": "animal-planet-runtime-provenance-control-watermark",
+  "schema_version": 1,
+  "selection": {
+    "basis": "observed_runtime_provenance_instant",
+    "lower_bound_exclusive_at": "2026-08-14T15:03:46.793603Z"
+  }
+}

@@ -1,0 +1,231 @@
+{
+  "corpus_root": "/home/sfx/p/lm/.worktrees/_node_exec_retrieval-signal-and-context-cost_holdout-shadow-eval/artifacts/animal-planet/corpus",
+  "delivery_defaults": {
+    "context_value_max_chars": 160,
+    "full_node_diet": true,
+    "provenance_value_max_chars": 160,
+    "session_dedup": true,
+    "snippet_ladder": [
+      0,
+      1000,
+      700,
+      500,
+      300,
+      200
+    ],
+    "snippet_max_chars": 1200,
+    "sparse_entries": true,
+    "stats_compaction": true
+  },
+  "fidelity_limits": [
+    "BM25/vector/graph re-execution out of scope: reranks re-mix recorded candidate scores only",
+    "node stats and supersedes edges are snapshot-time, not event-time",
+    "content fields are surrogates: snippet boundaries and causal-query detection are approximate",
+    "AFTER payload reconstructs the current server envelope (scope=requested_scope, auto_decay=null), ensure_ascii=False",
+    "provenance is a shape-filler padded to recorded serialized_chars; small escape residuals counted",
+    "session replay sees only this split's slice of each transport session (before and after equally)"
+  ],
+  "metrics": {
+    "auto_recall": {
+      "after": {
+        "content_bearing_duplicate_share": 0.0,
+        "content_bearing_duplicates": 0,
+        "deliveries": 9927,
+        "delivery_classes": {
+          "full": 2823,
+          "session_duplicate": 131,
+          "snippet": 6667,
+          "twin_duplicate": 306
+        },
+        "duplicate_deliveries": 133
+      },
+      "before": {
+        "content_bearing_duplicates": 133,
+        "deliveries": 9927,
+        "duplicate_deliveries": 133,
+        "duplicate_share": 0.013398
+      },
+      "delta": {
+        "content_bearing_duplicates": -133
+      },
+      "population": {
+        "automatic_events_with_transport_session": 1527,
+        "note": "duplicates = result node ids already delivered by an earlier event of the same transport session (200-event horizon, mirroring storage.delivered_node_ids); before ships every result full, after classifies repeats via current delivery",
+        "repeated_fingerprint_events": 0,
+        "transport_sessions": 1412
+      },
+      "repeat_gating": {
+        "chars": {
+          "automatic_nonrepeated": {
+            "delta_pct": -13.7064
+          },
+          "organic": {
+            "delta_pct": -1.9122,
+            "gated_total": 5861330,
+            "ungated_total": 5975596
+          },
+          "repeated_automatic": {
+            "gated_median": 156.0,
+            "gated_total": 26564763,
+            "reduction_ratio": 0.590891,
+            "ungated_median": 10372.0,
+            "ungated_total": 64933149
+          }
+        },
+        "policy": {
+          "drop_trailing_stubs": true,
+          "enabled": true,
+          "max_link_rate": 0.2,
+          "min_sessions": 2,
+          "min_unlinked": 5,
+          "probe_every": 25
+        },
+        "population": {
+          "gated_events": 1570,
+          "note": "a repeated fingerprint is a cross-session (query_surrogate, requested_scope) key with >=3 automatic events in the split (>=2 distinct transport sessions); gated_events counts replay events where the class-blind online rule fired. chars cover ALL events of repeated fingerprints — warmup deliveries made before the rule can fire dilute the reduction honestly",
+          "repeated_fingerprint_events": 1478,
+          "repeated_fingerprints": 57
+        },
+        "retention": {
+          "organic_content_access": {
+            "delta_pct": -0.5731,
+            "gated_share": 0.994269,
+            "ungated_share": 1.0
+          }
+        }
+      }
+    },
+    "correction_dominance": {
+      "after": {
+        "corrections_dropped": 0,
+        "stale_dropped": 0,
+        "superseded_deliveries": 1,
+        "superseded_share": 3.6e-05,
+        "superseded_top1_events": 0,
+        "violation_rate": null,
+        "violations": 0
+      },
+      "before": {
+        "superseded_deliveries": 27,
+        "superseded_share": 0.000833,
+        "superseded_top1_events": 6,
+        "violation_rate": null,
+        "violations": 0
+      },
+      "delta": {
+        "superseded_deliveries": -26,
+        "superseded_top1_events": -6,
+        "violations": 0
+      },
+      "population": {
+        "events": 4741,
+        "events_with_pairs": 0,
+        "note": "pairs = supersedes edges (correction supersedes stale) with both endpoints among one event's recorded candidates; violation = stale ranked above its correction. Supersedes edges are snapshot-time and mostly post-date the recorded recalls, so the pairs population can legitimately be 0; superseded_deliveries tracks the stale-delivery pressure regardless (results whose node is a supersedes target, i.e. known-superseded at snapshot time)",
+        "pairs": 0
+      }
+    },
+    "cross_scope": {
+      "after": {
+        "cross_scope_results": 2243,
+        "cross_scope_share": 0.080299,
+        "events_with_cross_scope": 1431,
+        "results": 27933,
+        "results_dropped_by_rerank": 4493
+      },
+      "before": {
+        "cross_scope_results": 5586,
+        "cross_scope_share": 0.172269,
+        "events_with_cross_scope": 2038,
+        "results": 32426
+      },
+      "delta": {
+        "cross_scope_results": -3343,
+        "cross_scope_share": -0.09197
+      },
+      "population": {
+        "events": 4741,
+        "note": "cross-scope = result node scope differs from the event's requested scope; after = current rank_candidates over the recorded candidates (snapshot node stats, corpus supersedes pairs, current default weights), truncated to max_results"
+      }
+    },
+    "payload": {
+      "after": {
+        "mean": 13964.81,
+        "median": 13707.0,
+        "n": 48,
+        "p90": 17519
+      },
+      "after_all_events": {
+        "mean": 23449.55,
+        "median": 12110,
+        "n": 4741,
+        "p90": 54792
+      },
+      "before": {
+        "mean": 23214.4,
+        "median": 23956.0,
+        "n": 48,
+        "p90": 29595
+      },
+      "delta": {
+        "mean": -9249.59,
+        "median": -10249.0,
+        "p90": -12076
+      },
+      "delta_shaping_only": {
+        "mean": -28354.67,
+        "median": -25858.0,
+        "p90": -41495
+      },
+      "population": {
+        "all_split_events_replayed": 4741,
+        "events_with_recorded_chars": 48,
+        "note": "before = recorded transcript tool-result chars; after = replayed current-code response chars on the same transcript-matched events; replayed_unshaped emulates the legacy full-delivery renderer on the reconstructed events, so unshaped-vs-before quantifies reconstruction bias (snapshot-time provenance/stats, envelope approximation, escaping) and after-vs-unshaped isolates the current shaping effect; *_all_events extend the replayed measures to every event in the split"
+      },
+      "provenance_char_residuals_total": 8,
+      "replayed_unshaped": {
+        "mean": 42319.48,
+        "median": 39565.0,
+        "n": 48,
+        "p90": 59014
+      },
+      "replayed_unshaped_all_events": {
+        "mean": 82696.32,
+        "median": 30290,
+        "n": 4741,
+        "p90": 116868
+      },
+      "retention": {
+        "note": "before = the legacy renderer, which ships every result's complete content inline, so both retention shares are 1.0 there by construction; after = replayed current delivery. top_result_content counts events whose top-ranked entry bears complete content inline or is a session-duplicate of a node whose content this session already delivered inline; useful_feedback counts feedback_applied events (lower-bound proxy for observed use, not ground-truth relevance) where every result stays content-bearing inline, a twin of an in-response bearer, or a session-duplicate with prior in-session content delivery. Populations exclude zero-result events.",
+        "top_result_content": {
+          "all_events": {
+            "after": 1.0,
+            "before": 1.0,
+            "n": 4741,
+            "ratio": 1.0
+          },
+          "matched_events": {
+            "after": 1.0,
+            "before": 1.0,
+            "n": 48,
+            "ratio": 1.0
+          }
+        },
+        "useful_feedback": {
+          "all_events": {
+            "after": 1.0,
+            "before": 1.0,
+            "n": 1057,
+            "ratio": 1.0
+          },
+          "matched_events": {
+            "after": 1.0,
+            "before": 1.0,
+            "n": 43,
+            "ratio": 1.0
+          }
+        }
+      }
+    }
+  },
+  "split": "holdout"
+}

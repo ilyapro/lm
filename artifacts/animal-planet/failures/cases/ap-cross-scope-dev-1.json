@@ -1,0 +1,151 @@
+{
+  "description": "session-scoped organic recall fully answered from the cross-scope global pool: 2 organic recall event(s) in dev whose resolved scope plan (primary scope + global) admitted 10 global-scope results drawn from the shared cross-project pool; every event has feedback_applied=0. Recorded rank/score tables are embedded in evidence. Note the structural finding recorded at family level: in the whole dev/eval corpus no result falls outside its event's resolved_scopes, so cross-scope admission manifests as the broad global tail of narrow-scoped plans, not as foreign project scopes.",
+  "event_ids": [
+    "01KZTKZ1KY4ZK1GG00Y8AP1HH9",
+    "01KZVM541W47QGASZ1NSH62ZV3"
+  ],
+  "evidence": {
+    "events": [
+      {
+        "best_global": {
+          "rank": 1,
+          "score": 0.7516
+        },
+        "best_in_scope": null,
+        "class": "organic",
+        "created_at": "2026-08-12T09:13:28Z",
+        "depth": "1",
+        "event_id": "01KZTKZ1KY4ZK1GG00Y8AP1HH9",
+        "feedback_applied": 0,
+        "max_results": 5,
+        "n_global_in_top5": 5,
+        "n_global_results": 5,
+        "n_results": 5,
+        "query_chars": 93,
+        "requested_scope": "session:ae-dashboard-chat",
+        "resolved_scopes": [
+          "session:ae-dashboard-chat",
+          "global"
+        ],
+        "results": [
+          {
+            "level": "trace",
+            "node_id": "01KYYDP3Z7MS4HW89EWGZ0Q3RG",
+            "rank": 1,
+            "scope": "global",
+            "score": 0.7516
+          },
+          {
+            "level": "trace",
+            "node_id": "01KZDXCRMYBJN9YZ01VYARQHRJ",
+            "rank": 2,
+            "scope": "global",
+            "score": 0.7379
+          },
+          {
+            "level": "trace",
+            "node_id": "01KZEH2V6KM37R6ZAPT36FD5JR",
+            "rank": 3,
+            "scope": "global",
+            "score": 0.6427
+          },
+          {
+            "level": "trace",
+            "node_id": "01KZF6914JBWTK4V5THHSY9NAB",
+            "rank": 4,
+            "scope": "global",
+            "score": 0.532
+          },
+          {
+            "level": "trace",
+            "node_id": "01KYSH6DK3E3CGTTQEYTF68VS0",
+            "rank": 5,
+            "scope": "global",
+            "score": 0.4473
+          }
+        ],
+        "scope": "session:ae-dashboard-chat",
+        "template_id": null
+      },
+      {
+        "best_global": {
+          "rank": 1,
+          "score": 0.743
+        },
+        "best_in_scope": null,
+        "class": "organic",
+        "created_at": "2026-08-12T18:36:02Z",
+        "depth": "1",
+        "event_id": "01KZVM541W47QGASZ1NSH62ZV3",
+        "feedback_applied": 0,
+        "max_results": 5,
+        "n_global_in_top5": 5,
+        "n_global_results": 5,
+        "n_results": 5,
+        "query_chars": 111,
+        "requested_scope": "session:ae-chat",
+        "resolved_scopes": [
+          "session:ae-chat",
+          "global"
+        ],
+        "results": [
+          {
+            "level": "trace",
+            "node_id": "01KZ6E4B1BAF454893XNKGZFCP",
+            "rank": 1,
+            "scope": "global",
+            "score": 0.743
+          },
+          {
+            "level": "trace",
+            "node_id": "01KZM6WJT6JYC76VPFNENFMK8C",
+            "rank": 2,
+            "scope": "global",
+            "score": 0.3025
+          },
+          {
+            "level": "trace",
+            "node_id": "01KYWKKG7V8K8V3B7K4CYJDXY6",
+            "rank": 3,
+            "scope": "global",
+            "score": 0.269
+          },
+          {
+            "level": "trace",
+            "node_id": "01KZ9P34FAN0EV3VPPHBQ5SRYJ",
+            "rank": 4,
+            "scope": "global",
+            "score": 0.2345
+          },
+          {
+            "level": "trace",
+            "node_id": "01KZC3VC596V9B34KN75EQTBWW",
+            "rank": 5,
+            "scope": "global",
+            "score": 0.2143
+          }
+        ],
+        "scope": "session:ae-chat",
+        "template_id": null
+      }
+    ]
+  },
+  "expected_behavior": "Scope-aware retrieval should demote or trim cross-scope global admissions that carry no task signal for a narrow-scoped query: the top ranks of a project/session-scoped organic recall should be dominated by in-scope results unless a global result is materially stronger, and zero-feedback global tails should shrink delivered payload rather than crowd max_results. Top-result relevance for genuinely useful global procedures must not regress.",
+  "family": "cross_scope",
+  "id": "ap-cross-scope-dev-1",
+  "metric_hook": "cross_scope",
+  "node_ids": [
+    "01KYYDP3Z7MS4HW89EWGZ0Q3RG",
+    "01KZDXCRMYBJN9YZ01VYARQHRJ",
+    "01KZEH2V6KM37R6ZAPT36FD5JR",
+    "01KZF6914JBWTK4V5THHSY9NAB",
+    "01KYSH6DK3E3CGTTQEYTF68VS0",
+    "01KZ6E4B1BAF454893XNKGZFCP",
+    "01KZM6WJT6JYC76VPFNENFMK8C",
+    "01KYWKKG7V8K8V3B7K4CYJDXY6",
+    "01KZ9P34FAN0EV3VPPHBQ5SRYJ",
+    "01KZC3VC596V9B34KN75EQTBWW"
+  ],
+  "selection_rule": "class=organic AND scope startswith 'session:' AND feedback_applied=0 AND results non-empty AND every admitted result scope='global'; ordered by (created_at, id)",
+  "split": "dev"
+}

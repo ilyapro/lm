@@ -26,10 +26,17 @@ from living_memory.consolidation import (
 )
 from living_memory.decay import apply_decay
 from living_memory.delivery import (
+    DELIVERY_SESSION_DUPLICATE,
+    DELIVERY_TWIN_DUPLICATE,
     context_value_max_chars_from_env,
+    full_node_diet_enabled_from_env,
+    provenance_value_max_chars_from_env,
     session_dedup_enabled_from_env,
     shape_recall_results,
+    snippet_ladder_from_env,
     snippet_max_chars_from_env,
+    sparse_entries_enabled_from_env,
+    stats_compaction_enabled_from_env,
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
 from living_memory.prompts import retrieval_context_prompt
@@ -44,10 +51,15 @@ from living_memory.resources import (
     recent_interactions,
 )
 from living_memory.retrieval import MemoryRecallService
-from living_memory.scope import normalize_scope
+from living_memory.scope import normalize_scope, resolve_scope
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.feedback import apply_pending_recall_feedback
-from living_memory.storage import MemoryStore
+from living_memory.storage import (
+    FingerprintGatePolicy,
+    MemoryStore,
+    recall_fingerprint,
+    should_gate_fingerprint,
+)
 from living_memory.temporal import parse_timestamp
 
 _BOOT_ID = uuid4().hex
@@ -478,7 +490,7 @@ def _server_instructions(default_scope: str) -> str:
 # imperative triggers: anything past the budget is the first to be lost.
 
 _RECALL_DESCRIPTION = (
-    "Retrieve relevant memories (text, vector, graph). "
+    "Retrieve memories. Experimental repeat gating is default-off. "
     "You MUST recall BEFORE acting, whatever the action's shape: "
     "changing any artifact (pass path or name — prior changes, "
     "conventions, rejected approaches are stored); creating or mutating "
@@ -492,7 +504,7 @@ _RECALL_DESCRIPTION = (
     "anything new — a session, task, message, thought, or direction "
     "(else you invent what memory holds). Default: "
     "when uncertain, recall. "
-    "Read broad: omit scope so lessons transfer across scopes. Depth "
+    "Read broad: omit scope to transfer across scopes. Depth "
     "'causal' when debugging. A level:schema result is a binding "
     "procedure — follow it literally. Non-full results carry a "
     "content_ref — refetch via memory_lookup."
@@ -836,12 +848,21 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
 
         Each result carries a ``delivery`` class: ``full``, ``snippet`` (long
         content truncated inline), ``session_duplicate`` (already delivered on
-        this transport session), or ``twin_duplicate`` (byte-identical to a
-        higher-ranked result). Non-full results keep every node field and add
-        a ``content_ref`` naming the ``memory_lookup(node_id=...)`` call that
-        returns the complete content; their oversized context values (e.g. a
-        procedural schema's ``context.procedure``) arrive compacted to
-        counts/truncations, restored in full by the same lookup.
+        this transport session — or, when experimental repeat gating is
+        explicitly enabled, already delivered under this exact (query, scope)
+        fingerprint's recent history), or ``twin_duplicate`` (byte-identical
+        to a higher-ranked result). When its independent trailing-drop control
+        is also explicitly enabled, a gated delivery drops its trailing
+        all-stub run (``FingerprintGatePolicy.drop_trailing_stubs``), so a
+        fully-repeated response arrives with ``count`` 0 while its recall_event
+        still records every result id. The top-ranked content-bearer ships
+        complete content; lower-ranked bearers get descending snippet budgets.
+        Non-full results add a ``content_ref`` whose ``node_id`` fed to
+        ``memory_lookup`` returns the complete stored node. Every delivery is
+        dieted on the wire — oversized context/provenance values compacted to
+        counts/truncations, bookkeeping stats and zero/null fields dropped —
+        and ``memory_lookup`` restores the stored node byte-complete
+        (``LM_DELIVERY_*`` env valves roll each cut back).
         """
 
         ambient_context = _with_transport_identity(ambient_context)
@@ -859,6 +880,32 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 if session_dedup
                 else set()
             )
+            # Experimental repeat gating is a strict opt-in via
+            # LM_RECALL_REPEAT_GATING=1. resolve_scope runs the same resolver
+            # retrieval will, so the fingerprint equals the one
+            # record_recall_event stamps on this event; stats are read before
+            # the service records this delivery — the decision sees only the
+            # accounting accumulated by prior requests.
+            gate_policy = FingerprintGatePolicy.from_env()
+            gated = False
+            if gate_policy.enabled:
+                plan = resolve_scope(
+                    query=query,
+                    scope=scope,
+                    ambient_context=ambient_context,
+                    store=store,
+                )
+                fingerprint = recall_fingerprint(query, plan.requested_scope)
+                gated = should_gate_fingerprint(
+                    store.get_recall_fingerprint_stats(fingerprint), gate_policy
+                )
+                if gated:
+                    # Nodes this exact request already shipped become
+                    # session_duplicate stubs; never-delivered nodes still
+                    # ship content-bearing.
+                    already_delivered = already_delivered | (
+                        store.fingerprint_delivered_node_ids(fingerprint)
+                    )
             results = recall_service.memory_recall(
                 query,
                 scope=scope,
@@ -866,18 +913,41 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 depth=depth,
                 max_results=max_results,
             )
+            if gated and recall_service.last_recall_event_id is not None:
+                store.mark_recall_event_gated(recall_service.last_recall_event_id)
+            shaped = shape_recall_results(
+                results,
+                already_delivered_ids=already_delivered,
+                snippet_max_chars=snippet_max_chars_from_env(),
+                context_value_max_chars=context_value_max_chars_from_env(),
+                session_dedup=session_dedup or gated,
+                snippet_ladder=snippet_ladder_from_env(),
+                full_node_diet=full_node_diet_enabled_from_env(),
+                provenance_value_max_chars=provenance_value_max_chars_from_env(),
+                stats_compaction=stats_compaction_enabled_from_env(),
+                sparse_entries=sparse_entries_enabled_from_env(),
+            )
+            if gated and gate_policy.drop_trailing_stubs:
+                # The trailing all-stub run of a gated delivery carries no
+                # content — every node in it was already delivered under this
+                # exact fingerprint's recent history — yet stub entries still
+                # cost ~1.1k chars each, so the gate drops the run (the
+                # reduced-result-count form of compaction). The independent
+                # LM_RECALL_REPEAT_DROP_TRAILING_STUBS=1 opt-in enables this;
+                # otherwise the stub list remains. Content-bearers and stubs
+                # ranked above them survive, and the recorded recall_event
+                # keeps every result id.
+                while shaped and shaped[-1]["delivery"] in (
+                    DELIVERY_SESSION_DUPLICATE,
+                    DELIVERY_TWIN_DUPLICATE,
+                ):
+                    shaped.pop()
             return {
                 "query": query,
                 "scope": scope,
                 "recall_event_id": recall_service.last_recall_event_id,
-                "count": len(results),
-                "results": shape_recall_results(
-                    results,
-                    already_delivered_ids=already_delivered,
-                    snippet_max_chars=snippet_max_chars_from_env(),
-                    context_value_max_chars=context_value_max_chars_from_env(),
-                    session_dedup=session_dedup,
-                ),
+                "count": len(shaped),
+                "results": shaped,
                 "auto_decay": auto_decay,
             }
 

@@ -14,14 +14,16 @@ them on the wire:
   direct store writes exactly as pre-digest consolidation used to persist
   them, yields exactly one content-bearer per response; the twin stub points
   at it via ``content_ref.duplicate_of``.
-* Snippets — content longer than the snippet limit arrives truncated with a
-  ``content_ref``, and ``memory_lookup(node_id=...)`` returns the stored
-  bytes unchanged (the re-fetch path).
+* Snippet ladder — the top-ranked content-bearer ships complete content by
+  default even when huge; a configured ``LM_DELIVERY_SNIPPET_LADDER`` budget
+  truncates it inline with a ``content_ref``, and
+  ``memory_lookup(node_id=...)`` returns the stored bytes unchanged (the
+  re-fetch path).
 * Context diet — a procedural schema node whose ``context.procedure``
   duplicates its multi-KB content arrives with that value compacted to
-  ``{"count", "chars"}`` on both snippet and stub deliveries, keeping whole
-  responses bounded, while ``memory_lookup(node_id=...)`` still returns the
-  stored context complete.
+  ``{"count", "chars"}`` on every delivery class, full included (the
+  full-node diet), keeping whole responses bounded, while
+  ``memory_lookup(node_id=...)`` still returns the stored context complete.
 * Remember diet — the ``memory_remember`` wire response stays bounded while
   the trace itself is durably stored and recallable.
 * Feedback closure — recall -> stub recall -> remember on one connection
@@ -46,12 +48,16 @@ pytest.importorskip("fastmcp")
 
 from fastmcp import Client
 
+from living_memory.delivery import DEFAULT_SNIPPET_LADDER, SNIPPET_LADDER_ENV
 from living_memory.embeddings import tokenize
 from living_memory.server import create_mcp_server
 
 from test_transport_identity import FakeMCP, _structured
 
-SNIPPET_LIMIT = 1200  # default LM_DELIVERY_SNIPPET_CHARS, pinned by the env fixture
+SNIPPET_LIMIT = 1200  # default LM_DELIVERY_SNIPPET_CHARS (uniform ladder-off mode)
+
+# Node fields every delivery class keeps, whatever the sparse diet drops.
+CORE_NODE_KEYS = {"id", "level", "content", "scope", "context", "stats", "provenance", "created_at"}
 
 RECALL_SCOPE = "project:dietprobe"
 RECALL_STEM = "meridian dossier torque calibration"
@@ -63,8 +69,13 @@ def _default_delivery_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
 
     for env in (
         "LM_DELIVERY_SNIPPET_CHARS",
+        "LM_DELIVERY_SNIPPET_LADDER",
         "LM_DELIVERY_SESSION_DEDUP",
         "LM_DELIVERY_CONTEXT_VALUE_CHARS",
+        "LM_DELIVERY_FULL_NODE_DIET",
+        "LM_DELIVERY_PROVENANCE_VALUE_CHARS",
+        "LM_DELIVERY_STATS_COMPACTION",
+        "LM_DELIVERY_SPARSE",
         "LM_AUTO_CONSOLIDATE_POLICY",
     ):
         monkeypatch.delenv(env, raising=False)
@@ -88,11 +99,16 @@ def _by_id(response: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {entry["node"]["id"]: entry for entry in response["results"]}
 
 
-def _bulk_content(tag: str) -> str:
-    """A body heavy enough to measure, yet below the snippet limit."""
+def _bulk_content(tag: str, clauses: int) -> str:
+    """A body heavy enough to measure, sized in ~115-char clause lines.
+
+    Callers pick ``clauses`` so every body stays below the smallest ladder
+    budget in play for their result count — the scenarios here probe dedup
+    and stubbing, not snippeting.
+    """
 
     lines = [f"{RECALL_STEM} {tag} ledger"]
-    for index in range(9):
+    for index in range(clauses):
         lines.append(
             f"{tag} clause {index}: torque calibration paragraph keeping the "
             f"ledger dense enough to make full delivery measurably heavy"
@@ -110,7 +126,7 @@ def test_session_dedup_full_then_stub_then_fresh_session_full_again(
         mcp, store = _server(tmp_path)
         contents: dict[str, str] = {}
         for tag in ("alpha", "beta", "gamma"):
-            node = store.append_trace(_bulk_content(tag), {"scope": RECALL_SCOPE})
+            node = store.append_trace(_bulk_content(tag, clauses=5), {"scope": RECALL_SCOPE})
             contents[node.id] = node.content
 
         async with Client(mcp) as client:
@@ -122,15 +138,17 @@ def test_session_dedup_full_then_stub_then_fresh_session_full_again(
 
     contents, first, second, fresh = asyncio.run(scenario())
 
+    # Below the smallest ladder budget for three bearers (complete, 1000, 700):
+    # every first delivery is full inline, whatever the ranking order.
+    smallest_budget = DEFAULT_SNIPPET_LADDER[2]
     for content in contents.values():
-        assert 800 < len(content) < SNIPPET_LIMIT  # full inline, no snippeting
+        assert 500 < len(content) < smallest_budget
     assert set(_by_id(first)) == set(_by_id(second)) == set(_by_id(fresh)) == set(contents)
 
     for node_id, entry in _by_id(first).items():
         assert entry["delivery"] == "full"
         assert "content_ref" not in entry
         assert entry["node"]["content"] == contents[node_id]
-    full_node_keys = {node_id: set(entry["node"]) for node_id, entry in _by_id(first).items()}
 
     for node_id, entry in _by_id(second).items():
         assert entry["delivery"] == "session_duplicate"
@@ -138,11 +156,11 @@ def test_session_dedup_full_then_stub_then_fresh_session_full_again(
         assert stub["content"] != contents[node_id]
         assert len(stub["content"]) <= 200  # a one-line preview, not the body
         assert contents[node_id].startswith(stub["content"])
-        assert set(stub) == full_node_keys[node_id]  # stubs keep the full node shape
+        assert set(stub) >= CORE_NODE_KEYS  # stubs keep the core node shape
         ref = entry["content_ref"]
         assert ref["node_id"] == node_id
         assert ref["full_content_chars"] == len(contents[node_id])
-        assert node_id in ref["fetch"]
+        assert "fetch" not in ref  # sparse diet: the recall docstring names the lookup
 
     # The repeat response is strictly and substantially smaller on the wire.
     first_bytes, second_bytes = _wire_bytes(first), _wire_bytes(second)
@@ -163,7 +181,9 @@ def test_direct_calls_without_transport_identity_never_stub(tmp_path: Path) -> N
     store = mcp.memory_store
     expected: dict[str, str] = {}
     for tag in ("alpha", "beta"):
-        node = store.append_trace(_bulk_content(tag), {"scope": RECALL_SCOPE})
+        # Below the two-bearer ladder budgets (complete, 1000): the control
+        # isolates stubbing from snippeting.
+        node = store.append_trace(_bulk_content(tag, clauses=7), {"scope": RECALL_SCOPE})
         expected[node.id] = node.content
 
     responses = [mcp.tools["memory_recall"](RECALL_STEM, scope=RECALL_SCOPE) for _ in range(2)]
@@ -231,10 +251,12 @@ def test_twin_dedup_delivers_exactly_one_content_bearer(tmp_path: Path) -> None:
     assert ref["full_content_chars"] == len(body)
 
 
-# --- Snippets: long content truncated inline, re-fetched via lookup ---------
+# --- Snippet ladder: top complete by default, budgeted inline + refetch -----
 
 
-def test_long_content_snippet_and_lookup_refetch(tmp_path: Path) -> None:
+def test_long_content_top_full_by_default_then_ladder_snippet_and_refetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     scope = "project:dietlong"
     paragraphs = ["glacier archive manifest overview"]
     for index in range(12):
@@ -244,20 +266,31 @@ def test_long_content_snippet_and_lookup_refetch(tmp_path: Path) -> None:
         )
     long_content = "\n\n".join(paragraphs)
 
-    async def scenario() -> tuple[str, dict[str, Any], dict[str, Any]]:
+    async def scenario() -> tuple[str, dict[str, Any], dict[str, Any], dict[str, Any]]:
         mcp, store = _server(tmp_path)
         node = store.append_trace(long_content, {"scope": scope})
         async with Client(mcp) as client:
-            recall = await _recall(client, "glacier archive manifest", scope=scope)
+            default_recall = await _recall(client, "glacier archive manifest", scope=scope)
+        # A configured uniform ladder budgets even the top bearer; the fresh
+        # connection below sidesteps session dedup.
+        monkeypatch.setenv(SNIPPET_LADDER_ENV, str(SNIPPET_LIMIT))
+        async with Client(mcp) as client:
+            ladder_recall = await _recall(client, "glacier archive manifest", scope=scope)
             looked_up = _structured(
                 await client.call_tool("memory_lookup", {"node_id": node.id})
             )
-        return node.id, recall, looked_up
+        return node.id, default_recall, ladder_recall, looked_up
 
-    node_id, recall, looked_up = asyncio.run(scenario())
+    node_id, default_recall, ladder_recall, looked_up = asyncio.run(scenario())
     assert len(long_content) > SNIPPET_LIMIT
 
-    entry = _by_id(recall)[node_id]
+    # Default ladder: the top-ranked bearer ships complete content, however long.
+    top_entry = _by_id(default_recall)[node_id]
+    assert top_entry["delivery"] == "full"
+    assert top_entry["node"]["content"] == long_content
+    assert "content_ref" not in top_entry
+
+    entry = _by_id(ladder_recall)[node_id]
     assert entry["delivery"] == "snippet"
     snippet = entry["node"]["content"]
     assert snippet != long_content
@@ -266,7 +299,6 @@ def test_long_content_snippet_and_lookup_refetch(tmp_path: Path) -> None:
     assert long_content.startswith(snippet[:-1])  # truncation, not paraphrase
     assert entry["content_ref"] == {
         "node_id": node_id,
-        "fetch": f'memory_lookup(node_id="{node_id}")',
         "full_content_chars": len(long_content),
     }
 
@@ -277,10 +309,10 @@ def test_long_content_snippet_and_lookup_refetch(tmp_path: Path) -> None:
     assert looked_up["results"][0]["content"] == long_content
 
 
-# --- Context diet: bulky context values compacted on non-full deliveries ----
+# --- Context diet: bulky context values compacted on every delivery class ---
 
 
-def test_bulky_context_procedure_compacted_on_non_full_deliveries(tmp_path: Path) -> None:
+def test_bulky_context_procedure_compacted_on_all_delivery_classes(tmp_path: Path) -> None:
     scope = "project:dietcontext"
     steps = [
         f"voltaic pergola rite step {index}: "
@@ -320,14 +352,18 @@ def test_bulky_context_procedure_compacted_on_non_full_deliveries(tmp_path: Path
     node_id, first, second, looked_up = asyncio.run(scenario())
 
     procedure_chars = len(json.dumps(steps, ensure_ascii=False))
-    assert procedure_chars > 4096  # the leak this diet closes dwarfs the bound below
+    assert procedure_chars > 4096  # the leak this diet closes dwarfs the bounds below
 
     stored_context = looked_up["results"][0]["context"]
     assert stored_context["procedure"] == steps  # the re-fetch hatch stays complete
 
     first_entry = _by_id(first)[node_id]
     second_entry = _by_id(second)[node_id]
-    assert first_entry["delivery"] == "snippet"  # long body: non-full from the start
+    # Top-ranked bearer: complete content, yet the full-node diet still
+    # compacts the context that would re-ship that same content.
+    assert first_entry["delivery"] == "full"
+    assert first_entry["node"]["content"] == body
+    assert first_entry["content_ref"] == {"node_id": node_id}  # lookup returns more
     assert second_entry["delivery"] == "session_duplicate"
 
     for entry in (first_entry, second_entry):
@@ -337,8 +373,10 @@ def test_bulky_context_procedure_compacted_on_non_full_deliveries(tmp_path: Path
         assert shaped["trigger"] == "voltaic pergola rite"
         assert shaped["task_pattern"] == "voltaic-pergola-rite"
 
-    # With context.procedure compacted, whole responses stay bounded on the wire.
-    assert _wire_bytes(first) < 4096
+    # With context.procedure compacted, the full delivery costs its content
+    # plus a bounded envelope — not content shipped twice — and the stub
+    # response stays small outright.
+    assert _wire_bytes(first) < len(json.dumps(body)) + 2048
     assert _wire_bytes(second) < 4096
 
 
@@ -383,8 +421,8 @@ def test_remember_response_bounded_while_write_durable_and_recallable(
     assert stored.content == body  # durably stored, byte-equal
 
     entry = _by_id(recalled)[confirmation["id"]]  # and recallable over the wire
-    assert entry["delivery"] == "snippet"  # first delivery of a long body
-    assert entry["content_ref"]["full_content_chars"] == len(body)
+    assert entry["delivery"] == "full"  # top-ranked bearer: complete content
+    assert entry["node"]["content"] == body
 
 
 # --- Feedback closure: stub deliveries never break pending-recall matching --

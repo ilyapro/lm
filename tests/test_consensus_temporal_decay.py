@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -7,7 +7,7 @@ from living_memory.config import MemoryConfig
 from living_memory.consolidation import memory_consolidate, memory_teach
 from living_memory.decay import apply_decay
 from living_memory.storage import MemoryStore
-from living_memory.temporal import detect_weekly_hint
+from living_memory.temporal import detect_weekly_hint, split_time_regimes
 
 
 def test_consensus_confidence_caps_single_agent_and_rises_for_multiple_agents(
@@ -46,6 +46,49 @@ def test_weekly_temporal_hint_detects_dominant_monday() -> None:
     )
 
     assert hint == "weekly:mon"
+
+
+def test_split_time_regimes_detects_disjoint_bursts() -> None:
+    # Shape of the animal-planet mixed-era cluster: a tight pre-goal burst,
+    # 15.76 days of silence, then two in-goal traces about a day apart.
+    moments = [
+        datetime(2026, 7, 26, 20, 36, 16, tzinfo=UTC),
+        datetime(2026, 7, 26, 20, 36, 41, tzinfo=UTC),
+        datetime(2026, 7, 26, 20, 37, 6, tzinfo=UTC),
+        datetime(2026, 7, 26, 20, 37, 32, tzinfo=UTC),
+        datetime(2026, 8, 11, 14, 46, 24, tzinfo=UTC),
+        datetime(2026, 8, 12, 15, 7, 25, tzinfo=UTC),
+    ]
+
+    assert split_time_regimes(moments) == [[0, 1, 2, 3], [4, 5]]
+
+
+def test_split_time_regimes_keeps_steady_cadence_whole() -> None:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    moments = [base + timedelta(days=10 * index) for index in range(6)]
+
+    # Every gap exceeds a week, but none dwarfs the cluster's own rhythm.
+    assert split_time_regimes(moments) == [[0, 1, 2, 3, 4, 5]]
+
+
+def test_split_time_regimes_finds_multiple_eras() -> None:
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    moments = []
+    for clump in range(3):
+        start = base + timedelta(days=30 * clump)
+        moments.extend(
+            [start, start + timedelta(minutes=5), start + timedelta(minutes=10)]
+        )
+
+    assert split_time_regimes(moments) == [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+
+
+def test_split_time_regimes_splits_two_distant_points_and_skips_none() -> None:
+    first = datetime(2026, 1, 1, tzinfo=UTC)
+    second = first + timedelta(days=30)
+
+    assert split_time_regimes([second, None, first]) == [[2], [0]]
+    assert split_time_regimes([None, None]) == []
 
 
 def test_decay_soft_deletes_expired_and_superseded_nodes(tmp_path: Path) -> None:

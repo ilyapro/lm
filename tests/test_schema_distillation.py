@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from pathlib import Path
 
 from living_memory.consolidation import memory_consolidate
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.retrieval import memory_recall
 from living_memory.storage import MemoryStore
+
+_AP_MIXED_ERA_CASE = (
+    Path(__file__).resolve().parent.parent
+    / "artifacts"
+    / "animal-planet"
+    / "failures"
+    / "cases"
+    / "ap-mixed-era-dev-1.json"
+)
 
 
 def _append_procedure_traces(
@@ -378,6 +389,243 @@ def test_consolidation_prefers_procedure_id_for_trigger_when_grouping_by_task_pa
         assert schema.context["task_pattern"] == "abc123def456"
         assert schema.provenance["procedure_field"] == "procedure_id"
         assert schema.provenance["group_field"] == "task_pattern"
+
+
+def _iso_between(start: str, end: str, count: int) -> list[str]:
+    begin = datetime.fromisoformat(start.replace("Z", "+00:00"))
+    finish = datetime.fromisoformat(end.replace("Z", "+00:00"))
+    if count == 1:
+        return [start]
+    step = (finish - begin) / (count - 1)
+    return [
+        (begin + step * index).isoformat(timespec="seconds").replace("+00:00", "Z")
+        for index in range(count)
+    ]
+
+
+def _build_mixed_era_fixture(store: MemoryStore, case: dict) -> dict:
+    """Rebuild the structural situation of the audited project:game schema.
+
+    Timestamps, era membership, and the supersedes topology come from the
+    frozen animal-planet failure case (dev split): a tight pre-goal burst of
+    procedural traces, a prior-era schema consolidated from them, and two
+    in-goal correction traces that supersede prior-era material — one of them
+    the prior schema itself.
+    """
+
+    evidence = case["evidence"]
+    pre_meta = evidence["era_clusters"]["pre_goal"]
+    in_goal_meta = evidence["era_clusters"]["in_goal"]
+    corrections = evidence["in_goal_sources_that_are_corrections"]
+    prior_meta = evidence["reconsumed_from"][0]
+
+    pre_traces = []
+    for index, moment in enumerate(
+        _iso_between(*pre_meta["created_at_span"], pre_meta["count"])
+    ):
+        pre_traces.append(
+            store.append_trace(
+                f"legacy bootstrap keeps four files and no client step {index + 1}",
+                {
+                    "scope": "project:game",
+                    "agent": "agent-old",
+                    "procedure_id": "project_bootstrap",
+                    "step_order": index + 1,
+                    "timestamp": moment,
+                },
+                feedback={"confidence": 0.6, "usefulness_score": 0.4},
+            )
+        )
+
+    prior_schema = store.create_node(
+        level="schema",
+        content="Procedure: project bootstrap\n1. legacy four files layout no client",
+        context={
+            "scope": "project:game",
+            "agent": "memory_consolidate",
+            "timestamp": prior_meta["prior_schema_created_at"],
+            "procedure_key": "project bootstrap",
+            "procedure_id": "project_bootstrap",
+            "trigger": "project bootstrap",
+        },
+        stats={"confidence": 0.6, "unique_agents": 2},
+        provenance={
+            "source_traces": [trace.id for trace in pre_traces],
+            "strategy": "procedural",
+            "procedure_key": "project bootstrap",
+        },
+    )
+    superseded_trace = store.append_trace(
+        "bootstrap has no client component at all",
+        {
+            "scope": "project:game",
+            "agent": "agent-old",
+            "timestamp": corrections[1]["superseded_created_at"],
+        },
+    )
+
+    corrector_targets = [prior_schema.id, superseded_trace.id]
+    correctors = []
+    for index, moment in enumerate(
+        _iso_between(*in_goal_meta["created_at_span"], in_goal_meta["count"])
+    ):
+        corrector = store.append_trace(
+            f"current bootstrap ships a client with single manifest step {index + 1}",
+            {
+                "scope": "project:game",
+                "agent": "agent-new",
+                "procedure_id": "project_bootstrap",
+                "step_order": index + 1,
+                "timestamp": moment,
+            },
+            feedback={"confidence": 0.7, "usefulness_score": 0.5},
+        )
+        store.create_connection(corrector.id, corrector_targets[index], "supersedes")
+        correctors.append(corrector)
+
+    return {
+        "pre_traces": pre_traces,
+        "prior_schema": prior_schema,
+        "superseded_trace": superseded_trace,
+        "correctors": correctors,
+    }
+
+
+def _assert_no_mixed_era_schema(
+    store: MemoryStore, pre_ids: set[str], live_ids: set[str]
+) -> None:
+    """The packet's node-level predicate, inverted: no schema's sources span eras."""
+
+    for schema in store.list_nodes(
+        level="schema", scope="project:game", include_decayed=True, limit=100
+    ):
+        sources = set(schema.source_traces)
+        assert not (sources & pre_ids and sources & live_ids), (
+            f"schema {schema.id} silently merges obsolete and current eras"
+        )
+
+
+def test_consolidation_never_emits_mixed_era_schema_from_animal_planet_case(
+    tmp_path: Path,
+) -> None:
+    case = json.loads(_AP_MIXED_ERA_CASE.read_text())
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        fixture = _build_mixed_era_fixture(store, case)
+        pre_ids = {trace.id for trace in fixture["pre_traces"]}
+        live_ids = {trace.id for trace in fixture["correctors"]}
+
+        result = memory_consolidate(store, scope="project:game")
+
+        _assert_no_mixed_era_schema(store, pre_ids, live_ids)
+        assert len(result.schemas_created) == 1
+        schema = result.schemas_created[0]
+        assert set(schema.source_traces) == live_ids
+        era = schema.provenance["era"]
+        assert era["status"] == "current"
+        assert era["conflict"] is True
+        assert set(era["excluded_sources"]) == pre_ids
+        assert schema.context["era_status"] == "current"
+        assert "legacy" not in schema.content
+        assert "client with single manifest" in schema.content
+
+        # The superseded prior-era schema is not resurrected: content intact,
+        # and the decay stage retires it.
+        prior = store.get_node(fixture["prior_schema"].id)
+        assert prior is not None
+        assert prior.content.startswith("Procedure: project bootstrap\n1. legacy")
+        assert prior.decayed is True
+
+        second = memory_consolidate(store, scope="project:game")
+
+        assert second.schemas_created == []
+        assert [node.id for node in second.schemas_updated] == [schema.id]
+        assert set(second.schemas_updated[0].source_traces) == live_ids
+        _assert_no_mixed_era_schema(store, pre_ids, live_ids)
+
+
+def test_consolidation_repairs_preexisting_mixed_era_schema(tmp_path: Path) -> None:
+    case = json.loads(_AP_MIXED_ERA_CASE.read_text())
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        fixture = _build_mixed_era_fixture(store, case)
+        pre_ids = {trace.id for trace in fixture["pre_traces"]}
+        live_ids = {trace.id for trace in fixture["correctors"]}
+        # The audited artifact: one schema already folding both eras together.
+        mixed = store.create_node(
+            level="schema",
+            content=(
+                "Procedure: project bootstrap\n"
+                "1. legacy four files layout no client\n"
+                "2. current bootstrap ships a client"
+            ),
+            context={
+                "scope": "project:game",
+                "agent": "memory_consolidate",
+                "timestamp": case["evidence"]["schema"]["created_at"],
+                "procedure_key": "project bootstrap",
+                "procedure_id": "project_bootstrap",
+                "trigger": "project bootstrap",
+            },
+            stats={"confidence": 0.6, "unique_agents": 2},
+            provenance={
+                "source_traces": sorted(pre_ids | live_ids),
+                "strategy": "procedural",
+                "procedure_key": "project bootstrap",
+            },
+        )
+
+        result = memory_consolidate(store, scope="project:game")
+
+        assert result.schemas_created == []
+        assert [node.id for node in result.schemas_updated] == [mixed.id]
+        repaired = result.schemas_updated[0]
+        assert set(repaired.source_traces) == live_ids
+        assert repaired.provenance["era"]["status"] == "current"
+        assert set(repaired.provenance["era"]["excluded_sources"]) == pre_ids
+        assert "legacy" not in repaired.content
+        _assert_no_mixed_era_schema(store, pre_ids, live_ids)
+
+
+def test_procedural_promotion_survives_disjoint_regimes_without_conflict(
+    tmp_path: Path,
+) -> None:
+    """Anti-suppression regression: a temporal split alone must not reject,
+    filter, or era-mark a promotion — conflict evidence is required."""
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        moments = (
+            "2026-05-01T09:00:00Z",
+            "2026-05-01T09:05:00Z",
+            "2026-06-20T09:00:00Z",
+        )
+        contents = (
+            "check migration is reversible before release",
+            "run migration dry run on staging",
+            "execute rollback only after dry run passes",
+        )
+        traces = []
+        for index, (moment, body) in enumerate(zip(moments, contents)):
+            traces.append(
+                store.append_trace(
+                    f"[deploy_rollback] {body}",
+                    {
+                        "scope": "project:alpha",
+                        "agent": f"agent-{index}",
+                        "procedure_id": "deploy_rollback",
+                        "step_order": index + 1,
+                        "timestamp": moment,
+                    },
+                    feedback={"confidence": 0.6, "usefulness_score": 0.4},
+                )
+            )
+
+        result = memory_consolidate(store, scope="project:alpha")
+
+        assert len(result.schemas_created) == 1
+        schema = result.schemas_created[0]
+        assert sorted(schema.source_traces) == sorted(trace.id for trace in traces)
+        assert len(schema.context["procedure"]) == 3
+        assert "era" not in schema.provenance
+        assert "era_status" not in schema.context
 
 
 def test_consolidation_is_idempotent_when_grouping_by_task_pattern(

@@ -14,8 +14,8 @@ from living_memory.edge_derivation import DERIVED_FROM_ANNOTATION
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
 from living_memory.models import Connection, Node, string_list
-from living_memory.storage import MemoryStore
-from living_memory.temporal import detect_temporal_hint
+from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore
+from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
 DEFAULT_MIN_CLUSTER_SIZE = 100
 DEFAULT_RECENT_LIMIT = 10_000
@@ -208,6 +208,184 @@ class _ProcedureKey:
     group_id: str
 
 
+@dataclass(slots=True)
+class _EraAssessment:
+    """Structural era analysis of one promotion candidate cluster.
+
+    ``live`` holds the members a schema/concept may be derived from;
+    ``excluded`` maps every dropped member to the structural reason
+    (``corrected``, ``superseded-by:<id>``, ``displaced-via:<id>``,
+    ``obsolete-era``). ``conflict`` is set only when contradiction evidence
+    crosses a regime boundary — a temporal split alone never filters anything.
+    """
+
+    members: list[Node]
+    live: list[Node]
+    excluded: dict[str, str]
+    conflict: bool
+    regime_count: int
+
+    @property
+    def filtered(self) -> bool:
+        return bool(self.excluded)
+
+    def era_provenance(self) -> dict[str, Any]:
+        live_moments = sorted(
+            moment for member in self.live if (moment := _node_moment(member)) is not None
+        )
+        return {
+            "status": "current",
+            "policy": "current-era-only",
+            "conflict": self.conflict,
+            "regimes_detected": self.regime_count,
+            "live_window": [
+                _iso(live_moments[0]) if live_moments else None,
+                _iso(live_moments[-1]) if live_moments else None,
+            ],
+            "excluded_sources": dict(sorted(self.excluded.items())),
+            "assessed_at": _utc_now(),
+        }
+
+
+def _node_moment(node: Node) -> datetime | None:
+    return parse_timestamp(node.timestamp) or parse_timestamp(node.created_at)
+
+
+def _iso(moment: datetime) -> str:
+    return moment.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _assess_cluster_eras(store: MemoryStore, members: Sequence[Node]) -> _EraAssessment:
+    """Detect whether a promotion candidate spans contradictory project eras.
+
+    Detection is purely structural: teach corrections, supersedes/contradicts
+    edges (including a member superseding a consolidated node whose sources
+    are other members), and timestamp regimes from ``split_time_regimes``.
+    Individually corrected members are always excluded from derivation; whole
+    older regimes are excluded only on ``conflict`` — when some corrective
+    evidence lands in a strictly later regime than the material it corrects.
+    """
+
+    member_list = list(members)
+    member_ids = {member.id for member in member_list}
+    moments = {member.id: _node_moment(member) for member in member_list}
+
+    excluded: dict[str, str] = {}
+    # (obsolete-side moment, corrective-side moment) pairs. A pair whose
+    # corrective side falls in a strictly later regime than its obsolete side
+    # is the era-flip evidence.
+    conflict_events: list[tuple[datetime | None, datetime | None]] = []
+
+    for member in member_list:
+        if member.corrections:
+            excluded[member.id] = "corrected"
+            last = member.corrections[-1]
+            correction_moment = (
+                parse_timestamp(last.get("timestamp")) if isinstance(last, Mapping) else None
+            )
+            conflict_events.append((moments[member.id], correction_moment))
+
+    external_cache: dict[str, Node | None] = {}
+
+    def _external(node_id: str) -> Node | None:
+        if node_id not in external_cache:
+            external_cache[node_id] = store.get_node(node_id)
+        return external_cache[node_id]
+
+    def _moment_of(node_id: str, fallback: str) -> datetime | None:
+        if node_id in moments:
+            return moments[node_id]
+        node = _external(node_id)
+        if node is not None:
+            return _node_moment(node)
+        return parse_timestamp(fallback)
+
+    seen_edges: set[str] = set()
+    for edges in store.list_connections_for_nodes(member_ids).values():
+        for edge in edges:
+            if edge.id in seen_edges or edge.type not in ("supersedes", "contradicts"):
+                continue
+            seen_edges.add(edge.id)
+            if edge.metadata.get("kind") == _DUPLICATE_CONTENT_KIND:
+                # Re-remembered identical content affirms the fact; it is not
+                # a correction and must not read as era conflict.
+                continue
+            source_moment = _moment_of(edge.source_id, edge.created_at)
+            target_moment = _moment_of(edge.target_id, edge.created_at)
+            if edge.type == "supersedes":
+                if edge.target_id in member_ids:
+                    excluded.setdefault(edge.target_id, f"superseded-by:{edge.source_id}")
+                    conflict_events.append((target_moment, source_moment))
+                if edge.source_id in member_ids and edge.target_id not in member_ids:
+                    target = _external(edge.target_id)
+                    if target is not None:
+                        displaced = (set(target.source_traces) & member_ids) - {edge.source_id}
+                        for displaced_id in sorted(displaced):
+                            excluded.setdefault(
+                                displaced_id, f"displaced-via:{edge.target_id}"
+                            )
+                            conflict_events.append((moments[displaced_id], source_moment))
+                    conflict_events.append((target_moment, source_moment))
+            else:
+                # contradicts carries no direction of truth; with timestamps
+                # the newer side counts as the corrective one.
+                if source_moment is None or target_moment is None:
+                    continue
+                older, newer = sorted((source_moment, target_moment))
+                conflict_events.append((older, newer))
+
+    regime_groups = split_time_regimes([moments[member.id] for member in member_list])
+    dated_groups = [[member_list[index].id for index in group] for group in regime_groups]
+    if not dated_groups:
+        dated_groups = [[]]
+    # Members without a parseable moment stay with the newest regime: a
+    # missing timestamp must never mark a member obsolete.
+    dated_groups[-1].extend(
+        member.id for member in member_list if moments[member.id] is None
+    )
+    regime_count = len(dated_groups)
+
+    conflict = False
+    if regime_count >= 2:
+        starts = [
+            min(group_moments)
+            for group in dated_groups
+            if (group_moments := [moments[mid] for mid in group if moments[mid] is not None])
+        ]
+
+        def _regime_index(moment: datetime) -> int:
+            return sum(1 for start in starts if start <= moment)
+
+        for obsolete_moment, corrective_moment in conflict_events:
+            if obsolete_moment is None or corrective_moment is None:
+                continue
+            obsolete_regime = _regime_index(obsolete_moment)
+            if obsolete_regime >= 1 and _regime_index(corrective_moment) > obsolete_regime:
+                conflict = True
+                break
+        if conflict:
+            newest_ids = set(dated_groups[-1])
+            for member in member_list:
+                if member.id not in newest_ids:
+                    excluded.setdefault(member.id, "obsolete-era")
+
+    live = [member for member in member_list if member.id not in excluded]
+    return _EraAssessment(
+        members=member_list,
+        live=live,
+        excluded=excluded,
+        conflict=conflict,
+        regime_count=regime_count,
+    )
+
+
+def _is_superseded(store: MemoryStore, node_id: str) -> bool:
+    return any(
+        edge.metadata.get("kind") != _DUPLICATE_CONTENT_KIND
+        for edge in store.list_connections(target_id=node_id, relation_type="supersedes")
+    )
+
+
 class ConsolidationService:
     """Service facade for consolidation and correction ingestion."""
 
@@ -305,8 +483,13 @@ def memory_consolidate(
     for cluster in clusters:
         if len(cluster.traces) < min_cluster_size:
             continue
-        concept, created = _merge_cluster_into_concept(store, cluster)
-        _update_edge_weights_from_co_access(store, concept, cluster.traces)
+        assessment = _assess_cluster_eras(store, cluster.traces)
+        if not assessment.live:
+            # Every member is superseded or era-displaced: there is no current
+            # era to speak for, so nothing may be promoted from this cluster.
+            continue
+        concept, created = _merge_cluster_into_concept(store, cluster, assessment)
+        _update_edge_weights_from_co_access(store, concept, assessment.live)
         promoted = _cross_scope_promotion(store, concept, phase_number=phase.number)
         if promoted is not None:
             result.concepts_promoted.append(promoted)
@@ -420,11 +603,24 @@ def _materialize_procedural_schemas(
     for (scope, _group_id), group_traces in groups.items():
         if len(group_traces) < min_cluster_size:
             continue
-        procedure_key = _select_group_procedure_key(keys_by_group[(scope, _group_id)])
-        schema, created = _create_or_update_schema(
-            store, scope, procedure_key, group_traces
+        assessment = _assess_cluster_eras(store, group_traces)
+        if not assessment.live:
+            # Every member is superseded or era-displaced: no current era to
+            # distill, so no schema may be emitted for this group.
+            continue
+        live_ids = {member.id for member in assessment.live}
+        live_keys = [
+            key
+            for trace, key in zip(group_traces, keys_by_group[(scope, _group_id)])
+            if trace.id in live_ids
+        ]
+        procedure_key = _select_group_procedure_key(
+            live_keys or keys_by_group[(scope, _group_id)]
         )
-        _connect_schema_to_traces(store, schema, group_traces)
+        schema, created = _create_or_update_schema(
+            store, scope, procedure_key, assessment.live, era=assessment
+        )
+        _connect_schema_to_traces(store, schema, assessment.live)
         schemas.append((schema, created))
     return schemas
 
@@ -497,6 +693,8 @@ def _create_or_update_schema(
     scope: str,
     procedure_key: _ProcedureKey,
     traces: list[Node],
+    *,
+    era: _EraAssessment | None = None,
 ) -> tuple[Node, bool]:
     trigger = procedure_key.trigger
     group_id = procedure_key.group_id
@@ -509,6 +707,9 @@ def _create_or_update_schema(
     temporal_hint = detect_temporal_hint(traces)
     usefulness = sum(max(0.0, trace.usefulness_score) for trace in traces) / len(traces)
 
+    era_block = era.era_provenance() if era is not None and era.filtered else None
+    excluded_ids = set(era.excluded) if era is not None else set()
+
     base_provenance = {
         "procedure_key": group_id,
         "procedure_field": procedure_key.field,
@@ -518,6 +719,8 @@ def _create_or_update_schema(
         "strategy": "procedural",
         "consolidated_at": _utc_now(),
     }
+    if era_block is not None:
+        base_provenance["era"] = era_block
     stats = {
         "confidence": confidence,
         "unique_agents": unique_agents,
@@ -534,6 +737,8 @@ def _create_or_update_schema(
         "trigger": trigger,
         "procedure": steps,
     }
+    if era_block is not None:
+        context["era_status"] = "current"
 
     existing = _find_existing_schema(store, scope, procedure_key)
     if existing is None:
@@ -551,7 +756,7 @@ def _create_or_update_schema(
         )
         return schema, True
 
-    merged_sources = sorted({*existing.source_traces, *sorted_trace_ids})
+    merged_sources = sorted({*existing.source_traces, *sorted_trace_ids} - excluded_ids)
     provenance = {
         **existing.provenance,
         **base_provenance,
@@ -595,8 +800,13 @@ def _find_existing_schema(
             for value in candidates
             if value is not None and str(value).strip()
         }
-        if procedure_key.group_id in normalized:
-            return schema
+        if procedure_key.group_id not in normalized:
+            continue
+        if schema.corrections or _is_superseded(store, schema.id):
+            # A taught/superseded schema belongs to a dead era; updating it
+            # would resurrect corrected content. Emit a fresh one instead.
+            continue
+        return schema
     return None
 
 
@@ -736,19 +946,18 @@ def _cluster_traces(
 
 
 def _merge_cluster_into_concept(
-    store: MemoryStore, cluster: _TraceCluster
+    store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment
 ) -> tuple[Node, bool]:
-    source_traces = sorted({trace.id for trace in cluster.traces})
+    members = assessment.live
+    source_traces = sorted({trace.id for trace in members})
     cluster_key = _cluster_key(cluster)
-    unique_agents = _unique_agent_count(cluster.traces)
-    confidence = _consensus_confidence(cluster.traces, unique_agents)
-    temporal_hint = detect_temporal_hint(cluster.traces)
-    best_trace = max(cluster.traces, key=lambda trace: (_trace_quality(trace), trace.id))
+    unique_agents = _unique_agent_count(members)
+    confidence = _consensus_confidence(members, unique_agents)
+    temporal_hint = detect_temporal_hint(members)
+    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
     concept_embedding = cluster.embedding_for(best_trace) or cluster.representative_embedding
-    digest = _synthesize_digest(cluster.traces, best=best_trace)
-    usefulness = sum(max(0.0, trace.usefulness_score) for trace in cluster.traces) / len(
-        cluster.traces
-    )
+    digest = _synthesize_digest(members, best=best_trace)
+    usefulness = sum(max(0.0, trace.usefulness_score) for trace in members) / len(members)
 
     provenance = {
         "source_traces": source_traces,
@@ -757,6 +966,8 @@ def _merge_cluster_into_concept(
         "consolidated_at": _utc_now(),
         "strategy": cluster.strategy,
     }
+    if assessment.filtered:
+        provenance["era"] = assessment.era_provenance()
     stats = {
         "confidence": confidence,
         "unique_agents": unique_agents,
@@ -768,7 +979,7 @@ def _merge_cluster_into_concept(
         store,
         cluster.scope,
         cluster_key,
-        candidate_contents={digest, *(trace.content for trace in cluster.traces)},
+        candidate_contents={digest, *(trace.content for trace in members)},
     )
     if existing is None:
         concept = store.create_node(
@@ -785,7 +996,9 @@ def _merge_cluster_into_concept(
         )
         return concept, True
 
-    merged_sources = sorted({*existing.source_traces, *source_traces})
+    merged_sources = sorted(
+        {*existing.source_traces, *source_traces} - set(assessment.excluded)
+    )
     provenance["source_traces"] = merged_sources
     provenance["cluster_size"] = len(merged_sources)
     content_update = (
@@ -980,7 +1193,7 @@ def _cross_scope_promotion(
         return None
     if concept.level != "concept" or not concept.scope.startswith("project:"):
         return None
-    if concept.embedding is None:
+    if concept.embedding is None or concept.corrections:
         return None
 
     matches = store.find_similar_by_embedding(
@@ -994,6 +1207,9 @@ def _cross_scope_promotion(
     sources_by_scope: dict[str, tuple[Node, float]] = {concept.scope: (concept, 1.0)}
     for candidate, similarity in matches:
         if candidate.id == concept.id or candidate.scope == concept.scope:
+            continue
+        if candidate.corrections:
+            # Corrected project concepts must not feed the global digest.
             continue
         current = sources_by_scope.get(candidate.scope)
         if current is None or (similarity, candidate.confidence) > (
@@ -1297,6 +1513,10 @@ def _find_existing_concept(
     contents = frozenset(candidate_contents)
     content_twin: Node | None = None
     for concept in concepts:
+        if concept.corrections:
+            # A taught concept holds a corrected belief; merging fresh cluster
+            # content into it would resurrect it. Let a new concept form.
+            continue
         if concept.provenance.get("cluster_key") == cluster_key:
             return concept
         if content_twin is None and concept.content in contents:

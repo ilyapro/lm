@@ -207,9 +207,17 @@ def _structured(result: Any) -> dict[str, Any]:
 
 
 def _clear_delivery_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LM_DELIVERY_SNIPPET_CHARS", raising=False)
-    monkeypatch.delenv("LM_DELIVERY_SESSION_DEDUP", raising=False)
-    monkeypatch.delenv("LM_DELIVERY_CONTEXT_VALUE_CHARS", raising=False)
+    for env in (
+        "LM_DELIVERY_SNIPPET_CHARS",
+        "LM_DELIVERY_SNIPPET_LADDER",
+        "LM_DELIVERY_SESSION_DEDUP",
+        "LM_DELIVERY_CONTEXT_VALUE_CHARS",
+        "LM_DELIVERY_FULL_NODE_DIET",
+        "LM_DELIVERY_PROVENANCE_VALUE_CHARS",
+        "LM_DELIVERY_STATS_COMPACTION",
+        "LM_DELIVERY_SPARSE",
+    ):
+        monkeypatch.delenv(env, raising=False)
 
 
 DEDUP_CONTENT = (
@@ -325,6 +333,9 @@ def test_recall_snippets_long_content_with_content_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _clear_delivery_env(monkeypatch)
+    # Uniform legacy mode: the default ladder ships the top bearer complete,
+    # so budgeting the top result takes the documented uniform-budget valve.
+    monkeypatch.setenv("LM_DELIVERY_SNIPPET_CHARS", "1200")
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     long_content = "meridian telescope alignment procedure. " + " ".join(
         f"step {index}: calibrate axis {index}" for index in range(200)

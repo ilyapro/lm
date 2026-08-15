@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "packet": "animal-planet P6 replacement temporal supplement",
+  "namespace": "replacement-holdout",
+  "frozen": true,
+  "generated_at": "2026-08-14T01:52:42Z",
+  "semantic_reads": 0,
+  "selection": {
+    "source": "pinned immutable SQLite main snapshot",
+    "predicate": {
+      "created_at": {
+        "gt": "2026-08-12T23:13:24Z",
+        "lt": "2026-08-13T20:16:51Z"
+      },
+      "requested_scope_in": [
+        "project:ae",
+        "project:online"
+      ]
+    },
+    "outcome_filtering": false,
+    "ordering": [
+      "created_at ASC",
+      "id ASC"
+    ]
+  },
+  "classification": {
+    "automatic": "agent IS NULL",
+    "organic": "agent IS NOT NULL"
+  },
+  "identity": {
+    "algorithm": "HMAC-SHA256",
+    "normalization": "\" \".join(query.split()) + \"\\n\" + requested_scope",
+    "one_key_for_dev_and_supplement": true,
+    "key_transport": "inherited anonymous descriptor to keyed verifier only",
+    "key_persisted": false,
+    "unkeyed_query_fingerprints_persisted": false,
+    "token_encoding": "lowercase hexadecimal full digest"
+  },
+  "deidentification": {
+    "salt": "fresh independent ephemeral 256-bit value; not persisted",
+    "private_string_invariants": [
+      "exact Python character length",
+      "space/tab/newline/carriage-return positions preserved",
+      "all other characters replaced by lowercase a-z",
+      "global original-to-surrogate equality classes are bijective per build"
+    ],
+    "private_mapping_persisted": false
+  },
+  "repeated_family": {
+    "population": "automatic events only",
+    "identity": "fingerprint_token",
+    "minimum_events": 3,
+    "minimum_distinct_transport_session_values": 2,
+    "unseen_in_dev": "fingerprint_token absent from frozen-dev automatic index"
+  },
+  "sources": {
+    "staging_metadata": {
+      "sha256": "025e734f84f452711e86a31d1639f2ee9833213e7ec94ced69b95d315ebac855",
+      "bytes": 25382
+    },
+    "staging_events": {
+      "sha256": "45dbfdb389324a8702ba1a84b28be028991f23dcfe1d7ab9d771928c37c2cc7a",
+      "bytes": 4162914,
+      "rows": 1576
+    },
+    "sqlite_snapshot": {
+      "sha256": "4d6648f9e3c33e8ffaa7bf15620bd26a18bdf9f7ddf5b97641aa8c082e9aaa67",
+      "bytes": 492367872,
+      "open_mode": "mode=ro&immutable=1&cache=private",
+      "query_only": true,
+      "temp_store": "MEMORY"
+    },
+    "original_packet_manifest": {
+      "sha256": "3f1a6a87a4d34e411f06e50161f9203afc3c4992dfc973d4f544453e8bbfde48",
+      "bytes": 34934,
+      "frozen": true
+    },
+    "original_splits": {
+      "sha256": "66f04caa41e0302fd7b8582f54197a396a2bb8483ddd543e564740a8e4c3a7b7",
+      "bytes": 4040
+    },
+    "deid_implementation": {
+      "sha256": "503de08cea164660c2f1c3b3675ad082f70109d8f4360194bb1e02c7423bd6e3",
+      "bytes": 8216
+    }
+  },
+  "implementation": {
+    "builder": {
+      "path": "recipe/build.py",
+      "sha256": "a2f420bec70e0ec7a87e0a99ddd9d030b9131e72c27b3b7facc622f6bcf4cd65",
+      "bytes": 98378
+    },
+    "verifier": {
+      "path": "recipe/verify.py",
+      "sha256": "4cc7a7487316bbcb7c2d0471b205f72f3ac141afa0e3ee612e8de03de44f6267",
+      "bytes": 92603
+    }
+  },
+  "counts": {
+    "supplement": {
+      "events": 769,
+      "direct_nodes": 619,
+      "nodes": 804,
+      "automatic": 332,
+      "organic": 437,
+      "by_requested_scope": {
+        "project:ae": 502,
+        "project:online": 267
+      }
+    },
+    "frozen_dev": {
+      "events": 826,
+      "automatic": 732,
+      "organic": 94,
+      "unique_automatic_tokens": 353
+    },
+    "repeated_automatic": {
+      "families": 18,
+      "events": 238,
+      "unseen_in_dev_families": 16,
+      "unseen_in_dev_events": 113
+    }
+  },
+  "files": {
+    "corpus/holdout.jsonl": {
+      "sha256": "1fc02b85adfa63f511d851b54990dd5162d23f6a81a4943475febbf16c981e33",
+      "bytes": 6931461,
+      "records": 1573,
+      "nodes": 804,
+      "events": 769
+    },
+    "corpus/dev-fingerprint-index.json": {
+      "sha256": "b5c0550a562de5a181358b4ca6f3a4ccd6de81e72750d5ebf4abcdcd5e2a326f",
+      "bytes": 25676,
+      "population_events": 732,
+      "unique_tokens": 353
+    }
+  },
+  "packet_files": {
+    "README.md": {
+      "sha256": "c0483824717fb3323600b94db945c4ed8718e23749863f493f3013ecd2fae409",
+      "bytes": 11153
+    },
+    "POLICY.md": {
+      "sha256": "05d4f3d148b86a933c107341ac1157487509efe011428dc4858c18b9b1c28a90",
+      "bytes": 6958
+    },
+    "recipe/build.py": {
+      "sha256": "a2f420bec70e0ec7a87e0a99ddd9d030b9131e72c27b3b7facc622f6bcf4cd65",
+      "bytes": 98378
+    },
+    "recipe/verify.py": {
+      "sha256": "4cc7a7487316bbcb7c2d0471b205f72f3ac141afa0e3ee612e8de03de44f6267",
+      "bytes": 92603
+    }
+  },
+  "validation": {
+    "keyed_preseal": {
+      "schema_version": 1,
+      "mode": "keyed-preseal",
+      "status": "pass",
+      "mismatches": 0,
+      "token_collisions": 0,
+      "semantic_reads": 0,
+      "supplement_events": 769,
+      "automatic_events": 332,
+      "organic_events": 437,
+      "project_ae_events": 502,
+      "project_online_events": 267,
+      "direct_nodes": 619,
+      "nodes": 804,
+      "dev_automatic_events": 732,
+      "dev_unique_tokens": 353,
+      "repeated_automatic_families": 18,
+      "repeated_automatic_events": 238,
+      "unseen_in_dev_families": 16,
+      "unseen_in_dev_events": 113
+    },
+    "candidate_unchanged_after_validation": true
+  },
+  "publication": {
+    "no_overwrite": true,
+    "content_and_index_before_manifest": true,
+    "manifest_last": true,
+    "canonical_namespace_sealed_iff_manifest_present": true
+  }
+}

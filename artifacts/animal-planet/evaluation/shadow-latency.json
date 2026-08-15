@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-13T20:45:15Z",
+  "status": "pass",
+  "source": {
+    "kind": "local_live_db_snapshot",
+    "live_path": "/home/sfx/.local/share/living-memory/global.sqlite3",
+    "captured_at": "2026-08-13T20:20:51Z",
+    "capture_method": "cp live DB+WAL+SHM to /tmp; PRAGMA wal_checkpoint(TRUNCATE) and integrity_check on the copy",
+    "snapshot_bytes": 492367872,
+    "snapshot_sha256": "4d6648f9e3c33e8ffaa7bf15620bd26a18bdf9f7ddf5b97641aa8c082e9aaa67",
+    "snapshot_schema_version": "4",
+    "snapshot_integrity_check": "ok",
+    "selection_connection": "SQLite URI mode=ro with PRAGMA query_only=ON",
+    "snapshot_hash_unchanged_after_replay": true,
+    "snapshot_or_raw_io_committed": false
+  },
+  "replay": {
+    "old_commit": "3b2f5782baf0f3f128d4cf31b4c0989e8208472d",
+    "new_commit": "9b70f98883764dcaf5c7071c38d78ea7264a16be",
+    "path": "scripts/server.sh -> living_memory.server -> FastMCP stdio -> JSON-RPC tools/call memory_recall",
+    "clone_start_sha256": {
+      "old": "4d6648f9e3c33e8ffaa7bf15620bd26a18bdf9f7ddf5b97641aa8c082e9aaa67",
+      "new": "4d6648f9e3c33e8ffaa7bf15620bd26a18bdf9f7ddf5b97641aa8c082e9aaa67"
+    },
+    "clone_start_hashes_equal_snapshot": true,
+    "clone_integrity_check_after_replay": {
+      "old": "ok",
+      "new": "ok"
+    },
+    "schema_version_after_server_open": {
+      "old": "4",
+      "new": "5"
+    },
+    "embedding_backend": "auto using cached paraphrase-multilingual-MiniLM-L12-v2; HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1",
+    "maintenance": "LM_DECAY_SWEEP_INTERVAL_SEC=0 for both versions",
+    "latency_boundary": "client flush of tools/call request through receipt of the complete JSON-RPC response line; process startup, initialize, migration, model load and the first request of each workflow are excluded",
+    "percentile_method": "p50=statistics.median; p90/p95=nearest rank",
+    "serialized_response_chars_definition": "len(json.dumps(result.content, ensure_ascii=False)), matching the frozen transcript tool_result-content measure; full compact JSON-RPC response-line characters are reported separately",
+    "counterbalancing": "old-first/new-first alternated; identical chronological workflow and request order; independent writable clones",
+    "completed_measured_requests_per_version": 35,
+    "errors_per_version": {
+      "old": 0,
+      "new": 0
+    }
+  },
+  "selection": {
+    "predicate": "latest transport-session subsequences with at least three organic (agent IS NOT NULL) recall_events having nonempty query; up to five sessions per requested project scope; this evaluation task excluded; selected newest-first and replayed chronologically",
+    "identity_replay": "historical server-derived transport_session_id was stripped; every workflow used a fresh stdio connection and fresh server-derived stable transport identity",
+    "project_scopes": 3,
+    "workflows": 11,
+    "selected_requests": 46,
+    "warmup_requests": 11,
+    "measured_requests": 35,
+    "by_scope": {
+      "project:ae": {
+        "workflows": 5,
+        "selected_requests": 18,
+        "warmup_requests": 5,
+        "measured_requests": 13,
+        "created_at_min": "2026-08-11T10:38:24Z",
+        "created_at_max": "2026-08-13T00:23:16Z"
+      },
+      "project:lm": {
+        "workflows": 1,
+        "selected_requests": 6,
+        "warmup_requests": 1,
+        "measured_requests": 5,
+        "created_at_min": "2026-08-12T21:48:33Z",
+        "created_at_max": "2026-08-12T22:13:22Z"
+      },
+      "project:online": {
+        "workflows": 5,
+        "selected_requests": 22,
+        "warmup_requests": 5,
+        "measured_requests": 17,
+        "created_at_min": "2026-08-13T12:38:10Z",
+        "created_at_max": "2026-08-13T13:29:26Z"
+      }
+    }
+  },
+  "old": {
+    "requests": 35,
+    "tool_result_content_chars": {
+      "total": 1168651,
+      "mean": 33390.029,
+      "median": 24427,
+      "p90": 52062,
+      "p95": 128494,
+      "min": 10334,
+      "max": 172114
+    },
+    "jsonrpc_wire_chars": {
+      "total": 2267900,
+      "mean": 64797.143,
+      "median": 47170,
+      "p90": 100233,
+      "p95": 254331
+    },
+    "latency_ms": {
+      "mean": 171.086,
+      "p50": 134.646,
+      "p95": 482.637,
+      "min": 99.470,
+      "max": 866.843
+    },
+    "result_count": {
+      "total": 349,
+      "median": 10
+    },
+    "delivery_classes": {
+      "full": 182,
+      "session_duplicate": 95,
+      "snippet": 68,
+      "twin_duplicate": 4
+    }
+  },
+  "new": {
+    "requests": 35,
+    "tool_result_content_chars": {
+      "total": 670816,
+      "mean": 19166.171,
+      "median": 14384,
+      "p90": 33851,
+      "p95": 34835,
+      "min": 7784,
+      "max": 112361
+    },
+    "jsonrpc_wire_chars": {
+      "total": 1298214,
+      "mean": 37091.829,
+      "median": 27484,
+      "p90": 65247,
+      "p95": 67155
+    },
+    "latency_ms": {
+      "mean": 166.810,
+      "p50": 137.313,
+      "p95": 446.298,
+      "min": 95.466,
+      "max": 906.293
+    },
+    "result_count": {
+      "total": 349,
+      "median": 10
+    },
+    "delivery_classes": {
+      "full": 89,
+      "session_duplicate": 85,
+      "snippet": 171,
+      "twin_duplicate": 4
+    }
+  },
+  "by_scope_latency": {
+    "project:ae": {
+      "requests": 13,
+      "old_p50_ms": 147.545,
+      "new_p50_ms": 144.758,
+      "p50_degradation_ratio": -0.018889,
+      "old_p95_ms": 482.637,
+      "new_p95_ms": 446.298,
+      "p95_degradation_ratio": -0.075293,
+      "pass": true
+    },
+    "project:lm": {
+      "requests": 5,
+      "old_p50_ms": 110.780,
+      "new_p50_ms": 104.877,
+      "p50_degradation_ratio": -0.053286,
+      "old_p95_ms": 134.646,
+      "new_p95_ms": 127.867,
+      "p95_degradation_ratio": -0.050347,
+      "pass": true
+    },
+    "project:online": {
+      "requests": 17,
+      "old_p50_ms": 133.989,
+      "new_p50_ms": 138.941,
+      "p50_degradation_ratio": 0.036958,
+      "old_p95_ms": 866.843,
+      "new_p95_ms": 906.293,
+      "p95_degradation_ratio": 0.045510,
+      "pass": true
+    }
+  },
+  "delta": {
+    "tool_result_content_chars_total_reduction_ratio": 0.425991,
+    "tool_result_content_chars_median_reduction_ratio": 0.411143,
+    "jsonrpc_wire_chars_total_reduction_ratio": 0.427570,
+    "jsonrpc_wire_chars_median_reduction_ratio": 0.417342,
+    "latency_p50_degradation_ratio": 0.019807,
+    "latency_p95_degradation_ratio": -0.075293
+  },
+  "gates": {
+    "maximum_latency_degradation_ratio": 0.10,
+    "p50": {
+      "observed_degradation_ratio": 0.019807,
+      "pass": true
+    },
+    "p95": {
+      "observed_degradation_ratio": -0.075293,
+      "pass": true
+    },
+    "overall_pass": true
+  },
+  "fidelity_limits": [
+    "The replay supplies recorded requested_scope explicitly; it cannot recover whether the original caller supplied that scope or it was inferred.",
+    "Requests are asked again against the capture-time snapshot, which already contains their historical events; this intentionally preserves capture-time cross-session fingerprint signal while fresh transport identities prevent historical session-dedup contamination.",
+    "The new server performs the expected schema v4-to-v5 migration and fingerprint backfill at startup; migration and model-load costs are excluded from per-call latency.",
+    "This is a heterogeneous real-workflow distribution with 35 measured calls, not a repeated-query microbenchmark."
+  ]
+}

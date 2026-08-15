@@ -1,0 +1,270 @@
+{
+  "description": "At-risk supersedes pair in eval: node 01KZCNB73VTME1D6KNMEA64GVR (created 2026-08-06T23:08:14Z, 2577 content chars) was later superseded by correction 01KZE020R1NVT3F0V7WAP3WGYE (created 2026-08-07T11:34:41Z, 1019 chars). The recorded events delivered the superseded node 11 times (3 times at rank 1; best rank 1 score 1.0306), every time BEFORE the correction existed; after the correction was created the split records 11 correction deliveries and zero further superseded deliveries, and no recorded event contains both endpoints. Recorded-corpus honesty note: across the whole dev/eval corpus there are ZERO ordering violations and ZERO events where a superseded node and its correction co-occur as candidates; this case therefore encodes the recorded at-risk surface (observed superseded-delivery ranks plus the live edge) rather than an observed inversion.",
+  "event_ids": [
+    "01KZCNHVBD0A5SBX731T9EFNKT",
+    "01KZD15F228WGM8H6Z119P70A0",
+    "01KZD3DJRNW35W77685ZSJK3XT",
+    "01KZD4NXYC6823VFP29WANTMB6",
+    "01KZDR78SKNS3MWY3KTHXKE1SB",
+    "01KZDWK5CRRSM36BZWWD9XY6Z0",
+    "01KZDWK80VE1M9ZF816M3M8FTC",
+    "01KZDWKJF25K2N947KZPHXPBE4",
+    "01KZDY19D6SJFXSADEZ1TZDY2C",
+    "01KZDY1AEAAKGZKZ1AE7BH56GP",
+    "01KZDZ0ZB4GPD3191W3X6HDXG6"
+  ],
+  "evidence": {
+    "all_superseded_deliveries_precede_correction": true,
+    "correction_deliveries": [
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T11:37:28Z",
+        "event_id": "01KZE073E055RW5NX1R6PXW9HD",
+        "feedback_applied": 1,
+        "rank": 3,
+        "scope": "project:game",
+        "score": 0.7985,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T20:16:39Z",
+        "event_id": "01KZEXXRM7VXY1GM3Z47M2PGGM",
+        "feedback_applied": 0,
+        "rank": 7,
+        "scope": "project:game",
+        "score": 0.4215,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-08T14:04:13Z",
+        "event_id": "01KZGV0H21QSTXK8BTPERW1KMR",
+        "feedback_applied": 1,
+        "rank": 4,
+        "scope": "project:game",
+        "score": 0.5754,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-08T15:16:38Z",
+        "event_id": "01KZGZ54SE12N9KBXY512AJRT3",
+        "feedback_applied": 1,
+        "rank": 6,
+        "scope": "project:game",
+        "score": 0.589,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-08T16:08:15Z",
+        "event_id": "01KZH23N6E8S2PRAC0GN4F7RQG",
+        "feedback_applied": 1,
+        "rank": 3,
+        "scope": "project:game",
+        "score": 0.5574,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-08T17:33:06Z",
+        "event_id": "01KZH6Z06RPQXN1PWACB99AP0Z",
+        "feedback_applied": 1,
+        "rank": 8,
+        "scope": "project:game",
+        "score": 0.4748,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-08T17:40:14Z",
+        "event_id": "01KZH7C265N55RXSR2HXG5JAKC",
+        "feedback_applied": 0,
+        "rank": 8,
+        "scope": "project:game",
+        "score": 0.4795,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-08T21:50:44Z",
+        "event_id": "01KZHNPRCXVY6MXA5VBQY3P4XR",
+        "feedback_applied": 0,
+        "rank": 3,
+        "scope": "project:game",
+        "score": 0.5954,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-09T04:17:55Z",
+        "event_id": "01KZJBVQ41J7XNRWA3C62MBKEH",
+        "feedback_applied": 1,
+        "rank": 9,
+        "scope": "project:game",
+        "score": 0.4343,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-09T08:44:46Z",
+        "event_id": "01KZJV4AP1YGA7DP69WQS6YXYB",
+        "feedback_applied": 1,
+        "rank": 4,
+        "scope": "project:game",
+        "score": 0.4623,
+        "template_id": null
+      },
+      {
+        "class": "organic",
+        "created_at": "2026-08-11T21:45:56Z",
+        "event_id": "01KZSCM4B349CEKNDS2FRKG1TG",
+        "feedback_applied": 0,
+        "rank": 9,
+        "scope": "project:game",
+        "score": 0.4149,
+        "template_id": null
+      }
+    ],
+    "pair": {
+      "correction": {
+        "content_chars": 1019,
+        "created_at": "2026-08-07T11:34:41Z",
+        "id": "01KZE020R1NVT3F0V7WAP3WGYE",
+        "scope": "project:game"
+      },
+      "superseded": {
+        "content_chars": 2577,
+        "created_at": "2026-08-06T23:08:14Z",
+        "id": "01KZCNB73VTME1D6KNMEA64GVR",
+        "scope": "project:game"
+      }
+    },
+    "recorded_both_present_events_in_split": 0,
+    "recorded_violations_in_split": 0,
+    "superseded_deliveries": [
+      {
+        "class": "automatic",
+        "created_at": "2026-08-06T23:11:51Z",
+        "event_id": "01KZCNHVBD0A5SBX731T9EFNKT",
+        "feedback_applied": 0,
+        "rank": 1,
+        "scope": "project:game",
+        "score": 0.9935,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T02:34:48Z",
+        "event_id": "01KZD15F228WGM8H6Z119P70A0",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "project:game",
+        "score": 1.0306,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T03:14:11Z",
+        "event_id": "01KZD3DJRNW35W77685ZSJK3XT",
+        "feedback_applied": 0,
+        "rank": 2,
+        "scope": "project:game",
+        "score": 0.9551,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T03:36:14Z",
+        "event_id": "01KZD4NXYC6823VFP29WANTMB6",
+        "feedback_applied": 1,
+        "rank": 2,
+        "scope": "project:game",
+        "score": 0.9427,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T09:17:45Z",
+        "event_id": "01KZDR78SKNS3MWY3KTHXKE1SB",
+        "feedback_applied": 1,
+        "rank": 3,
+        "scope": "project:game",
+        "score": 0.5934,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T10:34:09Z",
+        "event_id": "01KZDWK5CRRSM36BZWWD9XY6Z0",
+        "feedback_applied": 0,
+        "rank": 4,
+        "scope": "project:game",
+        "score": 0.5896,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T10:34:11Z",
+        "event_id": "01KZDWK80VE1M9ZF816M3M8FTC",
+        "feedback_applied": 0,
+        "rank": 4,
+        "scope": "project:game",
+        "score": 0.5967,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T10:34:22Z",
+        "event_id": "01KZDWKJF25K2N947KZPHXPBE4",
+        "feedback_applied": 1,
+        "rank": 7,
+        "scope": "project:game",
+        "score": 0.3905,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T10:59:20Z",
+        "event_id": "01KZDY19D6SJFXSADEZ1TZDY2C",
+        "feedback_applied": 1,
+        "rank": 5,
+        "scope": "project:game",
+        "score": 0.4236,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T10:59:21Z",
+        "event_id": "01KZDY1AEAAKGZKZ1AE7BH56GP",
+        "feedback_applied": 1,
+        "rank": 5,
+        "scope": "project:game",
+        "score": 0.5273,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-07T11:16:38Z",
+        "event_id": "01KZDZ0ZB4GPD3191W3X6HDXG6",
+        "feedback_applied": 1,
+        "rank": 1,
+        "scope": "project:game",
+        "score": 1.0136,
+        "template_id": null
+      }
+    ],
+    "superseded_rank1_deliveries": 3
+  },
+  "expected_behavior": "Whenever both endpoints of a supersedes edge are candidates for the same recall, the correction must rank above the superseded node (hard ordering, not just a relative score multiplier — see the 0.2x/1.2x relative-weight hole), and a delivered superseded node should carry its supersession/correction reference so the recorded rank-1 stale deliveries cannot repeat silently once a correction exists.",
+  "family": "correction_ordering",
+  "id": "ap-correction-ordering-eval-2",
+  "metric_hook": "correction_dominance",
+  "node_ids": [
+    "01KZE020R1NVT3F0V7WAP3WGYE",
+    "01KZCNB73VTME1D6KNMEA64GVR"
+  ],
+  "selection_rule": "supersedes pairs (correction, superseded) from same-file typed relations with >=1 recorded delivery of the superseded node; top 2 per split by (superseded delivery count desc, pair ids)",
+  "split": "eval"
+}

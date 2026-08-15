@@ -572,6 +572,101 @@ def test_synthesize_digest_caps_total_length(tmp_path: Path) -> None:
         assert all(digest != source.content for source in sources)
 
 
+_ERA_CORE = (
+    "gateway retry budget tuning requires pinned driver version rollout policy checklist"
+)
+
+
+def test_consolidation_excludes_taught_traces_from_concept(tmp_path: Path) -> None:
+    """Corrected members never contribute to a digest, but promotion still fires."""
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        traces = []
+        for index in range(12):
+            traces.append(
+                store.append_trace(
+                    f"{_ERA_CORE} sample {index}",
+                    {
+                        "scope": "project:alpha",
+                        "agent": "agent-a" if index % 2 == 0 else "agent-b",
+                        "timestamp": "2026-05-04T09:00:00Z",
+                    },
+                    feedback={"confidence": 0.4, "usefulness_score": 0.2},
+                )
+            )
+        corrected = traces[:2]
+        for trace in corrected:
+            store.add_correction(
+                trace.id,
+                old=trace.content,
+                new="retry budget is adaptive now",
+                by="agent-c",
+            )
+
+        result = memory_consolidate(store, scope="project:alpha", min_cluster_size=10)
+
+        assert len(result.concepts_created) == 1
+        concept = result.concepts_created[0]
+        corrected_ids = {trace.id for trace in corrected}
+        assert set(concept.source_traces) == {trace.id for trace in traces} - corrected_ids
+        era = concept.provenance["era"]
+        assert era["status"] == "current"
+        assert era["conflict"] is False
+        assert set(era["excluded_sources"]) == corrected_ids
+        assert all(reason == "corrected" for reason in era["excluded_sources"].values())
+
+
+def test_consolidation_splits_cluster_on_cross_era_supersedes(tmp_path: Path) -> None:
+    """A cluster spanning eras with a boundary-crossing correction promotes a
+    concept derived only from the live era, marked current."""
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        old_traces = []
+        for index in range(8):
+            old_traces.append(
+                store.append_trace(
+                    f"{_ERA_CORE} legacy socket draining {index}",
+                    {
+                        "scope": "project:alpha",
+                        "agent": "agent-a",
+                        "timestamp": f"2026-06-01T09:{index:02d}:00Z",
+                    },
+                    feedback={"confidence": 0.4, "usefulness_score": 0.2},
+                )
+            )
+        new_traces = []
+        for index in range(4):
+            new_traces.append(
+                store.append_trace(
+                    f"{_ERA_CORE} adaptive backoff window {index}",
+                    {
+                        "scope": "project:alpha",
+                        "agent": "agent-b",
+                        "timestamp": f"2026-08-10T09:{index:02d}:00Z",
+                    },
+                    feedback={"confidence": 0.4, "usefulness_score": 0.2},
+                )
+            )
+        store.create_connection(new_traces[0].id, old_traces[0].id, "supersedes")
+
+        result = memory_consolidate(store, scope="project:alpha", min_cluster_size=10)
+
+        assert len(result.concepts_created) == 1
+        concept = result.concepts_created[0]
+        assert set(concept.source_traces) == {trace.id for trace in new_traces}
+        era = concept.provenance["era"]
+        assert era["status"] == "current"
+        assert era["conflict"] is True
+        assert set(era["excluded_sources"]) == {trace.id for trace in old_traces}
+        assert era["excluded_sources"][old_traces[0].id].startswith("superseded-by:")
+        assert "legacy" not in concept.content
+        assert "adaptive" in concept.content
+
+        related = store.list_connections(source_id=concept.id, relation_type="related")
+        endorsed = {edge.target_id for edge in related}
+        assert endorsed == {trace.id for trace in new_traces}
+
+
 def test_cross_scope_promotion_ignores_dissimilar_project_concepts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

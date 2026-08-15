@@ -1,0 +1,2849 @@
+{
+  "schema_version": 3,
+  "namespace": "confirmatory-holdout-v3",
+  "protocol_id": "confirmatory-holdout-v3-protocol-v1",
+  "protocol_parent_commit": "ba2742b23ab2aa87a65118addbb1d35432e6eff3",
+  "protocol_parent_tree": "487385aa124a1ebd593b2f81aba9e1e111aa5dd4",
+  "status": "preregistered-source-unprobed-accruable-unsealed",
+  "frozen": true,
+  "amendment_policy": "never in place; a correction, calendar change, floor change, failed seal, or exhausted reader requires parent escalation and a new authorized namespace",
+  "source_blind_preregistration": {
+    "availability_values_used": false,
+    "calendar_derived_from_availability": false,
+    "power_floors_derived_from_current_availability": false,
+    "repair_implementation_started": false,
+    "semantic_evaluator_started": false,
+    "reads_before_freeze": {
+      "candidate_private_rows": 0,
+      "candidate_source_aggregate_queries": 0,
+      "candidate_source_snapshot_captures": 0,
+      "original_sealed_corpus_rows": 0,
+      "replacement_sealed_corpus_rows": 0,
+      "consumed_packet_verifier_invocations": 0,
+      "v3_semantic_reads": 0
+    },
+    "allowed_inputs": [
+      {
+        "path": "artifacts/animal-planet/evaluation/release-v1/release-manifest.json",
+        "sha256": "dd1208d4f5196460428d7049fa9e33ca74ef71be77d074c2b479876653c61768",
+        "bytes": 16970,
+        "kind": "frozen-public-release-lineage"
+      },
+      {
+        "path": "artifacts/animal-planet/evaluation/release-v1/control-watermark.json",
+        "sha256": "a9e6e6a4dbd6178345e11e951e973a1af9c062fb50f8dd7bd51528d44217a86f",
+        "bytes": 10553,
+        "kind": "frozen-public-runtime-provenance-watermark"
+      },
+      {
+        "path": "artifacts/animal-planet/evaluation/confirmatory-holdout-v2/README.md",
+        "sha256": "4455e267979284ffbe09c704de6f51069e2fd733e3092bddbbc5f2f482ac90e4",
+        "bytes": 3581,
+        "kind": "frozen-public-retired-readme"
+      },
+      {
+        "path": "artifacts/animal-planet/evaluation/confirmatory-holdout-v2/attempt-note.json",
+        "sha256": "436b32d4cccdb293a6c06249d22f338328b19e49c59f45120d2da4c70f1a2087",
+        "bytes": 1699,
+        "kind": "frozen-public-fatal-attempt-note"
+      },
+      {
+        "path": "artifacts/animal-planet/evaluation/confirmatory-holdout-v2/POLICY.md",
+        "sha256": "096263ddf554dc014c8cd971e6129d47300bd1c0b9710da90a5749ff186a1afb",
+        "bytes": 19239,
+        "kind": "frozen-public-retired-policy"
+      },
+      {
+        "path": "artifacts/animal-planet/evaluation/confirmatory-holdout-v2/analysis-plan.json",
+        "sha256": "5f5f050330b97c8a35b0e76bd31cbf1b9dd73f4d1a2baa0175817c8201a0c653",
+        "bytes": 35902,
+        "kind": "frozen-public-retired-analysis"
+      },
+      {
+        "path": "artifacts/animal-planet/evaluation/confirmatory-holdout-v2/repair-design.md",
+        "sha256": "76d34d33b7be57230ef0988662060fe70eea229f9b07f2cd5b8a2354600a79f5",
+        "bytes": 68799,
+        "kind": "frozen-public-unchanged-repair-design"
+      },
+      {
+        "path": "scripts/ap_confirmatory_readiness.py",
+        "sha256": "ce1875bf4c442bb481cc254e3b145fb45625b483d4e98644d9365d56cfa017ba",
+        "bytes": 54274,
+        "kind": "frozen-public-retired-scanner"
+      },
+      {
+        "path": "artifacts/animal-planet/manifest.json",
+        "sha256": "3f1a6a87a4d34e411f06e50161f9203afc3c4992dfc973d4f544453e8bbfde48",
+        "bytes": 34934,
+        "kind": "frozen-public-original-metadata"
+      },
+      {
+        "path": "artifacts/animal-planet/corpus/splits.json",
+        "sha256": "66f04caa41e0302fd7b8582f54197a396a2bb8483ddd543e564740a8e4c3a7b7",
+        "bytes": 4040,
+        "kind": "frozen-public-original-split-declaration"
+      },
+      {
+        "path": "artifacts/animal-planet/corpus/dev.jsonl",
+        "sha256": "605e4f3fdc91817788a40d0dbbabffb16b86ef98ad28020c20379ef249cc9a36",
+        "bytes": 5638050,
+        "kind": "frozen-public-deidentified-development-corpus"
+      },
+      {
+        "path": "artifacts/animal-planet/evaluation/replacement-holdout/manifest.json",
+        "sha256": "fd36c972b049c296acbd2537f9af8f1db8d7db725f188c5dd90d27ab9aa3ab83",
+        "bytes": 5537,
+        "kind": "frozen-public-replacement-metadata"
+      }
+    ]
+  },
+  "lineage": {
+    "retired_v2": {
+      "namespace": "confirmatory-holdout-v2",
+      "state": "fatal-before-readiness",
+      "protocol_design_freeze_commit": "fb0307f8f101cbd2c9bdbfe6a14a9e20d012d578",
+      "retirement_record_commit": "ea0ee426293b24eaef7e837c05f61eac99d5ea1a",
+      "retirement_record_tree": "013a68c6a7a5cb5f35bb91da6f16c979dbd831d9",
+      "scanner": {
+        "path": "scripts/ap_confirmatory_readiness.py",
+        "sha256": "ce1875bf4c442bb481cc254e3b145fb45625b483d4e98644d9365d56cfa017ba",
+        "bytes": 54274,
+        "launch_count": 1,
+        "launch_consumed": true,
+        "exit_code": 2,
+        "validator_valid_receipt": false,
+        "retry_allowed": false
+      },
+      "authority_grants": [],
+      "readiness_receipt": false,
+      "packet": false,
+      "reader": false,
+      "repair_implementation": false,
+      "all_authorities_unusable": true
+    },
+    "unchanged_repair_design": {
+      "path": "artifacts/animal-planet/evaluation/confirmatory-holdout-v2/repair-design.md",
+      "sha256": "76d34d33b7be57230ef0988662060fe70eea229f9b07f2cd5b8a2354600a79f5",
+      "bytes": 68799,
+      "design_freeze_commit": "fb0307f8f101cbd2c9bdbfe6a14a9e20d012d578",
+      "design_freeze_tree": "0cda1cd29662d7fbe9c9d9448e411c24dfd940d7",
+      "unchanged_parts": [
+        "production repair invariants R1-R15",
+        "defaults and rollback behavior",
+        "storage and delivery design",
+        "automatic-versus-agent state machine",
+        "metric arithmetic and operators, metric meanings, and numeric point gates",
+        "implementation ownership"
+      ],
+      "v3_evidence_protocol_supersessions": [
+        "v2 POLICY and analysis-plan bindings become this hash-bound v3 POLICY and analysis plan",
+        "v2 one-shot readiness steps and ready receipt become fixed-slot segmented non-consuming accrual plus atomic ready-to-seal handoff",
+        "v2 readiness precondition becomes a validator-valid v3 manifest-introduction commit ancestry precondition",
+        "v2 packet namespace, reader identifiers, domains, and namespace-derived seeds become the fresh v3 registry",
+        "every floor witness and every measured-cohort event or call must be packet-replayable; selected nonreplayable inventory remains selected but is denominator-ineligible",
+        "retrieval_weights seed validation uses production policy keys rather than the node-scope grammar",
+        "the gating-off reference arm is the hash-pinned default-off replay control rather than the serving accrual build or a same-implementation arm",
+        "v2 evidence-order, receipt, evaluator-input, reader-mode, and bootstrap literals are replaced only by the exact v3 state machines, schemas, registry, and hash bindings"
+      ],
+      "fresh_implementation_precondition": "a validator-valid v3 packet manifest exists and its manifest-introduction commit is a strict Git ancestor of every repair and semantic-evaluator commit",
+      "v2_can_satisfy_precondition": false
+    }
+  },
+  "release_control_watermark": {
+    "path": "artifacts/animal-planet/evaluation/release-v1/control-watermark.json",
+    "sha256": "a9e6e6a4dbd6178345e11e951e973a1af9c062fb50f8dd7bd51528d44217a86f",
+    "bytes": 10553,
+    "schema": "animal-planet-runtime-provenance-control-watermark",
+    "schema_version": 1,
+    "release_effective_at": "2026-08-14T15:03:46.793603Z",
+    "release_effective_at_source": "selection.lower_bound_exclusive_at",
+    "release_effective_at_semantics": "observed runtime-provenance boundary; not a deployment claim",
+    "release_manifest_reverse_pin": {
+      "name": "release-manifest.json",
+      "sha256": "dd1208d4f5196460428d7049fa9e33ca74ef71be77d074c2b479876653c61768",
+      "bytes": 16970
+    },
+    "replay_code_control": {
+      "commit": "46a9951842512333b0896370056d07a9e1c25bdf",
+      "tree": "c1606671b9d13bed78c21b7d2f9a4bb75a3d1c1c",
+      "role": "replay_code_control_only",
+      "measurement_arm": "gating-off",
+      "deployment_required": false
+    },
+    "stable_observation": {
+      "pre_observed_at": "2026-08-14T15:02:28.861295Z",
+      "post_observed_at": "2026-08-14T15:03:47.736042Z",
+      "method": "read_only_pre_post_canonical_services_sha256",
+      "pre_watermark_services_state_sha256": "84b53e60f899afa18c7ab401f8e992e754f80e2b3b6dbddac7b94e95fe070449",
+      "post_watermark_services_state_sha256": "84b53e60f899afa18c7ab401f8e992e754f80e2b3b6dbddac7b94e95fe070449"
+    },
+    "identity_derivation": {
+      "schema": "living-memory-service-boot-identity-v1",
+      "algorithm": "SHA-256",
+      "encoding": "canonical-json-utf8",
+      "service_identity_input": [
+        "living-memory-service-identity-v1",
+        "raw_service_identity",
+        "raw_per_service_process_invocation_identity"
+      ],
+      "boot_identity_input": [
+        "living-memory-boot-identity-v1",
+        "raw_per_service_process_invocation_identity"
+      ],
+      "per_service_process_invocation_identity_high_entropy": true
+    },
+    "identity_derivation_encoding_bytes": "domains.release_v1_canonical_json_utf8; the watermark label canonical-json-utf8 never selects the v3 compact encoder",
+    "serving_build_role": "event population only; never either replay arm"
+  },
+  "domains": {
+    "automatic_identity_utf8": "confirmatory-holdout-v3/identity/v1",
+    "partition_utf8": "confirmatory-holdout-v3/partition/v1",
+    "arm_order_utf8": "confirmatory-holdout-v3/arm-order/v1",
+    "bootstrap_utf8": "confirmatory-holdout-v3/bootstrap/v1",
+    "runtime_segment_utf8": "confirmatory-holdout-v3/segment/v1",
+    "slot_receipt_utf8": "confirmatory-holdout-v3/slot-receipt/v1",
+    "accrual_ledger_utf8": "confirmatory-holdout-v3/accrual-ledger/v1",
+    "source_database_identity_utf8": "confirmatory-holdout-v3/source-database-identity/v1",
+    "alias_service_database_binding_utf8": "confirmatory-holdout-v3/alias-service-database-binding/v1",
+    "source_binding_core_utf8": "confirmatory-holdout-v3/source-binding-core/v1",
+    "snapshot_set_utf8": "confirmatory-holdout-v3/snapshot-set/v1",
+    "ready_core_utf8": "confirmatory-holdout-v3/ready-core/v1",
+    "release_v1_canonical_json_utf8": "(Python json.dumps(value, ensure_ascii=False, allow_nan=False, indent=2, sort_keys=True) + '\n').encode('utf-8'); this is the exact meaning of the watermark label canonical-json-utf8",
+    "v3_canonical_json_utf8": "Python json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(',', ':')).encode('utf-8'); reject duplicate object keys",
+    "initial_segment_id_preimage": "runtime_segment_utf8 + NUL + v3_canonical_json_utf8({segment_index:0,attestation_source_sha256:release_control_watermark.sha256,lower_bound_exclusive_at:release_effective_at})",
+    "initial_segment_id_value": "b084e79959146e10397b725cae86d8edc9425cdcca21f464c9f7efac584ca53b",
+    "successor_segment_id_preimage": "runtime_segment_utf8 + NUL + v3_canonical_json_utf8(successor segment attestation without segment_id or attestation_sha256); the attestation contains no segment_id in its referenced source-binding artifact, and that artifact's source-binding core is segment-independent",
+    "successor_segment_id_value": "lowercase hex SHA-256 of successor_segment_id_preimage",
+    "slot_resolution_id_preimage": "slot_receipt_utf8 + NUL + v3_canonical_json_utf8(slot resolution without resolution_id or artifact_sha256)",
+    "slot_resolution_id_value": "lowercase hex SHA-256 of slot_resolution_id_preimage",
+    "ledger_genesis_preimage": "accrual_ledger_utf8 + NUL + UTF-8 lowercase analysis_plan_sha256",
+    "ledger_genesis_value": "lowercase hex SHA-256 of ledger_genesis_preimage, computed after the immutable plan bytes are frozen; the plan cannot embed the value without a hash cycle",
+    "ledger_entry_preimage": "accrual_ledger_utf8 + NUL + previous_ledger_entry_sha256 raw 32 bytes + NUL + v3_canonical_json_utf8(entry without entry_sha256)",
+    "ledger_entry_value": "lowercase hex SHA-256 of ledger_entry_preimage",
+    "snapshot_set_preimage": "snapshot_set_utf8 + NUL + v3_canonical_json_utf8({local:{sha256,bytes},alt:{sha256,bytes}}) with exactly those keys and common sha256/bytes scalar types",
+    "snapshot_set_value": "snapshot_set_sha256_and_bytes.sha256 is SHA-256 of snapshot_set_preimage and .bytes is the byte length of that same preimage; the local and alt snapshot SHA-256 values must differ",
+    "all_active_domains_fresh": true,
+    "retired_domain_prefix": "confirmatory-holdout-v2/",
+    "retired_domains_reusable": false
+  },
+  "authority": {
+    "retired_consumed_readers": [
+      "shadow-eval",
+      "replacement-holdout-eval"
+    ],
+    "retired_void_v2_readers": [
+      "confirmatory-shadow-v2-eval",
+      "confirmatory-holdout-v2-eval"
+    ],
+    "retired_v2_source_alias_ids": [
+      "confirmatory-local-v2-ro",
+      "confirmatory-alt-v2-ro"
+    ],
+    "seal": {
+      "id": "confirmatory-holdout-v3-seal",
+      "max_process_launches": 1,
+      "max_publication_attempts": 1,
+      "consumed_at": "durable no-overwrite consumption marker created before process spawn and before content creation",
+      "watchdog_seconds": 3600,
+      "forced_termination_grace_seconds": 30,
+      "timeout_action": "terminal-seal-failure; no reseal or return to accrual"
+    },
+    "reserved_readers_exactly": [
+      {
+        "id": "confirmatory-shadow-v3-eval",
+        "partition": "shadow",
+        "max_process_launches": 1,
+        "max_semantic_passes": 1
+      },
+      {
+        "id": "confirmatory-holdout-v3-eval",
+        "partition": "holdout",
+        "max_process_launches": 1,
+        "max_semantic_passes": 1
+      }
+    ],
+    "reader_aliases_allowed": false,
+    "reader_delegation_allowed": false,
+    "reader_wildcards_allowed": false,
+    "fallback_readers_allowed": false,
+    "reader_authority_consumption_trigger": "durable O_EXCL reader-launch-attempt marker creation before consumption-marker creation, process spawn, or source open",
+    "existing_valid_attempt_marker_action": "authority is already consumed; recover without a second process launch",
+    "invalid_or_colliding_attempt_marker_action": "never overwrite or relaunch; synthesize that reader's launch-integrity terminal receipt from the predecessor artifact and advance the unconditional sequence, or enter terminal evaluation-integrity failure if that receipt is not durable by the original deadline",
+    "non_semantic_roles": [
+      "runtime-observer",
+      "aggregate-probe",
+      "accrual-ledger",
+      "packet-builder",
+      "packet-verifier",
+      "seal-launcher",
+      "mechanical-integrity-checker"
+    ],
+    "execution_order": [
+      "confirmatory-shadow-v3-eval",
+      "confirmatory-holdout-v3-eval"
+    ],
+    "evaluation_state_machine": [
+      {"from":"implementation-stack-frozen","event":"one-shot development calibration terminal pass","to":"public-evaluation-terminal-attempt-required"},
+      {"from":"implementation-stack-frozen","event":"development calibration fail, crash, invalid-output, inconclusive, or timeout","to":"terminal-default-off-before-readers"},
+      {"from":"implementation-stack-frozen","event":"development calibration does not start within 30 seconds of state entry","to":"terminal-default-off-before-readers"},
+      {"from":"public-evaluation-terminal-attempt-required","event":"any public terminal outcome, including controller-synthesized timeout when launch does not start within 30 seconds, is followed within 30 seconds by a durable O_EXCL shadow launch-attempt marker or recovery of that same valid marker","to":"shadow-authority-consumed-awaiting-marker-and-spawn"},
+      {"from":"public-evaluation-terminal-attempt-required","event":"shadow attempt-marker creation or validation fails, so a shadow launch-integrity terminal receipt and then a holdout attempt marker become durable within the same original 30-second deadline","to":"holdout-authority-consumed-awaiting-marker-and-spawn"},
+      {"from":"public-evaluation-terminal-attempt-required","event":"both shadow and holdout attempt-marker paths fail but exact launch-integrity terminal receipts for both become durable within the original 30-second deadline","to":"joint-release-required"},
+      {"from":"public-evaluation-terminal-attempt-required","event":"neither valid shadow marker nor fail-closed shadow receipt plus holdout marker is durable by the original 30-second deadline","to":"terminal-evaluation-integrity-failure-default-off"},
+      {"from":"shadow-authority-consumed-awaiting-marker-and-spawn","event":"launch-consumption marker and evaluator spawn succeed","to":"shadow-terminal-required"},
+      {"from":"shadow-authority-consumed-awaiting-marker-and-spawn","event":"consumption-marker or spawn failure yields a synthesized shadow terminal receipt and durable O_EXCL holdout attempt marker within 30 seconds","to":"holdout-authority-consumed-awaiting-marker-and-spawn"},
+      {"from":"shadow-authority-consumed-awaiting-marker-and-spawn","event":"the synthesized shadow terminal receipt is valid but holdout attempt-marker creation/validation fails, so a holdout launch-integrity terminal receipt becomes durable within 30 seconds","to":"joint-release-required"},
+      {"from":"shadow-authority-consumed-awaiting-marker-and-spawn","event":"terminal-receipt synthesis/validation or holdout-marker creation/recovery misses its original 30-second deadline","to":"terminal-evaluation-integrity-failure-default-off"},
+      {"from":"shadow-terminal-required","event":"any validated or synthesized shadow terminal receipt is followed within 30 seconds by a durable O_EXCL holdout attempt marker or recovery of that same valid marker","to":"holdout-authority-consumed-awaiting-marker-and-spawn"},
+      {"from":"shadow-terminal-required","event":"the shadow terminal receipt is valid but holdout attempt-marker creation/validation fails, so a holdout launch-integrity terminal receipt becomes durable within 30 seconds","to":"joint-release-required"},
+      {"from":"shadow-terminal-required","event":"terminal-receipt synthesis or validation, or holdout-marker creation or recovery, misses its original 30-second deadline","to":"terminal-evaluation-integrity-failure-default-off"},
+      {"from":"holdout-authority-consumed-awaiting-marker-and-spawn","event":"launch-consumption marker and evaluator spawn succeed","to":"holdout-terminal-required"},
+      {"from":"holdout-authority-consumed-awaiting-marker-and-spawn","event":"consumption-marker or spawn failure yields a synthesized holdout terminal receipt","to":"joint-release-required"},
+      {"from":"holdout-authority-consumed-awaiting-marker-and-spawn","event":"terminal-receipt synthesis or validation fails","to":"terminal-evaluation-integrity-failure-default-off"},
+      {"from":"holdout-terminal-required","event":"validated or controller-synthesized terminal receipt","to":"joint-release-required"},
+      {"from":"holdout-terminal-required","event":"terminal-receipt synthesis, validation, watchdog handling, or controller deadline fails","to":"terminal-evaluation-integrity-failure-default-off"},
+      {"from":"joint-release-required","event":"single no-replace atomic joint envelope publishes both embedded terminal receipts within 30 seconds","to":"confirmation-terminal"},
+      {"from":"joint-release-required","event":"joint-envelope validation, atomic publication, or original deadline fails","to":"terminal-evaluation-integrity-failure-default-off"}
+    ],
+    "evaluation_process_watchdog_seconds": 3600,
+    "development_and_public_start_deadline_seconds": 30,
+    "development_and_public_launch_authority": "one durable O_EXCL pre-reader-launch-attempt marker for each exact phase development-calibration and public-evaluation; marker creation consumes that phase before spawn and a second marker or process is invalid",
+    "development_watchdog_epoch": "implementation-stack-frozen state entry; no-launch by 30 seconds is terminal default-off before readers",
+    "public_watchdog_epoch": "public-evaluation-terminal-attempt-required state entry; no-launch by 30 seconds is normalized to controller-synthesized public timeout and still advances to shadow",
+    "reader_watchdog_seconds": 3600,
+    "forced_termination_grace_seconds": 30,
+    "controller_handoff_deadline_seconds": 30,
+    "joint_release_deadline_seconds": 30,
+    "watchdog_applies_to": ["development-calibration", "public-eval", "shadow", "holdout"],
+    "controller_recovery_rule": "each next reader's O_EXCL launch-attempt marker is the durable controller handoff; reconstruct state only from public terminal evidence, launch-attempt markers, launch-consumption markers, embargoed reader terminal receipts, and the joint temp/final envelope; never relaunch a consumed reader; immediately perform the required next action under its original absolute deadline; watchdog and handoff deadlines never reset",
+    "reader_launch_consumes_before_source_open": true,
+    "shadow_result_embargo": "only the isolated shadow evaluator and controller may create/hash the shadow terminal receipt; no external actor, selector, dashboard, repair process, or holdout path may access its aggregate before joint release",
+    "public_terminal_outcomes": ["pass", "fail", "crash", "invalid-output", "inconclusive", "timeout"],
+    "shadow_and_holdout_terminal_outcomes": [
+      "pass",
+      "fail",
+      "crash",
+      "invalid-output",
+      "inconclusive",
+      "timeout",
+      "launch-failure",
+      "launch-integrity-failure"
+    ],
+    "public_terminal_attempt_then_shadow_unconditional": true,
+    "holdout_launch_unconditional_on_shadow_or_public_outcome": true,
+    "launcher_synthesizes_aggregate_terminal_receipt_for_missing_invalid_crashed_or_timed_out_reader": true,
+    "joint_receipt_release": true,
+    "joint_receipt_release_rule": "one no-overwrite joint manifest makes exactly the shadow and holdout terminal receipts visible all-or-neither after holdout termination",
+    "identical_frozen_stack_for_both_readers": true
+  },
+  "schedule": {
+    "basis": "calendar-only source-blind allocation; not derived from source availability or outcomes",
+    "anchor_at": "2026-08-17T00:00:00Z",
+    "cadence_seconds": 86400,
+    "first_slot_index": 0,
+    "last_slot_index": 28,
+    "slot_count": 29,
+    "slot_formula": "anchor_at + slot_index * cadence_seconds as exact UTC seconds",
+    "grace_seconds": 21600,
+    "execution_window": "scheduled_at <= every launch/capture/observation/validation instant < scheduled_at + grace_seconds",
+    "window_lower_inclusive": true,
+    "window_upper_exclusive": true,
+    "first_slot_at": "2026-08-17T00:00:00Z",
+    "final_selection_slot_at": "2026-09-14T00:00:00Z",
+    "absolute_horizon_expires_at": "2026-09-14T06:00:00Z",
+    "horizon_resets_on_segment_change": false,
+    "scheduled_upper_bound_not_actual_time": true,
+    "no_sleep_or_poll_across_slots": true,
+    "one_invocation_may_span_multiple_slots": false,
+    "retry_without_valid_receipt": "same slot and before grace only when an append-only failure marker proves failure before key creation and before any source open; no recapture after either source opens",
+    "orchestration_retry_creates_new_slot": false,
+    "first_validator_valid_receipt_per_slot_immutable": true,
+    "early_invocation_action": "reject before source access",
+    "late_invocation_action": "append missed marker without source access, enter terminal schedule-integrity-failure, and escalate",
+    "missed_slot_action": "terminal schedule-integrity-failure; no catch-up, later probe, or seal",
+    "missed_slot_rationale": "without the exact scheduled snapshot, a later receipt cannot prove that it is the first scheduled passing population",
+    "backfill_allowed": false,
+    "catch_up_allowed": false,
+    "slot_replacement_allowed": false,
+    "slot_skipping_allowed": false,
+    "boundary_vectors": [
+      {
+        "instant": "2026-08-17T00:00:00Z",
+        "slot_index": 0,
+        "launch_allowed": true
+      },
+      {
+        "instant": "2026-08-17T05:59:59.999999Z",
+        "slot_index": 0,
+        "launch_allowed": true
+      },
+      {
+        "instant": "2026-08-17T06:00:00Z",
+        "slot_index": 0,
+        "launch_allowed": false
+      },
+      {
+        "instant": "2026-09-14T06:00:00Z",
+        "slot_index": 28,
+        "launch_allowed": false
+      }
+    ]
+  },
+  "sources": {
+    "aliases": {
+      "local": {
+        "alias_id": "confirmatory-local-v3-ro",
+        "authority": "local",
+        "locator": "external-untracked-operator-mapping",
+        "source_access": "read-only",
+        "snapshot_open": "mode=ro&immutable=1&cache=private",
+        "query_only": true,
+        "temp_store": "MEMORY"
+      },
+      "alt": {
+        "alias_id": "confirmatory-alt-v3-ro",
+        "authority": "ssh-alias:alt",
+        "locator": "external-untracked-operator-mapping",
+        "source_access": "read-only",
+        "snapshot_open": "mode=ro&immutable=1&cache=private",
+        "query_only": true,
+        "temp_store": "MEMORY"
+      }
+    },
+    "source_aliases_exactly": [
+      "local",
+      "alt"
+    ],
+    "alias_authorities_exactly": {
+      "local": "local",
+      "alt": "ssh-alias:alt"
+    },
+    "watermark_service_set_is_unaliased": true,
+    "public_alias_to_watermark_array_index_mapping": false,
+    "private_bijection_precondition": "before any source-row access, the runtime observer proves privately that the two fixed alias authorities resolve bijectively to the exact unordered watermark service tuple set and to two distinct live database instances",
+    "public_bijection_result": "strict allowlisted segment-independent source-binding attestation containing alias IDs, distinct privacy-safe database-instance hashes, alias/service/database binding hashes, active unaliased-services SHA-256, and pass metadata only; no locator or raw identity",
+    "initial_watermark_unordered_service_identity_pairs": [
+      {
+        "service_identity_sha256": "2d91bae2d25542b2cf09d4ff31395e56595923a0ab4fcdaa97f34cfa860d4fda",
+        "boot_identity_sha256": "fc61ac0cc251b2eeb8f9affd1ed0aa308987f7f9e3dc1bd067328b578e4cfc59"
+      },
+      {
+        "service_identity_sha256": "316dcfd3d60b9a00d676688186ecd8e3ab30c8a5cb529faa509dcbde304458de",
+        "boot_identity_sha256": "128c3efa2b23f9154d304f049505abc3f5d60a58d1a08c326e24e675e4946894"
+      }
+    ],
+    "database_instance_identity_derivation": {
+      "domain_separator_utf8": "confirmatory-holdout-v3/source-database-identity/v1",
+      "algorithm": "SHA-256",
+      "encoding": "canonical-json-utf8",
+      "private_input_exactly": [
+        "filesystem_uuid",
+        "statx_inode_uint64",
+        "statx_birthtime_ns_int64"
+      ],
+      "preimage": "domain_separator_utf8 + NUL + domains.v3_canonical_json_utf8(private_input object)",
+      "alias_or_service_identity_in_preimage": false,
+      "acquisition": "on the live configured SQLite main file, resolve beneath the pre-open authority root without following a final symlink; read filesystem UUID plus Linux statx inode and birthtime nanoseconds using metadata-only syscalls; no alias, authority, service, path, content, or snapshot value enters the identity",
+      "fallback_allowed": false,
+      "raw_inputs_persisted": false,
+      "filesystem_uuid_type": "canonical lowercase UUID text with hyphens; unavailable or all-zero is invalid",
+      "statx_inode_uint64_type": "integer 1..18446744073709551615; booleans are invalid",
+      "statx_birthtime_ns_int64_type": "integer 1..9223372036854775807; booleans, zero, unavailable, or synthesized values are invalid",
+      "segment_binding_capture": "two read-only metadata observations in local-then-alt order during the row-blind initial or successor source-binding ceremony; both occur before any source-row or snapshot access",
+      "probe_binding_capture": "an independent metadata observation immediately before the first snapshot open and again immediately after both immutable snapshot captures",
+      "pre_post_equal_within_segment": true,
+      "values_distinct_across_aliases": true,
+      "missing_unstable_or_equal_action": "fatal-integrity-error"
+    },
+    "alias_service_database_binding_derivation": {
+      "domain_separator_utf8": "confirmatory-holdout-v3/alias-service-database-binding/v1",
+      "private_input_exactly": [
+        "alias_id",
+        "authenticated_authority_identity",
+        "service_identity_sha256",
+        "boot_identity_sha256",
+        "database_instance_identity_sha256"
+      ],
+      "preimage": "domain_separator_utf8 + NUL + domains.v3_canonical_json_utf8(private_input object)",
+      "value": "lowercase hex SHA-256",
+      "authenticated_authority_identity": {
+        "local_fields_exactly": [
+          "transport",
+          "kernel_uid_uint32",
+          "process_user_namespace_inode_uint64"
+        ],
+        "local_transport_literal": "local",
+        "alt_fields_exactly": [
+          "transport",
+          "ssh_host_key_algorithm",
+          "ssh_host_key_sha256_base64",
+          "remote_kernel_uid_uint32",
+          "remote_process_user_namespace_inode_uint64"
+        ],
+        "alt_transport_literal": "ssh",
+        "ssh_host_key_algorithm_enum": [
+          "ssh-ed25519",
+          "ecdsa-sha2-nistp256",
+          "rsa-sha2-512",
+          "rsa-sha2-256"
+        ],
+        "integer_rule": "UIDs are integers 0..4294967295 and namespace inodes are integers 1..18446744073709551615; booleans are invalid",
+        "fingerprint_rule": "unpadded RFC 4648 base64 encoding of exactly 32 SHA-256 bytes",
+        "acquisition": "read only from the authenticated local process credentials or negotiated SSH peer host key plus remote process credentials; no locator spelling is accepted",
+        "encoding": "domains.v3_canonical_json_utf8 of the exact transport-specific object"
+      },
+      "raw_inputs_persisted": false
+    },
+    "source_binding_core": {
+      "domain_separator_utf8": "confirmatory-holdout-v3/source-binding-core/v1",
+      "fields_exactly": [
+        "alias_ids_by_alias",
+        "database_instance_identity_sha256_by_alias",
+        "alias_service_database_binding_sha256_by_alias",
+        "active_services_state_sha256"
+      ],
+      "alias_ids_by_alias": {
+        "local": "confirmatory-local-v3-ro",
+        "alt": "confirmatory-alt-v3-ro"
+      },
+      "map_keys_exactly": [
+        "local",
+        "alt"
+      ],
+      "preimage": "domain_separator_utf8 + NUL + domains.v3_canonical_json_utf8(the exact fields_exactly object)",
+      "value": "lowercase hex SHA-256 of preimage",
+      "database_digests_distinct": true,
+      "binding_digests_distinct": true,
+      "pre_post_maps_equal": true,
+      "watermark_array_index_semantics": false
+    },
+    "source_binding_attestation_allowlist": [
+      "schema_version",
+      "namespace",
+      "receipt_kind",
+      "segment_index",
+      "attestation_attempt_marker_sha256_and_bytes",
+      "alias_ids_by_alias",
+      "pre_database_instance_identity_sha256_by_alias",
+      "post_database_instance_identity_sha256_by_alias",
+      "pre_alias_service_database_binding_sha256_by_alias",
+      "post_alias_service_database_binding_sha256_by_alias",
+      "active_services_state_sha256",
+      "source_binding_core_sha256_and_bytes",
+      "status",
+      "pre_observed_at",
+      "post_observed_at",
+      "runtime_observer_sha256_and_bytes",
+      "analysis_plan_sha256_and_bytes",
+      "previous_ledger_entry_sha256"
+    ],
+    "source_binding_receipt_kind": "source-binding-attestation",
+    "source_binding_status": "pass",
+    "source_binding_core_is_segment_independent": true,
+    "initial_source_binding_attempt": "exactly one row-blind ceremony inside the slot-0 invocation after its probe-attempt marker and before key creation or source open; a complete valid observed service tuple different from the watermark yields only a slot-0 active-services-state-change closure and immediate successor path, while malformed/unavailable tuple or binding evidence is terminal runtime-attestation failure; total invocation absence is the ordinary missed-slot rule",
+    "scheduled_probe_binding_observation": "the pre/post database and alias-binding maps bracketing snapshot capture equal each other and the active source-binding core; only sources.closable_binding_change yields the exact count-free source-binding-change closure, while every sources.terminal_binding_integrity_failures condition terminalizes",
+    "closable_binding_change": "only a structurally valid complete exact alias/authority set with two distinct valid database identities and a recomputable observed source-binding core different from the prior core",
+    "terminal_binding_integrity_failures": "missing/extra/swapped authority, equal databases or snapshots, malformed/unavailable metadata, invalid bijection, or an unrecomputable core; these never become segment closures",
+    "alias_to_service_binding_immutable_within_segment": true,
+    "alias_swap_action": "fatal-integrity-error",
+    "distinct_authorities_and_database_instances_required": true,
+    "same_source_under_both_aliases": "fatal-integrity-error",
+    "equal_snapshot_sha256": "fatal-integrity-error",
+    "missing_or_extra_source": "fatal-integrity-error",
+    "raw_locators_in_artifacts": false,
+    "snapshot_hash": "SHA-256",
+    "snapshot_byte_size_required": true,
+    "snapshot_set_per_valid_slot": "exactly one immutable snapshot for each declared alias",
+    "snapshot_set_identity": "derive exactly with domains.snapshot_set_preimage/value from the slot resolution aliased_source_snapshot_sha256_and_bytes map; the ready resolution, seal marker, post-build observation, seal terminal receipt, and packet manifest must carry the identical identity",
+    "below_floor_snapshot_action": "destroy after validator-valid aggregate receipt",
+    "first_ready_snapshot_action": "retain privately and hand the exact set directly to the one-shot sealer",
+    "same_snapshot_set_required_for_probe_and_packet": true
+  },
+  "runtime_segments": {
+    "initial_segment": {
+      "segment_index": 0,
+      "segment_id": "b084e79959146e10397b725cae86d8edc9425cdcca21f464c9f7efac584ca53b",
+      "segment_id_derivation": "domains.initial_segment_id_preimage and initial_segment_id_value",
+      "attestation_source": "release_control_watermark",
+      "lower_bound_exclusive_at": "2026-08-14T15:03:46.793603Z",
+      "watermark_services_state_sha256": "84b53e60f899afa18c7ab401f8e992e754f80e2b3b6dbddac7b94e95fe070449",
+      "active_services_state_sha256": "84b53e60f899afa18c7ab401f8e992e754f80e2b3b6dbddac7b94e95fe070449",
+      "active_services_state_encoding": "release-v1-pretty-json-newline",
+      "service_count": 2,
+      "all_event_producing_services_attested": true,
+      "effective_legacy_repeat_controls": {
+        "LM_RECALL_REPEAT_GATING": false,
+        "LM_RECALL_REPEAT_DROP_TRAILING_STUBS": false
+      },
+      "serving_commit": "3b2f5782baf0f3f128d4cf31b4c0989e8208472d",
+      "serving_tree": "15a974faa8e3440382b0b407f6a06bce169a6d7e"
+    },
+    "complete_unaliased_service_tuple": [
+      "service_identity_sha256",
+      "boot_identity_sha256",
+      "boot_started_at",
+      "serving_build.commit",
+      "serving_build.tree",
+      "every serving_build.implementation key with sha256 and bytes",
+      "sanitized_configuration.schema",
+      "sanitized_configuration.encoding",
+      "sanitized_configuration.sha256",
+      "sanitized_configuration.bytes",
+      "effective_legacy_repeat_controls.LM_RECALL_REPEAT_GATING",
+      "effective_legacy_repeat_controls.LM_RECALL_REPEAT_DROP_TRAILING_STUBS"
+    ],
+    "watermark_tuple_encoding": "release-v1 exact bytes: (Python json.dumps(sorted complete services array, ensure_ascii=False, allow_nan=False, indent=2, sort_keys=True) + '\n').encode('utf-8')",
+    "successor_tuple_encoding": "domains.release_v1_canonical_json_utf8 of the complete services array sorted by (service_identity_sha256, boot_identity_sha256), identical to the initial watermark encoding",
+    "tuple_hash": "SHA-256",
+    "alias_binding_encoding": "separate private alias-authority-service-database bijection; never claim that watermark array order assigns aliases",
+    "probe_observation": "complete unaliased service set and private alias/database binding before and after snapshot capture equal the open attestation and have identical canonical digests",
+    "tuple_order_cannot_hide_change": true,
+    "change_closes_entire_segment": true,
+    "change_members": [
+      "source set",
+      "alias binding",
+      "service identity",
+      "boot identity or boot instant",
+      "serving commit or tree",
+      "any implementation hash or byte size",
+      "sanitized configuration identity",
+      "either effective legacy repeat control"
+    ],
+    "candidate_deployment_action": "runtime-segment-change",
+    "inter_slot_observation_or_closure_allowed": false,
+    "between_slot_rule": "no polling or discretionary observer runs between slots; event-producing tuple members and the configured database binding are process-lifetime immutable, boot identities are high-entropy and nonreusable, and the next fixed-slot precheck detects any process or binding replacement before using rows",
+    "slot_change_action": "append a validator-valid count-free slot-segment-closed resolution, which is the immutable resolution occupying that slot",
+    "change_during_probe_action": "emit only a validator-valid count-free segment-closed slot resolution, destroy snapshots, close segment, and reset all counts and any provisional ready result",
+    "identity_derivation": {
+      "schema": "living-memory-service-boot-identity-v1",
+      "algorithm": "SHA-256",
+      "encoding": "canonical-json-utf8",
+      "service_identity_input": [
+        "living-memory-service-identity-v1",
+        "raw_service_identity",
+        "raw_per_service_process_invocation_identity"
+      ],
+      "boot_identity_input": [
+        "living-memory-boot-identity-v1",
+        "raw_per_service_process_invocation_identity"
+      ],
+      "per_service_process_invocation_identity_high_entropy": true
+    },
+    "identity_derivation_encoding_bytes": "domains.release_v1_canonical_json_utf8; exact pretty JSON plus newline",
+    "successor_boundary_ceremony": {
+      "reads_source_rows": false,
+      "pre_launcher_at": "canonical launcher UTC now before observers",
+      "pre_source_order": [
+        "local",
+        "alt"
+      ],
+      "boundary_launcher_at": "fresh canonical launcher UTC now immediately after both pre observers return",
+      "boundary_at": "exact maximum parsed UTC instant among boundary_launcher_at and every pre source_clock_observed_at; no alternate instant permitted",
+      "post_observation_not_before_boundary_plus_seconds": 0.25,
+      "post_phase_started_at": "canonical launcher UTC sampled immediately before the first post observer; must be at least boundary_at + 0.25 seconds",
+      "post_source_order": [
+        "local",
+        "alt"
+      ],
+      "post_launcher_at": "canonical launcher UTC now after both post observers",
+      "required_inequalities": "pre_launcher_at <= boundary_launcher_at <= boundary_at < post_launcher_at; every boot_started_at <= its pre observation; every post source clock and post_launcher_at > boundary_at",
+      "maximum_envelope_seconds": 300,
+      "complete_pre_post_service_set_equal": true,
+      "complete_pre_post_alias_database_binding_equal": true,
+      "lower_bound_exclusive_at": "exactly boundary_at",
+      "predecessor_lower_bound_strictly_earlier": true,
+      "start_deadline_after_closure_seconds": 30,
+      "start_window": "closure.validated_at <= pre_launcher_at < closure.validated_at + 30 seconds",
+      "attempts_per_closure": 1,
+      "failure_action": "terminal runtime-attestation failure and parent escalation; no later attempt, alternate boundary, or skipped slot"
+    },
+    "successor_attestation": {
+      "schema": "confirmatory-holdout-v3-runtime-segment-attestation-v1",
+      "append_only": true,
+      "predecessor_closure_sha256_required": true,
+      "segment_index_rule": "exact non-boolean integer equal to predecessor segment_index + 1; initial segment is 0 and reuse or skipping is invalid",
+      "lower_bound_equals_boundary_at": true,
+      "strictly_later_lower_bound_required": true,
+      "stable_pre_post_tuple_required": true,
+      "same_complete_alias_set_required": true,
+      "must_complete_before_eligible_slot": true,
+      "overwrites_release_watermark": false,
+      "exact_identity_derivation_required": true,
+      "source_clock_bracketing_required": true,
+      "maximum_envelope_seconds": 300
+    },
+    "segment_index_sequence": "segment_index is a zero-based contiguous non-boolean integer: initial is 0 and every successor is exactly predecessor + 1",
+    "on_successor": {
+      "counts_reset": true,
+      "readiness_latch_reset_if_seal_authority_unconsumed": true,
+      "snapshots_carried": false,
+      "components_carried": false,
+      "families_sessions_workflows_scopes_carried": false,
+      "schedule_reset": false,
+      "horizon_reset": false
+    },
+    "cross_segment_pooling_allowed": false,
+    "closed_segment_receipts_preserved": true,
+    "closed_segment_receipts_grant_authority": false,
+    "segment_closure_mismatch_kind_enum": [
+      "active-services-state-change",
+      "source-binding-change"
+    ],
+    "closure_mismatch_kinds_rule": "nonempty array containing active-services-state-change iff the prior and observed active-services objects differ and source-binding-change iff the prior and observed source-binding cores differ, sorted by UTF-8 bytes with no duplicates; a chosen or incomplete reason is invalid",
+    "closure_requires_proven_tuple_or_binding_mismatch": true,
+    "observation_unavailable_action": "never a closure; an initial or successor runtime/source-binding ceremony is one-shot and immediately terminalizes through runtime-attestation-terminal even before source open; only ordinary probe work after a valid binding may use the frozen pre-key/pre-source retry rule; after any source open enter terminal-probe-integrity-failure, and at grace without a resolution enter terminal schedule-integrity failure",
+    "segment_attestation_allowlist": [
+      "schema_version",
+      "namespace",
+      "receipt_kind",
+      "status",
+      "segment_index",
+      "segment_id",
+      "attestation_attempt_marker_sha256_and_bytes",
+      "predecessor_closure_sha256",
+      "lower_bound_exclusive_at",
+      "pre_launcher_at",
+      "pre_source_clock_observed_at_by_alias",
+      "boundary_launcher_at",
+      "boundary_at",
+      "post_phase_started_at",
+      "post_source_clock_observed_at_by_alias",
+      "post_launcher_at",
+      "complete_unaliased_service_tuple_sha256_and_bytes",
+      "source_binding_attestation_sha256_and_bytes",
+      "active_services_state_sha256",
+      "replay_code_control_commit_and_tree",
+      "analysis_plan_sha256_and_bytes",
+      "previous_ledger_entry_sha256"
+    ],
+    "slot_segment_closure_resolution_allowlist": [
+      "schema_version",
+      "namespace",
+      "receipt_kind",
+      "status",
+      "resolution_id",
+      "slot_index",
+      "scheduled_at",
+      "grace_deadline_at",
+      "launched_at",
+      "validated_at",
+      "segment_index",
+      "segment_id",
+      "mismatch_kinds",
+      "prior_active_services_state_sha256_and_bytes",
+      "observed_active_services_state_sha256_and_bytes",
+      "prior_source_binding_core_sha256_and_bytes",
+      "observed_source_binding_core_sha256_and_bytes",
+      "attestation_sha256_and_bytes",
+      "previous_ledger_entry_sha256",
+      "runtime_observer_sha256_and_bytes",
+      "analysis_plan_sha256_and_bytes"
+    ],
+    "segment_attestation_receipt_kind": "runtime-segment-attestation",
+    "segment_attestation_status": "pass",
+    "slot_closure_receipt_kind": "slot-segment-closed",
+    "slot_closure_status": "segment-closed"
+  },
+  "selection": {
+    "source_aliases_exactly": [
+      "local",
+      "alt"
+    ],
+    "predicate": {
+      "created_at": {
+        "gt_release_effective_at": "2026-08-14T15:03:46.793603Z",
+        "gt_active_segment_lower_bound_exclusive_at": true,
+        "lte_scheduled_slot_at": true
+      },
+      "population": "source-qualified union of the complete recall-event contents present in either exact immutable alias snapshot",
+      "scope_filter": null,
+      "replayability_filter": null,
+      "outcome_filtering": false
+    },
+    "initial_boundary_vectors": [
+      {
+        "created_at": "2026-08-14T15:03:46.793602Z",
+        "included": false
+      },
+      {
+        "created_at": "2026-08-14T15:03:46.793603Z",
+        "included": false
+      },
+      {
+        "created_at": "2026-08-14T15:03:46.793604Z",
+        "included": true
+      }
+    ],
+    "upper_boundary_vectors": [
+      {
+        "scheduled_at": "2026-08-17T00:00:00Z",
+        "created_at": "2026-08-17T00:00:00Z",
+        "included": true
+      },
+      {
+        "scheduled_at": "2026-08-17T00:00:00Z",
+        "created_at": "2026-08-17T00:00:00.000001Z",
+        "included": false
+      }
+    ],
+    "classification": {
+      "automatic": "persisted agent IS NULL",
+      "organic": "persisted agent IS NOT NULL, including empty string, zero, and false"
+    },
+    "ordering": [
+      "parsed UTC microseconds since Unix epoch ASC",
+      "source_alias UTF-8 byte order ASC",
+      "event_id UTF-8 byte order ASC"
+    ],
+    "source_qualified_event_key": "source_alias UTF-8 + NUL + event_id UTF-8",
+    "duplicate_source_qualified_event_key": "fatal-integrity-error",
+    "all_eligible_events_included": true,
+    "all_selected_events_accounted_in_packet": true,
+    "floors_are_not_inclusion_filters": true,
+    "replayability_is_not_inclusion_filter": true,
+    "no_max_n": true,
+    "no_stop_at_floor": true,
+    "required_structural_fields": {
+      "source_alias": "exactly local or alt",
+      "event_id": "nonempty UTF-8 string",
+      "created_at": "valid canonicalizable UTC instant"
+    },
+    "utc_timestamp_contract": {
+      "accepted_grammar": "YYYY-MM-DDTHH:MM:SS[.fraction]Z with 1..6 fractional digits when present, valid proleptic-Gregorian date, seconds 00..59, and no offset spelling",
+      "comparison": "parse exactly to integer microseconds since Unix epoch; do not compare source text",
+      "canonical_receipt_encoding": "YYYY-MM-DDTHH:MM:SS.ffffffZ",
+      "invalid_ambiguous_or_submicrosecond_action": "fatal-integrity-error"
+    },
+    "missing_or_invalid_structural_field": "fatal-integrity-error; never drop",
+    "missing_nonselection_metadata_events_remain_selected": true,
+    "missing_family_identity_action": "no automatic identity edge; retain any independently valid workflow edge, otherwise singleton; zero automatic family/floor/measurement contribution",
+    "missing_transport_session_action": "no session or workflow edge; retain any independently valid automatic identity edge, otherwise singleton; zero session/workflow floor contribution",
+    "selected_nonreplayable_action": "retain selected, partition, account in aggregate and packet inventory, contribute to no floor or measured cohort",
+    "forbidden_filter_fields": [
+      "feedback_applied",
+      "feedback_applied_at",
+      "success",
+      "error",
+      "payload",
+      "latency",
+      "access",
+      "results",
+      "content",
+      "case_outcome",
+      "candidate_metric",
+      "baseline_metric",
+      "family_size",
+      "session_presence",
+      "workflow_presence",
+      "replayability"
+    ],
+    "consumed_packet_disjointness": {
+      "proof": "strict nonoverlapping manifest-bound temporal intervals",
+      "original_max_created_at_inclusive": "2026-08-12T21:48:45Z",
+      "replacement_upper_bound_exclusive": "2026-08-13T20:16:51Z",
+      "v3_lower_bound_exclusive": "2026-08-14T15:03:46.793603Z",
+      "open_consumed_corpora": false,
+      "invoke_consumed_verifiers": false
+    }
+  },
+  "identity": {
+    "algorithm": "HMAC-SHA256",
+    "key": "one fresh ephemeral 256-bit key per aggregate-probe attempt that reaches keyed computation, and one different fresh key for the one-shot sealer; within that one process the key covers the complete frozen-dev automatic reference and every selected candidate automatic identity",
+    "key_reuse_between_probe_attempts": false,
+    "key_reuse_between_probe_and_sealer": false,
+    "key_invariance": "equality classes, unseen membership, components, partitions, and aggregate counts are invariant under fresh keys when HMAC equality is collision-free; any collision is terminal",
+    "domain_separator_utf8": "confirmatory-holdout-v3/identity/v1",
+    "digest_input": "domain_separator_utf8 + NUL + normalized identity UTF-8",
+    "normalization": "\" \".join(query.split()) + \"\\n\" + requested_scope",
+    "complete_frozen_dev_reference": {
+      "public_dev_corpus": {
+        "path": "artifacts/animal-planet/corpus/dev.jsonl",
+        "sha256_from_frozen_manifest": "605e4f3fdc91817788a40d0dbbabffb16b86ef98ad28020c20379ef249cc9a36",
+        "identity_comparison_input": false,
+        "reason": "independently de-identified query surrogates cannot establish cross-build equality"
+      },
+      "raw_identity_reference": {
+        "kind": "operator-resolved read-only original alt recall-event export pinned by the frozen original manifest; not a v3 source alias",
+        "sha256": "45dbfdb389324a8702ba1a84b28be028991f23dcfe1d7ab9d771928c37c2cc7a",
+        "bytes": 4162914,
+        "split_membership": "source alt and 15 <= int.from_bytes(SHA256(event_id UTF-8)[0:8], 'big') % 100 < 66",
+        "classification": "agent IS NULL",
+        "required_fields": [
+          "event_id",
+          "query",
+          "requested_scope",
+          "agent"
+        ],
+        "processing": "opened only inside the same isolated HMAC process and under the same fresh key as candidate identities",
+        "persistence": "no raw field, identity, HMAC token, or per-event result persists",
+        "unavailable_or_hash_mismatch": "fatal slot integrity failure; no surrogate or alternate reference"
+      },
+      "population": "all automatic events selected by the frozen original split declaration from the raw identity reference"
+    },
+    "repeated_automatic_family": {
+      "population": "floor-eligible replayable automatic events only for qualification and counts; all selected automatic peers still form component edges",
+      "identity": "same source_alias plus equal ephemeral v3 HMAC token",
+      "minimum_events": 3,
+      "minimum_distinct_nonempty_source_qualified_transport_sessions": 2,
+      "organic_contribution": 0,
+      "nonreplayable_contribution": 0
+    },
+    "unseen_in_dev": "family token absent from the complete frozen-dev automatic reference",
+    "collision_action": "fatal-integrity-error",
+    "persist_key": false,
+    "persist_key_commitment": false,
+    "persist_hmac_tokens_or_samples": false,
+    "persist_plaintext_or_normalized_identity": false,
+    "persist_unkeyed_fingerprint": false,
+    "sealed_packet_equality_labels": "fresh opaque random surrogates unrelated to HMAC output and confined to the sealed corpus"
+  },
+  "replayability": {
+    "role": "input-only floor and measurement eligibility; never selection",
+    "replay_input_schema": {
+      "event_id": "nonempty source identifier structurally validated, then replaced by an opaque packet-local event label",
+      "created_at": "valid UTC instant within the selected interval",
+      "query": "nonempty string preserved only as a sealed de-identified surrogate",
+      "scope_argument": "canonical replay reconstruction sets an explicit de-identified scope from the persisted requested_scope; the frozen resolver must recompute the persisted de-identified scope plan exactly",
+      "resolved_requested_scope": "persisted requested_scope and resolved scope plan are de-identified expected inputs for mechanical resolver-equivalence verification",
+      "max_results_argument": "canonical replay reconstruction uses the persisted resolved positive integer, independent of whether the historical caller omitted the default",
+      "depth_argument": "canonical replay reconstruction uses the persisted normalized accepted depth value, independent of the historical surface spelling",
+      "ambient_context": {
+        "encoding": "canonical behaviorally equivalent caller object reconstructed from persisted provenance with exact recorded nullness, scalar type, and equality preserved under packet-local de-identification",
+        "behaviorally_relevant_keys_exactly": [
+          "scope",
+          "session_id",
+          "session",
+          "project",
+          "project_name",
+          "workspace",
+          "workspace_path",
+          "cwd",
+          "project_scope",
+          "agent",
+          "task",
+          "transport_session_id"
+        ],
+        "unknown_key_action": "unconditionally nonreplayable; no later implementation proof or case-specific exception is allowed",
+        "resolver_output": "exact de-identified scope plan and provenance labels recomputed and verified"
+      },
+      "agent": "nullness preserved; non-null values replaced by packet-local equality-preserving labels",
+      "task": "nullness preserved; non-null values replaced by packet-local equality-preserving labels",
+      "session_id": "nullness preserved; non-null values replaced by packet-local equality-preserving labels",
+      "transport_session_id": "nullness and equality preserved; a nonempty source value is additionally required for session or workflow floors",
+      "initial_state": "hash-bound, de-identified, outcome-independent projection of every allowed source-state row in the selected alias snapshot; it is not chosen by recorded results and can represent every node/edge/weight required by any selected call"
+    },
+    "persisted_source_fields_required": [
+      "id",
+      "created_at",
+      "query",
+      "scope",
+      "requested_scope",
+      "resolved_scopes",
+      "ambient_context",
+      "depth",
+      "max_results",
+      "agent",
+      "task",
+      "session_id"
+    ],
+    "persisted_to_caller_consistency": {
+      "agent": "ambient_context.agent is injected from the de-identified persisted agent with exact nullness; every persisted non-None value, including empty string, zero, and false, remains non-None and equal to the caller-envelope value",
+      "task": "when persisted task exists, its de-identified nullness/equality must match the corresponding caller-envelope task",
+      "session": "persisted session_id and transport_session_id nullness/equality must match the corresponding caller-envelope provenance inputs when present",
+      "mismatch_action": "case is nonreplayable during probes and a fatal preseal mismatch if it was floor-counted"
+    },
+    "deidentified_identity_equivalence": "within each source alias, raw normalized identity equality iff sealed surrogate normalized identity equality under the exact identity.normalization expression; any false merge or split makes the event nonreplayable and is a fatal preseal mismatch for a floor-counted family",
+    "requested_scope_grammar": {
+      "global": "exact UTF-8 bytes global",
+      "project": "exact prefix project: followed by at least one UTF-8 code point and no NUL, CR, LF, or other ASCII control",
+      "session": "exact prefix session: followed by at least one UTF-8 code point and no NUL, CR, LF, or other ASCII control",
+      "anything_else": "nonreplayable"
+    },
+    "canonical_reconstruction_equivalence": "the hash-pinned input-only scope/provenance resolver, before either replay arm and without retrieval/result access, must recompute exactly the persisted de-identified requested scope, scope plan, agent/task/session provenance, max_results, and normalized depth; mismatch is nonreplayable and floor-counted mismatch is fatal at preseal",
+    "shared_seed_state_validation": {
+      "contract_id": "confirmatory-holdout-v3-production-seed-state-v1",
+      "used_byte_identically_by": [
+        "aggregate-probe",
+        "packet-sealer",
+        "semantic-evaluator-seed-builder"
+      ],
+      "retrieval_weights_table_must_be_nonempty": true,
+      "production_policy_keys_required": [
+        "default",
+        "project",
+        "global",
+        "session"
+      ],
+      "policy_key_mapping_exact": {
+        "default": "default",
+        "project": "project",
+        "global": "global",
+        "session": "session",
+        "project:<nonempty UTF-8 suffix>": "project",
+        "session:<nonempty UTF-8 suffix>": "session"
+      },
+      "policy_key_vectors": [
+        {"input": "default", "accepted": true, "kind": "default"},
+        {"input": "project", "accepted": true, "kind": "project"},
+        {"input": "global", "accepted": true, "kind": "global"},
+        {"input": "session", "accepted": true, "kind": "session"},
+        {"input": "project:p", "accepted": true, "kind": "project"},
+        {"input": "session:s", "accepted": true, "kind": "session"},
+        {"input": "project:", "accepted": false, "kind": null},
+        {"input": "session:", "accepted": false, "kind": null},
+        {"input": "scope:project:p", "accepted": false, "kind": null},
+        {"input": "unknown", "accepted": false, "kind": null}
+      ],
+      "node_scope_grammar_applied_to_retrieval_weight_policy_key": false,
+      "unknown_missing_or_duplicate_policy_key_action": "fatal preseal protocol mismatch",
+      "full_projection_is_result_independent": true
+    },
+    "forbidden_inputs": [
+      "feedback_applied",
+      "success",
+      "error",
+      "result content or count",
+      "payload size",
+      "latency",
+      "access result",
+      "candidate behavior",
+      "baseline behavior"
+    ],
+    "floor_counted_rule": "every event or logical call counted directly, and every witness for a counted family, session, component, scope, or workflow, has a sealed replayable case",
+    "selected_nonreplayable_remains_selected": true,
+    "selected_nonreplayable_floor_contribution": 0,
+    "selected_nonreplayable_measurement_contribution": 0,
+    "missing_measurement_for_replayable_cohort_case": "fail; never shrink denominator",
+    "probe_builds_candidate_plan": false,
+    "probe_builds_corpus": false
+  },
+  "partition": {
+    "version": 1,
+    "component_edges": [
+      "shared source-qualified automatic identity equality class for every selected automatic event, regardless of replayability or family qualification",
+      "shared nonempty source-qualified transport_session_id, which is also the workflow key"
+    ],
+    "missing_edge_fallback": "singleton selected event component",
+    "component_representative": "lexicographically smallest source_alias UTF-8 + NUL + event_id UTF-8 byte string",
+    "domain_separator_utf8": "confirmatory-holdout-v3/partition/v1",
+    "digest_input": "domain_separator_utf8 + NUL + component_representative",
+    "algorithm": "SHA-256",
+    "bucket_integer": "int.from_bytes(digest[0:4], 'big')",
+    "modulus": 100,
+    "holdout_buckets": {
+      "gte": 0,
+      "lt": 50
+    },
+    "shadow_buckets": {
+      "gte": 50,
+      "lt": 100
+    },
+    "golden_vectors": [
+      {
+        "representative_display": "local\\0evt-a",
+        "digest_sha256": "b41210718c6d0dfe574cba6380b689b828e6f479345d3cfb7d838cf71a718c83",
+        "bucket": 37,
+        "partition": "holdout"
+      },
+      {
+        "representative_display": "alt\\0evt-a",
+        "digest_sha256": "c69d5dc93eb6ee42985c773359b47024e4f86a03d289f2b6e5e0f8af99e2ee9b",
+        "bucket": 29,
+        "partition": "holdout"
+      },
+      {
+        "representative_display": "local\\0evt-c",
+        "digest_sha256": "03a502ac7ead168b5a1a8e0a312e31c0a6dae9414f5ff039a96da6a79e08fc41",
+        "bucket": 72,
+        "partition": "shadow"
+      }
+    ],
+    "event_intersection_required": 0,
+    "event_union_equals_selected_population": true,
+    "automatic_family_cross_partition_count_required": 0,
+    "organic_session_cross_partition_count_required": 0,
+    "workflow_cross_partition_count_required": 0,
+    "input_order_invariant": true,
+    "outcome_field_invariant": true,
+    "source_qualified_keys": true,
+    "key_search_allowed": false,
+    "rebalancing_allowed": false,
+    "truncation_allowed": false,
+    "stratification_allowed": false,
+    "reassignment_allowed": false
+  },
+  "readiness": {
+    "initial_status": "unprobed",
+    "probe_receipt_status_allowed": [
+      "below-floor",
+      "ready"
+    ],
+    "slot_resolution_status_allowed": [
+      "below-floor",
+      "ready",
+      "segment-closed"
+    ],
+    "intermediate_insufficient_status_allowed": false,
+    "probe_launches_consume_authority": false,
+    "decision_operator": "all",
+    "holdout_floor": {
+      "unseen_in_dev_repeated_automatic_families_min": 30,
+      "unseen_in_dev_repeated_automatic_events_min": 150,
+      "distinct_components_containing_qualifying_unseen_automatic_family_min": 30,
+      "organic_events_min": 200,
+      "distinct_nonempty_source_qualified_organic_sessions_min": 30,
+      "distinct_components_containing_organic_event_min": 30,
+      "distinct_requested_project_scopes_min": 2
+    },
+    "shadow_floor": {
+      "genuine_nonsynthetic_real_workflows_min": 30,
+      "unique_replayable_logical_calls_min": 100,
+      "distinct_components_containing_counted_workflow_min": 30,
+      "distinct_requested_project_scopes_min": 2
+    },
+    "post_run_evidence_floor": {
+      "complete_paired_measured_calls_min": 100,
+      "distinct_workflows_with_at_least_one_complete_pair_min": 30
+    },
+    "scheduled_ready_floor_groups_exactly": [
+      "holdout_floor",
+      "shadow_floor"
+    ],
+    "post_run_evidence_floor_is_not_readiness_input": true,
+    "post_run_evidence_floor_role": "later shadow-reader and promotion gate after implementation; it cannot be observed or satisfied by an accrual probe",
+    "all_floor_counted_events_and_calls_replayable": true,
+    "family_qualification_uses_replayable_events_only": true,
+    "organic_floor_uses_replayable_events_only": true,
+    "session_component_scope_witnesses_replayable": true,
+    "project_scope_predicate": "requested_scope starts with the exact bytes 'project:'",
+    "global_or_session_scope_counts": false,
+    "workflow_definition": "one source-qualified nonempty transport_session_id originally recorded in a declared production source",
+    "workflow_provenance_predicate": {
+      "source_alias_in": [
+        "local",
+        "alt"
+      ],
+      "transport_session_id": "nonempty UTF-8 string",
+      "organic_anchor": "at least one selected replayable event in the source-qualified workflow has persisted agent IS NOT NULL",
+      "origin": "row is present in recall_events of an immutable declared production snapshot",
+      "replayable_call": "at least one selected input-only replayable logical call"
+    },
+    "real_workflow_proxy": "production-snapshot origin plus nonempty source-qualified transport_session_id plus replayable organic anchor plus replayable call; no content or undeclared synthetic classifier",
+    "synthetic_generated_fixture_or_manufactured_workflow_counts": false,
+    "logical_call_definition": "one unique source-qualified selected replayable recall event; baseline and candidate observations form one pair",
+    "measured_call_definition": "one replayable logical call with complete baseline and candidate payload, access, provenance, and latency instrumentation",
+    "partition_pooling_allowed": false,
+    "segment_pooling_allowed": false,
+    "use_complete_population_not_minimum_prefix": true,
+    "ready_action": "inside the same supervisor invocation and before publishing ready: retain the exact snapshots, perform the final complete runtime and alias/database-binding check, durably create the no-overwrite seal-consumption marker, and spawn the one-shot sealer within grace; ready has no externally visible discretionary latch state",
+    "runtime_change_at_provisional_ready_action": "publish no counts or ready status; append only the count-free segment-closed resolution for that slot, void the segment, and re-attest before a later fixed slot",
+    "intermediate_below_floor_action": "append immutable aggregate receipt, destroy snapshots, and continue to the next fixed slot",
+    "final_below_floor_action": "perform no later source read and append terminal insufficient-evidence at the absolute horizon",
+    "threshold_change_allowed": false,
+    "alternate_partition_allowed": false,
+    "slot_population_replacement_allowed": false,
+    "probe_receipt_allowlist": [
+      "schema_version",
+      "namespace",
+      "receipt_kind",
+      "status",
+      "resolution_id",
+      "slot_index",
+      "scheduled_at",
+      "grace_deadline_at",
+      "launched_at",
+      "validated_at",
+      "release_effective_at",
+      "active_segment_lower_bound_exclusive_at",
+      "segment_id",
+      "segment_attestation_sha256_and_bytes",
+      "source_binding_attestation_sha256_and_bytes",
+      "previous_ledger_entry_sha256",
+      "pre_active_services_state_sha256",
+      "post_active_services_state_sha256",
+      "pre_database_instance_identity_sha256_by_alias",
+      "post_database_instance_identity_sha256_by_alias",
+      "pre_alias_service_database_binding_sha256_by_alias",
+      "post_alias_service_database_binding_sha256_by_alias",
+      "aliased_source_snapshot_sha256_and_bytes",
+      "selected_event_count",
+      "selected_replayable_event_count",
+      "selected_nonreplayable_event_count",
+      "holdout_unseen_automatic_family_count",
+      "holdout_unseen_automatic_event_count",
+      "holdout_unseen_automatic_component_count",
+      "holdout_organic_event_count",
+      "holdout_organic_session_count",
+      "holdout_organic_component_count",
+      "holdout_project_scope_count",
+      "shadow_real_workflow_count",
+      "shadow_replayable_logical_call_count",
+      "shadow_real_workflow_component_count",
+      "shadow_project_scope_count",
+      "runtime_observer_sha256_and_bytes",
+      "probe_sha256_and_bytes",
+      "analysis_plan_sha256_and_bytes",
+      "seal_consumption_marker_sha256_and_bytes_or_null",
+      "sealer_process_launched_at_or_null"
+    ],
+    "probe_receipt_conditional_fields": {
+      "below-floor": "seal_consumption_marker_sha256_and_bytes_or_null and sealer_process_launched_at_or_null are both null",
+      "ready": "seal_consumption_marker_sha256_and_bytes_or_null and sealer_process_launched_at_or_null are both nonnull and prove the blocked spawn occurred before ready publication"
+    },
+    "atomic_ready_handoff": {
+      "prior_ledger_head_symbol": "H",
+      "provisional_ready_core_fields": "probe_receipt_allowlist minus exactly resolution_id, previous_ledger_entry_sha256, seal_consumption_marker_sha256_and_bytes_or_null, and sealer_process_launched_at_or_null; status is fixed ready",
+      "provisional_ready_core_preimage": "domains.ready_core_utf8 + NUL + domains.v3_canonical_json_utf8(provisional ready core)",
+      "provisional_ready_core_digest": "lowercase hex SHA-256 of provisional_ready_core_preimage",
+      "ordering_exactly": [
+        "compute provisional ready core privately after final stable runtime check while ledger head is H",
+        "O_EXCL-create and fsync seal-consumption marker binding H, provisional core digest/bytes, segment, slot, and exact snapshots",
+        "append seal-consumption ledger entry whose predecessor is H; its entry hash becomes M",
+        "spawn the sealer with the consumed marker and exact retained snapshots behind an inherited closed start gate; it may not read snapshots, build, or publish",
+        "construct and fsync in a private same-filesystem staging directory the final ready resolution binding marker/spawn with predecessor M plus its deterministic ledger entry R, then deliver both exact bytes and R over inherited IPC while they remain invisible",
+        "after child validation, expose the ready resolution and R together with one atomic no-replace directory rename; no state exposes either artifact alone",
+        "open the child start gate only after atomic visibility; the child then reopens and validates the public bundle before any snapshot read, build, or publication"
+      ],
+      "handoff_deadline_seconds": 30,
+      "blocked_child_eof_or_supervisor_failure": "child emits terminal seal failure without opening snapshots; a visible ready bundle does not restore authority and cannot authorize a new child",
+      "recovery": "an existing valid marker M is consumed authority, never a collision authorizing retry; recover only the same blocked child and private staged bundle before the original 30-second deadline, otherwise terminalize",
+      "spawn_failure_action": "append terminal seal receipt after M; publish no ready resolution; authority remains consumed",
+      "branch_or_circular_reference_allowed": false
+    },
+    "individual_family_workflow_scope_spelling_or_per_source_counts_allowed": false
+  },
+  "a_priori_power_floor": {
+    "derived_from_current_availability": false,
+    "independence_unit": "connected partition component",
+    "minimum_independent_components_per_stream": 30,
+    "automatic": {
+      "qualifying_components": 30,
+      "families": 30,
+      "events": 150,
+      "events_per_cluster_average_at_floor": 5.0,
+      "expected_misses_at_access_0_95": 7.5,
+      "iid_reference_standard_error_at_0_95": 0.0178,
+      "iid_reference_95pct_half_width": 0.0349
+    },
+    "organic": {
+      "qualifying_components": 30,
+      "sessions": 30,
+      "events": 200,
+      "expected_misses_at_access_0_95": 10.0,
+      "iid_reference_standard_error_at_0_95": 0.0154,
+      "iid_reference_95pct_half_width": 0.0302
+    },
+    "shadow": {
+      "qualifying_components": 30,
+      "workflows": 30,
+      "measured_calls": 100,
+      "expected_calls_in_upper_5pct_tail": 5.0
+    },
+    "scope_generalization": "at least two project scopes independently in holdout and shadow",
+    "iid_values_are_design_references_not_inference": true,
+    "component_bootstrap_handles_family_session_workflow_dependence": true
+  },
+  "accrual_and_stopping": {
+    "ledger": {
+      "append_only": true,
+      "domain_separator_utf8": "confirmatory-holdout-v3/accrual-ledger/v1",
+      "predecessor_sha256_required": true,
+      "first_validator_valid_receipt_per_slot_wins": true,
+      "valid_receipt_replacement_allowed": false,
+      "out_of_order_slot_allowed": false,
+      "gap_allowed": false,
+      "attempt_and_failure_markers_are_ledger_entries_but_not_slot_resolutions": true,
+      "failed_execution_may_retry_inside_same_grace": "only a marker proving failure before key creation and before any source open authorizes another capture attempt",
+      "post_source_open_retry_may_recapture": false,
+      "post_source_open_validator_retry": "only the exact latched snapshots and keyed result may be revalidated without reopening either source; crash, invalid structure, or lost latch is terminal",
+      "counts_carried_between_receipts": false,
+      "each_receipt_recomputes_complete_active_segment_population": true
+    },
+    "initial_state": "initial-segment-awaiting-source-binding",
+    "state_machine": [
+      {
+        "from": "initial-segment-awaiting-source-binding",
+        "event": "slot 0 opens and the same invocation completes its sole validator-valid row-blind initial source-binding attestation before key creation or source open",
+        "to": "awaiting-slot",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "initial-segment-awaiting-source-binding",
+        "event": "slot 0 row-blind precheck proves a complete valid active-services tuple different from the initial watermark and appends the count-free slot closure",
+        "to": "segment-closed-awaiting-immediate-re-attestation",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "initial-segment-awaiting-source-binding",
+        "event": "a validator-valid runtime-attestation-terminal marker and ledger entry records any slot-0 attempt-marker, observer, binding, worker, watchdog, or validator failure",
+        "to": "terminal-runtime-attestation-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "initial-segment-awaiting-source-binding",
+        "event": "slot 0 grace expires with no probe-attempt marker and no validator-valid slot resolution",
+        "to": "terminal-schedule-integrity-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-next-fixed-slot",
+        "event": "next fixed slot opens with an attested active segment",
+        "to": "awaiting-slot",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-next-fixed-slot",
+        "event": "next due slot grace expires without a validator-valid slot resolution",
+        "to": "terminal-schedule-integrity-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-slot",
+        "event": "validator-valid-below-floor at slot 0..27",
+        "to": "awaiting-next-fixed-slot",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-slot",
+        "event": "runtime change is proven during capture or final provisional-ready check at slot 0..27",
+        "to": "segment-closed-awaiting-immediate-re-attestation",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "segment-closed-awaiting-immediate-re-attestation",
+        "event": "the sole successor ceremony starts within 30 seconds and validator-valid attestation completes before the next due slot opens",
+        "to": "awaiting-next-fixed-slot",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "segment-closed-awaiting-immediate-re-attestation",
+        "event": "a validator-valid runtime-attestation-terminal marker and ledger entry records that the sole successor ceremony fails, starts at or after closure.validated_at plus 30 seconds, or does not complete before the next due slot opens",
+        "to": "terminal-runtime-attestation-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-slot",
+        "event": "provisional all-preseal-floor pass survives the final runtime and binding check",
+        "to": "seal-marker-creation-required",
+        "terminal": false,
+        "authority_granted": "exact retained snapshot set only"
+      },
+      {
+        "from": "seal-marker-creation-required",
+        "event": "durable O_EXCL seal-consumption marker and its ledger entry are created, or read-after-error proves the exact intended marker entry M already durable",
+        "to": "seal-authority-consumed-awaiting-blocked-spawn",
+        "terminal": false,
+        "authority_granted": "one blocked sealer spawn"
+      },
+      {
+        "from": "seal-marker-creation-required",
+        "event": "a validator-valid seal-terminal receipt and seal-terminal ledger entry from H record marker creation or validation failure, invalid collision, or read-after-error proof that intended M is absent; an invalid or partial M is terminal integrity failure with no alternate ledger branch",
+        "to": "terminal-seal-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "seal-authority-consumed-awaiting-blocked-spawn",
+        "event": "sealer spawns behind an inherited closed start gate",
+        "to": "seal-authority-consumed-awaiting-ready-ledger",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "seal-authority-consumed-awaiting-blocked-spawn",
+        "event": "a validator-valid seal-terminal receipt and seal-terminal ledger entry record sealer spawn failure or timeout",
+        "to": "terminal-seal-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "seal-authority-consumed-awaiting-ready-ledger",
+        "event": "private ready bundle fsyncs, child validates its exact resolution and deterministic ledger entry over inherited IPC, one atomic no-replace rename exposes both, and the start gate opens within 30 seconds",
+        "to": "sealer-running-ready-visible",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "seal-authority-consumed-awaiting-ready-ledger",
+        "event": "a validator-valid seal-terminal receipt and seal-terminal ledger entry record staging, IPC validation, atomic visibility, start-gate release, blocked-child EOF, or original 30-second handoff deadline failure",
+        "to": "terminal-seal-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "sealer-running-ready-visible",
+        "event": "a validator-valid seal-terminal receipt and seal-terminal ledger entry record build, post-build runtime observation, publication, validation, watchdog, or forced-termination failure",
+        "to": "terminal-seal-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "sealer-running-ready-visible",
+        "event": "post-build pre-manifest runtime and binding observation matches, manifest-last validation passes, and a validator-valid sealed seal-terminal receipt plus seal-terminal ledger entry become durable",
+        "to": "sealed",
+        "terminal": true,
+        "authority_granted": "fresh readers remain reserved until stack freeze"
+      },
+      {
+        "from": "awaiting-slot",
+        "event": "validator-valid-below-floor or proven segment-closed resolution at slot 28",
+        "to": "awaiting-absolute-horizon-with-no-more-source-reads",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-absolute-horizon-with-no-more-source-reads",
+        "event": "absolute horizon expires",
+        "to": "terminal-insufficient-evidence-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-slot",
+        "event": "grace expires without validator-valid receipt",
+        "to": "terminal-schedule-integrity-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-slot",
+        "event": "validator-valid ordinary probe-failure marker has failure_class pre-source-retryable, so attempt_ordinal+1 starts within the same grace against no prior snapshot",
+        "to": "awaiting-slot",
+        "terminal": false,
+        "authority_granted": false
+      },
+      {
+        "from": "awaiting-slot",
+        "event": "validator-valid probe-failure marker with failure_class post-source-terminal",
+        "to": "terminal-probe-integrity-failure-escalate",
+        "terminal": true,
+        "authority_granted": false
+      }
+    ],
+    "first_scheduled_passing_slot_mandatory": true,
+    "first_passing_definition": "first provisional all-floor result in an uninterrupted active segment that survives the outcome-blind final runtime check and atomic sealer handoff; a validator-valid segment closure voids that segment's counts before they become observable",
+    "pass_may_be_ignored_or_deferred_for_outcome_review": false,
+    "later_passing_slot_substitution_allowed": false,
+    "later_segment_restart_is_not_substitution": "after validator-valid segment closure all old counts and provisional results are void and first-pass accrual restarts on the unchanged global lattice",
+    "horizon_terminal_status": "insufficient-evidence",
+    "horizon_terminal_action": "leave packet absent and escalate; never lower floors or silently satisfy the goal"
+  },
+  "operational_receipt_schemas": {
+    "common_validation": {
+      "storage": "regular non-symlink UTF-8 file created with O_CREAT|O_EXCL and fsync(file), fsync(parent)",
+      "encoding": "domains.v3_canonical_json_utf8",
+      "unknown_or_missing_field_action": "invalid",
+      "duplicate_json_key_action": "invalid",
+      "sha256_type": "exactly 64 lowercase hexadecimal characters",
+      "bytes_type": "integer >= 0; booleans are not integers",
+      "slot_index_type": "integer 0..28; booleans are not integers",
+      "timestamp_type": "selection.utc_timestamp_contract canonical receipt encoding",
+      "free_text_fields_allowed": false,
+      "recursive_unknown_members_action": "invalid at every nested depth",
+      "constants": {
+        "schema_version": 3,
+        "namespace": "confirmatory-holdout-v3"
+      },
+      "composite_types": {
+        "sha256_and_bytes": "object with exactly sha256 and bytes; sha256 has sha256_type and bytes has bytes_type",
+        "sha256_and_bytes_or_null": "null or sha256_and_bytes with no extra member",
+        "alias_sha256_map": "object with exactly local and alt; each value has sha256_type",
+        "alias_timestamp_map": "object with exactly local and alt; each value has timestamp_type",
+        "alias_sha256_and_bytes_map": "object with exactly local and alt; each value has sha256_and_bytes type",
+        "alias_id_map": "object exactly {local:confirmatory-local-v3-ro,alt:confirmatory-alt-v3-ro}",
+        "commit_tree": "object with exactly commit and tree; each is 40 lowercase hexadecimal characters",
+        "mismatch_kinds": "nonempty unique array containing every and only detected values from runtime_segments.segment_closure_mismatch_kind_enum in UTF-8 byte order",
+        "embedded_reader_terminal": "object recursively valid against reader_terminal_receipt; no extra member",
+        "aggregate_measurements_or_null": "null or the exact partition-specific reader_terminal_receipt.aggregate_measurements_schema"
+      },
+      "content_addressed_artifact_resolution": {
+        "fields_requiring_retained_object_bytes": [
+          "prior_active_services_state_sha256_and_bytes",
+          "observed_active_services_state_sha256_and_bytes",
+          "prior_source_binding_core_sha256_and_bytes",
+          "observed_source_binding_core_sha256_and_bytes"
+        ],
+        "path": "namespace-relative objects/sha256/<first-two-hex>/<remaining-62-hex> with no extension",
+        "validation": "regular non-symlink bytes with exact byte length and SHA-256; active-services bytes must parse with the release-v1 pretty-newline contract and source-binding-core bytes must equal the declared domain preimage; reject missing, alternate-path, extra, or noncanonical bytes",
+        "other_sha256_and_bytes_fields": "opaque file/artifact identities are verified against their separately declared regular non-symlink input or private retained artifact and are not required to be JSON or copied into this object store"
+      },
+      "closed_field_type_rules": {
+        "sha256_and_bytes_fields": [
+          "analysis_plan_sha256_and_bytes",
+          "artifact_sha256_and_bytes",
+          "attestation_attempt_marker_sha256_and_bytes",
+          "attestation_sha256_and_bytes",
+          "complete_unaliased_service_tuple_sha256_and_bytes",
+          "controller_state_predecessor_sha256_and_bytes",
+          "final_slot_resolution_sha256_and_bytes",
+          "holdout_terminal_receipt_sha256_and_bytes",
+          "implementation_stack_freeze_receipt_sha256_and_bytes",
+          "launch_attempt_marker_sha256_and_bytes",
+          "launcher_sha256_and_bytes",
+          "packet_manifest_sha256_and_bytes",
+          "probe_failure_marker_sha256_and_bytes",
+          "probe_attempt_marker_sha256_and_bytes",
+          "probe_sha256_and_bytes",
+          "provisional_ready_core_sha256_and_bytes",
+          "prior_active_services_state_sha256_and_bytes",
+          "observed_active_services_state_sha256_and_bytes",
+          "prior_source_binding_core_sha256_and_bytes",
+          "observed_source_binding_core_sha256_and_bytes",
+          "runtime_observer_sha256_and_bytes",
+          "same_stack_binding_sha256_and_bytes",
+          "sealer_sha256_and_bytes",
+          "segment_attestation_sha256_and_bytes",
+          "shadow_terminal_receipt_sha256_and_bytes",
+          "snapshot_set_sha256_and_bytes",
+          "source_binding_attestation_sha256_and_bytes",
+          "source_binding_core_sha256_and_bytes",
+          "stack_binding_sha256_and_bytes"
+        ],
+        "nullable_sha256_and_bytes_fields": [
+          "attestation_attempt_marker_sha256_and_bytes_or_null",
+          "launch_attempt_marker_sha256_and_bytes_or_null",
+          "launch_consumption_sha256_and_bytes_or_null",
+          "manifest_sha256_and_bytes_or_null",
+          "post_build_runtime_observation_sha256_and_bytes_or_null",
+          "pre_reader_launch_attempt_marker_sha256_and_bytes_or_null",
+          "seal_consumption_marker_sha256_and_bytes_or_null",
+          "sealer_sha256_and_bytes_or_null",
+          "slot_resolution_sha256_and_bytes_or_null",
+          "verifier_sha256_and_bytes_or_null"
+        ],
+        "alias_sha256_map_fields": [
+          "pre_database_instance_identity_sha256_by_alias",
+          "post_database_instance_identity_sha256_by_alias",
+          "pre_alias_service_database_binding_sha256_by_alias",
+          "post_alias_service_database_binding_sha256_by_alias"
+        ],
+        "alias_sha256_and_bytes_map_fields": [
+          "aliased_source_snapshot_sha256_and_bytes"
+        ],
+        "alias_timestamp_map_fields": [
+          "pre_source_clock_observed_at_by_alias",
+          "post_source_clock_observed_at_by_alias"
+        ],
+        "timestamp_fields": [
+          "absolute_horizon_expires_at",
+          "active_segment_lower_bound_exclusive_at",
+          "boundary_at",
+          "boundary_launcher_at",
+          "completed_at",
+          "consumed_at",
+          "controller_handoff_deadline_at",
+          "created_at",
+          "failed_at",
+          "frozen_at",
+          "grace_deadline_at",
+          "launched_at",
+          "lower_bound_exclusive_at",
+          "observed_at",
+          "post_observed_at",
+          "post_launcher_at",
+          "post_phase_started_at",
+          "pre_observed_at",
+          "pre_launcher_at",
+          "recorded_at",
+          "release_effective_at",
+          "scheduled_at",
+          "authorized_at",
+          "written_at",
+          "start_deadline_at",
+          "state_entry_at",
+          "terminated_at",
+          "validated_at",
+          "watchdog_deadline_at"
+        ],
+        "nullable_timestamp_fields": [
+          "launched_at_or_null",
+          "sealer_process_launched_at_or_null",
+          "watchdog_deadline_at_or_null",
+          "forced_termination_deadline_at_or_null"
+        ],
+        "sha256_fields": [
+          "active_services_state_sha256",
+          "entry_sha256",
+          "predecessor_closure_sha256",
+          "post_active_services_state_sha256",
+          "pre_active_services_state_sha256",
+          "previous_ledger_entry_sha256",
+          "resolution_id",
+          "segment_id"
+        ],
+        "nullable_sha256_fields": [
+          "predecessor_closure_sha256_or_null"
+        ],
+        "slot_index_fields": [
+          "final_slot_index",
+          "slot_index"
+        ],
+        "nonnegative_integer_fields": [
+          "attempt_ordinal",
+          "entry_index",
+          "segment_index",
+          "selected_event_count",
+          "selected_nonreplayable_event_count",
+          "selected_replayable_event_count",
+          "holdout_unseen_automatic_family_count",
+          "holdout_unseen_automatic_event_count",
+          "holdout_unseen_automatic_component_count",
+          "holdout_organic_event_count",
+          "holdout_organic_session_count",
+          "holdout_organic_component_count",
+          "holdout_project_scope_count",
+          "shadow_real_workflow_count",
+          "shadow_replayable_logical_call_count",
+          "shadow_real_workflow_component_count",
+          "shadow_project_scope_count"
+        ],
+        "boolean_fields": [
+          "controller_synthesized",
+          "retry_authorized"
+        ],
+        "schema_local_enum_or_conditional_fields": [
+          "aggregate_measurements_or_null",
+          "alias_ids_by_alias",
+          "attempt_scope",
+          "entry_kind",
+          "failure_class",
+          "failure_reason_or_null",
+          "failure_stage_or_null",
+          "holdout_terminal_receipt",
+          "key_created_or_null",
+          "mismatch_kinds",
+          "partition",
+          "phase_at_failure",
+          "pre_reader_phase",
+          "reader_id",
+          "reason",
+          "receipt_kind",
+          "replay_code_control_commit_and_tree",
+          "seal_authority_id",
+          "shadow_terminal_receipt",
+          "slot_index_or_null",
+          "source_open_count",
+          "source_open_count_or_null",
+          "status",
+          "terminal_status"
+        ]
+      },
+      "coverage_rule": "every field in every fields_exactly list must match exactly one closed_field_type_rules category or the constants schema_version/namespace; every schema_local_enum_or_conditional field must have an exact enum, literal, or conditional rule in that receipt schema; unmatched or multiply matched fields are invalid"
+    },
+    "source_binding_attestation": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "segment_index",
+        "attestation_attempt_marker_sha256_and_bytes",
+        "alias_ids_by_alias",
+        "pre_database_instance_identity_sha256_by_alias",
+        "post_database_instance_identity_sha256_by_alias",
+        "pre_alias_service_database_binding_sha256_by_alias",
+        "post_alias_service_database_binding_sha256_by_alias",
+        "active_services_state_sha256",
+        "source_binding_core_sha256_and_bytes",
+        "status",
+        "pre_observed_at",
+        "post_observed_at",
+        "runtime_observer_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+        ,"previous_ledger_entry_sha256"
+      ],
+      "receipt_kind": "source-binding-attestation",
+      "status": "pass",
+      "alias_ids_by_alias": "common_validation.composite_types.alias_id_map",
+      "map_rules": "all four digest maps have exactly local and alt; corresponding pre/post maps are byte-equal; the two database digests and the two binding digests are each distinct",
+      "bijection_rule": "the verifier privately recomputes each alias binding and proves its service/boot pair multiset equals the active complete unordered service/boot pair multiset exactly once each, with exact frozen authorities and two distinct database digests; no array-index inference is allowed",
+      "core_rule": "rebuild sources.source_binding_core from alias_ids_by_alias, the equal pre database map, the equal pre binding map, and active_services_state_sha256; source_binding_core_sha256_and_bytes.sha256 is SHA-256 of the declared domain preimage and .bytes is the byte length of that same preimage",
+      "marker_chain_rule": "attestation_attempt_marker is validator-valid with the same segment_index; initial uses initial-source-binding/slot 0/null closure and successor uses successor-segment/null slot/the exact predecessor closure; previous_ledger_entry_sha256 is the attempt marker ledger head",
+      "time_rule": "pre_observed_at is the launcher sample immediately before the first pre metadata observer and post_observed_at immediately follows the final post metadata observer; pre_observed_at < post_observed_at and both are row-blind; for initial binding attempt.written_at <= pre_observed_at < post_observed_at < its start_deadline_at, and the frozen implementation ordering plus fault-point tests enforce completion before key creation/source open while the ledger proves marker -> binding -> later resolution order; for a successor they equal the enclosing segment attestation pre_launcher_at and post_launcher_at"
+    },
+    "runtime_segment_attestation": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "segment_index",
+        "segment_id",
+        "attestation_attempt_marker_sha256_and_bytes",
+        "predecessor_closure_sha256",
+        "lower_bound_exclusive_at",
+        "pre_launcher_at",
+        "pre_source_clock_observed_at_by_alias",
+        "boundary_launcher_at",
+        "boundary_at",
+        "post_phase_started_at",
+        "post_source_clock_observed_at_by_alias",
+        "post_launcher_at",
+        "complete_unaliased_service_tuple_sha256_and_bytes",
+        "source_binding_attestation_sha256_and_bytes",
+        "active_services_state_sha256",
+        "replay_code_control_commit_and_tree",
+        "analysis_plan_sha256_and_bytes",
+        "previous_ledger_entry_sha256"
+      ],
+      "receipt_kind": "runtime-segment-attestation",
+      "status": "pass",
+      "successor_only": true,
+      "index_rule": "segment_index equals predecessor segment_index + 1",
+      "identity_rule": "segment_id is recomputed with domains.successor_segment_id_preimage; active_services_state_sha256 equals the hash in complete_unaliased_service_tuple_sha256_and_bytes; attestation_attempt_marker is the sole marker for this predecessor closure; the source-binding artifact validates independently and its pre/post observations equal this receipt's pre_launcher_at/post_launcher_at",
+      "marker_chain_rule": "the segment attestation and referenced source-binding attestation carry the same validator-valid attempt-marker identity, segment_index, and predecessor-closure hash; previous_ledger_entry_sha256 equals the source-binding ledger head",
+      "time_rule": "pre_launcher_at <= boundary_launcher_at; boundary_at equals max(boundary_launcher_at, both pre_source_clock_observed_at_by_alias values); lower_bound_exclusive_at equals boundary_at; every retained service boot_started_at is <= its corresponding pre observation; post_phase_started_at >= boundary_at + 0.25 seconds; every post source clock and post_launcher_at is greater than boundary_at; post_launcher_at - pre_launcher_at is less than 300 seconds",
+      "replay_code_control_commit_and_tree": {
+        "commit": "46a9951842512333b0896370056d07a9e1c25bdf",
+        "tree": "c1606671b9d13bed78c21b7d2f9a4bb75a3d1c1c"
+      }
+    },
+    "successor_attestation_attempt_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "attempt_scope",
+        "segment_index",
+        "slot_index_or_null",
+        "predecessor_closure_sha256_or_null",
+        "authorized_at",
+        "written_at",
+        "start_deadline_at",
+        "previous_ledger_entry_sha256",
+        "runtime_observer_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "runtime-attestation-attempt",
+      "attempt_scope_enum": [
+        "initial-source-binding",
+        "successor-segment"
+      ],
+      "conditional_rule": "initial-source-binding requires segment_index=0, slot_index_or_null=0, null predecessor closure, authorized_at equal schedule.first_slot_at, probe-attempt.launched_at <= written_at <= source-binding.pre_observed_at < start_deadline_at equal slot-0 grace deadline; successor-segment requires null slot, segment_index=predecessor+1, nonnull closure, authorized_at equal closure.validated_at, closure.validated_at <= written_at <= segment.pre_launcher_at < start_deadline_at equal closure.validated_at+30 seconds",
+      "attempt_rule": "write/fsync the initial marker immediately after the slot-0 probe-attempt ledger entry, or the successor marker immediately after the slot-closure ledger entry, then append its own ledger entry before either pre observer; these are ordered separate writes, and a crash/missing marker or ledger gap terminalizes through runtime_attestation_terminal_marker by start_deadline_at without authorizing another marker"
+    },
+    "runtime_attestation_terminal_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "attempt_scope",
+        "segment_index",
+        "attestation_attempt_marker_sha256_and_bytes_or_null",
+        "predecessor_closure_sha256_or_null",
+        "recorded_at",
+        "reason",
+        "previous_ledger_entry_sha256",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "runtime-attestation-terminal",
+      "status": "terminal-runtime-attestation-failure",
+      "attempt_scope_enum": [
+        "initial-source-binding",
+        "successor-segment"
+      ],
+      "reason_enum": [
+        "attempt-marker-create-failure",
+        "attempt-marker-collision",
+        "attempt-start-late",
+        "observation-unavailable",
+        "unstable-runtime",
+        "unstable-source-binding",
+        "boundary-invalid",
+        "next-slot-deadline",
+        "worker-crash-or-eof",
+        "watchdog-timeout",
+        "validator-failure"
+      ],
+      "marker_nullability": "attempt marker is null only for attempt-marker-create-failure, invalid collision, attempt-start-late, worker-crash-or-eof before durable marker validation, or watchdog-timeout before durable marker validation; predecessor closure is null only for initial-source-binding",
+      "retry_allowed": false
+    },
+    "slot_segment_closure_resolution": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "resolution_id",
+        "slot_index",
+        "scheduled_at",
+        "grace_deadline_at",
+        "launched_at",
+        "validated_at",
+        "segment_index",
+        "segment_id",
+        "mismatch_kinds",
+        "prior_active_services_state_sha256_and_bytes",
+        "observed_active_services_state_sha256_and_bytes",
+        "prior_source_binding_core_sha256_and_bytes",
+        "observed_source_binding_core_sha256_and_bytes",
+        "attestation_sha256_and_bytes",
+        "previous_ledger_entry_sha256",
+        "runtime_observer_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "slot-segment-closed",
+      "status": "segment-closed",
+      "mismatch_rule": "recompute exactly with runtime_segments.closure_mismatch_kinds_rule from the four retained content-addressed objects; unavailable or structurally invalid observation is never a closure",
+      "attestation_rule": "segment 0 attestation identity equals the pinned release control watermark; a successor equals its validator-valid runtime_segment_attestation artifact; segment_index and segment_id equal that attestation",
+      "identity_rule": "resolution_id is recomputed exactly with domains.slot_resolution_id_preimage",
+      "time_rule": "scheduled_at is the exact lattice time, grace_deadline_at = scheduled_at + 21600 seconds, and scheduled_at <= launched_at <= validated_at < grace_deadline_at"
+    },
+    "slot_probe_resolution": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "resolution_id",
+        "slot_index",
+        "scheduled_at",
+        "grace_deadline_at",
+        "launched_at",
+        "validated_at",
+        "release_effective_at",
+        "active_segment_lower_bound_exclusive_at",
+        "segment_id",
+        "segment_attestation_sha256_and_bytes",
+        "source_binding_attestation_sha256_and_bytes",
+        "previous_ledger_entry_sha256",
+        "pre_active_services_state_sha256",
+        "post_active_services_state_sha256",
+        "pre_database_instance_identity_sha256_by_alias",
+        "post_database_instance_identity_sha256_by_alias",
+        "pre_alias_service_database_binding_sha256_by_alias",
+        "post_alias_service_database_binding_sha256_by_alias",
+        "aliased_source_snapshot_sha256_and_bytes",
+        "selected_event_count",
+        "selected_replayable_event_count",
+        "selected_nonreplayable_event_count",
+        "holdout_unseen_automatic_family_count",
+        "holdout_unseen_automatic_event_count",
+        "holdout_unseen_automatic_component_count",
+        "holdout_organic_event_count",
+        "holdout_organic_session_count",
+        "holdout_organic_component_count",
+        "holdout_project_scope_count",
+        "shadow_real_workflow_count",
+        "shadow_replayable_logical_call_count",
+        "shadow_real_workflow_component_count",
+        "shadow_project_scope_count",
+        "runtime_observer_sha256_and_bytes",
+        "probe_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes",
+        "seal_consumption_marker_sha256_and_bytes_or_null",
+        "sealer_process_launched_at_or_null"
+      ],
+      "receipt_kind": "slot-probe-resolution",
+      "status_enum": [
+        "below-floor",
+        "ready"
+      ],
+      "count_rule": "selected_event_count equals selected_replayable_event_count plus selected_nonreplayable_event_count; every count is a nonnegative non-boolean integer",
+      "decision_rule": "status is ready iff every readiness.scheduled_ready_floor_groups_exactly floor passes on the complete replayable population; post_run_evidence_floor is never an input; otherwise status is below-floor",
+      "runtime_binding_rule": "release_effective_at equals the pinned 2026-08-14T15:03:46.793603Z; segment_id and active_segment_lower_bound_exclusive_at equal the referenced active segment; source_binding_attestation_sha256_and_bytes equals its active validator-valid binding artifact; pre_active_services_state_sha256 equals post_active_services_state_sha256 and the active segment digest; both pre/post database maps and both pre/post binding maps are pairwise equal and rebuild that active source-binding core; any mismatch cannot produce below-floor or ready",
+      "identity_rule": "resolution_id is recomputed exactly with domains.slot_resolution_id_preimage",
+      "time_rule": "scheduled_at is the exact lattice time, grace_deadline_at = scheduled_at + 21600 seconds, and scheduled_at <= launched_at <= validated_at < grace_deadline_at",
+      "snapshot_rule": "aliased_source_snapshot_sha256_and_bytes has exactly local and alt hash/byte identities and their SHA-256 values are distinct",
+      "segment_attestation_rule": "for segment 0, segment_attestation_sha256_and_bytes equals the pinned release control-watermark SHA-256/bytes; for a successor it equals that segment's validator-valid runtime_segment_attestation artifact",
+      "conditional_rule": "below-floor requires null seal-consumption and sealer-launch fields; ready requires both nonnull and is valid only after readiness.atomic_ready_handoff"
+    },
+    "post_build_runtime_observation": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "segment_id",
+        "observed_active_services_state_sha256_and_bytes",
+        "observed_source_binding_core_sha256_and_bytes",
+        "segment_attestation_sha256_and_bytes",
+        "snapshot_set_sha256_and_bytes",
+        "observed_at",
+        "runtime_observer_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "post-build-runtime-observation",
+      "status": "pass",
+      "equality_rule": "both observed objects equal the active segment and source-binding attestation byte-for-byte and the snapshot set equals the atomic handoff; mismatch or unavailability cannot produce this receipt"
+    },
+    "probe_attempt_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "slot_index",
+        "scheduled_at",
+        "grace_deadline_at",
+        "attempt_ordinal",
+        "launched_at",
+        "watchdog_deadline_at",
+        "segment_id",
+        "previous_ledger_entry_sha256",
+        "runtime_observer_sha256_and_bytes",
+        "probe_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "probe-attempt",
+      "attempt_ordinal": "first attempt in a slot is integer 0 and every authorized retry is exactly prior attempt_ordinal + 1; booleans, skips, reuse, and reset are invalid",
+      "watchdog_rule": "watchdog_deadline_at is the earlier of launched_at + 3600 seconds and grace_deadline_at minus 60 seconds; launches at or after that latest permissible instant are rejected before marker creation; unresolved workers are conservatively terminalized at the watchdog, leaving the fixed 60-second fsync margin",
+      "time_rule": "scheduled_at is the exact lattice instant; grace_deadline_at is scheduled_at + 21600 seconds; scheduled_at <= launched_at < watchdog_deadline_at < grace_deadline_at",
+      "written_before_key_creation_or_source_open": true
+    },
+    "probe_failure_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "slot_index",
+        "attempt_ordinal",
+        "probe_attempt_marker_sha256_and_bytes",
+        "failed_at",
+        "phase_at_failure",
+        "failure_class",
+        "source_open_count_or_null",
+        "key_created_or_null",
+        "retry_authorized",
+        "controller_synthesized",
+        "previous_ledger_entry_sha256",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "probe-failure",
+      "phase_at_failure_enum": [
+        "pre-key-pre-source",
+        "key-created-pre-source",
+        "first-source-opened",
+        "snapshots-latched",
+        "keyed-count-computed",
+        "atomic-seal-handoff",
+        "unknown-after-attempt"
+      ],
+      "failure_class_enum": [
+        "pre-source-retryable",
+        "post-source-terminal"
+      ],
+      "phase_value_rule": "known phases require source_open_count integer 0..2 and boolean key_created consistent with the phase; unknown-after-attempt requires both fields null, controller_synthesized true, failure_class post-source-terminal, and retry_authorized false",
+      "authority_boundary_rule": "atomic-seal-handoff is valid only before a seal-consumption marker exists; marker creation transfers every later failure exclusively to seal_terminal_receipt",
+      "attempt_binding_rule": "slot_index and attempt_ordinal equal the referenced validator-valid probe-attempt marker and previous_ledger_entry_sha256 is its ledger head",
+      "retry_equivalence": "only ordinary probe work after a validator-valid source binding may set retry_authorized true, exactly when phase is pre-key-pre-source, source_open_count_or_null is 0, key_created_or_null is false, controller_synthesized is false, and failure_class is pre-source-retryable; runtime/source-binding ceremonies never use this marker",
+      "watchdog_synthesis": "worker crash, EOF, or hang with unproved progress emits unknown-after-attempt at the referenced attempt watchdog deadline and immediately enters terminal-probe-integrity-failure"
+    },
+    "missed_slot_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "slot_index",
+        "scheduled_at",
+        "grace_deadline_at",
+        "recorded_at",
+        "source_open_count",
+        "previous_ledger_entry_sha256",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "missed-slot",
+      "status": "terminal-schedule-integrity-failure",
+      "source_open_count": 0,
+      "time_rule": "scheduled_at is the exact lattice instant for slot_index, grace_deadline_at = scheduled_at + 21600 seconds, and recorded_at >= grace_deadline_at",
+      "precondition": "no validator-valid slot resolution exists for slot_index and no attempt artifact proves any source open; the marker is the immutable terminal resolution and no retry follows"
+    },
+    "horizon_terminal_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "final_slot_index",
+        "final_slot_resolution_sha256_and_bytes",
+        "absolute_horizon_expires_at",
+        "recorded_at",
+        "reason",
+        "previous_ledger_entry_sha256",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "horizon-terminal",
+      "status": "insufficient-evidence",
+      "reason_enum": [
+        "final-slot-below-floor",
+        "final-slot-segment-closed"
+      ],
+      "exact_rule": "final_slot_index is 28, absolute_horizon_expires_at is 2026-09-14T06:00:00.000000Z, recorded_at >= that instant, and final_slot_resolution_sha256_and_bytes resolves to slot 28 with below-floor exactly for final-slot-below-floor or segment-closed exactly for final-slot-segment-closed"
+    },
+    "ledger_entry": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "entry_index",
+        "entry_kind",
+        "slot_index_or_null",
+        "artifact_sha256_and_bytes",
+        "previous_ledger_entry_sha256",
+        "entry_sha256"
+      ],
+      "entry_kind_enum": [
+        "segment-attestation",
+        "runtime-attestation-attempt",
+        "runtime-attestation-terminal",
+        "source-binding-attestation",
+        "probe-attempt",
+        "probe-failure",
+        "probe-terminal",
+        "below-floor",
+        "ready",
+        "slot-segment-closed",
+        "missed-slot",
+        "seal-consumption",
+        "seal-terminal",
+        "horizon-terminal"
+      ],
+      "slot_index_or_null": "segment-attestation is null; runtime-attestation-attempt, runtime-attestation-terminal, and source-binding-attestation are 0 for initial-source-binding and null for successor-segment; all probe/resolution/seal/horizon artifacts carry their exact slot",
+      "entry_index_rule": "entry_index is 0 for the first entry and exactly predecessor.entry_index + 1 thereafter; reuse, skip, negative, or boolean is invalid",
+      "genesis_rule": "entry 0 is segment-attestation pointing to the exact release control-watermark SHA-256/bytes and its previous_ledger_entry_sha256 equals domains.ledger_genesis_value",
+      "artifact_kind_rule": {
+        "segment-attestation": "control-watermark for entry 0 or runtime-segment-attestation for successors",
+        "runtime-attestation-attempt": "runtime-attestation-attempt",
+        "runtime-attestation-terminal": "runtime-attestation-terminal",
+        "source-binding-attestation": "source-binding-attestation",
+        "probe-attempt": "probe-attempt",
+        "probe-failure": "probe-failure",
+        "probe-terminal": "probe-terminal",
+        "below-floor": "slot-probe-resolution with status below-floor",
+        "ready": "slot-probe-resolution with status ready",
+        "slot-segment-closed": "slot-segment-closed",
+        "missed-slot": "missed-slot",
+        "seal-consumption": "seal-consumption",
+        "seal-terminal": "seal-terminal",
+        "horizon-terminal": "horizon-terminal"
+      },
+      "bootstrap_and_successor_order": "entry 0 control-watermark segment -> slot-0 probe-attempt -> initial runtime-attestation-attempt -> initial source-binding -> continuation of that same slot-0 probe without a second attempt marker; for a changed slot 0..27: slot-segment-closed -> successor runtime-attestation-attempt -> successor source-binding -> successor segment-attestation; slot-28 closure goes only to horizon; each artifact's own previous_ledger_entry_sha256 equals the immediate prior ledger head",
+      "hash_derivation": "domains.ledger_entry_preimage and ledger_entry_value; artifact identity resolves through common_validation.content_addressed_artifact_resolution and its receipt kind/status must match artifact_kind_rule"
+    },
+    "seal_consumption_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "seal_authority_id",
+        "slot_index",
+        "segment_id",
+        "provisional_ready_core_sha256_and_bytes",
+        "snapshot_set_sha256_and_bytes",
+        "consumed_at",
+        "previous_ledger_entry_sha256",
+        "sealer_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "seal-consumption",
+      "seal_authority_id": "confirmatory-holdout-v3-seal",
+      "creation_precedes_process_spawn": true,
+      "snapshot_rule": "snapshot_set_sha256_and_bytes is recomputed from the exact ready resolution aliased_source_snapshot_sha256_and_bytes with domains.snapshot_set_preimage/value",
+      "overwrite_or_second_marker_action": "terminal-seal-failure"
+    },
+    "probe_terminal_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "slot_index",
+        "attempt_ordinal",
+        "probe_failure_marker_sha256_and_bytes",
+        "recorded_at",
+        "previous_ledger_entry_sha256",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "probe-terminal",
+      "status": "terminal-probe-integrity-failure",
+      "precondition": "failure_class is post-source-terminal; no missed-slot marker and no retry"
+    },
+    "seal_terminal_receipt": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "status",
+        "failure_stage_or_null",
+        "failure_reason_or_null",
+        "provisional_ready_core_sha256_and_bytes",
+        "seal_consumption_marker_sha256_and_bytes_or_null",
+        "slot_resolution_sha256_and_bytes_or_null",
+        "segment_attestation_sha256_and_bytes",
+        "snapshot_set_sha256_and_bytes",
+        "post_build_runtime_observation_sha256_and_bytes_or_null",
+        "manifest_sha256_and_bytes_or_null",
+        "watchdog_deadline_at_or_null",
+        "forced_termination_deadline_at_or_null",
+        "completed_at",
+        "previous_ledger_entry_sha256",
+        "sealer_sha256_and_bytes_or_null",
+        "verifier_sha256_and_bytes_or_null",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "seal-terminal",
+      "status_enum": [
+        "sealed",
+        "terminal-seal-failure"
+      ],
+      "failure_stage_enum": [
+        null,
+        "marker-create",
+        "marker-ledger",
+        "spawn",
+        "ready-staging",
+        "ready-ipc",
+        "ready-visibility",
+        "start-gate",
+        "blocked-child",
+        "build",
+        "post-build-observation",
+        "publication",
+        "validation",
+        "watchdog"
+      ],
+      "failure_reason_enum": [
+        null,
+        "marker-create-failure",
+        "marker-collision",
+        "marker-validation-failure",
+        "marker-ledger-failure",
+        "spawn-failure",
+        "staging-failure",
+        "ready-ledger-failure",
+        "ipc-validation-failure",
+        "atomic-visibility-failure",
+        "start-gate-failure",
+        "blocked-child-eof",
+        "handoff-timeout",
+        "build-failure",
+        "runtime-change",
+        "observation-unavailable",
+        "publication-failure",
+        "verifier-failure",
+        "timeout",
+        "forced-termination"
+      ],
+      "sealed_conditional_fields": "status sealed requires null failure fields and every *_or_null artifact nonnull",
+      "stage_reason_matrix": {
+        "marker-create": ["marker-create-failure", "marker-collision"],
+        "marker-ledger": ["marker-validation-failure", "marker-ledger-failure"],
+        "spawn": ["spawn-failure", "handoff-timeout"],
+        "ready-staging": ["staging-failure", "ready-ledger-failure", "handoff-timeout"],
+        "ready-ipc": ["ipc-validation-failure", "handoff-timeout"],
+        "ready-visibility": ["atomic-visibility-failure", "handoff-timeout"],
+        "start-gate": ["start-gate-failure", "handoff-timeout"],
+        "blocked-child": ["blocked-child-eof", "handoff-timeout"],
+        "build": ["build-failure"],
+        "post-build-observation": ["runtime-change", "observation-unavailable"],
+        "publication": ["publication-failure"],
+        "validation": ["verifier-failure"],
+        "watchdog": ["timeout", "forced-termination"]
+      },
+      "watchdog_rule": "after a semantically valid seal marker, every pre-gate handoff stage shares one deadline marker.consumed_at+30 seconds; watchdog_deadline_at_or_null equals marker.consumed_at+3600 seconds and forced_termination_deadline_at_or_null equals watchdog+30 seconds; both watchdog fields are null exactly when no semantically valid marker exists",
+      "marker_identity_rule": "marker-create-failure has a null marker identity; marker-collision or marker-validation-failure may carry the hash/byte identity of resolvable invalid bytes but those bytes are expected to fail semantic validation; every later stage requires a nonnull semantically validator-valid marker",
+      "time_rule": "a marker-create, marker-collision, or marker-validation failure completes inside the originating slot grace; every other pre-gate failure and the ready resolution validated_at are at or before marker.consumed_at+30 seconds; sealed or non-timeout post-gate completion is at or before watchdog_deadline_at; timeout completes from watchdog_deadline_at through forced_termination_deadline_at inclusive; forced-termination completes exactly at forced_termination_deadline_at; no deadline resets on recovery",
+      "ledger_predecessor_rule": "marker-create and proven-absent marker-ledger failures append from pre-consumption head H; a marker-ledger write/fsync error is resolved read-only at the unique entry path: exact valid intended M becomes authoritative and recovery continues from M, proven absence terminalizes from H, and invalid/partial/colliding bytes cause terminal integrity escalation without writing an alternate branch; spawn through blocked-child failures append from M; build through validation/watchdog failures and sealed success append from atomically visible ready head R; no branch, skipped predecessor, or fabricated M/R is valid",
+      "cross_artifact_rule": "every present snapshot_set_sha256_and_bytes equals the seal marker, ready resolution, post-build observation, and packet manifest identity; every present slot/manifest artifact and every marker except the explicitly expected invalid marker cases resolves and validates rather than matching by digest spelling alone",
+      "failure_conditional_fields": "status terminal-seal-failure requires nonnull stage/reason permitted by stage_reason_matrix; marker nullability follows marker_identity_rule, slot resolution may be null only before the ready bundle becomes visible, post-build observation may be null before that phase, for observation-unavailable, or at watchdog failure, manifest/verifier may be null before their phases, and no absent artifact may be fabricated"
+    },
+    "implementation_stack_freeze_receipt": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "frozen_at",
+        "packet_manifest_sha256_and_bytes",
+        "stack_binding_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "implementation-stack-freeze",
+      "time_rule": "frozen_at is the single durable transition instant after every implementation, evaluator, calculator, configuration, threshold, dependency/environment, runtime-setting, resolver, and arm-schedule member is content-hash bound and before development calibration",
+      "binding_rule": "stack_binding_sha256_and_bytes resolves as the exact frozen measurement stack required by hash_binding.evaluation_receipt_must_bind; packet and plan identities match that stack object; overwrite, alternate freeze receipt, or mutable-name-only binding is invalid"
+    },
+    "pre_reader_launch_attempt_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "pre_reader_phase",
+        "controller_state_predecessor_sha256_and_bytes",
+        "consumed_at",
+        "start_deadline_at",
+        "watchdog_deadline_at",
+        "packet_manifest_sha256_and_bytes",
+        "stack_binding_sha256_and_bytes",
+        "launcher_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "pre-reader-launch-attempt",
+      "pre_reader_phase_enum": [
+        "development-calibration",
+        "public-evaluation"
+      ],
+      "creation": "one O_CREAT|O_EXCL regular non-symlink marker per exact phase, fsynced before process spawn; creation consumes that phase and overwrite, second marker, second process, alias, or retry is invalid",
+      "predecessor_rule": "development-calibration predecessor resolves as implementation_stack_freeze_receipt and public-evaluation predecessor resolves as development_terminal_receipt with terminal_status pass; packet, stack, and plan identities are equal",
+      "time_rule": "consumed_at is at or after predecessor.frozen_at for development or predecessor.terminated_at for public; start_deadline_at is exactly that predecessor instant+30 seconds; consumed_at and process launch are no later than start_deadline_at; watchdog_deadline_at equals that same predecessor instant+3600 seconds and never resets"
+    },
+    "development_terminal_receipt": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "terminal_status",
+        "state_entry_at",
+        "implementation_stack_freeze_receipt_sha256_and_bytes",
+        "pre_reader_launch_attempt_marker_sha256_and_bytes_or_null",
+        "launched_at_or_null",
+        "watchdog_deadline_at",
+        "terminated_at",
+        "packet_manifest_sha256_and_bytes",
+        "stack_binding_sha256_and_bytes",
+        "controller_synthesized",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "development-calibration-terminal",
+      "terminal_status_enum": [
+        "pass",
+        "fail",
+        "crash",
+        "invalid-output",
+        "inconclusive",
+        "timeout"
+      ],
+      "time_rule": "implementation_stack_freeze_receipt resolves and state_entry_at equals its frozen_at; a present launch marker has phase development-calibration, watchdog_deadline_at equal state_entry_at+3600 seconds, and a process launch has marker.consumed_at <= launched_at_or_null <= marker.start_deadline_at; marker creation/validation failure has a null marker, while a valid marker followed by spawn/no-launch failure keeps the marker nonnull; either no-launch path has null launched_at_or_null and timeout terminates exactly at state_entry_at+30 seconds; a receipt may not hide an existing valid marker; a launched-process timeout terminates from watchdog through watchdog+30 seconds and every other launched status terminates at or before watchdog",
+      "status_and_nullability": "pass/fail require nonnull launched_at and controller_synthesized false; every other status has null outcome aggregates and may be controller-synthesized; only a no-launch timeout has null launched_at",
+      "binding_rule": "packet manifest, stack binding, and analysis plan equal the implementation_stack_freeze_receipt; only terminal_status pass authorizes public evaluation"
+    },
+    "public_terminal_receipt": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "terminal_status",
+        "state_entry_at",
+        "pre_reader_launch_attempt_marker_sha256_and_bytes_or_null",
+        "launched_at_or_null",
+        "watchdog_deadline_at",
+        "controller_handoff_deadline_at",
+        "terminated_at",
+        "controller_state_predecessor_sha256_and_bytes",
+        "packet_manifest_sha256_and_bytes",
+        "stack_binding_sha256_and_bytes",
+        "controller_synthesized",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "public-evaluation-terminal",
+      "terminal_status_enum": [
+        "pass",
+        "fail",
+        "crash",
+        "invalid-output",
+        "inconclusive",
+        "timeout"
+      ],
+      "time_rule": "controller_state_predecessor resolves as a validator-valid development_terminal_receipt with status pass and state_entry_at equals predecessor.terminated_at; a present launch marker has phase public-evaluation, watchdog_deadline_at equal state_entry_at+3600 seconds, and a process launch has marker.consumed_at <= launched_at_or_null <= marker.start_deadline_at; marker creation/validation failure has a null marker, while a valid marker followed by spawn/no-launch failure keeps the marker nonnull; either no-launch path has null launched_at_or_null and timeout terminates exactly at state_entry_at+30 seconds; a receipt may not hide an existing valid marker; a launched-process timeout terminates from watchdog through watchdog+30 seconds and every other launched status terminates at or before watchdog; controller_handoff_deadline_at equals terminated_at+30 seconds",
+      "status_and_nullability": "pass/fail require nonnull launched_at and controller_synthesized false; crash, invalid-output, and inconclusive require nonnull launched_at and may be controller-synthesized only when the evaluator failed to emit a validator-valid terminal artifact; timeout may have null launched_at only for the no-launch deadline and is controller-synthesized",
+      "binding_rule": "packet manifest, stack binding, and analysis plan equal the predecessor development receipt and are the exact frozen artifacts later required by both reader launch-attempt markers; no public metric or case content is present"
+    },
+    "reader_terminal_receipt": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "reader_id",
+        "partition",
+        "terminal_status",
+        "launched_at_or_null",
+        "watchdog_deadline_at",
+        "controller_handoff_deadline_at",
+        "terminated_at",
+        "controller_state_predecessor_sha256_and_bytes",
+        "launch_attempt_marker_sha256_and_bytes_or_null",
+        "launch_consumption_sha256_and_bytes_or_null",
+        "packet_manifest_sha256_and_bytes",
+        "stack_binding_sha256_and_bytes",
+        "aggregate_measurements_or_null",
+        "controller_synthesized",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "reader-terminal",
+      "reader_id_partition_pairs": {
+        "confirmatory-shadow-v3-eval": "shadow",
+        "confirmatory-holdout-v3-eval": "holdout"
+      },
+      "terminal_status_enum": [
+        "pass",
+        "fail",
+        "crash",
+        "invalid-output",
+        "inconclusive",
+        "timeout",
+        "launch-failure",
+        "launch-integrity-failure"
+      ],
+      "status_normalization": {
+        "forced-termination-after-watchdog": "timeout",
+        "pre-open-validation-failure": "invalid-output",
+        "spawn-failure-after-valid-consumption-marker": "launch-failure",
+        "attempt-marker-create-or-validation-failure": "launch-integrity-failure",
+        "consumption-marker-create-or-validation-failure": "launch-integrity-failure"
+      },
+      "status_and_nullability": "pass/fail require nonnull attempt, consumption, launched_at, and aggregate with controller_synthesized false; crash/invalid-output/inconclusive/timeout require nonnull attempt, consumption, and launched_at, null aggregate, controller_synthesized true; launch-failure requires nonnull attempt and consumption but null launched_at/aggregate with controller_synthesized true; launch-integrity-failure permits null attempt only for attempt-marker failure and requires null consumption/launched_at/aggregate with controller_synthesized true",
+      "cross_artifact_equalities": "reader_id, partition, controller predecessor SHA-256/bytes, packet manifest, stack binding, analysis plan, and watchdog equal every present launch marker; shadow controller predecessor resolves as public_terminal_receipt and holdout controller predecessor resolves as the embargoed reader_terminal_receipt for shadow; predecessor terminal time <= attempt.consumed_at <= consumption.consumed_at <= launched_at <= watchdog_deadline_at when those values exist, and every launched_at is no later than the attempt marker controller_handoff_deadline_at; watchdog_deadline_at equals attempt consumed_at plus 3600 seconds when attempt exists and otherwise predecessor terminal time plus 3600 seconds; terminated_at is not before every applicable predecessor/attempt/launch instant; timeout requires watchdog_deadline_at <= terminated_at <= watchdog_deadline_at+30 seconds, while every other validated terminal receipt is at or before its watchdog deadline",
+      "handoff_deadline_rule": "for pass, fail, crash, invalid-output, inconclusive, or timeout, controller_handoff_deadline_at equals terminated_at+30 seconds; launch-failure and launch-integrity-failure inherit the attempt marker's controller_handoff_deadline_at; when the attempt marker is null, shadow derives public_predecessor.terminated_at+30 seconds while holdout inherits shadow_predecessor.controller_handoff_deadline_at; those synthetic launch statuses terminate no later than that inherited deadline, so chained shadow-to-holdout failure handling never receives a fresh 30-second window",
+      "aggregate_measurements_or_null": "the exact partition-specific registry below only for validated pass/fail; null for every controller-synthesized terminal status",
+      "aggregate_measurements_schema": {
+        "holdout_fields_exactly": [
+          "unseen_repeated_automatic_character_reduction",
+          "automatic_content_access",
+          "organic_payload_delta",
+          "organic_access_delta",
+          "agent_triggered_byte_mismatch_count",
+          "novel_nodes_content_bearing_fraction",
+          "automatic_component_count",
+          "organic_component_count",
+          "metric_failure_reason_by_metric",
+          "uncertainty_by_metric",
+          "all_holdout_point_gates_pass"
+        ],
+        "shadow_fields_exactly": [
+          "shadow_latency_p50_degradation",
+          "shadow_latency_p95_degradation",
+          "complete_paired_measured_call_count",
+          "distinct_workflow_with_complete_pair_count",
+          "shadow_component_count",
+          "metric_failure_reason_by_metric",
+          "uncertainty_by_metric",
+          "all_shadow_point_gates_pass"
+        ],
+        "holdout_uncertainty_metric_keys_exactly": [
+          "unseen_repeated_automatic_character_reduction",
+          "automatic_content_access",
+          "organic_payload_delta",
+          "organic_access_delta",
+          "agent_triggered_delivery",
+          "novel_nodes_content_bearing"
+        ],
+        "shadow_uncertainty_metric_keys_exactly": [
+          "shadow_latency_p50_degradation",
+          "shadow_latency_p95_degradation"
+        ],
+        "holdout_point_metric_keys_exactly": [
+          "unseen_repeated_automatic_character_reduction",
+          "automatic_content_access",
+          "organic_payload_delta",
+          "organic_access_delta",
+          "agent_triggered_byte_mismatch_count",
+          "novel_nodes_content_bearing_fraction"
+        ],
+        "shadow_point_metric_keys_exactly": [
+          "shadow_latency_p50_degradation",
+          "shadow_latency_p95_degradation"
+        ],
+        "point_to_uncertainty_key": {
+          "unseen_repeated_automatic_character_reduction": "unseen_repeated_automatic_character_reduction",
+          "automatic_content_access": "automatic_content_access",
+          "organic_payload_delta": "organic_payload_delta",
+          "organic_access_delta": "organic_access_delta",
+          "agent_triggered_byte_mismatch_count": "agent_triggered_delivery",
+          "novel_nodes_content_bearing_fraction": "novel_nodes_content_bearing",
+          "shadow_latency_p50_degradation": "shadow_latency_p50_degradation",
+          "shadow_latency_p95_degradation": "shadow_latency_p95_degradation"
+        },
+        "integer_count_fields_exactly": [
+          "agent_triggered_byte_mismatch_count",
+          "automatic_component_count",
+          "organic_component_count",
+          "complete_paired_measured_call_count",
+          "distinct_workflow_with_complete_pair_count",
+          "shadow_component_count"
+        ],
+        "uncertainty_object_fields_exactly": [
+          "full_sample_point_estimate",
+          "ci_lower",
+          "ci_upper",
+          "component_count",
+          "observation_count",
+          "seed",
+          "resamples",
+          "invalid_replicate_count"
+        ],
+        "point_metric_type": "finite JSON number, except agent_triggered_byte_mismatch_count is a nonnegative non-boolean integer; either may be null iff the same metric has a nonnull failure reason and the partition gate boolean is false; NaN, infinity, and fractional mismatch counts are forbidden",
+        "metric_failure_reason_keys": "exactly holdout_point_metric_keys_exactly or shadow_point_metric_keys_exactly for that partition",
+        "metric_failure_reason_value_enum": [
+          null,
+          "missing-metric",
+          "zero-denominator",
+          "incomplete-pair",
+          "instrumentation-gap"
+        ],
+        "pass_nullability_rule": "terminal_status is pass iff every point metric has its exact valid type, every failure reason is null, the post-run floor applies where required, and the recomputed partition gate boolean is true",
+        "fail_nullability_rule": "terminal_status is fail iff the recomputed partition gate boolean is false; it may carry typed failed-gate values or typed nulls, and each null has exactly one nonnull enum reason",
+        "ci_type": "finite JSON number, or null iff invalid_replicate_count is nonzero",
+        "count_type": "integer >= 0; booleans are not integers",
+        "resamples": 10000,
+        "uncertainty_binding": "full_sample_point_estimate equals its mapped outer point metric; resamples equals 10000; seed equals 588763221 for automatic/novel metrics, 1632232291 for organic/agent metrics, and 2220152078 for shadow metrics; component_count equals the corresponding exact outer component count and observation_count equals the complete untrimmed cohort opportunity count",
+        "gate_recomputation": "the verifier recomputes every frozen operator against the exact outer point metric, typed failure reason, post-run counts, and uncertainty registry; a supplied gate boolean is not trusted",
+        "gate_pass_type": "boolean",
+        "partition_schema_mismatch_action": "invalid reader receipt",
+        "all_point_gates_pass": "joint confirmation requires both partition-specific gate booleans true and every other frozen gate true",
+        "extra_nested_members_allowed": false
+      }
+    },
+    "reader_launch_attempt_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "reader_id",
+        "partition",
+        "packet_manifest_sha256_and_bytes",
+        "stack_binding_sha256_and_bytes",
+        "consumed_at",
+        "watchdog_deadline_at",
+        "controller_handoff_deadline_at",
+        "controller_state_predecessor_sha256_and_bytes",
+        "launcher_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "reader-launch-attempt",
+      "reader_id_partition_pairs": {
+        "confirmatory-shadow-v3-eval": "shadow",
+        "confirmatory-holdout-v3-eval": "holdout"
+      },
+      "creation": "O_CREAT|O_EXCL and durable fsync consumes authority before consumption-marker creation, process spawn, or source open",
+      "predecessor_rule": "shadow maps to an exact public_terminal_receipt and holdout maps to an exact embargoed reader_terminal_receipt for shadow; consumed_at is at or after that artifact's terminated_at and no later than controller_handoff_deadline_at; for shadow that deadline equals public.terminated_at+30 seconds, while for holdout it equals the predecessor shadow receipt's controller_handoff_deadline_at",
+      "handoff_deadline_rule": "controller_handoff_deadline_at is the nonresetting deadline derived by predecessor_rule; marker creation, validation, consumption-marker creation, and evaluator spawn must all complete no later than it",
+      "watchdog_deadline": "exactly consumed_at + 3600 seconds"
+    },
+    "reader_launch_consumption_marker": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "reader_id",
+        "partition",
+        "launch_attempt_marker_sha256_and_bytes",
+        "packet_manifest_sha256_and_bytes",
+        "stack_binding_sha256_and_bytes",
+        "consumed_at",
+        "watchdog_deadline_at",
+        "controller_handoff_deadline_at",
+        "launcher_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "reader-launch-consumption",
+      "reader_id_partition_pairs": {
+        "confirmatory-shadow-v3-eval": "shadow",
+        "confirmatory-holdout-v3-eval": "holdout"
+      },
+      "creation": "O_CREAT|O_EXCL and durable fsync after the attempt marker and before evaluator process spawn or source open",
+      "cross_artifact_equalities": "reader_id, partition, packet manifest, stack binding, launcher, plan, watchdog deadline, and controller handoff deadline equal the attempt marker; attempt.consumed_at <= consumed_at <= controller_handoff_deadline_at, and evaluator launched_at when present is also no later than that deadline",
+      "overwrite_second_marker_or_spawn_failure_action": "authority remains consumed; controller emits the corresponding aggregate terminal receipt and advances the unconditional sequence"
+    },
+    "joint_reader_release_manifest": {
+      "fields_exactly": [
+        "schema_version",
+        "namespace",
+        "receipt_kind",
+        "shadow_terminal_receipt",
+        "shadow_terminal_receipt_sha256_and_bytes",
+        "holdout_terminal_receipt",
+        "holdout_terminal_receipt_sha256_and_bytes",
+        "same_stack_binding_sha256_and_bytes",
+        "created_at",
+        "launcher_sha256_and_bytes",
+        "analysis_plan_sha256_and_bytes"
+      ],
+      "receipt_kind": "joint-reader-release",
+      "embedded_receipt_schema": "shadow_terminal_receipt is exactly reader confirmatory-shadow-v3-eval/partition shadow and holdout_terminal_receipt exactly confirmatory-holdout-v3-eval/partition holdout; each recursively satisfies reader_terminal_receipt and hashes to its adjacent identity; both have identical packet manifest, analysis plan, and stack binding equal same_stack_binding_sha256_and_bytes",
+      "time_rule": "both terminal receipts precede or equal created_at and holdout.terminated_at <= created_at <= holdout.controller_handoff_deadline_at; synthetic failure chains retain their inherited original deadline rather than receiving another 30 seconds",
+      "publication": "write and fsync one private same-filesystem temp envelope containing both embedded receipts, fsync parent, then use one atomic no-replace visibility operation; private receipt files are never directly visible",
+      "recovery": "validate and atomically publish an existing private temp under the original 30-second deadline, or validate an existing final envelope; never overwrite, split, or publish one receipt alone",
+      "partial_or_duplicate_action": "terminal evaluation-integrity failure; preserve private evidence and expose no partial envelope"
+    }
+  },
+  "publication_and_ordering": {
+    "state_sequence": [
+      "v3-protocol-frozen",
+      "source-blind-runtime-probe-ledger-and-packet-tooling-frozen",
+      "scheduled-aggregate-accrual",
+      "first-ready-atomic-consumption-and-sealer-handoff",
+      "one-shot-both-partitions-sealed",
+      "packet-seal-commit-created",
+      "repair-specific-production-and-semantic-evaluator-changes-begin",
+      "implementation-and-measurement-stack-frozen",
+      "one-shot-development-calibration-terminal-pass",
+      "one-shot-public-evaluation-terminal-attempt",
+      "embargoed-shadow-reader-launch",
+      "unconditional-holdout-reader-launch",
+      "joint-aggregate-receipt-release"
+    ],
+    "packet_publication_attempts": 1,
+    "no_overwrite": true,
+    "content_before_manifest": true,
+    "manifest_last": true,
+    "sealed_state": {
+      "canonical_manifest_present": true,
+      "manifest_hash_valid": true,
+      "frozen": true,
+      "latched_slot_status": "ready",
+      "first_ready_predecessor_chain_valid": true,
+      "active_segment_open_at_atomic_handoff": true,
+      "active_segment_unchanged_at_post_build_pre_manifest_observation": true,
+      "keyed_preseal_status": "pass",
+      "keyed_preseal_mismatches": 0,
+      "semantic_reads": {
+        "confirmatory-shadow-v3-eval": 0,
+        "confirmatory-holdout-v3-eval": 0
+      },
+      "consumption_record_location": "separate hash-bound aggregate receipts only"
+    },
+    "partial_publication_action": "terminal-seal-failure",
+    "post_build_pre_manifest_runtime_change_action": "terminal-seal-failure after one-shot authority consumption; no reseal or later-slot substitution",
+    "reseal_allowed": false,
+    "repair_before_both_partitions_sealed": false,
+    "semantic_evaluator_before_both_partitions_sealed": false,
+    "packet_seal_commit_must_be_strict_ancestor_of_repair_and_evaluator_commits": true,
+    "timestamps_alone_sufficient": false,
+    "protocol_to_packet_diff_must_exclude_production_repair_and_semantic_evaluator": true
+  },
+  "measurement": {
+    "design": "paired gating-off replay control and candidate executions over identical ordered replayable logical calls",
+    "point_estimate_population": "complete input-only replayable cohort in the reader's partition; every selected nonreplayable inventory event remains accounted but is predeclared outside measured cohorts",
+    "reference_behavior": "gating-off control implementation is exactly commit 46a9951842512333b0896370056d07a9e1c25bdf/tree c1606671b9d13bed78c21b7d2f9a4bb75a3d1c1c; the candidate is the future post-seal repair implementation. They use the same evaluator, configuration, environment, seed state, resolver, and ordered inputs but necessarily distinct hash-bound arm implementations. The serving accrual build supplies population only and is never either replay arm",
+    "cohorts": {
+      "unseen_repeated_automatic": "every replayable holdout automatic event belonging to a replayable-event-qualified repeated family absent from the complete frozen-dev automatic reference",
+      "organic": "every replayable selected holdout event with persisted agent IS NOT NULL",
+      "agent_triggered": "every organic cohort event, with agent-triggered provenance fixed in the pre-candidate envelope",
+      "shadow": "every selected replayable shadow logical call; incomplete post-run pairs fail rather than disappear",
+      "novel_node_opportunity": "for each qualifying unseen family in canonical gating-off event order, every opaque gating-off node not present in an earlier gating-off event of that family; all first-event nodes are novel"
+    },
+    "content_access_opportunity": "one opaque event-node pair in the gating-off delivery; candidate preserves access only when the same node is inline with nonempty content or its content_ref passes isolated resolution",
+    "content_ref_resolver": {
+      "phase": "after every primary timed recall call in both arms has completed",
+      "environment": "fresh isolated read-only clone of the corresponding arm's pre-call sealed node state",
+      "operation": "invoke the normal frozen MCP memory_lookup path once per unique opaque content_ref and reduce to a boolean resolvable value",
+      "shares_state_cache_or_process_with_primary_calls": false,
+      "resolver_payload_or_latency_in_primary_metrics": false,
+      "receipt_binding": "resolver code, configuration, and initial-state SHA-256 and bytes"
+    },
+    "content_bearing_delivery": "same opaque node present in candidate delivery with nonempty inline content; a stub or content_ref alone is not content-bearing",
+    "serialized_character_measure": {
+      "value": "decoded content member of the MCP tool-result envelope for the logical call",
+      "serialization": "Python json.dumps(value, ensure_ascii=False) with default separators and insertion order under the hash-bound runtime",
+      "count": "Python len of the resulting Unicode string",
+      "same_function_both_arms": true
+    },
+    "latency_measure": {
+      "clock": "monotonic_ns",
+      "start": "immediately before dispatch of the MCP recall request",
+      "stop": "immediately after the complete MCP response is received and parsed",
+      "process_startup_excluded": true,
+      "source_case_warmups_allowed": false,
+      "empirical_quantile": "sort complete paired-call arm values ascending and select index max(0, ceil(p * n) - 1), independently for p=0.50 and p=0.95"
+    },
+    "state_isolation": {
+      "state_granularity": "one seed state per partition and source alias",
+      "seed_source": "the exact latched first-ready snapshot for that source alias",
+      "construction": {
+        "shared_validator_reference": "replayability.shared_seed_state_validation; aggregate probe, sealer, and evaluator seed builder must bind the same contract ID and implementation SHA-256",
+        "schema": "fresh database created by the hash-bound pre-repair packet-state builder",
+        "copied_table_column_allowlist": {
+          "nodes": [
+            "packet_node_label",
+            "level",
+            "deidentified_content",
+            "packet_scope_label",
+            "created_at"
+          ],
+          "connections": [
+            "source_packet_node_label",
+            "target_packet_node_label",
+            "relation_type",
+            "weight"
+          ],
+          "retrieval_weights": [
+            "packet_scope_label",
+            "bm25_weight",
+            "vector_weight",
+            "graph_weight"
+          ]
+        },
+        "source_retrieval_policy_keys_required": [
+          "default",
+          "project",
+          "global",
+          "session"
+        ],
+        "source_retrieval_policy_key_validation": "exactly replayability.shared_seed_state_validation; policy-key allowlist plus explicit supported concrete learned-policy-key mapping; never a node memory-scope predicate",
+        "empty_source_retrieval_weights_table_validates_production_shape": false,
+        "all_other_source_tables_or_columns": "not copied; any required extra field is a fatal preseal protocol mismatch",
+        "recall_events": "empty at seed; no pre-boundary or candidate recall event is copied",
+        "forced_empty_state": [
+          "recall_events",
+          "automatic fingerprint or signal history",
+          "delivery history",
+          "runtime sessions",
+          "request and embedding caches",
+          "pending feedback",
+          "feedback and outcome tables",
+          "temporary tables"
+        ],
+        "unclassified_mutable_table": "fatal preseal integrity failure",
+        "manifest": "hash-bind schema, table/column allowlist, aggregate table counts, policy-key mapping, and complete seed bytes"
+      },
+      "gating_off_and_candidate": "separate byte-identical pre-open clones; each implementation performs only its normal hash-bound migration",
+      "shadow_and_holdout": "separate fresh clones with no shared mutable database, history, session, cache, or process",
+      "arm_execution": "each isolated arm executes every cohort call once in canonical order",
+      "reset_rule": "never reuse a clone across source aliases, partitions, readers, or arms",
+      "cross_arm_or_cross_reader_state_reuse": false,
+      "receipt_bindings": [
+        "partition initial-state SHA-256 and bytes",
+        "gating-off clone SHA-256 and bytes before execution",
+        "candidate clone SHA-256 and bytes before execution",
+        "process and cache initialization configuration SHA-256"
+      ]
+    },
+    "arm_schedule": {
+      "domain_separator_utf8": "confirmatory-holdout-v3/arm-order/v1",
+      "digest_input": "domain_separator_utf8 + NUL + source-qualified event key",
+      "order": "if SHA-256(digest_input)[0] & 1 == 0 dispatch gating-off then candidate, else candidate then gating-off",
+      "publication": "computed before implementation from the private source-qualified event key and stored only as a one-bit dispatch-order field in the sealed case",
+      "evaluator_input": "reader consumes only the sealed bit and never the destroyed raw event key or mapping",
+      "barrier": "both paired responses complete before either arm advances to the next canonical event",
+      "outcome_adaptive": false
+    },
+    "metric_definitions": {
+      "unseen_repeated_automatic_character_reduction": "1 - sum(candidate serialized characters) / sum(gating-off serialized characters) over unseen_repeated_automatic",
+      "automatic_content_access": "preserved gating-off event-node access opportunities / all gating-off opportunities over unseen_repeated_automatic",
+      "organic_payload_delta": "sum(candidate serialized characters) / sum(gating-off serialized characters) - 1 over organic",
+      "organic_access_delta": "preserved gating-off event-node access opportunities / all gating-off opportunities - 1 over organic",
+      "agent_triggered_delivery": "count of paired agent_triggered calls whose raw MCP tool-result content bytes differ; required zero",
+      "novel_nodes_content_bearing": "candidate content-bearing novel opportunities / all novel opportunities; zero denominator invalid",
+      "shadow_latency_p50_degradation": "nearest-rank candidate p50 / nearest-rank gating-off p50 - 1 over shadow",
+      "shadow_latency_p95_degradation": "nearest-rank candidate p95 / nearest-rank gating-off p95 - 1 over shadow"
+    },
+    "parent_point_gates": {
+      "unseen_repeated_automatic_character_reduction": {
+        "operator": "gte",
+        "value": 0.5,
+        "cluster_unit": "connected component containing a qualifying unseen automatic family"
+      },
+      "automatic_content_access": {
+        "operator": "gte",
+        "value": 0.95,
+        "cluster_unit": "connected component containing a qualifying unseen automatic family"
+      },
+      "organic_payload_delta": {
+        "operator": "within-inclusive",
+        "lower": -0.05,
+        "upper": 0.05,
+        "cluster_unit": "connected component containing a selected replayable organic event"
+      },
+      "organic_access_delta": {
+        "operator": "within-inclusive",
+        "lower": -0.05,
+        "upper": 0.05,
+        "cluster_unit": "connected component containing a selected replayable organic event"
+      },
+      "agent_triggered_delivery": {
+        "operator": "byte-identical",
+        "reference": "gating-off paired delivery",
+        "maximum_violations": 0,
+        "cluster_unit": "connected component containing a selected replayable organic event"
+      },
+      "novel_nodes_content_bearing": {
+        "operator": "all",
+        "minimum_fraction": 1.0,
+        "zero_eligible_population": "fail",
+        "cluster_unit": "connected component containing a qualifying unseen automatic family"
+      },
+      "shadow_latency_p50_degradation": {
+        "operator": "lte",
+        "value": 0.1,
+        "cluster_unit": "connected component containing a counted shadow workflow"
+      },
+      "shadow_latency_p95_degradation": {
+        "operator": "lte",
+        "value": 0.1,
+        "cluster_unit": "connected component containing a counted shadow workflow"
+      }
+    },
+    "all_parent_point_gates_conjunctive": true,
+    "trimming_or_metric_specific_case_exclusion_allowed": false,
+    "comparisons_use_unrounded_values": true,
+    "display_decimal_places": 6,
+    "missing_metric": "fail",
+    "zero_denominator": "fail",
+    "incomplete_pair": "fail",
+    "alternate_metric_or_cohort_allowed": false
+  },
+  "promotion": {
+    "default_off_release_remains_shippable": true,
+    "promotion_requires_all_confirmation_gates_conjunctively_pass": true,
+    "negative_invalid_inconclusive_timeout_or_missing_gate_action": "retain default-off release and escalate; no operational promotion",
+    "serving_accrual_build_is_promotable_candidate": false
+  },
+  "uncertainty": {
+    "supplementary_only": true,
+    "decision_basis": "full-sample parent point estimates",
+    "bootstrap_mean_is_point_estimate": false,
+    "interval_can_rescue_failed_point_gate": false,
+    "resamples": 10000,
+    "confidence_level": 0.95,
+    "interval": {
+      "method": "two-sided percentile nearest-rank",
+      "sorted_zero_based_lower_index": 249,
+      "sorted_zero_based_upper_index": 9749
+    },
+    "sampling": {
+      "algorithm": "SHA-256 counter sampler v1",
+      "domain_separator_utf8": "confirmatory-holdout-v3/bootstrap/v1",
+      "cluster_order": "opaque connected-component label UTF-8 byte order ASC",
+      "draw_input": "domain NUL + uint32be(seed) + uint32be(replicate_index) + uint32be(draw_index)",
+      "draw_index": "int.from_bytes(digest[0:8], 'big') % component_count",
+      "draws_per_replicate": "component_count",
+      "whole_component_resampling": true,
+      "paired_observations_kept_together": true,
+      "drawn_component_multiplicity_preserved": true,
+      "replicate_estimator": "recompute the exact corresponding full-sample formula over the sampled component multiset"
+    },
+    "seed_derivation": "uint32be value of SHA256(namespace UTF-8 + NUL + seed label UTF-8)[0:4]",
+    "seeds": {
+      "automatic_component": {
+        "label": "automatic-component",
+        "value": 588763221
+      },
+      "organic_component": {
+        "label": "organic-component",
+        "value": 1632232291
+      },
+      "shadow_component": {
+        "label": "shadow-component",
+        "value": 2220152078
+      }
+    },
+    "retired_v2_seed_values_reusable": false,
+    "invalid_replicate_action": "report count and set interval null if nonzero; never change the full-sample point-gate result",
+    "required_report_fields": [
+      "full_sample_point_estimate",
+      "ci_lower",
+      "ci_upper",
+      "component_count",
+      "observation_count",
+      "seed",
+      "resamples",
+      "invalid_replicate_count"
+    ]
+  },
+  "privacy": {
+    "forbidden_in_prompts_logs_diagnostics_or_tracked_nonsealed_artifacts": [
+      "raw SQLite rows",
+      "raw transcripts",
+      "raw paths or source locators",
+      "raw queries or raw content",
+      "query or content surrogates outside sealed corpus",
+      "HMAC keys or commitments",
+      "identity tokens or samples",
+      "unkeyed query fingerprints",
+      "raw event identifiers or packet event labels outside sealed corpus",
+      "family membership or per-family sizes",
+      "session or workflow identifiers",
+      "raw or de-identified individual case records outside sealed corpus",
+      "case-level outcomes",
+      "scope spelling lists",
+      "per-source counts or outcomes"
+    ],
+    "all_operational_receipts_are_strict_allowlists": true,
+    "final_reports_aggregate_only": true,
+    "sealed_corpus_only_allowance": [
+      "freshly de-identified outcome-free selected case and inventory records required for complete accounting and replay",
+      "fresh opaque packet-local event, node, family, component, scope, agent, task, session, and workflow labels unrelated to HMAC output"
+    ],
+    "deidentification": {
+      "salt": "fresh independent ephemeral 256-bit value",
+      "preserve": [
+        "exact Python character length",
+        "space, tab, newline, and carriage-return positions",
+        "bijective equality classes within one packet build"
+      ],
+      "replace_other_characters_with": "lowercase a-z",
+      "persist_salt_or_map": false
+    },
+    "key_transport": "inherited anonymous descriptors only",
+    "hard_destruction_boundary": [
+      "descriptor closure",
+      "keyed verifier and worker termination",
+      "descendant process-group termination",
+      "launcher wait observes process exit"
+    ],
+    "manifest_construction_after_hard_boundary": true,
+    "private_raw_io_committed": false,
+    "consumed_corpus_opened": false
+  },
+  "hash_binding": {
+    "digest": "SHA-256",
+    "byte_size_required": true,
+    "mutable_head_or_path_only_binding_allowed": false,
+    "append_only_artifact_predecessor_hash_required": true,
+    "packet_manifest_must_bind": [
+      "release control watermark",
+      "release manifest reverse pin",
+      "replay code-control commit and tree",
+      "unchanged repair design",
+      "active runtime-segment attestation and complete tuple",
+      "active source-binding attestation and source-binding core",
+      "first-ready scheduled slot and complete ledger predecessor chain",
+      "local alias immutable snapshot",
+      "alt alias immutable snapshot",
+      "canonical exact two-alias snapshot-set identity",
+      "distinct source-authority and alias-binding attestations",
+      "POLICY.md",
+      "README.md",
+      "analysis-plan.json",
+      "original frozen manifest and split declaration",
+      "complete frozen-dev reference and raw identity reference",
+      "retired v2 README, policy, plan, attempt note, and scanner",
+      "retired replacement manifest",
+      "runtime observer, aggregate probe, and accrual ledger with synthetic and production-seeded tests",
+      "packet builder and independent verifier",
+      "seal launcher and de-identification implementation",
+      "complete selected holdout partition",
+      "complete selected shadow partition",
+      "partition/source seed states and construction manifest",
+      "keyed aggregate preseal receipt"
+    ],
+    "evaluation_receipts_must_bind": [
+      "sealed v3 packet manifest",
+      "packet manifest-introduction Git commit",
+      "clean repair Git commit and tree",
+      "gating-off replay code-control commit and tree",
+      "semantic evaluator",
+      "calculator",
+      "configuration",
+      "threshold registry",
+      "bootstrap plan, domain, and seeds",
+      "dependency and environment lock",
+      "runtime settings",
+      "partition initial-state and pre-execution arm-clone hashes",
+      "process and cache initialization configuration",
+      "content_ref resolver code, configuration, and isolated state",
+      "deterministic paired-arm schedule",
+      "reader identifier and partition",
+      "shadow embargo and joint-release mechanism"
+    ],
+    "both_readers_same_stack_hashes": true,
+    "final_aggregate_evidence_preserves_runtime_source_implementation_configuration_latency_and_context_cost_hashes": true
+  }
+}

@@ -1,0 +1,373 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-13T20:45:15Z",
+  "overall": {
+    "status": "evidence_gap",
+    "summary": "Payload, cross-scope, correction/protocol, era-safety, shadow context-cost, latency, and repo-global gates pass. The frozen compare output does not expose the required auto-recall subset of holdout fingerprints unseen in dev, so that one generalization claim remains unproven without a forbidden second holdout read.",
+    "observed_threshold_failures": [],
+    "evidence_gaps": [
+      "auto-recall compaction on repeated holdout fingerprints absent from dev"
+    ]
+  },
+  "provenance": {
+    "head": "9b70f98883764dcaf5c7071c38d78ea7264a16be",
+    "merge_base_old": "3b2f5782baf0f3f128d4cf31b4c0989e8208472d",
+    "packet_commit": "5fd03fc66246d833d90285d8b456e6f3a317ca8b",
+    "manifest_sha256": "3f1a6a87a4d34e411f06e50161f9203afc3c4992dfc973d4f544453e8bbfde48",
+    "baseline_report_sha256": "8332edf5d1d4a13b51b7a464ed3cef04eaffdf8f8248c30b0e77c0c9c5f1f615",
+    "calculator_sha256": "ce465b9d4fd2bf752663ddf7ca11f84fa82530b8da3210b50f95361a77e560d3",
+    "holdout_sha256": "d83a3b9a19c8237d0ad31f9434c2822ec8875fb5753cf94b63d59a6413788b3c"
+  },
+  "seal": {
+    "policy": "artifacts/animal-planet/corpus/POLICY.md",
+    "unseal_method": "post-freeze policy authorization for this integration node; no tracked seal state was mutated",
+    "tracked_prior_semantic_evaluation_found": false,
+    "semantic_read_command": "python3 scripts/ap_baseline.py compare --split holdout --metrics payload,cross_scope,correction_dominance,auto_recall",
+    "semantic_read_recorded_at": "2026-08-13T20:19:52Z",
+    "semantic_read_duration_seconds": 4.0208,
+    "semantic_read_exit_code": 0,
+    "semantic_read_count_this_node": 1,
+    "first_and_only_authorized_semantic_read": true,
+    "living_memory_trace": "01KZYCFYYZ7731R2YPNTR42Z0Y",
+    "per_case_inspection": false,
+    "holdout_driven_tuning": false,
+    "holdout_rerun_after_result": false
+  },
+  "frozen_baseline": {
+    "field_cited": {
+      "organic_feedback_linkage_pct": 42.4,
+      "automatic_feedback_linkage_pct": 17.6,
+      "payload_median_chars": 26496,
+      "payload_p90_chars": 35237,
+      "payload_mean_chars": 26543,
+      "payload_n": 278
+    },
+    "reproduced_from_surviving_packet_evidence": {
+      "organic_feedback_linkage_pct": 44.0994,
+      "automatic_feedback_linkage_pct": 17.5926,
+      "payload_median_chars": 26792.0,
+      "payload_p90_chars": 30614,
+      "payload_mean_chars": 26405.37,
+      "payload_n": 164
+    },
+    "payload_discrepancy": {
+      "id": "d3-w3-payload-population",
+      "explanation": "The cited population has 278 results; the frozen corpus carries the 164 surviving transcript-matched results. The remaining 114 /root-session tool results were unreadable or removed on the evidence host. Survivor statistics reproduce exactly and the discrepancy is frozen in baseline-report.json."
+    },
+    "feedback_caveat": "feedback_applied is a lower-bound proxy for observed use, not ground-truth relevance."
+  },
+  "replay": {
+    "dev": {
+      "population_events": 826,
+      "payload": {
+        "matched_n": 185,
+        "before": {
+          "mean": 24567.81,
+          "median": 24702,
+          "p90": 30780
+        },
+        "after": {
+          "mean": 14382.83,
+          "median": 14211,
+          "p90": 17962
+        },
+        "reduction_pct": {
+          "median": 42.470245,
+          "p90": 41.643925
+        },
+        "after_over_frozen_cited_ratio": {
+          "median": 0.536345,
+          "p90": 0.509748
+        },
+        "top_result_content_retention": 1.0,
+        "useful_feedback_content_retention": 1.0
+      },
+      "cross_scope": {
+        "before_results": 5569,
+        "before_cross_scope_results": 1310,
+        "after_results": 4755,
+        "after_cross_scope_results": 597,
+        "admission_reduction_pct": 54.427481,
+        "same_scope_retention_pct": 97.628551
+      },
+      "auto_recall": {
+        "repeated_fingerprints": 14,
+        "repeated_fingerprint_events": 352,
+        "gated_events": 283,
+        "ungated_chars": 3470758,
+        "gated_chars": 832100,
+        "split_wide_compaction_pct": 76.0254,
+        "organic_chars_delta_pct": 0.0,
+        "organic_content_access_delta_pct": 0.0
+      },
+      "correction_dominance": {
+        "events_with_pairs": 0,
+        "after_violations": 0,
+        "superseded_deliveries_before": 111,
+        "superseded_deliveries_after": 2,
+        "superseded_top1_before": 31,
+        "superseded_top1_after": 0
+      }
+    },
+    "eval": {
+      "population_events": 509,
+      "payload": {
+        "matched_n": 133,
+        "before": {
+          "mean": 25044.77,
+          "median": 25345,
+          "p90": 30176
+        },
+        "after": {
+          "mean": 14413.35,
+          "median": 14394,
+          "p90": 17455
+        },
+        "reduction_pct": {
+          "median": 43.207733,
+          "p90": 42.156018
+        },
+        "after_over_frozen_cited_ratio": {
+          "median": 0.543252,
+          "p90": 0.495360
+        },
+        "top_result_content_retention": 1.0,
+        "useful_feedback_content_retention": 1.0
+      },
+      "cross_scope": {
+        "before_results": 3477,
+        "before_cross_scope_results": 788,
+        "after_results": 2980,
+        "after_cross_scope_results": 348,
+        "admission_reduction_pct": 55.837563,
+        "same_scope_retention_pct": 97.880253
+      },
+      "auto_recall": {
+        "repeated_fingerprints": 7,
+        "repeated_fingerprint_events": 204,
+        "gated_events": 169,
+        "ungated_chars": 1999022,
+        "gated_chars": 460836,
+        "split_wide_compaction_pct": 76.9469,
+        "organic_chars_delta_pct": 0.0,
+        "organic_content_access_delta_pct": 0.0
+      },
+      "correction_dominance": {
+        "events_with_pairs": 0,
+        "after_violations": 0,
+        "superseded_deliveries_before": 61,
+        "superseded_deliveries_after": 1,
+        "superseded_top1_before": 18,
+        "superseded_top1_after": 0
+      }
+    },
+    "holdout": {
+      "population_events": 4741,
+      "sources": {
+        "local_multi_project": 4500,
+        "animal_planet_hash_slice": 241
+      },
+      "payload": {
+        "matched_n": 48,
+        "before": {
+          "mean": 23214.40,
+          "median": 23956.0,
+          "p90": 29595
+        },
+        "after": {
+          "mean": 13964.81,
+          "median": 13707.0,
+          "p90": 17519
+        },
+        "reduction_pct": {
+          "median": 42.782601,
+          "p90": 40.804190
+        },
+        "after_over_frozen_cited_ratio": {
+          "median": 0.517323,
+          "p90": 0.497176
+        },
+        "top_result_content_retention": 1.0,
+        "useful_feedback_content_retention": 1.0
+      },
+      "cross_scope": {
+        "before_results": 32426,
+        "before_cross_scope_results": 5586,
+        "after_results": 27933,
+        "after_cross_scope_results": 2243,
+        "admission_reduction_pct": 59.846044,
+        "same_scope_retention_pct": 95.715350
+      },
+      "auto_recall": {
+        "repeated_fingerprints": 57,
+        "repeated_fingerprint_events": 1478,
+        "gated_events": 1570,
+        "ungated_chars": 64933149,
+        "gated_chars": 26564763,
+        "split_wide_compaction_pct": 59.0891,
+        "unseen_in_dev_compaction_pct": null,
+        "organic_chars_delta_pct": -1.9122,
+        "organic_content_access_delta_pct": -0.5731
+      },
+      "correction_dominance": {
+        "events_with_pairs": 0,
+        "after_violations": 0,
+        "superseded_deliveries_before": 27,
+        "superseded_deliveries_after": 1,
+        "superseded_top1_before": 6,
+        "superseded_top1_after": 0
+      }
+    }
+  },
+  "generalization": {
+    "payload": {
+      "median": {
+        "holdout_reduction_pct": 42.782601,
+        "minimum_reduction_pct": 25.0,
+        "eval_reduction_pct": 43.207733,
+        "holdout_eval_gap_pp": 0.425132,
+        "maximum_gap_pp": 10.0,
+        "status": "pass"
+      },
+      "p90": {
+        "holdout_reduction_pct": 40.804190,
+        "minimum_reduction_pct": 25.0,
+        "eval_reduction_pct": 42.156018,
+        "holdout_eval_gap_pp": 1.351828,
+        "maximum_gap_pp": 10.0,
+        "status": "pass"
+      },
+      "retention": {
+        "top_result_content": 1.0,
+        "useful_feedback_content": 1.0,
+        "status": "pass"
+      },
+      "status": "pass"
+    },
+    "cross_scope": {
+      "holdout_admission_reduction_pct": 59.846044,
+      "minimum_admission_reduction_pct": 40.0,
+      "holdout_same_scope_retention_pct": 95.715350,
+      "minimum_same_scope_retention_pct": 95.0,
+      "retention_definition": "(after.results-after.cross_scope_results)/(before.results-before.cross_scope_results); scope-label proxy, not independent relevance judgment",
+      "status": "pass"
+    },
+    "auto_recall": {
+      "holdout_split_wide_repeated_compaction_pct": 59.0891,
+      "minimum_unseen_in_dev_compaction_pct": 30.0,
+      "unseen_in_dev_compaction_pct": null,
+      "organic_chars_delta_pct": -1.9122,
+      "organic_content_access_delta_pct": -0.5731,
+      "maximum_absolute_organic_delta_pct": 5.0,
+      "organic_safety_status": "pass",
+      "status": "evidence_gap",
+      "reason": "The required one-shot compare emits only split-wide repeated-fingerprint compaction. It does not emit fingerprint identity overlap or an unseen-in-dev aggregate, so the unseen subset cannot be recovered from the captured JSON."
+    },
+    "correction_dominance": {
+      "replay_after_violations": 0,
+      "replay_pair_population": 0,
+      "focused_test_status": "pass",
+      "status": "pass_with_replay_population_limit"
+    }
+  },
+  "shadow": {
+    "artifact": "artifacts/animal-planet/evaluation/shadow-latency.json",
+    "project_scopes": 3,
+    "workflows": 11,
+    "selected_requests": 46,
+    "measured_requests_per_version": 35,
+    "tool_result_content_chars_total_reduction_pct": 42.5991,
+    "tool_result_content_chars_median_reduction_pct": 41.1143,
+    "latency_ms": {
+      "old_p50": 134.646,
+      "new_p50": 137.313,
+      "p50_degradation_pct": 1.9807,
+      "old_p95": 482.637,
+      "new_p95": 446.298,
+      "p95_degradation_pct": -7.5293,
+      "maximum_degradation_pct": 10.0
+    },
+    "status": "pass"
+  },
+  "verification": {
+    "protocol_integrity": {
+      "command": "npm test -- tests/test_instructions_imperative.py",
+      "passed": 24,
+      "failed": 0,
+      "wall_seconds": 0.64,
+      "status": "pass"
+    },
+    "superseded_vs_correction": {
+      "command": "npm test -- tests/test_retrieval_correction_dominance.py tests/test_dedup_supersede.py",
+      "passed": 26,
+      "failed": 0,
+      "wall_seconds": 1.09,
+      "status": "pass"
+    },
+    "era_safety": {
+      "command": "npm test -- tests/test_consolidation.py tests/test_schema_distillation.py tests/test_consensus_temporal_decay.py",
+      "passed": 45,
+      "failed": 0,
+      "wall_seconds": 3.11,
+      "status": "pass"
+    },
+    "repo_global": {
+      "command": "npm run check",
+      "passed": 551,
+      "failed": 0,
+      "pytest_seconds": 38.82,
+      "wall_seconds": 39.72,
+      "status": "pass"
+    }
+  },
+  "gates": [
+    {
+      "id": "payload-generalization",
+      "status": "pass"
+    },
+    {
+      "id": "cross-scope-generalization",
+      "status": "pass"
+    },
+    {
+      "id": "auto-recall-unseen-in-dev",
+      "status": "evidence_gap"
+    },
+    {
+      "id": "correction-dominance",
+      "status": "pass"
+    },
+    {
+      "id": "era-safety",
+      "status": "pass"
+    },
+    {
+      "id": "shadow-latency",
+      "status": "pass"
+    },
+    {
+      "id": "repo-global",
+      "status": "pass"
+    }
+  ],
+  "out_of_scope_escalation": {
+    "responsible_area": "scripts/ap_baseline.py auto_recall compare output (family_repeat_gating)",
+    "needed_change": "Before any future sealed evaluation, preload the dev automatic fingerprint set and emit a privacy-safe aggregate for repeated holdout fingerprints absent from dev: population, ungated chars, gated chars, reduction ratio, and organic safety deltas.",
+    "why_this_node_cannot_fix_it": "This node owns only artifacts/animal-planet/evaluation/**; scripts/ap_baseline.py is outside its files_owned. More importantly, the authorized holdout semantic read has already occurred, so changing the evaluator now and rereading holdout would violate the seal and invite holdout-driven tuning.",
+    "new_authority_required": "parent-level evaluator ownership plus explicit authorization for a new sealed workload or a formally re-sealed evaluation; do not rerun this holdout"
+  },
+  "fidelity_limits": [
+    "Recorded-candidate replay re-mixes historical candidate scores; BM25, vector and graph candidate generation are not re-executed.",
+    "Node stats and supersedes edges are snapshot-time, not event-time.",
+    "Surrogate content preserves lengths and equality classes but makes snippet boundaries and causal-query markers approximate.",
+    "The holdout payload before/after population has 48 transcript-matched events; after_all_events exists for all 4741 events but has no historical-before comparator.",
+    "Correction replay has no event containing both endpoints of a supersedes pair; focused property and SQLite-path tests provide the ordering proof.",
+    "The end-to-end shadow is a heterogeneous 35-call real-workflow distribution, not a repeated-query microbenchmark."
+  ],
+  "privacy": {
+    "raw_live_database_committed": false,
+    "raw_shadow_requests_or_responses_committed": false,
+    "raw_holdout_compare_output_committed": false,
+    "tracked_outputs_are_aggregates_only": true
+  }
+}

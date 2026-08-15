@@ -76,6 +76,19 @@ class ScopeResolver:
                 implicit_scope=implicit_scope,
             )
 
+        default_project = _configured_default_project(store)
+        if default_project:
+            # Scope-less call on a deployment whose writes default to a project
+            # scope (storage honours config.default_scope on every remember).
+            # The request stays global — the caller asked for nothing narrower,
+            # and feedback closure relies on that divergence — but the search
+            # widens to the declared project so the deployment's own memory
+            # stays reachable without a deliberate query mention.
+            return ScopePlan(
+                requested_scope=GLOBAL_SCOPE,
+                scopes=(default_project, GLOBAL_SCOPE),
+            )
+
         return ScopePlan(requested_scope=GLOBAL_SCOPE, scopes=(GLOBAL_SCOPE,))
 
 
@@ -137,10 +150,45 @@ def infer_project_scope(query: str, store: Any | None = None) -> str | None:
     for row in rows:
         candidate = str(row["scope"])
         project_name = candidate.split(":", 1)[1]
-        project_tokens = set(_tokens(project_name))
-        if project_name.lower() in query.lower() or project_tokens & query_tokens:
+        if _query_mentions_project(query, query_tokens, project_name):
             return candidate
     return None
+
+
+def _query_mentions_project(query: str, query_tokens: set[str], project_name: str) -> bool:
+    """True only for a deliberate mention of the project.
+
+    Either the whole name appears as a substring, or every token of the name
+    appears among the query tokens. A single shared token is not a mention:
+    it silently narrowed broad queries into an unrelated project's scope
+    (query "pipeline docs" is not a request for project:data-pipeline).
+    """
+
+    if project_name.lower() in query.lower():
+        return True
+    project_tokens = set(_tokens(project_name))
+    return bool(project_tokens) and project_tokens <= query_tokens
+
+
+def _configured_default_project(store: Any | None) -> str | None:
+    """The store's configured default write scope, when it names a project.
+
+    Session and global defaults never widen a plan: global adds nothing, and a
+    session default is not a durable declaration the way an operator-configured
+    project scope is.
+    """
+
+    config = getattr(store, "config", None)
+    raw = getattr(config, "default_scope", None)
+    if not raw:
+        return None
+    try:
+        normalized = normalize_scope(str(raw))
+    except ValueError:
+        return None
+    if scope_family(normalized) != "project":
+        return None
+    return normalized
 
 
 def _plan_for_scope(

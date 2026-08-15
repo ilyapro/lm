@@ -1,0 +1,367 @@
+{
+  "cases": [
+    {
+      "family": "cross_scope",
+      "file": "cases/ap-cross-scope-dev-1.json",
+      "id": "ap-cross-scope-dev-1",
+      "metric_hook": "cross_scope",
+      "n_event_ids": 2,
+      "n_node_ids": 10,
+      "split": "dev"
+    },
+    {
+      "family": "cross_scope",
+      "file": "cases/ap-cross-scope-dev-2.json",
+      "id": "ap-cross-scope-dev-2",
+      "metric_hook": "cross_scope",
+      "n_event_ids": 2,
+      "n_node_ids": 12,
+      "split": "dev"
+    },
+    {
+      "family": "cross_scope",
+      "file": "cases/ap-cross-scope-eval-1.json",
+      "id": "ap-cross-scope-eval-1",
+      "metric_hook": "cross_scope",
+      "n_event_ids": 2,
+      "n_node_ids": 12,
+      "split": "eval"
+    },
+    {
+      "family": "cross_scope",
+      "file": "cases/ap-cross-scope-eval-2.json",
+      "id": "ap-cross-scope-eval-2",
+      "metric_hook": "cross_scope",
+      "n_event_ids": 2,
+      "n_node_ids": 6,
+      "split": "eval"
+    },
+    {
+      "family": "auto_dup",
+      "file": "cases/ap-auto-dup-dev-1.json",
+      "id": "ap-auto-dup-dev-1",
+      "metric_hook": "auto_recall",
+      "n_event_ids": 154,
+      "n_node_ids": 5,
+      "split": "dev"
+    },
+    {
+      "family": "auto_dup",
+      "file": "cases/ap-auto-dup-dev-2.json",
+      "id": "ap-auto-dup-dev-2",
+      "metric_hook": "auto_recall",
+      "n_event_ids": 162,
+      "n_node_ids": 5,
+      "split": "dev"
+    },
+    {
+      "family": "auto_dup",
+      "file": "cases/ap-auto-dup-eval-1.json",
+      "id": "ap-auto-dup-eval-1",
+      "metric_hook": "auto_recall",
+      "n_event_ids": 100,
+      "n_node_ids": 5,
+      "split": "eval"
+    },
+    {
+      "family": "auto_dup",
+      "file": "cases/ap-auto-dup-eval-2.json",
+      "id": "ap-auto-dup-eval-2",
+      "metric_hook": "auto_recall",
+      "n_event_ids": 95,
+      "n_node_ids": 5,
+      "split": "eval"
+    },
+    {
+      "family": "correction_ordering",
+      "file": "cases/ap-correction-ordering-dev-1.json",
+      "id": "ap-correction-ordering-dev-1",
+      "metric_hook": "correction_dominance",
+      "n_event_ids": 23,
+      "n_node_ids": 2,
+      "split": "dev"
+    },
+    {
+      "family": "correction_ordering",
+      "file": "cases/ap-correction-ordering-dev-2.json",
+      "id": "ap-correction-ordering-dev-2",
+      "metric_hook": "correction_dominance",
+      "n_event_ids": 16,
+      "n_node_ids": 2,
+      "split": "dev"
+    },
+    {
+      "family": "correction_ordering",
+      "file": "cases/ap-correction-ordering-eval-1.json",
+      "id": "ap-correction-ordering-eval-1",
+      "metric_hook": "correction_dominance",
+      "n_event_ids": 12,
+      "n_node_ids": 2,
+      "split": "eval"
+    },
+    {
+      "family": "correction_ordering",
+      "file": "cases/ap-correction-ordering-eval-2.json",
+      "id": "ap-correction-ordering-eval-2",
+      "metric_hook": "correction_dominance",
+      "n_event_ids": 11,
+      "n_node_ids": 2,
+      "split": "eval"
+    },
+    {
+      "family": "mixed_era",
+      "file": "cases/ap-mixed-era-dev-1.json",
+      "id": "ap-mixed-era-dev-1",
+      "metric_hook": "payload",
+      "n_event_ids": 0,
+      "n_node_ids": 7,
+      "split": "dev"
+    },
+    {
+      "family": "mixed_era",
+      "file": "cases/ap-mixed-era-dev-2.json",
+      "id": "ap-mixed-era-dev-2",
+      "metric_hook": "correction_dominance",
+      "n_event_ids": 2,
+      "n_node_ids": 6,
+      "split": "dev"
+    },
+    {
+      "family": "mixed_era",
+      "file": "cases/ap-mixed-era-eval-1.json",
+      "id": "ap-mixed-era-eval-1",
+      "metric_hook": "payload",
+      "n_event_ids": 0,
+      "n_node_ids": 7,
+      "split": "eval"
+    },
+    {
+      "family": "mixed_era",
+      "file": "cases/ap-mixed-era-eval-2.json",
+      "id": "ap-mixed-era-eval-2",
+      "metric_hook": "correction_dominance",
+      "n_event_ids": 4,
+      "n_node_ids": 6,
+      "split": "eval"
+    }
+  ],
+  "corpus": {
+    "dev": {
+      "events": 826,
+      "nodes": 777,
+      "path": "artifacts/animal-planet/corpus/dev.jsonl",
+      "sha256_from_splits_json": "605e4f3fdc91817788a40d0dbbabffb16b86ef98ad28020c20379ef249cc9a36"
+    },
+    "eval": {
+      "events": 509,
+      "nodes": 653,
+      "path": "artifacts/animal-planet/corpus/eval.jsonl",
+      "sha256_from_splits_json": "c7be5b723dd69e2565e85f2d7fe92aa5915bc07d3b6e7bd94e85e16b953a856b"
+    }
+  },
+  "families": {
+    "auto_dup": {
+      "aggregates": {
+        "dev": {
+          "template_totals": {
+            "architectural_decision": {
+              "cross_session_duplicated_chars": 5544466,
+              "distinct_query_equality_classes": 1,
+              "distinct_result_tuples": 25,
+              "dominant_tuple_deliveries": 28,
+              "n_events": 162
+            },
+            "reopen_lesson": {
+              "cross_session_duplicated_chars": 2075498,
+              "distinct_query_equality_classes": 1,
+              "distinct_result_tuples": 8,
+              "dominant_tuple_deliveries": 130,
+              "n_events": 154
+            }
+          },
+          "within_session": {
+            "automatic_only_duplicated_chars": 515946,
+            "automatic_only_sessions_with_redelivery": 31,
+            "sessions_with_redelivery": 51,
+            "top_automatic_only_sessions": [
+              {
+                "duplicated_chars": 40687,
+                "event_ids": [
+                  "01KZKKPGXMYCK5QFJPXK35KFQP",
+                  "01KZKKPH92ZN3S0W3R6MTSYDNG"
+                ],
+                "n_events": 2,
+                "redelivered_nodes": 6,
+                "transport_session_id": "2c25a1f19d154c1e87191f4a26802105"
+              },
+              {
+                "duplicated_chars": 38345,
+                "event_ids": [
+                  "01KZDXF27C60ES6XPCDDY7CCAR",
+                  "01KZDXF2TB3G1V7WB0P0Z23SZJ"
+                ],
+                "n_events": 2,
+                "redelivered_nodes": 5,
+                "transport_session_id": "16dd63969cff48ac974fbfef4e636c65"
+              },
+              {
+                "duplicated_chars": 34749,
+                "event_ids": [
+                  "01KZKMFT2X06G98AR1P2AT4B0C",
+                  "01KZKMFV1TV3AQEM8A4REB73N4"
+                ],
+                "n_events": 2,
+                "redelivered_nodes": 5,
+                "transport_session_id": "3183f93d7db14781bf88dbe62c82cd2a"
+              }
+            ],
+            "within_session_duplicated_chars_total": 1082561
+          }
+        },
+        "eval": {
+          "template_totals": {
+            "architectural_decision": {
+              "cross_session_duplicated_chars": 3131751,
+              "distinct_query_equality_classes": 1,
+              "distinct_result_tuples": 21,
+              "dominant_tuple_deliveries": 16,
+              "n_events": 95
+            },
+            "reopen_lesson": {
+              "cross_session_duplicated_chars": 1377917,
+              "distinct_query_equality_classes": 1,
+              "distinct_result_tuples": 7,
+              "dominant_tuple_deliveries": 78,
+              "n_events": 100
+            }
+          },
+          "within_session": {
+            "automatic_only_duplicated_chars": 275276,
+            "automatic_only_sessions_with_redelivery": 15,
+            "sessions_with_redelivery": 26,
+            "top_automatic_only_sessions": [
+              {
+                "duplicated_chars": 52320,
+                "event_ids": [
+                  "01KZDY19D6SJFXSADEZ1TZDY2C",
+                  "01KZDY1AEAAKGZKZ1AE7BH56GP",
+                  "01KZDZ0ZB4GPD3191W3X6HDXG6"
+                ],
+                "n_events": 3,
+                "redelivered_nodes": 7,
+                "transport_session_id": "12df24e981724135b84511e3647879b1"
+              },
+              {
+                "duplicated_chars": 41159,
+                "event_ids": [
+                  "01KZKMGCPSNGGNBV9DNSRT1K26",
+                  "01KZKMGDB8JAWME81K0VQ69W9J"
+                ],
+                "n_events": 2,
+                "redelivered_nodes": 6,
+                "transport_session_id": "b945931c00fb45288207b7450f2b2433"
+              },
+              {
+                "duplicated_chars": 37509,
+                "event_ids": [
+                  "01KZPJKZBE2RQFCCETF67STB80",
+                  "01KZPJKZFQ3A9N6GRXF524Y01S"
+                ],
+                "n_events": 2,
+                "redelivered_nodes": 8,
+                "transport_session_id": "efb9ec650bab405aa1cd88a187b101c9"
+              }
+            ],
+            "within_session_duplicated_chars_total": 415266
+          }
+        }
+      },
+      "cases": [
+        "ap-auto-dup-dev-1",
+        "ap-auto-dup-dev-2",
+        "ap-auto-dup-eval-1",
+        "ap-auto-dup-eval-2"
+      ],
+      "definition": "Deterministic prompt_engine pre-recalls (reopen_lesson / architectural_decision template fingerprints) repeatedly delivering near-identical payloads; duplicated serialized chars quantified across concrete recorded runs.",
+      "recorded_footprint": "Each template fires exactly once per transport session in recorded dev/eval (every template event has a unique transport_session_id), so duplication is fleet-level: byte-identical queries and near-identical candidate lists re-shipped to every new session. Within-session re-delivery exists across different events of one session (automatic non-template clarification/goal-excerpt blocks and organic re-recalls) and is aggregated below."
+    },
+    "correction_ordering": {
+      "aggregates": {
+        "dev": {
+          "both_present_events": 0,
+          "correction_only_admissions": 976,
+          "stale_deliveries_after_correction_existed": 0,
+          "stale_deliveries_before_correction": 111,
+          "supersedes_edges_in_file": 71,
+          "violations": 0
+        },
+        "eval": {
+          "both_present_events": 0,
+          "correction_only_admissions": 630,
+          "stale_deliveries_after_correction_existed": 0,
+          "stale_deliveries_before_correction": 61,
+          "supersedes_edges_in_file": 64,
+          "violations": 0
+        }
+      },
+      "cases": [
+        "ap-correction-ordering-dev-1",
+        "ap-correction-ordering-dev-2",
+        "ap-correction-ordering-eval-1",
+        "ap-correction-ordering-eval-2"
+      ],
+      "definition": "From supersedes connections: recorded events where a superseded node and its correction both appear as candidates, with every ordering violation (superseded ranked above correction) enumerated; encoded from the at-risk surface when no violation exists.",
+      "recorded_footprint": "Honest zero-findings, stated per instruction: recorded dev/eval events contain ZERO ordering violations, ZERO events with both endpoints of a supersedes pair among the candidates, and ZERO deliveries of a superseded node after its correction already existed — every stale delivery predates its correction, and post-correction deliveries are correction-only. The at-risk surface (pairs with heavy pre-correction stale delivery, including rank-1 deliveries at scores ~1.0) is encoded as the cases; note one pair recurs in both splits."
+    },
+    "cross_scope": {
+      "aggregates": {
+        "dev": {
+          "events_with_results_outside_resolved_scopes": 0,
+          "organic_events": 94,
+          "organic_with_global_admission": 67,
+          "organic_with_global_admission_zero_feedback": 40
+        },
+        "eval": {
+          "events_with_results_outside_resolved_scopes": 0,
+          "organic_events": 51,
+          "organic_with_global_admission": 31,
+          "organic_with_global_admission_zero_feedback": 24
+        }
+      },
+      "cases": [
+        "ap-cross-scope-dev-1",
+        "ap-cross-scope-dev-2",
+        "ap-cross-scope-eval-1",
+        "ap-cross-scope-eval-2"
+      ],
+      "definition": "Organic recall events whose broad resolved scope plan admitted irrelevant cross-scope results, identified structurally: admitted result scopes beyond the query's primary scope, zero recorded feedback, rank/score patterns.",
+      "recorded_footprint": "In recorded dev/eval events every resolved scope plan is exactly (primary scope, global) or (global,), and zero results fall outside the resolved plan; cross-scope admission therefore manifests exclusively as global-pool results entering narrower-scoped organic queries. The known code-level widener (infer_project_scope firing on any query/project-name token overlap) did not leave out-of-plan admissions in this window."
+    },
+    "mixed_era": {
+      "cases": [
+        "ap-mixed-era-dev-1",
+        "ap-mixed-era-dev-2",
+        "ap-mixed-era-eval-1",
+        "ap-mixed-era-eval-2"
+      ],
+      "definition": "The project:game mixed-era consolidation from the audit: a schema-level node whose source_traces span distinct project eras (pre-goal vs in-goal clusters by created_at), plus the era-currency companion (a fully pre-goal schema competing unmarked in in-goal recalls).",
+      "recorded_footprint": "Exactly one project:game schema in the corpus evidence pack mixes eras; it has zero recorded deliveries (audited access_count=0), so its cases carry node-level era-clustering evidence with honestly-empty event_ids, mirrored in dev and eval (the evidence pack is embedded in both split files). The companion pre-goal-era schema HAS recorded deliveries in both splits, including a rank-1 organic zero-feedback delivery in eval."
+    }
+  },
+  "generated_at": "2026-08-13T08:42:48Z",
+  "generator": "artifacts/animal-planet/failures/curate/curate_failures.py",
+  "goal_window_start": "2026-08-06T20:00:00Z",
+  "payload_proxy": {
+    "formula": "per delivered node: content_chars + sum(context_chars) + provenance_shape.serialized_chars + sum(corrections_chars) + 300 envelope chars; per event: sum over admitted candidate nodes",
+    "rationale": "DB-side reconstruction of delivered payload used because prompt_engine pre-recalls are not MCP tool results and thus have no transcript-measured size; the same formula reproduced the transcript payload baseline ballpark during extraction (see recipe/01-extract.md grounding)"
+  },
+  "policy": {
+    "holdout": "holdout.jsonl was never opened by this curation (sealed per corpus/POLICY.md); holdout-absence of every referenced event id is guaranteed by the recorded split hash rule (bucket in [15,66) => dev, [66,100) => eval) and additionally verified mechanically by a zero-match id grep during curation",
+    "privacy": "cases contain only structural data: ids, scopes, levels, ranks, scores, timestamps, char counts and counts — no surrogate text, no original text"
+  },
+  "verification": {
+    "problems": [],
+    "referenced_event_id_count": 620,
+    "split_rule": "Declared in advance, by rule, not by inspection. source=local (all local-DB non-animal-planet workloads) -> holdout only. source=alt (every recall_event exported from the alt DB in the export window) -> bucket = int.from_bytes(sha256(event_id.encode('utf-8')).digest()[:8], 'big') % 100; bucket < 15 -> holdout (~15% holdout-AP slice); 15 <= bucket < 66 -> dev (51/85 = 60% of the remainder); 66 <= bucket < 100 -> eval (34/85 = 40%). No stratification by outcome."
+  }
+}

@@ -1,0 +1,383 @@
+{
+  "configuration": {
+    "delivery_defaults": {
+      "context_value_max_chars": 160,
+      "full_node_diet": true,
+      "provenance_value_max_chars": 160,
+      "session_dedup": true,
+      "snippet_ladder": [
+        0,
+        1000,
+        700,
+        500,
+        300,
+        200
+      ],
+      "snippet_max_chars": 1200,
+      "sparse_entries": true,
+      "stats_compaction": true
+    },
+    "disabled_policy_raw_equalities": {
+      "organic_chars": {
+        "effective": 796731,
+        "ungated": 796731
+      },
+      "organic_content_access": {
+        "effective": 1,
+        "ungated": 1
+      },
+      "repeated_automatic_chars": {
+        "effective": 1999022,
+        "ungated": 1999022
+      },
+      "unseen_content_bearing_events": {
+        "effective_retained": 3,
+        "ungated_retained": 3
+      },
+      "unseen_repeated_automatic_chars": {
+        "effective": 44835,
+        "ungated": 44835
+      }
+    },
+    "environment": {
+      "bytecode_writes_disabled": true,
+      "caller_git_and_pip_configuration_removed": true,
+      "embedding_backend": "hash",
+      "executable_lookup_path": "/usr/bin:/bin",
+      "inherited_environment_allowlist": [
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TMPDIR",
+        "TZ"
+      ],
+      "package_index_access_disabled": true,
+      "pytest_plugin_autoload_disabled": true,
+      "python_hash_seed": "0",
+      "python_io_encoding": "utf-8",
+      "python_safe_path": true,
+      "python_user_site_disabled": true,
+      "repeat_and_delivery_overrides": "absent",
+      "retrieval_tuning_override": "absent_fixed_default",
+      "sanitized_prefixes": [
+        "LM_RECALL_REPEAT_",
+        "LM_DELIVERY_"
+      ]
+    },
+    "repeat_gating_policy": {
+      "drop_trailing_stubs": false,
+      "enabled": false,
+      "max_link_rate": 0.2,
+      "min_sessions": 2,
+      "min_unlinked": 5,
+      "probe_every": 25
+    },
+    "zero_gated_events": {
+      "all_eval": 0,
+      "unseen_in_dev": 0
+    }
+  },
+  "evidence": {
+    "calculator": {
+      "command": [
+        "python3",
+        "-B",
+        "scripts/ap_baseline.py",
+        "compare",
+        "--corpus-root",
+        "artifacts/animal-planet/corpus",
+        "--split",
+        "eval",
+        "--metrics",
+        "payload,cross_scope,correction_dominance,auto_recall"
+      ],
+      "stdout_artifact": "eval-compare.json",
+      "stdout_bytes": 9173,
+      "stdout_sha256": "fceae91402b41acd361eb0b35cb8d65ff7322256596dda96dd39109302126dc5",
+      "stdout_stored_byte_for_byte": true
+    },
+    "focused_checks_executed_on_release_lineage": true,
+    "lineage_and_implementation_hashes": "release-manifest.json",
+    "private_raw_data_read_or_committed": false,
+    "semantic_holdout_reads": 0
+  },
+  "fidelity_limits": [
+    "Recorded-candidate replay re-mixes historical candidate scores; it does not re-retrieve.",
+    "The preserved original holdout is consumed only as a byte-pinned aggregate JSON file.",
+    "Correction replay has zero candidate pairs; the focused live/property suite supplies the proof.",
+    "feedback_applied is a lower-bound proxy for observed use, not ground-truth relevance."
+  ],
+  "gates": [
+    {
+      "id": "P1_packet_lineage",
+      "status": "pass"
+    },
+    {
+      "id": "P2_payload_and_retention",
+      "status": "pass"
+    },
+    {
+      "id": "P3_cross_scope",
+      "status": "pass"
+    },
+    {
+      "id": "P4_correction_dominance",
+      "status": "pass"
+    },
+    {
+      "id": "P5_era_safety",
+      "status": "pass"
+    },
+    {
+      "id": "P6_automatic_only_policy",
+      "status": "deferred_pending_confirmatory_v3"
+    },
+    {
+      "id": "P7_release_evidence",
+      "status": "pass"
+    }
+  ],
+  "measurements": {
+    "P2_payload_and_retention": {
+      "eval": {
+        "median": {
+          "after_chars": 14394,
+          "before_chars": 25345,
+          "ratio": 0.5679226672,
+          "reduction_ratio": 0.4320773328
+        },
+        "p90": {
+          "after_chars": 17455,
+          "before_chars": 30176,
+          "ratio": 0.5784398197,
+          "reduction_ratio": 0.4215601803
+        },
+        "retention": {
+          "minimum_ratio": 1.0,
+          "top_result_content": {
+            "all_events": {
+              "after_share": 1,
+              "before_share": 1,
+              "events": 509,
+              "ratio": 1.0
+            },
+            "matched_events": {
+              "after_share": 1,
+              "before_share": 1,
+              "events": 133,
+              "ratio": 1.0
+            }
+          },
+          "useful_feedback": {
+            "all_events": {
+              "after_share": 1,
+              "before_share": 1,
+              "events": 137,
+              "ratio": 1.0
+            },
+            "matched_events": {
+              "after_share": 1,
+              "before_share": 1,
+              "events": 111,
+              "ratio": 1.0
+            }
+          }
+        }
+      },
+      "eval_to_holdout_reduction_gap_pp": {
+        "median": 0.425132,
+        "p90": 1.351828
+      },
+      "preserved_holdout": {
+        "median": {
+          "after_chars": 13707,
+          "before_chars": 23956,
+          "ratio": 0.5721739856,
+          "reduction_ratio": 0.4278260144
+        },
+        "p90": {
+          "after_chars": 17519,
+          "before_chars": 29595,
+          "ratio": 0.591958101,
+          "reduction_ratio": 0.408041899
+        },
+        "retention": {
+          "minimum_ratio": 1.0,
+          "top_result_content": {
+            "all_events": {
+              "after_share": 1,
+              "before_share": 1,
+              "events": 4741,
+              "ratio": 1.0
+            },
+            "matched_events": {
+              "after_share": 1,
+              "before_share": 1,
+              "events": 48,
+              "ratio": 1.0
+            }
+          },
+          "useful_feedback": {
+            "all_events": {
+              "after_share": 1,
+              "before_share": 1,
+              "events": 1057,
+              "ratio": 1.0
+            },
+            "matched_events": {
+              "after_share": 1,
+              "before_share": 1,
+              "events": 43,
+              "ratio": 1.0
+            }
+          }
+        },
+        "semantic_rerun": false
+      },
+      "status": "pass",
+      "thresholds": {
+        "maximum_eval_to_holdout_reduction_gap_pp": 5.0,
+        "maximum_payload_ratio": 0.6,
+        "minimum_retention_ratio": 0.95
+      }
+    },
+    "P3_cross_scope": {
+      "eval": {
+        "admission": {
+          "after_cross_scope_results": 348,
+          "before_cross_scope_results": 788,
+          "reduction_ratio": 0.5583756345
+        },
+        "same_scope": {
+          "after_results": 2632,
+          "before_results": 2689,
+          "retention_ratio": 0.9788025288
+        },
+        "total_results": {
+          "after": 2980,
+          "before": 3477
+        }
+      },
+      "preserved_holdout": {
+        "admission": {
+          "after_cross_scope_results": 2243,
+          "before_cross_scope_results": 5586,
+          "reduction_ratio": 0.5984604368
+        },
+        "same_scope": {
+          "after_results": 25690,
+          "before_results": 26840,
+          "retention_ratio": 0.9571535022
+        },
+        "semantic_rerun": false,
+        "total_results": {
+          "after": 27933,
+          "before": 32426
+        }
+      },
+      "status": "pass",
+      "thresholds": {
+        "minimum_admission_reduction_ratio": 0.5,
+        "minimum_same_scope_retention_ratio": 0.95
+      }
+    },
+    "P4_correction_dominance": {
+      "eval_replay": {
+        "after_violations": 0,
+        "candidate_pairs": 0,
+        "corrections_dropped": 0,
+        "events_with_pairs": 0
+      },
+      "focused_suite": {
+        "command": [
+          "bash",
+          "scripts/test.sh",
+          "tests/test_retrieval_correction_dominance.py",
+          "tests/test_dedup_supersede.py"
+        ],
+        "failed": 0,
+        "passed": 26,
+        "status": "pass"
+      },
+      "preserved_holdout_replay": {
+        "after_violations": 0,
+        "candidate_pairs": 0,
+        "corrections_dropped": 0,
+        "events_with_pairs": 0
+      },
+      "status": "pass",
+      "zero_pair_population_limitation": "Recorded-candidate replay exercises zero correction/superseded pairs in eval and preserved holdout; the 26-test live/property/SQLite focused suite is the substantive ordering proof."
+    },
+    "P5_era_safety": {
+      "coverage": "mixed-era rejection/repair and ordinary single-era promotion",
+      "focused_suite": {
+        "command": [
+          "bash",
+          "scripts/test.sh",
+          "tests/test_consolidation.py",
+          "tests/test_schema_distillation.py",
+          "tests/test_consensus_temporal_decay.py"
+        ],
+        "failed": 0,
+        "passed": 45,
+        "status": "pass"
+      },
+      "status": "pass"
+    },
+    "P6_automatic_only_policy": {
+      "automatic_only_compaction": "not_confirmed_by_this_release",
+      "disabled_policy_raw_equalities": {
+        "organic_chars": {
+          "effective": 796731,
+          "ungated": 796731
+        },
+        "organic_content_access": {
+          "effective": 1,
+          "ungated": 1
+        },
+        "repeated_automatic_chars": {
+          "effective": 1999022,
+          "ungated": 1999022
+        },
+        "unseen_content_bearing_events": {
+          "effective_retained": 3,
+          "ungated_retained": 3
+        },
+        "unseen_repeated_automatic_chars": {
+          "effective": 44835,
+          "ungated": 44835
+        }
+      },
+      "effective_policy": {
+        "drop_trailing_stubs": false,
+        "enabled": false,
+        "max_link_rate": 0.2,
+        "min_sessions": 2,
+        "min_unlinked": 5,
+        "probe_every": 25
+      },
+      "historical_negative_evidence": {
+        "artifacts": [
+          "artifacts/animal-planet/evaluation/final-report.json",
+          "artifacts/animal-planet/evaluation/final-report.md",
+          "artifacts/animal-planet/evaluation/replacement-auto-recall.json"
+        ],
+        "new_semantic_evaluation": false,
+        "status": "preserved_byte_for_byte"
+      },
+      "legacy_repeat_path": "class-blind_experimental_strict_opt_in",
+      "status": "deferred_pending_confirmatory_v3",
+      "zero_gated_events": {
+        "all_eval": 0,
+        "unseen_in_dev": 0
+      }
+    }
+  },
+  "overall": {
+    "status": "pass_with_p6_deferred",
+    "summary": "P2-P5 pass on override-free eval plus preserved aggregate evidence; P6 remains deferred pending an event-disjoint confirmatory v3 packet."
+  },
+  "release_id": "animal-planet-release-v1",
+  "schema_version": 1
+}

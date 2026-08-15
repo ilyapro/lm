@@ -1,0 +1,23 @@
+{
+  "W1": {
+    "start": "2026-08-06T20:00:00Z",
+    "end": "2026-08-09T11:00:23Z",
+    "start_source": "animal-planet goal window start (audit node 01KZK2WMP07CNTYDQXFTS23F39: 'окно цели с 2026-08-06T20:00')",
+    "end_source": "created_at of audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)"
+  },
+  "W2": {
+    "start": "2026-08-06T20:00:00Z",
+    "end": "2026-08-12T21:48:45Z",
+    "end_source": "created_at of net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE (scope project:lm); the cited 42.4%/17.6% organic/automatic linkage is measured over project:game events in this window"
+  },
+  "W3": {
+    "start": "2026-08-09T11:34:00Z",
+    "end": "2026-08-12T14:37:00Z",
+    "source": "follow-up payload audit trace 01KZV6VCVGXVKPF6PSFXBH00EM (scope project:lm); boundaries known at minute precision only — exact inclusivity is pinned by 70_build_metadata.py into METADATA.json"
+  },
+  "export": {
+    "start": "2026-08-06T20:00:00Z",
+    "end": "2026-08-12T21:48:45Z",
+    "note": "alt recall_events export range = W1.start .. W2.end; covers W1, W2, W3"
+  }
+}

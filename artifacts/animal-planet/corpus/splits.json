@@ -1,0 +1,133 @@
+{
+  "generated_at": "2026-08-12T23:37:22Z",
+  "generator": "artifacts/animal-planet/recipe/transform/build_corpus.py",
+  "staging_metadata_sha256": "025e734f84f452711e86a31d1639f2ee9833213e7ec94ced69b95d315ebac855",
+  "rule": {
+    "text": "Declared in advance, by rule, not by inspection. source=local (all local-DB non-animal-planet workloads) -> holdout only. source=alt (every recall_event exported from the alt DB in the export window) -> bucket = int.from_bytes(sha256(event_id.encode('utf-8')).digest()[:8], 'big') % 100; bucket < 15 -> holdout (~15% holdout-AP slice); 15 <= bucket < 66 -> dev (51/85 = 60% of the remainder); 66 <= bucket < 100 -> eval (34/85 = 40%). No stratification by outcome.",
+    "hash": "int.from_bytes(sha256(event_id.encode('utf-8')).digest()[:8], 'big') % 100",
+    "mod": 100,
+    "holdout_bound": 15,
+    "dev_bound": 66,
+    "local_sources": [
+      "local-db/holdout_project_octopus",
+      "local-db/holdout_project_online",
+      "local-db/holdout_project_x"
+    ]
+  },
+  "family_check": {
+    "predicate": "event is correction/supersedes-bearing iff any results[].node_id is an endpoint (source or target) of a supersedes connection in alt-db/connections_typed.jsonl",
+    "dev_bearing_events": 406,
+    "eval_bearing_events": 256,
+    "dev_bound_adjusted": false,
+    "dev_bound": 66
+  },
+  "windows": {
+    "W1": {
+      "start": "2026-08-06T20:00:00Z",
+      "end": "2026-08-09T11:00:23Z"
+    },
+    "W2": {
+      "start": "2026-08-06T20:00:00Z",
+      "end": "2026-08-12T21:48:45Z"
+    },
+    "W3": {
+      "start": "2026-08-09T11:34:00Z",
+      "end": "2026-08-12T14:37:00Z"
+    },
+    "export": {
+      "start": "2026-08-06T20:00:00Z",
+      "end": "2026-08-12T21:48:45Z"
+    }
+  },
+  "event_class_predicate": "agent IS NULL -> automatic, else organic",
+  "template_predicate": "query contains 'reopen_lesson' / 'architectural_decision' (substring)",
+  "counts": {
+    "dev": {
+      "events": 826,
+      "nodes": 777,
+      "by_source": {
+        "alt": 826
+      },
+      "by_scope": {
+        "project:game": 706,
+        "global": 81,
+        "project:ae": 37,
+        "session:ae-dashboard-chat": 1,
+        "session:ae-chat": 1
+      },
+      "by_class": {
+        "automatic": 732,
+        "organic": 94
+      },
+      "by_template": {
+        "None": 510,
+        "architectural_decision": 162,
+        "reopen_lesson": 154
+      },
+      "supersedes_bearing_events": 406,
+      "transcript_matched_events": 185,
+      "bytes": 5638050,
+      "sha256": "605e4f3fdc91817788a40d0dbbabffb16b86ef98ad28020c20379ef249cc9a36"
+    },
+    "eval": {
+      "events": 509,
+      "nodes": 653,
+      "by_source": {
+        "alt": 509
+      },
+      "by_scope": {
+        "project:game": 428,
+        "global": 61,
+        "project:ae": 18,
+        "session:ae-dashboard-chat": 2
+      },
+      "by_class": {
+        "automatic": 458,
+        "organic": 51
+      },
+      "by_template": {
+        "reopen_lesson": 100,
+        "architectural_decision": 95,
+        "None": 314
+      },
+      "supersedes_bearing_events": 256,
+      "transcript_matched_events": 133,
+      "bytes": 4299588,
+      "sha256": "c7be5b723dd69e2565e85f2d7fe92aa5915bc07d3b6e7bd94e85e16b953a856b"
+    },
+    "holdout": {
+      "events": 4741,
+      "nodes": 2872,
+      "by_source": {
+        "local": 4500,
+        "alt": 241
+      },
+      "by_scope": {
+        "project:octopus": 1500,
+        "project:x": 1500,
+        "project:online": 1500,
+        "project:game": 215,
+        "global": 19,
+        "project:ae": 7
+      },
+      "by_class": {
+        "automatic": 4392,
+        "organic": 349
+      },
+      "by_template": {
+        "None": 2966,
+        "reopen_lesson": 912,
+        "architectural_decision": 863
+      },
+      "supersedes_bearing_events": 126,
+      "transcript_matched_events": 48,
+      "bytes": 25638886,
+      "sha256": "d83a3b9a19c8237d0ad31f9434c2822ec8875fb5753cf94b63d59a6413788b3c"
+    }
+  },
+  "totals": {
+    "events": 6076,
+    "alt_events": 1576,
+    "local_events": 4500
+  }
+}

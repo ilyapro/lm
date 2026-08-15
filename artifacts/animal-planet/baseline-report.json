@@ -1,0 +1,521 @@
+{
+  "calculator": "scripts/ap_baseline.py",
+  "caveats": {
+    "feedback_applied": "lower-bound proxy for observed use, not ground-truth relevance"
+  },
+  "comparison": [
+    {
+      "cited": 42.4,
+      "computed": 44.0994,
+      "covered_by_discrepancy": "d1-organic-linkage-population",
+      "metric": "organic_linkage_pct",
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "pp",
+        "value": 0.5
+      },
+      "within_tolerance": false
+    },
+    {
+      "cited": 17.6,
+      "computed": 17.5926,
+      "covered_by_discrepancy": null,
+      "metric": "automatic_linkage_pct",
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "pp",
+        "value": 0.5
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 26496,
+      "computed": 26792.0,
+      "covered_by_discrepancy": "d3-w3-payload-population",
+      "metric": "payload_median_chars",
+      "source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM",
+      "tolerance": {
+        "kind": "pct",
+        "value": 1.0
+      },
+      "within_tolerance": false
+    },
+    {
+      "cited": 35237,
+      "computed": 30614,
+      "covered_by_discrepancy": "d3-w3-payload-population",
+      "metric": "payload_p90_chars",
+      "source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM",
+      "tolerance": {
+        "kind": "pct",
+        "value": 1.0
+      },
+      "within_tolerance": false
+    },
+    {
+      "cited": 26543,
+      "computed": 26405.37,
+      "covered_by_discrepancy": "d3-w3-payload-population",
+      "metric": "payload_mean_chars",
+      "source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM",
+      "tolerance": {
+        "kind": "pct",
+        "value": 1.0
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 278,
+      "computed": 164,
+      "covered_by_discrepancy": "d3-w3-payload-population",
+      "metric": "payload_n",
+      "source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": false
+    },
+    {
+      "cited": 727,
+      "computed": 727,
+      "covered_by_discrepancy": null,
+      "metric": "w1_recall_events",
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 9,
+      "computed": 9,
+      "covered_by_discrepancy": null,
+      "metric": "w1_supersedes_edges",
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 152,
+      "computed": 152,
+      "covered_by_discrepancy": null,
+      "metric": "w1_reopen_lesson_events",
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 152,
+      "computed": 152,
+      "covered_by_discrepancy": null,
+      "metric": "w1_architectural_decision_events",
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 42.0,
+      "computed": 41.8157,
+      "covered_by_discrepancy": null,
+      "metric": "w1_deterministic_template_share_pct",
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae) ('42% deterministic pre-recalls')",
+      "tolerance": {
+        "kind": "pp",
+        "value": 0.5
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 1349,
+      "computed": 1349,
+      "covered_by_discrepancy": null,
+      "metric": "w2_game_events",
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 1188,
+      "computed": 1188,
+      "covered_by_discrepancy": null,
+      "metric": "w2_game_automatic_events",
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 209,
+      "computed": 209,
+      "covered_by_discrepancy": null,
+      "metric": "w2_game_automatic_feedback",
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": true
+    },
+    {
+      "cited": 165,
+      "computed": 161,
+      "covered_by_discrepancy": "d1-organic-linkage-population",
+      "metric": "w2_game_organic_events",
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": false
+    },
+    {
+      "cited": 70,
+      "computed": 71,
+      "covered_by_discrepancy": "d1-organic-linkage-population",
+      "metric": "w2_game_organic_feedback",
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      },
+      "within_tolerance": false
+    },
+    {
+      "cited": 105,
+      "computed": null,
+      "covered_by_discrepancy": "d2-auto-outcome-not-derivable",
+      "metric": "w1_auto_outcome_traces",
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "not_derivable"
+      },
+      "within_tolerance": null
+    },
+    {
+      "cited": 12.6,
+      "computed": null,
+      "covered_by_discrepancy": "d4-avg-recall-kb-measure-basis",
+      "metric": "w1_avg_recall_kb",
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "not_derivable"
+      },
+      "within_tolerance": null
+    }
+  ],
+  "corpus": {
+    "alt_events": 1576,
+    "files": {
+      "dev.jsonl": {
+        "events": 826,
+        "nodes": 777,
+        "sha256": "605e4f3fdc91817788a40d0dbbabffb16b86ef98ad28020c20379ef249cc9a36"
+      },
+      "eval.jsonl": {
+        "events": 509,
+        "nodes": 653,
+        "sha256": "c7be5b723dd69e2565e85f2d7fe92aa5915bc07d3b6e7bd94e85e16b953a856b"
+      },
+      "holdout.jsonl": {
+        "events": 4741,
+        "nodes": 2872,
+        "sha256": "d83a3b9a19c8237d0ad31f9434c2822ec8875fb5753cf94b63d59a6413788b3c"
+      },
+      "splits.json": {
+        "sha256": "66f04caa41e0302fd7b8582f54197a396a2bb8483ddd543e564740a8e4c3a7b7"
+      }
+    },
+    "root": "artifacts/animal-planet/corpus",
+    "splits": {
+      "dev": {
+        "events": 826,
+        "nodes": 777
+      },
+      "eval": {
+        "events": 509,
+        "nodes": 653
+      },
+      "holdout": {
+        "events": 4741,
+        "nodes": 2872
+      }
+    },
+    "total_events": 6076
+  },
+  "definitions": {
+    "automatic_linkage_pct": "share of W2 project:game events with class=automatic that have feedback_applied set",
+    "organic_linkage_pct": "share of W2 project:game events with class=organic (splits.json event_class_predicate: automatic iff agent IS NULL) that have feedback_applied set",
+    "payload_*_chars": "median/nearest-rank-p90/mean of transcript_serialized_chars (len_json_content of the matched MCP recall tool-result) over transcript-matched events created in W3",
+    "w1_supersedes_edges": "supersedes relations (deduped by source,target,created_at across split files) created within W1"
+  },
+  "discrepancies": [
+    {
+      "cited": {
+        "organic_linkage_pct": 42.4,
+        "w2_game_organic_events": 165,
+        "w2_game_organic_feedback": 70
+      },
+      "computed": {
+        "organic_linkage_pct": 44.0994,
+        "w2_game_organic_events": 161,
+        "w2_game_organic_feedback": 71
+      },
+      "explanation": "The cited organic population is internally inconsistent: cited organic events + cited automatic events do not sum to the W2 project:game window total, and cited feedback counts do not sum to the window's total feedback either. No column-level predicate reproduces the cited organic split; the corpus pins the class predicate 'automatic iff agent IS NULL' (splits.json event_class_predicate), under which the automatic side is exact and the organic side differs as recorded here. The qualitative baseline gap (organic linkage far above automatic) is preserved.",
+      "id": "d1-organic-linkage-population",
+      "metrics": [
+        "organic_linkage_pct",
+        "w2_game_organic_events",
+        "w2_game_organic_feedback"
+      ],
+      "source": "recipe/01-extract.md discrepancy 1; staging METADATA.json.discrepancies[]"
+    },
+    {
+      "cited": {
+        "w1_auto_outcome_traces": 105
+      },
+      "computed": {
+        "w1_auto_outcome_traces": null
+      },
+      "explanation": "Auto-OUTCOME traces are identified by a content template (node.sh _node_lm_record_outcome, 'OUTCOME pass/fail: ...' with agent='ae'); corpus content and agent fields are de-identified surrogates, so the marker cannot be recomputed from the tracked corpus at all. At extract time the pinned template matched 78 W1 traces (89 under a broad substring match) against the cited 105; the snapshot is a lower bound because identical retry contents dedup at remember time and traces can decay or be forgotten between the audit and the snapshot.",
+      "id": "d2-auto-outcome-not-derivable",
+      "metrics": [
+        "w1_auto_outcome_traces"
+      ],
+      "source": "recipe/01-extract.md discrepancy 2; staging METADATA.json.discrepancies[]"
+    },
+    {
+      "cited": {
+        "payload_mean_chars": 26543,
+        "payload_median_chars": 26496,
+        "payload_n": 278,
+        "payload_p90_chars": 35237
+      },
+      "computed": {
+        "payload_mean_chars": 26405.37,
+        "payload_median_chars": 26792.0,
+        "payload_n": 164,
+        "payload_p90_chars": 30614
+      },
+      "explanation": "The cited W3 payload population decomposes exactly as the surviving transcript-matched recalls (carried in the corpus) plus 114 W3 DB events from /root-agent manual sessions whose transcripts are unreadable (permission denied) or removed on the evidence host; the serialized sizes of those tool-results cannot be re-measured from surviving evidence. The corpus reproduces the survivor population's statistics exactly; the cited median/p90/mean/n cover the larger, partly unrecoverable population.",
+      "id": "d3-w3-payload-population",
+      "metrics": [
+        "payload_median_chars",
+        "payload_p90_chars",
+        "payload_mean_chars",
+        "payload_n"
+      ],
+      "source": "recipe/01-extract.md discrepancy 3; staging METADATA.json.discrepancies[]"
+    },
+    {
+      "cited": {
+        "w1_avg_recall_kb": 12.6
+      },
+      "computed": {
+        "w1_avg_recall_kb": null
+      },
+      "explanation": "The audit's 'avg 12.6KB/recall' (and its 18.8% share of tool-result volume) is measured on the len_text basis — the sum of text-block lengths over ALL W1 LM tool-results, including tools other than memory_recall. The corpus carries only the len_json_content measure for transcript-matched recall events, so this figure is not derivable from the tracked corpus; it was reproduced exactly at the extract stage from the raw transcripts.",
+      "id": "d4-avg-recall-kb-measure-basis",
+      "metrics": [
+        "w1_avg_recall_kb"
+      ],
+      "source": "recipe/01-extract.md 'Serialized payload measure'"
+    }
+  ],
+  "expected": {
+    "automatic_linkage_pct": {
+      "cited": 17.6,
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "pp",
+        "value": 0.5
+      }
+    },
+    "organic_linkage_pct": {
+      "cited": 42.4,
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "pp",
+        "value": 0.5
+      }
+    },
+    "payload_mean_chars": {
+      "cited": 26543,
+      "source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM",
+      "tolerance": {
+        "kind": "pct",
+        "value": 1.0
+      }
+    },
+    "payload_median_chars": {
+      "cited": 26496,
+      "source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM",
+      "tolerance": {
+        "kind": "pct",
+        "value": 1.0
+      }
+    },
+    "payload_n": {
+      "cited": 278,
+      "source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "payload_p90_chars": {
+      "cited": 35237,
+      "source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM",
+      "tolerance": {
+        "kind": "pct",
+        "value": 1.0
+      }
+    },
+    "w1_architectural_decision_events": {
+      "cited": 152,
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "w1_auto_outcome_traces": {
+      "cited": 105,
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "not_derivable"
+      }
+    },
+    "w1_avg_recall_kb": {
+      "cited": 12.6,
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "not_derivable"
+      }
+    },
+    "w1_deterministic_template_share_pct": {
+      "cited": 42.0,
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae) ('42% deterministic pre-recalls')",
+      "tolerance": {
+        "kind": "pp",
+        "value": 0.5
+      }
+    },
+    "w1_recall_events": {
+      "cited": 727,
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "w1_reopen_lesson_events": {
+      "cited": 152,
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "w1_supersedes_edges": {
+      "cited": 9,
+      "source": "audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "w2_game_automatic_events": {
+      "cited": 1188,
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "w2_game_automatic_feedback": {
+      "cited": 209,
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "w2_game_events": {
+      "cited": 1349,
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "w2_game_organic_events": {
+      "cited": 165,
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      }
+    },
+    "w2_game_organic_feedback": {
+      "cited": 70,
+      "source": "net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE / root-goal field baseline",
+      "tolerance": {
+        "kind": "exact"
+      }
+    }
+  },
+  "failing_uncovered_metrics": [],
+  "metrics": {
+    "automatic_linkage_pct": 17.5926,
+    "cross_checks": {
+      "w1_architectural_decision_events": 152,
+      "w1_auto_outcome_traces": null,
+      "w1_avg_recall_kb": null,
+      "w1_class_counts": {
+        "automatic": 727
+      },
+      "w1_deterministic_template_share_pct": 41.8157,
+      "w1_recall_events": 727,
+      "w1_reopen_lesson_events": 152,
+      "w1_supersedes_edges": 9,
+      "w2_game_automatic_events": 1188,
+      "w2_game_automatic_feedback": 209,
+      "w2_game_events": 1349,
+      "w2_game_organic_events": 161,
+      "w2_game_organic_feedback": 71
+    },
+    "organic_linkage_pct": 44.0994,
+    "payload_mean_chars": 26405.37,
+    "payload_median_chars": 26792.0,
+    "payload_n": 164,
+    "payload_p90_chars": 30614
+  },
+  "populations": {
+    "supersedes_edges_in_corpus": 73,
+    "w1_alt_events": 727,
+    "w2_game_events": 1349,
+    "w3_transcript_matched_events": 164
+  },
+  "schema_version": 1,
+  "tolerances": {
+    "counts": "exact",
+    "linkage_pct": "±0.5 percentage points vs the rounded cited values",
+    "payload_chars": "±1% vs the cited values (covers the 26.5k/35.2k roundings)"
+  },
+  "window_convention": "created_at within [start, end], inclusive both ends",
+  "windows": {
+    "W1": {
+      "end": "2026-08-09T11:00:23Z",
+      "start": "2026-08-06T20:00:00Z"
+    },
+    "W2": {
+      "end": "2026-08-12T21:48:45Z",
+      "start": "2026-08-06T20:00:00Z"
+    },
+    "W3": {
+      "end": "2026-08-12T14:37:00Z",
+      "start": "2026-08-09T11:34:00Z"
+    },
+    "export": {
+      "end": "2026-08-12T21:48:45Z",
+      "start": "2026-08-06T20:00:00Z"
+    }
+  }
+}

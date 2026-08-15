@@ -1,0 +1,844 @@
+{
+  "calculator": {
+    "bytes": 58901,
+    "note": "single baseline calculator (report/verify/compare); tooling, not packet data - later bug-fixes may change this file without amending the manifest",
+    "path": "scripts/ap_baseline.py",
+    "sha256_at_freeze": "ea029c80f4803866972c848e3990770e590722581dbef53656ac67b80b2563fc"
+  },
+  "corpus": {
+    "counts": {
+      "dev": {
+        "by_class": {
+          "automatic": 732,
+          "organic": 94
+        },
+        "by_scope": {
+          "global": 81,
+          "project:ae": 37,
+          "project:game": 706,
+          "session:ae-chat": 1,
+          "session:ae-dashboard-chat": 1
+        },
+        "by_source": {
+          "alt": 826
+        },
+        "by_template": {
+          "None": 510,
+          "architectural_decision": 162,
+          "reopen_lesson": 154
+        },
+        "events": 826,
+        "nodes": 777,
+        "supersedes_bearing_events": 406,
+        "transcript_matched_events": 185
+      },
+      "eval": {
+        "by_class": {
+          "automatic": 458,
+          "organic": 51
+        },
+        "by_scope": {
+          "global": 61,
+          "project:ae": 18,
+          "project:game": 428,
+          "session:ae-dashboard-chat": 2
+        },
+        "by_source": {
+          "alt": 509
+        },
+        "by_template": {
+          "None": 314,
+          "architectural_decision": 95,
+          "reopen_lesson": 100
+        },
+        "events": 509,
+        "nodes": 653,
+        "supersedes_bearing_events": 256,
+        "transcript_matched_events": 133
+      },
+      "holdout": {
+        "by_class": {
+          "automatic": 4392,
+          "organic": 349
+        },
+        "by_scope": {
+          "global": 19,
+          "project:ae": 7,
+          "project:game": 215,
+          "project:octopus": 1500,
+          "project:online": 1500,
+          "project:x": 1500
+        },
+        "by_source": {
+          "alt": 241,
+          "local": 4500
+        },
+        "by_template": {
+          "None": 2966,
+          "architectural_decision": 863,
+          "reopen_lesson": 912
+        },
+        "events": 4741,
+        "nodes": 2872,
+        "supersedes_bearing_events": 126,
+        "transcript_matched_events": 48
+      }
+    },
+    "event_class_predicate": "agent IS NULL -> automatic, else organic",
+    "family_check": {
+      "dev_bearing_events": 406,
+      "dev_bound": 66,
+      "dev_bound_adjusted": false,
+      "eval_bearing_events": 256,
+      "predicate": "event is correction/supersedes-bearing iff any results[].node_id is an endpoint (source or target) of a supersedes connection in alt-db/connections_typed.jsonl"
+    },
+    "holdout_seal": "corpus/POLICY.md - holdout is sealed; first semantic read belongs to the post-freeze shadow-eval stage",
+    "split_rule": {
+      "dev_bound": 66,
+      "hash": "int.from_bytes(sha256(event_id.encode('utf-8')).digest()[:8], 'big') % 100",
+      "holdout_bound": 15,
+      "local_sources": [
+        "local-db/holdout_project_octopus",
+        "local-db/holdout_project_online",
+        "local-db/holdout_project_x"
+      ],
+      "mod": 100,
+      "text": "Declared in advance, by rule, not by inspection. source=local (all local-DB non-animal-planet workloads) -> holdout only. source=alt (every recall_event exported from the alt DB in the export window) -> bucket = int.from_bytes(sha256(event_id.encode('utf-8')).digest()[:8], 'big') % 100; bucket < 15 -> holdout (~15% holdout-AP slice); 15 <= bucket < 66 -> dev (51/85 = 60% of the remainder); 66 <= bucket < 100 -> eval (34/85 = 40%). No stratification by outcome."
+    },
+    "template_predicate": "query contains 'reopen_lesson' / 'architectural_decision' (substring)",
+    "totals": {
+      "alt_events": 1576,
+      "events": 6076,
+      "local_events": 4500
+    }
+  },
+  "cross_check_status_counts": {
+    "discrepancy": 4,
+    "exact": 11,
+    "exact_within_rounding": 2,
+    "near": 2
+  },
+  "discrepancies": [
+    {
+      "cited": {
+        "organic_linkage_pct": 42.4,
+        "w2_game_organic_events": 165,
+        "w2_game_organic_feedback": 70
+      },
+      "computed": {
+        "organic_linkage_pct": 44.0994,
+        "w2_game_organic_events": 161,
+        "w2_game_organic_feedback": 71
+      },
+      "explanation": "The cited organic population is internally inconsistent: cited organic events + cited automatic events do not sum to the W2 project:game window total, and cited feedback counts do not sum to the window's total feedback either. No column-level predicate reproduces the cited organic split; the corpus pins the class predicate 'automatic iff agent IS NULL' (splits.json event_class_predicate), under which the automatic side is exact and the organic side differs as recorded here. The qualitative baseline gap (organic linkage far above automatic) is preserved.",
+      "id": "d1-organic-linkage-population",
+      "metrics": [
+        "organic_linkage_pct",
+        "w2_game_organic_events",
+        "w2_game_organic_feedback"
+      ],
+      "source": "recipe/01-extract.md discrepancy 1; staging METADATA.json.discrepancies[]"
+    },
+    {
+      "cited": {
+        "w1_auto_outcome_traces": 105
+      },
+      "computed": {
+        "w1_auto_outcome_traces": null
+      },
+      "explanation": "Auto-OUTCOME traces are identified by a content template (node.sh _node_lm_record_outcome, 'OUTCOME pass/fail: ...' with agent='ae'); corpus content and agent fields are de-identified surrogates, so the marker cannot be recomputed from the tracked corpus at all. At extract time the pinned template matched 78 W1 traces (89 under a broad substring match) against the cited 105; the snapshot is a lower bound because identical retry contents dedup at remember time and traces can decay or be forgotten between the audit and the snapshot.",
+      "id": "d2-auto-outcome-not-derivable",
+      "metrics": [
+        "w1_auto_outcome_traces"
+      ],
+      "source": "recipe/01-extract.md discrepancy 2; staging METADATA.json.discrepancies[]"
+    },
+    {
+      "cited": {
+        "payload_mean_chars": 26543,
+        "payload_median_chars": 26496,
+        "payload_n": 278,
+        "payload_p90_chars": 35237
+      },
+      "computed": {
+        "payload_mean_chars": 26405.37,
+        "payload_median_chars": 26792.0,
+        "payload_n": 164,
+        "payload_p90_chars": 30614
+      },
+      "explanation": "The cited W3 payload population decomposes exactly as the surviving transcript-matched recalls (carried in the corpus) plus 114 W3 DB events from /root-agent manual sessions whose transcripts are unreadable (permission denied) or removed on the evidence host; the serialized sizes of those tool-results cannot be re-measured from surviving evidence. The corpus reproduces the survivor population's statistics exactly; the cited median/p90/mean/n cover the larger, partly unrecoverable population.",
+      "id": "d3-w3-payload-population",
+      "metrics": [
+        "payload_median_chars",
+        "payload_p90_chars",
+        "payload_mean_chars",
+        "payload_n"
+      ],
+      "source": "recipe/01-extract.md discrepancy 3; staging METADATA.json.discrepancies[]"
+    },
+    {
+      "cited": {
+        "w1_avg_recall_kb": 12.6
+      },
+      "computed": {
+        "w1_avg_recall_kb": null
+      },
+      "explanation": "The audit's 'avg 12.6KB/recall' (and its 18.8% share of tool-result volume) is measured on the len_text basis — the sum of text-block lengths over ALL W1 LM tool-results, including tools other than memory_recall. The corpus carries only the len_json_content measure for transcript-matched recall events, so this figure is not derivable from the tracked corpus; it was reproduced exactly at the extract stage from the raw transcripts.",
+      "id": "d4-avg-recall-kb-measure-basis",
+      "metrics": [
+        "w1_avg_recall_kb"
+      ],
+      "source": "recipe/01-extract.md 'Serialized payload measure'"
+    }
+  ],
+  "extraction_predicates": {
+    "auto_outcome_marker": {
+      "note": "not recomputable from the de-identified corpus (content and agent are surrogates); see discrepancy d2",
+      "pinned_sql": "content LIKE 'OUTCOME pass: %' OR content LIKE 'OUTCOME fail: %', agent='ae', created_at in W1",
+      "template": "OUTCOME {pass|fail}: {task}[ — {goal.md first line}]",
+      "template_source": "alt ~/p/ae/node.sh, _node_lm_record_outcome (goal cites line 1204); written via lm_client.py remember --agent ae --scope project:$PROJECT_NAME",
+      "variant_matrix": {
+        "broad_like|active|agent=ae": {
+          "all_time": 235,
+          "w1": 78
+        },
+        "broad_like|active|any_agent": {
+          "all_time": 262,
+          "w1": 89
+        },
+        "broad_like|any_decay|agent=ae": {
+          "all_time": 238,
+          "w1": 78
+        },
+        "broad_like|any_decay|any_agent": {
+          "all_time": 267,
+          "w1": 89
+        },
+        "template_prefix|active|agent=ae": {
+          "all_time": 235,
+          "w1": 78
+        },
+        "template_prefix|active|any_agent": {
+          "all_time": 243,
+          "w1": 83
+        },
+        "template_prefix|any_decay|agent=ae": {
+          "all_time": 238,
+          "w1": 78
+        },
+        "template_prefix|any_decay|any_agent": {
+          "all_time": 246,
+          "w1": 83
+        }
+      },
+      "w1_broad_variant_count": 89,
+      "w1_pinned_count": 78
+    },
+    "deterministic_templates": {
+      "measured": {
+        "architectural_decision": 152,
+        "reopen_lesson": 152
+      },
+      "pinned": "query contains 'reopen_lesson' / 'architectural_decision' (substring)"
+    },
+    "event_class": "agent IS NULL -> automatic, else organic",
+    "feedback_applied_domain": [
+      0,
+      1
+    ],
+    "feedback_metric": "COUNT(feedback_applied != 0); feedback_applied domain is {0,1} in this window",
+    "linkage_population": "recall_events with scope='project:game' and created_at in W2 (inclusive)",
+    "organic_vs_automatic_search_table": {
+      "agent_not_null": {
+        "automatic_fb": 209,
+        "automatic_n": 1188,
+        "organic_fb": 71,
+        "organic_n": 161
+      },
+      "agent_or_session_id": {
+        "automatic_fb": 209,
+        "automatic_n": 1188,
+        "organic_fb": 71,
+        "organic_n": 161
+      },
+      "session_id_not_null": {
+        "automatic_fb": 210,
+        "automatic_n": 1194,
+        "organic_fb": 70,
+        "organic_n": 155
+      },
+      "task_not_null": {
+        "automatic_fb": 204,
+        "automatic_n": 1183,
+        "organic_fb": 76,
+        "organic_n": 166
+      }
+    },
+    "payload_measure": {
+      "alternatives": {
+        "len_text": "sum of len(text) over text blocks",
+        "len_tool_use_result": "len(json.dumps(top-level toolUseResult))"
+      },
+      "definition": "len(json.dumps(content-of-tool_result-block, ensure_ascii=False)) from the transcript",
+      "len_json_content_equals_len_tool_use_result": true,
+      "pinned": "len_json_content"
+    },
+    "transcript_match_rule": {
+      "assignment": "greedy one-to-one by ascending time delta (ties: db id, transcript order)",
+      "key": "exact query string equality against recall_events.query",
+      "matched_total": 366,
+      "population": "transcript tool_results of mcp__living-memory__memory_recall with is_error=false",
+      "time": "nearest |recall_events.created_at - tool_result.timestamp| <= 600s",
+      "w1": {
+        "w1_matched": 202,
+        "w1_transcript_recalls": 202
+      }
+    }
+  },
+  "files": {
+    "corpus/dev.jsonl": {
+      "bytes": 5638050,
+      "sha256": "605e4f3fdc91817788a40d0dbbabffb16b86ef98ad28020c20379ef249cc9a36"
+    },
+    "corpus/eval.jsonl": {
+      "bytes": 4299588,
+      "sha256": "c7be5b723dd69e2565e85f2d7fe92aa5915bc07d3b6e7bd94e85e16b953a856b"
+    },
+    "corpus/holdout.jsonl": {
+      "bytes": 25638886,
+      "sha256": "d83a3b9a19c8237d0ad31f9434c2822ec8875fb5753cf94b63d59a6413788b3c"
+    },
+    "corpus/splits.json": {
+      "bytes": 4040,
+      "sha256": "66f04caa41e0302fd7b8582f54197a396a2bb8483ddd543e564740a8e4c3a7b7"
+    }
+  },
+  "frozen": true,
+  "frozen_at": "2026-08-13T09:00:18Z",
+  "frozen_by": "freeze-manifest goal node (retrieval-signal-and-context-cost/audit-replay-packet/freeze-manifest)",
+  "immutability": "Every file listed in `files` and `packet_files` is frozen at the recorded SHA-256 (paths relative to packet_root). manifest.json itself is the only packet file without a recorded hash (it cannot contain its own digest); RECIPE.md was finalized before this manifest and is hashed. Any byte change to a corpus file or baseline-report.json makes `python3 scripts/ap_baseline.py verify` exit non-zero. The calculator (see `calculator`) is measurement tooling, not packet data: its at-freeze hash is recorded for provenance, and later tooling fixes do not amend this manifest.",
+  "near_cross_checks": [
+    {
+      "expected": 23046,
+      "expected_source": "R (point-in-time 2026-08-12T22:41Z, live DB keeps growing)",
+      "measured": 23123,
+      "name": "connections_related_total",
+      "note": "full-table count is point-in-time; the live DB keeps growing, window-bound checks are the stable ones",
+      "status": "near"
+    },
+    {
+      "expected": 10669,
+      "expected_source": "A ('10669 tool-вызовов')",
+      "measured": 10667,
+      "name": "w1_total_tool_results",
+      "note": "tool_result blocks in W1 across surviving transcripts; the audit counted tool CALLS at 2026-08-09 over ~210 files",
+      "status": "near"
+    }
+  ],
+  "packet": "animal-planet audit & replay packet",
+  "packet_files": {
+    "RECIPE.md": {
+      "bytes": 17220,
+      "sha256": "f481edc597b06d1fe31932c750e2638d47a4953b009dcd48ae18db2c7a99935c"
+    },
+    "baseline-report.json": {
+      "bytes": 16872,
+      "sha256": "8332edf5d1d4a13b51b7a464ed3cef04eaffdf8f8248c30b0e77c0c9c5f1f615"
+    },
+    "corpus/POLICY.md": {
+      "bytes": 2287,
+      "sha256": "ad6506796b96ce5004f085d078b709c977aab5f38256782cc30d6f3806a65fbc"
+    },
+    "failures/README.md": {
+      "bytes": 1506,
+      "sha256": "73535864bffe7b7e5f73d09081970257e3fa0b07f8d56cf0d179024c01198742"
+    },
+    "failures/cases/ap-auto-dup-dev-1.json": {
+      "bytes": 8464,
+      "sha256": "8c44972698641c72b1b8764fbccbfb4508c4c17a5a4a3e4e48b4067df5958c2e"
+    },
+    "failures/cases/ap-auto-dup-dev-2.json": {
+      "bytes": 8751,
+      "sha256": "dbefdc0d378a38a005fec23b87f7907ce44970909bac37a03a55a0c13805307e"
+    },
+    "failures/cases/ap-auto-dup-eval-1.json": {
+      "bytes": 6625,
+      "sha256": "48a29042b4fc6d7c1f82c6e1514bbf5cb0170359a6dafe02bdda6dc0c509eb16"
+    },
+    "failures/cases/ap-auto-dup-eval-2.json": {
+      "bytes": 6469,
+      "sha256": "0f4d0b9ac6f10af676f93fc32650f642c2edeb6dfd35ffb24aab6d1de52344de"
+    },
+    "failures/cases/ap-correction-ordering-dev-1.json": {
+      "bytes": 10341,
+      "sha256": "bca3e17341e2893f23cbb64ce46b9482478d63f23a5e2a352b9d58affb72ceef"
+    },
+    "failures/cases/ap-correction-ordering-dev-2.json": {
+      "bytes": 12455,
+      "sha256": "c1fc2f9f8dc5fbe79ad34e3e71458f72ef33fff744425e577391d1e4693e576b"
+    },
+    "failures/cases/ap-correction-ordering-eval-1.json": {
+      "bytes": 6744,
+      "sha256": "94477927b42091e6fd52db960116821ea5f19d68510e23218f6b8d997103f4c3"
+    },
+    "failures/cases/ap-correction-ordering-eval-2.json": {
+      "bytes": 8941,
+      "sha256": "137877a66d04750691ed593fea13c0029633070a9c9bedfbdc1e54b6fffe0958"
+    },
+    "failures/cases/ap-cross-scope-dev-1.json": {
+      "bytes": 5133,
+      "sha256": "b2b710d812bc734b3fd516964d1385585c3613405916dfa50ef70f73cb07259a"
+    },
+    "failures/cases/ap-cross-scope-dev-2.json": {
+      "bytes": 6834,
+      "sha256": "b651b7e1c366b7cb3fd2c908d6261b721f343967329c57a2c648a30b066b826f"
+    },
+    "failures/cases/ap-cross-scope-eval-1.json": {
+      "bytes": 6769,
+      "sha256": "24a27e40eef46db81932ce2a6feb5039b80cfa1f9369f95b6c7266659e97f2a0"
+    },
+    "failures/cases/ap-cross-scope-eval-2.json": {
+      "bytes": 7455,
+      "sha256": "553b5fdfdd5525d46cd27d55342491e22c750ba601dd00acb7ca9ff2248dab17"
+    },
+    "failures/cases/ap-mixed-era-dev-1.json": {
+      "bytes": 5986,
+      "sha256": "4f4bfbd0ecd5ac7d48815536e68c5cf16fc17f60120ba2a901cdd23cae6c3ada"
+    },
+    "failures/cases/ap-mixed-era-dev-2.json": {
+      "bytes": 3628,
+      "sha256": "51805e0df5d0f0ba9b67d594abe331eb1ca0fe4928eaab0e8c6bd249851fc7e0"
+    },
+    "failures/cases/ap-mixed-era-eval-1.json": {
+      "bytes": 6943,
+      "sha256": "a78d528e57d6c294fe7498b59d48478c1ba02faa017e5be54dea26862e8d68ac"
+    },
+    "failures/cases/ap-mixed-era-eval-2.json": {
+      "bytes": 4253,
+      "sha256": "a45c1a496dae687bc2eba167110db603b107d71691f7316b9e68e4b4416016b7"
+    },
+    "failures/curate/curate_failures.py": {
+      "bytes": 54762,
+      "sha256": "cf452cd20dfd7e944d23e23429bc0e55fedcb2739a308badd3dcc85154ccfc8f"
+    },
+    "failures/index.json": {
+      "bytes": 15109,
+      "sha256": "7c746e11c5cb0fb6244c5b76f9c89ca6b3466b125cff6819451437a8356d32bc"
+    },
+    "recipe/01-extract.md": {
+      "bytes": 7622,
+      "sha256": "c46f8f180f04693b83ee80957a0ded8a6d70a4e08b0d7a069a88f28d21284713"
+    },
+    "recipe/02-transform.md": {
+      "bytes": 10864,
+      "sha256": "8a82ad2fcc140fb6b3b9fbfe82128a99b4a5455707b5a52fe71efae678ec7829"
+    },
+    "recipe/03-calculator.md": {
+      "bytes": 9322,
+      "sha256": "48c94d039073615aa2d49718f1eb19df78a02830de05dacc840e695dde2ee925"
+    },
+    "recipe/extract/10_snapshot_alt_db.sh": {
+      "bytes": 3374,
+      "sha256": "b921df0bfe9e7e06823b4441ce9405c8f8fa3143e0cf8be542dae5692d722d7b"
+    },
+    "recipe/extract/20_export_alt_db.py": {
+      "bytes": 9129,
+      "sha256": "3fda247a1609236e22bf73738924e02c199b976fbb405a09a692680b5b094c3d"
+    },
+    "recipe/extract/30_transcript_inventory.sh": {
+      "bytes": 2543,
+      "sha256": "a2e0b5eaa8ff8607e7899da77c60a398705fee87c78adc7aed0d83ade35b6394"
+    },
+    "recipe/extract/40_parse_transcripts.sh": {
+      "bytes": 1380,
+      "sha256": "04758855f8b70edd25610aaa0849c82af5a4fd53b82d7c2c1dfe36dea0298d15"
+    },
+    "recipe/extract/50_snapshot_local_db.sh": {
+      "bytes": 2833,
+      "sha256": "9986f04c4c1459a775fa5eb259f14a4cb3ece3252f72bac13e6d19847d64df62"
+    },
+    "recipe/extract/60_export_local_holdout.py": {
+      "bytes": 4152,
+      "sha256": "4172fc5e91438aeeb88cea52056cb1f2637f9b599e54166f82f8079f9345a8de"
+    },
+    "recipe/extract/70_build_metadata.py": {
+      "bytes": 30903,
+      "sha256": "2056211fb06f681ccc7505fdcb6ee011ef16bb28419eaf5e460fc41edea14333"
+    },
+    "recipe/extract/common.sh": {
+      "bytes": 1162,
+      "sha256": "c1df2b32b9a7f3fc9eb9e00735d8050bc1834c687bada37d2fdd05b88cd160df"
+    },
+    "recipe/extract/run_all.sh": {
+      "bytes": 1137,
+      "sha256": "864e338a61fd02e349f7f9a465903f0cdfb31587ceb9b729e1c0df4874a34240"
+    },
+    "recipe/extract/transcript_parser.py": {
+      "bytes": 7823,
+      "sha256": "7c7bd59eb7a2b632b3f5122ac92ce4955cc92b098dafee4a4945f7066f2e8139"
+    },
+    "recipe/extract/windows.json": {
+      "bytes": 1074,
+      "sha256": "146d1bb31aa3056d205f1b9b3a8c04fac0b859683fb46276097406477ce3db06"
+    },
+    "recipe/transform/build_corpus.py": {
+      "bytes": 24474,
+      "sha256": "d706d0937ba39136d9a95165c05c7331933dd6caf8cc3a7ae5e7320582f6c987"
+    },
+    "recipe/transform/deid.py": {
+      "bytes": 8216,
+      "sha256": "503de08cea164660c2f1c3b3675ad082f70109d8f4360194bb1e02c7423bd6e3"
+    },
+    "recipe/transform/verify_corpus.py": {
+      "bytes": 35178,
+      "sha256": "66bc71ec44e0ae04201da36227ea44ccd8924ff224404c9ae2bc15737228f913"
+    }
+  },
+  "packet_root": "artifacts/animal-planet",
+  "privacy": {
+    "audit": {
+      "audited_at": "2026-08-13T09:00:18Z",
+      "prior_era_references": "grep over the packet and the calculator finds exactly two mentions of a prior-era root file, both citing the DB-snapshot *method* of artifacts/baseline.md as precedent (recipe/extract/10_snapshot_alt_db.sh, recipe/01-extract.md); no prior-era root file is used as evidence",
+      "staging_tmp_paths": "clean - no tracked path contains a staging / tmp / .cache / ap-audit segment",
+      "surrogate_purity_rescan": "10,378 corpus records re-scanned corpus-only per RECIPE.md Stage 4 (flat *_surrogate fields plus string leaves of surrogated containers against the purity regex / kept-real classes): 0 impure leaves",
+      "tracked_jsonl": "all evidence .jsonl live under the corpus directory; the only tracked .jsonl elsewhere is projects/lm/state/acceptance/acceptance.jsonl - a 312-byte pre-existing AE goal-tree acceptance record (tracked since 2026-06-01, commit a5bf6ad), orchestration infrastructure unrelated to this packet, containing no evidence rows and no private text",
+      "tracked_sqlite_db": "clean - `git ls-files` contains no *.sqlite3 / *.db"
+    },
+    "prior_era_note": "The files at the artifacts/ repo root (ANALYSIS.md, baseline.md, backfill/, discovery/, replay/, latency_before.json, latency_after.json, ...) are a 2026-05-22 prior-era audit of the LOCAL database. They are not part of this packet and are never used as its evidence; this packet's evidence base is exclusively the captures recorded under `sources`.",
+    "rules": [
+      "staging holds raw private rows (queries, contents, transcripts-derived events) and lives outside every repo; it is never tracked or committed",
+      "tracked recipe files and script stdout carry only aggregates, identifiers, lengths and hashes",
+      "node `embedding` columns are excluded from all exports",
+      "corpus text fields are length/whitespace/equality-class-preserving surrogates; the HMAC de-id salt was ephemeral (os.urandom(32)) and intentionally recorded nowhere",
+      "holdout.jsonl is sealed per corpus/POLICY.md"
+    ]
+  },
+  "schema_version": 1,
+  "sources": {
+    "alt_db": {
+      "capture_finished": "2026-08-12T23:13:19Z",
+      "capture_started": "2026-08-12T23:13:17Z",
+      "checkpoint": {
+        "integrity_check": "ok",
+        "journal_mode": "wal",
+        "wal_checkpoint": [
+          0,
+          0,
+          0
+        ]
+      },
+      "exports_row_counts": {
+        "connections_among_exported": 13103,
+        "connections_typed_exported": 178,
+        "game_schema_nodes": 11,
+        "game_schema_source_nodes": 43,
+        "outcome_candidate_nodes": 267,
+        "recall_events_exported": 1576,
+        "recall_events_per_scope": {
+          "global": 161,
+          "project:ae": 62,
+          "project:game": 1349,
+          "session:ae-chat": 1,
+          "session:ae-dashboard-chat": 3
+        },
+        "recall_events_total_in_db": 5096,
+        "referenced_nodes_found": 807,
+        "retrieval_weights_rows": 7,
+        "typed_edge_extra_nodes": 162
+      },
+      "method": "scp db+wal+shm of live DB -> local copy; PRAGMA wal_checkpoint(TRUNCATE) on the copy; PRAGMA integrity_check; sha256 of checkpointed copy",
+      "sha256": "dc3c24634994c039d1d58c6ae2208067229f876cf85b847abcea455bada26cb1",
+      "snapshot_bytes": 64970752,
+      "snapshot_path": "/tmp/ap-audit/alt/global.sqlite3",
+      "source_dir": "/home/user/.local/share/living-memory",
+      "source_files_at_capture": [
+        {
+          "bytes": 64917504,
+          "mtime_epoch": 1786574676,
+          "path": "/home/user/.local/share/living-memory/global.sqlite3"
+        },
+        {
+          "bytes": 6097632,
+          "mtime_epoch": 1786575566,
+          "path": "/home/user/.local/share/living-memory/global.sqlite3-wal"
+        },
+        {
+          "bytes": 32768,
+          "mtime_epoch": 1786575566,
+          "path": "/home/user/.local/share/living-memory/global.sqlite3-shm"
+        }
+      ],
+      "source_host": "alt",
+      "wal_bytes_before_checkpoint": 6097632
+    },
+    "alt_transcripts": {
+      "capture_finished": "2026-08-12T23:13:21Z",
+      "capture_started": "2026-08-12T23:13:20Z",
+      "dir_count": 126,
+      "file_count": 336,
+      "hash_algorithm": "sha256 (remote sha256sum)",
+      "inventory_rows": 336,
+      "inventory_sha256": "8b0ad806701d91839fcb379cdb2cc8d1c49acf7cdcb23a0c7469252920c2e5d8",
+      "parsed_counts": {
+        "files": 336,
+        "lm_events": 702,
+        "matched_recall_events": 366,
+        "result_size_records": 20796,
+        "total_bytes": 465083716
+      },
+      "source_glob": "~/.claude/projects/*animal-planet*/*.jsonl",
+      "source_host": "alt",
+      "total_bytes": 465083716
+    },
+    "local_db": {
+      "capture_finished": "2026-08-12T23:13:24Z",
+      "capture_started": "2026-08-12T23:13:24Z",
+      "checkpoint": {
+        "integrity_check": "ok",
+        "journal_mode": "wal",
+        "wal_checkpoint": [
+          0,
+          0,
+          0
+        ]
+      },
+      "holdout_scopes": {
+        "project:octopus": {
+          "nodes_exported": 620,
+          "nodes_missing": 0,
+          "recall_events_exported": 1500,
+          "recall_events_total_in_db": 12127,
+          "referenced_node_ids": 620,
+          "results_json_parse_errors": 0,
+          "span": [
+            "2026-06-02T11:48:30Z",
+            "2026-08-05T11:23:31Z"
+          ]
+        },
+        "project:online": {
+          "nodes_exported": 935,
+          "nodes_missing": 0,
+          "recall_events_exported": 1500,
+          "recall_events_total_in_db": 7976,
+          "referenced_node_ids": 935,
+          "results_json_parse_errors": 0,
+          "span": [
+            "2026-07-11T11:50:00Z",
+            "2026-08-12T15:50:33Z"
+          ]
+        },
+        "project:x": {
+          "nodes_exported": 890,
+          "nodes_missing": 0,
+          "recall_events_exported": 1500,
+          "recall_events_total_in_db": 9080,
+          "referenced_node_ids": 890,
+          "results_json_parse_errors": 0,
+          "span": [
+            "2026-06-25T20:42:18Z",
+            "2026-08-11T15:13:13Z"
+          ]
+        }
+      },
+      "method": "cp db+wal+shm of live DB -> local copy; PRAGMA wal_checkpoint(TRUNCATE) on the copy; PRAGMA integrity_check; sha256 of checkpointed copy",
+      "sha256": "7c4b7aec59d328f2a0d050516dc69f69877e3689a959ed4766b3070bb8676761",
+      "snapshot_bytes": 484184064,
+      "snapshot_path": "/tmp/ap-audit/local/global.sqlite3",
+      "source_files_at_capture": [
+        {
+          "bytes": 484184064,
+          "mtime_epoch": 1786574516,
+          "path": "/home/sfx/.local/share/living-memory/global.sqlite3"
+        },
+        {
+          "bytes": 69294312,
+          "mtime_epoch": 1786576353,
+          "path": "/home/sfx/.local/share/living-memory/global.sqlite3-wal"
+        },
+        {
+          "bytes": 32768,
+          "mtime_epoch": 1786576353,
+          "path": "/home/sfx/.local/share/living-memory/global.sqlite3-shm"
+        }
+      ],
+      "source_host": "local",
+      "source_path": "/home/sfx/.local/share/living-memory/global.sqlite3",
+      "wal_bytes_before_checkpoint": 69294312
+    }
+  },
+  "staging": {
+    "exports_sha256": {
+      "alt-db/connections_among_exported.jsonl": {
+        "bytes": 5888004,
+        "rows": 13103,
+        "sha256": "cbd434a6e254599f7d544e682cbc4465b78b17a367eb725b1d2ffe6966d30d8b"
+      },
+      "alt-db/connections_typed.jsonl": {
+        "bytes": 520874,
+        "rows": 178,
+        "sha256": "8e3c444cb8daf432651f7dbaa6c5158e1d6bc2b9ef5c4de2a93d43d408731443"
+      },
+      "alt-db/game_schema_nodes.jsonl": {
+        "bytes": 178514,
+        "rows": 11,
+        "sha256": "3849047274229bbdee2e05bd49e9a25aee0f633bb426799c23a98dab819dd8a4"
+      },
+      "alt-db/game_schema_source_nodes.jsonl": {
+        "bytes": 127522,
+        "rows": 43,
+        "sha256": "364c3066dbaea02bdba1453dde4678d6680b24b8c22c53554d768b780b59dd11"
+      },
+      "alt-db/nodes.jsonl": {
+        "bytes": 4983447,
+        "rows": 807,
+        "sha256": "5ef73d8264c505db7628a2d635a49f3cb30097aaa2e2d70465039cf553fd8586"
+      },
+      "alt-db/nodes_typed_edges.jsonl": {
+        "bytes": 1377523,
+        "rows": 162,
+        "sha256": "2071f88e16bbe0bac9941e3afb8be2b4e106459d2762a5cf0c2566cc6dc44269"
+      },
+      "alt-db/outcome_nodes.jsonl": {
+        "bytes": 512511,
+        "rows": 267,
+        "sha256": "8b63e27ebaeef21ea6b598071694a2e152eb7b47e7b4b9e4fa32fc92e6b63339"
+      },
+      "alt-db/recall_events.jsonl": {
+        "bytes": 4162914,
+        "rows": 1576,
+        "sha256": "45dbfdb389324a8702ba1a84b28be028991f23dcfe1d7ab9d771928c37c2cc7a"
+      },
+      "alt-db/retrieval_weights.json": {
+        "bytes": 1257,
+        "sha256": "9588dd8444a2e343d9ef70cb6bec20e0ad0962dc5f829c2864318898c2be7c93"
+      },
+      "alt-db/schema.json": {
+        "bytes": 5314,
+        "sha256": "b378cbf1942b0f93fb3a675cdcdf60764d7512b5c0acb26567c6c92b2a0b4acd"
+      },
+      "alt-db/snapshot.json": {
+        "bytes": 1129,
+        "sha256": "745b97f42af6677dac061d07e14d1d4185d387d0ddf1a6cf9e720448f21580f2"
+      },
+      "alt-db/summary.json": {
+        "bytes": 904,
+        "sha256": "786c46b1e3d42e2b69293b4f23515495e22fe9a27360cf3d46817c23ba876ff8"
+      },
+      "local-db/holdout_project_octopus.nodes.jsonl": {
+        "bytes": 2873031,
+        "rows": 620,
+        "sha256": "ff22a4f6b13cd0d82eb8832570a855e92f42544da65ca4cb5e36bd81c4e55ab8"
+      },
+      "local-db/holdout_project_octopus.recall_events.jsonl": {
+        "bytes": 3893099,
+        "rows": 1500,
+        "sha256": "10131f8de9864e460efc4be0f6138be4fb825ca4551ace19dad18ebd53060d4c"
+      },
+      "local-db/holdout_project_online.nodes.jsonl": {
+        "bytes": 5381204,
+        "rows": 935,
+        "sha256": "e52c20985d2ba34908ed3ea20972f74a7811f66913d33520924e136f21c5938f"
+      },
+      "local-db/holdout_project_online.recall_events.jsonl": {
+        "bytes": 4268171,
+        "rows": 1500,
+        "sha256": "cc97d5f7c694028cc20cf71a3d844f7dbd3a032e2960be55f9057710b4e1ae24"
+      },
+      "local-db/holdout_project_x.nodes.jsonl": {
+        "bytes": 3587958,
+        "rows": 890,
+        "sha256": "4f72869292df5fa828bab87f1049430804860f067cb341c1accec41810721483"
+      },
+      "local-db/holdout_project_x.recall_events.jsonl": {
+        "bytes": 3543245,
+        "rows": 1500,
+        "sha256": "88b2da855eca4938853dcf4a5a852d4344b29b8ee83a6fe5c300042bece0343f"
+      },
+      "local-db/snapshot.json": {
+        "bytes": 1148,
+        "sha256": "38d32c5dc802622a59e0c81783b962dd63281b1116de8e2ba24616fcf88d1f87"
+      },
+      "local-db/summary.json": {
+        "bytes": 1069,
+        "sha256": "210e60babcb43ed5020145e50eea59cebcc7fdf13a123155f78dd1a6340fafca"
+      },
+      "transcripts/inventory.jsonl": {
+        "bytes": 104432,
+        "rows": 336,
+        "sha256": "8b0ad806701d91839fcb379cdb2cc8d1c49acf7cdcb23a0c7469252920c2e5d8"
+      },
+      "transcripts/inventory_summary.json": {
+        "bytes": 299,
+        "sha256": "40beaa0e05c0dcebbb5b544f35e04bc8201a78ee5e04a2526d4ea9f8e0cc8b93"
+      },
+      "transcripts/lm_events.jsonl": {
+        "bytes": 6167937,
+        "rows": 21835,
+        "sha256": "9ec70b96542440bde2a81c18ff18bd033396c0ebc7bdc17a2689d33fb9328626"
+      },
+      "transcripts/matched.jsonl": {
+        "bytes": 194088,
+        "rows": 366,
+        "sha256": "44a14a112fc3e9a38a1a18f6a830dbc1473cd5b818defc8563e6cf9571b6799e"
+      },
+      "transcripts/parse_summary.json": {
+        "bytes": 566,
+        "sha256": "3d6522634a8bf6cdadbcd4688b7bdf1de0fda86ff4c249930edd77e3fa6bc3f6"
+      }
+    },
+    "metadata_generated_at": "2026-08-12T23:13:26Z",
+    "metadata_sha256": "025e734f84f452711e86a31d1639f2ee9833213e7ec94ced69b95d315ebac855",
+    "metadata_sha256_matches_corpus_build": true,
+    "path_documented": "/home/sfx/.cache/ap-audit/staging (untracked, outside every repo; rebuildable via recipe/extract/run_all.sh with live-source drift caveats)"
+  },
+  "verification": {
+    "gate": "python3 scripts/ap_baseline.py verify  # exit 0 iff the frozen packet is intact",
+    "purity_rescan": "RECIPE.md, Stage 4 - corpus surrogate-purity re-scan (corpus-only)",
+    "rehash": "jq -r '(.files + .packet_files) | to_entries[] | \"\\(.value.sha256)  artifacts/animal-planet/\\(.key)\"' artifacts/animal-planet/manifest.json | sha256sum -c --quiet"
+  },
+  "windows": {
+    "W1": {
+      "bounds_source": "start = animal-planet goal window start (20:00 UTC 2026-08-06); end = created_at of audit node 01KZK2WMP07CNTYDQXFTS23F39 (scope project:ae)",
+      "end": "2026-08-09T11:00:23Z",
+      "pins": [
+        "w1_recall_events (cited 727; exact)",
+        "w1_supersedes_edges (cited 9; exact)",
+        "w1_reopen_lesson_events + w1_architectural_decision_events (cited 152 + 152; exact)",
+        "w1_deterministic_template_share_pct (cited 42.0; computed 41.8157)",
+        "w1_auto_outcome_traces (cited 105; not derivable from the de-identified corpus - discrepancy d2-auto-outcome-not-derivable; extract-stage pinned SQL matched 78, broad variant 89)",
+        "w1_avg_recall_kb (cited 12.6; len_text basis over ALL W1 LM tool-results, not carried in the corpus - discrepancy d4-avg-recall-kb-measure-basis; reproduced at extract: 12,642.8 avg, 0.1876 share)",
+        "extract-stage cross-checks: W1 LM calls memory_recall 202 / memory_remember 141 / memory_lookup 46 / memory_teach 8 (exact); W1 tool_result blocks 10,667 vs cited 10,669 (near)"
+      ],
+      "start": "2026-08-06T20:00:00Z"
+    },
+    "W2": {
+      "bounds_source": "end = created_at of net-value trace 01KZVZ5ZTE1WSXFHCK6091H0RE (scope project:lm)",
+      "end": "2026-08-12T21:48:45Z",
+      "pins": [
+        "organic_linkage_pct (cited 42.4; computed 44.0994 - discrepancy d1-organic-linkage-population)",
+        "automatic_linkage_pct (cited 17.6; computed 17.5926, within tolerance)",
+        "w2_game_events (cited 1349; exact)",
+        "w2_game_automatic_events / w2_game_automatic_feedback (cited 1188 / 209; exact)",
+        "w2_game_organic_events / w2_game_organic_feedback (cited 165 / 70; computed 161 / 71 - discrepancy d1)"
+      ],
+      "start": "2026-08-06T20:00:00Z"
+    },
+    "W3": {
+      "bounds_source": "payload follow-up trace 01KZV6VCVGXVKPF6PSFXBH00EM (scope project:lm); bounds known at minute precision",
+      "end": "2026-08-12T14:37:00Z",
+      "pins": [
+        "payload_median_chars (cited 26496; survivor population computes 26792.0 - discrepancy d3-w3-payload-population)",
+        "payload_p90_chars (cited 35237; survivors 30614 - d3)",
+        "payload_mean_chars (cited 26543; survivors 26405.37, within tolerance)",
+        "payload_n (cited 278 = 164 surviving transcript-matched recalls + 114 unrecoverable /root-session results - d3)"
+      ],
+      "start": "2026-08-09T11:34:00Z"
+    },
+    "export": {
+      "end": "2026-08-12T21:48:45Z",
+      "note": "alt recall_events export range = W1.start .. W2.end; covers W1, W2, W3",
+      "start": "2026-08-06T20:00:00Z"
+    },
+    "semantics": "all window membership checks are inclusive on both ends; DB events keyed by recall_events.created_at, transcript events by tool_result timestamp (matching) or tool_use timestamp (call counts)"
+  }
+}

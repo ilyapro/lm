@@ -1,0 +1,172 @@
+{
+  "description": "Mixed-era consolidation (the project:game case from the audit): schema-level node 01KZVHNCK2D0AJW2ZS19SVCBJM (created 2026-08-12T17:52:29Z, 8481 content chars) consolidates 6 source traces from two project eras separated by 15.76 days: a pre-goal-era cluster of 4 traces (2026-07-26T20:36:16Z .. 2026-07-26T20:37:32Z, 7488 chars, 0.896 of source material) and an in-goal cluster of 2 traces (2026-08-11T14:46:24Z .. 2026-08-12T15:07:25Z, 865 chars). All pre-goal sources were already consolidated once by a pre-goal schema (see reconsumed_from), and 2 of the 2 in-goal sources are themselves supersedes-corrections of pre-goal-era material (superseding prior-era nodes at levels: schema, trace — including the prior-era schema itself) — obsolete-era claims and the corrections that displaced them are folded into a single undifferentiated schema. The split records 0 delivery of this node in recall events (zero — consistent with the audited access_count=0), so the case is encoded from node-level era clustering evidence; event_ids is honestly empty.",
+  "event_ids": [],
+  "evidence": {
+    "era_clusters": {
+      "in_goal": {
+        "content_chars_sum": 865,
+        "count": 2,
+        "created_at_span": [
+          "2026-08-11T14:46:24Z",
+          "2026-08-12T15:07:25Z"
+        ],
+        "source_ids": [
+          "01KZRMKXX178KMB32E62N4X6CH",
+          "01KZV874TS57AMRFBEBCTN11V2"
+        ]
+      },
+      "missing_sources": [],
+      "pre_goal": {
+        "content_chars_sum": 7488,
+        "count": 4,
+        "created_at_span": [
+          "2026-07-26T20:36:16Z",
+          "2026-07-26T20:37:32Z"
+        ],
+        "source_ids": [
+          "01KYG2928MRQ5XNJYEN1HS5JX7",
+          "01KYG2A6VRE3RX5QZD1PRSEDSG",
+          "01KYG2ASBX4ESTBRZEWXF34TSC",
+          "01KYG2BCM69NMQB49MF2ME4E8Z"
+        ]
+      }
+    },
+    "in_goal_sources_that_are_corrections": [
+      {
+        "in_goal_source_id": "01KZRMKXX178KMB32E62N4X6CH",
+        "superseded_created_at": "2026-07-26T20:37:32Z",
+        "superseded_delivery_events": [
+          {
+            "class": "automatic",
+            "created_at": "2026-08-06T21:24:17Z",
+            "event_id": "01KZCFCWDVYZAZHD4YFWW0HG8T",
+            "feedback_applied": 1,
+            "rank": 5,
+            "scope": "project:game",
+            "score": 0.4671,
+            "template_id": null
+          },
+          {
+            "class": "automatic",
+            "created_at": "2026-08-07T12:23:29Z",
+            "event_id": "01KZE2VBP9R66CEVZ0FS6HHFYY",
+            "feedback_applied": 0,
+            "rank": 8,
+            "scope": "project:game",
+            "score": 0.4138,
+            "template_id": null
+          },
+          {
+            "class": "automatic",
+            "created_at": "2026-08-08T00:16:37Z",
+            "event_id": "01KZFBN5B3500PXBGAH47DF42Q",
+            "feedback_applied": 1,
+            "rank": 3,
+            "scope": "project:game",
+            "score": 0.57,
+            "template_id": null
+          },
+          {
+            "class": "organic",
+            "created_at": "2026-08-11T14:46:11Z",
+            "event_id": "01KZRMKGYXSYNRFZSFHQ4T4R2X",
+            "feedback_applied": 0,
+            "rank": 1,
+            "scope": "project:game",
+            "score": 1.0676,
+            "template_id": null
+          }
+        ],
+        "supersedes": "01KYG2BCMEXZFKYNK693KA59J6"
+      },
+      {
+        "in_goal_source_id": "01KZV874TS57AMRFBEBCTN11V2",
+        "superseded_created_at": "2026-07-26T20:36:39Z",
+        "superseded_delivery_events": [
+          {
+            "class": "automatic",
+            "created_at": "2026-08-06T21:24:17Z",
+            "event_id": "01KZCFCWDVYZAZHD4YFWW0HG8T",
+            "feedback_applied": 1,
+            "rank": 6,
+            "scope": "project:game",
+            "score": 0.4301,
+            "template_id": null
+          },
+          {
+            "class": "organic",
+            "created_at": "2026-08-11T14:55:50Z",
+            "event_id": "01KZRN56MXCYX48RY9HE7SA6PN",
+            "feedback_applied": 1,
+            "rank": 3,
+            "scope": "project:game",
+            "score": 0.5397,
+            "template_id": null
+          },
+          {
+            "class": "automatic",
+            "created_at": "2026-08-12T15:03:26Z",
+            "event_id": "01KZV7ZTK0TNBDJC7RJHGHSBC8",
+            "feedback_applied": 0,
+            "rank": 3,
+            "scope": "project:game",
+            "score": 0.5967,
+            "template_id": null
+          },
+          {
+            "class": "automatic",
+            "created_at": "2026-08-12T15:05:19Z",
+            "event_id": "01KZV839D5GNS282K8W1NSJ673",
+            "feedback_applied": 0,
+            "rank": 3,
+            "scope": "project:game",
+            "score": 0.5967,
+            "template_id": null
+          }
+        ],
+        "supersedes": "01KYG29QZWTR5ZP2JGZNA5GZJY"
+      }
+    ],
+    "inter_cluster_gap_days": 15.76,
+    "pre_goal_share_of_source_chars": 0.896,
+    "reconsumed_from": [
+      {
+        "prior_schema_created_at": "2026-07-26T20:37:32Z",
+        "prior_schema_id": "01KYG2BCMEXZFKYNK693KA59J6",
+        "shared_source_ids": [
+          "01KYG2928MRQ5XNJYEN1HS5JX7",
+          "01KYG2A6VRE3RX5QZD1PRSEDSG",
+          "01KYG2ASBX4ESTBRZEWXF34TSC",
+          "01KYG2BCM69NMQB49MF2ME4E8Z"
+        ]
+      }
+    ],
+    "recorded_delivery_events": [],
+    "schema": {
+      "content_chars": 8481,
+      "created_at": "2026-08-12T17:52:29Z",
+      "id": "01KZVHNCK2D0AJW2ZS19SVCBJM",
+      "included_via": [
+        "consolidation_evidence"
+      ],
+      "level": "schema",
+      "scope": "project:game"
+    }
+  },
+  "expected_behavior": "Consolidation must not merge source traces across distinct project eras into one undifferentiated schema: reject the merge, split per era, or emit an unambiguously-current schema where superseded-era material is dropped or explicitly marked historical. Era span of source_traces (here two clusters 15.76 days apart) is the structural detector.",
+  "family": "mixed_era",
+  "id": "ap-mixed-era-eval-1",
+  "metric_hook": "payload",
+  "metric_hook_note": "prospective only: this node has zero recorded deliveries in dev/eval, so recorded-replay compare cannot exercise it; the binding check is node-level (source_traces era span, encoded in evidence). Any future delivery of the 8k-char schema registers in the payload family; era-currency ordering in correction_dominance.",
+  "node_ids": [
+    "01KZVHNCK2D0AJW2ZS19SVCBJM",
+    "01KYG2928MRQ5XNJYEN1HS5JX7",
+    "01KYG2A6VRE3RX5QZD1PRSEDSG",
+    "01KYG2ASBX4ESTBRZEWXF34TSC",
+    "01KYG2BCM69NMQB49MF2ME4E8Z",
+    "01KZRMKXX178KMB32E62N4X6CH",
+    "01KZV874TS57AMRFBEBCTN11V2"
+  ],
+  "selection_rule": "level=schema AND scope=project:game AND source_traces span both eras (some created_at < goal start 2026-08-06T20:00:00Z, some >=); unique such node in the corpus evidence pack",
+  "split": "eval"
+}

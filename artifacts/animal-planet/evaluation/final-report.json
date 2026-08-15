@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-14T03:05:29Z",
+  "overall": {
+    "status": "fail",
+    "summary": "Strict P2 and P3 generalization, correction dominance, era safety, and shadow latency pass. The sole replacement P6 evaluation fails both unseen-in-dev compaction and organic-preservation gates; the one-shot authorization is consumed and no tuning or rerun is permitted.",
+    "parent_targets": {
+      "P2": "pass",
+      "P3": "pass",
+      "P6": "fail",
+      "P7": "fail"
+    },
+    "observed_threshold_failures": [
+      "auto-recall-unseen-in-dev",
+      "organic-recall-preservation"
+    ]
+  },
+  "evidence": {
+    "evaluated_git_commit": "ee042335dbcd763054819def24e7e487de5d8f11",
+    "evaluator_sha256": "18a162f7923af10705acf67b4655f76808ebd111dfa80f23bb10c59c26fa534a",
+    "replacement_manifest_sha256": "fd36c972b049c296acbd2537f9af8f1db8d7db725f188c5dd90d27ab9aa3ab83",
+    "replacement_aggregate_sha256": "fc1739fac4843e989cf33cd7ca707f49cd9bcaa3d3f21bda08a63894f41781ba",
+    "replacement_holdout_semantic_reads": 1,
+    "original_holdout_semantic_rerun": false,
+    "original_holdout_semantic_rerun_count": 0,
+    "raw_shadow_rerun": false,
+    "authorization_consumed": true,
+    "retry_permitted": false,
+    "semantic_command": "env -u LM_RECALL_REPEAT_GATING -u LM_RECALL_REPEAT_MIN_UNLINKED -u LM_RECALL_REPEAT_MAX_LINK_RATE -u LM_RECALL_REPEAT_MIN_SESSIONS -u LM_RECALL_REPEAT_PROBE_EVERY -u LM_RECALL_REPEAT_DROP_TRAILING_STUBS -u LM_DELIVERY_SNIPPET_CHARS -u LM_DELIVERY_CONTEXT_VALUE_CHARS -u LM_DELIVERY_SESSION_DEDUP -u LM_DELIVERY_SNIPPET_LADDER -u LM_DELIVERY_FULL_NODE_DIET -u LM_DELIVERY_PROVENANCE_VALUE_CHARS -u LM_DELIVERY_STATS_COMPACTION -u LM_DELIVERY_SPARSE LIVING_MEMORY_EMBEDDING_BACKEND=hash PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/ap_baseline.py compare --corpus-root artifacts/animal-planet/evaluation/replacement-holdout/corpus --split holdout --metrics auto_recall --dev-fingerprint-index artifacts/animal-planet/evaluation/replacement-holdout/corpus/dev-fingerprint-index.json > artifacts/animal-planet/evaluation/.replacement-auto-recall.json.tmp",
+    "evaluator_exit_status": 0,
+    "stdout_capture": {
+      "direct_redirection": true,
+      "same_directory_temporary": "artifacts/animal-planet/evaluation/.replacement-auto-recall.json.tmp",
+      "atomic_install": true,
+      "installed_unchanged": true,
+      "bytes": 4386,
+      "sha256": "fc1739fac4843e989cf33cd7ca707f49cd9bcaa3d3f21bda08a63894f41781ba"
+    },
+    "delivery_defaults": {
+      "context_value_max_chars": 160,
+      "full_node_diet": true,
+      "provenance_value_max_chars": 160,
+      "session_dedup": true,
+      "snippet_ladder": [
+        0,
+        1000,
+        700,
+        500,
+        300,
+        200
+      ],
+      "snippet_max_chars": 1200,
+      "sparse_entries": true,
+      "stats_compaction": true
+    },
+    "repeat_gating_policy": {
+      "drop_trailing_stubs": true,
+      "enabled": true,
+      "max_link_rate": 0.2,
+      "min_sessions": 2,
+      "min_unlinked": 5,
+      "probe_every": 25
+    },
+    "configuration": {
+      "embedding_backend": "hash",
+      "delivery_and_repeat_overrides": "explicitly unset",
+      "bytecode_writes_disabled": true,
+      "measurement_path_frozen_before_launch": true,
+      "production_or_evaluator_change_after_launch": false
+    },
+    "preflight": {
+      "all_completed_before_semantic_launch": true,
+      "worktree_clean": true,
+      "owned_outputs_absent": true,
+      "authoritative_hashes_match": true,
+      "fixed_keyless_verifier": {
+        "status": "pass",
+        "semantic_reads": 0
+      },
+      "retrieval_scope_suite": {
+        "hash_backend_passed": 52,
+        "default_backend_passed": 52,
+        "failed": 0
+      },
+      "receipt_bridge_suite": {
+        "passed": 27,
+        "failed": 0,
+        "named_manifest_regression": "pass"
+      },
+      "native_auto_recall": {
+        "dev_repeated_automatic_reduction_ratio": 0.760254,
+        "eval_repeated_automatic_reduction_ratio": 0.769469,
+        "dev_organic_payload_delta_pct": 0.0,
+        "eval_organic_payload_delta_pct": 0.0,
+        "dev_organic_access_delta_pct": 0.0,
+        "eval_organic_access_delta_pct": 0.0
+      },
+      "eval_cross_scope_and_correction": {
+        "cross_scope_reduction_ratio": 0.5583756345177665,
+        "same_scope_retention_ratio": 0.9788025288211231,
+        "correction_violations": 0,
+        "corrections_dropped": 0
+      }
+    },
+    "implementation_commits": {
+      "replacement_evaluation": "ee042335dbcd763054819def24e7e487de5d8f11",
+      "production_snapshot": "9b70f98883764dcaf5c7071c38d78ea7264a16be",
+      "correction_dominance": "6964b5bb1382bde91408547dd7685643719c9564",
+      "era_safety": "97ea860f3fd51a7e1a5b9a90839c2eb4724fdbd7",
+      "shadow_old": "3b2f5782baf0f3f128d4cf31b4c0989e8208472d",
+      "shadow_new": "9b70f98883764dcaf5c7071c38d78ea7264a16be"
+    },
+    "production_sources_unchanged_since_preserved_aggregates": true,
+    "input_sha256": {
+      "artifacts/animal-planet/manifest.json": "3f1a6a87a4d34e411f06e50161f9203afc3c4992dfc973d4f544453e8bbfde48",
+      "artifacts/animal-planet/baseline-report.json": "8332edf5d1d4a13b51b7a464ed3cef04eaffdf8f8248c30b0e77c0c9c5f1f615",
+      "artifacts/animal-planet/corpus/dev.jsonl": "605e4f3fdc91817788a40d0dbbabffb16b86ef98ad28020c20379ef249cc9a36",
+      "artifacts/animal-planet/corpus/eval.jsonl": "c7be5b723dd69e2565e85f2d7fe92aa5915bc07d3b6e7bd94e85e16b953a856b",
+      "artifacts/animal-planet/evaluation/original-holdout-compare.json": "d031828d0f1f6c970c5030f869d07a03a8e83a99643d2899adaa9500ee5f0382",
+      "artifacts/animal-planet/evaluation/original-holdout-report.json": "7d7fcbf44e81acb9a46e9e8137b165857b1627b9ac314ea5d9e3d8528ec2450b",
+      "artifacts/animal-planet/evaluation/shadow-latency.json": "40765127c0c5cbdcb2e3f6b365f6f2751a0ad659a0034e7c0180bd283c11c662",
+      "artifacts/animal-planet/evaluation/replacement-holdout/README.md": "c0483824717fb3323600b94db945c4ed8718e23749863f493f3013ecd2fae409",
+      "artifacts/animal-planet/evaluation/replacement-holdout/POLICY.md": "05d4f3d148b86a933c107341ac1157487509efe011428dc4858c18b9b1c28a90",
+      "artifacts/animal-planet/evaluation/replacement-holdout/manifest.json": "fd36c972b049c296acbd2537f9af8f1db8d7db725f188c5dd90d27ab9aa3ab83",
+      "artifacts/animal-planet/evaluation/replacement-holdout/corpus/holdout.jsonl": "1fc02b85adfa63f511d851b54990dd5162d23f6a81a4943475febbf16c981e33",
+      "artifacts/animal-planet/evaluation/replacement-holdout/corpus/dev-fingerprint-index.json": "b5c0550a562de5a181358b4ca6f3a4ccd6de81e72750d5ebf4abcdcd5e2a326f",
+      "artifacts/animal-planet/evaluation/replacement-holdout/recipe/verify.py": "4cc7a7487316bbcb7c2d0471b205f72f3ac141afa0e3ee612e8de03de44f6267",
+      "artifacts/animal-planet/evaluation/replacement-auto-recall.json": "fc1739fac4843e989cf33cd7ca707f49cd9bcaa3d3f21bda08a63894f41781ba",
+      "scripts/ap_baseline.py": "18a162f7923af10705acf67b4655f76808ebd111dfa80f23bb10c59c26fa534a",
+      "tests/test_ap_baseline_unseen.py": "da3ae484965f7138d08fbe35af4b03a1b0c89cb14fcce798922461ab0572f120",
+      "tests/test_scope.py": "ce2b1891480d1552d3f75d4f4b1d55376d1c5856eb1673249e8f293271a7d632",
+      "tests/test_retrieval_cross_scope_gate.py": "36fc299c3586e8ec9506e61062087d88636e12d446831c8655f8ce46fe3bfda9",
+      "tests/test_retrieval_correction_dominance.py": "6fa1957935ffdd84e4c25ae95fb117ba6940621fcdb450362bc3baa903410ff9",
+      "src/living_memory/config.py": "e378455e14e47c10f897aa50e4c0328e31c2b5df2f473715422aada47d2ff979",
+      "src/living_memory/delivery.py": "b3507a0c336fe04b3e25eaffba50c300d3994225b15d972fd138efa434b7a990",
+      "src/living_memory/models.py": "682dad7894d7d2d9d89655325454ee45fcc195d5b8dc6d9f38a9f30e17c0867b",
+      "src/living_memory/replay.py": "84564747042e57215b5d3294afee575963ba7766aa6111fad55d566e05a8b15a",
+      "src/living_memory/resources.py": "8b3bcada5f3b97233b90afd5b90ac4979ee41cee6e8d25d867886bfa4070ed20",
+      "src/living_memory/retrieval.py": "6e3929b7f2a7d19ba2a1f4f954e1c4a16a941d641df493e1df1a4d2f10547282",
+      "src/living_memory/scope.py": "513044c8e9f15343c40bb8da736d356d69cd5a67967e6dcd14690d8184a56c39",
+      "src/living_memory/storage.py": "7b82093d41ba04c15250390a0501d279f6c6787f67280a3170b830d245264eaa"
+    }
+  },
+  "measurements": {
+    "payload": {
+      "eval": {
+        "median_ratio": 0.5432518115942029,
+        "p90_ratio": 0.49535999091863664,
+        "top_result_retention": 1.0,
+        "useful_feedback_retention": 1.0,
+        "median_reduction_pct": 43.207733,
+        "p90_reduction_pct": 42.156018
+      },
+      "original_holdout": {
+        "median_ratio": 0.5173233695652174,
+        "p90_ratio": 0.4971762635865709,
+        "top_result_retention": 1.0,
+        "useful_feedback_retention": 1.0,
+        "median_reduction_pct": 42.782601,
+        "p90_reduction_pct": 40.80419
+      },
+      "eval_to_holdout_reduction_gap_pp": {
+        "median": 0.425132,
+        "p90": 1.351828
+      }
+    },
+    "cross_scope": {
+      "eval": {
+        "admission_reduction_ratio": 0.55837563,
+        "same_scope_retention_ratio": 0.97880253
+      },
+      "original_holdout": {
+        "admission_reduction_ratio": 0.59846044,
+        "same_scope_retention_ratio": 0.9571535
+      }
+    },
+    "auto_recall": {
+      "replacement_holdout": {
+        "repeated_fingerprints": 18,
+        "repeated_fingerprint_events": 238,
+        "split_wide_repeated_automatic_reduction_ratio": 0.212469,
+        "unseen_in_dev_repeated_fingerprints": 16,
+        "unseen_in_dev_repeated_fingerprint_events": 113,
+        "unseen_in_dev_gated_events": 21,
+        "unseen_in_dev_repeated_automatic_reduction_ratio": 0.040904,
+        "unseen_in_dev_content_access_delta_pct": -18.5841,
+        "organic_payload_delta_pct": -33.039,
+        "organic_content_access_delta_pct": -45.5378
+      }
+    },
+    "correction_dominance": {
+      "focused_tests_passed": 26,
+      "focused_tests_failed": 0,
+      "eval_replay_violations": 0,
+      "original_holdout_replay_violations": 0,
+      "replay_candidate_pairs": 0
+    },
+    "era_safety": {
+      "focused_tests_passed": 45,
+      "focused_tests_failed": 0
+    },
+    "shadow": {
+      "measured_requests_per_version": 35,
+      "latency_p50_degradation_ratio": 0.019807,
+      "latency_p95_degradation_ratio": -0.075293
+    }
+  },
+  "gates": [
+    {
+      "id": "payload-generalization",
+      "status": "pass",
+      "threshold": "eval and original holdout median/p90 ratios <= 0.60; top/useful retention >= 0.95; reduction gaps <= 5 percentage points",
+      "observed": {
+        "eval_median_ratio": 0.5432518115942029,
+        "eval_p90_ratio": 0.49535999091863664,
+        "holdout_median_ratio": 0.5173233695652174,
+        "holdout_p90_ratio": 0.4971762635865709,
+        "minimum_top_or_useful_retention": 1.0,
+        "median_reduction_gap_pp": 0.425132,
+        "p90_reduction_gap_pp": 1.351828
+      }
+    },
+    {
+      "id": "cross-scope-generalization",
+      "status": "pass",
+      "threshold": "admission reduction >= 0.50 and same-scope retention >= 0.95 on eval and original holdout",
+      "observed": {
+        "eval_admission_reduction_ratio": 0.55837563,
+        "eval_same_scope_retention_ratio": 0.97880253,
+        "holdout_admission_reduction_ratio": 0.59846044,
+        "holdout_same_scope_retention_ratio": 0.9571535
+      }
+    },
+    {
+      "id": "auto-recall-unseen-in-dev",
+      "status": "fail",
+      "threshold": "unseen-in-dev repeated-automatic character reduction >= 0.50",
+      "observed": {
+        "repeated_fingerprints": 16,
+        "repeated_fingerprint_events": 113,
+        "gated_events": 21,
+        "reduction_ratio": 0.040904
+      }
+    },
+    {
+      "id": "organic-recall-preservation",
+      "status": "fail",
+      "threshold": "organic payload and content-access deltas each within -5% to +5%",
+      "observed": {
+        "payload_delta_pct": -33.039,
+        "content_access_delta_pct": -45.5378
+      }
+    },
+    {
+      "id": "correction-dominance",
+      "status": "pass",
+      "threshold": "zero dominance violations and focused regression suite passes",
+      "observed": {
+        "focused_tests_passed": 26,
+        "focused_tests_failed": 0,
+        "replay_violations": 0,
+        "replay_candidate_pairs": 0
+      }
+    },
+    {
+      "id": "era-safety",
+      "status": "pass",
+      "threshold": "mixed-era safety and ordinary promotion regression suite passes",
+      "observed": {
+        "focused_tests_passed": 45,
+        "focused_tests_failed": 0
+      }
+    },
+    {
+      "id": "shadow-latency",
+      "status": "pass",
+      "threshold": "p50 and p95 degradation ratios <= 0.10",
+      "observed": {
+        "p50_degradation_ratio": 0.019807,
+        "p95_degradation_ratio": -0.075293
+      }
+    }
+  ],
+  "privacy": {
+    "aggregate_only": true,
+    "case_level_inspection": false,
+    "case_level_output": false,
+    "identity_values_emitted": false,
+    "private_raw_io_committed": false,
+    "absolute_source_paths_emitted": false
+  },
+  "fidelity_limits": [
+    "The preserved payload comparison has 48 transcript-matched original-holdout events and uses the frozen cited field payload as its denominator.",
+    "Correction replay contains zero candidate pairs; the focused regression suite is the substantive dominance evidence.",
+    "Shadow latency is a heterogeneous 35-call workflow sample per version.",
+    "The replacement result is aggregate-only; policy forbids case-level diagnosis, tuning, or a second semantic read."
+  ]
+}

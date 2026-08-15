@@ -244,34 +244,61 @@ Ranked results are shaped before serialization so repeated and oversized
 content is not delivered again and again. Every result carries a `delivery`
 class:
 
-* `full` — the node dict exactly as in the
-  [payload contract](#node-payload-contract).
-* `snippet` — content longer than the snippet limit, truncated inline at a
-  clean boundary with a trailing `…`.
+* `full` — complete `content`.
+* `snippet` — content longer than this bearer's ladder budget, truncated
+  inline at a clean boundary with a trailing `…`.
 * `session_duplicate` — the node's full content was already delivered on
   this transport session; `content` is a one-line preview (~160 chars).
 * `twin_duplicate` — the content is byte-identical to a higher-ranked result
   in the same response (typically a legacy concept and its verbatim source
   trace): exactly one twin bears the content, the rest are stubs.
 
-Stubs and snippets keep every key of the full node dict — `content` is never
-absent, the bulky `provenance.prior_recalls` list is summarized to
-`{"count": n}`, and oversized `context` values are compacted per key:
-strings are truncated at a clean boundary with a trailing `…`, lists and
-objects collapse to `{"count": n, "chars": m}` (a procedural schema's
-`context.procedure` would otherwise re-ship the node's whole content
-alongside a one-line stub). Every non-full result additionally carries a
-`content_ref` naming the re-fetch call, which also restores the complete
-`context`:
+Content budgets come from the snippet ladder, indexed by content-bearer
+position — stubs don't consume ladder slots. The default ladder
+`full,1000,700,500,300,200` ships the **top-ranked bearer complete,
+however long** (positions past the end reuse the last budget), so the best
+match never loses content to the diet; lower-ranked bearers arrive
+progressively trimmed and re-fetchable.
+
+Beyond content, every delivery class is dieted on the wire:
+
+* `provenance.prior_recalls` is summarized to `{"count": n}`, and any other
+  oversized provenance value compacts per key exactly like context values.
+  `corrections` are exempt from wholesale collapse: each correction keeps
+  its full key set with short values (who/when/ids) verbatim and only
+  oversized texts truncated — the supersedes signal always survives
+  delivery.
+* Oversized `context` values are compacted per key: strings are truncated at
+  a clean boundary with a trailing `…`, lists and objects collapse to
+  `{"count": n, "chars": m}` (a procedural schema's `context.procedure`
+  would otherwise re-ship the node's whole content alongside a one-line
+  stub).
+* `stats` drop bookkeeping and default-valued fields (`last_accessed`, null
+  `temporal_hint`, default `confidence`/`unique_agents`, zero counts) and
+  round `usefulness_score`.
+* Sparse entries drop the per-result `recall_event_id` copy (the envelope
+  carries it once), empty `path`, null `agent`/`task`/`decay_reason`,
+  `decayed: false`, and `timestamp`/`updated_at` equal to `created_at`.
+  Score fields always stay present — zeros included — with floats rounded
+  to 6 decimals, so score consumers keep a predictable schema.
+
+Every removal is wire-only: `memory_lookup(node_id=...)` returns the stored
+node byte-complete. Non-full results carry a `content_ref` with the
+`node_id` to pass to that lookup (plus `full_content_chars`, and
+`duplicate_of` on twin stubs; with `LM_DELIVERY_SPARSE=0` also the literal
+`fetch` call string):
 
 ```json
 {
   "node_id": "ulid",
-  "fetch": "memory_lookup(node_id=\"ulid\")",
   "full_content_chars": 5120,
   "duplicate_of": "bearer ulid — twin stubs only"
 }
 ```
+
+A `full` delivery whose provenance or context lost anything to the diet
+carries a minimal `{"node_id": "ulid"}` hint marking that the lookup
+returns strictly more than was delivered.
 
 Session dedup is keyed by the transport-derived `transport_session_id` and
 consults the node ids recorded in that session's recent recall events (a
@@ -285,18 +312,72 @@ per-response and deterministic. The persisted recall event always records
 the unshaped result ids: delivery shaping changes the wire response only and
 never perturbs feedback closure.
 
-Env knobs:
+Env knobs — every diet lever has its own rollback valve:
 
-* `LM_DELIVERY_SNIPPET_CHARS` — max content chars delivered inline
-  (default 1200; `0` disables snippeting).
+* `LM_DELIVERY_SNIPPET_LADDER` — per-bearer-position content budgets,
+  comma-separated `full` (deliver complete content) or char counts (default
+  `full,1000,700,500,300,200`; positions past the end reuse the last entry;
+  `off`/`uniform` fall back to the uniform legacy budget below; malformed
+  values fall back to the default ladder).
+* `LM_DELIVERY_SNIPPET_CHARS` — uniform max content chars delivered inline
+  (default 1200; `0` disables snippeting). Setting it explicitly while the
+  ladder is unset selects the uniform legacy mode, so the pre-ladder
+  contract survives unchanged.
 * `LM_DELIVERY_SESSION_DEDUP` — session-dedup rollback valve (default on;
   `0`/`false`/`no`/`off` disable).
 * `LM_DELIVERY_CONTEXT_VALUE_CHARS` — max chars a single `context` value may
-  occupy on non-full results (default 240; `0` disables context compaction).
+  occupy on dieted results (default 160; `0` disables context compaction;
+  the pre-ladder default was 240).
+* `LM_DELIVERY_FULL_NODE_DIET` — default on; `0` restores byte-untouched
+  provenance/context on `full` deliveries (rollback valve).
+* `LM_DELIVERY_PROVENANCE_VALUE_CHARS` — max chars a single provenance value
+  may occupy on dieted results (default 160; `0` limits provenance shaping
+  to the legacy `prior_recalls` summarization).
+* `LM_DELIVERY_STATS_COMPACTION` — default on; `0` restores complete `stats`
+  dicts (rollback valve).
+* `LM_DELIVERY_SPARSE` — default on; `0` restores null/duplicate entry
+  fields, the `content_ref.fetch` string, and full float precision
+  (rollback valve).
+
+Setting `LM_DELIVERY_SNIPPET_LADDER=off LM_DELIVERY_FULL_NODE_DIET=0
+LM_DELIVERY_PROVENANCE_VALUE_CHARS=0 LM_DELIVERY_STATS_COMPACTION=0
+LM_DELIVERY_SPARSE=0 LM_DELIVERY_CONTEXT_VALUE_CHARS=240` restores the
+pre-ladder delivery renderer byte-for-byte.
 
 `tests/test_delivery_diet_e2e.py` pins the wire-level behaviour — dedup,
-degradation, snippet re-fetch, context compaction, and closure invariance —
-over a real MCP client.
+degradation, the top-bearer complete-content guarantee, ladder snippet
+re-fetch, full-node context compaction, and closure invariance — over a
+real MCP client; `tests/test_delivery_shaping.py` pins each lever and its
+valve at the unit level.
+
+#### Experimental legacy repeat path (P6 deferred)
+
+The separate legacy repeat path is experimental pending confirmation. It is
+class-blind: its `(query, requested_scope)` fingerprint does not distinguish
+automatic or preprompt recall from agent-triggered recall, so it is not the
+automatic-only compaction policy required by P6. P6 remains deferred pending
+an event-disjoint, multi-project confirmatory-holdout-v3 evaluation.
+
+Its two switches are independent, strict default-off opt-ins:
+
+* `LM_RECALL_REPEAT_GATING` enables history-based fingerprint gating.
+* `LM_RECALL_REPEAT_DROP_TRAILING_STUBS` permits a gated response's trailing
+  run of `session_duplicate`/`twin_duplicate` stubs to be removed; setting it
+  alone neither enables gating nor changes an ungated response.
+
+For either switch, only a whitespace-trimmed, case-insensitive `1`, `true`,
+`yes`, or `on` enables it. Unset, empty, known-false (`0`, `false`, `no`,
+`off`), and malformed values are off. Consequently, a fully repeated response
+can become empty only when both switches are explicitly enabled and the
+fingerprint gate fires. With gating alone, the ranked response retains
+re-fetchable stubs; with trailing-drop alone, that switch removes nothing from
+a nonempty ranking.
+
+This experimental class-blind gate is distinct from the class-agnostic
+`LM_DELIVERY_*` diet described above. The diet intentionally shapes every
+caller class the same way, preserves direct access through `memory_lookup`,
+and remains enabled by default; its documented rollback valves do not opt the
+legacy repeat path in.
 
 ### `memory_lookup`
 

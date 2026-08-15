@@ -265,5 +265,8 @@ def test_memory_recall_returns_only_active_traces_after_dedup(tmp_path: Path) ->
             max_results=10,
         )
         # Recall surfaces the active trace only; the four superseded copies are
-        # decayed and excluded from active retrieval.
+        # decayed and excluded from active retrieval. The dedup chain's active
+        # head is the superseding end of its edges, never a supersedes target,
+        # so it must not carry the superseded flag.
         assert len(results) == 1
+        assert results[0].superseded is False

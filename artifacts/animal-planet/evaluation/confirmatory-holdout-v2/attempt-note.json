@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "fatal-attempt-note",
+  "namespace": "confirmatory-holdout-v2",
+  "state": "fatal-before-readiness",
+  "aggregate_only": true,
+  "provenance": {
+    "source_kind": "read-only-ae-result-transcript",
+    "source_goal": "retrieval-signal-and-context-cost/confirmatory-evidence-readiness",
+    "transcript_sha256": "092da8a1278af710fe393bc9d3eb8b0adf10d00119347d844836adc61caac9cf",
+    "reconstruction_only": true
+  },
+  "frozen_binding": {
+    "frozen_commit": "fb0307f8f101cbd2c9bdbfe6a14a9e20d012d578",
+    "policy_sha256": "096263ddf554dc014c8cd971e6129d47300bd1c0b9710da90a5749ff186a1afb",
+    "analysis_plan_sha256": "5f5f050330b97c8a35b0e76bd31cbf1b9dd73f4d1a2baa0175817c8201a0c653",
+    "repair_design_sha256": "76d34d33b7be57230ef0988662060fe70eea229f9b07f2cd5b8a2354600a79f5",
+    "scanner_path": "scripts/ap_confirmatory_readiness.py",
+    "scanner_sha256": "ce1875bf4c442bb481cc254e3b145fb45625b483d4e98644d9365d56cfa017ba"
+  },
+  "attempt": {
+    "scanner_launch_count": 1,
+    "consumed": true,
+    "consumed_at": "process-launch-before-source-open",
+    "launcher_aggregate_signal": "one_shot_scan=fatal",
+    "exit_code": 2,
+    "validator_valid_receipt_present": false,
+    "ephemeral_snapshots_deleted": true,
+    "retry_permitted": false
+  },
+  "authority": {
+    "grants": [],
+    "readiness_receipt": false,
+    "packet": false,
+    "reader": false,
+    "repair_implementation": false
+  },
+  "privacy": {
+    "private_sources_reopened_for_reconstruction": false,
+    "private_raw_data_committed": false,
+    "case_level_data_committed": false,
+    "source_snapshot_hashes_committed": false,
+    "underlying_sources_mutated": false
+  }
+}

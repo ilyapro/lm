@@ -1,0 +1,90 @@
+{
+  "description": "Era-currency companion case: schema-level node 01KYG2BCMEXZFKYNK693KA59J6 (9789 content chars) was consolidated pre-goal (2026-07-26T20:37:32Z, all 5 sources in 2026-07-26T20:36:16Z .. 2026-07-26T20:37:32Z) yet was delivered 2 times in recorded dev recall events during the goal window (2026-08-06T20:52:00Z .. 2026-08-06T21:02:07Z), 0 time(s) at rank 1 and 0 time(s) to organic task-specific queries, with no era or currentness marking. The prior-era schema competes as if current more than 11 days into a different project era. The staleness was later confirmed in the field: the schema was formally superseded on 2026-08-11T14:46:24Z by an in-goal teach correction, and every recorded delivery predates that correction.",
+  "event_ids": [
+    "01KZCDHRH4M0ATYS4THYX6NM6S",
+    "01KZCE49TRTAK3WKJQZRHBEJ4M"
+  ],
+  "evidence": {
+    "era_clusters": {
+      "in_goal": {
+        "content_chars_sum": 0,
+        "count": 0,
+        "created_at_span": null,
+        "source_ids": []
+      },
+      "missing_sources": [],
+      "pre_goal": {
+        "content_chars_sum": 9741,
+        "count": 5,
+        "created_at_span": [
+          "2026-07-26T20:36:16Z",
+          "2026-07-26T20:37:32Z"
+        ],
+        "source_ids": [
+          "01KYG2928MRQ5XNJYEN1HS5JX7",
+          "01KYG29QZWTR5ZP2JGZNA5GZJY",
+          "01KYG2A6VRE3RX5QZD1PRSEDSG",
+          "01KYG2ASBX4ESTBRZEWXF34TSC",
+          "01KYG2BCM69NMQB49MF2ME4E8Z"
+        ]
+      }
+    },
+    "goal_start": "2026-08-06T20:00:00Z",
+    "organic_deliveries": 0,
+    "rank1_deliveries": 0,
+    "recorded_delivery_events": [
+      {
+        "class": "automatic",
+        "created_at": "2026-08-06T20:52:00Z",
+        "event_id": "01KZCDHRH4M0ATYS4THYX6NM6S",
+        "feedback_applied": 1,
+        "rank": 5,
+        "scope": "project:game",
+        "score": 0.8501,
+        "template_id": null
+      },
+      {
+        "class": "automatic",
+        "created_at": "2026-08-06T21:02:07Z",
+        "event_id": "01KZCE49TRTAK3WKJQZRHBEJ4M",
+        "feedback_applied": 0,
+        "rank": 5,
+        "scope": "project:game",
+        "score": 0.6189,
+        "template_id": null
+      }
+    ],
+    "schema": {
+      "content_chars": 9789,
+      "created_at": "2026-07-26T20:37:32Z",
+      "id": "01KYG2BCMEXZFKYNK693KA59J6",
+      "included_via": [
+        "consolidation_evidence",
+        "results"
+      ],
+      "level": "schema",
+      "scope": "project:game"
+    },
+    "superseded_by": [
+      {
+        "correction_created_at": "2026-08-11T14:46:24Z",
+        "correction_id": "01KZRMKXX178KMB32E62N4X6CH"
+      }
+    ]
+  },
+  "expected_behavior": "Schemas consolidated in a prior project era must be delivered as unambiguously historical (annotated/downranked) or re-validated against the current era before competing at top ranks; an era-stale schema at rank 1 of an organic in-goal query with zero feedback is the recorded failure signature.",
+  "family": "mixed_era",
+  "id": "ap-mixed-era-dev-2",
+  "metric_hook": "correction_dominance",
+  "metric_hook_note": "era-currency ordering: a currentness-aware rerank changes this schema's recorded ranks; payload secondary (large schema chars leave the delivery)",
+  "node_ids": [
+    "01KYG2BCMEXZFKYNK693KA59J6",
+    "01KYG2928MRQ5XNJYEN1HS5JX7",
+    "01KYG29QZWTR5ZP2JGZNA5GZJY",
+    "01KYG2A6VRE3RX5QZD1PRSEDSG",
+    "01KYG2ASBX4ESTBRZEWXF34TSC",
+    "01KYG2BCM69NMQB49MF2ME4E8Z"
+  ],
+  "selection_rule": "level=schema AND scope=project:game AND created_at < goal start AND all source_traces pre-goal AND delivered in >=1 recorded event of this split; pick max content_chars",
+  "split": "dev"
+}
