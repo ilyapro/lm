@@ -490,8 +490,8 @@ def _server_instructions(default_scope: str) -> str:
 # imperative triggers: anything past the budget is the first to be lost.
 
 _RECALL_DESCRIPTION = (
-    "Retrieve memories. Experimental repeat gating is default-off. "
-    "You MUST recall BEFORE acting, whatever the action's shape: "
+    "Retrieve memories by text, vector, and graph signals. "
+    "You MUST recall BEFORE acting, whatever its shape: "
     "changing any artifact (pass path or name — prior changes, "
     "conventions, rejected approaches are stored); creating or mutating "
     "state (an owner or primitive may exist — recall the domain "
@@ -848,15 +848,11 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
 
         Each result carries a ``delivery`` class: ``full``, ``snippet`` (long
         content truncated inline), ``session_duplicate`` (already delivered on
-        this transport session — or, when experimental repeat gating is
-        explicitly enabled, already delivered under this exact (query, scope)
-        fingerprint's recent history), or ``twin_duplicate`` (byte-identical
-        to a higher-ranked result). When its independent trailing-drop control
-        is also explicitly enabled, a gated delivery drops its trailing
-        all-stub run (``FingerprintGatePolicy.drop_trailing_stubs``), so a
-        fully-repeated response arrives with ``count`` 0 while its recall_event
-        still records every result id. The top-ranked content-bearer ships
-        complete content; lower-ranked bearers get descending snippet budgets.
+        this transport session), or ``twin_duplicate`` (byte-identical to a
+        higher-ranked result). Both classes are on by default: twin collapse
+        unconditionally, the session class whenever a transport session id is
+        stamped. The top-ranked content-bearer ships complete content;
+        lower-ranked bearers get descending snippet budgets.
         Non-full results add a ``content_ref`` whose ``node_id`` fed to
         ``memory_lookup`` returns the complete stored node. Every delivery is
         dieted on the wire — oversized context/provenance values compacted to

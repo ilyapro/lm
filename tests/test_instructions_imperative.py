@@ -64,6 +64,13 @@ def union(instructions: str) -> str:
     return "\n\n".join([instructions, *DESCRIPTIONS.values()])
 
 
+@pytest.fixture(scope="module")
+def channels(instructions: str) -> dict[str, str]:
+    """Every protocol-bearing text, by the channel that delivers it."""
+
+    return {"instructions": instructions, **DESCRIPTIONS}
+
+
 # ── Channel budgets ─────────────────────────────────────────────────────────
 
 
@@ -85,6 +92,108 @@ def test_each_description_within_client_budget() -> None:
     assert not oversize, (
         f"tool descriptions exceed the {MAX_DESCRIPTION_CHARS}-char "
         f"per-function client limit: {oversize} — cut, do not raise the budget"
+    )
+
+
+# ── The budget funds protocol only ──────────────────────────────────────────
+
+# A capped channel spends every char on something. An agent following the
+# protocol cannot act on a mechanism that is off unless an operator flips it,
+# so each char describing one is taken from a trigger that would have changed
+# behaviour. Measured cost of the last regression (2026-08-15):
+# _RECALL_DESCRIPTION spent 43 of its 1024 chars on "Experimental repeat
+# gating is default-off.", and the opening sentence — the highest-value
+# position in the whole channel — had been truncated to "Retrieve memories."
+# to pay for it. Operator machinery belongs in docs and docstrings, which
+# have no budget; this channel carries protocol.
+NON_DEFAULT_MACHINERY_PATTERNS = {
+    "experimental": r"experiment(?:al|s|ing)?\b",
+    "default-off": r"default[-\s]off\b|\boff by default\b|\bdisabled by default\b",
+    "opt-in": r"\bopt(?:s|ed)?[-\s]?in\b",
+    "beta": r"\bbeta\b",
+    "feature-flag": r"\bfeature[-\s]?(?:flag|gate)",
+    "env-var machinery": r"\bLM_[A-Z0-9_]+|\benv(?:ironment)?[-\s]?var",
+}
+
+# One planted advert per pattern: the scanner must be able to fail.
+PLANTED_ADVERTS = {
+    "experimental": "Experimental repeat gating collapses repeated recalls.",
+    "default-off": "The fingerprint gate is default-off.",
+    "opt-in": "Trailing-stub drop is a strict opt-in.",
+    "beta": "The causal walker ships in beta.",
+    "feature-flag": "Cross-scope admission sits behind a feature flag.",
+    "env-var machinery": "Set LM_RECALL_REPEAT_GATING=1 to enable gating.",
+}
+
+# Protocol wording that must NOT trip the scanner — a ban worded too widely
+# (on bare "default", "in", "gate") would silently force real protocol out of
+# the channel, which is the very failure it exists to prevent.
+LEGITIMATE_PROTOCOL_WORDING = (
+    "Your default scope is global.",
+    "Default: when uncertain, recall.",
+    "Retrieve memories by text, vector, and graph signals.",
+    "Read broad: omit scope to transfer across scopes.",
+    "A level:schema result is a binding procedure — follow it literally.",
+    "Non-full results carry a content_ref — refetch via memory_lookup.",
+    "recipes, pitfalls, refutations, external contracts, measurement findings",
+    "You and Living Memory form ONE cognitive system; LM supplies durable memory.",
+    "entering anything new — a session, task, message, thought, or direction",
+    "Store universal rules in global so they can become schemas.",
+)
+
+
+def _machinery_hits(text: str) -> dict[str, list[str]]:
+    return {
+        label: found
+        for label, pattern in NON_DEFAULT_MACHINERY_PATTERNS.items()
+        if (found := re.findall(pattern, text, flags=re.IGNORECASE))
+    }
+
+
+def test_protocol_channels_advertise_no_non_default_machinery(
+    channels: dict[str, str],
+) -> None:
+    """No protocol-bearing text may spend budget on non-default machinery."""
+
+    offenders = {
+        name: hits for name, text in channels.items() if (hits := _machinery_hits(text))
+    }
+    assert not offenders, (
+        f"protocol channels advertise machinery an agent cannot act on: "
+        f"{offenders} — the channel is capped at "
+        f"{MAX_DESCRIPTION_CHARS} chars per description and "
+        f"{MAX_INSTRUCTION_CHARS} for instructions, and every char it spends "
+        "here is taken from a binding trigger; document the mechanism in "
+        "docs/ or a docstring instead"
+    )
+
+
+def test_machinery_scanner_fires_on_planted_adverts() -> None:
+    """The ban must be able to fail — one control per pattern."""
+
+    assert set(PLANTED_ADVERTS) == set(NON_DEFAULT_MACHINERY_PATTERNS), (
+        "every banned-machinery pattern needs a planted advert proving it "
+        "fires, or the ban can rot into a no-op"
+    )
+    for label, advert in PLANTED_ADVERTS.items():
+        assert label in _machinery_hits(advert), (
+            f"pattern {label!r} did not fire on {advert!r} — the ban would "
+            "not have caught the advert it exists to catch"
+        )
+
+
+def test_machinery_scanner_spares_legitimate_protocol_wording() -> None:
+    """The ban must not fire on protocol wording that merely looks similar."""
+
+    false_positives = {
+        phrase: hits
+        for phrase in LEGITIMATE_PROTOCOL_WORDING
+        if (hits := _machinery_hits(phrase))
+    }
+    assert not false_positives, (
+        f"the banned-machinery terms fire on legitimate protocol wording: "
+        f"{false_positives} — narrow the pattern; a ban that hits real "
+        "protocol pushes protocol out of the channel"
     )
 
 
@@ -242,6 +351,28 @@ def test_cross_project_transfer_explicit(union: str) -> None:
 
 
 # ── memory_recall description: the BEFORE hooks ─────────────────────────────
+
+
+def test_recall_opens_by_naming_the_retrieval_signals() -> None:
+    """The opening sentence is the highest-value position in the channel.
+
+    It is what a client shows in a collapsed tool list, so it must say what
+    recall actually does — retrieval over text, vector and graph signals —
+    rather than be squeezed down to a stub to pay for something else.
+    """
+
+    opener = _RECALL_DESCRIPTION.split(".", 1)[0]
+    missing = [s for s in ("text", "vector", "graph") if s not in opener]
+    assert not missing, (
+        f"the opening sentence {opener!r} does not name the retrieval "
+        f"signals {missing} — it is the first thing every client shows"
+    )
+    size = len(_RECALL_DESCRIPTION)
+    assert size < MAX_DESCRIPTION_CHARS, (
+        f"memory_recall is {size} chars, flush against the "
+        f"{MAX_DESCRIPTION_CHARS}-char client limit: keep headroom so the "
+        "next protocol wording fix does not have to truncate a trigger"
+    )
 
 
 def test_recall_hooks_universal_action_classes() -> None:

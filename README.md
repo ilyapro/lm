@@ -99,3 +99,8 @@ the wire.)
 
 - [Architecture](docs/architecture.md)
 - [MCP Interface](docs/mcp-interface.md)
+- [Deployment](docs/deployment.md) - how each host is updated, restarted and
+  verified, and how to tell that one is behind `master`.
+  `scripts/check_deployed_protocol.py` answers that last question executably:
+  it compares the protocol texts a running host serves against this checkout
+  and exits non-zero with a diff when they differ.

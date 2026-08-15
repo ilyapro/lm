@@ -584,7 +584,13 @@ def test_protocol_wording_served_intact(tmp_path: Path) -> None:
     assert "You MUST recall BEFORE you act" in instructions
     assert "You MUST teach the moment a belief changes" in instructions
     assert "You MUST recall BEFORE acting" in tools["memory_recall"]
-    assert "Experimental repeat gating is default-off." in tools["memory_recall"]
+    # The capped protocol channel funds protocol only: no agent can act on a
+    # gate an operator has to flip, so the served description must not spend
+    # its budget advertising this one — and the chars it freed must show up as
+    # the contentful opener (tests/test_instructions_imperative.py pins the
+    # general ban and the opener).
+    assert "Experimental repeat gating is default-off." not in tools["memory_recall"]
+    assert "text, vector, and graph signals" in tools["memory_recall"]
     assert len(tools["memory_recall"]) <= 1024
     assert "MUST teach the moment a belief changes" in tools["memory_teach"]
     assert "supersedes edge" in tools["memory_teach"]

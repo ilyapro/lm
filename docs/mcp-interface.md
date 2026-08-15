@@ -350,34 +350,125 @@ re-fetch, full-node context compaction, and closure invariance — over a
 real MCP client; `tests/test_delivery_shaping.py` pins each lever and its
 valve at the unit level.
 
-#### Experimental legacy repeat path (P6 deferred)
+#### Repeat-recall gating — a refuted hypothesis, kept only as an instrument
 
-The separate legacy repeat path is experimental pending confirmation. It is
-class-blind: its `(query, requested_scope)` fingerprint does not distinguish
-automatic or preprompt recall from agent-triggered recall, so it is not the
-automatic-only compaction policy required by P6. P6 remains deferred pending
-an event-disjoint, multi-project confirmatory-holdout-v3 evaluation.
+The separate repeat path gates a recall whose `(query, requested_scope)`
+fingerprint keeps being delivered without earning feedback links. The
+hypothesis was that gating such repeats would compact repeated *automatic*
+recall while leaving organic, agent-triggered recall intact. **That hypothesis
+was measured on sealed data and refuted.** It is not deferred, not pending,
+and not awaiting a better threshold — it failed, and the failure is recorded
+here so nobody pays to rediscover it.
 
-Its two switches are independent, strict default-off opt-ins:
+##### The two measured failures
+
+The sealed one-shot evaluation, whose report was generated
+`2026-08-14T03:05:29Z`, ran the gate explicitly enabled (`min_unlinked=5`,
+`max_link_rate=0.2`, `min_sessions=2`, `probe_every=25`, trailing-stub removal
+on) against the sealed replacement holdout corpus, and failed both of its
+required gates:
+
+| Gate | Required | Observed |
+|---|---:|---:|
+| Unseen-in-dev repeated-automatic character reduction | `>= 0.50` | **`0.040904`** — 16 repeated fingerprint families, 113 events, only 21 gated |
+| Organic recall preservation | each delta within `-5%` … `+5%` | **payload `-33.039%`, content-access `-45.5378%`** |
+
+Sealed source: `artifacts/animal-planet/evaluation/final-report.json` and its
+markdown rendering `final-report.md`, which carry these numbers, their
+thresholds, and the SHA-256 of every input. Evaluated commit
+`ee042335dbcd763054819def24e7e487de5d8f11`; evaluator `scripts/ap_baseline.py`
+SHA-256 `18a162f7923af10705acf67b4655f76808ebd111dfa80f23bb10c59c26fa534a`;
+replacement holdout manifest SHA-256
+`fd36c972b049c296acbd2537f9af8f1db8d7db725f188c5dd90d27ab9aa3ab83`. The
+authorization was one-shot and is consumed: the sealed policy forbids tuning,
+case-level diagnosis and any retry, so these numbers are the final word on
+this design rather than a work-in-progress reading.
+
+##### Why it is not a tuning problem
+
+In-sample the mechanism looked excellent. On the dev and eval splits its own
+thresholds were derived from, the identical configuration reduced repeated
+automatic payload by `0.760254` (dev) and `0.769469` (eval) with organic deltas
+of exactly `0%` (`evidence.preflight.native_auto_recall` in the sealed report). On
+fingerprints unseen in dev, that reduction collapsed to `0.040904` — roughly
+one nineteenth of the in-sample figure — while organic recall lost a third of
+its payload and nearly half of its content access. Even measured split-wide
+across all 18 repeated families (238 events) the holdout reduction was only
+`0.212469`, still less than half the required floor. The apparent gain was
+fitted to the split it was tuned on; it did not generalize.
+
+The cause is structural rather than numeric. The fingerprint is class-blind:
+`(query, requested_scope)` cannot tell an automatic or preprompt recall from
+one the agent deliberately issued. A server-side gate therefore cannot compact
+the first class without stripping the second — which is precisely the
+asymmetry the two failing gates report. No threshold reachable from this
+signal separates the classes, because the signal does not contain the
+distinction.
+
+##### Conclusion: this deduplication belongs on the calling side
+
+The caller knows which class a recall belongs to, already holds its own
+session history, and dedupes there today — demonstrably, and without touching
+organic recall. That is where repeat suppression belongs. It is not a
+server-side policy, and it will not become one by re-tuning this gate.
+
+##### Why the mechanism is nevertheless kept
+
+It stays in the tree as an instrument, not as a feature.
+`scripts/ap_baseline.py` — the frozen calculator that produced the refutation
+above, and whose SHA-256 is recorded in `final-report.json` — depends on all
+five moving parts of the mechanism. It imports `FingerprintGatePolicy`,
+`should_gate_fingerprint` and `recall_fingerprint` from
+`living_memory.storage`, and reaches the remaining two through the store API,
+as `store.get_recall_fingerprint_stats(...)` and
+`store.mark_recall_event_gated(...)`. Deleting any of the five would delete
+the instrument that reproduces its own refutation and leave the sealed report
+unverifiable. Removing a negative result's evidence is strictly worse than
+carrying a dormant code path.
+
+The schema-v5 columns stay for the same reason and for backward
+compatibility. `recall_events.fingerprint`, `recall_events.gated` and the
+`recall_fingerprints` aggregate are written by recall accounting that runs
+unconditionally inside `record_recall_event`, independent of both valves below.
+Accounting is not gating: stamping a fingerprint costs one hash and changes no
+response.
+
+##### Both valves, strictly opt-in
 
 * `LM_RECALL_REPEAT_GATING` enables history-based fingerprint gating.
 * `LM_RECALL_REPEAT_DROP_TRAILING_STUBS` permits a gated response's trailing
   run of `session_duplicate`/`twin_duplicate` stubs to be removed; setting it
   alone neither enables gating nor changes an ungated response.
 
-For either switch, only a whitespace-trimmed, case-insensitive `1`, `true`,
-`yes`, or `on` enables it. Unset, empty, known-false (`0`, `false`, `no`,
-`off`), and malformed values are off. Consequently, a fully repeated response
-can become empty only when both switches are explicitly enabled and the
-fingerprint gate fires. With gating alone, the ranked response retains
-re-fetchable stubs; with trailing-drop alone, that switch removes nothing from
-a nonempty ranking.
+`FingerprintGatePolicy` defaults both fields to `False`, so a clean
+environment resolves both off and the repeat path never runs. For either
+valve, only a whitespace-trimmed, case-insensitive `1`, `true`, `yes`, or `on`
+enables it; unset, empty, known-false (`0`, `false`, `no`, `off`), and
+malformed values are off. Consequently a fully repeated response can become
+empty only when both valves are explicitly enabled and the fingerprint gate
+fires. With gating alone the ranked response retains re-fetchable stubs; with
+trailing-drop alone that valve removes nothing from a nonempty ranking. The
+remaining `LM_RECALL_REPEAT_MIN_UNLINKED`, `LM_RECALL_REPEAT_MAX_LINK_RATE`,
+`LM_RECALL_REPEAT_MIN_SESSIONS` and `LM_RECALL_REPEAT_PROBE_EVERY` knobs only
+shift thresholds inside an already-enabled gate; they cannot enable it.
 
-This experimental class-blind gate is distinct from the class-agnostic
+##### Never advertised in the protocol channel
+
+This section is the only place the repeat path is documented, and that is
+deliberate. It MUST NOT be mentioned in any protocol-bearing text — tool
+descriptions, server instructions, or the `memory://prompt/retrieval_context`
+prompt. Those channels are paid for by every connected client on every
+request and are hard-capped by clients (1024 characters per function
+description for OpenAI-compatible clients); an agent following the protocol
+gains nothing from a refuted, default-off mechanism it will never enable, and
+every character spent on it is taken from the protocol itself. Re-adding it
+there is a regression, not a documentation improvement.
+
+This refuted class-blind gate is distinct from the class-agnostic
 `LM_DELIVERY_*` diet described above. The diet intentionally shapes every
 caller class the same way, preserves direct access through `memory_lookup`,
-and remains enabled by default; its documented rollback valves do not opt the
-legacy repeat path in.
+passed its generalization gates, and remains enabled by default; its
+documented rollback valves do not opt the repeat path in.
 
 ### `memory_lookup`
 

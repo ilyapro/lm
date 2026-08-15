@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Sequence
 
 import pytest
 
@@ -23,6 +23,59 @@ if DEPS_DIR.exists():
     if deps not in sys.path:
         insert_at = 1 if str(SRC_DIR) in sys.path else 0
         sys.path.insert(insert_at, deps)
+
+
+def prune_missing_target_paths(
+    args: Sequence[str], invocation_dir: Path
+) -> tuple[list[str], list[str]]:
+    """Split requested targets into (kept, dropped-because-they-do-not-exist).
+
+    Nothing is dropped unless at least one requested target survives: a run
+    whose every target is missing keeps its original arguments so pytest still
+    reports the usage error.
+    """
+
+    kept: list[str] = []
+    dropped: list[str] = []
+    for arg in args:
+        path_part = arg.split("::", 1)[0]
+        if not path_part or (invocation_dir / path_part).exists():
+            kept.append(arg)
+        else:
+            dropped.append(arg)
+    if not kept:
+        return list(args), []
+    return kept, dropped
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config: pytest.Config) -> None:
+    """Ignore requested test targets that the change under test deleted.
+
+    The merge gate runs targeted tests by handing pytest the directory of every
+    changed ``*.py`` file from ``git diff --name-only base...branch``. That list
+    includes files the change *deleted*, so removing the last Python file in a
+    directory points pytest at a path that is gone, and pytest aborts the whole
+    run with a usage error (exit 4) before collecting a single test — the suite
+    never runs, and a deletion-only change cannot be verified at all.
+
+    Drop such targets loudly, and only while another target survives, so a
+    mistyped path (``pytest tsets/``) still fails the way it always has.
+    """
+
+    if getattr(config.option, "pyargs", False):
+        return
+    kept, dropped = prune_missing_target_paths(
+        config.args, Path(config.invocation_params.dir)
+    )
+    if not dropped:
+        return
+    print(
+        "conftest: ignoring requested test target(s) that do not exist: "
+        + ", ".join(dropped),
+        file=sys.stderr,
+    )
+    config.args = kept
 
 
 @pytest.fixture(autouse=True)
