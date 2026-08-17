@@ -466,6 +466,13 @@ def memory_consolidate(
         if force or phase.number >= 2
         else None
     )
+    if embedder is not None:
+        # Hand the loaded encoder to the store. Every concept written below goes
+        # through create_node/update_node with an embedding, and those chunk the
+        # content — without this the store would load a second copy of the same
+        # model to do it.
+        model = embedder
+        store.set_chunk_embedder(lambda texts: [model.embed(text) for text in texts])
     clusters = _cluster_traces(traces, embedder=embedder)
     result = ConsolidationResult(
         clusters_considered=len(clusters),

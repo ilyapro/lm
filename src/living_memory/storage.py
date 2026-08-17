@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from array import array
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -12,11 +13,13 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import time
 from datetime import UTC, datetime
 
+from living_memory.chunking import TextChunk, chunk_text
 from living_memory.config import MemoryConfig, RetrievalWeightConfig
-from living_memory.embeddings import cosine_similarity, tokenize
+from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity, tokenize
 from living_memory.models import (
     CONNECTION_TYPES,
     NODE_LEVELS,
@@ -24,6 +27,7 @@ from living_memory.models import (
     Connection,
     ConnectionType,
     Node,
+    NodeChunkEmbedding,
     NodeLevel,
     RecallEvent,
     RetrievalWeights,
@@ -31,7 +35,22 @@ from living_memory.models import (
 from living_memory.phase import PhaseManager
 from living_memory.scope import normalize_scope
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
+
+CHUNK_EMBEDDING_TABLE = "node_chunk_embeddings"
+#: numpy dtype string for a stored chunk BLOB. Part of the read contract that
+#: the vector channel consumes: ``np.frombuffer(blob, dtype=CHUNK_EMBEDDING_DTYPE)``.
+CHUNK_EMBEDDING_DTYPE = "<f4"
+CHUNK_EMBEDDING_ITEMSIZE = 4
+
+#: SQL literal for the ASCII whitespace set, for TRIM(x, chars): SQLite's
+#: one-argument TRIM strips spaces and nothing else.
+_SQL_WHITESPACE = "' ' || CHAR(9) || CHAR(10) || CHAR(11) || CHAR(12) || CHAR(13)"
+
+#: Batch encoder for chunk texts: takes the chunk texts of one node in order and
+#: returns one vector per text. Injected via :meth:`MemoryStore.set_chunk_embedder`
+#: so a caller that already holds a loaded model does not pay for a second one.
+ChunkEmbedder = Callable[[Sequence[str]], Sequence[Sequence[float]]]
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 _RECALL_REPEAT_GATING_ENV = "LM_RECALL_REPEAT_GATING"
 _RECALL_REPEAT_MIN_UNLINKED_ENV = "LM_RECALL_REPEAT_MIN_UNLINKED"
@@ -57,6 +76,48 @@ _CONTEXT_LOOKUP_FIELDS = frozenset(
 
 def _content_fingerprint(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def pack_chunk_embedding(values: Iterable[float]) -> bytes:
+    """Encode a vector as a little-endian float32 BLOB.
+
+    ``array('f')`` is C ``float`` — 4 bytes per item on every platform CPython
+    supports — written in native byte order, so it is byte-swapped on a
+    big-endian host to keep the on-disk layout little-endian everywhere.
+
+    The float64 -> float32 narrowing is the only lossy step: values that are
+    exactly representable in float32 (which every value read back out of a BLOB
+    is) round-trip bit-for-bit, and the encoding is idempotent for the rest.
+    """
+
+    buffer = array("f", values)
+    if sys.byteorder != "little":  # pragma: no cover - little-endian CI
+        buffer.byteswap()
+    return buffer.tobytes()
+
+
+def unpack_chunk_embedding(blob: bytes | memoryview, dimensions: int) -> list[float]:
+    """Decode a float32 little-endian BLOB of exactly ``dimensions`` values.
+
+    ``dimensions`` comes from the row that stored the BLOB, never from the byte
+    length: a length-derived dimension cannot tell a truncated write from a
+    short vector, so a mismatch has to be an error rather than a guess.
+    """
+
+    if dimensions < 0:
+        raise ValueError("dimensions must not be negative")
+    raw = bytes(blob)
+    expected = dimensions * CHUNK_EMBEDDING_ITEMSIZE
+    if len(raw) != expected:
+        raise ValueError(
+            f"chunk embedding blob is {len(raw)} bytes, expected {expected} "
+            f"for {dimensions} float32 values"
+        )
+    buffer = array("f")
+    buffer.frombytes(raw)
+    if sys.byteorder != "little":  # pragma: no cover - little-endian CI
+        buffer.byteswap()
+    return list(buffer)
 
 
 def recall_fingerprint(query: str, requested_scope: str | None) -> str:
@@ -180,6 +241,8 @@ class MemoryStore:
         self,
         config: MemoryConfig | str | Path | None = None,
         base_config: MemoryConfig | None = None,
+        *,
+        chunk_embedder: ChunkEmbedder | None = None,
     ) -> None:
         if base_config is not None and not isinstance(base_config, MemoryConfig):
             raise TypeError("base_config must be a MemoryConfig")
@@ -198,6 +261,9 @@ class MemoryStore:
             self.config = MemoryConfig(db_path=Path(config))
 
         self.db_path = Path(self.config.db_path)
+        self._chunk_embedder = chunk_embedder
+        self._node_embedding_column_cache: bool | None = None
+        self._chunk_table_cache: bool | None = None
         if str(self.db_path) != ":memory:":
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -226,6 +292,52 @@ class MemoryStore:
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    # ------------------------------------------------------------------
+    # Schema-shape probes
+    #
+    # Three shapes are live at once during the v6 rollout: pre-v6 (no chunk
+    # table), post-v6 (chunks plus nodes.embedding, what the production server
+    # reads while the backfill runs), and post-drop (chunks only, after an
+    # operator calls drop_node_embedding_column). Read-only stores that never
+    # run migrations — health_audit.ReadOnlyAuditStore, and anything opening a
+    # snapshot — meet whichever shape the file happens to have, so every read
+    # path that names `nodes.embedding` or the chunk table asks first instead of
+    # assuming. Cached because they answer from DDL that only an explicit
+    # migration step changes, and both such steps invalidate the cache.
+    # ------------------------------------------------------------------
+
+    def _node_embedding_column_present(self, *, refresh: bool = False) -> bool:
+        """Whether the legacy ``nodes.embedding`` JSON column still exists."""
+
+        cached = getattr(self, "_node_embedding_column_cache", None)
+        if cached is not None and not refresh:
+            return bool(cached)
+        columns = {
+            str(row["name"])
+            for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
+        }
+        present = "embedding" in columns
+        self._node_embedding_column_cache = present
+        return present
+
+    def _chunk_table_present(self, *, refresh: bool = False) -> bool:
+        """Whether ``node_chunk_embeddings`` exists (false on a pre-v6 file)."""
+
+        cached = getattr(self, "_chunk_table_cache", None)
+        if cached is not None and not refresh:
+            return bool(cached)
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (CHUNK_EMBEDDING_TABLE,),
+        ).fetchone()
+        present = row is not None
+        self._chunk_table_cache = present
+        return present
+
+    def _invalidate_schema_shape_cache(self) -> None:
+        self._node_embedding_column_cache = None
+        self._chunk_table_cache = None
 
     def get_kv(self, key: str) -> str | None:
         row = self._conn.execute(
@@ -336,22 +448,29 @@ class MemoryStore:
                 ).fetchall()
             ]
 
+        vector = None if embedding is None else list(embedding)
+        legacy_embedding = self._node_embedding_column_present()
+        embedding_column = "embedding, " if legacy_embedding else ""
+        embedding_placeholder = "?, " if legacy_embedding else ""
+        embedding_value = (
+            (_json_dumps(vector) if vector is not None else None,) if legacy_embedding else ()
+        )
         self._conn.execute(
-            """
+            f"""
             INSERT INTO nodes (
-                id, level, content, content_fingerprint, embedding, scope, agent, task, context,
+                id, level, content, content_fingerprint, {embedding_column}scope, agent, task, context,
                 timestamp, decayed, decay_reason, access_count, last_accessed,
                 usefulness_score, confidence, unique_agents, temporal_hint,
                 source_traces, corrections, provenance, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, {embedding_placeholder}?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 new_id,
                 level,
                 content,
                 fingerprint,
-                _json_dumps(list(embedding)) if embedding is not None else None,
+                *embedding_value,
                 scope,
                 agent,
                 task,
@@ -370,6 +489,14 @@ class MemoryStore:
                 now,
             ),
         )
+
+        # Chunks follow the embedding, not the insert: memory_remember and
+        # memory_teach pass no vector (traces are embedded later, lazily, by the
+        # recall path), and encoding them here would put the model on the write
+        # path of every remember. A node with no vector simply has no chunks
+        # yet, exactly as it has no nodes.embedding yet.
+        if vector:
+            self._write_node_chunks(new_id, content, fingerprint, vector)
 
         for old_id in duplicate_ids:
             self._insert_connection(
@@ -588,17 +715,33 @@ class MemoryStore:
         source_traces = _as_list(provenance_data.pop("source_traces", existing.source_traces))
         corrections = _as_list(provenance_data.pop("corrections", existing.corrections))
         new_content = existing.content if content is None else content
+        content_changed = new_content != existing.content
+        new_fingerprint = _content_fingerprint(new_content)
+        vector = None if embedding is None else list(embedding)
         now = _utc_now()
         unique_agents = int(stats_data.get("unique_agents", existing.unique_agents))
         confidence = float(stats_data.get("confidence", existing.confidence))
         if unique_agents <= 1:
             confidence = min(confidence, 0.5)
 
+        legacy_embedding = self._node_embedding_column_present()
+        embedding_assignment = "embedding = ?, " if legacy_embedding else ""
+        embedding_value: tuple[Any, ...] = ()
+        if legacy_embedding:
+            if vector is not None:
+                stored_embedding = _json_dumps(vector)
+            elif existing.embedding is not None:
+                stored_embedding = _json_dumps(existing.embedding)
+            else:
+                stored_embedding = None
+            embedding_value = (stored_embedding,)
+
         with self._conn:
             self._conn.execute(
-                """
+                f"""
                 UPDATE nodes
-                SET content = ?, embedding = ?, scope = ?, agent = ?, task = ?, context = ?,
+                SET content = ?, content_fingerprint = ?, {embedding_assignment}scope = ?,
+                    agent = ?, task = ?, context = ?,
                     access_count = ?, last_accessed = ?, usefulness_score = ?,
                     confidence = ?, unique_agents = ?, temporal_hint = ?,
                     source_traces = ?, corrections = ?, provenance = ?, updated_at = ?
@@ -606,9 +749,8 @@ class MemoryStore:
                 """,
                 (
                     new_content,
-                    _json_dumps(list(embedding)) if embedding is not None else _json_dumps(existing.embedding)
-                    if existing.embedding is not None
-                    else None,
+                    new_fingerprint,
+                    *embedding_value,
                     str(context_data.get("scope") or existing.scope),
                     _optional_str(context_data.get("agent", existing.agent)),
                     _optional_str(context_data.get("task", existing.task)),
@@ -626,6 +768,26 @@ class MemoryStore:
                     node_id,
                 ),
             )
+            # Chunk maintenance, in the same transaction as the row it describes.
+            #
+            # A new vector re-chunks: this is the path the recall channel's lazy
+            # backfill takes (_ensure_embedding -> update_node(embedding=...)),
+            # and the path consolidation takes for a concept.
+            #
+            # Content that changed without a new vector only invalidates: the
+            # old chunks describe text that no longer exists, and keeping them
+            # would answer queries with content the node lost. Re-embedding is
+            # left to whoever holds the model — list_unchunked_nodes reports the
+            # node until then. Everything else (an access-count bump, a
+            # correction, a provenance merge) leaves chunks alone, so the model
+            # is not invoked by writes that cannot have changed the text.
+            if vector:
+                self._write_node_chunks(node_id, new_content, new_fingerprint, vector)
+            elif content_changed and self._chunk_table_present():
+                self._conn.execute(
+                    f"DELETE FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ?",
+                    (node_id,),
+                )
         return self.get_node(node_id)  # type: ignore[return-value]
 
     def add_correction(self, node_id: str, *, old: str, new: str, by: str) -> Node:
@@ -1240,7 +1402,15 @@ class MemoryStore:
         skips parsing of the much larger ``context``/``provenance`` JSON columns
         and avoids constructing full Node dataclass instances. Use this for
         bulk cosine scans and fall back to ``get_node`` for the top matches.
+
+        Superseded by :meth:`iter_chunk_embedding_rows`. Kept working for as
+        long as ``nodes.embedding`` exists; once an operator drops the column
+        this yields nothing rather than raising, so a reader still on the legacy
+        path degrades to an empty vector channel instead of a crash.
         """
+
+        if not self._node_embedding_column_present():
+            return
 
         clauses: list[str] = ["embedding IS NOT NULL"]
         params: list[Any] = []
@@ -1258,6 +1428,419 @@ class MemoryStore:
         for row in cur:
             yield str(row["id"]), str(row["embedding"])
 
+    # ------------------------------------------------------------------
+    # Chunk embeddings (schema v6)
+    # ------------------------------------------------------------------
+
+    def set_chunk_embedder(self, embedder: ChunkEmbedder | None) -> None:
+        """Install the batch encoder used to embed chunk texts on the write path.
+
+        A caller that already holds a loaded model should hand it over rather
+        than let the store build a second one: the model is the expensive part,
+        and two copies double both load time and resident memory. Passing
+        ``None`` restores the lazy default.
+        """
+
+        self._chunk_embedder = embedder
+
+    def _resolve_chunk_embedder(self) -> ChunkEmbedder:
+        if self._chunk_embedder is None:
+            model = LocalEmbeddingModel(model_name=self.config.embedding_model)
+            self._chunk_embedder = lambda texts: [model.embed(text) for text in texts]
+        return self._chunk_embedder
+
+    def iter_chunk_embedding_rows(
+        self,
+        *,
+        scope: str | None = None,
+        level: NodeLevel | None = None,
+        include_decayed: bool = False,
+    ) -> Iterator[tuple[str, int, memoryview]]:
+        """Yield ``(node_id, chunk_index, embedding)`` for live chunks.
+
+        The v6 analogue of :meth:`iter_embedding_rows` and the read contract the
+        vector channel consumes. Each third element is a ``memoryview`` over a
+        float32 little-endian BLOB, ready for
+        ``np.frombuffer(view, dtype=CHUNK_EMBEDDING_DTYPE)``; its length in
+        values is the row's recorded ``dimensions``, which
+        :meth:`chunk_embedding_dimensions` reports for the same filters.
+
+        Rows arrive grouped by node and ordered by ``chunk_index`` within a
+        node, so a consumer can max-pool a node's chunks in one pass without
+        sorting. That is a promise of the ``ORDER BY``, not of a query plan:
+        the scoped form pays a temp b-tree for it (~3 ms of the scan below),
+        which is worth not having the grouping silently break the day the
+        planner picks a different join order. Liveness comes from the join to
+        ``nodes``: soft deletion only sets ``nodes.decayed``, and nothing
+        hard-deletes chunk rows, so absence of a row never means "node is gone".
+
+        Measured on an on-disk 12840-node / 44940-chunk database (65.8 MB of
+        vectors, against 134.6 MB of JSON for the same corpus today): ~44 ms to
+        scan every chunk, ~75 ms to go from cold to one ``(44940, 384)`` float32
+        matrix via ``np.frombuffer(b"".join(views), dtype=CHUNK_EMBEDDING_DTYPE)``,
+        and ~1.2 ms for the cosine matmul after that. Most of the scan is the
+        irreducible cost of pulling 45k rows through the Python sqlite3 driver —
+        an unjoined ``SELECT`` over the same rows is ~24 ms — so a consumer that
+        wants this cheaper should cache the matrix, not micro-tune the query.
+
+        Yields nothing on a pre-v6 database rather than raising, so a snapshot
+        opened without migrations degrades instead of crashing.
+        """
+
+        if not self._chunk_table_present():
+            return
+
+        clauses = ["n.decayed = 0"] if not include_decayed else []
+        params: list[Any] = []
+        if level is not None:
+            self._validate_level(level)
+            clauses.append("n.level = ?")
+            params.append(level)
+        if scope is not None:
+            clauses.append("n.scope = ?")
+            params.append(scope)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        # A bare tuple cursor: at 45k rows the per-row sqlite3.Row wrapper is a
+        # measurable share of the scan, and nothing here needs lookup by name.
+        cursor = self._conn.cursor()
+        cursor.row_factory = None
+        cursor.execute(
+            f"""
+            SELECT c.node_id, c.chunk_index, c.embedding
+            FROM {CHUNK_EMBEDDING_TABLE} c
+            JOIN nodes n ON n.id = c.node_id
+            {where}
+            ORDER BY c.node_id ASC, c.chunk_index ASC
+            """,
+            params,
+        )
+        while True:
+            batch = cursor.fetchmany(1024)
+            if not batch:
+                return
+            for node_id, chunk_index, blob in batch:
+                yield str(node_id), int(chunk_index), memoryview(blob)
+
+    def chunk_embedding_dimensions(
+        self,
+        *,
+        scope: str | None = None,
+        level: NodeLevel | None = None,
+        include_decayed: bool = False,
+    ) -> tuple[int, ...]:
+        """Distinct recorded dimensions over the same rows the scan would yield.
+
+        The authority on vector width: a BLOB's byte length cannot distinguish a
+        short vector from a truncated write, so consumers reshape by this and
+        treat a result other than a single value as a corpus that must be
+        grouped (or re-embedded) before it can become one matrix.
+        """
+
+        if not self._chunk_table_present():
+            return ()
+
+        clauses = ["n.decayed = 0"] if not include_decayed else []
+        params: list[Any] = []
+        if level is not None:
+            self._validate_level(level)
+            clauses.append("n.level = ?")
+            params.append(level)
+        if scope is not None:
+            clauses.append("n.scope = ?")
+            params.append(scope)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"""
+            SELECT DISTINCT c.dimensions AS dimensions
+            FROM {CHUNK_EMBEDDING_TABLE} c
+            JOIN nodes n ON n.id = c.node_id
+            {where}
+            ORDER BY dimensions ASC
+            """,
+            params,
+        ).fetchall()
+        return tuple(int(row["dimensions"]) for row in rows)
+
+    def list_node_chunks(self, node_id: str) -> list[NodeChunkEmbedding]:
+        """Return one node's chunks decoded into vectors, in ordinal order."""
+
+        if not self._chunk_table_present():
+            return []
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM {CHUNK_EMBEDDING_TABLE}
+            WHERE node_id = ?
+            ORDER BY chunk_index ASC
+            """,
+            (str(node_id),),
+        ).fetchall()
+        return [_chunk_embedding_from_row(row) for row in rows]
+
+    def count_node_chunks(self, node_id: str | None = None) -> int:
+        """Count chunk rows, for one node or for the whole database."""
+
+        if not self._chunk_table_present():
+            return 0
+        if node_id is None:
+            row = self._conn.execute(
+                f"SELECT COUNT(*) AS count FROM {CHUNK_EMBEDDING_TABLE}"
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                f"SELECT COUNT(*) AS count FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ?",
+                (str(node_id),),
+            ).fetchone()
+        return int(row["count"])
+
+    def node_chunks_are_current(self, node_id: str) -> bool:
+        """Whether ``node_id`` has chunks and all of them match its content.
+
+        False both for a node that was never chunked and for one whose content
+        changed after chunking — the two cases a re-embed has to cover, which is
+        why :meth:`list_unchunked_nodes` returns them together.
+        """
+
+        if not self._chunk_table_present():
+            return False
+        row = self._conn.execute(
+            f"""
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN c.content_fingerprint = n.content_fingerprint
+                            THEN 1 ELSE 0 END) AS fresh
+            FROM {CHUNK_EMBEDDING_TABLE} c
+            JOIN nodes n ON n.id = c.node_id
+            WHERE c.node_id = ?
+            """,
+            (str(node_id),),
+        ).fetchone()
+        total = int(row["total"] or 0)
+        return total > 0 and int(row["fresh"] or 0) == total
+
+    def list_unchunked_nodes(
+        self,
+        *,
+        scope: str | None = None,
+        level: NodeLevel | None = None,
+        limit: int = 200,
+    ) -> list[Node]:
+        """Active nodes whose chunks are missing or stale, oldest work first.
+
+        The v6 analogue of :meth:`list_unembedded_nodes`, and deliberately not
+        the same question: a node whose content was edited still has a
+        ``nodes.embedding`` and so is invisible to the legacy query, but its
+        chunks were dropped as stale and it does need re-embedding.
+
+        Whitespace-only content is excluded. The chunker yields no windows for
+        text with no tokens, so such a node can never acquire a chunk row — and
+        a backfill driven by "keep going until this list is empty" would spin on
+        it forever. SQLite's one-argument ``TRIM`` strips spaces only, hence the
+        explicit whitespace set.
+        """
+
+        if not self._chunk_table_present():
+            return []
+
+        clauses = [
+            "n.decayed = 0",
+            f"TRIM(n.content, {_SQL_WHITESPACE}) != ''",
+        ]
+        params: list[Any] = []
+        if level is not None:
+            self._validate_level(level)
+            clauses.append("n.level = ?")
+            params.append(level)
+        if scope is not None:
+            clauses.append("n.scope = ?")
+            params.append(scope)
+        params.append(int(limit))
+        rows = self._conn.execute(
+            f"""
+            SELECT n.* FROM nodes n
+            WHERE {' AND '.join(clauses)}
+              AND NOT EXISTS (
+                    SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
+                    WHERE c.node_id = n.id
+                      AND c.content_fingerprint = n.content_fingerprint
+              )
+            ORDER BY n.timestamp DESC, n.id DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [_node_from_row(row) for row in rows]
+
+    def delete_node_chunks(self, node_id: str) -> int:
+        """Remove every chunk of one node. Returns the number of rows deleted."""
+
+        if not self._chunk_table_present():
+            return 0
+        with self._conn:
+            cur = self._conn.execute(
+                f"DELETE FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ?",
+                (str(node_id),),
+            )
+        return int(cur.rowcount or 0)
+
+    def replace_node_chunks(
+        self,
+        node_id: str,
+        chunks: Sequence[tuple[TextChunk, Sequence[float]]],
+        *,
+        content_fingerprint: str | None = None,
+    ) -> int:
+        """Make ``chunks`` the node's complete chunk set, atomically.
+
+        Delete-then-insert inside one transaction rather than upsert-by-ordinal:
+        a re-embed can produce fewer chunks than last time (an edit shortened the
+        content, or a different tokenizer packs windows differently), and an
+        upsert would leave the surplus tail behind. A node is never observable
+        holding chunks from two different embeddings of its content.
+
+        ``content_fingerprint`` defaults to the node's current
+        ``nodes.content_fingerprint``, which is what makes a later edit
+        detectable.
+        """
+
+        node_id = str(node_id)
+        if not self._chunk_table_present():
+            raise RuntimeError(
+                f"{CHUNK_EMBEDDING_TABLE} is missing; open the database through "
+                "MemoryStore so migrations run before writing chunks"
+            )
+        row = self._conn.execute(
+            "SELECT content_fingerprint FROM nodes WHERE id = ?",
+            (node_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(node_id)
+        fingerprint = str(content_fingerprint or row["content_fingerprint"] or "")
+        with self._conn:
+            written = self._replace_node_chunks(node_id, chunks, fingerprint)
+        return written
+
+    def _replace_node_chunks(
+        self,
+        node_id: str,
+        chunks: Sequence[tuple[TextChunk, Sequence[float]]],
+        fingerprint: str,
+    ) -> int:
+        """Transaction body of :meth:`replace_node_chunks` (caller holds the txn)."""
+
+        self._conn.execute(
+            f"DELETE FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ?",
+            (node_id,),
+        )
+        if not chunks:
+            return 0
+        now = _utc_now()
+        payload = []
+        for expected_index, (chunk, vector) in enumerate(chunks):
+            values = list(vector)
+            if not values:
+                raise ValueError(f"chunk {expected_index} of {node_id} has an empty vector")
+            if chunk.chunk_index != expected_index:
+                raise ValueError(
+                    f"chunk ordinals must be dense and ordered from 0; got "
+                    f"{chunk.chunk_index} at position {expected_index} of {node_id}"
+                )
+            payload.append(
+                (
+                    new_ulid(),
+                    node_id,
+                    expected_index,
+                    len(values),
+                    pack_chunk_embedding(values),
+                    int(chunk.token_start),
+                    int(chunk.token_end),
+                    fingerprint,
+                    now,
+                    now,
+                )
+            )
+        self._conn.executemany(
+            f"""
+            INSERT INTO {CHUNK_EMBEDDING_TABLE} (
+                id, node_id, chunk_index, dimensions, embedding,
+                token_start, token_end, content_fingerprint, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            payload,
+        )
+        return len(payload)
+
+    def _chunk_embeddings_for(
+        self,
+        content: str,
+        node_embedding: Sequence[float] | None,
+    ) -> list[tuple[TextChunk, Sequence[float]]]:
+        """Split ``content`` into windows and pair each with its vector.
+
+        The single-window case reuses ``node_embedding`` instead of encoding
+        again: when the whole content fits one window the chunk text *is* the
+        content, so the vector the caller already computed is the chunk's
+        vector, and re-encoding would only spend the model's time to reproduce
+        it. That case covers the short nodes, which are the majority of writes.
+
+        Multi-window content is where the whole-node vector is wrong — it only
+        ever saw the first window — so every chunk is encoded on its own.
+        """
+
+        chunks = chunk_text(content)
+        if not chunks:
+            return []
+        if len(chunks) == 1:
+            if node_embedding:
+                return [(chunks[0], list(node_embedding))]
+            vectors = self._resolve_chunk_embedder()([chunks[0].text])
+        else:
+            vectors = self._resolve_chunk_embedder()([chunk.text for chunk in chunks])
+        vectors = list(vectors)
+        if len(vectors) != len(chunks):
+            raise ValueError(
+                f"chunk embedder returned {len(vectors)} vectors for {len(chunks)} chunks"
+            )
+        return [
+            (chunk, list(vector))
+            for chunk, vector in zip(chunks, vectors, strict=True)
+            if list(vector)
+        ]
+
+    def _write_node_chunks(
+        self,
+        node_id: str,
+        content: str,
+        fingerprint: str,
+        node_embedding: Sequence[float] | None,
+    ) -> int:
+        """Re-chunk one node inside the caller's transaction."""
+
+        pairs = self._chunk_embeddings_for(content, node_embedding)
+        return self._replace_node_chunks(node_id, pairs, fingerprint)
+
+    def drop_node_embedding_column(self) -> bool:
+        """Drop the legacy ``nodes.embedding`` JSON column. Operator command only.
+
+        Deliberately not part of schema init and not part of any backfill: the
+        production MCP server runs code that still reads ``nodes.embedding``, and
+        it must keep serving reads for the whole time chunks are being written.
+        Additive first, drop later, and only when an operator says so — a drop
+        wired into ``_initialize_schema`` would fire the moment a new build
+        opened the database, under a server that cannot survive it.
+
+        Returns True if the column was dropped, False if it was already gone
+        (idempotent). Reclaiming the freed pages needs a separate ``VACUUM``,
+        which is left to the operator because it rewrites the whole file.
+        """
+
+        if not self._node_embedding_column_present(refresh=True):
+            return False
+        with self._conn:
+            self._conn.execute("DROP INDEX IF EXISTS idx_nodes_embedded_active_scope")
+            self._conn.execute("ALTER TABLE nodes DROP COLUMN embedding")
+        self._invalidate_schema_shape_cache()
+        return True
+
     def list_unembedded_nodes(
         self,
         *,
@@ -1265,7 +1848,16 @@ class MemoryStore:
         level: NodeLevel | None = None,
         limit: int = 200,
     ) -> list[Node]:
-        """Return active nodes with no stored embedding (for lazy backfill)."""
+        """Return active nodes with no stored embedding (for lazy backfill).
+
+        Empty once ``nodes.embedding`` is dropped: with no column there is no
+        such thing as an unembedded node, and the lazy-backfill loop that drains
+        this must terminate rather than raise. The chunk-era question is
+        :meth:`list_unchunked_nodes`.
+        """
+
+        if not self._node_embedding_column_present():
+            return []
 
         clauses: list[str] = ["embedding IS NULL", "decayed = 0"]
         params: list[Any] = []
@@ -1284,6 +1876,91 @@ class MemoryStore:
         ).fetchall()
         return [_node_from_row(row) for row in rows]
 
+    @staticmethod
+    def _scope_filter(
+        alias: str = "",
+        *,
+        scope: str | None = None,
+        exclude_scope: str | None = None,
+        scope_prefix: str | None = None,
+    ) -> tuple[list[str], list[Any]]:
+        """Shared scope predicates for the two halves of a similarity search.
+
+        Both the node query and the chunk query behind it have to narrow to the
+        same set, or the chunk side does far more work than the node side will
+        use. ``alias`` is the table qualifier ("" for a bare nodes query, "n."
+        when joined).
+        """
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if scope is not None:
+            clauses.append(f"{alias}scope = ?")
+            params.append(scope)
+        if exclude_scope is not None:
+            clauses.append(f"{alias}scope != ?")
+            params.append(exclude_scope)
+        if scope_prefix is not None:
+            clauses.append(f"{alias}scope >= ?")
+            params.append(scope_prefix)
+            upper_bound = _prefix_upper_bound(scope_prefix)
+            if upper_bound is not None:
+                clauses.append(f"{alias}scope < ?")
+                params.append(upper_bound)
+        return clauses, params
+
+    def _chunk_max_pool_scores(
+        self,
+        embedding: Sequence[float],
+        *,
+        level: NodeLevel | None = None,
+        scope: str | None = None,
+        exclude_scope: str | None = None,
+        scope_prefix: str | None = None,
+    ) -> dict[str, float]:
+        """Cosine of ``embedding`` against each live node's best chunk.
+
+        One pass rather than a query per node, so the caller pays the same
+        single scan the JSON path paid. Reads ``dimensions`` alongside the BLOB
+        instead of going through :meth:`iter_chunk_embedding_rows`, because
+        decoding needs the recorded width and the byte length is not allowed to
+        stand in for it.
+        """
+
+        if not self._chunk_table_present():
+            return {}
+
+        query = list(embedding)
+        clauses = ["n.decayed = 0"]
+        params: list[Any] = []
+        if level is not None:
+            self._validate_level(level)
+            clauses.append("n.level = ?")
+            params.append(level)
+        scope_clauses, scope_params = self._scope_filter(
+            "n.", scope=scope, exclude_scope=exclude_scope, scope_prefix=scope_prefix
+        )
+        clauses.extend(scope_clauses)
+        params.extend(scope_params)
+        rows = self._conn.execute(
+            f"""
+            SELECT c.node_id AS node_id, c.dimensions AS dimensions,
+                   c.embedding AS embedding
+            FROM {CHUNK_EMBEDDING_TABLE} c
+            JOIN nodes n ON n.id = c.node_id
+            WHERE {' AND '.join(clauses)}
+            """,
+            params,
+        )
+        best: dict[str, float] = {}
+        for row in rows:
+            node_id = str(row["node_id"])
+            vector = unpack_chunk_embedding(row["embedding"], int(row["dimensions"]))
+            score = cosine_similarity(query, vector)
+            if score > best.get(node_id, float("-inf")):
+                best[node_id] = score
+        return best
+
     def find_similar_by_embedding(
         self,
         embedding: list[float],
@@ -1295,27 +1972,46 @@ class MemoryStore:
         threshold: float = 0.7,
         limit: int = 50,
     ) -> list[tuple[Node, float]]:
-        """Scan active embedded nodes and return cosine matches above a threshold."""
+        """Scan active embedded nodes and return cosine matches above a threshold.
+
+        Compatibility path for the v6 rollout, so consolidation's callers keep
+        working without every one of them learning about chunks. While
+        ``nodes.embedding`` is present it stays the scoring vector and results
+        are bit-identical to v5 — that matters because the callers' thresholds
+        (``_find_existing_concept``, cross-scope promotion) were calibrated
+        against single-vector scores, and max-pooling chunks would silently
+        raise every score and merge more aggressively than anyone asked for.
+        Once the column is gone every node scores from its chunks instead, as
+        the best of them — the same max-pool quantity the vector channel uses.
+        Nothing is lost in the handover: while the column exists a node only
+        ever has chunks if it also has a legacy vector, so the set of nodes this
+        can match is the same on both sides of the drop.
+        """
 
         self._validate_level(level)
         if not embedding or limit <= 0:
             return []
 
-        clauses = ["level = ?", "decayed = 0", "embedding IS NOT NULL"]
+        legacy_embedding = self._node_embedding_column_present()
+        chunk_scores: dict[str, float] = {}
+        if not legacy_embedding:
+            chunk_scores = self._chunk_max_pool_scores(
+                embedding,
+                level=level,
+                scope=scope,
+                exclude_scope=exclude_scope,
+                scope_prefix=scope_prefix,
+            )
+
+        clauses = ["level = ?", "decayed = 0"]
         params: list[Any] = [level]
-        if scope is not None:
-            clauses.append("scope = ?")
-            params.append(scope)
-        if exclude_scope is not None:
-            clauses.append("scope != ?")
-            params.append(exclude_scope)
-        if scope_prefix is not None:
-            upper_bound = _prefix_upper_bound(scope_prefix)
-            clauses.append("scope >= ?")
-            params.append(scope_prefix)
-            if upper_bound is not None:
-                clauses.append("scope < ?")
-                params.append(upper_bound)
+        if legacy_embedding:
+            clauses.append("embedding IS NOT NULL")
+        scope_clauses, scope_params = self._scope_filter(
+            scope=scope, exclude_scope=exclude_scope, scope_prefix=scope_prefix
+        )
+        clauses.extend(scope_clauses)
+        params.extend(scope_params)
 
         rows = self._conn.execute(
             f"""
@@ -1330,7 +2026,10 @@ class MemoryStore:
         matches: list[tuple[Node, float]] = []
         for row in rows:
             node = _node_from_row(row)
-            score = cosine_similarity(embedding, node.embedding)
+            if legacy_embedding:
+                score = cosine_similarity(embedding, node.embedding)
+            else:
+                score = chunk_scores.get(node.id, 0.0)
             if score >= threshold:
                 matches.append((node, score))
 
@@ -1493,11 +2192,34 @@ class MemoryStore:
             deficit -= taken
 
     def _has_vector_evidence(self, scope: str) -> bool:
+        """Whether ``scope`` has anything for the vector channel to match on.
+
+        True for either storage shape, so the weight floors keep answering the
+        same question across the rollout: a scope whose nodes are chunked but
+        whose legacy column was dropped still has vector evidence, and a scope
+        on a pre-v6 file still has it through the JSON column.
+        """
+
+        if self._node_embedding_column_present():
+            row = self._conn.execute(
+                """
+                SELECT 1
+                FROM nodes
+                WHERE scope = ? AND decayed = 0 AND embedding IS NOT NULL
+                LIMIT 1
+                """,
+                (scope,),
+            ).fetchone()
+            if row is not None:
+                return True
+        if not self._chunk_table_present():
+            return False
         row = self._conn.execute(
-            """
+            f"""
             SELECT 1
-            FROM nodes
-            WHERE scope = ? AND decayed = 0 AND embedding IS NOT NULL
+            FROM {CHUNK_EMBEDDING_TABLE} c
+            JOIN nodes n ON n.id = c.node_id
+            WHERE n.scope = ? AND n.decayed = 0
             LIMIT 1
             """,
             (scope,),
@@ -1525,6 +2247,7 @@ class MemoryStore:
             self._migrate_pre_v3_schema()
             self._migrate_pre_v4_schema()
             self._migrate_pre_v5_schema()
+            self._migrate_pre_v6_schema()
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -1607,6 +2330,30 @@ class MemoryStore:
                     UNIQUE(source_id, target_id, type)
                 );
 
+                -- Per-chunk embeddings (schema v6): many float32 little-endian
+                -- BLOB vectors per node, replacing the single JSON-text vector
+                -- in nodes.embedding. `dimensions` is recorded rather than
+                -- inferred from the blob length, and `content_fingerprint` is
+                -- the parent's fingerprint at embed time so an edit to the
+                -- parent's content is detectable without re-embedding.
+                -- Node deletion is soft (soft_delete_node only sets decayed=1),
+                -- so a chunk row outliving its node's usefulness is normal:
+                -- readers must join nodes and filter decayed = 0 rather than
+                -- treat row presence as liveness.
+                CREATE TABLE IF NOT EXISTS node_chunk_embeddings (
+                    id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL REFERENCES nodes(id),
+                    chunk_index INTEGER NOT NULL,
+                    dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+                    embedding BLOB NOT NULL,
+                    token_start INTEGER NOT NULL,
+                    token_end INTEGER NOT NULL,
+                    content_fingerprint TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(node_id, chunk_index)
+                );
+
                 CREATE TABLE IF NOT EXISTS recall_events (
                     id TEXT PRIMARY KEY,
                     query TEXT NOT NULL,
@@ -1672,9 +2419,22 @@ class MemoryStore:
                     ON nodes(scope, content)
                     WHERE level IN ('concept', 'schema') AND decayed = 0;
 
-                CREATE INDEX IF NOT EXISTS idx_nodes_embedded_active_scope
-                    ON nodes(level, scope)
-                    WHERE decayed = 0 AND embedding IS NOT NULL;
+                -- Chunk-scan driver (iter_chunk_embedding_rows), the v6 mirror
+                -- of idx_nodes_embedded_active_scope. That index exists so the
+                -- vector channel can enumerate one scope's embedded active
+                -- nodes without touching the table, and it cannot serve the
+                -- chunk scan: it leads with `level` while the chunk scan always
+                -- filters `scope` and only sometimes `level`, and its
+                -- `embedding IS NOT NULL` predicate names the very column v6
+                -- replaces (and a later operator step drops). Carrying `id`
+                -- makes the range covering, so the scan walks a scope's active
+                -- nodes index-only and probes UNIQUE(node_id, chunk_index) once
+                -- per node — which also yields chunks in ordinal order with no
+                -- sort. Partial on decayed = 0 because chunk rows outlive their
+                -- node's soft delete and liveness only lives here.
+                CREATE INDEX IF NOT EXISTS idx_nodes_active_scope_level
+                    ON nodes(scope, level, id)
+                    WHERE decayed = 0;
 
                 CREATE INDEX IF NOT EXISTS idx_nodes_level_scope_active
                     ON nodes(level, scope)
@@ -1733,6 +2493,7 @@ class MemoryStore:
                     ON recall_events(fingerprint, created_at DESC);
                 """
             )
+            self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
             self._backfill_recall_fingerprint_signal()
             self._conn.execute(
@@ -1795,6 +2556,48 @@ class MemoryStore:
             self._conn.execute(
                 "ALTER TABLE recall_events ADD COLUMN gated INTEGER NOT NULL DEFAULT 0"
             )
+
+    def _migrate_pre_v6_schema(self) -> None:
+        """Reconcile the legacy embedding index for DBs created at schema_version <= 5.
+
+        The ``node_chunk_embeddings`` table itself is created by the
+        ``CREATE TABLE IF NOT EXISTS`` script below — a pre-v6 database and a
+        fresh one need the same DDL, so duplicating it here would be two copies
+        to keep in step.
+
+        What the script cannot do is survive the *other* half of v6:
+        ``idx_nodes_embedded_active_scope`` is partial on
+        ``embedding IS NOT NULL``, so once an operator runs
+        :meth:`drop_node_embedding_column` a plain ``CREATE INDEX IF NOT
+        EXISTS`` for it raises ``no such column: embedding`` and the database
+        can never be reopened. Creating that index moved to
+        ``_create_legacy_embedding_index``, which runs only while the column is
+        there; this migration drops the stale index object if a database still
+        carries one without the column. Self-guarding and idempotent, like its
+        siblings.
+        """
+
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='nodes'"
+        ).fetchone()
+        if row is None:
+            return
+        if self._node_embedding_column_present():
+            return
+        self._conn.execute("DROP INDEX IF EXISTS idx_nodes_embedded_active_scope")
+
+    def _create_legacy_embedding_index(self) -> None:
+        """Create the pre-chunk vector index, but only while its column exists."""
+
+        if not self._node_embedding_column_present():
+            return
+        self._conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_nodes_embedded_active_scope
+                ON nodes(level, scope)
+                WHERE decayed = 0 AND embedding IS NOT NULL
+            """
+        )
 
     def _backfill_missing_content_fingerprints(self) -> None:
         """Compute SHA-256 fingerprints for any rows still missing one.
@@ -2113,6 +2916,36 @@ def _rejected_alternative_content(approach: str, reason: str) -> str:
     return f"Rejected alternative: {approach}\nRejected because: {reason}"
 
 
+def _chunk_embedding_from_row(row: sqlite3.Row) -> NodeChunkEmbedding:
+    dimensions = int(row["dimensions"])
+    return NodeChunkEmbedding(
+        id=str(row["id"]),
+        node_id=str(row["node_id"]),
+        chunk_index=int(row["chunk_index"]),
+        dimensions=dimensions,
+        embedding=unpack_chunk_embedding(row["embedding"], dimensions),
+        token_start=int(row["token_start"]),
+        token_end=int(row["token_end"]),
+        content_fingerprint=str(row["content_fingerprint"]),
+        created_at=str(row["created_at"]),
+        updated_at=str(row["updated_at"]),
+    )
+
+
+def _row_value(row: sqlite3.Row, column: str, default: Any = None) -> Any:
+    """Read a column that a given schema shape may not have.
+
+    ``sqlite3.Row`` raises ``IndexError`` for an absent column, and after the
+    operator drops ``nodes.embedding`` every ``SELECT *`` over nodes comes back
+    without it.
+    """
+
+    try:
+        return row[column]
+    except IndexError:
+        return default
+
+
 def _node_from_row(row: sqlite3.Row) -> Node:
     source_traces = _json_loads(row["source_traces"], [])
     corrections = _json_loads(row["corrections"], [])
@@ -2124,7 +2957,7 @@ def _node_from_row(row: sqlite3.Row) -> Node:
         id=str(row["id"]),
         level=row["level"],
         content=str(row["content"]),
-        embedding=_json_loads(row["embedding"], None),
+        embedding=_json_loads(_row_value(row, "embedding"), None),
         context=_json_loads(row["context"], {}),
         scope=str(row["scope"]),
         agent=row["agent"],

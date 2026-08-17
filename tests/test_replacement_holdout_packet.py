@@ -32,8 +32,10 @@ PACKET_ROOT = ROOT / "artifacts/animal-planet"
 REPLACEMENT_ROOT = PACKET_ROOT / "evaluation/replacement-holdout"
 BUILD = REPLACEMENT_ROOT / "recipe/build.py"
 VERIFY = REPLACEMENT_ROOT / "recipe/verify.py"
-STAGING = Path("/home/sfx/.cache/ap-audit/staging")
-SNAPSHOT = Path("/tmp/lm-shadow-eval.O3vX3k/global.sqlite3")
+STAGING = Path(os.environ.get("LM_AP_STAGING") or "/home/sfx/.cache/ap-audit/staging")
+SNAPSHOT = Path(
+    os.environ.get("LM_AP_SNAPSHOT") or "/tmp/lm-shadow-eval.O3vX3k/global.sqlite3"
+)
 ORIGINAL_MANIFEST = PACKET_ROOT / "manifest.json"
 SPLITS = PACKET_ROOT / "corpus/splits.json"
 START = "2026-08-12T23:13:24Z"
@@ -116,6 +118,64 @@ class _KeyedFixture:
         return "<keyed-fixture>"
 
 
+def _missing_external_sources() -> list[str]:
+    """External, out-of-repo inputs this packet is pinned to, that are absent."""
+
+    return [
+        f"{name} ({path})"
+        for name, path in (("staging", STAGING), ("snapshot", SNAPSHOT))
+        if not path.exists()
+    ]
+
+
+def _require_external_sources() -> None:
+    """Skip — not error — when the pinned out-of-repo inputs are unavailable.
+
+    ``recipe/build.py`` and ``recipe/verify.py`` pin the shadow-eval snapshot by
+    exact sha256 (``SNAPSHOT_SHA256``, 492,367,872 bytes), and that snapshot was
+    an ephemeral ``/tmp`` copy of the *local* live database, checkpointed and
+    integrity-checked on the copy — see ``evaluation/original-holdout-report.md``
+    "End-to-end real-workflow shadow".  (The ``source_host: alt`` capture in
+    ``staging/alt-db/snapshot.json`` is a *different*, smaller file: it is where
+    the pinned recall-event export came from, not this SQLite snapshot.)
+
+    Once ``/tmp`` is cleared the file is gone for good.  It cannot be re-captured
+    even though its source was local, because a byte-exact re-copy would have to
+    reproduce the live database as it stood on 2026-08-12; that database is
+    mutated continuously by the running server and has since grown well past the
+    pinned size.  ``build.py`` raises ``snapshot_hash_mismatch`` on any other
+    file, and the packet's frozen aggregates derive from that exact state, so
+    re-pinning to a fresh capture would contradict every count in
+    ``manifest.json``.
+
+    These are therefore machine-local integration tests whose fixture can be
+    absent.  Absent fixture means "cannot verify here", which is a skip; erroring
+    would paint the whole suite red for every unrelated change.  Point
+    ``LM_AP_SNAPSHOT``/``LM_AP_STAGING`` at restored copies to re-enable them.
+    """
+
+    missing = _missing_external_sources()
+    if missing:
+        pytest.skip(
+            "replacement-holdout packet inputs unavailable: "
+            + ", ".join(missing)
+            + "; set LM_AP_SNAPSHOT/LM_AP_STAGING to restored copies to run these tests"
+        )
+
+
+def _build_source_args() -> list[str]:
+    """``build.py`` options pinning it to the same inputs as the tests.
+
+    ``build.py`` is itself hash-pinned (``BUILDER_SHA256`` in ``verify.py``) and
+    must not be edited, so the overridable paths are forwarded to it instead of
+    relying on its hardcoded defaults.  ``_add_source_arguments`` registers these
+    on each subparser, so they must follow ``draft``/``freeze`` on the command
+    line, not precede it.
+    """
+
+    return ["--staging", os.fspath(STAGING), "--snapshot", os.fspath(SNAPSHOT)]
+
+
 def _json_line(value: dict) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n"
 
@@ -134,6 +194,7 @@ def _bucket(event_id: str) -> int:
 
 
 def _raw_events(snapshot: Path = SNAPSHOT) -> list[dict]:
+    _require_external_sources()
     connection = sqlite3.connect(f"file:{snapshot}?mode=ro&immutable=1", uri=True)
     connection.row_factory = sqlite3.Row
     try:
@@ -356,9 +417,12 @@ def _run_sealed(packet: Path, *, original_manifest: Path = ORIGINAL_MANIFEST) ->
 
 @pytest.fixture(scope="session")
 def keyed_base(tmp_path_factory: pytest.TempPathFactory) -> _KeyedFixture:
+    _require_external_sources()
     root = tmp_path_factory.mktemp("replacement-keyed")
     draft = root / "draft"
-    built = _run([sys.executable, os.fspath(BUILD), "draft", "--draft-dir", os.fspath(draft)])
+    built = _run(
+        [sys.executable, os.fspath(BUILD), "draft", *_build_source_args(), "--draft-dir", os.fspath(draft)]
+    )
     assert built.returncode == 0
     _make_writable(draft)
     (draft / "manifest.json").unlink()
@@ -369,6 +433,7 @@ def keyed_base(tmp_path_factory: pytest.TempPathFactory) -> _KeyedFixture:
 
 @pytest.fixture(scope="session")
 def sealed_base(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    _require_external_sources()
     root = tmp_path_factory.mktemp("replacement-sealed")
     publish = root / "packet"
     (publish / "recipe").mkdir(parents=True)
@@ -378,7 +443,7 @@ def sealed_base(tmp_path_factory: pytest.TempPathFactory) -> Path:
     shutil.copy2(REPLACEMENT_ROOT / "POLICY.md", publish / "POLICY.md")
     digest = hashlib.sha256(VERIFY.read_bytes()).hexdigest()
     result = _run([
-        sys.executable, os.fspath(BUILD), "freeze",
+        sys.executable, os.fspath(BUILD), "freeze", *_build_source_args(),
         "--draft-dir", os.fspath(root / "draft"),
         "--publish-dir", os.fspath(publish),
         "--verifier-sha256", digest,

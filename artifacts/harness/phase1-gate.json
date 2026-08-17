@@ -1,0 +1,1169 @@
+{
+  "gate": "phase-1: chunked embeddings + float32 BLOB storage + max-pool vector channel",
+  "gates": {
+    "cold_vector_init_below_200ms": {
+      "ceiling_ms": 200.0,
+      "pass": true,
+      "phase1_ms_median": 104.84,
+      "phase1_rows_loaded": 60530,
+      "pre_change_ms_median": 700.7,
+      "pre_change_rows_loaded": 12829
+    },
+    "no_new_test_failures": {
+      "pass": true,
+      "phase1": {
+        "commit": "b267569",
+        "errors": 0,
+        "failed": 0,
+        "note": "the same 82 are now skips in the same file (6 passed, 82 skipped when run alone)",
+        "passed": 788,
+        "seconds": [
+          64.78,
+          64.03
+        ],
+        "skipped": 82
+      },
+      "recorded_head_baseline": {
+        "commit": "5996314",
+        "errors": 81,
+        "failed": 1,
+        "note": "all 82 problems in tests/test_replacement_holdout_packet.py",
+        "passed": 640
+      }
+    },
+    "overall_hit@5_not_below_baseline": {
+      "baseline": 0.525641,
+      "delta": 0.051282,
+      "pass": true,
+      "phase1": 0.576923
+    },
+    "overall_mrr_not_below_baseline": {
+      "baseline": 0.323804,
+      "delta": 0.030125,
+      "pass": true,
+      "phase1": 0.353929
+    },
+    "recall_p50_within_allowance": {
+      "allowance_ms": 5.0,
+      "delta_ms": -7.692,
+      "n_per_arm": 702,
+      "pass": true,
+      "phase1_p50_ms": 184.385,
+      "pre_change_p50_ms": 192.077
+    },
+    "regression_test_fails_on_old_code": {
+      "pass": true,
+      "phase1_commit": "b267569",
+      "phase1_result": "3 passed in 9.51s",
+      "pre_change_commit": "8b93e8d",
+      "pre_change_result": "2 failed, 1 passed in 9.90s",
+      "test": "tests/test_chunk_tail_regression.py"
+    },
+    "stored_embedding_bytes_below_ceiling": {
+      "ceiling_bytes": 134600000,
+      "chunk_blob_bytes": 92974080,
+      "chunk_rows": 60530,
+      "legacy_json_bytes": 134788051,
+      "pass": true,
+      "ratio_of_legacy": 0.6898
+    },
+    "tail_hit@5_clear_rise": {
+      "baseline": 0.076923,
+      "baseline_hits": 2,
+      "delta": 0.307692,
+      "items": 26,
+      "pass": true,
+      "phase1": 0.384615,
+      "phase1_hits": 10
+    },
+    "tail_mrr_clear_rise": {
+      "baseline": 0.046154,
+      "delta": 0.157784,
+      "pass": true,
+      "phase1": 0.203938
+    }
+  },
+  "generated_at": "2026-08-17T20:55:00Z",
+  "performance": {
+    "cold_vector_init": {
+      "method": "fresh MemoryRecallService over an already-open store, corpus load called directly, no encoder involved; 5 repetitions, fresh service each time",
+      "phase1": {
+        "(all scopes)": {
+          "ms_all": [
+            135.96,
+            104.84,
+            102.58,
+            106.78,
+            100.99
+          ],
+          "ms_max": 135.96,
+          "ms_median": 104.84,
+          "ms_min": 100.99,
+          "rows_loaded": 60530
+        },
+        "global": {
+          "ms_all": [
+            11.86,
+            10.98,
+            11.05,
+            11.45,
+            11.52
+          ],
+          "ms_max": 11.86,
+          "ms_median": 11.45,
+          "ms_min": 10.98,
+          "rows_loaded": 5237
+        },
+        "project:ae": {
+          "ms_all": [
+            28.15,
+            25.11,
+            24.72,
+            25.55,
+            25.97
+          ],
+          "ms_max": 28.15,
+          "ms_median": 25.55,
+          "ms_min": 24.72,
+          "rows_loaded": 12146
+        },
+        "project:lm": {
+          "ms_all": [
+            8.63,
+            8.87,
+            8.69,
+            8.34,
+            9.48
+          ],
+          "ms_max": 9.48,
+          "ms_median": 8.69,
+          "ms_min": 8.34,
+          "rows_loaded": 3577
+        },
+        "project:octopus": {
+          "ms_all": [
+            31.19,
+            27.23,
+            27.2,
+            27.16,
+            31.64
+          ],
+          "ms_max": 31.64,
+          "ms_median": 27.23,
+          "ms_min": 27.16,
+          "rows_loaded": 13001
+        },
+        "project:online": {
+          "ms_all": [
+            29.35,
+            26.61,
+            26.04,
+            27.29,
+            27.35
+          ],
+          "ms_max": 29.35,
+          "ms_median": 27.29,
+          "ms_min": 26.04,
+          "rows_loaded": 11477
+        },
+        "project:x": {
+          "ms_all": [
+            56.64,
+            34.23,
+            33.92,
+            34.66,
+            34.72
+          ],
+          "ms_max": 56.64,
+          "ms_median": 34.66,
+          "ms_min": 33.92,
+          "rows_loaded": 13861
+        }
+      },
+      "phase1_path": "chunk BLOB matrix (_build_chunk_index)",
+      "pre_change": {
+        "(all scopes)": {
+          "ms_all": [
+            715.03,
+            698.59,
+            699.52,
+            700.7,
+            710.42
+          ],
+          "ms_max": 715.03,
+          "ms_median": 700.7,
+          "ms_min": 698.59,
+          "rows_loaded": 12829
+        },
+        "global": {
+          "ms_all": [
+            45.24,
+            44.29,
+            44.95,
+            44.17,
+            44.35
+          ],
+          "ms_max": 45.24,
+          "ms_median": 44.35,
+          "ms_min": 44.17,
+          "rows_loaded": 803
+        },
+        "project:ae": {
+          "ms_all": [
+            108.06,
+            108.72,
+            106.04,
+            108.57,
+            107.66
+          ],
+          "ms_max": 108.72,
+          "ms_median": 108.06,
+          "ms_min": 106.04,
+          "rows_loaded": 1945
+        },
+        "project:lm": {
+          "ms_all": [
+            53.95,
+            53.82,
+            54.29,
+            53.42,
+            53.25
+          ],
+          "ms_max": 54.29,
+          "ms_median": 53.82,
+          "ms_min": 53.25,
+          "rows_loaded": 977
+        },
+        "project:octopus": {
+          "ms_all": [
+            158.24,
+            159.02,
+            155.48,
+            159.93,
+            157.77
+          ],
+          "ms_max": 159.93,
+          "ms_median": 158.24,
+          "ms_min": 155.48,
+          "rows_loaded": 2877
+        },
+        "project:online": {
+          "ms_all": [
+            162.66,
+            160.81,
+            161.1,
+            166.32,
+            160.46
+          ],
+          "ms_max": 166.32,
+          "ms_median": 161.1,
+          "ms_min": 160.46,
+          "rows_loaded": 2959
+        },
+        "project:x": {
+          "ms_all": [
+            169.59,
+            167.02,
+            170.97,
+            171.32,
+            168.38
+          ],
+          "ms_max": 171.32,
+          "ms_median": 169.59,
+          "ms_min": 167.02,
+          "rows_loaded": 3058
+        }
+      },
+      "pre_change_path": "nodes.embedding JSON (_scan_scope_embeddings)"
+    },
+    "database_file_size": {
+      "after_backfill_bytes": 664449024,
+      "after_drop_and_vacuum_bytes": 499453952,
+      "before_migration_bytes": 532840448,
+      "net_change_bytes": -33386496
+    },
+    "embedding_storage": {
+      "bytes_ratio": 0.6898,
+      "chunk_blobs": {
+        "bytes": 92974080,
+        "bytes_per_vector": 1536.0,
+        "chunks_per_node": 4.71,
+        "dimensions": [
+          384
+        ],
+        "max_chunks_in_one_node": 485,
+        "nodes": 12862,
+        "rows": 60530
+      },
+      "legacy_json": {
+        "bytes": 134788051,
+        "bytes_per_vector": 8116.8,
+        "rows": 16606
+      },
+      "live_database_json_bytes": 134844299,
+      "vectors_ratio": 3.65
+    },
+    "recall_latency": {
+      "method": "one process, one store, one service; encoder warmed and one untimed recall first; then every goldset query in query_id order, 3 repetitions, log_access and log_event left on; same snapshot for both arms",
+      "n_per_arm": 702,
+      "phase1_ms": {
+        "max": 1428.863,
+        "mean": 292.405,
+        "min": 58.507,
+        "p50": 184.385,
+        "p90": 644.328,
+        "p99": 855.808
+      },
+      "phase1_p50_per_rep": [
+        182.955,
+        182.946,
+        186.355
+      ],
+      "pre_change_ms": {
+        "max": 1510.903,
+        "mean": 300.396,
+        "min": 52.212,
+        "p50": 192.077,
+        "p90": 662.138,
+        "p99": 912.741
+      },
+      "pre_change_p50_per_rep": [
+        191.274,
+        190.046,
+        195.387
+      ],
+      "queries": 234,
+      "query_encode_only_ms": {
+        "mean": 9.949,
+        "n": 702,
+        "p50": 9.784,
+        "p90": 11.99
+      },
+      "reps": 3
+    }
+  },
+  "provenance": {
+    "baseline_report": {
+      "frozen": true,
+      "metrics_block_sha256": "e942ed41c9a2dc3098ca28735d48443f71b61d29dd2e15837282af34f926d007",
+      "path": "artifacts/harness/baseline.json",
+      "sha256": "a708a3b7885712dae7d24300aac021ffeb6496331667df9fc762cdc395037a50"
+    },
+    "goldset": {
+      "frozen": true,
+      "items": 234,
+      "path": "artifacts/harness/goldset.jsonl",
+      "sha256": "af40cb0da26fa78c5c477747357beec518053b01a2daa7e875338acc47c95612",
+      "tail_items": 26
+    },
+    "harness_version": 1,
+    "live_database": {
+      "mutated": false,
+      "note": "no backfill and no column drop was run against the live database",
+      "opened": "read-only (file:...?mode=ro) for counting only",
+      "path": "/home/sfx/.local/share/living-memory/global.sqlite3",
+      "schema_version": "5"
+    },
+    "phase1_commit": "b2675698125767b45fd6c8c0bd088733bcba30dc",
+    "pre_change_commit": "8b93e8d5d4c5f3af04fa8abaa8913990dfa48207",
+    "pre_change_commit_role": "parent of the max-pool commit: same schema v6 storage and chunk-writing write path, single-vector vector channel",
+    "repo": "/home/sfx/p/lm",
+    "snapshots": {
+      "fresh": {
+        "bytes": 532840448,
+        "captured_at": "2026-08-17T20:10:12Z",
+        "path": "/home/sfx/.cache/living-memory-harness/phase1/fresh.sqlite3",
+        "role": "fresh backup-API snapshot of the live database, taken for this gate",
+        "row_counts": {
+          "active_nodes": 12871,
+          "connections": 143016,
+          "nodes": 16692,
+          "recall_events": 54785
+        },
+        "sha256": "752ff825a6038d6b9a659a4537f1d4490208ac2835a479e9a893c82eaed0f65d"
+      },
+      "fresh_chunked": {
+        "backfill": {
+          "assumed_rate": null,
+          "backup": {
+            "backup_nodes": 16692,
+            "bytes": 532840448,
+            "created": false,
+            "path": "/home/sfx/.cache/living-memory-harness/phase1/fresh.sqlite3",
+            "quick_check": "ok",
+            "seconds": 0.0,
+            "source_nodes": 16692
+          },
+          "busy_retries": 0,
+          "chunk_bytes_total": 93057024,
+          "chunk_bytes_written": 93057024,
+          "chunk_rows_total": 60584,
+          "chunk_writes": 12871,
+          "chunks_per_second": 82.29,
+          "chunks_written": 60584,
+          "complete": true,
+          "db": "/home/sfx/.cache/living-memory-harness/phase1/fresh-chunked.sqlite3",
+          "elapsed_seconds": 736.212,
+          "embedding_backend": "sentence-transformers",
+          "embedding_dimensions": 384,
+          "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
+          "max_chunks_in_one_node": 485,
+          "mode": "backfill",
+          "node_embedding_column_present": true,
+          "nodes_per_second": 17.48,
+          "nodes_processed": 12871,
+          "nodes_rechunked_after_content_change": 0,
+          "nodes_skipped_attempt_limit": 0,
+          "nodes_skipped_no_chunks": 0,
+          "nodes_skipped_no_fingerprint": 0,
+          "nodes_vanished": 0,
+          "nodes_written": 12871,
+          "pending_after": 0,
+          "pending_before": 12871,
+          "projected_seconds": null,
+          "started_at": "2026-08-17T20:22:50Z",
+          "tokenizer": "model:paraphrase-multilingual-MiniLM-L12-v2",
+          "zero_vector_chunks": 0
+        },
+        "bytes_after_backfill": 664449024,
+        "path": "/home/sfx/.cache/living-memory-harness/phase1/fresh-chunked.sqlite3",
+        "role": "drift check, then the nodes.embedding drop rehearsal"
+      },
+      "frozen_baseline": {
+        "bytes": 532647936,
+        "captured_at": "2026-08-17T17:59:08Z",
+        "path": "/home/sfx/.cache/living-memory-harness/snapshot.sqlite3",
+        "role": "the bytes baseline.json was measured on; re-verified unchanged",
+        "row_counts": {
+          "active_nodes": 12862,
+          "connections": 142906,
+          "nodes": 16683,
+          "recall_events": 54777
+        },
+        "sha256": "d46f1b845adc3d806ec5cb7f593438f723bdf2b7c491c0f47aa92e4ef20bd75d"
+      },
+      "frozen_baseline_chunked": {
+        "backfill": {
+          "assumed_rate": null,
+          "backup": {
+            "backup_nodes": 16683,
+            "bytes": 532647936,
+            "created": false,
+            "path": "/home/sfx/.cache/living-memory-harness/snapshot.sqlite3",
+            "quick_check": "ok",
+            "seconds": 0.0,
+            "source_nodes": 16683
+          },
+          "busy_retries": 0,
+          "chunk_bytes_total": 92974080,
+          "chunk_bytes_written": 92974080,
+          "chunk_rows_total": 60530,
+          "chunk_writes": 12862,
+          "chunks_per_second": 81.08,
+          "chunks_written": 60530,
+          "complete": true,
+          "db": "/home/sfx/.cache/living-memory-harness/phase1/frozen-chunked.sqlite3",
+          "elapsed_seconds": 746.552,
+          "embedding_backend": "sentence-transformers",
+          "embedding_dimensions": 384,
+          "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
+          "max_chunks_in_one_node": 485,
+          "mode": "backfill",
+          "node_embedding_column_present": true,
+          "nodes_per_second": 17.23,
+          "nodes_processed": 12862,
+          "nodes_rechunked_after_content_change": 0,
+          "nodes_skipped_attempt_limit": 0,
+          "nodes_skipped_no_chunks": 0,
+          "nodes_skipped_no_fingerprint": 0,
+          "nodes_vanished": 0,
+          "nodes_written": 12862,
+          "pending_after": 0,
+          "pending_before": 12862,
+          "projected_seconds": null,
+          "started_at": "2026-08-17T20:10:18Z",
+          "tokenizer": "model:paraphrase-multilingual-MiniLM-L12-v2",
+          "zero_vector_chunks": 0
+        },
+        "bytes": 664096768,
+        "path": "/home/sfx/.cache/living-memory-harness/phase1/frozen-chunked.sqlite3",
+        "role": "primary gate snapshot: same bytes as the baseline plus chunk embeddings",
+        "schema_version": "6",
+        "sha256": "cc1675fba54e5d5399660e0b3e805c2e5b72327071cf0945bad1ef6f9fa2fee0"
+      }
+    }
+  },
+  "quality": {
+    "buckets": [
+      {
+        "baseline": {
+          "hit@1": 0.175214,
+          "hit@10": 0.688034,
+          "hit@5": 0.525641,
+          "mrr": 0.323804
+        },
+        "bucket": "overall",
+        "delta": {
+          "hit@1": 0.01282,
+          "hit@10": 0.038462,
+          "hit@5": 0.051282,
+          "mrr": 0.030125
+        },
+        "items": 234,
+        "phase1": {
+          "hit@1": 0.188034,
+          "hit@10": 0.726496,
+          "hit@5": 0.576923,
+          "mrr": 0.353929
+        }
+      },
+      {
+        "baseline": {
+          "hit@1": 0.23125,
+          "hit@10": 0.9,
+          "hit@5": 0.69375,
+          "mrr": 0.422359
+        },
+        "bucket": "stratum:content_grounded",
+        "delta": {
+          "hit@1": 0.01875,
+          "hit@10": -0.01875,
+          "hit@5": 0.025,
+          "mrr": 0.021689
+        },
+        "items": 160,
+        "phase1": {
+          "hit@1": 0.25,
+          "hit@10": 0.88125,
+          "hit@5": 0.71875,
+          "mrr": 0.444048
+        }
+      },
+      {
+        "baseline": {
+          "hit@1": 0.0,
+          "hit@10": 0.184211,
+          "hit@5": 0.105263,
+          "mrr": 0.057456
+        },
+        "bucket": "stratum:cross_lingual",
+        "delta": {
+          "hit@1": 0.0,
+          "hit@10": 0.0,
+          "hit@5": 0.0,
+          "mrr": -0.012646
+        },
+        "items": 38,
+        "phase1": {
+          "hit@1": 0.0,
+          "hit@10": 0.184211,
+          "hit@5": 0.105263,
+          "mrr": 0.04481
+        }
+      },
+      {
+        "baseline": {
+          "hit@1": 0.111111,
+          "hit@10": 0.277778,
+          "hit@5": 0.222222,
+          "mrr": 0.166931
+        },
+        "bucket": "stratum:role_query",
+        "delta": {
+          "hit@1": 0.0,
+          "hit@10": 0.333333,
+          "hit@5": 0.222222,
+          "mrr": 0.112765
+        },
+        "items": 36,
+        "phase1": {
+          "hit@1": 0.111111,
+          "hit@10": 0.611111,
+          "hit@5": 0.444444,
+          "mrr": 0.279696
+        }
+      },
+      {
+        "baseline": {
+          "hit@1": 0.038462,
+          "hit@10": 0.076923,
+          "hit@5": 0.076923,
+          "mrr": 0.046154
+        },
+        "bucket": "tail",
+        "delta": {
+          "hit@1": 0.0,
+          "hit@10": 0.461539,
+          "hit@5": 0.307692,
+          "mrr": 0.157784
+        },
+        "items": 26,
+        "phase1": {
+          "hit@1": 0.038462,
+          "hit@10": 0.538462,
+          "hit@5": 0.384615,
+          "mrr": 0.203938
+        }
+      },
+      {
+        "baseline": {
+          "hit@1": 0.15812,
+          "hit@10": 0.688034,
+          "hit@5": 0.57265,
+          "mrr": 0.32101
+        },
+        "bucket": "channel:bm25",
+        "delta": {
+          "hit@1": 0.021367,
+          "hit@10": 0.038462,
+          "hit@5": -0.004274,
+          "mrr": 0.020953
+        },
+        "items": 234,
+        "phase1": {
+          "hit@1": 0.179487,
+          "hit@10": 0.726496,
+          "hit@5": 0.568376,
+          "mrr": 0.341963
+        }
+      },
+      {
+        "baseline": {
+          "hit@1": 0.153846,
+          "hit@10": 0.688034,
+          "hit@5": 0.521368,
+          "mrr": 0.305937
+        },
+        "bucket": "channel:graph",
+        "delta": {
+          "hit@1": 0.047009,
+          "hit@10": 0.038462,
+          "hit@5": 0.038461,
+          "mrr": 0.047539
+        },
+        "items": 234,
+        "phase1": {
+          "hit@1": 0.200855,
+          "hit@10": 0.726496,
+          "hit@5": 0.559829,
+          "mrr": 0.353476
+        }
+      },
+      {
+        "baseline": {
+          "hit@1": 0.162393,
+          "hit@10": 0.688034,
+          "hit@5": 0.525641,
+          "mrr": 0.31483
+        },
+        "bucket": "channel:trigger",
+        "delta": {
+          "hit@1": 0.012821,
+          "hit@10": 0.038462,
+          "hit@5": 0.051282,
+          "mrr": 0.030125
+        },
+        "items": 234,
+        "phase1": {
+          "hit@1": 0.175214,
+          "hit@10": 0.726496,
+          "hit@5": 0.576923,
+          "mrr": 0.344955
+        }
+      },
+      {
+        "baseline": {
+          "hit@1": 0.175214,
+          "hit@10": 0.683761,
+          "hit@5": 0.538462,
+          "mrr": 0.332545
+        },
+        "bucket": "channel:vector",
+        "delta": {
+          "hit@1": -0.008547,
+          "hit@10": 0.042735,
+          "hit@5": 0.047008,
+          "mrr": 0.009812
+        },
+        "items": 234,
+        "phase1": {
+          "hit@1": 0.166667,
+          "hit@10": 0.726496,
+          "hit@5": 0.58547,
+          "mrr": 0.342357
+        }
+      }
+    ],
+    "channel_attribution": {
+      "baseline": {
+        "items_with_relevant_hit": 161,
+        "method_share": {
+          "bm25": 0.639752,
+          "graph": 0.192547,
+          "trigger": 0.198758,
+          "vector": 0.925466
+        },
+        "methods": {
+          "bm25": 103,
+          "graph": 31,
+          "trigger": 32,
+          "vector": 149
+        }
+      },
+      "phase1": {
+        "items_with_relevant_hit": 170,
+        "method_share": {
+          "bm25": 0.617647,
+          "graph": 0.288235,
+          "trigger": 0.188235,
+          "vector": 0.947059
+        },
+        "methods": {
+          "bm25": 105,
+          "graph": 49,
+          "trigger": 32,
+          "vector": 161
+        }
+      }
+    },
+    "control_arm": {
+      "description": "pre-change code on the chunked baseline snapshot",
+      "identical_to_committed_baseline": true,
+      "meaning": "adding 60,530 chunk rows changes nothing the pre-change code sees, so every delta below is attributable to the vector channel alone",
+      "metrics_block_bytes": 3613,
+      "metrics_block_sha256": "e942ed41c9a2dc3098ca28735d48443f71b61d29dd2e15837282af34f926d007"
+    },
+    "drift_check_fresh_snapshot": {
+      "buckets": {
+        "content_grounded": {
+          "phase1": {
+            "hit@1": 0.25,
+            "hit@10": 0.88125,
+            "hit@5": 0.71875,
+            "mrr": 0.444117
+          },
+          "pre_change": {
+            "hit@1": 0.23125,
+            "hit@10": 0.9,
+            "hit@5": 0.69375,
+            "mrr": 0.422359
+          }
+        },
+        "cross_lingual": {
+          "phase1": {
+            "hit@1": 0.0,
+            "hit@10": 0.184211,
+            "hit@5": 0.105263,
+            "mrr": 0.04481
+          },
+          "pre_change": {
+            "hit@1": 0.026316,
+            "hit@10": 0.184211,
+            "hit@5": 0.105263,
+            "mrr": 0.070614
+          }
+        },
+        "overall": {
+          "phase1": {
+            "hit@1": 0.188034,
+            "hit@10": 0.726496,
+            "hit@5": 0.576923,
+            "mrr": 0.353977
+          },
+          "pre_change": {
+            "hit@1": 0.179487,
+            "hit@10": 0.688034,
+            "hit@5": 0.525641,
+            "mrr": 0.325941
+          }
+        },
+        "role_query": {
+          "phase1": {
+            "hit@1": 0.111111,
+            "hit@10": 0.611111,
+            "hit@5": 0.444444,
+            "mrr": 0.279696
+          },
+          "pre_change": {
+            "hit@1": 0.111111,
+            "hit@10": 0.277778,
+            "hit@5": 0.222222,
+            "mrr": 0.166931
+          }
+        },
+        "tail": {
+          "phase1": {
+            "hit@1": 0.038462,
+            "hit@10": 0.538462,
+            "hit@5": 0.384615,
+            "mrr": 0.203938
+          },
+          "pre_change": {
+            "hit@1": 0.038462,
+            "hit@10": 0.076923,
+            "hit@5": 0.076923,
+            "mrr": 0.046154
+          }
+        }
+      },
+      "description": "both arms re-run on a snapshot taken 2h34m after the frozen one (9 more active nodes, 8 more recall events)"
+    },
+    "item_movement": {
+      "per_stratum": {
+        "content_grounded": {
+          "better": 43,
+          "items": 160,
+          "lost": 6,
+          "newly_found": 3,
+          "unchanged": 92,
+          "worse": 25
+        },
+        "cross_lingual": {
+          "better": 1,
+          "items": 37,
+          "lost": 1,
+          "newly_found": 1,
+          "unchanged": 30,
+          "worse": 6
+        },
+        "cross_lingual/tail": {
+          "better": 0,
+          "items": 1,
+          "lost": 0,
+          "newly_found": 0,
+          "unchanged": 1,
+          "worse": 0
+        },
+        "role_query": {
+          "better": 0,
+          "items": 11,
+          "lost": 0,
+          "newly_found": 0,
+          "unchanged": 10,
+          "worse": 1
+        },
+        "role_query/tail": {
+          "better": 14,
+          "items": 25,
+          "lost": 1,
+          "newly_found": 13,
+          "unchanged": 10,
+          "worse": 1
+        }
+      },
+      "totals": {
+        "better": 58,
+        "items": 234,
+        "lost": 8,
+        "newly_found": 17,
+        "unchanged": 143,
+        "worse": 33
+      },
+      "worse_items": [
+        {
+          "baseline_rank": 3,
+          "phase1_rank": 10,
+          "query_id": "content_grounded-03e630086d39",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 2,
+          "phase1_rank": 4,
+          "query_id": "content_grounded-1df7dab837be",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 10,
+          "phase1_rank": null,
+          "query_id": "content_grounded-23d6befb7770",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 2,
+          "phase1_rank": 3,
+          "query_id": "content_grounded-301a64526caf",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 1,
+          "phase1_rank": 2,
+          "query_id": "content_grounded-34e479cf33a7",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 5,
+          "phase1_rank": 7,
+          "query_id": "content_grounded-374219e613f8",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 2,
+          "phase1_rank": 3,
+          "query_id": "content_grounded-3d322a2a2a66",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 3,
+          "phase1_rank": 5,
+          "query_id": "content_grounded-5de703f86599",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 1,
+          "phase1_rank": 2,
+          "query_id": "content_grounded-65c55210dc1c",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 4,
+          "phase1_rank": 5,
+          "query_id": "content_grounded-6c85fb8be91b",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 7,
+          "phase1_rank": null,
+          "query_id": "content_grounded-6ee99864ecde",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 4,
+          "phase1_rank": 5,
+          "query_id": "content_grounded-7f08ef1544da",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 2,
+          "phase1_rank": 3,
+          "query_id": "content_grounded-82ee56f152e7",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 2,
+          "phase1_rank": 3,
+          "query_id": "content_grounded-88837f01670e",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 1,
+          "phase1_rank": 2,
+          "query_id": "content_grounded-88e3320f39cb",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 1,
+          "phase1_rank": 4,
+          "query_id": "content_grounded-adb216e3ad49",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 5,
+          "phase1_rank": 8,
+          "query_id": "content_grounded-b270c123f2e7",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 8,
+          "phase1_rank": 10,
+          "query_id": "content_grounded-b59a3c98df9a",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 10,
+          "phase1_rank": null,
+          "query_id": "content_grounded-bb342741bb4c",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 3,
+          "phase1_rank": 5,
+          "query_id": "content_grounded-bb6e47f2a0da",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 6,
+          "phase1_rank": 8,
+          "query_id": "content_grounded-c1e499e02ebe",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 1,
+          "phase1_rank": 2,
+          "query_id": "content_grounded-cee193784b61",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 7,
+          "phase1_rank": null,
+          "query_id": "content_grounded-cffbe45c13d0",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 4,
+          "phase1_rank": null,
+          "query_id": "content_grounded-d9c930b4e5e1",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 9,
+          "phase1_rank": null,
+          "query_id": "content_grounded-f65b3cae8388",
+          "stratum": "content_grounded",
+          "tail": false
+        },
+        {
+          "baseline_rank": 10,
+          "phase1_rank": null,
+          "query_id": "cross_lingual-0081c1ad4b78",
+          "stratum": "cross_lingual",
+          "tail": false
+        },
+        {
+          "baseline_rank": 6,
+          "phase1_rank": 9,
+          "query_id": "cross_lingual-0da0555e4a4f",
+          "stratum": "cross_lingual",
+          "tail": false
+        },
+        {
+          "baseline_rank": 6,
+          "phase1_rank": 8,
+          "query_id": "cross_lingual-6c94c09c3fa3",
+          "stratum": "cross_lingual",
+          "tail": false
+        },
+        {
+          "baseline_rank": 4,
+          "phase1_rank": 5,
+          "query_id": "cross_lingual-93abc3cc4fdc",
+          "stratum": "cross_lingual",
+          "tail": false
+        },
+        {
+          "baseline_rank": 2,
+          "phase1_rank": 3,
+          "query_id": "cross_lingual-bf4bf062a1cb",
+          "stratum": "cross_lingual",
+          "tail": false
+        },
+        {
+          "baseline_rank": 2,
+          "phase1_rank": 3,
+          "query_id": "cross_lingual-d5f8e43b5be9",
+          "stratum": "cross_lingual",
+          "tail": false
+        },
+        {
+          "baseline_rank": 1,
+          "phase1_rank": null,
+          "query_id": "role_query-a486aa8b5f70",
+          "stratum": "role_query",
+          "tail": true
+        },
+        {
+          "baseline_rank": 7,
+          "phase1_rank": 10,
+          "query_id": "role_query-f32f802a13d0",
+          "stratum": "role_query",
+          "tail": false
+        }
+      ]
+    },
+    "items_with_a_relevant_result": {
+      "baseline": 161,
+      "of": 234,
+      "phase1": 170
+    },
+    "live_agreement": {
+      "new_fresh_chunked": 1.0,
+      "new_frozen_chunked": 1.0,
+      "old_fresh_chunked": 1.0,
+      "old_frozen_chunked": 1.0,
+      "sample": 20
+    },
+    "post_drop_arm": {
+      "description": "phase-1 code on the fresh chunked snapshot after nodes.embedding was dropped and the file vacuumed: chunks are the only vectors left",
+      "identical_to_pre_drop_run": true,
+      "metrics": {
+        "hit@1": 0.188034,
+        "hit@10": 0.726496,
+        "hit@5": 0.576923,
+        "mrr": 0.353977
+      },
+      "tail": {
+        "hit@1": 0.038462,
+        "hit@10": 0.538462,
+        "hit@5": 0.384615,
+        "mrr": 0.203938
+      }
+    }
+  },
+  "regression_test": {
+    "pass": true,
+    "phase1_commit": "b267569",
+    "phase1_result": "3 passed in 9.51s",
+    "pre_change_commit": "8b93e8d",
+    "pre_change_result": "2 failed, 1 passed in 9.90s",
+    "test": "tests/test_chunk_tail_regression.py"
+  },
+  "test_suite": {
+    "pass": true,
+    "phase1": {
+      "commit": "b267569",
+      "errors": 0,
+      "failed": 0,
+      "note": "the same 82 are now skips in the same file (6 passed, 82 skipped when run alone)",
+      "passed": 788,
+      "seconds": [
+        64.78,
+        64.03
+      ],
+      "skipped": 82
+    },
+    "recorded_head_baseline": {
+      "commit": "5996314",
+      "errors": 81,
+      "failed": 1,
+      "note": "all 82 problems in tests/test_replacement_holdout_packet.py",
+      "passed": 640
+    }
+  },
+  "verdict": {
+    "gates": {
+      "cold_vector_init_below_200ms": "PASS",
+      "no_new_test_failures": "PASS",
+      "overall_hit@5_not_below_baseline": "PASS",
+      "overall_mrr_not_below_baseline": "PASS",
+      "recall_p50_within_allowance": "PASS",
+      "regression_test_fails_on_old_code": "PASS",
+      "stored_embedding_bytes_below_ceiling": "PASS",
+      "tail_hit@5_clear_rise": "PASS",
+      "tail_mrr_clear_rise": "PASS"
+    },
+    "overall": "PASS"
+  }
+}

@@ -77,6 +77,38 @@ class Node:
 
 
 @dataclass(slots=True)
+class NodeChunkEmbedding:
+    """One embedding window of a node, stored as a float32 little-endian BLOB.
+
+    A node owns zero or more of these, ordered by ``chunk_index`` starting at 0
+    with no gaps. ``dimensions`` is recorded per row and is the only authority
+    on the vector's shape — never infer it from ``len(blob) // 4`` and never
+    assume 384. ``content_fingerprint`` is the parent's
+    ``nodes.content_fingerprint`` as it stood when the chunk was embedded, so a
+    reader can tell a current chunk from one left behind by an edit.
+
+    ``token_start``/``token_end`` are the half-open token span of the parent's
+    content covered by this window, carried over from
+    :class:`living_memory.chunking.TextChunk`; consecutive chunks overlap.
+    """
+
+    id: str
+    node_id: str
+    chunk_index: int
+    dimensions: int
+    embedding: list[float]
+    token_start: int
+    token_end: int
+    content_fingerprint: str
+    created_at: str = ""
+    updated_at: str = ""
+
+    @property
+    def token_count(self) -> int:
+        return self.token_end - self.token_start
+
+
+@dataclass(slots=True)
 class Connection:
     """Adjacency edge between two memory nodes."""
 

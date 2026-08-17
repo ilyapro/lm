@@ -230,14 +230,14 @@ learning_rate = 0.1
         assert trace.scope == "project:test"
 
 
-def test_schema_version_is_five_after_initialize(tmp_path: Path) -> None:
-    assert SCHEMA_VERSION == 5
+def test_schema_version_is_six_after_initialize(tmp_path: Path) -> None:
+    assert SCHEMA_VERSION == 6
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         row = store.connection.execute(
             "SELECT value FROM metadata WHERE key = 'schema_version'"
         ).fetchone()
         assert row is not None
-        assert row["value"] == "5"
+        assert row["value"] == "6"
 
 
 def test_schema_v2_database_migrates_to_v3_with_backfill(tmp_path: Path) -> None:

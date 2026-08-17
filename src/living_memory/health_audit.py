@@ -427,8 +427,27 @@ class ReadOnlyAuditStore(MemoryStore):
     def list_unembedded_nodes(self, *args: Any, **kwargs: Any) -> list[Node]:
         return []
 
+    def list_unchunked_nodes(self, *args: Any, **kwargs: Any) -> list[Node]:
+        """Empty for the same reason as ``list_unembedded_nodes``.
+
+        Reporting work here would invite the caller to embed it, and this store
+        cannot write. The inherited implementation is also shape-tolerant, but
+        an audit should not depend on a pre-v6 snapshot to stay read-only.
+        """
+
+        return []
+
     def update_node(self, *args: Any, **kwargs: Any) -> Node:
         raise RuntimeError("health audit latency probe is read-only")
+
+    def replace_node_chunks(self, *args: Any, **kwargs: Any) -> int:
+        raise RuntimeError("health audit store is read-only")
+
+    def delete_node_chunks(self, *args: Any, **kwargs: Any) -> int:
+        raise RuntimeError("health audit store is read-only")
+
+    def drop_node_embedding_column(self, *args: Any, **kwargs: Any) -> bool:
+        raise RuntimeError("health audit store is read-only")
 
     def record_access(self, *args: Any, **kwargs: Any) -> Node:
         raise RuntimeError("health audit latency probe is read-only")

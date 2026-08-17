@@ -1,0 +1,685 @@
+{
+  "version": 1,
+  "purpose": "Curated cross_lingual and role_query specs for `python3 -m living_memory.retrieval_harness build-goldset --seed-queries`. Committed so artifacts/harness/goldset.jsonl regenerates byte-identically from the frozen snapshot.",
+  "snapshot": {
+    "path": "~/.cache/living-memory-harness/snapshot.sqlite3",
+    "sha256": "d46f1b845adc3d806ec5cb7f593438f723bdf2b7c491c0f47aa92e4ef20bd75d",
+    "captured_at": "2026-08-17T17:59:08Z",
+    "source_db": "~/.local/share/living-memory/global.sqlite3 (opened file:...?mode=ro, copied with the sqlite backup API)"
+  },
+  "cross_lingual_rule": "Russian jargon query vs its plain-English paraphrase, both run through the real MemoryRecallService on the snapshot with the same scope/depth. relevant_node_ids are resolved MECHANICALLY as the paraphrase query's top_k results (top_k=1: the single node the plain-language question surfaces first) — never hand-picked. A pair was kept only if, measured on the snapshot: (a) the paraphrase's top-1 vector similarity >= 0.40, (b) that node's content is predominantly Latin-script (English), (c) the jargon query scores STRICTLY LOWER on the same node (cosine) and does not already rank it first, and (d) the node is topically about the query's subject. 60+ authored pairs were measured; the ones where the jargon query already won (e.g. 'тесты флакуют' 0.5054 > 0.3484, 'дубликаты узлов схлопываются' 0.4805 > 0.3624, 'ядра пластичного обновления' 0.6331 > 0.5856) were dropped, because they prove nothing about the gap. Every kept item records both scores in provenance (paraphrase_top_k[].vector_score vs jargon_vector_scores).",
+  "role_query_rule": "Role/procedural queries whose answer is an active level:schema procedure carrying context.trigger; the builder re-validates active + level='schema' + context.trigger for every expected id and records the trigger as justification. Node ids were mined from the snapshot's 433 active schema nodes; where a procedure exists as several identical copies, ALL copies are named so retrieval is not penalised for returning a twin. scope is the procedure's own scope, so the item measures ranking rather than the scope gate. Roughly two thirds of the queries are phrased from material that lives BEYOND the 128-token visible span of the node (tail queries); the tail flag itself is computed by the harness.",
+  "measured_build": {
+    "command": "python3 -m living_memory.retrieval_harness build-goldset --snapshot ~/.cache/living-memory-harness/snapshot.sqlite3 --cutoff 2026-06-10T00:00:00Z --seed 20260817 --seed-queries artifacts/harness/seed-queries.json --out artifacts/harness/goldset.jsonl --max-content-grounded 160",
+    "note": "Numbers below were measured on the frozen snapshot at freeze time; `--build-report` reproduces them. This block is documentation only — the builder reads just `cross_lingual` and `role_query`, so it cannot influence the goldset.",
+    "items": {
+      "total": 234,
+      "content_grounded": 160,
+      "cross_lingual": 38,
+      "role_query": 36,
+      "tail": 26
+    },
+    "content_grounded_selection": {
+      "recall_events_in_snapshot": 54777,
+      "usable_events": 54757,
+      "labeled_events_at_or_after_cutoff": 3693,
+      "dropped_no_useful_result": 1720,
+      "dropped_inactive_node": 187,
+      "eligible_events": 1786,
+      "sampled": 160,
+      "sampling": "random.Random(20260817).sample over the sorted eligible event ids, then re-sorted",
+      "relevant_nodes_per_item": "1..15 (median 3); the containment label keeps every result of the event whose IDF containment against the consuming trace is >= 0.12",
+      "scope_skew": "project:x 110, project:online 26, project:ae 12, project:lm 6, global 2, other 4 — the natural distribution of labelled events after the cutoff, not a design choice"
+    },
+    "cross_lingual_scores": {
+      "measured_on": "38 kept pairs, one relevant node each",
+      "paraphrase_cosine": {
+        "min": 0.408,
+        "p25": 0.506,
+        "median": 0.558,
+        "p75": 0.607,
+        "max": 0.74,
+        "mean": 0.565
+      },
+      "jargon_cosine": {
+        "min": 0.033,
+        "p25": 0.23,
+        "median": 0.281,
+        "p75": 0.396,
+        "max": 0.536,
+        "mean": 0.308
+      },
+      "delta_paraphrase_minus_jargon": {
+        "min": 0.002,
+        "p25": 0.154,
+        "median": 0.241,
+        "p75": 0.351,
+        "max": 0.525,
+        "mean": 0.257
+      },
+      "reference": "the failure class measured 2026-08-17 on the live DB: поревьювь / мердж-реквест / апрув score cos 0.201-0.392 where ordinary lexicon scores 0.75-0.83"
+    },
+    "tail": {
+      "rule": "an item is tail iff every relevant node with a non-empty grounding-token set has all occurrences of all those tokens at char offset >= visible_char_end, where visible_char_end comes from the real paraphrase-multilingual-MiniLM-L12-v2 tokenizer at max_seq_length=128 (specials dropped). Full text is in TAIL_RULE and is copied into every item's provenance.tail_classification.rule.",
+      "per_stratum": {
+        "content_grounded": 0,
+        "cross_lingual": 1,
+        "role_query": 25
+      },
+      "item_reasons": {
+        "every_grounded_relevant_node_beyond_visible_span": 26,
+        "some_grounded_relevant_node_within_visible_span": 171,
+        "no_grounded_relevant_node": 37
+      },
+      "tail_item_spans": "visible_char_end 302..571 (median 432); earliest grounding char 378..1323 (median 640)",
+      "why_content_grounded_is_never_tail": "the containment label selects results sharing a lot of vocabulary with the consuming trace, so at least one grounding token always lands inside the visible prefix — 0 of 160 sampled items are tail. The tail subset therefore comes from the curated role_query specs, whose queries were written from material past the node's visible span and verified with the harness classifier."
+    }
+  },
+  "cross_lingual": [
+    {
+      "jargon_query": "вебпак собирает долго",
+      "paraphrase_query": "the webpack build is slow",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "веса каналов ретрива",
+      "paraphrase_query": "retrieval channel weights",
+      "scope": "project:lm",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "вложения к цели",
+      "paraphrase_query": "goal attachments",
+      "scope": "project:ae",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "где лежат артефакты приёмки",
+      "paraphrase_query": "where acceptance artifacts are stored",
+      "scope": "project:octopus",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "гейт упал на грязной базе",
+      "paraphrase_query": "the merge gate failed on a dirty base",
+      "scope": "project:octopus",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "глубина обхода графа",
+      "paraphrase_query": "graph traversal depth in recall",
+      "scope": "project:lm",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "глубина рекуррентной сети",
+      "paraphrase_query": "recurrent network depth",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "дашборд показывает дерево",
+      "paraphrase_query": "the dashboard renders the goal tree",
+      "scope": "project:ae",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "дашборд редизайн сёрчбара",
+      "paraphrase_query": "dashboard redesign searchbar",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "декодер токенов",
+      "paraphrase_query": "unified token decoder",
+      "scope": "project:octopus",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "джест тесты десктопа",
+      "paraphrase_query": "jest tests for the desktop package",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "диалоговая ветка агента",
+      "paraphrase_query": "the dialogue arm of the agent",
+      "scope": "project:octopus",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "заведи тикет в джире",
+      "paraphrase_query": "create a jira issue",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "замер видеопамяти на пике",
+      "paraphrase_query": "peak GPU memory measurement",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "канарейка жизненного цикла",
+      "paraphrase_query": "lifecycle canary run",
+      "scope": "project:octopus",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "карточка организации на выдаче",
+      "paraphrase_query": "the firm card in search results",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "кнопка рестарта в интерфейсе",
+      "paraphrase_query": "restart button in the dashboard UI",
+      "scope": "project:ae",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "обратная связь по полезности",
+      "paraphrase_query": "usefulness feedback signal",
+      "scope": "project:lm",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "память отдаёт мусор в выдаче",
+      "paraphrase_query": "recall returns irrelevant results",
+      "scope": "project:lm",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "планировщик выбирает действие",
+      "paraphrase_query": "planner action selection policy",
+      "scope": "project:octopus",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "посмотри метрики в графане",
+      "paraphrase_query": "look at grafana metrics dashboards",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "почему пайплайн красный",
+      "paraphrase_query": "the CI pipeline is failing",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "прогони смоук-набор тестов",
+      "paraphrase_query": "run the smoke test suite",
+      "scope": "project:octopus",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "протухшие узлы памяти",
+      "paraphrase_query": "decayed memory nodes",
+      "scope": "project:lm",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "профилировщик показывает узкое место",
+      "paraphrase_query": "the profiler shows the bottleneck",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "скоуп запроса резолвится",
+      "paraphrase_query": "how the query scope is resolved",
+      "scope": "project:lm",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "смешанная точность обучения",
+      "paraphrase_query": "mixed precision training",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "событие ревызова пишется в базу",
+      "paraphrase_query": "recall events are written to the database",
+      "scope": "project:lm",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "сохранение состояния модели",
+      "paraphrase_query": "model state persistence",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "стрим ответа модели",
+      "paraphrase_query": "streaming the model output",
+      "scope": "project:ae",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "фигма-нода не скачана",
+      "paraphrase_query": "the figma node was not downloaded",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "фича-флаг выключен по умолчанию",
+      "paraphrase_query": "the feature flag is off by default",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "холдаут подсматривать нельзя",
+      "paraphrase_query": "the holdout set must not be inspected",
+      "scope": "project:octopus",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "чекни логи в эластике",
+      "paraphrase_query": "check the logs in elasticsearch",
+      "scope": "project:online",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "чекпойнт весит слишком много",
+      "paraphrase_query": "the checkpoint file is too large",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "чекпойнт не грузится",
+      "paraphrase_query": "the checkpoint fails to load",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "шедулер лернинг рейта",
+      "paraphrase_query": "learning rate scheduler",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    },
+    {
+      "jargon_query": "ядро куды падает",
+      "paraphrase_query": "the CUDA kernel crashes",
+      "scope": "project:x",
+      "depth": 1,
+      "top_k": 1
+    }
+  ],
+  "role_query": [
+    {
+      "query": "ANSI-эскейпы ломают разбор одноразового кода, сначала stripAnsi",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KY5HQ9EPZGDNVFSV0CFJV7EM"
+      ],
+      "justification": "cli-login procedure: ANSI stripping before URL/code parsing"
+    },
+    {
+      "query": "EZ-13871 ревью задачи",
+      "scope": "global",
+      "depth": 1,
+      "expected_node_ids": [
+        "01M07Q3MBKAEQ8SCT3E5G9KE1X"
+      ],
+      "justification": "review role-router procedure: decide role by pwd before touching Jira/GitLab"
+    },
+    {
+      "query": "SIGTERM-эскалация с grace-таймаутом, respondControl и авто-деним can_use_tool",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KY5HQ9F8MH1MYJMBF62HPBFA"
+      ],
+      "justification": "persistent-runtime procedure: stop grace escalation and control-request handling"
+    },
+    {
+      "query": "anti-lookup проверка, нулевые skill-гейты, infeasible диагностика, make smoke",
+      "scope": "project:octopus",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KRXTWDW479GJ71Q8E34WAV60"
+      ],
+      "justification": "implementation-outcome procedure: anti-lookup test wiring and zero skill-dispatch gates"
+    },
+    {
+      "query": "appVersion unknown, uuid v4 в куке _2gis_webapi_user, deviceType из UA",
+      "scope": "project:gas-stations-ui",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KXKB7EC0HHXWJE5GVTWYZD8A"
+      ],
+      "justification": "reopen-lesson procedure: the exact BSS common.* synthesis rules"
+    },
+    {
+      "query": "blur и fade на границе саггеста, инверсия цвета инпута",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KVYS3SMQ8EEAQKD0GH9Z1BJ9"
+      ],
+      "justification": "reopen-lesson procedure: the enumerated searchbar/suggester defects that form the acceptance contract"
+    },
+    {
+      "query": "claude setup-token не пишет credentials и висит на ретрай-экране",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KZ8RYA46J5QWG00S712PPCMF"
+      ],
+      "justification": "reopen-lesson procedure: why the driver switched away from setup-token"
+    },
+    {
+      "query": "compactstem строки: как считается seed и что за guard",
+      "scope": "project:x",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KTZ5GK8NR2RMX6M58RYDPQY0"
+      ],
+      "justification": "matrix-runner procedure: seed arithmetic and per-row guards for the appended carry rows"
+    },
+    {
+      "query": "cuLaunchHostFunc не смог поставить колбэк — что делать с StreamTensorHold",
+      "scope": "project:x",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KTQ35TGQZ332JXDRF6EA55X8"
+      ],
+      "justification": "CUDA lifetime procedure: no fallback to a direct stream synchronize on enqueue failure"
+    },
+    {
+      "query": "fast-forward долив ветки притащил лишний md-файл",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KZDN9CC1C1D3ZTYNZEQFX4W1"
+      ],
+      "justification": "reopen-lesson procedure: fast-forward merges drag non-source notes into the branch"
+    },
+    {
+      "query": "floor64 и allowlist: расширять ли bounded-починку на GPU capacity",
+      "scope": "project:octopus",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KT2968E8N93M2A20JJH6DBBB"
+      ],
+      "justification": "reopen-lesson procedure: bounded repair explicitly excludes the GPU capacity floor test"
+    },
+    {
+      "query": "gate repair: отсутствует acceptance.sha256 у goal-каталога",
+      "scope": "project:octopus",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KRXY78CSP7W5CJMC6GX21EBC"
+      ],
+      "justification": "gate-repair procedure: the missing acceptance.sha256 case"
+    },
+    {
+      "query": "installEventRoutes порядок регистрации, handleAPI отдаёт 404",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KWQ5YJCN84WSAWW7ZKDND9S0"
+      ],
+      "justification": "chats procedure: SSE route ordering and the /api/* early-skip convention"
+    },
+    {
+      "query": "nitpick про sed -i.bak: почему && а не точка с запятой",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KZDN9CBKBC8PYZKWX7KN0RMD"
+      ],
+      "justification": "reopen-lesson procedure: rejected reviewer nitpicks and the evidence against them"
+    },
+    {
+      "query": "pgrep и свежесть mtime дочерних файлов вместо вывода списка",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KT7QN1JK2CAWM34QADEA3YCP",
+        "01KY5HQ9QYAPMMTAV8T9074VRS",
+        "01KZ8RYAC3N836NFZ7DJBS03HM",
+        "01KZEXTZJV576E1PH4J9ZQN8B4"
+      ],
+      "justification": "supervision procedure: inspect child pids and file mtimes before declaring a tree stalled"
+    },
+    {
+      "query": "planner-profile-kernel-dispatch жив, discover-efe-boilerplate провалился — застряло?",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KT7QN1M6RD8NK4RZB5N5X9MR",
+        "01KY5HQ9VB4Q89YNA0GAVT6V89",
+        "01KZ8RYAFD04XJJFE50HHGSJHK",
+        "01KZEXTZP52XF5ZFT2EA7WQDSQ"
+      ],
+      "justification": "dashboard supervision procedure: failed children under a live sibling are not yet stuck"
+    },
+    {
+      "query": "reopen lesson: не тащить researches и docs-заметки в фичеветку",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KXQKC13VEE38PYHH5H2BSRV1"
+      ],
+      "justification": "reopen-lesson procedure: keep skill artifacts out of the product branch"
+    },
+    {
+      "query": "reset --hard и force-with-lease вместо удаляющего форвард-действия",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KZDN9CAGE14TE5SMR5SGW0A0"
+      ],
+      "justification": "reopen-lesson procedure: how to strip a junk tip commit from a pushed branch"
+    },
+    {
+      "query": "review EZ-13560 merge request threads and approval",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KZXPK81DCQYTA6YPGSYYQTRM"
+      ],
+      "justification": "mr-review procedure: refresh head, re-check findings, resolve own threads, approve"
+    },
+    {
+      "query": "speakableText нормализация, выбор ru-RU или en-US по кириллице",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KWQ5YJBD6PYEDXWKNJFT21VQ"
+      ],
+      "justification": "audio-playback procedure: markdown normalization and utterance language choice"
+    },
+    {
+      "query": "stagnation detection seconds_since_last_acceptance_pass 999999 на свежем дереве",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KRVDY1Q1NTDHFV9S5G9D9VW7"
+      ],
+      "justification": "stagnation-detection procedure: the fresh-tree false positive"
+    },
+    {
+      "query": "арабские plural формы вакансий деградируют в ar.po, ручной фикс затирается",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KX5CXCT131XT2BKCVJ19MKJ9"
+      ],
+      "justification": "translations procedure: recurring Crowdin trap on the Arabic vacancy plural"
+    },
+    {
+      "query": "грязные пути P3 и stale canary артефакты блокируют ретрай",
+      "scope": "project:octopus",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KRW4J9M99QVBX6SY5P1MSKJD"
+      ],
+      "justification": "gate dirty-base repair procedure: sync the child branch so a retry avoids stale artifacts"
+    },
+    {
+      "query": "зелёный logo-пин 3DB200 и tinted medallion вместо белого",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KT3J5PVW3DXDWWPXZH81XX7C"
+      ],
+      "justification": "reopen-lesson procedure: the concrete design deltas found by live pixel diff"
+    },
+    {
+      "query": "как супервизить активные цели octopus через dashboard API",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KT7QN1M6RD8NK4RZB5N5X9MR",
+        "01KY5HQ9VB4Q89YNA0GAVT6V89",
+        "01KZ8RYAFD04XJJFE50HHGSJHK",
+        "01KZEXTZP52XF5ZFT2EA7WQDSQ"
+      ],
+      "justification": "dashboard goal-api supervision procedure, asked head-on"
+    },
+    {
+      "query": "коллапс-карточка Настройки приватности с chevron и borderRadius",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KVB3XD0G35N712AGWVDYYJAG"
+      ],
+      "justification": "reopen-lesson procedure: reproduce the whole collapsible container, not the single control"
+    },
+    {
+      "query": "критика декомпозиции дерева целей: что искать",
+      "scope": "project:octopus",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KRVVF4H8V2NJWT2PDF2QWJ1X",
+        "01KSDT3SQS49QJGDRKTMHP207P",
+        "01KSFNCKH3Y443YS9CFCXPK5PC",
+        "01KSMXRB8VZXD89HJCAY996JEK",
+        "01KSQ335AEA39CEWX5HHMVW0Q0"
+      ],
+      "justification": "tree-decomposition-critique procedure, asked head-on"
+    },
+    {
+      "query": "мок-сцена под бейдж Подтверждён на миникарточках выдачи",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KVYS3SMGS83R2SKX7ZWTBDJN"
+      ],
+      "justification": "reopen-lesson procedure: mock scenes are mandatory for every new UI element"
+    },
+    {
+      "query": "нужен ли рестарт узла, который под prioritized replay гоняет gate и unittest",
+      "scope": "project:octopus",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KT7C5RXV3K98BS0H5WB4X5XR"
+      ],
+      "justification": "supervision procedure: a child running gate/unittest under prioritized replay needs no restart"
+    },
+    {
+      "query": "отревьюй тикет ADS-989 и оставь комментарии в мердж-реквесте",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KXQKC19BEEWM5559DASQZEY7"
+      ],
+      "justification": "jira-ticket-review procedure: outer agent creates/reopens the review goal instead of reviewing"
+    },
+    {
+      "query": "переводы для джира-тикета: crowdin upload и задачи на языки",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KX5CXCT131XT2BKCVJ19MKJ9"
+      ],
+      "justification": "jira-ticket-translations procedure, asked head-on"
+    },
+    {
+      "query": "переименование оператором в середине генерации и deletion mid-flight NOT_FOUND",
+      "scope": "project:ae",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KWQ5YJC24QT34EZ89D1V6VA8"
+      ],
+      "justification": "auto-title procedure: race-safety rules for rename/deletion during generation"
+    },
+    {
+      "query": "повторное ревью после правок автора: что делать с тредами и апрувом",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KZXPK81DCQYTA6YPGSYYQTRM"
+      ],
+      "justification": "mr-review procedure: the post-fix re-review cycle"
+    },
+    {
+      "query": "поревьювь EZ-14119",
+      "scope": "global",
+      "depth": 1,
+      "expected_node_ids": [
+        "01M07Q3MBKAEQ8SCT3E5G9KE1X"
+      ],
+      "justification": "review role-router procedure: the canonical trigger phrase of the class"
+    },
+    {
+      "query": "серые и оранжевые пилюли, топливные фильтры вместо синтетического чипа",
+      "scope": "project:online",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KX5CXCRXZ4P84RTT6G09R40E"
+      ],
+      "justification": "reopen-lesson procedure: the design deltas every benzin surface must match"
+    },
+    {
+      "query": "чем подтверждать что родительская цель дерева достигнута",
+      "scope": "project:octopus",
+      "depth": 1,
+      "expected_node_ids": [
+        "01KSPV9MT78G1VAHZWJ9X62Z8Y"
+      ],
+      "justification": "tree-goal-verification procedure, asked head-on"
+    }
+  ]
+}

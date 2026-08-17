@@ -1,11 +1,104 @@
-"""Recall service combining scope, FTS5, embeddings, graph traversal, and feedback."""
+"""Recall service combining scope, FTS5, embeddings, graph traversal, and feedback.
+
+The vector channel
+==================
+
+A node's vector score is the **maximum cosine over its chunk vectors**, read as
+float32 BLOBs from ``node_chunk_embeddings`` (schema v6) and kept as a cached
+matrix per scope. The encoder is configured with ``max_seq_length = 128``, so a
+single whole-node vector only ever saw the node's first window; max-pooling
+over windows is what makes the rest of a node findable at all.
+
+Length bias, measured
+---------------------
+
+Max over ``k`` draws is stochastically greater than one draw, so a node with
+more windows gets more attempts to match. That is a real effect and it was
+measured rather than assumed. Over all 12,862 active nodes of a snapshot of the
+live database and all 234 frozen goldset queries, scoring every node three ways
+-- the legacy single vector, the re-encoded *first* chunk alone, and the
+max-pool -- isolates it from both selection and encoder drift:
+
+===========  =====  ==============================  =====================
+chunks (k)   nodes  max-pool minus first chunk      that gain / log2(k)
+===========  =====  ==============================  =====================
+1            4851   +0.000                          --
+2            1627   +0.027                          0.027
+3             980   +0.052                          0.033
+4             912   +0.065                          0.033
+6             737   +0.085                          0.033
+8             413   +0.095                          0.032
+12            165   +0.109                          0.030
+16            155   +0.130                          0.032
+===========  =====  ==============================  =====================
+
+The gain is not noise and it is not content: re-encoding the same first window
+moves every bucket by the same -0.005, while the extra-window gain is strictly
+monotone in ``k`` and almost exactly proportional to ``log2(k)``. A
+least-squares fit through the origin (a one-window node has no extra windows
+and must take no correction) gives **0.0313 of cosine per doubling**. Left
+uncorrected it moved real rankings: on a vector-only top-5 over the same fixed
+population, one-chunk nodes fell from 29.7% of slots to 15.0% while 16+-chunk
+nodes rose from 4.4% to 13.6%.
+
+So the correction is applied, at the coefficient the measurement produced --
+:data:`LENGTH_BIAS_LOG2_COEFFICIENT`. The frozen goldset then *checks* that
+coefficient rather than choosing it, and agrees. All three rows are full
+end-to-end harness runs over the same 234-query goldset and the same chunked
+snapshot, so the vector channel is the only difference between them:
+
+==========================  ======  ======  ======  ==============
+vector channel              hit@1   hit@5   MRR     hit@5 on tail
+==========================  ======  ======  ======  ==============
+single vector (baseline)    0.175   0.526   0.324   0.077
+max-pool, uncorrected       0.188   0.534   0.338   --
+max-pool, beta = 0.031      0.188   0.577   0.354   0.385
+==========================  ======  ======  ======  ==============
+
+The last column is the 26 goldset items whose answer lies past the node's first
+128 tokens -- the subset this whole change exists for. It goes from 0.077 to
+0.385 hit@5 (0.046 to 0.204 MRR), and no stratum regresses: content_grounded
+0.694 -> 0.719, role_query 0.222 -> 0.444, cross_lingual flat at 0.105 (that
+one is a jargon-vocabulary problem, not a window problem).
+
+A sensitivity sweep over the same goldset puts hit@5 at 0.573 for every beta in
+[0.015, 0.045] and back down to 0.543 at 0.060, so the fitted value sits inside
+a plateau rather than on a peak, and nothing was picked for scoring best -- the
+sweep's own argmax on MRR is beta = 0.015, which is not what ships.
+
+What the shift does to STRONG_VECTOR_MATCH
+------------------------------------------
+
+:data:`STRONG_VECTOR_MATCH` (0.65) is both the base-score override in
+``rank_candidates`` and the cross-scope admission bar, so a shift in the
+vector_score distribution moves how often either fires. Over every result the
+goldset run returned, the share at or above 0.65 goes:
+
+* baseline 30.1%, precision of those strong matches 0.284
+* max-pool uncorrected 40.0%, precision 0.204 -- a third more results claiming
+  "strong match", and materially less often right
+* max-pool corrected **18.3%**, precision 0.259
+
+The correction does not merely undo the inflation, it lands the distribution
+below where it started (median vector_score 0.553 -> 0.515): a long node now
+pays up to 0.12 for its windows, and long nodes were most of what sat above
+0.65. So 0.65 fires *less* often than the calibration it was chosen under, in
+the safe direction -- fewer overrides, fewer cross-scope admissions, and the
+precision of what still qualifies is back within noise of baseline. The
+relative gate (``CROSS_SCOPE_RELATIVE_VECTOR``) is scale-free and unaffected.
+The constant is therefore left alone: the goldset improves with it unchanged,
+and moving it would be a second untested intervention on top of this one.
+Retuning the channel blend for the new distribution is the separate downstream
+step (``weights-recalibration``); nothing here changes a weight or a floor.
+"""
 
 from __future__ import annotations
 
-import json
+import sqlite3
 from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
+from math import log2
 from typing import Any
 
 from living_memory.edge_derivation import CONTENT_REFERENCE_KIND, DERIVED_FROM_KIND
@@ -18,7 +111,13 @@ from living_memory.models import (
     Node,
 )
 from living_memory.scope import GLOBAL_SCOPE, ScopePlan, ScopeResolver, scope_family
-from living_memory.storage import MemoryStore
+from living_memory.storage import (
+    CHUNK_EMBEDDING_DTYPE,
+    CHUNK_EMBEDDING_ITEMSIZE,
+    CHUNK_EMBEDDING_TABLE,
+    MemoryStore,
+    unpack_chunk_embedding,
+)
 
 try:
     import numpy as _np  # type: ignore[import-not-found]
@@ -134,6 +233,49 @@ class _Candidate:
         return tuple(names)
 
 
+@dataclass(frozen=True, slots=True)
+class _ChunkBlock:
+    """One vector-width slice of a scope's chunk corpus, grouped by node.
+
+    ``rows`` holds every chunk vector of ``node_ids`` back to back in scan
+    order and ``starts[i]`` is where node ``i``'s run of chunks begins, which
+    is what lets the max-pool be one ``np.maximum.reduceat`` instead of a
+    Python loop over the corpus's 60,530 rows. Rows are stored unit-length, so
+    a dot product with a unit query *is* the cosine — and so the numpy path and
+    the numpy-free path compute the same number rather than two different ones.
+
+    One block per vector width, because a corpus is allowed to hold more than
+    one: a fixture storing 3-d vectors, a database caught mid-re-embed,
+    whatever ``MemoryStore.chunk_embedding_dimensions`` would report as several
+    values. Vectors of different widths are points in different spaces — they
+    cannot share a matrix and must not be compared at all, so each width gets
+    its own and only the one matching the query is ever multiplied.
+    """
+
+    dimension: int
+    node_ids: tuple[str, ...]
+    #: ``np.ndarray[intp]`` with numpy, ``tuple[int, ...]`` without.
+    starts: Any
+    #: ``(len(rows), dimension)`` float32 matrix with numpy, a tuple of
+    #: per-chunk float tuples without.
+    rows: Any
+    row_count: int
+    #: ``log2`` of each node's chunk count, aligned with ``node_ids``. Computed
+    #: once at scan time because it is what the length-bias correction
+    #: subtracts, on every query, from every node.
+    log2_chunk_counts: Any
+
+
+@dataclass(frozen=True, slots=True)
+class _ScopeChunkIndex:
+    """A scope's whole chunk corpus, reusable until ``revision`` moves."""
+
+    revision: tuple[Any, ...]
+    blocks: tuple[_ChunkBlock, ...]
+    node_count: int
+    row_count: int
+
+
 class MemoryRecallService:
     """Callable retrieval policy service on top of MemoryStore."""
 
@@ -146,11 +288,20 @@ class MemoryRecallService:
     ) -> None:
         self.store = store
         self.embedder = embedder or LocalEmbeddingModel(model_name=store.config.embedding_model)
+        # Kept because it is part of this constructor's published signature, and
+        # deliberately still not applied as a scan cap: truncating the chunk
+        # corpus would drop vectors silently, and the live corpus (60.5k chunks)
+        # already exceeds the old 50k default. What used to make a cap tempting
+        # -- re-parsing every vector on every recall -- is what the cached
+        # matrix below removes.
         self.vector_scan_limit = int(vector_scan_limit)
         self.scope_resolver = ScopeResolver()
         self.feedback = FeedbackService(store)
         self.last_recall_event_id: str | None = None
-        self._embedding_cache: dict[str, Any] = {}
+        self._chunk_index: dict[str, _ScopeChunkIndex] = {}
+        self._write_probe: tuple[int, int] | None = None
+        self._chunk_revision: tuple[Any, ...] | None = None
+        self._store_embedder_shared = False
 
     def memory_recall(
         self,
@@ -373,6 +524,24 @@ class MemoryRecallService:
         *,
         max_results: int,
     ) -> None:
+        """Score nodes by the best cosine among their chunk vectors.
+
+        A node's vector score is ``max`` over its chunks, not the mean and not
+        a single whole-node vector. The encoder only ever sees the first 128
+        tokens of whatever it is handed, so a single vector answers "does the
+        *opening* of this node match?"; the max over windows answers "does
+        *any part* of this node match?", which is the question recall is
+        actually asking. Mean would answer a third question nobody asked --
+        one relevant paragraph in a long node is a hit, not a 1/k-strength
+        hit -- and would make long nodes systematically unfindable.
+
+        Everything downstream is untouched: the pooled score goes into
+        ``_Candidate.vector_score`` exactly where the old single-vector cosine
+        went, and fusion, the STRONG_VECTOR_MATCH override and the cross-scope
+        gate read it the same way. What the shift in that score's distribution
+        does to those two thresholds is measured in the module notes above.
+        """
+
         per_scope_limit = max(50, max_results * 12)
         query_embedding = self.embedder.embed(query)
 
@@ -380,6 +549,9 @@ class MemoryRecallService:
         # embedding before the scan. In steady state these queries return zero
         # rows. The loop drains batches until none are left so first-time
         # recalls populate the full scope just like the previous code did.
+        # Under schema v6 this also produces the node's chunks, because
+        # update_node writes them in the same transaction as the vector -- so a
+        # node the drain reaches is scannable by the very next statement here.
         for scope in plan.scopes:
             while True:
                 unembedded = self.store.list_unembedded_nodes(scope=scope, limit=500)
@@ -389,50 +561,139 @@ class MemoryRecallService:
                     self._ensure_embedding(node)
 
         q_arr = _as_query_array(query_embedding)
+        # After the drain, never before it: the drain writes chunks.
+        revision = self._chunk_corpus_revision()
         scoped_scores: list[tuple[float, str]] = []
         for scope in plan.scopes:
-            ids, vectors = self._scan_scope_embeddings(scope)
-            if not ids:
-                continue
-            sims = _batch_similarity(q_arr, query_embedding, vectors)
-            for sim, node_id in zip(sims, ids, strict=True):
-                if sim >= VECTOR_MATCH_THRESHOLD:
-                    scoped_scores.append((sim, node_id))
+            index = self._scope_chunk_index(scope, revision)
+            for block in index.blocks:
+                if block.dimension != len(query_embedding):
+                    continue
+                for similarity, node_id in _pooled_chunk_similarities(
+                    block, query_embedding, q_arr
+                ):
+                    if similarity >= VECTOR_MATCH_THRESHOLD:
+                        scoped_scores.append((similarity, node_id))
 
         if not scoped_scores:
             return
 
         scoped_scores.sort(key=lambda item: item[0], reverse=True)
         keep_n = per_scope_limit * max(1, len(plan.scopes))
-        for similarity, node_id in scoped_scores[:keep_n]:
+        kept = scoped_scores[:keep_n]
+        # One query for the whole kept set rather than one per node. Max-pool
+        # puts more nodes over VECTOR_MATCH_THRESHOLD than a single vector did
+        # -- a node now clears it if *any* window does -- so this list runs
+        # closer to its `keep_n` ceiling than it used to, and the per-node
+        # round trip is the part of it that is pure overhead.
+        missing = [node_id for _score, node_id in kept if node_id not in candidates]
+        fetched = self.store.get_nodes(missing) if missing else {}
+        for similarity, node_id in kept:
             existing = candidates.get(node_id)
             if existing is None:
-                node = self.store.get_node(node_id)
+                node = fetched.get(node_id)
                 if node is None or node.decayed or not plan.allows(node.scope):
                     continue
                 existing = candidates.setdefault(node_id, _Candidate(node=node))
             existing.vector_score = max(existing.vector_score, similarity)
 
-    def _scan_scope_embeddings(self, scope: str) -> tuple[list[str], list[Any]]:
-        """Return cached (ids, vectors) for active embedded nodes in ``scope``."""
+    # ------------------------------------------------------------------
+    # Chunk corpus cache
+    # ------------------------------------------------------------------
 
-        ids: list[str] = []
-        vectors: list[Any] = []
-        cache = self._embedding_cache
-        for node_id, embedding_json in self.store.iter_embedding_rows(scope=scope):
-            vector = cache.get(node_id)
-            if vector is None:
-                try:
-                    parsed = json.loads(embedding_json)
-                except (TypeError, ValueError):
-                    continue
-                if not parsed:
-                    continue
-                vector = _np.asarray(parsed, dtype=_np.float32) if _np is not None else parsed
-                cache[node_id] = vector
-            ids.append(node_id)
-            vectors.append(vector)
-        return ids, vectors
+    def _chunk_corpus_revision(self) -> tuple[Any, ...]:
+        """Identity of the chunk corpus, cheap enough to re-ask on every recall.
+
+        The cached matrices are only as correct as this value, so it is worth
+        being precise about why it is complete. Two tiers, because the exact
+        signal and the cheap signal are different things:
+
+        * ``(Connection.total_changes, PRAGMA data_version)`` is exact and
+          costs no query. ``total_changes`` counts every row *this* connection
+          has written; ``data_version`` changes whenever *another* connection
+          commits. If neither moved, nothing anywhere has written since the
+          last check, so every cached matrix is provably current. This is the
+          path taken for the second and later scopes of one recall.
+        * When they did move it was usually this recall's own bookkeeping --
+          ``record_access`` and ``record_recall_event`` write on every recall
+          and touch no chunk -- so tier two asks the chunk table itself rather
+          than throwing away a 60k-row matrix for an access-count bump.
+
+        Tier two is ``COUNT(*)`` plus ``MAX(id)``, and it is not a heuristic.
+        Chunk rows are only ever deleted, or delete-then-inserted by
+        ``_replace_node_chunks``; nothing updates one in place. A delete-only
+        change (content edited without a new vector) moves ``COUNT(*)``. An
+        insert mints fresh ULIDs whose leading 48 bits are the current
+        millisecond, so ``MAX(id)`` rises above every id minted in an earlier
+        millisecond. For both to sit still, two chunk-writing transactions
+        would have to land in the same millisecond *with a recall between
+        them* -- and the recall that reads this value costs milliseconds, so
+        it does not fit in the gap. ``MAX(updated_at)`` would be the obvious
+        third component and is deliberately absent: ``updated_at`` is in no
+        index, so that aggregate scans the table itself, BLOB pages included.
+        """
+
+        connection = self.store.connection
+        probe = (int(connection.total_changes), _data_version(connection))
+        cached = self._chunk_revision
+        if cached is not None and probe == self._write_probe:
+            return cached
+        revision = _chunk_table_revision(connection)
+        self._write_probe = probe
+        self._chunk_revision = revision
+        return revision
+
+    def _scope_chunk_index(self, scope: str, revision: tuple[Any, ...]) -> _ScopeChunkIndex:
+        cached = self._chunk_index.get(scope)
+        if cached is not None and cached.revision == revision:
+            return cached
+        index = self._build_chunk_index(scope, revision)
+        self._chunk_index[scope] = index
+        return index
+
+    def _build_chunk_index(self, scope: str, revision: tuple[Any, ...]) -> _ScopeChunkIndex:
+        """Read one scope's chunk BLOBs into reusable matrices.
+
+        The whole point of the cache. Measured over the whole corpus of a
+        snapshot of the live database (12,862 active nodes, 60,530 chunks,
+        88.7 MiB of vectors): 146 ms once and nothing afterwards, against the
+        767 ms the JSON column costs on the same box for the same nodes
+        (100 ms to fetch, 666 ms to ``json.loads``) -- and *that* scan was
+        re-issued on every recall, not cached. A recall touches only its plan's
+        scopes, so the first recall of a two-scope plan pays ~69 ms of this,
+        not the full 146.
+
+        Rows are grouped by byte width rather than by the ``dimensions`` column
+        storage records, and that is not the shortcut it looks like. Reading
+        the column would mean a second full scan of the chunk table per scope
+        for a fact the scorer does not need: a block is only ever multiplied by
+        a query of *exactly* its own width, so a row whose bytes disagree with
+        its recorded width lands in a width nothing queries and is skipped by
+        construction, which is the same outcome and no scan. What the byte
+        length must never do is reshape a *scored* corpus around itself, and it
+        cannot -- the query width decides that.
+        """
+
+        accumulators: dict[int, _BlockAccumulator] = {}
+        width = -1
+        accumulator: _BlockAccumulator | None = None
+        for node_id, _ordinal, view in self.store.iter_chunk_embedding_rows(scope=scope):
+            row_width, remainder = divmod(len(view), CHUNK_EMBEDDING_ITEMSIZE)
+            if remainder or not row_width:
+                # Not a whole number of float32s, or none at all: not a vector.
+                continue
+            if row_width != width or accumulator is None:
+                width = row_width
+                accumulator = accumulators.setdefault(width, _BlockAccumulator())
+            accumulator.add(node_id, view)
+
+        blocks = tuple(accumulators[width].freeze(width) for width in sorted(accumulators))
+        return _ScopeChunkIndex(
+            revision=revision,
+            blocks=blocks,
+            node_count=sum(len(block.node_ids) for block in blocks),
+            row_count=sum(block.row_count for block in blocks),
+        )
 
     def _collect_schema_triggers(
         self,
@@ -588,10 +849,32 @@ class MemoryRecallService:
     def _ensure_embedding(self, node: Node) -> list[float]:
         if node.embedding is not None:
             return node.embedding
+        self._share_embedder_with_store()
         embedding = self.embedder.embed(node.content)
         updated = self.store.update_node(node.id, embedding=embedding)
         node.embedding = updated.embedding
         return updated.embedding or embedding
+
+    def _share_embedder_with_store(self) -> None:
+        """Lend the store this service's encoder for the chunks it writes.
+
+        ``update_node(embedding=...)`` chunks the node in the same
+        transaction, and content longer than one window needs every window
+        encoded -- which the store would otherwise do by loading a *second*
+        copy of the same model, doubling both load time and resident memory
+        for no gain. Done here rather than in ``__init__`` because this is the
+        first moment a real write is about to happen: the ranking-only store
+        face that ``replay`` passes in has no such method and never gets here.
+        """
+
+        if self._store_embedder_shared:
+            return
+        self._store_embedder_shared = True
+        share = getattr(self.store, "set_chunk_embedder", None)
+        if share is None:
+            return
+        embedder = self.embedder
+        share(lambda texts: [embedder.embed(text) for text in texts])
 
     def _record_result_access(self, result: RecallResult) -> RecallResult:
         updated_node = self.store.record_access(result.node.id)
@@ -998,16 +1281,162 @@ def _as_query_array(query_embedding: list[float]) -> Any:
     return arr
 
 
-def _batch_similarity(
-    q_arr: Any,
-    query_embedding: list[float],
-    vectors: list[Any],
-) -> list[float]:
-    """Vectorized cosine for unit-length stored embeddings, with a pure-Python fallback."""
+def _data_version(connection: sqlite3.Connection) -> int:
+    """``PRAGMA data_version``: bumped when another connection commits."""
 
-    if _np is not None and q_arr is not None and vectors and isinstance(vectors[0], _np.ndarray):
-        mat = _np.vstack(vectors)
-        sims = mat @ q_arr
-        sims = _np.clip(sims, 0.0, None)
-        return sims.tolist()
-    return [max(0.0, cosine_similarity(query_embedding, vec)) for vec in vectors]
+    row = connection.execute("PRAGMA data_version").fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def _chunk_table_revision(connection: sqlite3.Connection) -> tuple[Any, ...]:
+    """``(row count, greatest chunk id)``, or ``()`` on a pre-v6 database.
+
+    Two statements rather than the one they obviously fold into, because the
+    fold costs an order of magnitude: SQLite answers a bare ``COUNT(*)`` from
+    the smallest index (0.14 ms over 60,530 rows) and a bare ``MAX`` of an
+    indexed column by seeking one edge of it (0.002 ms), but asking for both in
+    one SELECT gives up both fast paths and scans (1.8 ms). This runs on every
+    recall whose predecessor wrote anything, which is most of them.
+
+    A file with no chunk table has no chunk corpus to invalidate, and an empty
+    tuple compares equal to itself, so such a store caches an empty index once
+    instead of re-probing forever.
+    """
+
+    try:
+        counted = connection.execute(
+            f"SELECT COUNT(*) FROM {CHUNK_EMBEDDING_TABLE}"
+        ).fetchone()
+        greatest = connection.execute(
+            f"SELECT MAX(id) FROM {CHUNK_EMBEDDING_TABLE}"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return ()
+    return (int(counted[0]), greatest[0])
+
+
+#: Largest deviation from unit length that still counts as "the writer already
+#: normalized this". The encoder returns unit vectors and storing them as
+#: float32 rounds the norm by ~2e-7 (measured 2.4e-7 across the live corpus's
+#: 60,530 chunks), so real vectors clear this by four orders of magnitude while
+#: anything genuinely unnormalized -- a fixture, a hand-written vector -- does
+#: not. Skipping the division when it holds saves ~54 ms and a second 89 MiB
+#: allocation on the cold build; the error it can hide is bounded by the
+#: tolerance itself, far below what any threshold in this module resolves.
+UNIT_NORM_TOLERANCE = 1e-6
+
+#: Cosine subtracted per doubling of a node's chunk count, cancelling the part
+#: of a max-pooled score that comes from having more windows rather than better
+#: ones. See ``Length bias`` in the module docstring for the derivation and the
+#: numbers; ``0.031`` is the least-squares fit of the measured gain, not a
+#: value tuned against the goldset.
+LENGTH_BIAS_LOG2_COEFFICIENT = 0.031
+
+
+class _BlockAccumulator:
+    """Scan-time buffer for one vector width, frozen into a ``_ChunkBlock``.
+
+    The BLOBs are concatenated into one ``bytearray`` as they arrive rather
+    than collected into a list and joined at the end. Measured over the live
+    corpus that is the difference between a 146 ms cold build and a 276 ms
+    one: the list costs 60,530 Python objects to hold, and the join then
+    copies all 89 MiB of them a second time.
+    """
+
+    __slots__ = ("payload", "node_ids", "starts", "rows")
+
+    def __init__(self) -> None:
+        self.payload = bytearray()
+        self.node_ids: list[str] = []
+        self.starts: list[int] = []
+        self.rows = 0
+
+    def add(self, node_id: str, view: Any) -> None:
+        # iter_chunk_embedding_rows promises rows grouped by node, so a node id
+        # that differs from the last one can only mean a new run.
+        if not self.node_ids or self.node_ids[-1] != node_id:
+            self.node_ids.append(node_id)
+            self.starts.append(self.rows)
+        self.payload += view
+        self.rows += 1
+
+    def freeze(self, dimension: int) -> _ChunkBlock:
+        node_ids = tuple(self.node_ids)
+        if _np is not None:
+            # One reinterpretation of one buffer, no per-vector Python object:
+            # this is the step that replaces 685 ms of json.loads. The
+            # bytearray stays alive as the array's base and is buffer-locked
+            # against resizing for exactly as long.
+            matrix = _np.frombuffer(self.payload, dtype=CHUNK_EMBEDDING_DTYPE).reshape(
+                self.rows, dimension
+            )
+            # einsum here is a fused row-wise self-dot: the row norms without a
+            # temporary copy of the matrix.
+            norms = _np.sqrt(_np.einsum("ij,ij->i", matrix, matrix))
+            if self.rows and float(_np.abs(norms - 1.0).max()) > UNIT_NORM_TOLERANCE:
+                norms[norms == 0.0] = 1.0
+                matrix = matrix / norms[:, None]
+            starts = _np.asarray(self.starts, dtype=_np.intp)
+            counts = _np.diff(_np.append(starts, self.rows)).astype(_np.float32)
+            return _ChunkBlock(
+                dimension=dimension,
+                node_ids=node_ids,
+                starts=starts,
+                rows=matrix,
+                row_count=self.rows,
+                log2_chunk_counts=_np.log2(counts),
+            )
+        payload = bytes(self.payload)
+        stride = dimension * CHUNK_EMBEDDING_ITEMSIZE
+        rows = tuple(
+            tuple(unpack_chunk_embedding(payload[offset : offset + stride], dimension))
+            for offset in range(0, len(payload), stride)
+        )
+        bounds = tuple(self.starts) + (self.rows,)
+        return _ChunkBlock(
+            dimension=dimension,
+            node_ids=node_ids,
+            starts=tuple(self.starts),
+            rows=rows,
+            row_count=self.rows,
+            log2_chunk_counts=tuple(
+                log2(bounds[index + 1] - bounds[index]) for index in range(len(node_ids))
+            ),
+        )
+
+
+def _pooled_chunk_similarities(
+    block: _ChunkBlock,
+    query_embedding: list[float],
+    q_arr: Any,
+) -> list[tuple[float, str]]:
+    """Max-pool one block's chunk cosines into one score per node.
+
+    Negative cosines clip to 0 before pooling, as the single-vector path did;
+    clipping and ``max`` commute, so the order costs nothing either way. The
+    length-bias correction is then subtracted, and the result clipped again --
+    a node's score is a cosine, and cosines do not go below zero here.
+    """
+
+    if _np is not None and isinstance(block.rows, _np.ndarray):
+        if q_arr is None:
+            # A query with no direction has no cosine to anything.
+            return []
+        sims = block.rows @ q_arr
+        # `starts` is the run boundary of each node, so one reduceat pools
+        # every node at once -- no Python loop over the corpus's 60k chunk rows.
+        pooled = _np.clip(_np.maximum.reduceat(sims, block.starts), 0.0, None)
+        if LENGTH_BIAS_LOG2_COEFFICIENT:
+            pooled -= LENGTH_BIAS_LOG2_COEFFICIENT * block.log2_chunk_counts
+            _np.clip(pooled, 0.0, None, out=pooled)
+        return list(zip(pooled.tolist(), block.node_ids, strict=True))
+
+    bounds = tuple(block.starts) + (block.row_count,)
+    pooled_rows: list[tuple[float, str]] = []
+    for index, node_id in enumerate(block.node_ids):
+        best = 0.0
+        for row in block.rows[bounds[index] : bounds[index + 1]]:
+            best = max(best, cosine_similarity(query_embedding, list(row)))
+        penalty = LENGTH_BIAS_LOG2_COEFFICIENT * block.log2_chunk_counts[index]
+        pooled_rows.append((max(0.0, best - penalty), node_id))
+    return pooled_rows
