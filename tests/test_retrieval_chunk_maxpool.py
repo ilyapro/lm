@@ -296,6 +296,62 @@ def test_lazy_backfill_still_embeds_and_chunks_a_node_that_has_neither(
     assert scores[node.id] == pytest.approx(expected_score(1.0, 1), abs=1e-6)
 
 
+def test_unchunked_drain_reaches_a_trace_written_after_the_column_drop(
+    store: MemoryStore,
+) -> None:
+    """A trace written post-drop still becomes scannable after one recall.
+
+    Once ``nodes.embedding`` is gone, ``list_unembedded_nodes`` returns []
+    by contract, so the legacy feeder can no longer see fresh traces at all.
+    The drain has to reach them through ``list_unchunked_nodes`` -- without
+    that, every node written after the drop is invisible to the vector
+    channel forever, which is exactly the live regression this test pins.
+    """
+
+    add_node(store, "company for the scan", PARTIAL)
+    assert store.drop_node_embedding_column() is True
+
+    node = store.create_node(
+        level="trace",
+        content=f"{QUERY} written after the drop",
+        context={"scope": SCOPE, "agent": "tester"},
+    )
+    assert store.count_node_chunks(node.id) == 0
+    assert store.list_unembedded_nodes() == [], "legacy feeder must be blind here"
+
+    service = MemoryRecallService(store, embedder=FixedEmbedder())
+    scores = vector_scores(recall(service))
+
+    assert store.count_node_chunks(node.id) == 1
+    assert scores[node.id] == pytest.approx(expected_score(1.0, 1), abs=1e-6)
+
+
+def test_unchunked_drain_rechunks_a_node_whose_content_changed(
+    store: MemoryStore,
+) -> None:
+    """Edited content gets re-embedded, not served from the stale vector.
+
+    A content edit deletes the node's chunks as stale but leaves
+    ``nodes.embedding`` in place, so the legacy feeder never lists it and
+    ``_ensure_embedding`` would short-circuit on the cached vector -- which
+    describes text the node no longer holds. The unchunked drain must
+    re-embed the current content instead.
+    """
+
+    node_id = add_node(store, "original text, orthogonal", ORTHOGONAL, level="concept")
+    assert store.count_node_chunks(node_id) == 1
+
+    store.update_node(node_id, content=f"{QUERY} is what it says now")
+    assert store.count_node_chunks(node_id) == 0, "stale chunks must be invalidated"
+    assert store.list_unembedded_nodes() == [], "legacy feeder cannot see this node"
+
+    service = MemoryRecallService(store, embedder=FixedEmbedder())
+    scores = vector_scores(recall(service))
+
+    assert store.count_node_chunks(node_id) == 1
+    assert scores[node_id] == pytest.approx(expected_score(1.0, 1), abs=1e-6)
+
+
 def test_matrix_is_reused_across_recalls_that_write(
     store: MemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:

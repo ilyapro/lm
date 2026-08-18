@@ -851,13 +851,55 @@ class MemoryRecallService:
         # Under schema v6 this also produces the node's chunks, because
         # update_node writes them in the same transaction as the vector -- so a
         # node the drain reaches is scannable by the very next statement here.
+        #
+        # Two feeder queries, because the column drop changes which one can see
+        # the work. While ``nodes.embedding`` exists, list_unembedded_nodes
+        # names every node written without a vector. Once the column is dropped
+        # it returns nothing by contract, and list_unchunked_nodes is the only
+        # query that still sees fresh traces -- without it, every node written
+        # after the drop stays invisible to this channel forever. It also
+        # catches the one case the legacy query never could: content edited
+        # after chunking, where the stale chunks were deleted but the stored
+        # vector stayed put -- which is why _rechunk_node re-embeds instead of
+        # trusting node.embedding. The ``attempted`` guard terminates the drain
+        # even for a node that gains no chunk row (list_unchunked_nodes already
+        # excludes whitespace-only content, so it should never fire; it exists
+        # so no single node can make recall loop).
         for scope in plan.scopes:
+            drained = 0
             while True:
                 unembedded = self.store.list_unembedded_nodes(scope=scope, limit=500)
                 if not unembedded:
                     break
                 for node in unembedded:
                     self._ensure_embedding(node)
+                drained += len(unembedded)
+            attempted: set[str] = set()
+            while True:
+                unchunked = [
+                    node
+                    for node in self.store.list_unchunked_nodes(scope=scope, limit=500)
+                    if node.id not in attempted
+                ]
+                if not unchunked:
+                    break
+                for node in unchunked:
+                    attempted.add(node.id)
+                    self._rechunk_node(node)
+            if drained or attempted:
+                # The revision probe cannot be trusted across this drain's own
+                # writes. Tier two is (COUNT(*), MAX(id)), and its safety
+                # argument -- a fresh ULID always outsorts every earlier one --
+                # assumes millisecond clock ticks. On a coarse-tick clock a
+                # delete (the content edit) and this drain's re-insert can land
+                # in one tick with a recall in between: COUNT returns to its
+                # cached value, the new ULID's random bits may sort below the
+                # cached MAX, and the stale matrix -- built from the deleted
+                # vector -- would be served as current. The drain knows it
+                # wrote, so it drops the scope's index outright instead of
+                # betting on the tie-break; steady state (nothing drained)
+                # keeps the cache.
+                self._chunk_index.pop(scope, None)
 
         q_arr = _as_query_array(query_embedding)
         # After the drain, never before it: the drain writes chunks.
@@ -1360,6 +1402,18 @@ class MemoryRecallService:
     def _ensure_embedding(self, node: Node) -> list[float]:
         if node.embedding is not None:
             return node.embedding
+        return self._rechunk_node(node)
+
+    def _rechunk_node(self, node: Node) -> list[float]:
+        """Embed ``node.content`` and store it; chunks rewrite in-transaction.
+
+        Unlike :meth:`_ensure_embedding` this does not trust a stored vector:
+        the unchunked drain hands it nodes whose content may have changed after
+        embedding, and the cached vector describes text the node no longer
+        holds. Post-drop ``updated.embedding`` is None (there is no column), so
+        the freshly computed vector is what the caller gets back.
+        """
+
         self._share_embedder_with_store()
         embedding = self.embedder.embed(node.content)
         updated = self.store.update_node(node.id, embedding=embedding)
