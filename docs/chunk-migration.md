@@ -242,6 +242,19 @@ backup is now old), and the command refuses to proceed unless `verify` passes
 vector channel). The drop itself is `ALTER TABLE nodes DROP COLUMN embedding`
 plus dropping the partial index that depended on the column.
 
+**Restart the server again immediately after the drop.** `MemoryStore` caches
+whether the legacy column exists (`_node_embedding_column_present`,
+`storage.py`) once per process; a server that started while the column was
+present keeps `cached=True` and every `INSERT INTO nodes` now fails with
+`table nodes has no column named embedding` — reads keep working, but
+`memory_remember`/`memory_teach` are broken until the restart. Observed live
+on the 2026-08-18 rollout. Then smoke-test a **write** (e.g. a `memory_teach`
+you needed anyway), not only a recall:
+
+```sh
+systemctl --user restart living-memory.service
+```
+
 The freed pages stay in the file until a `VACUUM`, which rewrites the whole
 database and needs an exclusive lock — so it does **not** belong in the same
 breath as the drop:
