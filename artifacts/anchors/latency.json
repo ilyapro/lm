@@ -1,0 +1,642 @@
+{
+  "artifact": "artifacts/anchors/latency.json",
+  "what": "memory_recall p50/p95 with and without the query-anchor graph entry",
+  "budget": {
+    "rule": "p50 memory_recall no worse than +5 ms",
+    "unit": "ms"
+  },
+  "reproduce": "python3 scripts/anchor_latency_bench.py --snapshot /tmp/anchor-eval/snap-anchored.sqlite3 --cutoff 2026-07-15T00:00:00Z --out artifacts/anchors/latency.json --iters 13 --warmup 2 --holdout-queries 22 --repeat-queries 20 --match-rate-sample 384 --seed 20260819",
+  "method": {
+    "script": "scripts/anchor_latency_bench.py",
+    "database": "sqlite backup-API snapshot, copied to a scratch working copy; the live database is never opened",
+    "snapshot": "/tmp/anchor-eval/snap-anchored.sqlite3",
+    "snapshot_sha256": "5201b10682fcc0e597785371c613f5050afce5e7e1d9d5e66b6521bd62ee8e9d",
+    "snapshot_manifest": "sqlite-backup-API copy of /tmp/anchor-est/snap.sqlite3 (sha256 5f82312ec3566f991bc320b82cd60fb75b13d81a0798f3e05aa5fc6269171fee), then scripts/backfill_query_anchors.py backfill --until 2026-07-15T00:00:00Z",
+    "anchor_population": "whatever the snapshot carries -- built by scripts/backfill_query_anchors.py from real consumed recall_events strictly before the cutoff, with the real encoder",
+    "eval_queries": "distinct real recall_events queries strictly at/after the cutoff (holdout), plus a worst-case repeat stratum of distinct queries from strictly before it -- the events the anchors were built from",
+    "arms": "one MemoryRecallService with anchor_seeding toggled, so caches and chunk index are shared and only the scan and hop differ",
+    "arm_order": "alternated every iteration; a fixed order gave the second arm the first arm's warm page cache and produced a spurious +5.6 ms",
+    "reads": "log_access=False, log_event=False, so neither arm mutates the snapshot",
+    "paired": "per-query medians differenced, because per-query spread (80-400 ms, driven by scope size and depth) dwarfs the effect",
+    "iters_per_query": 13,
+    "warmup_per_query": 2,
+    "seed": 20260819,
+    "machine": "same host as the live server; numpy present"
+  },
+  "corpus": {
+    "anchors": 3071,
+    "live_anchors": 3071,
+    "edges": 7510,
+    "active_nodes": 12893,
+    "connections": 143209,
+    "recall_events": 54814,
+    "cutoff": "2026-07-15T00:00:00Z",
+    "edges_per_anchor": 2.45
+  },
+  "match_rate": {
+    "holdout_distinct_queries": 384,
+    "holdout_queries_that_seeded": 145,
+    "share": 0.3776,
+    "match_floor": 0.6,
+    "match_limit": 5,
+    "best_anchor_cosine_percentiles": {
+      "p50": 0.564,
+      "p75": 0.643,
+      "p90": 0.737,
+      "p95": 0.794,
+      "p99": 0.856,
+      "max": 1.0
+    }
+  },
+  "with_anchors": {
+    "p50_ms": 101.904,
+    "p95_ms": 404.468,
+    "mean_ms": 150.046,
+    "samples": 546
+  },
+  "without_anchors": {
+    "p50_ms": 94.811,
+    "p95_ms": 408.041,
+    "mean_ms": 145.753,
+    "samples": 546
+  },
+  "pooled_delta_ms": {
+    "p50": 7.093,
+    "p95": -3.573
+  },
+  "paired_delta_ms": {
+    "all": {
+      "median": 3.777,
+      "p95": 22.953,
+      "max": 36.023,
+      "n": 42
+    },
+    "unmatched_holdout": {
+      "median": 1.111,
+      "p95": 4.524,
+      "max": 7.334,
+      "n": 16
+    },
+    "matched_holdout": {
+      "median": 5.867,
+      "p95": 36.023,
+      "max": 36.023,
+      "n": 6
+    },
+    "repeat_worst_case": {
+      "median": 5.21,
+      "p95": 22.953,
+      "max": 24.331,
+      "n": 20
+    }
+  },
+  "anchor_stage_ms": {
+    "all": {
+      "p50": 0.56,
+      "p95": 1.036,
+      "max": 1.126,
+      "n": 42
+    },
+    "matched_holdout": {
+      "p50": 0.688,
+      "p95": 0.834,
+      "max": 0.834,
+      "n": 6
+    },
+    "unmatched_holdout": {
+      "p50": 0.436,
+      "p95": 0.544,
+      "max": 0.556,
+      "n": 16
+    },
+    "repeat": {
+      "p50": 0.84,
+      "p95": 1.108,
+      "max": 1.126,
+      "n": 20
+    }
+  },
+  "per_query": [
+    {
+      "scope": "project:lm",
+      "depth": "causal",
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 156,
+      "with_anchors_median_ms": 83.222,
+      "without_anchors_median_ms": 84.847,
+      "anchor_stage_median_ms": 0.31,
+      "paired_delta_ms": -1.625
+    },
+    {
+      "scope": "project:lm",
+      "depth": "shallow",
+      "stratum": "matched_holdout",
+      "matched": true,
+      "anchor_seeds": 2,
+      "query_chars": 53,
+      "with_anchors_median_ms": 85.885,
+      "without_anchors_median_ms": 80.079,
+      "anchor_stage_median_ms": 0.436,
+      "paired_delta_ms": 5.807
+    },
+    {
+      "scope": "project:lm",
+      "depth": "shallow",
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 200,
+      "with_anchors_median_ms": 105.164,
+      "without_anchors_median_ms": 100.85,
+      "anchor_stage_median_ms": 0.331,
+      "paired_delta_ms": 4.314
+    },
+    {
+      "scope": "project:lm",
+      "depth": 1,
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 59,
+      "with_anchors_median_ms": 84.331,
+      "without_anchors_median_ms": 87.659,
+      "anchor_stage_median_ms": 0.32,
+      "paired_delta_ms": -3.328
+    },
+    {
+      "scope": "global",
+      "depth": 1,
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 55,
+      "with_anchors_median_ms": 78.624,
+      "without_anchors_median_ms": 79.791,
+      "anchor_stage_median_ms": 0.267,
+      "paired_delta_ms": -1.167
+    },
+    {
+      "scope": "project:online",
+      "depth": "causal",
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 95,
+      "with_anchors_median_ms": 85.563,
+      "without_anchors_median_ms": 86.955,
+      "anchor_stage_median_ms": 0.544,
+      "paired_delta_ms": -1.392
+    },
+    {
+      "scope": "project:online",
+      "depth": "causal",
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 155,
+      "with_anchors_median_ms": 86.037,
+      "without_anchors_median_ms": 84.165,
+      "anchor_stage_median_ms": 0.54,
+      "paired_delta_ms": 1.872
+    },
+    {
+      "scope": "project:ae",
+      "depth": 2,
+      "stratum": "matched_holdout",
+      "matched": true,
+      "anchor_seeds": 1,
+      "query_chars": 147,
+      "with_anchors_median_ms": 448.732,
+      "without_anchors_median_ms": 412.709,
+      "anchor_stage_median_ms": 0.564,
+      "paired_delta_ms": 36.023
+    },
+    {
+      "scope": "project:ae",
+      "depth": "shallow",
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 200,
+      "with_anchors_median_ms": 111.275,
+      "without_anchors_median_ms": 106.882,
+      "anchor_stage_median_ms": 0.442,
+      "paired_delta_ms": 4.393
+    },
+    {
+      "scope": "project:ae",
+      "depth": 2,
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 88,
+      "with_anchors_median_ms": 367.754,
+      "without_anchors_median_ms": 366.715,
+      "anchor_stage_median_ms": 0.436,
+      "paired_delta_ms": 1.039
+    },
+    {
+      "scope": "project:online",
+      "depth": "shallow",
+      "stratum": "matched_holdout",
+      "matched": true,
+      "anchor_seeds": 1,
+      "query_chars": 136,
+      "with_anchors_median_ms": 93.901,
+      "without_anchors_median_ms": 88.693,
+      "anchor_stage_median_ms": 0.653,
+      "paired_delta_ms": 5.208
+    },
+    {
+      "scope": "project:ae",
+      "depth": "shallow",
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 215,
+      "with_anchors_median_ms": 105.763,
+      "without_anchors_median_ms": 104.606,
+      "anchor_stage_median_ms": 0.447,
+      "paired_delta_ms": 1.157
+    },
+    {
+      "scope": "project:ae",
+      "depth": 2,
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 69,
+      "with_anchors_median_ms": 351.707,
+      "without_anchors_median_ms": 348.468,
+      "anchor_stage_median_ms": 0.437,
+      "paired_delta_ms": 3.24
+    },
+    {
+      "scope": "project:lm",
+      "depth": 2,
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 145,
+      "with_anchors_median_ms": 160.8,
+      "without_anchors_median_ms": 153.466,
+      "anchor_stage_median_ms": 0.307,
+      "paired_delta_ms": 7.334
+    },
+    {
+      "scope": "project:online",
+      "depth": "causal",
+      "stratum": "matched_holdout",
+      "matched": true,
+      "anchor_seeds": 5,
+      "query_chars": 141,
+      "with_anchors_median_ms": 91.0,
+      "without_anchors_median_ms": 84.657,
+      "anchor_stage_median_ms": 0.825,
+      "paired_delta_ms": 6.343
+    },
+    {
+      "scope": "project:online",
+      "depth": "causal",
+      "stratum": "matched_holdout",
+      "matched": true,
+      "anchor_seeds": 11,
+      "query_chars": 138,
+      "with_anchors_median_ms": 88.107,
+      "without_anchors_median_ms": 82.179,
+      "anchor_stage_median_ms": 0.834,
+      "paired_delta_ms": 5.927
+    },
+    {
+      "scope": "project:online",
+      "depth": 1,
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 66,
+      "with_anchors_median_ms": 84.009,
+      "without_anchors_median_ms": 82.943,
+      "anchor_stage_median_ms": 0.556,
+      "paired_delta_ms": 1.066
+    },
+    {
+      "scope": "project:online",
+      "depth": 2,
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 56,
+      "with_anchors_median_ms": 552.421,
+      "without_anchors_median_ms": 556.808,
+      "anchor_stage_median_ms": 0.51,
+      "paired_delta_ms": -4.386
+    },
+    {
+      "scope": "project:lm",
+      "depth": "shallow",
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 200,
+      "with_anchors_median_ms": 98.527,
+      "without_anchors_median_ms": 97.975,
+      "anchor_stage_median_ms": 0.335,
+      "paired_delta_ms": 0.552
+    },
+    {
+      "scope": "project:octopus",
+      "depth": 2,
+      "stratum": "matched_holdout",
+      "matched": true,
+      "anchor_seeds": 2,
+      "query_chars": 142,
+      "with_anchors_median_ms": 400.445,
+      "without_anchors_median_ms": 408.041,
+      "anchor_stage_median_ms": 0.722,
+      "paired_delta_ms": -7.596
+    },
+    {
+      "scope": "project:lm",
+      "depth": 2,
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 119,
+      "with_anchors_median_ms": 179.715,
+      "without_anchors_median_ms": 175.191,
+      "anchor_stage_median_ms": 0.317,
+      "paired_delta_ms": 4.524
+    },
+    {
+      "scope": "project:online",
+      "depth": "causal",
+      "stratum": "unmatched_holdout",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 120,
+      "with_anchors_median_ms": 85.606,
+      "without_anchors_median_ms": 83.791,
+      "anchor_stage_median_ms": 0.538,
+      "paired_delta_ms": 1.815
+    },
+    {
+      "scope": "project:online",
+      "depth": "causal",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 4,
+      "query_chars": 140,
+      "with_anchors_median_ms": 90.079,
+      "without_anchors_median_ms": 86.863,
+      "anchor_stage_median_ms": 0.828,
+      "paired_delta_ms": 3.216
+    },
+    {
+      "scope": "project:online",
+      "depth": 1,
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 3,
+      "query_chars": 85,
+      "with_anchors_median_ms": 107.205,
+      "without_anchors_median_ms": 88.384,
+      "anchor_stage_median_ms": 0.679,
+      "paired_delta_ms": 18.821
+    },
+    {
+      "scope": "project:octopus",
+      "depth": 1,
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 12,
+      "query_chars": 128,
+      "with_anchors_median_ms": 109.322,
+      "without_anchors_median_ms": 87.446,
+      "anchor_stage_median_ms": 0.928,
+      "paired_delta_ms": 21.877
+    },
+    {
+      "scope": "project:x",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 11,
+      "query_chars": 198,
+      "with_anchors_median_ms": 117.83,
+      "without_anchors_median_ms": 112.598,
+      "anchor_stage_median_ms": 1.126,
+      "paired_delta_ms": 5.232
+    },
+    {
+      "scope": "project:x",
+      "depth": "standard",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 7,
+      "query_chars": 104,
+      "with_anchors_median_ms": 99.482,
+      "without_anchors_median_ms": 86.771,
+      "anchor_stage_median_ms": 1.108,
+      "paired_delta_ms": 12.711
+    },
+    {
+      "scope": "project:ae",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 2,
+      "query_chars": 112,
+      "with_anchors_median_ms": 91.199,
+      "without_anchors_median_ms": 88.021,
+      "anchor_stage_median_ms": 0.594,
+      "paired_delta_ms": 3.178
+    },
+    {
+      "scope": "project:ae",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 89,
+      "with_anchors_median_ms": 95.824,
+      "without_anchors_median_ms": 93.074,
+      "anchor_stage_median_ms": 0.447,
+      "paired_delta_ms": 2.75
+    },
+    {
+      "scope": "project:x",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 8,
+      "query_chars": 144,
+      "with_anchors_median_ms": 121.936,
+      "without_anchors_median_ms": 107.3,
+      "anchor_stage_median_ms": 1.035,
+      "paired_delta_ms": 14.637
+    },
+    {
+      "scope": "project:octopus",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 7,
+      "query_chars": 200,
+      "with_anchors_median_ms": 131.07,
+      "without_anchors_median_ms": 108.116,
+      "anchor_stage_median_ms": 0.852,
+      "paired_delta_ms": 22.953
+    },
+    {
+      "scope": "project:online",
+      "depth": "causal",
+      "stratum": "repeat",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 124,
+      "with_anchors_median_ms": 84.861,
+      "without_anchors_median_ms": 84.363,
+      "anchor_stage_median_ms": 0.55,
+      "paired_delta_ms": 0.498
+    },
+    {
+      "scope": "project:online",
+      "depth": "causal",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 4,
+      "query_chars": 158,
+      "with_anchors_median_ms": 102.065,
+      "without_anchors_median_ms": 97.372,
+      "anchor_stage_median_ms": 0.736,
+      "paired_delta_ms": 4.693
+    },
+    {
+      "scope": "project:octopus",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 10,
+      "query_chars": 178,
+      "with_anchors_median_ms": 119.731,
+      "without_anchors_median_ms": 102.149,
+      "anchor_stage_median_ms": 0.927,
+      "paired_delta_ms": 17.583
+    },
+    {
+      "scope": "project:octopus",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 10,
+      "query_chars": 86,
+      "with_anchors_median_ms": 106.894,
+      "without_anchors_median_ms": 82.563,
+      "anchor_stage_median_ms": 0.871,
+      "paired_delta_ms": 24.331
+    },
+    {
+      "scope": "project:ae",
+      "depth": "causal",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 7,
+      "query_chars": 121,
+      "with_anchors_median_ms": 97.269,
+      "without_anchors_median_ms": 92.08,
+      "anchor_stage_median_ms": 0.729,
+      "paired_delta_ms": 5.188
+    },
+    {
+      "scope": "project:ae",
+      "depth": 1,
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 1,
+      "query_chars": 16,
+      "with_anchors_median_ms": 81.539,
+      "without_anchors_median_ms": 81.034,
+      "anchor_stage_median_ms": 0.569,
+      "paired_delta_ms": 0.505
+    },
+    {
+      "scope": "global",
+      "depth": 2,
+      "stratum": "repeat",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 56,
+      "with_anchors_median_ms": 310.096,
+      "without_anchors_median_ms": 316.652,
+      "anchor_stage_median_ms": 0.268,
+      "paired_delta_ms": -6.556
+    },
+    {
+      "scope": "project:EZ-13771-tooltip-experiment/tooltip-implementation/land-root-tap-bss",
+      "depth": 1,
+      "stratum": "repeat",
+      "matched": false,
+      "anchor_seeds": 0,
+      "query_chars": 63,
+      "with_anchors_median_ms": 92.398,
+      "without_anchors_median_ms": 90.834,
+      "anchor_stage_median_ms": 0.27,
+      "paired_delta_ms": 1.564
+    },
+    {
+      "scope": "project:x",
+      "depth": 1,
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 7,
+      "query_chars": 41,
+      "with_anchors_median_ms": 93.235,
+      "without_anchors_median_ms": 86.131,
+      "anchor_stage_median_ms": 1.036,
+      "paired_delta_ms": 7.104
+    },
+    {
+      "scope": "project:x",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 6,
+      "query_chars": 74,
+      "with_anchors_median_ms": 98.519,
+      "without_anchors_median_ms": 95.455,
+      "anchor_stage_median_ms": 0.957,
+      "paired_delta_ms": 3.064
+    },
+    {
+      "scope": "project:octopus",
+      "depth": "shallow",
+      "stratum": "repeat",
+      "matched": true,
+      "anchor_seeds": 9,
+      "query_chars": 200,
+      "with_anchors_median_ms": 134.497,
+      "without_anchors_median_ms": 116.734,
+      "anchor_stage_median_ms": 0.864,
+      "paired_delta_ms": 17.762
+    }
+  ],
+  "baseline_commit": "ed0c61d9dc726d4e1ad5428032155b23a32306ab",
+  "traffic_weighted_delta_ms": {
+    "p50": 2.907,
+    "matched_share": 0.3776,
+    "definition": "matched_share * paired matched_holdout p50 + (1 - matched_share) * paired unmatched_holdout p50, where matched_share is the fraction of distinct holdout queries that clear the match floor. The measured mix over-represents matched queries; this re-weights to it."
+  },
+  "verdict": {
+    "budget_ms": 5.0,
+    "budget_basis": "paired_delta_ms.all.median",
+    "p50_delta_paired_ms": 3.777,
+    "p50_delta_pooled_ms": 7.093,
+    "p50_delta_traffic_weighted_ms": 2.907,
+    "within_budget": true,
+    "pooled_within_budget": false,
+    "traffic_weighted_within_budget": true,
+    "mix_note": "26 of 42 measured queries carry a matching anchor, against 37.8% of real distinct holdout queries. The pooled p50 is therefore an upper bound on this mix, not a traffic estimate; the paired and traffic-weighted rows are the ones that describe the operator's recall."
+  }
+}

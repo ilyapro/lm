@@ -35,9 +35,11 @@ from living_memory.models import (
 from living_memory.phase import PhaseManager
 from living_memory.scope import normalize_scope
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 CHUNK_EMBEDDING_TABLE = "node_chunk_embeddings"
+QUERY_ANCHOR_TABLE = "query_anchors"
+QUERY_ANCHOR_EDGE_TABLE = "query_anchor_edges"
 #: numpy dtype string for a stored chunk BLOB. Part of the read contract that
 #: the vector channel consumes: ``np.frombuffer(blob, dtype=CHUNK_EMBEDDING_DTYPE)``.
 CHUNK_EMBEDDING_DTYPE = "<f4"
@@ -46,6 +48,95 @@ CHUNK_EMBEDDING_ITEMSIZE = 4
 #: SQL literal for the ASCII whitespace set, for TRIM(x, chars): SQLite's
 #: one-argument TRIM strips spaces and nothing else.
 _SQL_WHITESPACE = "' ' || CHAR(9) || CHAR(10) || CHAR(11) || CHAR(12) || CHAR(13)"
+
+#: Query-anchor DDL (schema v7). Held as one constant because it has two
+#: callers that must never drift apart: ``_initialize_schema`` runs it so a
+#: fresh database gets the tables, and ``_migrate_pre_v7_schema`` runs it so a
+#: pre-v7 file gets exactly the same objects. ``_migrate_pre_v6_schema``'s
+#: docstring records why a second hand-written copy of a table's DDL inside the
+#: migration is the wrong shape: two copies to keep in step. Purely additive —
+#: it touches no existing table, so the ``nodes`` and ``connections`` DDL that a
+#: 500 MB live database already carries (with its baked-in ``level`` and
+#: ``type`` CHECK constraints) stays byte-identical.
+_QUERY_ANCHOR_SCHEMA_SQL = """
+    -- Query anchors (schema v7): the graph's entry from query space. One row
+    -- is one remembered *question* — the operator's own words, embedded by the
+    -- same model and packed the same way as node chunks — so a repeat of a
+    -- situation is found by "query <-> past query" instead of
+    -- "query <-> node content", which measurement puts at 0.10-0.27 across
+    -- languages while the query-to-query match sits at ~0.92.
+    --
+    -- `scope` is the consuming recall event's scope and an anchor never
+    -- crosses it. `fingerprint` is storage.recall_fingerprint(query, scope),
+    -- the exact-match dedup key that recall_events already stamps; UNIQUE with
+    -- the scope so the same question in two scopes stays two anchors.
+    -- `dimensions` is recorded rather than inferred from the BLOB's byte
+    -- length, for the reason unpack_chunk_embedding states: a length-derived
+    -- width cannot tell a truncated write from a short vector.
+    -- Decay is soft, like a node's, so a quiet anchor stops matching without
+    -- taking its learned edges with it.
+    CREATE TABLE IF NOT EXISTS query_anchors (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        query TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+        embedding BLOB NOT NULL,
+        reinforcement_count INTEGER NOT NULL DEFAULT 0,
+        usefulness_score REAL NOT NULL DEFAULT 0.0,
+        decayed INTEGER NOT NULL DEFAULT 0 CHECK (decayed IN (0, 1)),
+        decay_reason TEXT,
+        first_seen TEXT NOT NULL,
+        last_matched_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(scope, fingerprint)
+    );
+
+    -- Weighted anchor -> node edges. Bipartite by construction: `anchor_id`
+    -- only ever names a query_anchors row and `target_id` only ever a nodes
+    -- row, so no anchor edge can be a self-loop or close a cycle. `hits`
+    -- counts reinforcements separately from `weight` so accumulation stays
+    -- visible after the weight saturates at 1.0.
+    CREATE TABLE IF NOT EXISTS query_anchor_edges (
+        anchor_id TEXT NOT NULL REFERENCES query_anchors(id),
+        target_id TEXT NOT NULL REFERENCES nodes(id),
+        weight REAL NOT NULL DEFAULT 0.0,
+        hits INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (anchor_id, target_id)
+    );
+
+    -- Anchor-scan driver: match_anchors walks one scope's live anchors.
+    -- Partial on decayed = 0 because a decayed anchor must not match, and the
+    -- decayed share grows without bound as unreinforced anchors age out.
+    CREATE INDEX IF NOT EXISTS idx_query_anchors_scope_active
+        ON query_anchors(scope)
+        WHERE decayed = 0;
+
+    -- Edge migration drives off the target: "every anchor edge pointing at the
+    -- node being superseded". PRIMARY KEY(anchor_id, target_id) leads with
+    -- anchor_id and cannot serve that, so without this index every supersedes
+    -- write would scan the whole edge table.
+    CREATE INDEX IF NOT EXISTS idx_query_anchor_edges_target
+        ON query_anchor_edges(target_id);
+"""
+
+#: Columns of ``query_anchors`` in DDL order, for the pre-v7 ALTER TABLE guard.
+_QUERY_ANCHOR_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("reinforcement_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("usefulness_score", "REAL NOT NULL DEFAULT 0.0"),
+    ("decayed", "INTEGER NOT NULL DEFAULT 0"),
+    ("decay_reason", "TEXT"),
+    ("last_matched_at", "TEXT"),
+)
+
+#: Columns of ``query_anchor_edges`` that a partial earlier rollout could lack.
+_QUERY_ANCHOR_EDGE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("weight", "REAL NOT NULL DEFAULT 0.0"),
+    ("hits", "INTEGER NOT NULL DEFAULT 0"),
+)
 
 #: Batch encoder for chunk texts: takes the chunk texts of one node in order and
 #: returns one vector per text. Injected via :meth:`MemoryStore.set_chunk_embedder`
@@ -132,6 +223,45 @@ def recall_fingerprint(query: str, requested_scope: str | None) -> str:
     collapsed_query = " ".join(str(query).split())
     scope_part = "" if requested_scope is None else str(requested_scope)
     return hashlib.sha256(f"{collapsed_query}\n{scope_part}".encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class QueryAnchor:
+    """One remembered query: its text, its vector, and its reinforcement state.
+
+    ``embedding`` is decoded eagerly via :func:`unpack_chunk_embedding` using
+    the row's own ``dimensions``. The scan path
+    (:meth:`MemoryStore.iter_query_anchor_vectors`) deliberately does not build
+    these — it yields raw BLOB views so a matcher pays for decoding only the
+    vectors it keeps.
+    """
+
+    id: str
+    scope: str
+    query: str
+    fingerprint: str
+    dimensions: int
+    embedding: tuple[float, ...]
+    reinforcement_count: int
+    usefulness_score: float
+    decayed: bool
+    decay_reason: str | None
+    first_seen: str
+    last_matched_at: str | None
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class QueryAnchorEdge:
+    """One weighted anchor -> node edge."""
+
+    anchor_id: str
+    target_id: str
+    weight: float
+    hits: int
+    created_at: str
+    updated_at: str
 
 
 @dataclass(frozen=True)
@@ -264,6 +394,7 @@ class MemoryStore:
         self._chunk_embedder = chunk_embedder
         self._node_embedding_column_cache: bool | None = None
         self._chunk_table_cache: bool | None = None
+        self._anchor_tables_cache: bool | None = None
         if str(self.db_path) != ":memory:":
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -335,9 +466,30 @@ class MemoryStore:
         self._chunk_table_cache = present
         return present
 
+    def _anchor_tables_present(self, *, refresh: bool = False) -> bool:
+        """Whether the v7 query-anchor tables exist (false on a pre-v7 file).
+
+        Every anchor read degrades to "no anchors" on a database that lacks
+        them, so a snapshot opened read-only — by ``health_audit`` or by an
+        offline script that never runs migrations — reports an empty anchor
+        graph instead of raising ``no such table``.
+        """
+
+        cached = getattr(self, "_anchor_tables_cache", None)
+        if cached is not None and not refresh:
+            return bool(cached)
+        rows = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?)",
+            (QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE),
+        ).fetchall()
+        present = len(rows) == 2
+        self._anchor_tables_cache = present
+        return present
+
     def _invalidate_schema_shape_cache(self) -> None:
         self._node_embedding_column_cache = None
         self._chunk_table_cache = None
+        self._anchor_tables_cache = None
 
     def get_kv(self, key: str) -> str | None:
         row = self._conn.execute(
@@ -886,7 +1038,40 @@ class MemoryStore:
                 now,
             ),
         )
+        if relation_type == "supersedes":
+            self._follow_supersedes_with_anchor_edges(source_id, target_id, now=now)
         return connection_id
+
+    def _follow_supersedes_with_anchor_edges(
+        self, source_id: str, target_id: str, *, now: str
+    ) -> int:
+        """Re-point anchor edges off a superseded node onto its replacement.
+
+        Hooked at the lowest write primitive on purpose: every path that
+        supersedes a node funnels through :meth:`_insert_connection` — teach
+        (``consolidation.memory_teach``), duplicate-content dedup
+        (:meth:`_insert_node`), and derived corrections
+        (``edge_derivation.rule_r1c_content_correction``, which persists via
+        :meth:`create_connection`) — so one hook covers all three and cannot be
+        forgotten by a fourth. It also runs inside the caller's transaction, so
+        an anchor never observes a node as superseded while its edges still
+        point at the old target.
+
+        Chains resolve incrementally rather than by walking: when B supersedes
+        A the edges land on B, so a later "C supersedes B" moves the same edges
+        to C. That is also the cycle guard — each step only ever follows the
+        edge being written, so a ``supersedes`` cycle cannot make this recurse.
+        A self-superseding edge is dropped outright.
+
+        Era displacement has no edge to hook and is handled explicitly by
+        :func:`living_memory.query_anchors.migrate_anchor_edges_for_exclusions`.
+        """
+
+        if source_id == target_id:
+            return 0
+        if not self._anchor_tables_present():
+            return 0
+        return self.repoint_query_anchor_edges(target_id, source_id, now=now)
 
     def connect_nodes(
         self,
@@ -2242,12 +2427,458 @@ class MemoryStore:
         ).fetchone()
         return row is not None
 
+    # ------------------------------------------------------------------
+    # Query anchors (schema v7)
+    #
+    # Thin table access only: rows in, dataclasses out, no policy. Which
+    # anchor an incoming query reinforces, how much weight one grounded
+    # consumption is worth, and when an anchor has gone stale all live in
+    # living_memory.query_anchors. The one exception is deliberate and is
+    # documented on _insert_connection: writing a `supersedes` edge re-points
+    # anchor edges in the same transaction, because a caller that forgets to
+    # would silently leave anchors pointing into the past.
+    # ------------------------------------------------------------------
+
+    def get_query_anchor(self, anchor_id: str) -> QueryAnchor | None:
+        if not self._anchor_tables_present():
+            return None
+        row = self._conn.execute(
+            f"SELECT * FROM {QUERY_ANCHOR_TABLE} WHERE id = ?",
+            (str(anchor_id),),
+        ).fetchone()
+        return None if row is None else _query_anchor_from_row(row)
+
+    def find_query_anchor(self, scope: str, fingerprint: str) -> QueryAnchor | None:
+        """Exact-identity lookup on the ``UNIQUE(scope, fingerprint)`` key."""
+
+        if not self._anchor_tables_present():
+            return None
+        row = self._conn.execute(
+            f"SELECT * FROM {QUERY_ANCHOR_TABLE} WHERE scope = ? AND fingerprint = ?",
+            (normalize_scope(scope), str(fingerprint)),
+        ).fetchone()
+        return None if row is None else _query_anchor_from_row(row)
+
+    def insert_query_anchor(
+        self,
+        *,
+        scope: str,
+        query: str,
+        fingerprint: str,
+        embedding: Sequence[float],
+        now: str | None = None,
+        usefulness_score: float = 0.0,
+        anchor_id: str | None = None,
+    ) -> QueryAnchor:
+        """Insert one anchor. Raises ``sqlite3.IntegrityError`` on a repeat key.
+
+        ``scope`` is normalized on the way in, exactly as :meth:`_insert_node`
+        normalizes a node's. An anchor stored under a raw scope string that the
+        scoped reads normalize differently would be invisible to every one of
+        them — written, counted, and never matched.
+        """
+
+        vector = [float(value) for value in embedding]
+        if not vector:
+            raise ValueError("anchor embedding must not be empty")
+        stamp = now or _utc_now()
+        new_id = str(anchor_id) if anchor_id else new_ulid()
+        with self._conn:
+            self._conn.execute(
+                f"""
+                INSERT INTO {QUERY_ANCHOR_TABLE} (
+                    id, scope, query, fingerprint, dimensions, embedding,
+                    reinforcement_count, usefulness_score, decayed, decay_reason,
+                    first_seen, last_matched_at, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, NULL, ?, ?, ?, ?)
+                """,
+                (
+                    new_id,
+                    normalize_scope(scope),
+                    str(query),
+                    str(fingerprint),
+                    len(vector),
+                    pack_chunk_embedding(vector),
+                    float(usefulness_score),
+                    stamp,
+                    stamp,
+                    stamp,
+                    stamp,
+                ),
+            )
+        anchor = self.get_query_anchor(new_id)
+        if anchor is None:  # pragma: no cover - insert just succeeded
+            raise RuntimeError("query anchor insert failed")
+        return anchor
+
+    def reinforce_query_anchor(
+        self,
+        anchor_id: str,
+        *,
+        now: str | None = None,
+        usefulness_delta: float = 0.0,
+    ) -> QueryAnchor | None:
+        """Bump reinforcement, refresh freshness, and revive a decayed anchor.
+
+        Revival is the point: an anchor that aged out and is then asked again
+        is exactly the repeated situation anchors exist for, and leaving it
+        decayed would throw away every edge it had learned.
+        """
+
+        if not self._anchor_tables_present():
+            return None
+        stamp = now or _utc_now()
+        with self._conn:
+            self._conn.execute(
+                f"""
+                UPDATE {QUERY_ANCHOR_TABLE}
+                SET reinforcement_count = reinforcement_count + 1,
+                    usefulness_score = usefulness_score + ?,
+                    decayed = 0,
+                    decay_reason = NULL,
+                    last_matched_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (float(usefulness_delta), stamp, stamp, str(anchor_id)),
+            )
+        return self.get_query_anchor(anchor_id)
+
+    def decay_query_anchor(
+        self, anchor_id: str, reason: str, *, now: str | None = None
+    ) -> QueryAnchor | None:
+        """Soft-delete one anchor, keeping its row and its edges."""
+
+        if not self._anchor_tables_present():
+            return None
+        stamp = now or _utc_now()
+        with self._conn:
+            self._conn.execute(
+                f"""
+                UPDATE {QUERY_ANCHOR_TABLE}
+                SET decayed = 1, decay_reason = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (str(reason), stamp, str(anchor_id)),
+            )
+        return self.get_query_anchor(anchor_id)
+
+    def list_query_anchors(
+        self,
+        *,
+        scope: str | None = None,
+        include_decayed: bool = False,
+        limit: int | None = None,
+    ) -> list[QueryAnchor]:
+        if not self._anchor_tables_present():
+            return []
+        clauses: list[str] = []
+        params: list[Any] = []
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(normalize_scope(scope))
+        if not include_decayed:
+            clauses.append("decayed = 0")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        suffix = ""
+        if limit is not None:
+            suffix = " LIMIT ?"
+            params.append(int(limit))
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM {QUERY_ANCHOR_TABLE}
+            {where}
+            ORDER BY last_matched_at DESC, created_at DESC
+            {suffix}
+            """,
+            params,
+        ).fetchall()
+        return [_query_anchor_from_row(row) for row in rows]
+
+    def iter_query_anchor_vectors(
+        self,
+        scopes: Sequence[str] | None = None,
+        *,
+        include_decayed: bool = False,
+        limit: int | None = None,
+    ) -> Iterator[tuple[str, str, int, memoryview]]:
+        """Yield ``(anchor_id, scope, dimensions, embedding)`` for live anchors.
+
+        The anchor analogue of :meth:`iter_chunk_embedding_rows`: a bare tuple
+        cursor over BLOB views, so a matcher decodes only what it keeps. The
+        corpus is small by design — one row per distinct remembered question,
+        estimated at a few thousand — so this is a scan, not an ANN index.
+        ``dimensions`` is the row's own recorded width, never the BLOB length.
+
+        Yields nothing on a pre-v7 database rather than raising.
+        """
+
+        if not self._anchor_tables_present():
+            return
+        clauses: list[str] = []
+        params: list[Any] = []
+        if not include_decayed:
+            clauses.append("decayed = 0")
+        scope_list = (
+            [normalize_scope(scope) for scope in scopes] if scopes is not None else None
+        )
+        if scope_list is not None:
+            if not scope_list:
+                return
+            placeholders = ",".join("?" for _ in scope_list)
+            clauses.append(f"scope IN ({placeholders})")
+            params.extend(scope_list)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        suffix = ""
+        if limit is not None:
+            suffix = " LIMIT ?"
+            params.append(int(limit))
+        cursor = self._conn.cursor()
+        cursor.row_factory = None
+        cursor.execute(
+            f"""
+            SELECT id, scope, dimensions, embedding
+            FROM {QUERY_ANCHOR_TABLE}
+            {where}
+            {suffix}
+            """,
+            params,
+        )
+        while True:
+            batch = cursor.fetchmany(512)
+            if not batch:
+                return
+            for anchor_id, scope, dimensions, blob in batch:
+                yield str(anchor_id), str(scope), int(dimensions), memoryview(blob)
+
+    def upsert_query_anchor_edge(
+        self,
+        anchor_id: str,
+        target_id: str,
+        *,
+        weight: float,
+        now: str | None = None,
+    ) -> QueryAnchorEdge:
+        """Accumulate weight onto an anchor -> node edge; never clobber it.
+
+        Read-modify-write in one statement, the contract
+        ``consolidation._upsert_weighted_connection`` exists to provide and
+        that :meth:`create_connection` does *not*: its
+        ``ON CONFLICT ... DO UPDATE SET weight = excluded.weight`` overwrites,
+        so a re-derivation at a lower weight silently downgrades an edge that
+        repeated use had strengthened.
+
+        Anchor edges go one step further than that mirror's ``max()``: weight
+        *adds*, saturating at 1.0. An anchor edge is a repetition signal — the
+        same question grounding on the same node again is new evidence, not a
+        restatement of the old one-shot structural score that ``max()`` is
+        right for. ``hits`` keeps counting after the weight saturates, so the
+        evidence stays legible.
+        """
+
+        if not self._anchor_tables_present():
+            raise RuntimeError("query anchor tables are absent (pre-v7 database)")
+        stamp = now or _utc_now()
+        increment = min(1.0, max(0.0, float(weight)))
+        with self._conn:
+            self._conn.execute(
+                f"""
+                INSERT INTO {QUERY_ANCHOR_EDGE_TABLE} (
+                    anchor_id, target_id, weight, hits, created_at, updated_at
+                )
+                VALUES (?, ?, ?, 1, ?, ?)
+                ON CONFLICT(anchor_id, target_id) DO UPDATE SET
+                    weight = MIN(1.0, {QUERY_ANCHOR_EDGE_TABLE}.weight + excluded.weight),
+                    hits = {QUERY_ANCHOR_EDGE_TABLE}.hits + 1,
+                    updated_at = excluded.updated_at
+                """,
+                (str(anchor_id), str(target_id), increment, stamp, stamp),
+            )
+        row = self._conn.execute(
+            f"""
+            SELECT * FROM {QUERY_ANCHOR_EDGE_TABLE}
+            WHERE anchor_id = ? AND target_id = ?
+            """,
+            (str(anchor_id), str(target_id)),
+        ).fetchone()
+        return _query_anchor_edge_from_row(row)
+
+    def list_query_anchor_edges(
+        self,
+        *,
+        anchor_id: str | None = None,
+        target_id: str | None = None,
+        active_targets_only: bool = False,
+    ) -> list[QueryAnchorEdge]:
+        """List anchor edges, heaviest first.
+
+        ``active_targets_only`` joins ``nodes`` and drops soft-deleted targets:
+        node deletion is soft everywhere in this store, so an edge row
+        outliving its target's usefulness is normal and liveness has to be
+        asked for rather than assumed.
+        """
+
+        if not self._anchor_tables_present():
+            return []
+        clauses: list[str] = []
+        params: list[Any] = []
+        if anchor_id is not None:
+            clauses.append("e.anchor_id = ?")
+            params.append(str(anchor_id))
+        if target_id is not None:
+            clauses.append("e.target_id = ?")
+            params.append(str(target_id))
+        join = ""
+        if active_targets_only:
+            join = "JOIN nodes n ON n.id = e.target_id"
+            clauses.append("n.decayed = 0")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"""
+            SELECT e.* FROM {QUERY_ANCHOR_EDGE_TABLE} e
+            {join}
+            {where}
+            ORDER BY e.weight DESC, e.target_id ASC
+            """,
+            params,
+        ).fetchall()
+        return [_query_anchor_edge_from_row(row) for row in rows]
+
+    def count_query_anchors(self, *, include_decayed: bool = True) -> int:
+        if not self._anchor_tables_present():
+            return 0
+        where = "" if include_decayed else "WHERE decayed = 0"
+        row = self._conn.execute(
+            f"SELECT COUNT(*) AS count FROM {QUERY_ANCHOR_TABLE} {where}"
+        ).fetchone()
+        return int(row["count"])
+
+    def count_query_anchor_edges(self) -> int:
+        if not self._anchor_tables_present():
+            return 0
+        row = self._conn.execute(
+            f"SELECT COUNT(*) AS count FROM {QUERY_ANCHOR_EDGE_TABLE}"
+        ).fetchone()
+        return int(row["count"])
+
+    def repoint_query_anchor_edges(
+        self, from_target: str, to_target: str, *, now: str | None = None
+    ) -> int:
+        """Move every anchor edge on ``from_target`` onto ``to_target``.
+
+        Merging, not overwriting: an anchor that already points at
+        ``to_target`` keeps the heavier claim plus the arriving one, capped at
+        1.0, and its ``hits`` add — the same accumulate-never-clobber contract
+        as :meth:`upsert_query_anchor_edge`, which is why a plain
+        ``UPDATE ... SET target_id = ?`` is wrong here: it raises on the
+        PRIMARY KEY collision, and ``UPDATE OR REPLACE`` would silently discard
+        one of the two edges' learned weight.
+
+        Runs no transaction of its own so it can join the one that is writing
+        the ``supersedes`` edge; callers outside such a transaction should wrap
+        it in ``with store.connection:``. Returns the number of edge rows
+        moved. No identity, existence, or cycle checking — that is policy and
+        lives in :mod:`living_memory.query_anchors`.
+        """
+
+        if not self._anchor_tables_present():
+            return 0
+        source = str(from_target)
+        destination = str(to_target)
+        if source == destination:
+            return 0
+        rows = self._conn.execute(
+            f"""
+            SELECT anchor_id, weight, hits, created_at
+            FROM {QUERY_ANCHOR_EDGE_TABLE}
+            WHERE target_id = ?
+            """,
+            (source,),
+        ).fetchall()
+        if not rows:
+            return 0
+        stamp = now or _utc_now()
+        for row in rows:
+            self._conn.execute(
+                f"""
+                INSERT INTO {QUERY_ANCHOR_EDGE_TABLE} (
+                    anchor_id, target_id, weight, hits, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(anchor_id, target_id) DO UPDATE SET
+                    weight = MIN(1.0, {QUERY_ANCHOR_EDGE_TABLE}.weight + excluded.weight),
+                    hits = {QUERY_ANCHOR_EDGE_TABLE}.hits + excluded.hits,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    str(row["anchor_id"]),
+                    destination,
+                    float(row["weight"]),
+                    int(row["hits"]),
+                    str(row["created_at"]),
+                    stamp,
+                ),
+            )
+        self._conn.execute(
+            f"DELETE FROM {QUERY_ANCHOR_EDGE_TABLE} WHERE target_id = ?",
+            (source,),
+        )
+        return len(rows)
+
+    def query_anchor_revision(self) -> tuple[Any, ...]:
+        """``(live anchor count, greatest anchor id)``, or ``()`` before v7.
+
+        The cache key for the live-anchor matrix, the anchor analogue of
+        ``retrieval._chunk_table_revision``. Measured cold, the scan behind
+        :meth:`iter_query_anchor_vectors` is ~5 ms at 4,000 anchors x 384
+        dims — small against the chunk corpus, but not free enough to repeat on
+        every recall when the recall's whole latency budget is single-digit
+        milliseconds. A caller that caches the matrix re-asks this instead.
+
+        Two components, and the pair is complete for what the matrix holds —
+        the id and vector of every live anchor. Only three things can change
+        that set. An insert mints a fresh ULID whose leading 48 bits are the
+        current millisecond, so it raises ``MAX(id)``. A decay and a revival
+        both move the live count. What is deliberately *not* covered is a
+        reinforcement, because it changes neither: reinforcing updates counters
+        and freshness and never rewrites the stored vector, exactly so that the
+        cached matrix survives the most frequent write on the anchor path.
+
+        ``MAX(updated_at)`` is absent for the same reason it is absent from the
+        chunk revision: ``updated_at`` is in no index, so that aggregate would
+        scan the table, embedding BLOBs included. Two statements rather than
+        one for the same reason as well — folding them gives up both index fast
+        paths.
+        """
+
+        if not self._anchor_tables_present():
+            return ()
+        counted = self._conn.execute(
+            f"SELECT COUNT(*) FROM {QUERY_ANCHOR_TABLE} WHERE decayed = 0"
+        ).fetchone()
+        greatest = self._conn.execute(
+            f"SELECT MAX(id) FROM {QUERY_ANCHOR_TABLE}"
+        ).fetchone()
+        return (int(counted[0]), greatest[0])
+
+    def list_anchor_edge_targets(self) -> list[str]:
+        """Every distinct node id that some anchor edge points at."""
+
+        if not self._anchor_tables_present():
+            return []
+        rows = self._conn.execute(
+            f"SELECT DISTINCT target_id FROM {QUERY_ANCHOR_EDGE_TABLE} ORDER BY target_id"
+        ).fetchall()
+        return [str(row["target_id"]) for row in rows]
+
     def _initialize_schema(self) -> None:
         with self._conn:
             self._migrate_pre_v3_schema()
             self._migrate_pre_v4_schema()
             self._migrate_pre_v5_schema()
             self._migrate_pre_v6_schema()
+            self._migrate_pre_v7_schema()
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -2493,6 +3124,10 @@ class MemoryStore:
                     ON recall_events(fingerprint, created_at DESC);
                 """
             )
+            # Query anchors (v7). Same script the pre-v7 migration runs, so a
+            # fresh database and a migrated one end up with identical objects.
+            self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)
+            self._anchor_tables_cache = None
             self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
             self._backfill_recall_fingerprint_signal()
@@ -2585,6 +3220,70 @@ class MemoryStore:
         if self._node_embedding_column_present():
             return
         self._conn.execute("DROP INDEX IF EXISTS idx_nodes_embedded_active_scope")
+
+    def _migrate_pre_v7_schema(self) -> None:
+        """Add the query-anchor tables for DBs created at schema_version <= 6.
+
+        Self-guarding and idempotent, in the shape of
+        :meth:`_migrate_pre_v5_schema`: probe ``sqlite_master``, read
+        ``PRAGMA table_info``, and only then run ``CREATE TABLE IF NOT
+        EXISTS`` / ``ALTER TABLE ... ADD COLUMN``.
+
+        Strictly additive by construction. ``nodes.level`` and
+        ``connections.type`` carry baked-in CHECK constraints on a 500 MB live
+        database, so an anchor could not be a new node level nor an anchor edge
+        a new connection type without a full table rebuild; two new tables cost
+        one ``CREATE`` each and leave both existing DDL strings byte-identical.
+
+        The ``CREATE`` half is shared with :meth:`_initialize_schema` through
+        ``_QUERY_ANCHOR_SCHEMA_SQL`` rather than copied here — see the note on
+        that constant, and :meth:`_migrate_pre_v6_schema` for why a second copy
+        of a table's DDL inside a migration is the wrong shape. What is local
+        to this method is the ``ALTER TABLE`` half: a database that already
+        carries ``query_anchors`` from a partial earlier rollout would be left
+        untouched by ``CREATE TABLE IF NOT EXISTS``, so any column the current
+        DDL adds is added explicitly. Only NULLable or defaulted columns can be
+        added this way, which is why every optional anchor column has a
+        default.
+        """
+
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (QUERY_ANCHOR_TABLE,),
+        ).fetchone()
+        edge_row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (QUERY_ANCHOR_EDGE_TABLE,),
+        ).fetchone()
+        if row is None or edge_row is None:
+            self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)
+            self._anchor_tables_cache = None
+            return
+
+        columns = {
+            str(r["name"])
+            for r in self._conn.execute(
+                f"PRAGMA table_info({QUERY_ANCHOR_TABLE})"
+            ).fetchall()
+        }
+        for name, declaration in _QUERY_ANCHOR_COLUMNS:
+            if name not in columns:
+                self._conn.execute(
+                    f"ALTER TABLE {QUERY_ANCHOR_TABLE} ADD COLUMN {name} {declaration}"
+                )
+
+        edge_columns = {
+            str(r["name"])
+            for r in self._conn.execute(
+                f"PRAGMA table_info({QUERY_ANCHOR_EDGE_TABLE})"
+            ).fetchall()
+        }
+        for name, declaration in _QUERY_ANCHOR_EDGE_COLUMNS:
+            if name not in edge_columns:
+                self._conn.execute(
+                    f"ALTER TABLE {QUERY_ANCHOR_EDGE_TABLE} "
+                    f"ADD COLUMN {name} {declaration}"
+                )
 
     def _create_legacy_embedding_index(self) -> None:
         """Create the pre-chunk vector index, but only while its column exists."""
@@ -2914,6 +3613,37 @@ def _normalize_rejected_alternatives(
 
 def _rejected_alternative_content(approach: str, reason: str) -> str:
     return f"Rejected alternative: {approach}\nRejected because: {reason}"
+
+
+def _query_anchor_from_row(row: sqlite3.Row) -> QueryAnchor:
+    dimensions = int(row["dimensions"])
+    return QueryAnchor(
+        id=str(row["id"]),
+        scope=str(row["scope"]),
+        query=str(row["query"]),
+        fingerprint=str(row["fingerprint"]),
+        dimensions=dimensions,
+        embedding=tuple(unpack_chunk_embedding(row["embedding"], dimensions)),
+        reinforcement_count=int(row["reinforcement_count"]),
+        usefulness_score=float(row["usefulness_score"]),
+        decayed=bool(row["decayed"]),
+        decay_reason=_optional_str(row["decay_reason"]),
+        first_seen=str(row["first_seen"]),
+        last_matched_at=_optional_str(row["last_matched_at"]),
+        created_at=str(row["created_at"]),
+        updated_at=str(row["updated_at"]),
+    )
+
+
+def _query_anchor_edge_from_row(row: sqlite3.Row) -> QueryAnchorEdge:
+    return QueryAnchorEdge(
+        anchor_id=str(row["anchor_id"]),
+        target_id=str(row["target_id"]),
+        weight=float(row["weight"]),
+        hits=int(row["hits"]),
+        created_at=str(row["created_at"]),
+        updated_at=str(row["updated_at"]),
+    )
 
 
 def _chunk_embedding_from_row(row: sqlite3.Row) -> NodeChunkEmbedding:

@@ -1,0 +1,375 @@
+{
+  "what": "Retro query-anchor backfill executed against the LIVE Living Memory database",
+  "db": "/home/sfx/.local/share/living-memory/global.sqlite3",
+  "date": "2026-08-18",
+  "runbook": "docs/query-anchors-migration.md, steps 0-2 and 6",
+  "server_state": {
+    "up_throughout": true,
+    "boot_id": "d291137fe5c040eb95f256c59017f39a",
+    "restarted": false,
+    "reason": "restart belongs to the pending post-merge steps"
+  },
+  "database_before": {
+    "schema_version": "6",
+    "anchor_tables": false,
+    "nodes": 16734,
+    "connections": 143340,
+    "recall_events": 54824,
+    "consumed_events": 9122,
+    "file_bytes": 501264384,
+    "wal_bytes": 502977872,
+    "note": "the ~503 MB WAL is why a cp is not a valid backup of this database"
+  },
+  "database_after": {
+    "schema_version": "7",
+    "anchor_tables": true,
+    "file_bytes": 510300160,
+    "growth_bytes": 9035776,
+    "anchor_storage_mb": {
+      "query_anchors": 6.54,
+      "query_anchor_edges": 0.87
+    }
+  },
+  "step_0_preflight": {
+    "verify_before_migration": {
+      "exit_code": 1,
+      "expected": true,
+      "report": {
+        "anchor_tables_present": false,
+        "checked_at": "2026-08-18T14:28:12Z",
+        "db": "/home/sfx/.local/share/living-memory/global.sqlite3",
+        "ok": false,
+        "reason": "query_anchors / query_anchor_edges are absent: this database is pre-v7, so the backfill has not run against it",
+        "schema_version": "6"
+      }
+    },
+    "dry_run": {
+      "exit_code": 0,
+      "elapsed_seconds": 29.773,
+      "events_per_second": 305.21,
+      "report": {
+        "anchor_edges_total": 0,
+        "anchor_tables_present": false,
+        "anchors_created": 0,
+        "anchors_merged_by_cosine": 0,
+        "anchors_reinforced": 0,
+        "anchors_total": 0,
+        "assumed_rate": 200.0,
+        "backup": null,
+        "busy_retries": 0,
+        "complete": true,
+        "db": "/home/sfx/.local/share/living-memory/global.sqlite3",
+        "edge_writes": 0,
+        "elapsed_seconds": 29.773,
+        "embedding_backend": "",
+        "embedding_dimensions": 384,
+        "embedding_model": "",
+        "events_already_anchored": 0,
+        "events_applied": 0,
+        "events_grounded": 3682,
+        "events_per_second": 305.21,
+        "events_processed": 9087,
+        "events_skipped_bad_scope": 0,
+        "events_skipped_zero_vector": 0,
+        "events_total": 9122,
+        "events_ungrounded": 5405,
+        "events_without_live_target": 21,
+        "grounded_targets": 8699,
+        "min_containment": 0.25,
+        "mode": "dry-run",
+        "projected_anchors": 3430,
+        "projected_edges": 8072,
+        "projected_seconds": 18.4,
+        "results_without_node": 3,
+        "scope": null,
+        "started_at": "2026-08-18T14:28:19Z",
+        "sweep": {},
+        "targets_decayed_with_replacement": 219,
+        "targets_decayed_without_replacement": 263,
+        "targets_missing": 0,
+        "targets_skipped_dead": 0,
+        "until": null
+      }
+    }
+  },
+  "step_1_backup": {
+    "backup_nodes": 16734,
+    "bytes": 501354496,
+    "created": true,
+    "path": "/home/sfx/.local/share/living-memory/global.pre-anchors-20260818.sqlite3",
+    "quick_check": "ok",
+    "seconds": 1.665,
+    "source_nodes": 16734,
+    "api": "sqlite3.Connection.backup() from a mode=ro source connection",
+    "cp_would_be_invalid": true
+  },
+  "step_2_backfill": {
+    "exit_code": 0,
+    "wall_clock_seconds": 65.9,
+    "report": {
+      "anchor_edges_total": 7942,
+      "anchor_tables_present": true,
+      "anchors_created": 3337,
+      "anchors_merged_by_cosine": 101,
+      "anchors_reinforced": 324,
+      "anchors_total": 3337,
+      "assumed_rate": null,
+      "backup": {
+        "backup_nodes": 16734,
+        "bytes": 501354496,
+        "created": true,
+        "path": "/home/sfx/.local/share/living-memory/global.pre-anchors-20260818.sqlite3",
+        "quick_check": "ok",
+        "seconds": 1.665,
+        "source_nodes": 16734
+      },
+      "busy_retries": 0,
+      "complete": true,
+      "db": "/home/sfx/.local/share/living-memory/global.sqlite3",
+      "edge_writes": 8436,
+      "elapsed_seconds": 59.345,
+      "embedding_backend": "sentence-transformers",
+      "embedding_dimensions": 384,
+      "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
+      "events_already_anchored": 0,
+      "events_applied": 3661,
+      "events_grounded": 3682,
+      "events_per_second": 153.12,
+      "events_processed": 9087,
+      "events_skipped_bad_scope": 0,
+      "events_skipped_zero_vector": 0,
+      "events_total": 9122,
+      "events_ungrounded": 5405,
+      "events_without_live_target": 21,
+      "grounded_targets": 8699,
+      "min_containment": 0.25,
+      "mode": "backfill",
+      "projected_anchors": 0,
+      "projected_edges": 0,
+      "projected_seconds": null,
+      "results_without_node": 0,
+      "scope": null,
+      "started_at": "2026-08-18T14:29:32Z",
+      "sweep": {
+        "edges_moved": 0,
+        "migrations": [],
+        "targets_examined": 2111,
+        "targets_migrated": 0
+      },
+      "targets_decayed_with_replacement": 0,
+      "targets_decayed_without_replacement": 0,
+      "targets_missing": 0,
+      "targets_skipped_dead": 263,
+      "until": null
+    }
+  },
+  "step_6_verify": {
+    "exit_code": 0,
+    "report": {
+      "anchor_edges": 7942,
+      "anchor_tables_present": true,
+      "anchors": 3337,
+      "anchors_live": 3337,
+      "anchors_outside_source_scope": 0,
+      "anchors_with_unusable_embedding": 0,
+      "anchors_without_edges": 0,
+      "anchors_without_edges_examples": [],
+      "checked_at": "2026-08-18T14:30:42Z",
+      "consumed_event_identities": 8049,
+      "db": "/home/sfx/.local/share/living-memory/global.sqlite3",
+      "duplicate_identities": 0,
+      "duplicate_identity_examples": [],
+      "edges_per_anchor": 2.38,
+      "edges_to_decayed_nodes_without_replacement": 0,
+      "edges_to_missing_nodes": 0,
+      "edges_to_superseded_nodes": 0,
+      "embedding_dimensions": [
+        384
+      ],
+      "missing_target_examples": [],
+      "ok": true,
+      "outside_source_scope_examples": [],
+      "schema_version": "7",
+      "scopes": {
+        "global": 81,
+        "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": 3,
+        "project:/root/p/octopus": 2,
+        "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": 3,
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": 1,
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": 1,
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": 2,
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": 1,
+        "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": 1,
+        "project:/root/p/octopus/.worktrees/_node_exec_rise": 4,
+        "project:/root/p/octopus/.worktrees/_node_exec_rise2": 1,
+        "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": 1,
+        "project:/root/p/octopus/.worktrees/goal-breakthrough": 1,
+        "project:/root/p/octopus/.worktrees/goal-landing": 1,
+        "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": 1,
+        "project:/root/p/octopus/.worktrees/goal-rise": 1,
+        "project:2gis": 1,
+        "project:DesktopTouchpad": 1,
+        "project:ae": 392,
+        "project:breakthrough/gemini-flash-contract": 4,
+        "project:breakthrough/programming-capability-loop": 1,
+        "project:flamp4": 2,
+        "project:gas-stations-ui": 8,
+        "project:goal-tree": 1,
+        "project:id-2gis-com": 1,
+        "project:ilyapro/ae": 2,
+        "project:living-memory": 3,
+        "project:lm": 154,
+        "project:mm": 17,
+        "project:natural-flow/downstream-route-propagation/_critique/review-packet-route-triple": 3,
+        "project:octopus": 657,
+        "project:online": 652,
+        "project:online-beautyshare": 1,
+        "project:online-sitemaps": 1,
+        "project:rise/gemini-comparator-execution": 2,
+        "project:sfx": 2,
+        "project:x": 1327
+      },
+      "superseded_target_examples": [],
+      "unusable_embedding_examples": []
+    }
+  },
+  "anchors_untouched_proof": {
+    "claim": "the backfill wrote nothing outside query_anchors / query_anchor_edges",
+    "method": "sha256 over ordered projections of nodes(id,content,level,scope,created_at), connections(source_id,target_id,type) and recall_events(id,query,scope,created_at), compared between the pre-backfill backup and the live database after the run",
+    "nodes": {
+      "rows": 16734,
+      "delta": 0,
+      "sha256_prefix": "171a63e79116d6e2",
+      "identical": true
+    },
+    "connections": {
+      "rows": 143340,
+      "delta": 0,
+      "sha256_prefix": "c8a465231a9aaa4c",
+      "identical": true
+    },
+    "recall_events": {
+      "rows": 54824,
+      "delta": 0,
+      "sha256_prefix": "de9d7bbf9c5bf985",
+      "identical": true
+    },
+    "nodes_updated_during_run": 0,
+    "new_recall_events_during_run": 0,
+    "note": "The server was up throughout, but it happened to receive no write in the 70 s window, so the comparison is unconfounded: every projection is byte-identical."
+  },
+  "counts_against_estimate": {
+    "goal_prior_estimate": {
+      "anchors": 3700,
+      "edges": 8500,
+      "source": "root goal (600-event sample, extrapolated)"
+    },
+    "estimate_json": {
+      "anchors": 3450,
+      "edges": 8335,
+      "edges_per_anchor": 2.415942,
+      "source": "artifacts/anchors/estimate.json, full-history read-only labeling"
+    },
+    "live_dry_run": {
+      "anchors": 3430,
+      "edges": 8072,
+      "source": "step-0 preflight on the live file; an upper bound (identity count, before cosine dedup)"
+    },
+    "live_actual": {
+      "anchors": 3337,
+      "edges": 7942,
+      "edges_per_anchor": 2.38
+    },
+    "deltas": {
+      "vs_goal_prior_estimate": {
+        "anchors_pct": -9.8,
+        "edges_pct": -6.6
+      },
+      "vs_estimate_json": {
+        "anchors_pct": -3.3,
+        "edges_pct": -4.7
+      },
+      "vs_live_dry_run": {
+        "anchors_pct": -2.7,
+        "edges_pct": -1.6
+      }
+    },
+    "explanation": {
+      "anchors": "The 93-anchor gap between the dry-run upper bound (3,430) and what was written (3,337) is cosine dedup: 101 questions whose (scope, fingerprint) identities differ but whose vectors are near-identical were merged into an existing anchor instead of creating one. The projection counts identities and cannot model that; it is documented as an upper bound for exactly this reason. Against the root goal's ~3,700 the shortfall is 9.8%, and it is the same two rules a 600-event extrapolation could not see: cosine dedup, and 21 grounded events whose every target node is gone with nothing replacing it.",
+      "edges": "Exact arithmetic, no residual: 8,699 grounded targets - 263 targets that are decayed with no heir (skipped rather than written as dead edges) = 8,436 edge writes; 8,436 writes - 494 that landed on an (anchor, target) pair that already existed and accumulated weight/hits instead of adding a row = 7,942 rows. sum(hits) over query_anchor_edges is 8,436, which confirms the collapse rather than assuming it. estimate.json's 8,335 counted the decayed-target share as present (5.7%) rather than skipped, and could not model the extra collapse caused by the 101 anchor merges.",
+      "edges_per_anchor": "2.38 against the root goal's 2.28 and estimate.json's 2.42: the merges concentrate edges on fewer anchors, which raises the ratio while lowering both absolute counts.",
+      "agreement_with_the_snapshot_rehearsal": "3,337 / 7,942 / 8,436 are the identical counts the sibling node measured on a sqlite-backup-API snapshot of this same database (docs/query-anchors-migration.md, 'Measured numbers'). The live file has since grown from 9,117 to 9,122 consumed events, and all 5 new ones labeled ungrounded - events_grounded is 3,682 in both runs while events_processed went 9,082 -> 9,087 - so identical output is the expected result, not a coincidence."
+    }
+  },
+  "observations": {
+    "anchor_freshness_span": [
+      "2026-05-15T07:25:32Z",
+      "2026-08-17T18:49:28Z"
+    ],
+    "freshness_note": "Anchors are stamped with their source event's timestamp, not the wall clock, so a May consumption produces an anchor last matched in May. That is what makes --until reproduce the anchor set that existed at a cutoff.",
+    "decayed_anchors": 0,
+    "edge_weight_range": [
+      0.25,
+      1.0
+    ],
+    "edge_hits_total": 8436,
+    "busy_retries": 0,
+    "edge_migration_sweep": {
+      "edges_moved": 0,
+      "migrations": [],
+      "targets_examined": 2111,
+      "targets_migrated": 0
+    },
+    "sweep_note": "0 edges moved is the expected result: upsert_anchor resolves a target through supersedes before writing, so the 219 grounded targets superseded since were already written to their replacements.",
+    "top_scopes": {
+      "project:x": 1327,
+      "project:octopus": 657,
+      "project:online": 652,
+      "project:ae": 392,
+      "project:lm": 154,
+      "global": 81
+    }
+  },
+  "pending_post_merge": {
+    "status": "NOT PERFORMED by this node, by contract - they run from merged master",
+    "why": "The shared checkout /home/sfx/p/lm is read-only for this node, so the code deploy, the service restart and the post-restart WRITE smoke test are left as ready-to-run runbook steps.",
+    "steps": [
+      {
+        "runbook_step": 3,
+        "name": "deploy the merged code",
+        "command": "git -C /home/sfx/p/lm fetch origin && git -C /home/sfx/p/lm pull --ff-only"
+      },
+      {
+        "runbook_step": 4,
+        "name": "restart the server",
+        "command": "systemctl --user restart living-memory.service"
+      },
+      {
+        "runbook_step": 4,
+        "name": "confirm a new boot_id",
+        "command": "curl -fsS http://127.0.0.1:8765/health   # boot_id must differ from d291137fe5c040eb95f256c59017f39a"
+      },
+      {
+        "runbook_step": 4,
+        "name": "WRITE smoke test - a memory_remember, never a recall",
+        "command": "curl -fsS -H \"Authorization: Bearer $LM_AUTH_TOKEN\" -H 'Content-Type: application/json' http://127.0.0.1:8765/mcp/ -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_remember\",\"arguments\":{\"content\":\"query-anchor rollout smoke: writes work after the restart\",\"context\":{\"scope\":\"project:lm\"}}}}'"
+      },
+      {
+        "runbook_step": 4,
+        "name": "confirm the process serves this checkout's protocol texts",
+        "command": "python3 /home/sfx/p/lm/scripts/check_deployed_protocol.py"
+      },
+      {
+        "runbook_step": 5,
+        "name": "catch-up pass over the deploy window",
+        "command": "python3 scripts/backfill_query_anchors.py backfill --db ~/.local/share/living-memory/global.sqlite3 --existing-backup /home/sfx/.local/share/living-memory/global.pre-anchors-20260818.sqlite3 --json /tmp/anchor-catchup.json"
+      },
+      {
+        "runbook_step": 6,
+        "name": "re-verify after the catch-up pass",
+        "command": "python3 scripts/backfill_query_anchors.py verify --db ~/.local/share/living-memory/global.sqlite3 --json /tmp/anchor-verify-post.json"
+      }
+    ],
+    "alt_host": "NOT TOUCHED and not part of this procedure. No agent connects to, deploys to, restarts, or backfills alt; updating it happens only on the operator's explicit command."
+  }
+}

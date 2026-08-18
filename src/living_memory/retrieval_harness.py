@@ -59,6 +59,34 @@ visible span (median content 2074 chars, median visible share 0.19), and
 picking query terms that occur only past ``visible_char_end`` yields
 ``tail=True`` mechanically — verified on three such nodes.
 
+Query anchors: three buckets and one ablation switch
+----------------------------------------------------
+
+``run`` annotates every goldset item against the snapshot's anchor corpus
+(:func:`annotate_anchors`) and turns that into first-class metric buckets
+beside ``per_stratum`` and ``tail``:
+
+``anchor_holdout``
+    ``exact_repeat`` versus ``fingerprint_disjoint``. Reported apart, never
+    merged: an exact repeat pulling back its own past answer is a lookup
+    table, and only the disjoint subset can carry a generalization claim.
+
+``fresh_node_visibility``
+    The self-reinforcement guard. Anchors, grounding and usefulness form a
+    loop; this bucket is what says the loop does not bury new memory. It
+    scores *only* the relevant nodes created after the matched anchor last
+    learned anything, and must not be worse with anchors than without.
+
+``anchor_coverage``
+    How much of the goldset the corpus can even see, including the unfloored
+    nearest-anchor cosine, which separates "no anchor exists for this class of
+    query" from "one exists and the match floor rejected it".
+
+``--no-anchors`` flips ``MemoryRecallService(anchor_seeding=False)`` and
+nothing else, so the two arms of a leak-free with/without run hold one
+snapshot, one goldset and one code path fixed. The annotation deliberately
+ignores the switch: both arms must be scored over the same bucket membership.
+
 Determinism
 -----------
 
@@ -74,7 +102,7 @@ CLI::
     python3 -m living_memory.retrieval_harness build-goldset --snapshot SNAP --cutoff ISO \\
         --seed 0 --seed-queries seed-queries.json --out goldset.jsonl
     python3 -m living_memory.retrieval_harness [run] --snapshot SNAP --goldset goldset.jsonl \\
-        --report baseline.json --markdown baseline.md
+        --report baseline.json --markdown baseline.md [--no-anchors]
 """
 
 from __future__ import annotations
@@ -101,6 +129,11 @@ from typing import Any, Protocol
 from living_memory.config import MemoryConfig
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity, tokenize
 from living_memory.models import NODE_LEVELS
+from living_memory.query_anchors import (
+    ANCHOR_MATCH_COSINE_THRESHOLD,
+    ANCHOR_MATCH_LIMIT,
+    match_anchors,
+)
 from living_memory.replay import (
     HIT_KS,
     LabelConfig,
@@ -115,9 +148,13 @@ from living_memory.replay import (
     open_readonly,
 )
 from living_memory.retrieval import MemoryRecallService, RecallResult
-from living_memory.storage import MemoryStore
+from living_memory.scope import normalize_scope
+from living_memory.storage import MemoryStore, recall_fingerprint
 
-HARNESS_VERSION = 1
+#: v2 adds the anchor annotation and the three buckets it feeds
+#: (``fresh_node_visibility``, ``anchor_holdout``, ``anchor_coverage``), plus
+#: per-stratum channel attribution. Every v1 key keeps its meaning.
+HARNESS_VERSION = 2
 
 STRATA: tuple[str, ...] = ("content_grounded", "cross_lingual", "role_query")
 CHANNELS: tuple[str, ...] = ("bm25", "vector", "graph", "trigger")
@@ -190,6 +227,37 @@ top-5 node ids are compared with the runner's top-5. `agreement_rate` is the
 share of sampled items that match exactly; every mismatch is listed in full.
 The run exits non-zero when the rate is below 1.0 unless `--divergence-note`
 explains it."""
+
+ANCHOR_SLICE_RULE = """\
+Per goldset item, computed from the snapshot alone so both arms of an
+anchors-on/anchors-off comparison annotate identically:
+
+1. The query is embedded with the run's own encoder and matched against the
+   live anchor vectors of the item's resolved `ScopePlan` through
+   `query_anchors.match_anchors`, at the shipped floor
+   (ANCHOR_MATCH_COSINE_THRESHOLD, limit ANCHOR_MATCH_LIMIT) -- the same call,
+   scope gate and floor `retrieval._collect_anchor_seeds` uses. The annotation
+   therefore states what retrieval could see, not what a laxer probe finds.
+2. An item is EXACT_REPEAT iff `storage.recall_fingerprint(query, scope)`
+   already names a live anchor in one of those scopes, and
+   FINGERPRINT_DISJOINT otherwise. Both subsets are reported apart, never
+   merged into a headline: an exact repeat retrieving its own past answer is a
+   lookup table, and the generalization claim lives only in the disjoint
+   subset, where a new query must reach the right node by resembling a
+   *different* past query.
+3. `anchor_as_of` := the newest `updated_at` over the matched anchors -- the
+   moment the anchor corpus last learned anything about this query. The
+   backfill stamps it with the source event's own `created_at`, so it is a
+   training-set timestamp and not a run timestamp.
+4. A relevant node is FRESH iff its `created_at` is strictly after
+   `anchor_as_of` and it is not itself one of the matched anchors' live edge
+   targets. An item enters the FRESH-NODE-VISIBILITY slice iff it matched an
+   anchor, that anchor holds at least one live edge (it points at an older
+   node), and the item has at least one fresh relevant node. The slice scores
+   ONLY those fresh nodes: it asks whether the node the anchor cannot know
+   about is still reachable once the anchor's older targets are seeded into
+   the graph channel. This is the gate against "the rich get richer"; anchors
+   must not make it worse than the anchor-free arm."""
 
 if __doc__:  # `python -OO` strips docstrings; the rule still lives in TAIL_RULE.
     __doc__ = __doc__ % {"tail_rule": TAIL_RULE}
@@ -809,11 +877,184 @@ def run_goldset(
 
 
 # ---------------------------------------------------------------------------
+# Query-anchor annotation (arm-independent)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class AnchorAnnotation:
+    """What the anchor corpus holds about one goldset item.
+
+    Derived from the snapshot and the item only -- never from the run -- so an
+    anchors-on and an anchors-off arm over the same snapshot produce identical
+    annotations and therefore identical bucket membership. Without that, the
+    two arms would be scoring different item sets and the comparison would be
+    meaningless.
+    """
+
+    query_id: str
+    stratum: str
+    scopes: tuple[str, ...]
+    fingerprint: str
+    exact_repeat: bool
+    fingerprint_anchor_id: str | None
+    matched_anchor_ids: tuple[str, ...]
+    best_similarity: float | None
+    nearest_similarity: float | None
+    target_ids: tuple[str, ...]
+    anchor_as_of: str | None
+    fresh_relevant_ids: tuple[str, ...]
+
+    @property
+    def matched(self) -> bool:
+        return bool(self.matched_anchor_ids)
+
+    @property
+    def in_fresh_slice(self) -> bool:
+        return bool(self.matched_anchor_ids and self.target_ids and self.fresh_relevant_ids)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "query_id": self.query_id,
+            "stratum": self.stratum,
+            "scopes": list(self.scopes),
+            "fingerprint": self.fingerprint,
+            "exact_repeat": self.exact_repeat,
+            "fingerprint_anchor_id": self.fingerprint_anchor_id,
+            "matched_anchor_ids": list(self.matched_anchor_ids),
+            "best_similarity": self.best_similarity,
+            "nearest_similarity": self.nearest_similarity,
+            "target_ids": list(self.target_ids),
+            "anchor_as_of": self.anchor_as_of,
+            "fresh_relevant_ids": list(self.fresh_relevant_ids),
+            "in_fresh_slice": self.in_fresh_slice,
+        }
+
+
+def _node_created_at(store: MemoryStore, node_ids: Iterable[str]) -> dict[str, str]:
+    """``{node_id: created_at}`` for the ids that still have a row."""
+
+    ids = sorted(set(node_ids))
+    found: dict[str, str] = {}
+    connection = store.connection
+    for start in range(0, len(ids), 900):
+        chunk = ids[start : start + 900]
+        placeholders = ",".join("?" * len(chunk))
+        for row in connection.execute(
+            f"SELECT id, created_at FROM nodes WHERE id IN ({placeholders})", chunk
+        ):
+            found[str(row["id"])] = str(row["created_at"] or "")
+    return found
+
+
+def annotate_anchors(
+    service: MemoryRecallService, items: Sequence[GoldsetItem]
+) -> dict[str, AnchorAnnotation]:
+    """Annotate every item against the snapshot's anchor corpus.
+
+    Uses the service's own encoder and scope resolver, and
+    ``query_anchors.match_anchors`` at the shipped floor, so the annotation is
+    the retrieval path's own view of the corpus. Deliberately independent of
+    ``service.anchor_seeding``: the anchors-off arm must be annotated with the
+    same anchors the anchors-on arm was offered, or the two arms would not be
+    scoring the same buckets.
+
+    Returns ``{}`` on a snapshot with no anchor table and on one with no live
+    anchor -- the cold-start case, where every anchor bucket is empty rather
+    than absent.
+    """
+
+    store = service.store
+    # 0 on a pre-v7 file as well as on an empty corpus: both are "no anchors".
+    if not store.count_query_anchors(include_decayed=False):
+        return {}
+
+    annotations: dict[str, AnchorAnnotation] = {}
+    for item in sorted(items, key=lambda item: item.query_id):
+        plan = service.scope_resolver.resolve(
+            query=item.query,
+            scope=item.scope,
+            ambient_context=item.ambient_context,
+            store=store,
+        )
+        plan_scopes = [normalize_scope(scope) for scope in plan.scopes]
+        own_scope = normalize_scope(item.scope) if item.scope else (
+            plan_scopes[0] if plan_scopes else "global"
+        )
+        # The item's own scope first: `fingerprint` below is the one the goal's
+        # rule names, `recall_fingerprint(query, scope)`. The rest of the plan
+        # follows because an anchor in any admitted scope is one the scan can
+        # return, and an exact repeat found there is still a lookup, not
+        # generalization.
+        scopes = tuple(dict.fromkeys([own_scope, *plan_scopes]))
+        embedding = service.embedder.embed(item.query)
+
+        fingerprint = recall_fingerprint(item.query, own_scope)
+        fingerprint_anchor_id: str | None = None
+        for scope in scopes:
+            found = store.find_query_anchor(scope, recall_fingerprint(item.query, scope))
+            if found is not None and not found.decayed:
+                fingerprint_anchor_id = found.id
+                break
+
+        matches = match_anchors(
+            store,
+            embedding,
+            plan,
+            limit=ANCHOR_MATCH_LIMIT,
+            min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
+        )
+        # The unfloored nearest neighbour is the diagnostic that separates "no
+        # anchor exists for this class of query" from "one exists and the floor
+        # rejected it"; the eval cannot read a zero match rate without it.
+        nearest = match_anchors(
+            store, embedding, plan, limit=1, min_similarity=-1.0, include_targets=False
+        )
+
+        target_ids: list[str] = []
+        as_of: str | None = None
+        for match in matches:
+            stamp = str(match.anchor.updated_at or match.anchor.created_at or "")
+            if stamp and (as_of is None or stamp > as_of):
+                as_of = stamp
+            for target_id, _weight in match.targets:
+                if target_id not in target_ids:
+                    target_ids.append(target_id)
+
+        relevant = tuple(item.relevant_node_ids)
+        created = _node_created_at(store, relevant) if (matches and as_of) else {}
+        fresh = tuple(
+            node_id
+            for node_id in relevant
+            if node_id not in set(target_ids)
+            and (created.get(node_id) or "") > (as_of or "")
+        )
+
+        annotations[item.query_id] = AnchorAnnotation(
+            query_id=item.query_id,
+            stratum=item.stratum,
+            scopes=scopes,
+            fingerprint=fingerprint,
+            exact_repeat=fingerprint_anchor_id is not None,
+            fingerprint_anchor_id=fingerprint_anchor_id,
+            matched_anchor_ids=tuple(match.anchor.id for match in matches),
+            best_similarity=round(matches[0].similarity, 6) if matches else None,
+            nearest_similarity=round(nearest[0].similarity, 6) if nearest else None,
+            target_ids=tuple(sorted(target_ids)),
+            anchor_as_of=as_of,
+            fresh_relevant_ids=fresh,
+        )
+    return annotations
+
+
+# ---------------------------------------------------------------------------
 # Metrics (replay's accumulator, live scores)
 # ---------------------------------------------------------------------------
 
 
-def to_replay_event(run: HarnessRun) -> ReplayEvent:
+def to_replay_event(
+    run: HarnessRun, *, relevant_override: Sequence[str] | None = None
+) -> ReplayEvent:
     """Adapt a live run into the shape ``MetricAccumulator`` consumes.
 
     The ``ReplayResult`` rows carry the **live** per-channel scores, and
@@ -828,9 +1069,17 @@ def to_replay_event(run: HarnessRun) -> ReplayEvent:
     hiding exactly the recall failures phase 1 is meant to fix. Placeholders
     are never put into ``order`` / ``zero_order``, so they contribute a miss
     (no hit, no reciprocal rank) and nothing else.
+
+    ``relevant_override`` narrows the useful set without touching the ranking:
+    the fresh-node-visibility slice scores the same returned list against the
+    fresh relevant nodes only. An empty override yields an event with no useful
+    result, which ``MetricAccumulator`` drops from ``events_with_useful``, so an
+    item is never scored against a relevance set it does not have.
     """
 
-    relevant = set(run.item.relevant_node_ids)
+    relevant = set(
+        run.item.relevant_node_ids if relevant_override is None else relevant_override
+    )
     scope = run.item.scope or "global"
     results = [
         ReplayResult(
@@ -915,22 +1164,99 @@ def _channel_block(accumulator: MetricAccumulator) -> dict[str, Any]:
     return {key: block[key] for key in _CHANNEL_BLOCK_KEYS}
 
 
-def compute_metrics(runs: Sequence[HarnessRun]) -> dict[str, Any]:
-    """Overall / per-stratum / per-channel / tail metrics for a set of runs."""
+class _Attribution:
+    """First-relevant-result method counts, plus the exact method *sets*.
 
+    ``methods`` counts a result found by two channels once for each, which is
+    what the phase-1 report has always shown. ``method_sets`` keeps the
+    combination intact (``graph+trigger`` distinct from ``trigger``), which is
+    the only way to read one channel's *unique* contribution: retiring a
+    channel costs the hits nothing else found, not its whole share.
+    """
+
+    def __init__(self) -> None:
+        self.items = 0
+        self.methods: Counter[str] = Counter()
+        self.method_sets: Counter[str] = Counter()
+
+    def add(self, methods: Sequence[str]) -> None:
+        self.items += 1
+        self.methods.update(methods)
+        self.method_sets["+".join(sorted(set(methods))) or "none"] += 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "items_with_relevant_hit": self.items,
+            "methods": {channel: self.methods.get(channel, 0) for channel in CHANNELS},
+            "method_share": {
+                channel: _ratio(self.methods.get(channel, 0), self.items)
+                for channel in CHANNELS
+            },
+            "method_sets": dict(sorted(self.method_sets.items())),
+            "unique_to_channel": {
+                channel: self.method_sets.get(channel, 0) for channel in CHANNELS
+            },
+            "unique_share": {
+                channel: _ratio(self.method_sets.get(channel, 0), self.items)
+                for channel in CHANNELS
+            },
+        }
+
+
+def _percentiles(values: Sequence[float]) -> dict[str, float] | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+
+    def at(fraction: float) -> float:
+        index = min(len(ordered) - 1, max(0, round(fraction * (len(ordered) - 1))))
+        return round(ordered[index], 6)
+
+    return {
+        "min": round(ordered[0], 6),
+        "p50": at(0.50),
+        "p90": at(0.90),
+        "p99": at(0.99),
+        "max": round(ordered[-1], 6),
+    }
+
+
+def compute_metrics(
+    runs: Sequence[HarnessRun],
+    annotations: Mapping[str, AnchorAnnotation] | None = None,
+) -> dict[str, Any]:
+    """Overall / per-stratum / per-channel / tail metrics for a set of runs.
+
+    With ``annotations`` (see :func:`annotate_anchors`) three anchor buckets
+    join them as first-class metrics: ``anchor_holdout`` (exact repeat versus
+    fingerprint-disjoint), ``fresh_node_visibility`` (the self-reinforcement
+    guard) and ``anchor_coverage``. Because the annotation is derived from the
+    snapshot rather than from the run, the same annotations apply to an
+    anchors-on and an anchors-off arm, and the buckets compare like for like.
+    """
+
+    annotations = dict(annotations or {})
     overall = MetricAccumulator()
     tail = MetricAccumulator()
     per_stratum: dict[str, MetricAccumulator] = {}
     per_channel = {channel: MetricAccumulator() for channel in CHANNELS}
-    attribution: Counter[str] = Counter()
-    first_relevant_items = 0
+    attribution = _Attribution()
+    per_stratum_attribution: dict[str, _Attribution] = {}
+    fresh = MetricAccumulator()
+    holdout = {"exact_repeat": MetricAccumulator(), "fingerprint_disjoint": MetricAccumulator()}
+    holdout_per_stratum: dict[str, dict[str, MetricAccumulator]] = {}
+    fresh_relevant_nodes = 0
+    nearest_similarities: list[float] = []
+    coverage: Counter[str] = Counter()
+    coverage_per_stratum: dict[str, Counter[str]] = {}
 
     for run in sorted(runs, key=lambda run: run.item.query_id):
+        stratum = run.item.stratum
         event = to_replay_event(run)
         order = live_order(run)
         zero_order = zero_graph_order(run)
         overall.add_event(event, order, zero_order)
-        per_stratum.setdefault(run.item.stratum, MetricAccumulator()).add_event(
+        per_stratum.setdefault(stratum, MetricAccumulator()).add_event(
             event, order, zero_order
         )
         if run.item.tail:
@@ -943,8 +1269,49 @@ def compute_metrics(runs: Sequence[HarnessRun]) -> dict[str, Any]:
             (result for result in run.results if result.node_id in relevant), None
         )
         if first is not None:
-            first_relevant_items += 1
-            attribution.update(first.methods)
+            attribution.add(first.methods)
+            per_stratum_attribution.setdefault(stratum, _Attribution()).add(first.methods)
+
+        annotation = annotations.get(run.item.query_id)
+        if annotation is None:
+            continue
+        bucket = "exact_repeat" if annotation.exact_repeat else "fingerprint_disjoint"
+        holdout[bucket].add_event(event, order, zero_order)
+        holdout_per_stratum.setdefault(
+            stratum, {key: MetricAccumulator() for key in holdout}
+        )[bucket].add_event(event, order, zero_order)
+
+        stratum_coverage = coverage_per_stratum.setdefault(stratum, Counter())
+        for counter in (coverage, stratum_coverage):
+            counter["items"] += 1
+            counter["exact_repeat"] += int(annotation.exact_repeat)
+            counter["fingerprint_disjoint"] += int(not annotation.exact_repeat)
+            counter["matched"] += int(annotation.matched)
+            counter["matched_with_live_targets"] += int(
+                bool(annotation.matched_anchor_ids and annotation.target_ids)
+            )
+            counter["fresh_slice"] += int(annotation.in_fresh_slice)
+        if annotation.nearest_similarity is not None:
+            nearest_similarities.append(annotation.nearest_similarity)
+        if annotation.in_fresh_slice:
+            fresh_relevant_nodes += len(annotation.fresh_relevant_ids)
+            fresh.add_event(
+                to_replay_event(run, relevant_override=annotation.fresh_relevant_ids),
+                order,
+                zero_order,
+            )
+
+    def _coverage_block(counter: Counter[str]) -> dict[str, Any]:
+        items = counter["items"]
+        return {
+            "items": items,
+            "exact_repeat": counter["exact_repeat"],
+            "fingerprint_disjoint": counter["fingerprint_disjoint"],
+            "matched": counter["matched"],
+            "matched_share": _ratio(counter["matched"], items),
+            "matched_with_live_targets": counter["matched_with_live_targets"],
+            "fresh_slice_items": counter["fresh_slice"],
+        }
 
     return {
         "harness_version": HARNESS_VERSION,
@@ -962,11 +1329,36 @@ def compute_metrics(runs: Sequence[HarnessRun]) -> dict[str, Any]:
             for channel, accumulator in sorted(per_channel.items())
         },
         "channel_attribution": {
-            "items_with_relevant_hit": first_relevant_items,
-            "methods": {channel: attribution.get(channel, 0) for channel in CHANNELS},
-            "method_share": {
-                channel: _ratio(attribution.get(channel, 0), first_relevant_items)
-                for channel in CHANNELS
+            **attribution.to_dict(),
+            "per_stratum": {
+                stratum: block.to_dict()
+                for stratum, block in sorted(per_stratum_attribution.items())
+            },
+        },
+        "anchor_holdout": {
+            "annotated_items": coverage["items"],
+            **{key: accumulator.to_dict() for key, accumulator in sorted(holdout.items())},
+            "per_stratum": {
+                stratum: {
+                    key: accumulator.to_dict()
+                    for key, accumulator in sorted(buckets.items())
+                }
+                for stratum, buckets in sorted(holdout_per_stratum.items())
+            },
+        },
+        "fresh_node_visibility": {
+            "items": coverage["fresh_slice"],
+            "fresh_relevant_nodes": fresh_relevant_nodes,
+            **fresh.to_dict(),
+        },
+        "anchor_coverage": {
+            **_coverage_block(coverage),
+            "nearest_similarity": _percentiles(nearest_similarities),
+            "match_floor": ANCHOR_MATCH_COSINE_THRESHOLD,
+            "match_limit": ANCHOR_MATCH_LIMIT,
+            "per_stratum": {
+                stratum: _coverage_block(counter)
+                for stratum, counter in sorted(coverage_per_stratum.items())
             },
         },
     }
@@ -996,12 +1388,16 @@ def live_agreement(
     sample_size: int,
     seed: int,
     top_k: int = AGREEMENT_TOP_K,
+    anchor_seeding: bool = True,
 ) -> dict[str, Any]:
     """Compare the runner's top-k with an independently built live service.
 
     Deliberately does *not* call :func:`run_item`: a fresh ``MemoryStore`` +
     ``MemoryRecallService`` pair is constructed here on the same working copy
     and driven directly, so a bug in the runner's own plumbing cannot hide.
+    ``anchor_seeding`` must mirror the runner's, or the check would compare an
+    anchors-off arm against an anchors-on service and report the ablation as a
+    divergence.
     """
 
     by_id = {item.query_id: item for item in items}
@@ -1011,7 +1407,7 @@ def live_agreement(
     if sampled:
         store = MemoryStore(MemoryConfig(db_path=working_db))
         try:
-            service = MemoryRecallService(store)
+            service = MemoryRecallService(store, anchor_seeding=anchor_seeding)
             for query_id in sampled:
                 item = by_id[query_id]
                 results = service.memory_recall(
@@ -1089,6 +1485,9 @@ def build_report(
     seed: int,
     divergence_note: str | None,
     generated_at: str | None = None,
+    annotations: Mapping[str, AnchorAnnotation] | None = None,
+    anchor_seeding: bool = True,
+    anchor_corpus: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble the JSON report: byte-stable ``metrics``, dated ``provenance``."""
 
@@ -1096,10 +1495,15 @@ def build_report(
         "metrics": dict(metrics),
         "agreement": dict(agreement),
         "runs": [run.to_dict() for run in sorted(runs, key=lambda run: run.item.query_id)],
+        "anchor_annotations": [
+            annotation.to_dict()
+            for _query_id, annotation in sorted((annotations or {}).items())
+        ],
         "definitions": {
             "tail_rule": TAIL_RULE,
             "per_channel": PER_CHANNEL_RULE,
             "live_agreement": AGREEMENT_RULE,
+            "anchor_slice": ANCHOR_SLICE_RULE,
         },
         "provenance": {
             "generated_at": generated_at or utc_now_iso(),
@@ -1119,6 +1523,9 @@ def build_report(
             "embedding_backend": embedding_backend(),
             "embedding_model": MemoryConfig().embedding_model,
             "divergence_note": divergence_note,
+            # The one bit that separates the two arms of the holdout run.
+            "anchor_seeding": bool(anchor_seeding),
+            "anchor_corpus": dict(anchor_corpus or {}),
         },
     }
 
@@ -1186,7 +1593,53 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     for stratum, block in metrics["per_stratum"].items():
         lines.append(_metric_row(f"stratum:{stratum}", block))
     lines.append(_metric_row("tail", metrics["tail"]))
+    if "fresh_node_visibility" in metrics:
+        lines.append(_metric_row("fresh_node_visibility", metrics["fresh_node_visibility"]))
     lines.append("")
+    holdout = metrics.get("anchor_holdout") or {}
+    coverage = metrics.get("anchor_coverage") or {}
+    if holdout.get("annotated_items"):
+        lines.append(
+            "### Anchor holdout "
+            f"(anchor_seeding={provenance.get('anchor_seeding')}, "
+            f"{(provenance.get('anchor_corpus') or {}).get('live_anchors')} live anchors)"
+        )
+        lines.append("")
+        lines.append("| bucket | items | w/relevant | hit@1 | hit@5 | hit@10 | MRR |")
+        lines.append("|" + "---|" * 7)
+        for key in ("exact_repeat", "fingerprint_disjoint"):
+            lines.append(_metric_row(key, holdout[key]))
+        for stratum, buckets in holdout.get("per_stratum", {}).items():
+            for key in ("exact_repeat", "fingerprint_disjoint"):
+                lines.append(_metric_row(f"{stratum}:{key}", buckets[key]))
+        lines.append("")
+        lines.append("### Anchor coverage of the goldset")
+        lines.append("")
+        lines.append(
+            "| bucket | items | exact repeat | disjoint | matched | matched share | "
+            "matched w/ live targets | fresh-node slice |"
+        )
+        lines.append("|" + "---|" * 8)
+
+        def coverage_row(label: str, block: Mapping[str, Any]) -> str:
+            return (
+                f"| {label} | {block['items']} | {block['exact_repeat']} "
+                f"| {block['fingerprint_disjoint']} | {block['matched']} "
+                f"| {block['matched_share']:.3f} | {block['matched_with_live_targets']} "
+                f"| {block['fresh_slice_items']} |"
+            )
+
+        lines.append(coverage_row("all", coverage))
+        for stratum, block in coverage.get("per_stratum", {}).items():
+            lines.append(coverage_row(stratum, block))
+        nearest = coverage.get("nearest_similarity")
+        if nearest:
+            lines.append("")
+            lines.append(
+                f"- Nearest in-scope anchor cosine, floor {coverage.get('match_floor')}: "
+                + ", ".join(f"{name} {nearest[name]:.3f}" for name in sorted(nearest))
+            )
+        lines.append("")
     lines.append("### Per channel")
     lines.append("")
     lines.append("| channel | items | w/relevant | hit@1 | hit@5 | hit@10 | MRR |")
@@ -1200,12 +1653,23 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         f"({attribution['items_with_relevant_hit']} items with a relevant result)"
     )
     lines.append("")
-    lines.append("| method | first-relevant results | share |")
-    lines.append("|" + "---|" * 3)
+    lines.append("| method | first-relevant results | share | unique to it | unique share |")
+    lines.append("|" + "---|" * 5)
     for channel in CHANNELS:
         lines.append(
             f"| {channel} | {attribution['methods'][channel]} "
-            f"| {attribution['method_share'][channel]:.3f} |"
+            f"| {attribution['method_share'][channel]:.3f} "
+            f"| {attribution.get('unique_to_channel', {}).get(channel, 0)} "
+            f"| {attribution.get('unique_share', {}).get(channel, 0.0):.3f} |"
+        )
+    lines.append("")
+    for stratum, block in (attribution.get("per_stratum") or {}).items():
+        lines.append(
+            f"- `{stratum}` ({block['items_with_relevant_hit']} items with a relevant "
+            "result), method sets: "
+            + ", ".join(
+                f"`{name}` {count}" for name, count in block["method_sets"].items()
+            )
         )
     lines.append("")
     lines.append("## Live-agreement sanity")
@@ -1249,6 +1713,12 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     lines.append("")
     lines.append("```text")
     lines.append(AGREEMENT_RULE)
+    lines.append("```")
+    lines.append("")
+    lines.append("### Anchor holdout, coverage and fresh-node visibility")
+    lines.append("")
+    lines.append("```text")
+    lines.append(ANCHOR_SLICE_RULE)
     lines.append("```")
     lines.append("")
     lines.append("## Limitations")
@@ -1768,6 +2238,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--divergence-note",
         help="explanation that downgrades an agreement_rate below 1.0 from fatal to recorded",
     )
+    run.add_argument(
+        "--no-anchors",
+        action="store_true",
+        help="ablate the query-anchor entry into the graph channel "
+        "(MemoryRecallService(anchor_seeding=False)). The anchor buckets are "
+        "still annotated from the same snapshot, so this is the anchor-free arm "
+        "of a with/without comparison and not a different measurement.",
+    )
 
     goldset = subparsers.add_parser("build-goldset", help="generate a goldset from a snapshot")
     _add_snapshot_source(goldset)
@@ -1804,12 +2282,21 @@ def _cmd_snapshot(args: argparse.Namespace) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     goldset_path = Path(args.goldset)
     items = load_goldset(goldset_path)
+    anchor_seeding = not args.no_anchors
     with frozen_snapshot(args.snapshot, args.source_db) as (snapshot_path, manifest):
         with working_copy(snapshot_path) as working_db:
             store = MemoryStore(MemoryConfig(db_path=working_db))
             try:
-                service = MemoryRecallService(store)
+                service = MemoryRecallService(store, anchor_seeding=anchor_seeding)
                 runs = run_goldset(service, items)
+                # Annotated after the runs and independently of the ablation:
+                # both arms see the same corpus, so both get the same buckets.
+                annotations = annotate_anchors(service, items)
+                anchor_corpus = {
+                    "anchors": store.count_query_anchors(),
+                    "live_anchors": store.count_query_anchors(include_decayed=False),
+                    "edges": store.count_query_anchor_edges(),
+                }
             finally:
                 store.close()
             agreement = live_agreement(
@@ -1818,8 +2305,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 runs,
                 sample_size=args.agreement_sample,
                 seed=args.seed,
+                anchor_seeding=anchor_seeding,
             )
-        metrics = compute_metrics(runs)
+        metrics = compute_metrics(runs, annotations)
         report = build_report(
             runs=runs,
             metrics=metrics,
@@ -1830,12 +2318,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
             cutoff=normalize_cutoff(args.cutoff) if args.cutoff else None,
             seed=args.seed,
             divergence_note=args.divergence_note,
+            annotations=annotations,
+            anchor_seeding=anchor_seeding,
+            anchor_corpus=anchor_corpus,
         )
     write_report(report, Path(args.report), Path(args.markdown) if args.markdown else None)
 
     overall = metrics["overall"]
     print(
-        f"ran {metrics['items']} goldset items ({metrics['tail_items']} tail): "
+        f"ran {metrics['items']} goldset items ({metrics['tail_items']} tail, "
+        f"anchor_seeding={anchor_seeding}, "
+        f"{anchor_corpus['live_anchors']} live anchors): "
         f"hit@1 {overall['hit@1']:.3f} hit@5 {overall['hit@5']:.3f} "
         f"mrr {overall['mrr']:.3f} -> {args.report}",
         file=sys.stderr,

@@ -1,0 +1,1285 @@
+{
+  "what": "The graph-floor / anchor-seed interaction fix, measured. An anchor-derived graph activation used to trip the per-scope graph-weight floor for a candidate that had none, moving up to a quarter of the weight off the bm25/vector evidence carrying it -- so the anchor demoted the node it was seeding (result.md section 6). The floor is unchanged; the anchor walk is now separate from the pre-anchor walk and every candidate an anchor touches is also scored the way it would have been scored with anchors off, keeping the better of the two.",
+  "code": {
+    "pre_fix_commit": "71d4005",
+    "pre_anchor_commit": "ed20653",
+    "changed": [
+      "src/living_memory/retrieval.py"
+    ],
+    "not_changed": [
+      "minimum_graph (0.25 / 0.75 causal)",
+      "channel weights",
+      "feedback_weighted_score",
+      "other floors and caps",
+      "bm25/FTS",
+      "tokenize/_SYNONYMS",
+      "embedding model",
+      "schema trigger channel",
+      "ANCHOR_MATCH_COSINE_THRESHOLD",
+      "ANCHOR_MATCH_LIMIT"
+    ]
+  },
+  "inputs": {
+    "snapshot": {
+      "path": "/tmp/anchor-eval/snap-anchored.sqlite3",
+      "sha256": "5201b10682fcc0e597785371c613f5050afce5e7e1d9d5e66b6521bd62ee8e9d",
+      "anchors": 3071,
+      "anchor_edges": 7510,
+      "cutoff": "2026-07-15T00:00:00Z"
+    },
+    "frozen_goldset": {
+      "path": "artifacts/harness/goldset.jsonl",
+      "sha256": "af40cb0da26fa78c5c477747357beec518053b01a2daa7e875338acc47c95612",
+      "items": 234
+    },
+    "holdout_goldset": {
+      "path": "/tmp/anchor-eval/goldset-holdout-20260715.jsonl",
+      "sha256": "816c365cbfa88d475c06c1d195a609a594f359c0d97b49ccd386ec1a70c94e30",
+      "items": 343
+    },
+    "command": "python3 -m living_memory.retrieval_harness run --snapshot <snapshot> --goldset <goldset> --cutoff 2026-07-15T00:00:00Z --seed 20260818 --report <report> [--no-anchors]"
+  },
+  "arms": {
+    "frozen_goldset_234": {
+      "without_anchors": {
+        "events": 234,
+        "hit@1": 0.188034,
+        "hit@5": 0.576923,
+        "hit@10": 0.726496,
+        "mrr": 0.353977
+      },
+      "with_anchors": {
+        "events": 234,
+        "hit@1": 0.196581,
+        "hit@5": 0.581197,
+        "hit@10": 0.726496,
+        "mrr": 0.361693
+      },
+      "per_stratum_without_anchors": {
+        "content_grounded": {
+          "events": 160,
+          "hit@1": 0.25,
+          "hit@5": 0.71875,
+          "hit@10": 0.88125,
+          "mrr": 0.444117
+        },
+        "cross_lingual": {
+          "events": 38,
+          "hit@1": 0.0,
+          "hit@5": 0.105263,
+          "hit@10": 0.184211,
+          "mrr": 0.04481
+        },
+        "role_query": {
+          "events": 36,
+          "hit@1": 0.111111,
+          "hit@5": 0.444444,
+          "hit@10": 0.611111,
+          "mrr": 0.279696
+        }
+      },
+      "per_stratum_with_anchors": {
+        "content_grounded": {
+          "events": 160,
+          "hit@1": 0.2625,
+          "hit@5": 0.725,
+          "hit@10": 0.88125,
+          "mrr": 0.455402
+        },
+        "cross_lingual": {
+          "events": 38,
+          "hit@1": 0.0,
+          "hit@5": 0.105263,
+          "hit@10": 0.184211,
+          "mrr": 0.04481
+        },
+        "role_query": {
+          "events": 36,
+          "hit@1": 0.111111,
+          "hit@5": 0.444444,
+          "hit@10": 0.611111,
+          "mrr": 0.279696
+        }
+      },
+      "published_pre_fix_with_anchors": {
+        "events": 234,
+        "hit@1": 0.188034,
+        "hit@5": 0.57265,
+        "hit@10": 0.717949,
+        "mrr": 0.348547
+      },
+      "published_pre_fix_without_anchors": {
+        "events": 234,
+        "hit@1": 0.188034,
+        "hit@5": 0.576923,
+        "hit@10": 0.726496,
+        "mrr": 0.353977
+      }
+    },
+    "holdout_goldset_343": {
+      "without_anchors": {
+        "events": 343,
+        "hit@1": 0.250729,
+        "hit@5": 0.612245,
+        "hit@10": 0.749271,
+        "mrr": 0.403523
+      },
+      "with_anchors": {
+        "events": 343,
+        "hit@1": 0.253644,
+        "hit@5": 0.61516,
+        "hit@10": 0.749271,
+        "mrr": 0.406114
+      },
+      "per_stratum_without_anchors": {
+        "content_grounded": {
+          "events": 269,
+          "hit@1": 0.304833,
+          "hit@5": 0.70632,
+          "hit@10": 0.847584,
+          "mrr": 0.470768
+        },
+        "cross_lingual": {
+          "events": 38,
+          "hit@1": 0.0,
+          "hit@5": 0.105263,
+          "hit@10": 0.184211,
+          "mrr": 0.04481
+        },
+        "role_query": {
+          "events": 36,
+          "hit@1": 0.111111,
+          "hit@5": 0.444444,
+          "hit@10": 0.611111,
+          "mrr": 0.279696
+        }
+      },
+      "per_stratum_with_anchors": {
+        "content_grounded": {
+          "events": 269,
+          "hit@1": 0.30855,
+          "hit@5": 0.710037,
+          "hit@10": 0.847584,
+          "mrr": 0.474072
+        },
+        "cross_lingual": {
+          "events": 38,
+          "hit@1": 0.0,
+          "hit@5": 0.105263,
+          "hit@10": 0.184211,
+          "mrr": 0.04481
+        },
+        "role_query": {
+          "events": 36,
+          "hit@1": 0.111111,
+          "hit@5": 0.444444,
+          "hit@10": 0.611111,
+          "mrr": 0.279696
+        }
+      },
+      "published_pre_fix_with_anchors": {
+        "events": 343,
+        "hit@1": 0.253644,
+        "hit@5": 0.61516,
+        "hit@10": 0.749271,
+        "mrr": 0.406357
+      },
+      "published_pre_fix_without_anchors": {
+        "events": 343,
+        "hit@1": 0.250729,
+        "hit@5": 0.612245,
+        "hit@10": 0.749271,
+        "mrr": 0.403523
+      }
+    }
+  },
+  "invariants": {
+    "monotonicity": {
+      "claim": "no candidate scores lower with anchors on than with anchors off",
+      "frozen_goldset_234": {
+        "results_scored_in_both_arms": 2406,
+        "lost_score": 0,
+        "gained_score": 20,
+        "unchanged": 2386,
+        "fell_out_of_returned_list": 1,
+        "fell_out_detail": [
+          {
+            "query_id": "content_grounded-fa3313236e99",
+            "node_id": "01KW014135N3KGXJ7XXGVHV701",
+            "score": 0.6116209101784544,
+            "rank": 10,
+            "weakest_returned_score_with_anchors": 0.6235515340422044,
+            "explained_by_displacement": true
+          }
+        ],
+        "relevant_node_rank_better": 9,
+        "relevant_node_rank_worse": 2,
+        "relevant_node_rank_worse_detail": [
+          {
+            "query_id": "content_grounded-34e479cf33a7",
+            "node_id": "01KVDHWC4WCZ7M3YRED2FWHH9V",
+            "rank_without": 1,
+            "rank_with": 6,
+            "score_without": 0.87451834487915,
+            "score_with": 0.87451834487915,
+            "score_unchanged": true
+          },
+          {
+            "query_id": "content_grounded-34e479cf33a7",
+            "node_id": "01KVDKN3FQ50EFC30QSEMDV77N",
+            "rank_without": 2,
+            "rank_with": 7,
+            "score_without": 0.8565272647072286,
+            "score_with": 0.8565272647072286,
+            "score_unchanged": true
+          }
+        ]
+      },
+      "holdout_goldset_343": {
+        "results_scored_in_both_arms": 3479,
+        "lost_score": 0,
+        "gained_score": 2,
+        "unchanged": 3477,
+        "fell_out_of_returned_list": 0,
+        "fell_out_detail": [],
+        "relevant_node_rank_better": 1,
+        "relevant_node_rank_worse": 0,
+        "relevant_node_rank_worse_detail": []
+      },
+      "pre_fix_for_contrast": {
+        "frozen_goldset_234": {
+          "results_scored_in_both_arms": 2371,
+          "lost_score": 54,
+          "gained_score": 18,
+          "unchanged": 2299,
+          "fell_out_of_returned_list": 36,
+          "fell_out_detail": [
+            {
+              "query_id": "content_grounded-03e630086d39",
+              "node_id": "01KVT17R4MTP1W7590FK8A2Y0Z",
+              "score": 0.8799068312644958,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.8436017713739289,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-07a03a7e0228",
+              "node_id": "01KV3SZQCK3Q5JWP9APGSTSEN2",
+              "score": 0.9488854007720944,
+              "rank": 8,
+              "weakest_returned_score_with_anchors": 0.8663738024892642,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-180fe6633960",
+              "node_id": "01KVA8S28KS8WY20ME6EWDCZ0Z",
+              "score": 0.8766544623292724,
+              "rank": 6,
+              "weakest_returned_score_with_anchors": 0.8005801842212676,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-1df7dab837be",
+              "node_id": "01KTYN42A9JX6WAZYF2YSE76P6",
+              "score": 0.8096478577166465,
+              "rank": 5,
+              "weakest_returned_score_with_anchors": 0.7480877503519472,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-301a64526caf",
+              "node_id": "01KVS92GYW6ST4WPHTA36ART8B",
+              "score": 0.9042213967457694,
+              "rank": 6,
+              "weakest_returned_score_with_anchors": 0.8059934687418372,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-301a64526caf",
+              "node_id": "01KVMAT2P5CGYEPEN8M6YA76TT",
+              "score": 0.8786757840026507,
+              "rank": 8,
+              "weakest_returned_score_with_anchors": 0.8059934687418372,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-3e3f991969e9",
+              "node_id": "01KVZA18ZJMY2GB2PWT3TBMGA4",
+              "score": 0.8194983573696254,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.8113790345191955,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-455d312c842d",
+              "node_id": "01KVS92GYW6ST4WPHTA36ART8B",
+              "score": 0.9026759039326351,
+              "rank": 6,
+              "weakest_returned_score_with_anchors": 0.8196536608306985,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-455d312c842d",
+              "node_id": "01KVMAT2P5CGYEPEN8M6YA76TT",
+              "score": 0.8871542406876881,
+              "rank": 7,
+              "weakest_returned_score_with_anchors": 0.8196536608306985,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-455d312c842d",
+              "node_id": "01KVRSYKNWRKX7ZSCMFTS6VAN8",
+              "score": 0.8869817741804417,
+              "rank": 8,
+              "weakest_returned_score_with_anchors": 0.8196536608306985,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-49c93d3c04f5",
+              "node_id": "01KVWZ9R632P2SXKX2NCQ5Q093",
+              "score": 0.9097224268913268,
+              "rank": 5,
+              "weakest_returned_score_with_anchors": 0.8255424751688478,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-49c93d3c04f5",
+              "node_id": "01KVRSYKPV4V3A7NH1XHW39QP1",
+              "score": 0.8558870317451155,
+              "rank": 8,
+              "weakest_returned_score_with_anchors": 0.8255424751688478,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-5359bf2deb4d",
+              "node_id": "01KVDHWC4WCZ7M3YRED2FWHH9V",
+              "score": 0.9338408224582669,
+              "rank": 7,
+              "weakest_returned_score_with_anchors": 0.8627953789736285,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-5359bf2deb4d",
+              "node_id": "01KVDG0BK9NDT9KDE3E3E3WT2W",
+              "score": 0.9238012009461719,
+              "rank": 8,
+              "weakest_returned_score_with_anchors": 0.8627953789736285,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-60e5864c7f0f",
+              "node_id": "01KVX91DBS51PQ5KAA9ZVFWEAN",
+              "score": 0.924447226524353,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.9198778045177458,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-65c55210dc1c",
+              "node_id": "01KRV5ZP43264QZ3GFWCDQANYM",
+              "score": 0.7576932991388681,
+              "rank": 6,
+              "weakest_returned_score_with_anchors": 0.7116946356860742,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-65c55210dc1c",
+              "node_id": "01KRV5YZ690TG8MD691D1D93R5",
+              "score": 0.7438826665878296,
+              "rank": 8,
+              "weakest_returned_score_with_anchors": 0.7116946356860742,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-78fae01f2129",
+              "node_id": "01KV27PZK638K9ZFSAMY0J6YXW",
+              "score": 0.8728061614036559,
+              "rank": 7,
+              "weakest_returned_score_with_anchors": 0.8074519786834715,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-78fae01f2129",
+              "node_id": "01KV330ZJA2VDYK8184KKDB083",
+              "score": 0.8696828505992887,
+              "rank": 8,
+              "weakest_returned_score_with_anchors": 0.8074519786834715,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-78fae01f2129",
+              "node_id": "01KV2AB80X39XPR5V5R3F6PQ6R",
+              "score": 0.8580786380767821,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.8074519786834715,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-78fae01f2129",
+              "node_id": "01KV2BQR4GB87MF0G0YS4ZWDQ0",
+              "score": 0.8276691357691365,
+              "rank": 10,
+              "weakest_returned_score_with_anchors": 0.8074519786834715,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-7f08ef1544da",
+              "node_id": "01KV34R9QZAJDGZ5ZWMFF27EMQ",
+              "score": 0.909248333930969,
+              "rank": 6,
+              "weakest_returned_score_with_anchors": 0.8244112911415247,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-7f08ef1544da",
+              "node_id": "01KV330ZJA2VDYK8184KKDB083",
+              "score": 0.842500556230545,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.8244112911415247,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-a6407c223258",
+              "node_id": "01KV46PK6ZTME6WMNZVB25SZ2R",
+              "score": 0.8966984055042266,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.8571053373324243,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-b9f56b5b0dd2",
+              "node_id": "01KV35JJFTCY4R5WNNDSCFRAT8",
+              "score": 0.8875539422035217,
+              "rank": 6,
+              "weakest_returned_score_with_anchors": 0.8422099721431731,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-c2d79d799264",
+              "node_id": "01KV2947ZM9EPRHTQZ7Z55DP48",
+              "score": 0.9321937100092569,
+              "rank": 10,
+              "weakest_returned_score_with_anchors": 0.9192709102536185,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-cee193784b61",
+              "node_id": "01KV0CSNAFR4WCM0893YQGW3Y0",
+              "score": 0.8414441940573919,
+              "rank": 7,
+              "weakest_returned_score_with_anchors": 0.8174221843032625,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-d1a85ac9d4ad",
+              "node_id": "01KV0T6Q51Y3MBV6Z0E2VQGY9S",
+              "score": 0.71137557261205,
+              "rank": 22,
+              "weakest_returned_score_with_anchors": 0.68498610663414,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-e46f75057371",
+              "node_id": "01KW8SE9EY49WR49W1YRDE8CY5",
+              "score": 0.9259197235107421,
+              "rank": 3,
+              "weakest_returned_score_with_anchors": 0.8506424422957272,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-e46f75057371",
+              "node_id": "01KVXHMH3QSAA0TAPQXPE7Q7BV",
+              "score": 0.9192930614948273,
+              "rank": 4,
+              "weakest_returned_score_with_anchors": 0.8506424422957272,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-e46f75057371",
+              "node_id": "01KVXTK8J03GRNNXX5B6A3KFWH",
+              "score": 0.8740139493942259,
+              "rank": 7,
+              "weakest_returned_score_with_anchors": 0.8506424422957272,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-e6f0316cbdfb",
+              "node_id": "01KVMGD0WPV7HD98ZJ0M8CN7EK",
+              "score": 0.9238709950447082,
+              "rank": 7,
+              "weakest_returned_score_with_anchors": 0.882143211364746,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-e795082c2a4b",
+              "node_id": "01KVRSYKJYA1C8YD9K4F59J8XS",
+              "score": 0.8322755742816301,
+              "rank": 10,
+              "weakest_returned_score_with_anchors": 0.8042456803321838,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-e951cbeabd36",
+              "node_id": "01KTVXTC5ATK8V1BFV3XNVGCSC",
+              "score": 0.7166656121785323,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.6996415797472,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-ee70a8901041",
+              "node_id": "01KVKVKB3DB8CQNTJKDGWWC6Z3",
+              "score": 0.6743773190975189,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.6510081556395481,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-f5850a1df575",
+              "node_id": "01KVXNQS92GHGF1NATCPMK3TW7",
+              "score": 0.7175386775599725,
+              "rank": 9,
+              "weakest_returned_score_with_anchors": 0.6928003808573672,
+              "explained_by_displacement": false
+            }
+          ],
+          "relevant_node_rank_better": 12,
+          "relevant_node_rank_worse": 71,
+          "relevant_node_rank_worse_detail": [
+            {
+              "query_id": "content_grounded-03e630086d39",
+              "node_id": "01KVT17R4MTP1W7590FK8A2Y0Z",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.8799068312644958,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-05e02a6c655e",
+              "node_id": "01KX32T4APG5R1YJ3WG68R2EEC",
+              "rank_without": 5,
+              "rank_with": 7,
+              "score_without": 0.7155796352411535,
+              "score_with": 0.6943767846473649,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-07a03a7e0228",
+              "node_id": "01KV3SZQCK3Q5JWP9APGSTSEN2",
+              "rank_without": 7,
+              "rank_with": null,
+              "score_without": 0.9488854007720944,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-093f5c194286",
+              "node_id": "01KTRAER4TTW0QAK6Z8A40CF4Q",
+              "rank_without": 4,
+              "rank_with": 5,
+              "score_without": 0.8343295013939952,
+              "score_with": 0.7630745674478564,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-1053395b466a",
+              "node_id": "01KW0DK6HBS6HE240BKAM7MA0K",
+              "rank_without": 2,
+              "rank_with": 6,
+              "score_without": 0.9172634840011596,
+              "score_with": 0.829155394623154,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-12560458a628",
+              "node_id": "01KVT18E9K2QPCRQM87H4WFABS",
+              "rank_without": 4,
+              "rank_with": 8,
+              "score_without": 0.7706433842182159,
+              "score_with": 0.7134026842681984,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-180fe6633960",
+              "node_id": "01KVA8S28KS8WY20ME6EWDCZ0Z",
+              "rank_without": 5,
+              "rank_with": null,
+              "score_without": 0.8766544623292724,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-1df7dab837be",
+              "node_id": "01KTRWQGAZ6B83ZVW30VA5RGBT",
+              "rank_without": 3,
+              "rank_with": 7,
+              "score_without": 0.8387999257494191,
+              "score_with": 0.7672104676969098,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-1df7dab837be",
+              "node_id": "01KTYN42A9JX6WAZYF2YSE76P6",
+              "rank_without": 4,
+              "rank_with": null,
+              "score_without": 0.8096478577166465,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-301a64526caf",
+              "node_id": "01KVMAT2P5CGYEPEN8M6YA76TT",
+              "rank_without": 7,
+              "rank_with": null,
+              "score_without": 0.8786757840026507,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-301a64526caf",
+              "node_id": "01KVMXE5NTZA8NKB53JV88NHM0",
+              "rank_without": 3,
+              "rank_with": 8,
+              "score_without": 0.9357730915546415,
+              "score_with": 0.8437682426916925,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-34e479cf33a7",
+              "node_id": "01KVDHWC4WCZ7M3YRED2FWHH9V",
+              "rank_without": 1,
+              "rank_with": 6,
+              "score_without": 0.87451834487915,
+              "score_with": 0.8668062100598687,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-34e479cf33a7",
+              "node_id": "01KVDKN3FQ50EFC30QSEMDV77N",
+              "rank_without": 2,
+              "rank_with": 7,
+              "score_without": 0.8565272647072286,
+              "score_with": 0.8526027257136147,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-374219e613f8",
+              "node_id": "01KVDQRQRSW6EF46769ZAMC4CM",
+              "rank_without": 6,
+              "rank_with": 7,
+              "score_without": 0.8831090177234849,
+              "score_with": 0.8021913297816987,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-374219e613f8",
+              "node_id": "01KVFNPNW2V9ZNP5A4ZD6W7SBJ",
+              "rank_without": 7,
+              "rank_with": 8,
+              "score_without": 0.8783251111507414,
+              "score_with": 0.7984145614347959,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-3d322a2a2a66",
+              "node_id": "01KRRY8DQ05WARHTAFAFZQ6JXF",
+              "rank_without": 4,
+              "rank_with": 5,
+              "score_without": 0.7463289554913781,
+              "score_with": 0.7051520272245554,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-3deb1b471023",
+              "node_id": "01KRV5ZP43264QZ3GFWCDQANYM",
+              "rank_without": 1,
+              "rank_with": 4,
+              "score_without": 0.9177082548875074,
+              "score_with": 0.8295065295334287,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-3e3f991969e9",
+              "node_id": "01KVZA18ZJMY2GB2PWT3TBMGA4",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.8194983573696254,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-455d312c842d",
+              "node_id": "01KVMAT2P5CGYEPEN8M6YA76TT",
+              "rank_without": 6,
+              "rank_with": null,
+              "score_without": 0.8871542406876881,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-455d312c842d",
+              "node_id": "01KVRSYKNWRKX7ZSCMFTS6VAN8",
+              "rank_without": 7,
+              "rank_with": null,
+              "score_without": 0.8869817741804417,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-455d312c842d",
+              "node_id": "01KVS92GYW6ST4WPHTA36ART8B",
+              "rank_without": 5,
+              "rank_with": null,
+              "score_without": 0.9026759039326351,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-5359bf2deb4d",
+              "node_id": "01KVDG0BK9NDT9KDE3E3E3WT2W",
+              "rank_without": 7,
+              "rank_with": null,
+              "score_without": 0.9238012009461719,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-5359bf2deb4d",
+              "node_id": "01KVDHWC4WCZ7M3YRED2FWHH9V",
+              "rank_without": 6,
+              "rank_with": null,
+              "score_without": 0.9338408224582669,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-54ea933a1278",
+              "node_id": "01KV480NDHZ5VDKY0X7S35DEXG",
+              "rank_without": 2,
+              "rank_with": 3,
+              "score_without": 0.8854214634895323,
+              "score_with": 0.8040169573771326,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-60e5864c7f0f",
+              "node_id": "01KVX91DBS51PQ5KAA9ZVFWEAN",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.924447226524353,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-65c55210dc1c",
+              "node_id": "01KRV5YJAJV34HPTTZV2C5FRZW",
+              "rank_without": 3,
+              "rank_with": 5,
+              "score_without": 0.8056025773851495,
+              "score_with": 0.741002047294725,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-65c55210dc1c",
+              "node_id": "01KRV5YZ269CABABRD7T8MYHSP",
+              "rank_without": 1,
+              "rank_with": 2,
+              "score_without": 0.8433900125026702,
+              "score_with": 0.7708342329138205,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-65c55210dc1c",
+              "node_id": "01KRV5YZ690TG8MD691D1D93R5",
+              "rank_without": 7,
+              "rank_with": null,
+              "score_without": 0.7438826665878296,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-65c55210dc1c",
+              "node_id": "01KRV5ZP43264QZ3GFWCDQANYM",
+              "rank_without": 5,
+              "rank_with": null,
+              "score_without": 0.7576932991388681,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-76a36e2b0382",
+              "node_id": "01KVMH5ZPSSCTKRQCS46DP99SV",
+              "rank_without": 4,
+              "rank_with": 5,
+              "score_without": 0.8318532976309458,
+              "score_with": 0.7617262876033782,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-76a36e2b0382",
+              "node_id": "01KVX7ENM0WKF0KRCT89DQY0T5",
+              "rank_without": 6,
+              "rank_with": 8,
+              "score_without": 0.8096174855232238,
+              "score_with": 0.744171699097282,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-76a36e2b0382",
+              "node_id": "01KVYXQQW5WDTE5GQTF0Q8GM4Q",
+              "rank_without": 1,
+              "rank_with": 2,
+              "score_without": 0.9162320551872252,
+              "score_with": 0.8283410962004409,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-76a36e2b0382",
+              "node_id": "01KVZ4R1AKHK62A5KX2THEXG7A",
+              "rank_without": 2,
+              "rank_with": 3,
+              "score_without": 0.8613545608520506,
+              "score_with": 0.7850167585674085,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-76a36e2b0382",
+              "node_id": "01KVZ7A9WVZ8N8X1VZCSDYVK4R",
+              "rank_without": 5,
+              "rank_with": 6,
+              "score_without": 0.8262689580917357,
+              "score_with": 0.7573175984934756,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-78fae01f2129",
+              "node_id": "01KV27PZK638K9ZFSAMY0J6YXW",
+              "rank_without": 6,
+              "rank_with": null,
+              "score_without": 0.8728061614036559,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-78fae01f2129",
+              "node_id": "01KV2AB80X39XPR5V5R3F6PQ6R",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.8580786380767821,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-78fae01f2129",
+              "node_id": "01KV2BQR4GB87MF0G0YS4ZWDQ0",
+              "rank_without": 9,
+              "rank_with": null,
+              "score_without": 0.8276691357691365,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-78fae01f2129",
+              "node_id": "01KV330ZJA2VDYK8184KKDB083",
+              "rank_without": 7,
+              "rank_with": null,
+              "score_without": 0.8696828505992887,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-7c08fdc53149",
+              "node_id": "01KV1XKXKBKBYNJT9BW24GB98Y",
+              "rank_without": 3,
+              "rank_with": 4,
+              "score_without": 0.7649895915985107,
+              "score_with": 0.7089391450034943,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-7c801fef8a4f",
+              "node_id": "01KVX8BC2ZFX8RPE0YPTYY2631",
+              "rank_without": 4,
+              "rank_with": 7,
+              "score_without": 0.9143909507517544,
+              "score_with": 0.8268875926987534,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-7f08ef1544da",
+              "node_id": "01KV32M1N9YV4JW32FG9G7A4MK",
+              "rank_without": 4,
+              "rank_with": 8,
+              "score_without": 0.9158665273189543,
+              "score_with": 0.8280525215675955,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-7f08ef1544da",
+              "node_id": "01KV330ZJA2VDYK8184KKDB083",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.842500556230545,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-7f08ef1544da",
+              "node_id": "01KV34R9QZAJDGZ5ZWMFF27EMQ",
+              "rank_without": 5,
+              "rank_with": null,
+              "score_without": 0.909248333930969,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-82ee56f152e7",
+              "node_id": "01KTVSBMC7508WBEYJRY38JGQS",
+              "rank_without": 2,
+              "rank_with": 4,
+              "score_without": 0.7977584373950957,
+              "score_with": 0.7348093051973141,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-88e3320f39cb",
+              "node_id": "01KX36QKB2CTCV69CTBT1RJFWM",
+              "rank_without": 1,
+              "rank_with": 2,
+              "score_without": 0.8262343333440456,
+              "score_with": 0.7991612025650291,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-a6407c223258",
+              "node_id": "01KV46PK6ZTME6WMNZVB25SZ2R",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.8966984055042266,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-ab63b97d786b",
+              "node_id": "01KVXAE5RH0EVECRDTH67BQ7N0",
+              "rank_without": 3,
+              "rank_with": 5,
+              "score_without": 0.9069748237576596,
+              "score_with": 0.8210327555981521,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-adb216e3ad49",
+              "node_id": "01KX3D52S2MC6PAEE1HMQ2MKRH",
+              "rank_without": 3,
+              "rank_with": 5,
+              "score_without": 0.9265087310281792,
+              "score_with": 0.8649153832717059,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-b9f56b5b0dd2",
+              "node_id": "01KV35JJFTCY4R5WNNDSCFRAT8",
+              "rank_without": 5,
+              "rank_with": null,
+              "score_without": 0.8875539422035217,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-bbc41fe676e6",
+              "node_id": "01KVXHMH3QSAA0TAPQXPE7Q7BV",
+              "rank_without": 2,
+              "rank_with": 5,
+              "score_without": 0.8981914987564085,
+              "score_with": 0.8140985516497962,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-bbc41fe676e6",
+              "node_id": "01KVXTK8J03GRNNXX5B6A3KFWH",
+              "rank_without": 1,
+              "rank_with": 4,
+              "score_without": 0.9006836786270139,
+              "score_with": 0.8160660620739585,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-c2d79d799264",
+              "node_id": "01KV2947ZM9EPRHTQZ7Z55DP48",
+              "rank_without": 9,
+              "rank_with": null,
+              "score_without": 0.9321937100092569,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-cee193784b61",
+              "node_id": "01KV0CSNAFR4WCM0893YQGW3Y0",
+              "rank_without": 6,
+              "rank_with": null,
+              "score_without": 0.8414441940573919,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-d1a85ac9d4ad",
+              "node_id": "01KV0T6Q51Y3MBV6Z0E2VQGY9S",
+              "rank_without": 21,
+              "rank_with": null,
+              "score_without": 0.71137557261205,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-d1a85ac9d4ad",
+              "node_id": "01KV0TT6XTKP6T69CHJPNW08H7",
+              "rank_without": 15,
+              "rank_with": 17,
+              "score_without": 0.774723269409208,
+              "score_with": 0.7166236337441116,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-d1a85ac9d4ad",
+              "node_id": "01KV2639RCZ047PTJACEC2YZJV",
+              "rank_without": 14,
+              "rank_with": 19,
+              "score_without": 0.7761365178050696,
+              "score_with": 0.7069547833315274,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-d1a85ac9d4ad",
+              "node_id": "01KV35JJFTCY4R5WNNDSCFRAT8",
+              "rank_without": 11,
+              "rank_with": 15,
+              "score_without": 0.8060331895351409,
+              "score_with": 0.7413419917382691,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-d1a85ac9d4ad",
+              "node_id": "01KV591KTNM5DKBA20WS7SWMRJ",
+              "rank_without": 13,
+              "rank_with": 20,
+              "score_without": 0.7769493393829323,
+              "score_with": 0.7063065825049748,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-d1a85ac9d4ad",
+              "node_id": "01KV5CPRGED5XAJ9CXZ93KYC9A",
+              "rank_without": 18,
+              "rank_with": 22,
+              "score_without": 0.7580987389351329,
+              "score_with": 0.6982222051318953,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-d6096afd2424",
+              "node_id": "01KVWZ9R632P2SXKX2NCQ5Q093",
+              "rank_without": 3,
+              "rank_with": 8,
+              "score_without": 0.8217792041301726,
+              "score_with": 0.7537730684092169,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-d6096afd2424",
+              "node_id": "01KW9B8T42J3PJXWYYDSQB93XP",
+              "rank_without": 0,
+              "rank_with": 3,
+              "score_without": 0.8962761895656584,
+              "score_with": 0.8125864779635479,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-e46f75057371",
+              "node_id": "01KVXHMH3QSAA0TAPQXPE7Q7BV",
+              "rank_without": 3,
+              "rank_with": null,
+              "score_without": 0.9192930614948273,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-e46f75057371",
+              "node_id": "01KVXTK8J03GRNNXX5B6A3KFWH",
+              "rank_without": 6,
+              "rank_with": null,
+              "score_without": 0.8740139493942259,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-e46f75057371",
+              "node_id": "01KW8SE9EY49WR49W1YRDE8CY5",
+              "rank_without": 2,
+              "rank_with": null,
+              "score_without": 0.9259197235107421,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-e795082c2a4b",
+              "node_id": "01KVRHBBPJDRW38JCEVR5D4V1Z",
+              "rank_without": 4,
+              "rank_with": 8,
+              "score_without": 0.9166429924964904,
+              "score_with": 0.8286655329089414,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-e795082c2a4b",
+              "node_id": "01KVRSYKJYA1C8YD9K4F59J8XS",
+              "rank_without": 9,
+              "rank_with": null,
+              "score_without": 0.8322755742816301,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-e951cbeabd36",
+              "node_id": "01KTVXTC5ATK8V1BFV3XNVGCSC",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.7166656121785323,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-ee70a8901041",
+              "node_id": "01KVKVKB3DB8CQNTJKDGWWC6Z3",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.6743773190975189,
+              "score_with": null,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-ee70a8901041",
+              "node_id": "01KVMHNEG18G6ASYH3RTGJ4F8C",
+              "rank_without": 1,
+              "rank_with": 2,
+              "score_without": 0.7906107437610624,
+              "score_with": 0.7291663766534705,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-f5850a1df575",
+              "node_id": "01KVRS8P3YFM8FVG9H01MPK52F",
+              "rank_without": 3,
+              "rank_with": 7,
+              "score_without": 0.801777759027481,
+              "score_with": 0.7379824413374849,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-f5850a1df575",
+              "node_id": "01KVXNQS92GHGF1NATCPMK3TW7",
+              "rank_without": 8,
+              "rank_with": null,
+              "score_without": 0.7175386775599725,
+              "score_with": null,
+              "score_unchanged": false
+            }
+          ]
+        },
+        "holdout_goldset_343": {
+          "results_scored_in_both_arms": 3477,
+          "lost_score": 4,
+          "gained_score": 2,
+          "unchanged": 3471,
+          "fell_out_of_returned_list": 2,
+          "fell_out_detail": [
+            {
+              "query_id": "content_grounded-49229443cf1d",
+              "node_id": "01KT3PBN93APZ61M6XVGSFH9CJ",
+              "score": 0.7365150284324259,
+              "rank": 11,
+              "weakest_returned_score_with_anchors": 0.715214835140635,
+              "explained_by_displacement": false
+            },
+            {
+              "query_id": "content_grounded-d3d006b1b47d",
+              "node_id": "01KT2G9Q00X7AZV7A2VY0J88MC",
+              "score": 0.7155522483269794,
+              "rank": 7,
+              "weakest_returned_score_with_anchors": 0.6801960773128278,
+              "explained_by_displacement": false
+            }
+          ],
+          "relevant_node_rank_better": 3,
+          "relevant_node_rank_worse": 2,
+          "relevant_node_rank_worse_detail": [
+            {
+              "query_id": "content_grounded-7a29b039a68c",
+              "node_id": "01KRWR9MJW1CGY0M3TN55FDQGE",
+              "rank_without": 0,
+              "rank_with": 1,
+              "score_without": 0.7365688012812786,
+              "score_with": 0.6982369777566728,
+              "score_unchanged": false
+            },
+            {
+              "query_id": "content_grounded-e04de650ad00",
+              "node_id": "01KWQHH5ENPM0YX88H7D5Z5A9X",
+              "rank_without": 3,
+              "rank_with": 4,
+              "score_without": 0.6196409699580511,
+              "score_with": 0.6113992471214198,
+              "score_unchanged": false
+            }
+          ]
+        }
+      }
+    },
+    "baseline_untouched": {
+      "claim": "the anchors-off arm is bit-identical to the published pre-fix anchors-off arm",
+      "frozen_goldset_234": {
+        "ranked_node_ids_identical": true,
+        "scores_bit_identical": true
+      },
+      "holdout_goldset_343": {
+        "ranked_node_ids_identical": true,
+        "scores_bit_identical": true
+      }
+    },
+    "blind_spot_still_open": {
+      "claim": "a node reachable only through an anchor keeps the floored blend and stays competitive; pinned by tests, and measured against the naive alternative",
+      "pinned_by": [
+        "tests/test_retrieval_query_anchors.py::test_jargon_query_reaches_anchor_only_node",
+        "tests/test_retrieval_query_anchors.py::test_anchor_seed_opens_the_graph_with_no_other_candidate"
+      ],
+      "naive_alternative_measured": {
+        "variant": "exempt anchor activations from triggering the graph-weight floor",
+        "result": "both tests above FAIL: the anchor-only node's blend collapses to the learned graph weight and it leaves the result list entirely"
+      }
+    }
+  },
+  "latency": {
+    "note": "80 holdout queries, depth=1, warmed caches, same working copy of the anchored snapshot; wall time of the whole memory_recall, so the arm-to-arm delta is the figure, not the absolute",
+    "arms_ms": {
+      "pre-fix, anchors on": {
+        "n": 80,
+        "p50_ms": 87.34,
+        "p95_ms": 226.73,
+        "mean_ms": 94.84
+      },
+      "fixed,   anchors on": {
+        "n": 80,
+        "p50_ms": 88.76,
+        "p95_ms": 217.1,
+        "mean_ms": 96.49
+      },
+      "fixed,   anchors off": {
+        "n": 80,
+        "p50_ms": 88.01,
+        "p95_ms": 224.78,
+        "mean_ms": 97.37
+      }
+    }
+  }
+}

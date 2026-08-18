@@ -1174,7 +1174,14 @@ def test_report_separates_metrics_from_provenance(
         == 0
     )
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert set(report) == {"metrics", "agreement", "runs", "definitions", "provenance"}
+    assert set(report) == {
+        "metrics",
+        "agreement",
+        "runs",
+        "anchor_annotations",
+        "definitions",
+        "provenance",
+    }
     assert "generated_at" not in json.dumps(report["metrics"])
     provenance = report["provenance"]
     for key in (

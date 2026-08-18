@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+import logging
 import math
 import os
 from types import SimpleNamespace
@@ -10,7 +12,10 @@ from typing import Any
 
 from living_memory.grounding import DEFAULT_MIN_CONTAINMENT, ground_results
 from living_memory.models import Node, RecallEvent, RetrievalWeights
-from living_memory.storage import MemoryStore
+from living_memory.query_anchors import upsert_anchor
+from living_memory.storage import ChunkEmbedder, MemoryStore
+
+_LOG = logging.getLogger(__name__)
 
 
 # Credit assignment for implicit consumption feedback.
@@ -52,6 +57,41 @@ UNGROUNDED_NEGATIVE_FACTOR = 0.25
 # default: per-event and whole-corpus IDF agree on 96.2% of the 72,023
 # recorded result/trace pairs at this value (scripts/grounding_calibration.py).
 RECALL_CREDIT_MIN_CONTAINMENT = DEFAULT_MIN_CONTAINMENT
+
+
+# Query anchors on the live path.
+#
+# The same grounding verdict that decides credit also decides what the graph
+# learns about the *question*. A grounded consumption is the only moment where
+# both halves of "this query was answered by these nodes" are in hand at once,
+# so that is where the anchor is written: the consumed event's query becomes an
+# anchor in the consumed event's scope, with edges to exactly the nodes the
+# trace grounded on (living_memory.query_anchors owns dedup, edge accumulation,
+# and replacement-following; this module only decides *when* and *with what*).
+#
+# Four properties are load-bearing and each one is pinned by
+# tests/test_anchor_live_path.py:
+#
+# * Scope is ``event.scope``, never ``trace.scope``. The two diverge whenever a
+#   transport-session match closes feedback across the recall/ingest scope
+#   divergence, and an anchor written under the trace's scope would answer a
+#   question that was never asked there.
+# * Edges point at the grounded subset only. Reinforcing the whole delivered
+#   set is the defect the grounding work removed from credit assignment -- 87.9%
+#   of reinforcements (63,325 of 72,023 recorded pairs) went to results the
+#   trace never used -- and routing it back in through anchor edges would
+#   rebuild it in the graph, where it would then be *retrieved*.
+# * No grounded result, no anchor. Under ``LM_RECALL_CREDIT_POLICY=all`` no
+#   verdict is computed at all, so that policy writes no anchors rather than
+#   anchoring everything delivered; likewise ``reinforce_results=False``.
+#   Falling back to the pre-grounding credit rule must not poison the graph.
+# * Cost is one short vector per grounded event, batched into a single call to
+#   the encoder the store already holds. Grounding is not recomputed and the
+#   result contents are never re-embedded.
+#
+# An anchor is derived data. A failure to write one is logged and swallowed:
+# the trace, its provenance, and its credit are the user's write and must not
+# be lost to a stale encoder or a pre-v7 database.
 
 _ADAPTIVE_LR_LADDER: tuple[tuple[int, float], ...] = (
     (10, 0.20),
@@ -191,6 +231,11 @@ class ImplicitRecallFeedback:
     #: and graph traversal, only *reinforcement* is gated. Empty when
     #: reinforcement was skipped or the policy is ``all``.
     grounded_node_ids: list[str] = field(default_factory=list)
+    #: Query anchors created or reinforced by this consumption, deduplicated —
+    #: one per consumed event that grounded at least one result. Empty when
+    #: nothing grounded, and also when the anchor write failed, which is
+    #: logged and never raised.
+    anchor_ids: list[str] = field(default_factory=list)
 
 
 class FeedbackService:
@@ -264,6 +309,9 @@ def apply_pending_recall_feedback(
     *shown*. Reinforcement is not: under the grounding policies only results
     the trace demonstrably used move node usefulness and retrieval weights.
     See the credit-assignment note at the top of this module.
+
+    The same grounded subset also becomes a query anchor per consumed event —
+    the graph's entry from query space. See the anchor note above it.
     """
 
     events = store.pending_recall_events(
@@ -286,11 +334,15 @@ def apply_pending_recall_feedback(
     source_traces = list(trace.source_traces)
     linked_node_ids: list[str] = []
     grounded_node_ids: list[str] = []
+    anchor_work: list[tuple[RecallEvent, tuple[str, ...]]] = []
     feedback_applied = False
     policy = _recall_credit_policy()
 
     for event in events:
         event_node_ids: list[str] = []
+        # Per event, not accumulated across the batch: an anchor's edges may
+        # only carry the results *its own* query earned.
+        event_grounded: list[str] = []
         # Resolve every result once: linkage needs the node, and grounding
         # needs its content. One get_node per result, as before.
         resolved: list[tuple[int, dict[str, Any], Node]] = []
@@ -341,7 +393,10 @@ def apply_pending_recall_feedback(
                 continue
 
             verdict = verdicts.get(node_id)
-            grounded = policy == "all" or (verdict is not None and verdict.grounded)
+            content_grounded = verdict is not None and verdict.grounded
+            if content_grounded:
+                event_grounded.append(node_id)
+            grounded = policy == "all" or content_grounded
             if grounded and node_id not in grounded_node_ids:
                 grounded_node_ids.append(node_id)
             if not grounded and policy != "grounded_negative":
@@ -363,6 +418,9 @@ def apply_pending_recall_feedback(
             )
             feedback_applied = True
 
+        if event_grounded:
+            anchor_work.append((event, tuple(event_grounded)))
+
         prior_recalls.append(
             {
                 "id": event.id,
@@ -378,13 +436,74 @@ def apply_pending_recall_feedback(
     provenance["recalled_nodes"] = recalled_nodes
     provenance["source_traces"] = source_traces
     updated = store.update_node(trace.id, provenance=provenance)
+    # After the trace is durable, so a derived write can never cost the write
+    # it was derived from.
+    anchor_ids = _reinforce_query_anchors(store, anchor_work)
     return ImplicitRecallFeedback(
         trace=updated,
         events=events,
         linked_node_ids=linked_node_ids,
         feedback_applied=feedback_applied,
         grounded_node_ids=grounded_node_ids,
+        anchor_ids=anchor_ids,
     )
+
+
+def _reinforce_query_anchors(
+    store: MemoryStore, work: Sequence[tuple[RecallEvent, tuple[str, ...]]]
+) -> list[str]:
+    """Create or reinforce one anchor per grounded consumption. Never raises.
+
+    Every query is embedded in one batched call, before any anchor is written,
+    so a consuming ``memory_remember`` pays one encoder round trip no matter
+    how many pending events it closed. A blank query is skipped rather than
+    anchored: its fingerprint would be the same for every blank query in the
+    scope, so it would collect edges from unrelated consumptions.
+    """
+
+    items = [(event, targets) for event, targets in work if event.query.strip()]
+    if not items:
+        return []
+    anchor_ids: list[str] = []
+    try:
+        embedder = _anchor_embedder(store)
+        if embedder is None:
+            return []
+        vectors = embedder([event.query for event, _targets in items])
+        for (event, targets), vector in zip(items, vectors, strict=True):
+            if not vector:
+                continue
+            outcome = upsert_anchor(store, event.query, event.scope, vector, targets)
+            if outcome.anchor.id not in anchor_ids:
+                anchor_ids.append(outcome.anchor.id)
+    except Exception:
+        _LOG.warning(
+            "query anchor write failed for %d grounded consumption(s)",
+            len(items),
+            exc_info=True,
+        )
+    return anchor_ids
+
+
+def _anchor_embedder(store: MemoryStore) -> ChunkEmbedder | None:
+    """The encoder that puts an anchor vector in the same space as node chunks.
+
+    Deliberately the store's *chunk* encoder rather than a model of this
+    module's own. Retrieval matches an incoming query vector against anchor
+    vectors and node chunks against the same query, so all three have to come
+    out of one model; and the store already holds that model, lent to it by
+    ``MemoryRecallService._share_embedder_with_store`` precisely so a second
+    resident copy of the same weights never gets loaded.
+
+    Returns ``None`` for a store face that has no such encoder — the
+    ranking-only shim ``replay`` passes in — which writes no anchors, as an
+    offline scoring run should not.
+    """
+
+    resolve = getattr(store, "_resolve_chunk_embedder", None)
+    if resolve is None:
+        return None
+    return resolve()
 
 
 def feedback_weighted_score(

@@ -90,6 +90,115 @@ The constant is therefore left alone: the goldset improves with it unchanged,
 and moving it would be a second untested intervention on top of this one.
 Retuning the channel blend for the new distribution is the separate downstream
 step (``weights-recalibration``); nothing here changes a weight or a floor.
+
+The graph channel's entry from query space
+==========================================
+
+BFS used to be seedable only from what BM25, the vector channel, or a schema
+trigger had already found, so the graph had no entry of its own from the space
+of *questions*: a query whose answer no other channel can reach never got a
+walk at all. :mod:`living_memory.query_anchors` supplies the missing entry --
+a remembered query, embedded by the same model as node content, carrying
+weighted edges to the nodes a grounded consumption of that query actually used.
+Matching "query <-> past query" and taking one hop finds a repeated situation
+that "query <-> node content" cannot: the operator's own jargon meets itself
+(«поревьювь EZ-13871» <-> «поревьювь EZ-12826» = 0.931) where the same query
+against the English content of the node it should find sits at 0.100-0.269.
+
+This is deliberately **not** a fifth channel. A matched anchor's targets enter
+``_collect_graph`` as seeds, are scored as graph activation, and are blended by
+the same learned per-scope ``graph`` weight as any other graph evidence -- so
+the weights keep meaning what they meant. Three things change and nothing else:
+
+* the graph guard runs when anchors produced seeds even with no other
+  candidate, which is precisely the blind spot;
+* an anchor's targets open a second walk with activation
+  ``anchor cosine x edge weight``, landing in ``_Candidate.anchor_score`` under
+  the same ``min(1.5, ...)`` cap as a BFS-discovered neighbour;
+* nothing else. With no anchors, or on a query class no anchor resembles, no
+  anchor walk runs, every ``anchor_score`` is 0.0, and the ranking is
+  byte-identical to the pre-anchor code.
+
+Anchors never demote what they seed
+-----------------------------------
+
+Extra evidence must not cost a candidate anything, and the first cut of the
+above broke that. ``rank_candidates`` floors the per-scope normalized graph
+weight at 0.25 (0.75 in causal mode) for any candidate with a graph activation,
+taking the deficit proportionally out of ``bm25`` and ``vector``. That floor
+predates anchors and is exactly what makes a graph-only candidate competitive
+against lexical ones -- it is not the defect and is not touched here. But an
+anchor is a *new* way for an already-strong lexical/vector candidate to acquire
+a **small** graph activation, and crossing that step function moved up to a
+quarter of the weight off the very evidence that was carrying it. Measured on
+the frozen 234-item goldset: of the results that gained a graph score from an
+anchor seed, 54 lost score against 18 that gained, median relative loss 8.1%;
+two fell out of the returned list entirely. The anchor demoted the node it was
+seeding (``result.md`` section 6).
+
+The fix is to keep the anchors-off score computable and never go below it:
+
+* ``_collect_graph`` runs the pre-anchor walk **first and alone**, before a
+  single anchor target has been admitted as a candidate. ``graph_score``
+  therefore still holds exactly what it would hold with anchors off -- an
+  anchor can neither displace one of its seeds nor perturb one of its numbers.
+* the anchor walk then runs separately into ``anchor_score``, and
+  ``combined_graph_score`` is what the ranker blends.
+* a candidate whose activation an anchor moved is scored **both** ways, through
+  one ``_blend_candidate_score``, and keeps the better result. The floor
+  applies identically in both, so the comparison is honest.
+
+An anchor-*only* candidate has no anchors-off score to fall back to, so it
+keeps the floored blend in full: the blind spot the floor was covering stays
+covered, which a plain "exempt anchor activations from the floor" would have
+closed again.
+
+Both factors of the activation live in [0, 1] and the product is a confidence,
+so an anchor seed lands in exactly the numeric range seeds already occupied
+(a bm25 rank score, a cosine) rather than inflating the channel. One grounded
+consumption is worth ``ANCHOR_EDGE_WEIGHT`` (0.25), so a link the operator's
+work has confirmed once seeds weakly and one confirmed four times seeds at full
+strength -- the calibration is the edge weight's, not a new constant here.
+
+Cost, measured
+--------------
+
+``match_anchors`` is a full scan by design (a few thousand rows against the
+chunk corpus's 60k), and its own docstring measures that scan at ~12 ms cold
+and instructs read-path callers to cache the vectors and re-validate with
+``MemoryStore.query_anchor_revision``. That is what :class:`_AnchorVectorCache`
+and :class:`_CachedAnchorVectors` below are: the policy stays in
+``match_anchors``, only its input is cached. At 4,000 anchors x 384 dims on
+this machine the scan costs 5.9 ms p50 uncached and 0.9 ms over the cache, and
+the revision probe that guards it costs 0.04 ms. The cache is invalidated
+whole-corpus because ``query_anchor_revision`` is whole-corpus, and it is exact
+for what it holds -- a reinforcement never rewrites a stored vector, which is
+why the most frequent anchor write does not invalidate it.
+
+End to end, on a snapshot of the live database (12,901 active nodes, 143,285
+connections, 60,636 chunk vectors) carrying 3,760 anchors and 10,716 edges
+built from real pre-cutoff consumptions, against real post-cutoff queries --
+``artifacts/anchors/latency.json``:
+
+============================  ==================  ==================
+stratum                       paired delta p50    anchor stage p50
+============================  ==================  ==================
+holdout, no anchor matched     -0.6 ms             0.8 ms
+holdout, anchor matched        +8.3 ms             2.9 ms
+repeated query (worst case)    +4.4 ms             1.1 ms
+============================  ==================  ==================
+
+against a budget of +5 ms p50. The middle and bottom rows are the feature doing
+work rather than overhead: a matched anchor opens a walk from seeds no other
+channel produced, so the BFS explores a neighbourhood that would not have been
+visited at all. That walk is a *second* one, separate from the pre-anchor walk
+so it cannot perturb it (see below); it is bounded by the same
+:data:`GRAPH_SEED_LIMIT` roots and the same depth, and it runs only when an
+anchor actually matched -- which the table's top row, the common case, shows
+costing nothing.
+
+With zero live anchors the probe short-circuits and no scan happens: cold start
+costs one indexed ``COUNT``.
 """
 
 from __future__ import annotations
@@ -109,8 +218,20 @@ from living_memory.models import (
     Connection,
     ConnectionType,
     Node,
+    RetrievalWeights,
 )
-from living_memory.scope import GLOBAL_SCOPE, ScopePlan, ScopeResolver, scope_family
+from living_memory.query_anchors import (
+    ANCHOR_MATCH_COSINE_THRESHOLD,
+    ANCHOR_MATCH_LIMIT,
+    match_anchors,
+)
+from living_memory.scope import (
+    GLOBAL_SCOPE,
+    ScopePlan,
+    ScopeResolver,
+    normalize_scope,
+    scope_family,
+)
 from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
     CHUNK_EMBEDDING_ITEMSIZE,
@@ -216,17 +337,46 @@ class _Candidate:
     node: Node
     bm25_score: float = 0.0
     vector_score: float = 0.0
+    #: Activation from the traversal that would have happened with anchors
+    #: switched off. Written by that walk only, so it stays usable as the
+    #: anchors-off counterfactual the ranker needs.
     graph_score: float = 0.0
     trigger_score: float = 0.0
     path: tuple[str, ...] = ()
+    #: Activation this candidate owes to a matched query anchor, kept apart
+    #: from ``graph_score`` so the ranker can still see what the candidate was
+    #: worth before the anchor touched it. See "Anchors never demote what they
+    #: seed" in the module docstring.
+    anchor_score: float = 0.0
 
-    def methods(self) -> tuple[str, ...]:
+    @property
+    def combined_graph_score(self) -> float:
+        """The graph evidence this candidate actually carries, both sources.
+
+        A max rather than a sum, matching every other writer of graph
+        activation: two routes to the same node are one claim seen twice, not
+        two claims worth adding up.
+        """
+
+        return max(self.graph_score, self.anchor_score)
+
+    def methods(self, graph_score: float | None = None) -> tuple[str, ...]:
+        """Channels that carried this candidate.
+
+        ``graph_score`` overrides which graph activation counts, so a result
+        the ranker scored on its anchors-off blend reports the channels that
+        blend actually used rather than evidence it deliberately set aside.
+        """
+
+        effective_graph = (
+            self.combined_graph_score if graph_score is None else graph_score
+        )
         names: list[str] = []
         if self.bm25_score > 0.0:
             names.append("bm25")
         if self.vector_score > 0.0:
             names.append("vector")
-        if self.graph_score > 0.0:
+        if effective_graph > 0.0:
             names.append("graph")
         if self.trigger_score > 0.0:
             names.append("trigger")
@@ -276,6 +426,87 @@ class _ScopeChunkIndex:
     row_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class _AnchorVectorCache:
+    """Every live anchor's vector, reusable until ``revision`` moves.
+
+    Built and invalidated whole-corpus, unlike ``_ScopeChunkIndex``, because the
+    revision that validates it (``MemoryStore.query_anchor_revision``) is itself
+    whole-corpus: keying the *cache* per scope would rebuild every scope on any
+    anchor write and buy nothing.
+
+    Served per scope, though, and that part is not cosmetic. A real anchor
+    corpus is strongly partitioned by scope -- 3,760 anchors of a live snapshot
+    split 1322/1151/829/177/75/74 across the six scopes that hold all but 132 of
+    them -- and the matcher's cost is linear in the rows it is handed, since it
+    concatenates them into one matrix and takes their norms. Handing a
+    ``project:lm`` plan the whole corpus would mean 3,760 rows of work for the
+    251 it may look at. Rows keep the shape ``iter_query_anchor_vectors``
+    yields -- ``(id, scope, dimensions, bytes)`` -- and their scan order within
+    each scope, so the matcher reading them is the one that reads the database.
+    """
+
+    revision: tuple[Any, ...]
+    rows: tuple[tuple[str, str, int, Any], ...]
+    by_scope: dict[str, tuple[tuple[str, str, int, Any], ...]]
+
+
+class _CachedAnchorVectors:
+    """A ``MemoryStore`` face whose anchor vectors come from a cache.
+
+    Exists so the read path can reuse ``query_anchors.match_anchors`` verbatim
+    -- the single owner of match policy: the similarity floor, the width guard
+    that refuses to compare vectors from two different spaces, the stable tie
+    break, and the live-target filter -- without paying that function's
+    deliberate full scan on every recall. Only the vector scan is served from
+    cache; anchor rows and edges are read through, because they are small,
+    indexed, and (unlike a vector) may have changed under a revision that did
+    not move.
+    """
+
+    __slots__ = ("_store", "_cache")
+
+    def __init__(self, store: MemoryStore, cache: _AnchorVectorCache) -> None:
+        self._store = store
+        self._cache = cache
+
+    def iter_query_anchor_vectors(
+        self,
+        scopes: Any = None,
+        *,
+        include_decayed: bool = False,
+        limit: int | None = None,
+    ) -> Iterator[tuple[str, str, int, Any]]:
+        if include_decayed:
+            # The cache holds live anchors only, which is the whole of what a
+            # match may see; a caller asking for more is asking a different
+            # question and gets the database's answer.
+            yield from self._store.iter_query_anchor_vectors(
+                scopes, include_decayed=True, limit=limit
+            )
+            return
+        if scopes is None:
+            groups: tuple[tuple[tuple[str, str, int, Any], ...], ...] = (self._cache.rows,)
+        else:
+            # ``dict.fromkeys`` rather than a set: a plan that names one scope
+            # twice must yield its anchors once, as ``scope IN (...)`` would,
+            # and the plan's own order is worth keeping.
+            groups = tuple(
+                self._cache.by_scope.get(normalize_scope(scope), ())
+                for scope in dict.fromkeys(scopes)
+            )
+        emitted = 0
+        for group in groups:
+            for row in group:
+                yield row
+                emitted += 1
+                if limit is not None and emitted >= int(limit):
+                    return
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._store, name)
+
+
 class MemoryRecallService:
     """Callable retrieval policy service on top of MemoryStore."""
 
@@ -285,6 +516,7 @@ class MemoryRecallService:
         *,
         embedder: LocalEmbeddingModel | None = None,
         vector_scan_limit: int = DEFAULT_VECTOR_SCAN_LIMIT,
+        anchor_seeding: bool = True,
     ) -> None:
         self.store = store
         self.embedder = embedder or LocalEmbeddingModel(model_name=store.config.embedding_model)
@@ -298,9 +530,15 @@ class MemoryRecallService:
         self.scope_resolver = ScopeResolver()
         self.feedback = FeedbackService(store)
         self.last_recall_event_id: str | None = None
+        # Ablation switch, not a feature gate: anchors are on by default and
+        # this only turns them *off*, so the leak-free with/without evaluation
+        # can hold one snapshot, one goldset, and one code path fixed and vary
+        # nothing but the graph channel's entry from query space.
+        self.anchor_seeding = bool(anchor_seeding)
         self._chunk_index: dict[str, _ScopeChunkIndex] = {}
         self._write_probe: tuple[int, int] | None = None
         self._chunk_revision: tuple[Any, ...] | None = None
+        self._anchor_vectors: _AnchorVectorCache | None = None
         self._store_embedder_shared = False
 
     def memory_recall(
@@ -331,18 +569,33 @@ class MemoryRecallService:
         candidates: dict[str, _Candidate] = {}
 
         self._collect_bm25(query, plan, candidates, max_results=max_results)
-        self._collect_vector(query, plan, candidates, max_results=max_results)
+        query_embedding = self._collect_vector(
+            query, plan, candidates, max_results=max_results
+        )
         self._collect_schema_triggers(query, plan, candidates)
 
         graph_depth, causal_mode = _parse_depth(depth, query)
         decision_mode = _is_decision_depth(depth)
-        if graph_depth > 0 and candidates:
+        # Anchors are an entry *into* the graph channel, so they are asked for
+        # exactly when that channel runs: with the graph off (depth=0) there is
+        # nothing for a seed to open. The query vector is the one
+        # ``_collect_vector`` already computed -- an anchor match embeds
+        # nothing of its own.
+        anchor_seeds = (
+            self._collect_anchor_seeds(plan, query_embedding) if graph_depth > 0 else {}
+        )
+        # ``or anchor_seeds`` is the blind spot being fixed: until now the
+        # graph could not run unless some other channel had already produced a
+        # candidate to seed it from, which is exactly the case anchors exist
+        # to answer.
+        if graph_depth > 0 and (candidates or anchor_seeds):
             self._collect_graph(
                 plan,
                 candidates,
                 max_depth=graph_depth,
                 causal_mode=causal_mode,
                 decision_mode=decision_mode,
+                anchor_seeds=anchor_seeds,
             )
 
         ranked = self.rank_candidates(
@@ -402,70 +655,111 @@ class MemoryRecallService:
         narrow_present, best_narrow_vector = _ungated_scope_profile(
             candidates, ungated_scopes, decision_mode=decision_mode
         )
+        # The same gate as it would have read with anchors switched off.
+        # Anchors only ever *add* candidates, and an added candidate carries no
+        # vector score of its own, so the single thing they can move here is
+        # ``narrow_present`` False -> True -- which would gate out a
+        # cross-scope candidate the anchor never touched. Recomputed only when
+        # an anchor actually seeded something; otherwise it is the same walk
+        # over the same dict for the same answer.
+        anchor_seeded = any(
+            candidate.anchor_score > 0.0 for candidate in candidates.values()
+        )
+        anchor_free_narrow_present = (
+            _ungated_scope_profile(
+                candidates, ungated_scopes, decision_mode=decision_mode, anchor_free=True
+            )[0]
+            if anchor_seeded
+            else narrow_present
+        )
         for candidate in candidates.values():
             node = candidate.node
             if node.decayed or not plan.allows(node.scope):
                 continue
             if _is_rejected_alternative_node(node) and not decision_mode:
                 continue
-            if (
-                narrow_present
-                and node.scope not in ungated_scopes
-                and not _cross_scope_admissible(candidate, best_narrow_vector)
-            ):
-                continue
 
             weights = self.store.get_retrieval_weights(node.scope).normalized()
-            bm25_weight = weights.bm25
-            vector_weight = weights.vector
-            graph_weight = weights.graph
-            if candidate.graph_score > 0.0:
-                minimum_graph = 0.75 if causal_mode else 0.25
-                if graph_weight < minimum_graph:
-                    deficit = minimum_graph - graph_weight
-                    graph_weight = minimum_graph
-                    remaining = max(0.0, bm25_weight + vector_weight)
-                    if remaining > 0.0:
-                        bm25_weight = max(0.0, bm25_weight - deficit * (bm25_weight / remaining))
-                        vector_weight = max(0.0, vector_weight - deficit * (vector_weight / remaining))
-
-            base_score = (
-                bm25_weight * candidate.bm25_score
-                + vector_weight * candidate.vector_score
-                + graph_weight * candidate.graph_score
+            graph_score = candidate.combined_graph_score
+            ungated = node.scope in ungated_scopes
+            admissible = (
+                ungated
+                or not narrow_present
+                or _cross_scope_admissible(
+                    candidate, best_narrow_vector, graph_score=graph_score
+                )
             )
-            if candidate.vector_score >= STRONG_VECTOR_MATCH:
-                base_score = max(base_score, candidate.vector_score)
-            if node.level == "schema" and candidate.trigger_score > 0.0:
-                base_score = max(base_score, candidate.trigger_score)
-            if base_score <= 0.0:
+            adjusted = (
+                _blend_candidate_score(
+                    candidate,
+                    graph_score,
+                    weights,
+                    plan=plan,
+                    causal_mode=causal_mode,
+                    superseded=node.id in corrections_by_superseded,
+                    superseding=node.id in superseding_ids,
+                )
+                if admissible
+                else 0.0
+            )
+            effective_graph = graph_score
+
+            # MONOTONICITY. An anchor is extra evidence, so it must not be able
+            # to cost a candidate anything -- yet the graph-weight floor a few
+            # lines down is a step function at graph_score > 0, and an anchor
+            # is a brand new way for a strong lexical/vector candidate to
+            # acquire a *small* graph score. Crossing that step moved up to a
+            # quarter of the per-scope weight off the very evidence that was
+            # carrying the candidate, demoting the node the anchor was seeding
+            # (measured: 54 of 204 such results lost score, median -8.1%).
+            #
+            # The floor is not the defect and is not touched. Instead the
+            # candidate is also scored the way it would have been scored with
+            # anchors off -- which ``graph_score`` and ``anchor_free_*`` above
+            # preserve exactly -- and keeps the better of the two. An anchor
+            # can then only ever lift a candidate. Where the floor is what
+            # makes an anchor-only candidate competitive at all, this branch
+            # never runs: such a candidate has no anchors-off score to fall
+            # back to, so it keeps the floored one in full.
+            if _has_anchor_free_evidence(candidate) and (
+                graph_score > candidate.graph_score or not admissible
+            ):
+                anchor_free_admissible = (
+                    ungated
+                    or not anchor_free_narrow_present
+                    or _cross_scope_admissible(
+                        candidate, best_narrow_vector, graph_score=candidate.graph_score
+                    )
+                )
+                if anchor_free_admissible:
+                    anchor_free_score = _blend_candidate_score(
+                        candidate,
+                        candidate.graph_score,
+                        weights,
+                        plan=plan,
+                        causal_mode=causal_mode,
+                        superseded=node.id in corrections_by_superseded,
+                        superseding=node.id in superseding_ids,
+                    )
+                    if anchor_free_score > adjusted:
+                        adjusted = anchor_free_score
+                        effective_graph = candidate.graph_score
+            if adjusted <= 0.0:
                 continue
 
-            scope_boost = (
-                1.0
-                + max(0, len(plan.scopes) - plan.rank(node.scope) - 1) * SCOPE_RANK_BOOST_STEP
-            )
-            adjusted = feedback_weighted_score(
-                node,
-                base_score * scope_boost,
-                superseded=node.id in corrections_by_superseded,
-                superseding=node.id in superseding_ids,
-            )
-            if causal_mode and candidate.graph_score > 0.0:
-                adjusted *= 1.5
-            if node.level == "schema" and candidate.trigger_score > 0.0:
-                adjusted *= SCHEMA_TRIGGER_BOOST
             results.append(
                 RecallResult(
                     node=node,
                     score=adjusted,
                     bm25_score=candidate.bm25_score,
                     vector_score=candidate.vector_score,
-                    graph_score=candidate.graph_score,
+                    graph_score=effective_graph,
                     trigger_score=candidate.trigger_score,
                     scope_rank=plan.rank(node.scope),
-                    methods=candidate.methods(),
-                    path=candidate.path,
+                    methods=candidate.methods(effective_graph),
+                    # A candidate scored without its graph activation has no
+                    # graph route to report; with one, the walk recorded it.
+                    path=candidate.path if effective_graph > 0.0 else (),
                     superseded=node.id in corrections_by_superseded,
                 )
             )
@@ -523,7 +817,7 @@ class MemoryRecallService:
         candidates: dict[str, _Candidate],
         *,
         max_results: int,
-    ) -> None:
+    ) -> list[float]:
         """Score nodes by the best cosine among their chunk vectors.
 
         A node's vector score is ``max`` over its chunks, not the mean and not
@@ -540,6 +834,11 @@ class MemoryRecallService:
         went, and fusion, the STRONG_VECTOR_MATCH override and the cross-scope
         gate read it the same way. What the shift in that score's distribution
         does to those two thresholds is measured in the module notes above.
+
+        Returns the query's embedding so the anchor match can reuse it. The
+        encoder costs ~8.6 ms warm on this machine -- more than the whole
+        anchor budget -- and the two channels want the same vector of the same
+        query, so embedding twice would be paying that twice for one answer.
         """
 
         per_scope_limit = max(50, max_results * 12)
@@ -576,7 +875,7 @@ class MemoryRecallService:
                         scoped_scores.append((similarity, node_id))
 
         if not scoped_scores:
-            return
+            return query_embedding
 
         scoped_scores.sort(key=lambda item: item[0], reverse=True)
         keep_n = per_scope_limit * max(1, len(plan.scopes))
@@ -596,6 +895,7 @@ class MemoryRecallService:
                     continue
                 existing = candidates.setdefault(node_id, _Candidate(node=node))
             existing.vector_score = max(existing.vector_score, similarity)
+        return query_embedding
 
     # ------------------------------------------------------------------
     # Chunk corpus cache
@@ -695,6 +995,128 @@ class MemoryRecallService:
             row_count=sum(block.row_count for block in blocks),
         )
 
+    # ------------------------------------------------------------------
+    # Query anchors: the graph channel's entry from query space
+    # ------------------------------------------------------------------
+
+    def _collect_anchor_seeds(
+        self, plan: ScopePlan, query_embedding: list[float]
+    ) -> dict[str, float]:
+        """Graph seeds contributed by the anchors this query matches.
+
+        ``{node_id: activation}``, where activation is the matched anchor's
+        cosine times the weight of its edge to that node. Both factors are in
+        [0, 1] and their product is a confidence, so the value lands in the
+        same range ``_collect_graph``'s existing seeds occupy -- a bm25 rank
+        score, a cosine -- and blends through the same learned ``graph``
+        weight. A node reachable from two matched anchors keeps the stronger
+        claim rather than accumulating, so a query that happens to sit near
+        several anchors cannot manufacture activation the edges do not carry.
+
+        Scope is the ``ScopePlan``'s, handed to ``match_anchors`` so the SQL
+        never returns an anchor from outside it: an anchor seeds only where its
+        own scope is admitted. The targets it names are filtered against the
+        same plan downstream, exactly as every other channel's candidates are.
+
+        Returns ``{}`` on a pre-v7 database, with anchor seeding switched off,
+        with no live anchor, and when nothing clears the match floor.
+        """
+
+        if not self.anchor_seeding or not query_embedding:
+            return {}
+        source = self._anchor_vector_source()
+        if source is None:
+            return {}
+        seeds: dict[str, float] = {}
+        for match in match_anchors(
+            source,
+            query_embedding,
+            plan,
+            limit=ANCHOR_MATCH_LIMIT,
+            min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
+        ):
+            for target_id, weight in match.targets:
+                activation = match.similarity * min(1.0, max(0.0, weight))
+                if activation > seeds.get(target_id, 0.0):
+                    seeds[target_id] = activation
+        if len(seeds) <= GRAPH_SEED_LIMIT:
+            return seeds
+        # The same bound the seed block applies to every other seed, applied
+        # before the node fetch rather than after it: a pathological anchor
+        # with hundreds of edges must not turn into hundreds of get_nodes rows
+        # that the sort would then discard anyway.
+        return dict(
+            sorted(seeds.items(), key=lambda item: (-item[1], item[0]))[:GRAPH_SEED_LIMIT]
+        )
+
+    def _anchor_vector_source(self) -> _CachedAnchorVectors | None:
+        """The live anchor vectors, cached until ``query_anchor_revision`` moves.
+
+        The probe costs ~0.04 ms and is asked on every recall; the scan behind
+        it costs ~5.9 ms at 4,000 anchors and is paid only when the corpus
+        actually changed. Returning ``None`` for an empty or pre-v7 corpus is
+        what makes cold start free: no scan, no matcher, no seed.
+        """
+
+        revision = self.store.query_anchor_revision()
+        if not revision or not revision[0]:
+            self._anchor_vectors = None
+            return None
+        cached = self._anchor_vectors
+        if cached is None or cached.revision != revision:
+            rows = tuple(
+                (anchor_id, scope, dimensions, bytes(blob))
+                for anchor_id, scope, dimensions, blob in (
+                    self.store.iter_query_anchor_vectors()
+                )
+            )
+            grouped: dict[str, list[tuple[str, str, int, Any]]] = {}
+            for row in rows:
+                grouped.setdefault(row[1], []).append(row)
+            cached = _AnchorVectorCache(
+                revision=revision,
+                rows=rows,
+                by_scope={scope: tuple(group) for scope, group in grouped.items()},
+            )
+            self._anchor_vectors = cached
+        return _CachedAnchorVectors(self.store, cached)
+
+    def _admit_anchor_seeds(
+        self,
+        plan: ScopePlan,
+        candidates: dict[str, _Candidate],
+        anchor_seeds: dict[str, float],
+    ) -> dict[str, float]:
+        """Make every anchor-seeded target a candidate, and report what stuck.
+
+        An anchor's target is usually a node no other channel found -- that is
+        the point -- so it has to be fetched and admitted before the anchor
+        walk can start from it. Admission uses the ranking loop's own liveness
+        and scope rules, so a seed can never carry a decayed or out-of-plan
+        node into the walk that the ranker would then drop.
+
+        Called only *after* the pre-anchor walk has finished, so a target
+        admitted here cannot compete for one of that walk's seed slots. That
+        ordering is load-bearing: it is what keeps ``_Candidate.graph_score``
+        equal to its anchors-off value, which is the number the ranker's
+        monotonicity fallback compares against.
+        """
+
+        if not anchor_seeds:
+            return {}
+        missing = [node_id for node_id in anchor_seeds if node_id not in candidates]
+        fetched = self.store.get_nodes(missing) if missing else {}
+        admitted: dict[str, float] = {}
+        for node_id, activation in anchor_seeds.items():
+            existing = candidates.get(node_id)
+            node = existing.node if existing is not None else fetched.get(node_id)
+            if node is None or node.decayed or not plan.allows(node.scope):
+                continue
+            if existing is None:
+                candidates[node_id] = _Candidate(node=node)
+            admitted[node_id] = activation
+        return admitted
+
     def _collect_schema_triggers(
         self,
         query: str,
@@ -733,9 +1155,25 @@ class MemoryRecallService:
         max_depth: int,
         causal_mode: bool,
         decision_mode: bool = False,
+        anchor_seeds: dict[str, float] | None = None,
     ) -> None:
-        queue: deque[tuple[str, float, int, tuple[str, ...]]] = deque()
-        best_seen: dict[str, float] = {}
+        """Score candidates by graph proximity, in two separable walks.
+
+        The first walk is the one that existed before anchors: it seeds from
+        the top pre-graph candidates and writes ``graph_score``. Nothing in it
+        reads an anchor, and it runs *before* any anchor target is admitted as
+        a candidate, so it computes the same numbers whether anchors are on or
+        off. That is what makes ``graph_score`` the anchors-off counterfactual
+        the ranker needs -- see "Anchors never demote what they seed" in the
+        module docstring.
+
+        The second walk is the anchors', seeded from the matched anchors'
+        targets and writing ``anchor_score``. Keeping the two apart is the
+        whole fix: merged into one seed block, an anchor target could displace
+        a real seed, and an anchor-derived activation was indistinguishable
+        from a traversed one, so the ranker had no way to tell what a
+        candidate had been worth before the anchor named it.
+        """
 
         # Seed BFS only from the top-K pre-graph candidates to avoid
         # fan-out from low-quality matches that would dilute the graph
@@ -745,10 +1183,71 @@ class MemoryRecallService:
             key=lambda c: max(c.bm25_score, c.vector_score, 0.0),
             reverse=True,
         )[:GRAPH_SEED_LIMIT]
-        for candidate in seed_candidates:
-            seed = max(candidate.bm25_score, candidate.vector_score, 0.05)
-            queue.append((candidate.node.id, seed, 0, (candidate.node.id,)))
-            best_seen[candidate.node.id] = seed
+        self._walk_graph(
+            plan,
+            candidates,
+            [
+                (candidate.node.id, max(candidate.bm25_score, candidate.vector_score))
+                for candidate in seed_candidates
+            ],
+            max_depth=max_depth,
+            causal_mode=causal_mode,
+            decision_mode=decision_mode,
+            anchor_pass=False,
+        )
+
+        # An anchor's targets are admitted only now, so they cannot compete
+        # for a slot in the walk above or perturb a single one of its numbers.
+        anchor_activations = self._admit_anchor_seeds(plan, candidates, anchor_seeds or {})
+        if not anchor_activations:
+            return
+        anchor_roots: list[tuple[str, float]] = []
+        for node_id, activation in sorted(
+            anchor_activations.items(), key=lambda item: (-item[1], item[0])
+        )[:GRAPH_SEED_LIMIT]:
+            # The anchor edge is itself the evidence -- "this question used
+            # this node" -- so the target scores in the graph channel rather
+            # than merely opening a walk from it. Under the same cap as a
+            # BFS-discovered neighbour, so both writers of a graph activation
+            # agree on its ceiling.
+            candidate = candidates[node_id]
+            candidate.anchor_score = max(candidate.anchor_score, min(1.5, activation))
+            anchor_roots.append((node_id, activation))
+        self._walk_graph(
+            plan,
+            candidates,
+            anchor_roots,
+            max_depth=max_depth,
+            causal_mode=causal_mode,
+            decision_mode=decision_mode,
+            anchor_pass=True,
+        )
+
+    def _walk_graph(
+        self,
+        plan: ScopePlan,
+        candidates: dict[str, _Candidate],
+        roots: list[tuple[str, float]],
+        *,
+        max_depth: int,
+        causal_mode: bool,
+        decision_mode: bool,
+        anchor_pass: bool,
+    ) -> None:
+        """One breadth-first activation spread from ``roots``.
+
+        ``anchor_pass`` selects which field the activation lands in and
+        nothing else: the traversal, its bounds, and its arithmetic are one
+        implementation, so the anchor walk can never drift from the walk it is
+        the counterfactual for.
+        """
+
+        queue: deque[tuple[str, float, int, tuple[str, ...]]] = deque()
+        best_seen: dict[str, float] = {}
+        for node_id, activation in roots:
+            seed = max(activation, 0.05)
+            queue.append((node_id, seed, 0, (node_id,)))
+            best_seen[node_id] = seed
 
         # Cache neighbor lookups across the BFS so a node reached via multiple
         # paths is fetched at most once. A None entry marks "fetched and
@@ -842,8 +1341,20 @@ class MemoryRecallService:
 
                     best_seen[neighbor_id] = next_score
                     candidate = candidates.setdefault(neighbor_id, _Candidate(node=neighbor))
-                    candidate.graph_score = max(candidate.graph_score, min(1.5, next_score))
-                    candidate.path = path + (neighbor_id,)
+                    if anchor_pass:
+                        reached = min(1.5, next_score)
+                        # ``path`` is provenance for the strongest explanation
+                        # of a candidate's graph evidence, so the anchor walk
+                        # claims it only when its own route is that
+                        # explanation.
+                        if reached > candidate.combined_graph_score:
+                            candidate.path = path + (neighbor_id,)
+                        candidate.anchor_score = max(candidate.anchor_score, reached)
+                    else:
+                        candidate.graph_score = max(
+                            candidate.graph_score, min(1.5, next_score)
+                        )
+                        candidate.path = path + (neighbor_id,)
                     queue.append((neighbor_id, next_score, depth + 1, path + (neighbor_id,)))
 
     def _ensure_embedding(self, node: Node) -> list[float]:
@@ -1209,11 +1720,93 @@ def _ungated_scopes(plan: ScopePlan) -> tuple[str, ...]:
     )
 
 
+def _has_anchor_free_evidence(candidate: _Candidate) -> bool:
+    """Whether this candidate would exist at all with anchors switched off.
+
+    Every channel except the anchor entry, plus the traversal that runs before
+    any anchor target is admitted. False means the candidate is in the running
+    solely because an anchor named it -- it has no anchors-off score, so there
+    is nothing for the monotonicity fallback to fall back to.
+    """
+
+    return (
+        candidate.bm25_score > 0.0
+        or candidate.vector_score > 0.0
+        or candidate.trigger_score > 0.0
+        or candidate.graph_score > 0.0
+    )
+
+
+def _blend_candidate_score(
+    candidate: _Candidate,
+    graph_score: float,
+    weights: RetrievalWeights,
+    *,
+    plan: ScopePlan,
+    causal_mode: bool,
+    superseded: bool,
+    superseding: bool,
+) -> float:
+    """A candidate's final score for one given graph activation.
+
+    Takes ``graph_score`` as an argument rather than reading it off the
+    candidate because the ranker scores some candidates twice -- once with the
+    activation an anchor contributed and once without it -- and the two
+    scorings have to be the same function of it, floor included, or the
+    comparison between them proves nothing.
+
+    Returns 0.0 for a candidate no channel scored, which is the caller's cue
+    to drop it.
+    """
+
+    bm25_weight = weights.bm25
+    vector_weight = weights.vector
+    graph_weight = weights.graph
+    if graph_score > 0.0:
+        minimum_graph = 0.75 if causal_mode else 0.25
+        if graph_weight < minimum_graph:
+            deficit = minimum_graph - graph_weight
+            graph_weight = minimum_graph
+            remaining = max(0.0, bm25_weight + vector_weight)
+            if remaining > 0.0:
+                bm25_weight = max(0.0, bm25_weight - deficit * (bm25_weight / remaining))
+                vector_weight = max(0.0, vector_weight - deficit * (vector_weight / remaining))
+
+    node = candidate.node
+    base_score = (
+        bm25_weight * candidate.bm25_score
+        + vector_weight * candidate.vector_score
+        + graph_weight * graph_score
+    )
+    if candidate.vector_score >= STRONG_VECTOR_MATCH:
+        base_score = max(base_score, candidate.vector_score)
+    if node.level == "schema" and candidate.trigger_score > 0.0:
+        base_score = max(base_score, candidate.trigger_score)
+    if base_score <= 0.0:
+        return 0.0
+
+    scope_boost = (
+        1.0 + max(0, len(plan.scopes) - plan.rank(node.scope) - 1) * SCOPE_RANK_BOOST_STEP
+    )
+    adjusted = feedback_weighted_score(
+        node,
+        base_score * scope_boost,
+        superseded=superseded,
+        superseding=superseding,
+    )
+    if causal_mode and graph_score > 0.0:
+        adjusted *= 1.5
+    if node.level == "schema" and candidate.trigger_score > 0.0:
+        adjusted *= SCHEMA_TRIGGER_BOOST
+    return adjusted
+
+
 def _ungated_scope_profile(
     candidates: dict[str, _Candidate],
     ungated_scopes: tuple[str, ...],
     *,
     decision_mode: bool = False,
+    anchor_free: bool = False,
 ) -> tuple[bool, float]:
     """Whether any rankable ungated-scope candidate exists, and its best vector.
 
@@ -1221,6 +1814,10 @@ def _ungated_scope_profile(
     (decayed, rejected-alternative outside decision mode) count: a candidate
     that can never rank must not arm the cross-scope gate, or the gate could
     empty a recall whose only real answers are cross-scope.
+
+    ``anchor_free`` additionally ignores candidates that exist only because an
+    anchor named them, which is what the gate looked like before the anchor
+    matched -- an anchor must not arm a gate that drops somebody else.
     """
 
     present = False
@@ -1231,22 +1828,32 @@ def _ungated_scope_profile(
             continue
         if _is_rejected_alternative_node(node) and not decision_mode:
             continue
+        if anchor_free and not _has_anchor_free_evidence(candidate):
+            continue
         present = True
         if candidate.vector_score > best_vector:
             best_vector = candidate.vector_score
     return present, best_vector
 
 
-def _cross_scope_admissible(candidate: _Candidate, best_narrow_vector: float) -> bool:
+def _cross_scope_admissible(
+    candidate: _Candidate,
+    best_narrow_vector: float,
+    *,
+    graph_score: float,
+) -> bool:
     """Deliberate evidence that admits a candidate from outside the ungated scopes.
 
     bm25 rank scores never qualify (per-scope normalization makes them
-    incomparable across scopes; see the gate constants above).
+    incomparable across scopes; see the gate constants above). ``graph_score``
+    is passed in for the same reason ``_blend_candidate_score`` takes it: the
+    anchors-off counterfactual has to be able to ask this question about the
+    activation it is scoring, not about the one the anchor added.
     """
 
     if candidate.trigger_score > 0.0:
         return True
-    if candidate.graph_score >= CROSS_SCOPE_GRAPH_ADMIT:
+    if graph_score >= CROSS_SCOPE_GRAPH_ADMIT:
         return True
     if candidate.vector_score >= CROSS_SCOPE_VECTOR_ADMIT:
         return True

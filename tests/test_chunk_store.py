@@ -126,7 +126,9 @@ def test_numpy_reads_the_blob_through_the_published_dtype() -> None:
 
 
 def test_schema_v6_creates_the_chunk_table_with_its_index(store: MemoryStore) -> None:
-    assert SCHEMA_VERSION == 6
+    # v6 objects must survive every later additive migration, so this pins the
+    # floor rather than the current version (which test_storage.py owns).
+    assert SCHEMA_VERSION >= 6
     columns = {
         row["name"]: row
         for row in store.connection.execute(
@@ -622,7 +624,10 @@ def test_populated_v5_database_migrates_to_v6(tmp_path: Path) -> None:
         version = store.connection.execute(
             "SELECT value FROM metadata WHERE key = 'schema_version'"
         ).fetchone()
-        assert version["value"] == "6"
+        # The stamp lands on the current SCHEMA_VERSION: every migration in the
+        # chain runs on open, so a v5 file passes through v6 to whatever is
+        # newest. What this test asserts about v6 is the objects below.
+        assert version["value"] == str(SCHEMA_VERSION)
 
         tables = {
             row["name"]
