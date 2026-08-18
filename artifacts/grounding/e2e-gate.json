@@ -1,0 +1,94 @@
+{
+  "cutoff": "2026-06-10T00:00:00Z",
+  "gate": {
+    "hit@5": {
+      "bar": 0.576923,
+      "delta": 0.0,
+      "measured": 0.576923,
+      "pass": true
+    },
+    "mrr": {
+      "bar": 0.353929,
+      "delta": 0.0,
+      "measured": 0.353929,
+      "pass": true
+    },
+    "pass": true
+  },
+  "goldset": {
+    "items": 234,
+    "path": "artifacts/harness/goldset.jsonl",
+    "sha256": "af40cb0da26fa78c5c477747357beec518053b01a2daa7e875338acc47c95612",
+    "tail_items": 26
+  },
+  "phase1_reference": {
+    "hit@5": 0.576923,
+    "mrr": 0.353929
+  },
+  "purpose": "End-to-end goldset gate for the grounded credit change. The primary gate is the live-weights run, which must not fall below phase1; it is exact by construction because the change is write-path only. The weight-transfer runs are additional evidence, not a gate: they force a cold-start retrain that production never performs (see result.md section 6).",
+  "runs": {
+    "live_weights_unchanged": {
+      "agreement_rate": 1.0,
+      "embedding_backend": "auto",
+      "overall": {
+        "events": 234,
+        "events_with_useful": 234,
+        "hit@1": 0.188034,
+        "hit@10": 0.726496,
+        "hit@5": 0.576923,
+        "mrr": 0.353929
+      },
+      "snapshot": "~/.cache/living-memory-harness/phase1/frozen-chunked.sqlite3",
+      "tail": {
+        "events": 26,
+        "events_with_useful": 26,
+        "hit@1": 0.038462,
+        "hit@10": 0.538462,
+        "hit@5": 0.384615,
+        "mrr": 0.203938
+      }
+    },
+    "weight_transfer_grounded": {
+      "agreement_rate": 1.0,
+      "embedding_backend": "auto",
+      "overall": {
+        "events": 234,
+        "events_with_useful": 234,
+        "hit@1": 0.17094,
+        "hit@10": 0.717949,
+        "hit@5": 0.581197,
+        "mrr": 0.335886
+      },
+      "snapshot": "frozen-chunked + replayed grounded weights (28 scopes)",
+      "tail": {
+        "events": 26,
+        "events_with_useful": 26,
+        "hit@1": 0.0,
+        "hit@10": 0.538462,
+        "hit@5": 0.423077,
+        "mrr": 0.16891
+      }
+    },
+    "weight_transfer_proportional": {
+      "agreement_rate": 1.0,
+      "embedding_backend": "auto",
+      "overall": {
+        "events": 234,
+        "events_with_useful": 234,
+        "hit@1": 0.200855,
+        "hit@10": 0.722222,
+        "hit@5": 0.581197,
+        "mrr": 0.359339
+      },
+      "snapshot": "frozen-chunked + replayed proportional weights (40 scopes)",
+      "tail": {
+        "events": 26,
+        "events_with_useful": 26,
+        "hit@1": 0.038462,
+        "hit@10": 0.576923,
+        "hit@5": 0.384615,
+        "mrr": 0.200046
+      }
+    }
+  }
+}

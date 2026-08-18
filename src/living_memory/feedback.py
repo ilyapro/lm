@@ -2,15 +2,56 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import os
 from types import SimpleNamespace
 from typing import Any
 
+from living_memory.grounding import DEFAULT_MIN_CONTAINMENT, ground_results
 from living_memory.models import Node, RecallEvent, RetrievalWeights
 from living_memory.storage import MemoryStore
 
+
+# Credit assignment for implicit consumption feedback.
+#
+# When a memory_remember consumes a pending recall event, which of that
+# event's results actually earned the reinforcement? The historical answer
+# was "all of them": the loop below walked every result and handed each a
+# rank-decayed positive signal into both node usefulness and the per-scope
+# retrieval weights. That made the signal vacuous — an agent that used one
+# result of ten reinforced all ten, and nine nerfed deliveries entered the
+# learned weights as evidence *for* the channel that surfaced them.
+#
+# Credit now follows content grounding (living_memory.grounding): a result is
+# reinforced only when the IDF-weighted share of its content tokens appearing
+# in the consuming trace reaches ``min_containment``. This is the same measure
+# the offline replay harness has used as its confirmed-useful label since the
+# credit-assignment work, promoted from measurement to mechanism.
+#
+# Policies (``LM_RECALL_CREDIT_POLICY``):
+#
+# * ``grounded`` — reinforce grounded results, leave ungrounded ones neutral.
+# * ``grounded_negative`` — additionally blame ungrounded results at
+#   ``UNGROUNDED_NEGATIVE_FACTOR`` of the positive signal.
+# * ``all`` — the pre-grounding rule, reinforce every delivered result. Kept
+#   reachable so the regression test can exhibit the old behaviour and so an
+#   operator can fall back without a code change.
+#
+# The default is the arm chosen by the replay A/B over the recorded history;
+# see artifacts/grounding/credit-ab.md for the numbers.
+RECALL_CREDIT_POLICIES: tuple[str, ...] = ("grounded", "grounded_negative", "all")
+DEFAULT_RECALL_CREDIT_POLICY = "grounded"
+
+# Blame multiplier for a delivered-but-ungrounded result under the
+# ``grounded_negative`` policy, relative to the positive signal a grounded
+# result at the same rank would earn.
+UNGROUNDED_NEGATIVE_FACTOR = 0.25
+
+# Containment threshold for the live grounding gate. Held at the replay
+# default: per-event and whole-corpus IDF agree on 96.2% of the 72,023
+# recorded result/trace pairs at this value (scripts/grounding_calibration.py).
+RECALL_CREDIT_MIN_CONTAINMENT = DEFAULT_MIN_CONTAINMENT
 
 _ADAPTIVE_LR_LADDER: tuple[tuple[int, float], ...] = (
     (10, 0.20),
@@ -71,6 +112,27 @@ def _retrieval_tuning_policy() -> str:
     return os.environ.get("LM_RETRIEVAL_TUNING_POLICY", "fixed").strip().lower()
 
 
+def _recall_credit_policy() -> str:
+    """Active credit policy; an unknown value falls back to the default."""
+
+    policy = os.environ.get("LM_RECALL_CREDIT_POLICY", "").strip().lower()
+    if policy in RECALL_CREDIT_POLICIES:
+        return policy
+    return DEFAULT_RECALL_CREDIT_POLICY
+
+
+def ungrounded_negative_signals(result: Any, signal: float) -> dict[str, float]:
+    """Damped per-channel blame for a delivered result the trace never used.
+
+    Same proportional attribution as a positive signal, scaled down by
+    ``UNGROUNDED_NEGATIVE_FACTOR`` and inverted. Shared with the replay
+    harness's ``grounded_negative`` credit rule so the A/B arm and the live
+    policy cannot drift apart.
+    """
+
+    return _method_signals(result, -UNGROUNDED_NEGATIVE_FACTOR * abs(float(signal)))
+
+
 def _adaptive_learning_rate(trace_count: int) -> float:
     """Effective learning rate for a scope of the given size.
 
@@ -124,6 +186,11 @@ class ImplicitRecallFeedback:
     events: list[RecallEvent]
     linked_node_ids: list[str]
     feedback_applied: bool
+    #: Results whose content the consuming trace actually grounded. Always a
+    #: subset of ``linked_node_ids``: linkage stays exhaustive for provenance
+    #: and graph traversal, only *reinforcement* is gated. Empty when
+    #: reinforcement was skipped or the policy is ``all``.
+    grounded_node_ids: list[str] = field(default_factory=list)
 
 
 class FeedbackService:
@@ -189,7 +256,15 @@ def apply_pending_recall_feedback(
     limit: int = _DEFAULT_PENDING_RECALL_LIMIT,
     reinforce_results: bool = True,
 ) -> ImplicitRecallFeedback:
-    """Attach recent recall provenance to a new trace and optionally reinforce hits."""
+    """Attach recent recall provenance to a new trace and reinforce what it used.
+
+    Linkage is exhaustive and unchanged: every resolvable result of every
+    consumed event lands in ``recalled_nodes``/``source_traces`` and gets a
+    rank-weighted ``related`` edge, because provenance must record what was
+    *shown*. Reinforcement is not: under the grounding policies only results
+    the trace demonstrably used move node usefulness and retrieval weights.
+    See the credit-assignment note at the top of this module.
+    """
 
     events = store.pending_recall_events(
         scope=trace.scope,
@@ -210,19 +285,36 @@ def apply_pending_recall_feedback(
     recalled_nodes = list(provenance.get("recalled_nodes", []))
     source_traces = list(trace.source_traces)
     linked_node_ids: list[str] = []
+    grounded_node_ids: list[str] = []
     feedback_applied = False
+    policy = _recall_credit_policy()
 
     for event in events:
         event_node_ids: list[str] = []
+        # Resolve every result once: linkage needs the node, and grounding
+        # needs its content. One get_node per result, as before.
+        resolved: list[tuple[int, dict[str, Any], Node]] = []
         for rank, result in enumerate(event.results):
             node_id = str(result.get("node_id") or "")
             if not node_id or node_id == trace.id:
                 continue
-
             node = store.get_node(node_id)
             if node is None:
                 continue
+            resolved.append((rank, result, node))
 
+        # Grade the whole event at once: the IDF index is shared by its
+        # results, and an ungraded event costs no tokenization at all.
+        verdicts = {}
+        if reinforce_results and policy != "all" and resolved:
+            verdicts = ground_results(
+                trace.content,
+                {node.id: node.content for _rank, _result, node in resolved},
+                min_containment=RECALL_CREDIT_MIN_CONTAINMENT,
+            )
+
+        for rank, result, node in resolved:
+            node_id = node.id
             event_node_ids.append(node_id)
             if node_id not in recalled_nodes:
                 recalled_nodes.append(node_id)
@@ -245,22 +337,31 @@ def apply_pending_recall_feedback(
             if node_id not in linked_node_ids:
                 linked_node_ids.append(node_id)
 
-            if reinforce_results:
-                synthetic_result = SimpleNamespace(
-                    node_id=node_id,
-                    bm25_score=float(result.get("bm25_score", 0.0) or 0.0),
-                    vector_score=float(result.get("vector_score", 0.0) or 0.0),
-                    graph_score=float(result.get("graph_score", 0.0) or 0.0),
-                )
-                signal = max(0.2, 1.0 / (rank + 1))
-                apply_retrieval_feedback(
-                    store,
-                    synthetic_result,
-                    useful=True,
-                    signal=signal,
-                    scope=event.scope,
-                )
-                feedback_applied = True
+            if not reinforce_results:
+                continue
+
+            verdict = verdicts.get(node_id)
+            grounded = policy == "all" or (verdict is not None and verdict.grounded)
+            if grounded and node_id not in grounded_node_ids:
+                grounded_node_ids.append(node_id)
+            if not grounded and policy != "grounded_negative":
+                continue
+
+            synthetic_result = SimpleNamespace(
+                node_id=node_id,
+                bm25_score=float(result.get("bm25_score", 0.0) or 0.0),
+                vector_score=float(result.get("vector_score", 0.0) or 0.0),
+                graph_score=float(result.get("graph_score", 0.0) or 0.0),
+            )
+            signal = max(0.2, 1.0 / (rank + 1))
+            apply_retrieval_feedback(
+                store,
+                synthetic_result,
+                useful=grounded,
+                signal=signal if grounded else UNGROUNDED_NEGATIVE_FACTOR * signal,
+                scope=event.scope,
+            )
+            feedback_applied = True
 
         prior_recalls.append(
             {
@@ -282,6 +383,7 @@ def apply_pending_recall_feedback(
         events=events,
         linked_node_ids=linked_node_ids,
         feedback_applied=feedback_applied,
+        grounded_node_ids=grounded_node_ids,
     )
 
 

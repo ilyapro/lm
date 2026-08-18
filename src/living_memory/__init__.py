@@ -8,6 +8,7 @@ from living_memory.feedback import (
     apply_pending_recall_feedback,
     apply_retrieval_feedback,
 )
+from living_memory.grounding import Grounding, containment, ground_results
 from living_memory.models import Connection, Node, PhaseInfo, RecallEvent, RetrievalWeights
 from living_memory.phase import PhaseManager
 from living_memory.retrieval import (
@@ -23,6 +24,7 @@ from living_memory.storage import MemoryStore
 __all__ = [
     "Connection",
     "FeedbackService",
+    "Grounding",
     "ImplicitRecallFeedback",
     "LocalEmbeddingModel",
     "MemoryConfig",
@@ -40,8 +42,10 @@ __all__ = [
     "ScopeResolver",
     "apply_pending_recall_feedback",
     "apply_retrieval_feedback",
-    "create_mcp_server",
+    "containment",
     "cosine_similarity",
+    "create_mcp_server",
+    "ground_results",
     "load_config",
     "memory_connect",
     "memory_recall",

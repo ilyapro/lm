@@ -1,0 +1,82 @@
+{
+  "backends": {
+    "hash": {
+      "arms": {
+        "all": {
+          "events_with_a_grounded_result": 0,
+          "graded_events": 0,
+          "mean_grounded_per_event": 0.0,
+          "mean_ms": 88.4641,
+          "mean_results_delivered": 10.0,
+          "n": 400,
+          "p50_ms": 12.4833,
+          "p90_ms": 33.7723,
+          "p99_ms": 3406.0763,
+          "policy": "all"
+        },
+        "grounded": {
+          "events_with_a_grounded_result": 384,
+          "graded_events": 400,
+          "mean_grounded_per_event": 2.638,
+          "mean_ms": 78.8623,
+          "mean_results_delivered": 10.0,
+          "n": 400,
+          "p50_ms": 8.1083,
+          "p90_ms": 28.3391,
+          "p99_ms": 3465.7955,
+          "policy": "grounded"
+        }
+      },
+      "budget_ms": 10.0,
+      "p50_delta_ms": -4.375,
+      "within_budget": true
+    },
+    "model": {
+      "arms": {
+        "all": {
+          "events_with_a_grounded_result": 0,
+          "graded_events": 0,
+          "mean_grounded_per_event": 0.0,
+          "mean_ms": 64.5272,
+          "mean_results_delivered": 10.0,
+          "n": 150,
+          "p50_ms": 11.8831,
+          "p90_ms": 38.5792,
+          "p99_ms": 1804.2577,
+          "policy": "all"
+        },
+        "grounded": {
+          "events_with_a_grounded_result": 133,
+          "graded_events": 150,
+          "mean_grounded_per_event": 1.94,
+          "mean_ms": 58.2723,
+          "mean_results_delivered": 10.0,
+          "n": 150,
+          "p50_ms": 7.6858,
+          "p90_ms": 30.5364,
+          "p99_ms": 1780.5768,
+          "policy": "grounded"
+        }
+      },
+      "budget_ms": 10.0,
+      "p50_delta_ms": -4.1973,
+      "within_budget": true
+    }
+  },
+  "content_length_bytes": {
+    "max": 64472,
+    "mean": 1756.8,
+    "min": 201,
+    "p50": 965,
+    "p90": 3708
+  },
+  "corpus_nodes": 400,
+  "max_results": 10,
+  "seed": 20260818,
+  "snapshot": "/home/sfx/.cache/living-memory-harness/snapshot.sqlite3",
+  "verdict": {
+    "budget_ms": 10.0,
+    "pass": true,
+    "worst_p50_delta_ms": -4.1973
+  }
+}

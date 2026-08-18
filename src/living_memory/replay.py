@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sqlite3
 import sys
 from collections import Counter, defaultdict
@@ -58,15 +57,20 @@ from types import SimpleNamespace
 from typing import Any
 
 from living_memory.config import MemoryConfig
-from living_memory.embeddings import tokenize
-from living_memory.feedback import _method_signals
+from living_memory.feedback import _method_signals, ungrounded_negative_signals
+from living_memory.grounding import (
+    DEFAULT_MIN_CONTAINMENT,
+    build_idf,
+    containment as _idf_containment,
+    ground_token_sets,
+    token_set,
+)
 from living_memory.models import NODE_LEVELS, Node, RetrievalWeights
 from living_memory.retrieval import MemoryRecallService, _Candidate, _is_decision_depth, _parse_depth
 from living_memory.scope import ScopePlan
 from living_memory.storage import MemoryStore, _scope_family
 
 HIT_KS: tuple[int, ...] = (1, 5, 10)
-DEFAULT_MIN_CONTAINMENT = 0.25
 DEFAULT_RECONSUME_MIN_TRACES = 2
 DEFAULT_USEFULNESS_THRESHOLD = 0.8
 DEFAULT_MIN_SCOPE_EVENTS = 50
@@ -96,6 +100,12 @@ class ReplayResult:
     trigger_score: float
     path: tuple[str, ...] = ()
     useful: bool = False
+    #: Live-path verdict from ``grounding.ground_results`` (per-event IDF).
+    #: Deliberately distinct from ``useful``, which is the harness label under
+    #: the configured protocol and, for ``grounded``, uses the whole-corpus
+    #: IDF. Credit rules read ``grounded``; metrics read ``useful``.
+    grounded: bool = False
+    containment: float = 0.0
 
     @property
     def graph_only(self) -> bool:
@@ -282,16 +292,12 @@ def build_label_data(
     token_sets: dict[str, frozenset[str]] = {}
     usefulness: dict[str, float] = {}
     for node_id, (content, score) in node_rows.items():
-        token_sets[node_id] = frozenset(tokenize(content))
+        token_sets[node_id] = token_set(content)
         usefulness[node_id] = score
     for trace_id, (content, _score) in trace_rows.items():
-        token_sets.setdefault(trace_id, frozenset(tokenize(content)))
+        token_sets.setdefault(trace_id, token_set(content))
 
-    frequency: Counter[str] = Counter()
-    for tokens in token_sets.values():
-        frequency.update(tokens)
-    corpus_size = max(1, len(token_sets))
-    idf = {token: math.log(1.0 + corpus_size / count) for token, count in frequency.items()}
+    idf = build_idf(token_sets.values())
 
     consumers: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for event in labeled:
@@ -312,19 +318,75 @@ def build_label_data(
 
 
 def _containment(data: LabelData, node_id: str, trace_id: str | None) -> float:
-    """IDF-weighted share of the node's tokens present in the consuming trace."""
+    """IDF-weighted share of the node's tokens present in the consuming trace.
+
+    Whole-corpus IDF: the label view, which sees every document at once.
+    ``apply_grounding`` computes the live path's per-event view separately.
+    """
 
     if not trace_id:
         return 0.0
-    node_tokens = data.token_sets.get(node_id)
-    trace_tokens = data.token_sets.get(trace_id)
-    if not node_tokens or not trace_tokens:
-        return 0.0
-    total = sum(data.idf.get(token, 0.0) for token in node_tokens)
-    if total <= 0.0:
-        return 0.0
-    shared = sum(data.idf.get(token, 0.0) for token in node_tokens & trace_tokens)
-    return shared / total
+    return _idf_containment(
+        data.token_sets.get(node_id), data.token_sets.get(trace_id), data.idf
+    )
+
+
+def apply_grounding(
+    events: Sequence[ReplayEvent],
+    data: LabelData,
+    min_containment: float = DEFAULT_MIN_CONTAINMENT,
+) -> dict[str, Any]:
+    """Set ``result.grounded`` exactly as the live write path would.
+
+    Replays ``grounding.ground_results`` per consumed event over the same
+    documents ``feedback.apply_pending_recall_feedback`` holds at that moment
+    (the consuming trace plus that event's result nodes), so a replayed credit
+    rule gates on the live verdict rather than on the harness label. Returns
+    the agreement between the two views, which is what licenses reading the
+    A/B as a statement about the live rule.
+    """
+
+    graded = 0
+    grounded_results = 0
+    agree = 0
+    for event in events:
+        for result in event.results:
+            result.grounded = False
+            result.containment = 0.0
+        if not event.labeled or not event.feedback_trace_id:
+            continue
+        trace_tokens = data.token_sets.get(event.feedback_trace_id)
+        if trace_tokens is None:
+            continue
+        # The corpus token sets are already tokenized, so grade through the
+        # pre-tokenized entry point rather than re-tokenizing the contents.
+        result_tokens = {
+            result.node_id: tokens
+            for result in event.results
+            if (tokens := data.token_sets.get(result.node_id)) is not None
+        }
+        verdicts = ground_token_sets(
+            trace_tokens, result_tokens, min_containment=min_containment
+        )
+        for result in event.results:
+            verdict = verdicts.get(result.node_id)
+            if verdict is None:
+                continue
+            result.containment = verdict.containment
+            result.grounded = verdict.grounded
+            graded += 1
+            grounded_results += int(result.grounded)
+            corpus_grounded = (
+                _containment(data, result.node_id, event.feedback_trace_id) >= min_containment
+            )
+            agree += int(corpus_grounded == result.grounded)
+    return {
+        "min_containment": min_containment,
+        "graded_results": graded,
+        "grounded_results": grounded_results,
+        "grounded_share": _ratio(grounded_results, graded),
+        "corpus_idf_agreement": _ratio(agree, graded),
+    }
 
 
 def _reconsumed_later(
@@ -617,7 +679,11 @@ def explicit_weights(bm25: float, vector: float, graph: float) -> Callable[[str]
 # ---------------------------------------------------------------------------
 
 
-CreditRule = Callable[[ReplayResult, float], dict[str, float]]
+#: ``None`` means "this result earns no update at all" — the rule declined to
+#: assign credit, and the live path would not have called
+#: ``update_retrieval_weights`` either. Returning all-zero signals is not the
+#: same thing: it still counts as an update in the trajectory.
+CreditRule = Callable[[ReplayResult, float], dict[str, float] | None]
 
 
 def winner_take_all_credit(result: ReplayResult, signal: float) -> dict[str, float]:
@@ -661,9 +727,44 @@ def proportional_credit(result: ReplayResult, signal: float) -> dict[str, float]
     return _method_signals(synthetic, signal)
 
 
+def grounded_credit(result: ReplayResult, signal: float) -> dict[str, float] | None:
+    """Proportional credit, but only for results the consuming trace used.
+
+    The candidate live rule under ``LM_RECALL_CREDIT_POLICY=grounded``:
+    ungrounded results are *neutral* — no reinforcement, no blame — so a
+    delivery the agent ignored neither helps nor hurts the node or the
+    channel that surfaced it.
+    """
+
+    if not result.grounded:
+        return None
+    return proportional_credit(result, signal)
+
+
+def grounded_negative_credit(result: ReplayResult, signal: float) -> dict[str, float] | None:
+    """Grounded results earn credit; ungrounded ones take a damped penalty.
+
+    The candidate live rule under ``LM_RECALL_CREDIT_POLICY=grounded_negative``:
+    the other arm of the A/B, treating "delivered and not used" as weak
+    evidence against the channel that surfaced it, scaled by
+    ``feedback.UNGROUNDED_NEGATIVE_FACTOR``.
+    """
+
+    if result.grounded:
+        return proportional_credit(result, signal)
+    synthetic = SimpleNamespace(
+        bm25_score=result.bm25_score,
+        vector_score=result.vector_score,
+        graph_score=result.graph_score,
+    )
+    return ungrounded_negative_signals(synthetic, signal)
+
+
 CREDIT_RULES: dict[str, CreditRule] = {
     "winner_take_all": winner_take_all_credit,
     "proportional": proportional_credit,
+    "grounded": grounded_credit,
+    "grounded_negative": grounded_negative_credit,
 }
 
 
@@ -737,7 +838,10 @@ class WeightTrajectory:
             if event.feedback_trace_id and result.node_id == event.feedback_trace_id:
                 continue
             signal = max(0.2, 1.0 / (index + 1))
-            self.apply_signals(event.scope, rule(result, signal))
+            signals = rule(result, signal)
+            if signals is None:
+                continue
+            self.apply_signals(event.scope, signals)
 
 
 def reinforcement_order(events: Sequence[ReplayEvent]) -> list[tuple[str, ReplayEvent]]:
@@ -834,6 +938,11 @@ class MetricAccumulator:
         self.events = 0
         self.events_with_useful = 0
         self.hits: Counter[int] = Counter()
+        # Per-event (event_id, reciprocal_rank, hit@5) for events that have at
+        # least one confirmed-useful result. Aggregates alone cannot say
+        # whether a 0.002 metric gap between two schemes is signal, so this
+        # keeps the paired samples a significance test needs.
+        self.per_event: list[tuple[str, float, float]] = []
         self.mrr_sum = 0.0
         self.useful_results = 0
         self.graph_only_useful = 0
@@ -861,6 +970,13 @@ class MetricAccumulator:
             for k in HIT_KS:
                 if first_rank <= k:
                     self.hits[k] += 1
+        self.per_event.append(
+            (
+                event.id,
+                1.0 / first_rank if first_rank is not None else 0.0,
+                1.0 if first_rank is not None and first_rank <= 5 else 0.0,
+            )
+        )
 
         zero_first = next(
             (index + 1 for index, node_id in enumerate(zero_order) if node_id in useful), None
@@ -1083,6 +1199,11 @@ def _run_replay(
     events, load_stats = load_replay_events(connection, max_events=config.max_events)
     label_data = build_label_data(connection, events)
     label_summary = apply_labels(events, label_data, config.label)
+    # Independent of the label: this is the live write path's own verdict,
+    # and it is what the grounded credit rules gate on.
+    grounding_summary = apply_grounding(
+        events, label_data, config.label.min_containment
+    )
 
     labeled_events = [event for event in events if event.labeled]
     buckets = scope_buckets(events, config.min_scope_events)
@@ -1203,6 +1324,7 @@ def _run_replay(
             },
         },
         "labeling": label_summary,
+        "grounding": grounding_summary,
         "weights": {
             "live": {
                 scope: _weights_dict(weights) for scope, weights in sorted(live_weights.items())

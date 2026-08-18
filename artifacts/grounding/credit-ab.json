@@ -1,0 +1,1299 @@
+{
+  "arms": [
+    "proportional",
+    "grounded",
+    "grounded_negative"
+  ],
+  "bootstrap": {
+    "resamples": 2000,
+    "seed": 20260818
+  },
+  "control_labels": [
+    "reconsumed",
+    "usefulness"
+  ],
+  "corpus": {
+    "empty_results": 20,
+    "incomplete_results": 0,
+    "total_events": 54777,
+    "usable_events": 54757
+  },
+  "cutoff": "2026-06-10T00:00:00Z",
+  "db_path": "/home/sfx/.cache/living-memory-harness/snapshot.sqlite3",
+  "final_weights": {
+    "grounded": {
+      "default": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.0
+      },
+      "global": {
+        "bm25": 0.412356,
+        "graph": 0.05,
+        "learning_rate": 0.05,
+        "vector": 0.537644
+      },
+      "project": {
+        "bm25": 0.7,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.3
+      },
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+        "bm25": 0.619029,
+        "graph": 0.061616,
+        "learning_rate": 0.2,
+        "vector": 0.319355
+      },
+      "project:/root/p/octopus": {
+        "bm25": 0.660496,
+        "graph": 0.021755,
+        "learning_rate": 0.2,
+        "vector": 0.317749
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+        "bm25": 0.686103,
+        "graph": 0.007368,
+        "learning_rate": 0.05,
+        "vector": 0.30653
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+        "bm25": 0.692898,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.307102
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+        "bm25": 0.69584,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.30416
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+        "bm25": 0.679874,
+        "graph": 0.009336,
+        "learning_rate": 0.05,
+        "vector": 0.31079
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+        "bm25": 0.70006,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.29994
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+        "bm25": 0.697258,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.302742
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+        "bm25": 0.697116,
+        "graph": 0.00448,
+        "learning_rate": 0.05,
+        "vector": 0.298404
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+        "bm25": 0.685014,
+        "graph": 0.01939,
+        "learning_rate": 0.2,
+        "vector": 0.295596
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+        "bm25": 0.689422,
+        "graph": 0.00625,
+        "learning_rate": 0.05,
+        "vector": 0.304329
+      },
+      "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+        "bm25": 0.691655,
+        "graph": 0.005255,
+        "learning_rate": 0.05,
+        "vector": 0.30309
+      },
+      "project:/root/p/octopus/.worktrees/goal-landing": {
+        "bm25": 0.693577,
+        "graph": 0.007503,
+        "learning_rate": 0.05,
+        "vector": 0.298919
+      },
+      "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+        "bm25": 0.697844,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.302156
+      },
+      "project:/root/p/octopus/.worktrees/goal-rise": {
+        "bm25": 0.699699,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.300301
+      },
+      "project:ae": {
+        "bm25": 0.178874,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.771126
+      },
+      "project:breakthrough/gemini-flash-contract": {
+        "bm25": 0.617845,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.382155
+      },
+      "project:breakthrough/programming-capability-loop": {
+        "bm25": 0.674577,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.325423
+      },
+      "project:lm": {
+        "bm25": 0.431558,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.518442
+      },
+      "project:mm": {
+        "bm25": 0.370074,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.579926
+      },
+      "project:octopus": {
+        "bm25": 0.104888,
+        "graph": 0.104056,
+        "learning_rate": 0.02,
+        "vector": 0.791055
+      },
+      "project:online": {
+        "bm25": 0.207784,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.742216
+      },
+      "project:rise/gemini-comparator-execution": {
+        "bm25": 0.702383,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.297617
+      },
+      "project:x": {
+        "bm25": 0.325623,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.624377
+      },
+      "session": {
+        "bm25": 0.8,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      }
+    },
+    "grounded_negative": {
+      "default": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.0
+      },
+      "global": {
+        "bm25": 0.712855,
+        "graph": 0.087145,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      },
+      "project": {
+        "bm25": 0.7,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.3
+      },
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+        "bm25": 0.629039,
+        "graph": 0.051085,
+        "learning_rate": 0.2,
+        "vector": 0.319876
+      },
+      "project:/root/p/lm": {
+        "bm25": 0.664354,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.335646
+      },
+      "project:/root/p/octopus": {
+        "bm25": 0.540453,
+        "graph": 0.010417,
+        "learning_rate": 0.2,
+        "vector": 0.44913
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+        "bm25": 0.694479,
+        "graph": 0.006098,
+        "learning_rate": 0.05,
+        "vector": 0.299423
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough_gemini-flash-contract": {
+        "bm25": 0.699563,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.300437
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+        "bm25": 0.697561,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.302439
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+        "bm25": 0.696963,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.303037
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+        "bm25": 0.685107,
+        "graph": 0.005972,
+        "learning_rate": 0.05,
+        "vector": 0.308921
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+        "bm25": 0.700162,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.299838
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+        "bm25": 0.699818,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.300182
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+        "bm25": 0.718398,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.281602
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+        "bm25": 0.70357,
+        "graph": 0.01939,
+        "learning_rate": 0.2,
+        "vector": 0.27704
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+        "bm25": 0.690753,
+        "graph": 0.006265,
+        "learning_rate": 0.05,
+        "vector": 0.302982
+      },
+      "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+        "bm25": 0.694852,
+        "graph": 0.004368,
+        "learning_rate": 0.05,
+        "vector": 0.30078
+      },
+      "project:/root/p/octopus/.worktrees/goal-landing": {
+        "bm25": 0.697773,
+        "graph": 0.005138,
+        "learning_rate": 0.05,
+        "vector": 0.297089
+      },
+      "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+        "bm25": 0.707504,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.292496
+      },
+      "project:/root/p/octopus/.worktrees/goal-rise": {
+        "bm25": 0.703456,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.296544
+      },
+      "project:ae": {
+        "bm25": 0.1,
+        "graph": 0.75,
+        "learning_rate": 0.02,
+        "vector": 0.15
+      },
+      "project:breakthrough/gemini-flash-contract": {
+        "bm25": 0.6296,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.3704
+      },
+      "project:breakthrough/programming-capability-loop": {
+        "bm25": 0.683155,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.316845
+      },
+      "project:living-memory": {
+        "bm25": 0.677028,
+        "graph": 0.054896,
+        "learning_rate": 0.2,
+        "vector": 0.268076
+      },
+      "project:lm": {
+        "bm25": 0.391746,
+        "graph": 0.080816,
+        "learning_rate": 0.02,
+        "vector": 0.527438
+      },
+      "project:mm": {
+        "bm25": 0.102221,
+        "graph": 0.722567,
+        "learning_rate": 0.1,
+        "vector": 0.175212
+      },
+      "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": {
+        "bm25": 0.72691,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.27309
+      },
+      "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": {
+        "bm25": 0.716157,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.283843
+      },
+      "project:natural-flow/shared-organism-training": {
+        "bm25": 0.735214,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.264786
+      },
+      "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": {
+        "bm25": 0.722573,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.277427
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": {
+        "bm25": 0.734405,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.265595
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": {
+        "bm25": 0.839195,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.160805
+      },
+      "project:octopus": {
+        "bm25": 0.102195,
+        "graph": 0.050322,
+        "learning_rate": 0.02,
+        "vector": 0.847483
+      },
+      "project:octopus-capability-stack": {
+        "bm25": 0.883568,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.116432
+      },
+      "project:online": {
+        "bm25": 0.1,
+        "graph": 0.75,
+        "learning_rate": 0.02,
+        "vector": 0.15
+      },
+      "project:prompt-engine-v3-lm-driven": {
+        "bm25": 0.67924,
+        "graph": 0.0,
+        "learning_rate": 0.1,
+        "vector": 0.32076
+      },
+      "project:repo": {
+        "bm25": 0.687256,
+        "graph": 0.051531,
+        "learning_rate": 0.2,
+        "vector": 0.261213
+      },
+      "project:rise/gemini-comparator-execution": {
+        "bm25": 0.714659,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.285341
+      },
+      "project:x": {
+        "bm25": 0.752699,
+        "graph": 0.050207,
+        "learning_rate": 0.02,
+        "vector": 0.197094
+      },
+      "session": {
+        "bm25": 0.8,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      }
+    },
+    "proportional": {
+      "default": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.0
+      },
+      "global": {
+        "bm25": 0.137338,
+        "graph": 0.05,
+        "learning_rate": 0.05,
+        "vector": 0.812662
+      },
+      "project": {
+        "bm25": 0.7,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.3
+      },
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+        "bm25": 0.51645,
+        "graph": 0.13446,
+        "learning_rate": 0.2,
+        "vector": 0.34909
+      },
+      "project:/root/p/lm": {
+        "bm25": 0.704123,
+        "graph": 0.090369,
+        "learning_rate": 0.2,
+        "vector": 0.205508
+      },
+      "project:/root/p/octopus": {
+        "bm25": 0.563526,
+        "graph": 0.066687,
+        "learning_rate": 0.2,
+        "vector": 0.369787
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+        "bm25": 0.653341,
+        "graph": 0.01767,
+        "learning_rate": 0.05,
+        "vector": 0.32899
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough_gemini-flash-contract": {
+        "bm25": 0.701303,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.298697
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+        "bm25": 0.657724,
+        "graph": 0.024971,
+        "learning_rate": 0.05,
+        "vector": 0.317305
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+        "bm25": 0.680889,
+        "graph": 0.016393,
+        "learning_rate": 0.05,
+        "vector": 0.302717
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+        "bm25": 0.659495,
+        "graph": 0.02241,
+        "learning_rate": 0.05,
+        "vector": 0.318096
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+        "bm25": 0.684183,
+        "graph": 0.022124,
+        "learning_rate": 0.05,
+        "vector": 0.293693
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+        "bm25": 0.680535,
+        "graph": 0.009901,
+        "learning_rate": 0.05,
+        "vector": 0.309564
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+        "bm25": 0.57789,
+        "graph": 0.095608,
+        "learning_rate": 0.05,
+        "vector": 0.326503
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+        "bm25": 0.553781,
+        "graph": 0.123827,
+        "learning_rate": 0.2,
+        "vector": 0.322392
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+        "bm25": 0.684292,
+        "graph": 0.006188,
+        "learning_rate": 0.05,
+        "vector": 0.309521
+      },
+      "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+        "bm25": 0.672951,
+        "graph": 0.017781,
+        "learning_rate": 0.05,
+        "vector": 0.309267
+      },
+      "project:/root/p/octopus/.worktrees/goal-landing": {
+        "bm25": 0.671291,
+        "graph": 0.025322,
+        "learning_rate": 0.05,
+        "vector": 0.303387
+      },
+      "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+        "bm25": 0.655211,
+        "graph": 0.011772,
+        "learning_rate": 0.05,
+        "vector": 0.333017
+      },
+      "project:/root/p/octopus/.worktrees/goal-rise": {
+        "bm25": 0.667861,
+        "graph": 0.02597,
+        "learning_rate": 0.05,
+        "vector": 0.306169
+      },
+      "project:ae": {
+        "bm25": 0.115506,
+        "graph": 0.077402,
+        "learning_rate": 0.02,
+        "vector": 0.807092
+      },
+      "project:breakthrough/gemini-flash-contract": {
+        "bm25": 0.487135,
+        "graph": 0.152266,
+        "learning_rate": 0.2,
+        "vector": 0.360599
+      },
+      "project:breakthrough/programming-capability-loop": {
+        "bm25": 0.646852,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.353148
+      },
+      "project:living-memory": {
+        "bm25": 0.591751,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.358249
+      },
+      "project:lm": {
+        "bm25": 0.174544,
+        "graph": 0.053313,
+        "learning_rate": 0.02,
+        "vector": 0.772143
+      },
+      "project:mm": {
+        "bm25": 0.101975,
+        "graph": 0.086908,
+        "learning_rate": 0.1,
+        "vector": 0.811116
+      },
+      "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": {
+        "bm25": 0.590833,
+        "graph": 0.039353,
+        "learning_rate": 0.2,
+        "vector": 0.369814
+      },
+      "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": {
+        "bm25": 0.64624,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.35376
+      },
+      "project:natural-flow/shared-organism-training": {
+        "bm25": 0.585324,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.414676
+      },
+      "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": {
+        "bm25": 0.603828,
+        "graph": 0.031244,
+        "learning_rate": 0.2,
+        "vector": 0.364927
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": {
+        "bm25": 0.588417,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.411583
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": {
+        "bm25": 0.500039,
+        "graph": 0.07019,
+        "learning_rate": 0.2,
+        "vector": 0.429771
+      },
+      "project:octopus": {
+        "bm25": 0.104149,
+        "graph": 0.200958,
+        "learning_rate": 0.02,
+        "vector": 0.694892
+      },
+      "project:octopus-capability-stack": {
+        "bm25": 0.443607,
+        "graph": 0.025319,
+        "learning_rate": 0.2,
+        "vector": 0.531074
+      },
+      "project:online": {
+        "bm25": 0.163779,
+        "graph": 0.075587,
+        "learning_rate": 0.02,
+        "vector": 0.760633
+      },
+      "project:prompt-engine-v3-lm-driven": {
+        "bm25": 0.715136,
+        "graph": 0.029833,
+        "learning_rate": 0.1,
+        "vector": 0.255031
+      },
+      "project:repo": {
+        "bm25": 0.387885,
+        "graph": 0.141268,
+        "learning_rate": 0.2,
+        "vector": 0.470847
+      },
+      "project:rise/gemini-comparator-execution": {
+        "bm25": 0.579743,
+        "graph": 0.130335,
+        "learning_rate": 0.2,
+        "vector": 0.289922
+      },
+      "project:x": {
+        "bm25": 0.165943,
+        "graph": 0.112502,
+        "learning_rate": 0.02,
+        "vector": 0.721555
+      },
+      "session": {
+        "bm25": 0.8,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      }
+    }
+  },
+  "grounding": {
+    "corpus_idf_agreement": 0.961609,
+    "graded_results": 72023,
+    "grounded_results": 8698,
+    "grounded_share": 0.120767,
+    "min_containment": 0.25
+  },
+  "incumbent": "proportional",
+  "primary_label": "grounded",
+  "results": {
+    "grounded": {
+      "arms": {
+        "grounded": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 2015,
+            "hit@1": 0.532506,
+            "hit@10": 0.994045,
+            "hit@5": 0.930025,
+            "mrr": 0.699981
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 4093,
+            "hit@1": 0.503298,
+            "hit@10": 0.985829,
+            "hit@5": 0.918886,
+            "mrr": 0.674665
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.002481,
+              "ci95_low": -0.001985,
+              "distinguishable": false,
+              "mean_delta": 0.0,
+              "n": 2015
+            },
+            "mrr": {
+              "ci95_high": 0.012607,
+              "ci95_low": 0.003371,
+              "distinguishable": true,
+              "mean_delta": 0.007915,
+              "n": 2015
+            }
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 2078,
+            "hit@1": 0.474976,
+            "hit@10": 0.977863,
+            "hit@5": 0.908085,
+            "mrr": 0.650117
+          },
+          "weight_updates": 3842
+        },
+        "grounded_negative": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 2015,
+            "hit@1": 0.516129,
+            "hit@10": 0.993548,
+            "hit@5": 0.92804,
+            "mrr": 0.687009
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 4093,
+            "hit@1": 0.489616,
+            "hit@10": 0.985585,
+            "hit@5": 0.913755,
+            "mrr": 0.663789
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.005459,
+              "ci95_low": -0.008933,
+              "distinguishable": false,
+              "mean_delta": -0.001985,
+              "n": 2015
+            },
+            "mrr": {
+              "ci95_high": 0.001761,
+              "ci95_low": -0.012378,
+              "distinguishable": false,
+              "mean_delta": -0.005056,
+              "n": 2015
+            }
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 2078,
+            "hit@1": 0.463908,
+            "hit@10": 0.977863,
+            "hit@5": 0.899904,
+            "mrr": 0.641272
+          },
+          "weight_updates": 42348
+        },
+        "proportional": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 2015,
+            "hit@1": 0.521092,
+            "hit@10": 0.994541,
+            "hit@5": 0.930025,
+            "mrr": 0.692065
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 4093,
+            "hit@1": 0.494747,
+            "hit@10": 0.986318,
+            "hit@5": 0.918153,
+            "mrr": 0.669213
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 2078,
+            "hit@1": 0.469201,
+            "hit@10": 0.978345,
+            "hit@5": 0.906641,
+            "mrr": 0.647053
+          },
+          "weight_updates": 42348
+        }
+      },
+      "discrimination": {
+        "all_useful_fraction": 0.007961,
+        "mean_useful_share": 0.152306,
+        "multi_result_events": 9044,
+        "none_useful_fraction": 0.547766,
+        "strict_subset_events": 4018,
+        "strict_subset_fraction": 0.444272
+      },
+      "events_with_useful": 4093,
+      "label": {
+        "min_containment": 0.25,
+        "protocol": "grounded",
+        "reconsume_min_traces": 2,
+        "usefulness_threshold": 0.8
+      },
+      "useful_results": 11073
+    },
+    "reconsumed": {
+      "arms": {
+        "grounded": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 3638,
+            "hit@1": 0.747938,
+            "hit@10": 0.993403,
+            "hit@5": 0.981308,
+            "mrr": 0.84636
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 9005,
+            "hit@1": 0.834536,
+            "hit@10": 0.991449,
+            "hit@5": 0.985786,
+            "mrr": 0.900436
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.0,
+              "ci95_low": -0.003024,
+              "distinguishable": false,
+              "mean_delta": -0.001374,
+              "n": 3638
+            },
+            "mrr": {
+              "ci95_high": 4.6e-05,
+              "ci95_low": -0.005021,
+              "distinguishable": false,
+              "mean_delta": -0.002514,
+              "n": 3638
+            }
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 5367,
+            "hit@1": 0.893236,
+            "hit@10": 0.990125,
+            "hit@5": 0.988821,
+            "mrr": 0.937091
+          },
+          "weight_updates": 3842
+        },
+        "grounded_negative": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 3638,
+            "hit@1": 0.768829,
+            "hit@10": 0.993403,
+            "hit@5": 0.983233,
+            "mrr": 0.859992
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 9005,
+            "hit@1": 0.844642,
+            "hit@10": 0.991449,
+            "hit@5": 0.986452,
+            "mrr": 0.906874
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.003024,
+              "ci95_low": -0.001924,
+              "distinguishable": false,
+              "mean_delta": 0.00055,
+              "n": 3638
+            },
+            "mrr": {
+              "ci95_high": 0.014989,
+              "ci95_low": 0.007296,
+              "distinguishable": true,
+              "mean_delta": 0.011119,
+              "n": 3638
+            }
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 5367,
+            "hit@1": 0.896031,
+            "hit@10": 0.990125,
+            "hit@5": 0.988634,
+            "mrr": 0.938653
+          },
+          "weight_updates": 42348
+        },
+        "proportional": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 3638,
+            "hit@1": 0.752611,
+            "hit@10": 0.993403,
+            "hit@5": 0.982683,
+            "mrr": 0.848874
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 9005,
+            "hit@1": 0.837757,
+            "hit@10": 0.991449,
+            "hit@5": 0.986674,
+            "mrr": 0.902224
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 5367,
+            "hit@1": 0.895472,
+            "hit@10": 0.990125,
+            "hit@5": 0.98938,
+            "mrr": 0.938388
+          },
+          "weight_updates": 42348
+        }
+      },
+      "discrimination": {
+        "all_useful_fraction": 0.611234,
+        "mean_useful_share": 0.889811,
+        "multi_result_events": 9044,
+        "none_useful_fraction": 0.006855,
+        "strict_subset_events": 3454,
+        "strict_subset_fraction": 0.381911
+      },
+      "events_with_useful": 9005,
+      "label": {
+        "min_containment": 0.25,
+        "protocol": "reconsumed",
+        "reconsume_min_traces": 2,
+        "usefulness_threshold": 0.8
+      },
+      "useful_results": 64208
+    },
+    "usefulness": {
+      "arms": {
+        "grounded": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 3381,
+            "hit@1": 0.26501,
+            "hit@10": 0.979888,
+            "hit@5": 0.880213,
+            "mrr": 0.500038
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 8529,
+            "hit@1": 0.396178,
+            "hit@10": 0.942783,
+            "hit@5": 0.880525,
+            "mrr": 0.587203
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.001775,
+              "ci95_low": -0.004141,
+              "distinguishable": false,
+              "mean_delta": -0.001183,
+              "n": 3381
+            },
+            "mrr": {
+              "ci95_high": 0.000986,
+              "ci95_low": -0.004888,
+              "distinguishable": false,
+              "mean_delta": -0.001987,
+              "n": 3381
+            }
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 5148,
+            "hit@1": 0.482323,
+            "hit@10": 0.918415,
+            "hit@5": 0.88073,
+            "mrr": 0.64445
+          },
+          "weight_updates": 3842
+        },
+        "grounded_negative": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 3381,
+            "hit@1": 0.299615,
+            "hit@10": 0.980479,
+            "hit@5": 0.897368,
+            "mrr": 0.531737
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 8529,
+            "hit@1": 0.414703,
+            "hit@10": 0.943018,
+            "hit@5": 0.887795,
+            "mrr": 0.603132
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.021295,
+              "ci95_low": 0.010944,
+              "distinguishable": true,
+              "mean_delta": 0.015972,
+              "n": 3381
+            },
+            "mrr": {
+              "ci95_high": 0.035808,
+              "ci95_low": 0.02411,
+              "distinguishable": true,
+              "mean_delta": 0.029712,
+              "n": 3381
+            }
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 5148,
+            "hit@1": 0.490287,
+            "hit@10": 0.918415,
+            "hit@5": 0.881507,
+            "mrr": 0.650021
+          },
+          "weight_updates": 42348
+        },
+        "proportional": {
+          "holdout": {
+            "events": 3693,
+            "events_with_useful": 3381,
+            "hit@1": 0.269447,
+            "hit@10": 0.979888,
+            "hit@5": 0.881396,
+            "mrr": 0.502025
+          },
+          "overall": {
+            "events": 9069,
+            "events_with_useful": 8529,
+            "hit@1": 0.402626,
+            "hit@10": 0.942783,
+            "hit@5": 0.880994,
+            "mrr": 0.5906
+          },
+          "train": {
+            "events": 5376,
+            "events_with_useful": 5148,
+            "hit@1": 0.490093,
+            "hit@10": 0.918415,
+            "hit@5": 0.88073,
+            "mrr": 0.648772
+          },
+          "weight_updates": 42348
+        }
+      },
+      "discrimination": {
+        "all_useful_fraction": 0.143521,
+        "mean_useful_share": 0.613876,
+        "multi_result_events": 9044,
+        "none_useful_fraction": 0.058271,
+        "strict_subset_events": 7219,
+        "strict_subset_fraction": 0.798209
+      },
+      "events_with_useful": 8529,
+      "label": {
+        "min_containment": 0.25,
+        "protocol": "usefulness",
+        "reconsume_min_traces": 2,
+        "usefulness_threshold": 0.8
+      },
+      "useful_results": 44985
+    }
+  },
+  "ungrounded_negative_factor": 0.25,
+  "verdict": {
+    "per_arm": {
+      "grounded": {
+        "checks": {
+          "grounded": {
+            "hit@5": {
+              "arm": 0.930025,
+              "ci95": [
+                -0.001985,
+                0.002481
+              ],
+              "delta": 0.0,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.930025,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.699981,
+              "ci95": [
+                0.003371,
+                0.012607
+              ],
+              "delta": 0.007916,
+              "distinguishable": true,
+              "gain": true,
+              "incumbent": 0.692065,
+              "regression": false
+            }
+          },
+          "reconsumed": {
+            "hit@5": {
+              "arm": 0.981308,
+              "ci95": [
+                -0.003024,
+                0.0
+              ],
+              "delta": -0.001375,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.982683,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.84636,
+              "ci95": [
+                -0.005021,
+                4.6e-05
+              ],
+              "delta": -0.002514,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.848874,
+              "regression": false
+            }
+          },
+          "usefulness": {
+            "hit@5": {
+              "arm": 0.880213,
+              "ci95": [
+                -0.004141,
+                0.001775
+              ],
+              "delta": -0.001183,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.881396,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.500038,
+              "ci95": [
+                -0.004888,
+                0.000986
+              ],
+              "delta": -0.001987,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.502025,
+              "regression": false
+            }
+          }
+        },
+        "pass": true,
+        "primary_gains": [
+          "mrr"
+        ],
+        "significant_regressions": [],
+        "weights_degenerate": false
+      },
+      "grounded_negative": {
+        "checks": {
+          "grounded": {
+            "hit@5": {
+              "arm": 0.92804,
+              "ci95": [
+                -0.008933,
+                0.005459
+              ],
+              "delta": -0.001985,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.930025,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.687009,
+              "ci95": [
+                -0.012378,
+                0.001761
+              ],
+              "delta": -0.005056,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.692065,
+              "regression": false
+            }
+          },
+          "reconsumed": {
+            "hit@5": {
+              "arm": 0.983233,
+              "ci95": [
+                -0.001924,
+                0.003024
+              ],
+              "delta": 0.00055,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.982683,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.859992,
+              "ci95": [
+                0.007296,
+                0.014989
+              ],
+              "delta": 0.011118,
+              "distinguishable": true,
+              "gain": true,
+              "incumbent": 0.848874,
+              "regression": false
+            }
+          },
+          "usefulness": {
+            "hit@5": {
+              "arm": 0.897368,
+              "ci95": [
+                0.010944,
+                0.021295
+              ],
+              "delta": 0.015972,
+              "distinguishable": true,
+              "gain": true,
+              "incumbent": 0.881396,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.531737,
+              "ci95": [
+                0.02411,
+                0.035808
+              ],
+              "delta": 0.029712,
+              "distinguishable": true,
+              "gain": true,
+              "incumbent": 0.502025,
+              "regression": false
+            }
+          }
+        },
+        "pass": false,
+        "primary_gains": [],
+        "significant_regressions": [],
+        "weights_degenerate": true
+      }
+    },
+    "winner": "grounded"
+  },
+  "weight_sanity": {
+    "grounded": {
+      "graph_limit": 0.5,
+      "graph_over_limit": 0,
+      "graph_over_limit_scopes": [],
+      "max_graph": 0.104056,
+      "mean_graph": 0.019536,
+      "scopes": 28
+    },
+    "grounded_negative": {
+      "graph_limit": 0.5,
+      "graph_over_limit": 3,
+      "graph_over_limit_scopes": [
+        "project:ae",
+        "project:mm",
+        "project:online"
+      ],
+      "max_graph": 0.75,
+      "mean_graph": 0.067655,
+      "scopes": 40
+    },
+    "proportional": {
+      "graph_limit": 0.5,
+      "graph_over_limit": 0,
+      "graph_over_limit_scopes": [],
+      "max_graph": 0.200958,
+      "mean_graph": 0.050948,
+      "scopes": 40
+    }
+  }
+}

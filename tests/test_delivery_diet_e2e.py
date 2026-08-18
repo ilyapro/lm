@@ -475,7 +475,13 @@ def test_closure_links_recall_to_remember_despite_stub_delivery(
     assert {entry["id"] for entry in prior} == set(events)
     assert remembered["node"]["prior_recall_count"] == 2
     assert set(remembered["implicit_feedback"]["recall_event_ids"]) == set(events)
-    assert remembered["implicit_feedback"]["feedback_applied"] is True
+    # Linkage is exhaustive and reinforcement is not: the closure content
+    # shares zero tokens with the seeded node (asserted above), so it grounds
+    # nothing and earns no credit, while the provenance link still lands.
+    # Both halves matter — a regression that re-broadened credit to every
+    # delivered result would flip `feedback_applied` back to True here.
+    assert remembered["implicit_feedback"]["linked_node_ids"] == [seeded_id]
+    assert remembered["implicit_feedback"]["feedback_applied"] is False
 
 
 # --- Digest consolidation: concepts stop being verbatim trace copies --------

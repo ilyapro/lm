@@ -27,8 +27,17 @@ Simulation design (seeded, deterministic under the hash embedding backend):
   flat 0.1*signal increment by pinning the knobs to their neutral values
   (floor 1.0, damping 0.0 — pinned exact by the neutrality test below).
 * depth=0 recalls isolate the usefulness channel from graph-edge effects;
-  follow-up notes share the session (strong pending-event match) but no
-  vocabulary, so closing the loop never pollutes the ranked corpus.
+  follow-up notes share the session (strong pending-event match) and echo
+  exactly the four corpus tokens that appear in no query (`caused`,
+  `misconfiguration`, `mitigation`, `documented`), so closing the loop never
+  pollutes the ranked corpus. That echo is load-bearing since credit became
+  grounded (feedback.RECALL_CREDIT_POLICIES): reinforcement now reaches only
+  results whose content the consuming trace used, so a vocabulary-disjoint
+  note would reinforce nothing and the entrenchment engine this test measures
+  would not run at all. Because every paraphrase of every topic shares an
+  identical token structure, the note grounds in whichever paraphrase was
+  delivered at an identical containment of 0.2961 (vs the 0.25 threshold),
+  keeping the arms symmetric and the loop seed-independent.
 * Volume stays under 100 traces per scope so auto-consolidation never fires.
 
 Assertion margins were calibrated against seeds {7, 11, 13, 17, 23}; the two
@@ -231,7 +240,9 @@ def _run_closed_loop(db_path: Path, *, seed: int) -> SimOutcome:
                     hits.append(0.0)
             note_index += 1
             noted = mcp.tools["memory_remember"](
-                f"session follow-up entry number: verified and logged after review pass {note_index}",
+                "session follow-up: applied the documented mitigation for the "
+                "misconfiguration it caused, verified and logged after review "
+                f"pass {note_index}",
                 dict(note_context),
             )
             events_consumed += len(noted["implicit_feedback"]["recall_event_ids"])

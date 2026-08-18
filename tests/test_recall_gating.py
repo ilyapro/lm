@@ -391,11 +391,16 @@ def test_feedback_link_restores_full_delivery(
     store, contents, gated_response, remembered, after = asyncio.run(scenario())
 
     _assert_gated_dropped(gated_response)
-    assert remembered["implicit_feedback"]["feedback_applied"] is True
     assert (
         gated_response["recall_event_id"]
         in remembered["implicit_feedback"]["recall_event_ids"]
     )
+    # What restores delivery is the *link*, not the reinforcement: this
+    # closure content shares zero tokens with the seeded results, so grounded
+    # credit withholds reinforcement while the link still lands and lifts the
+    # gate below.
+    assert set(remembered["implicit_feedback"]["linked_node_ids"]) >= set(contents)
+    assert remembered["implicit_feedback"]["feedback_applied"] is False
 
     stats = store.get_recall_fingerprint_stats(
         recall_fingerprint(GATE_QUERY, GATE_SCOPE)
