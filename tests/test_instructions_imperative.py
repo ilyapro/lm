@@ -391,7 +391,10 @@ def test_recall_hooks_universal_action_classes() -> None:
         "measuring",
         "choosing a design or approach",
         "entering anything new",
-        "thought, or direction",
+        # thought/direction were promoted out of this enumeration into the
+        # mid-work law (operator directive 2026-08-19) — pinned by
+        # test_recall_standing_epistemic_trigger as "every new turn of
+        # thought", not here.
     ]
     missing = [c for c in classes if c not in text]
     assert not missing, f"universal action classes lost: {missing}"
@@ -416,23 +419,39 @@ def test_recall_default_and_economics() -> None:
 
 
 def test_recall_standing_epistemic_trigger() -> None:
-    """Mid-work epistemic states are triggers with no action attached.
+    """Every new turn of thought is a trigger — proactive, not remedial.
 
     Field measurement 2026-08-19 (30 tree sessions on the deployment host):
     recall was a session-start ritual — median position 0.02 of session
     length, 1 of 57 calls mid-session — because every trigger was bound to
     an action boundary, and a linear pass crosses its biggest boundary once,
-    at the start. The epistemic trigger class names the states of *need*
-    (stuck, surprised, missing context, out of hypotheses) rather than the
-    shapes of *action*, and is the prospective mirror of remember's
-    retrospective self-test ('I wish I had known this earlier')."""
+    at the start. Operator directive 2026-08-19: the mid-work trigger is the
+    *turn of thought itself* — ask what memory holds nearby before the turn
+    hardens, so related knowledge shapes the reasoning instead of being
+    missed. Failure states (stuck, surprised) are kept only as lagging
+    markers meaning the recall is overdue — they must never become the
+    primary trigger again, because by then the related fact has already
+    been missed once. 'If only I knew' is the prospective mirror of
+    remember's retrospective self-test ('I wish I had known this earlier').
+    The thought/direction member of the old entering-anything-new
+    enumeration lives here now, promoted from list item to law."""
 
     text = _RECALL_DESCRIPTION
     assert "MUST recall MID-WORK" in text, (
         "the mid-work law must stay a MUST, not advice"
     )
-    for state in ("stuck", "surprised", "missing context", "out of hypotheses"):
-        assert state in text, f"epistemic trigger state {state!r} lost"
+    assert "at every new turn of thought" in text, (
+        "the trigger is the turn of thought itself — proactive coverage of "
+        "related knowledge, not a remedy for being stuck"
+    )
+    assert "nothing related is missed" in text, (
+        "the law must state its purpose: completeness of related knowledge, "
+        "not unblocking"
+    )
+    assert "stuck or surprised means overdue" in text, (
+        "failure states stay as lagging markers, subordinate to the "
+        "turn-of-thought trigger"
+    )
     assert "'if only I knew' means recall NOW" in text, (
         "the prospective self-test is the strongest known nudge against "
         "grinding on without asking memory"
@@ -598,8 +617,10 @@ def test_legacy_protocol_abstract_coverage(instructions: str, union: str) -> Non
       the world — searching, measuring, probing (memory first ...
       anti-pattern: world-before-memory)"
     - CLAUDE.md's "recall for every new thought/direction/message"
-      -> "entering anything new — a session, task, message, thought, or
-      turn of direction" (the client file now only draws attention)
+      -> message stays under "entering anything new — session, task,
+      message"; thought and direction were promoted to the mid-work law
+      "at every new turn of thought" (operator directive 2026-08-19; the
+      client file now only draws attention)
     - "domain answers are invented instead of retrieved", "act blind"
       -> "Without recall you act blind — inventing what memory already
       holds" (now covers actions AND answers)
