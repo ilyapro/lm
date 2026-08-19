@@ -415,6 +415,37 @@ def test_recall_default_and_economics() -> None:
     )
 
 
+def test_recall_standing_epistemic_trigger() -> None:
+    """Mid-work epistemic states are triggers with no action attached.
+
+    Field measurement 2026-08-19 (30 tree sessions on the deployment host):
+    recall was a session-start ritual — median position 0.02 of session
+    length, 1 of 57 calls mid-session — because every trigger was bound to
+    an action boundary, and a linear pass crosses its biggest boundary once,
+    at the start. The epistemic trigger class names the states of *need*
+    (stuck, surprised, missing context, out of hypotheses) rather than the
+    shapes of *action*, and is the prospective mirror of remember's
+    retrospective self-test ('I wish I had known this earlier')."""
+
+    text = _RECALL_DESCRIPTION
+    assert "MUST recall MID-WORK" in text, (
+        "the mid-work law must stay a MUST, not advice"
+    )
+    for state in ("stuck", "surprised", "missing context", "out of hypotheses"):
+        assert state in text, f"epistemic trigger state {state!r} lost"
+    assert "'if only I knew' means recall NOW" in text, (
+        "the prospective self-test is the strongest known nudge against "
+        "grinding on without asking memory"
+    )
+
+
+def test_instructions_law_one_covers_stuck(instructions: str) -> None:
+    """The always-visible channel must extend recall past uncertainty to
+    stuckness — the epistemic state agents actually reach mid-work."""
+
+    assert "When uncertain or stuck, recall" in instructions
+
+
 def test_recall_schema_activation() -> None:
     text = _RECALL_DESCRIPTION
     assert "level:schema" in text
