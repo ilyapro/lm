@@ -1,0 +1,339 @@
+{
+  "arms": {
+    "map": {
+      "as_of": "2026-08-19T11:00:00Z",
+      "events_in_window": 0,
+      "events_scored": 0,
+      "gating": true,
+      "item_source": "map",
+      "items": 0,
+      "items_per_event_cap": 6,
+      "kind": "map",
+      "measured": false,
+      "primary_endpoint": {
+        "consumed": 0,
+        "items": 0,
+        "rate": null
+      },
+      "reason": "recall_events.recall_map is absent on this database: no writable open has ever migrated it, so no map has ever been delivered",
+      "recall_map_column_present": false,
+      "secondary_anchor_stratum": {
+        "consumed": 0,
+        "items": 0,
+        "rate": null
+      },
+      "transport_sessions": 0,
+      "window_end": "2026-08-18T11:00:00Z",
+      "window_start": null
+    },
+    "organic": {
+      "as_of": "2026-08-19T11:00:00Z",
+      "diagnostic_full_consumed_rule_either_limb": {
+        "consumed": 3603,
+        "items": 8214,
+        "rate": 0.4386
+      },
+      "diagnostic_stratum_under_as_of_cut": {
+        "anchor": {
+          "consumed": 1500,
+          "items": 3703,
+          "rate": 0.4051
+        },
+        "primary": {
+          "consumed": 2103,
+          "items": 4511,
+          "rate": 0.4662
+        },
+        "why": "non-gating: the sealed stratum rule names no cutoff, so this shows what an as_of-cut anchor table would have stratified instead"
+      },
+      "events_in_window": 5189,
+      "events_scored": 1740,
+      "exploratory_token_overlap": {
+        "computable": false,
+        "consumed": 0,
+        "items": 0,
+        "rate": null,
+        "why": "items carry no label or ask_hint; the token limb is undefined here"
+      },
+      "gating": true,
+      "head_cut": 3,
+      "item_source": "organic",
+      "items": 8214,
+      "items_per_event_cap": 6,
+      "kind": "organic",
+      "measured": true,
+      "observable_consumer_events": 5276,
+      "opportunity_bearing_events": 1748,
+      "primary_endpoint": {
+        "consumed": 2103,
+        "items": 4511,
+        "rate": 0.4662
+      },
+      "secondary_anchor_stratum": {
+        "consumed": 1500,
+        "items": 3703,
+        "rate": 0.4051
+      },
+      "strata": {
+        "anchor": {
+          "consumed": 1500,
+          "items": 3703,
+          "rate": 0.4051
+        },
+        "primary": {
+          "consumed": 2103,
+          "items": 4511,
+          "rate": 0.4662
+        }
+      },
+      "transport_sessions": 1055,
+      "window_end": "2026-08-18T11:00:00Z",
+      "window_start": "2026-08-01T00:00:00Z"
+    },
+    "organic_concurrent": {
+      "gating": false,
+      "item_source": "organic_concurrent",
+      "kind": "organic",
+      "measured": false,
+      "reason": "recall_events.recall_map is absent on this database: no writable open has ever migrated it, so no map has ever been delivered"
+    }
+  },
+  "artifact": "recall-map-effect-baseline",
+  "as_of": "2026-08-19T11:00:00Z",
+  "db": "~/.local/share/living-memory/global.sqlite3",
+  "generated_at": "2026-08-19T19:04:15Z",
+  "notes": [
+    "Aggregates only: no node id, no query text, no cluster label and no ask_hint reaches this artifact; every value passes usage_metric.check_privacy.",
+    "The database was opened read-only through replay.open_readonly; MemoryStore was never instantiated, so the recall_map column was not migrated into existence.",
+    "The sealed stratum rule names no cutoff, so the gating stratification reads the anchor tables as they stand; the as_of-cut variant sits beside it as a diagnostic.",
+    "Map arm NOT YET MEASURED, by design: it is recorded rather than omitted so a later field run fills it in under this same plan_sha256.",
+    "Organic primary rate 0.4662 is admissible (>= min_organic_rate 0.04 and above absolute_floor 0.02), so the relative floor 0.2331 is the binding one.",
+    "Pre-feature mid_session_share 0.4688 over 608 calls in 300 sessions is NOT the published '1 of 57'.",
+    "The plan registers that figure as a prior only: the threshold behind the word mid-session is recorded nowhere in the code, so it is not comparable to a share under this band.",
+    "The positional criterion stays falsifiable: a pre share of 0.4688 is below 0.90, so the sealed rise of 0.1 is arithmetically reachable."
+  ],
+  "plan_sha256": "d17b2e65a20df83968886d307f7f9792491d02cb0ebb406ddeb45b1392e7ad25",
+  "positional": {
+    "corpus": {
+      "by_split": {
+        "eval": 767,
+        "holdout": 847,
+        "train": 2401
+      },
+      "generated_at": "2026-08-19T18:58:45.500077Z",
+      "holdout_sha256": "b210dce3b8025c42787af5d380e26f0f00fdb0d262c751611aa7cf7cfaba90a8",
+      "index_sha256": "8305b77e45a0f6946d36d501f0664e4163200e2ac72eeb9e42cb4ff3eb9426f7",
+      "manifest": "~/.cache/living-memory/recall-map/corpus.json",
+      "rows": 4015
+    },
+    "joint_endpoint": "measures the mid-work recall law and the map together, not the map alone",
+    "post": {
+      "measured": false,
+      "reason": "no map has been deployed; nothing to measure"
+    },
+    "pre": {
+      "aggregator": "postsession.corpus.recovery_stats",
+      "band_bounds": "closed interval: low <= position <= high",
+      "cutoff": "2026-08-19T11:00:00Z",
+      "measured": true,
+      "median_position": {
+        "recall": 0.2493,
+        "write": 0.8756
+      },
+      "mid_session_band": [
+        0.25,
+        0.9
+      ],
+      "mid_session_calls": 285,
+      "mid_session_share": 0.4688,
+      "min_recall_calls_per_arm": 50,
+      "parse_failure_kinds": {},
+      "parse_failures": 0,
+      "position_definition": "session.RecallInteraction.position = record_index / max(1, record_count-1)",
+      "recall_calls": 608,
+      "session_limit": 300,
+      "sessions_eligible": 2293,
+      "sessions_parsed": 300,
+      "sessions_selected": 300,
+      "sessions_train_eval": 3168,
+      "sessions_unparseable_ended_at": 0,
+      "sessions_with_recall": 201,
+      "sessions_without_ended_at": 835,
+      "side": "pre",
+      "small_n": false,
+      "write_calls": 336
+    },
+    "protocol": "artifacts/recall-map/prereg.json#positional_protocol",
+    "published_reference": "median position 0.02; 1 of 57 mid-session; 2026-08-19",
+    "published_reference_status": "the prior, NOT the pre value: the pre arm is re-measured under this protocol",
+    "verdict_inputs": {
+      "direction": "up",
+      "min_recall_calls_per_arm": 50,
+      "minimum_magnitude_absolute": 0.1,
+      "post_mid_session_share": null,
+      "post_recall_calls": null,
+      "pre_mid_session_share": 0.4688,
+      "pre_recall_calls": 608,
+      "reason": "only one arm measured; the post arm needs a deployed map",
+      "rule": "PASS iff post_mid_session_share - pre_mid_session_share >= magnitude",
+      "verdict": "INCONCLUSIVE"
+    }
+  },
+  "preregistration": {
+    "bar_source": "artifacts/recall-map/prereg.json#verdict_rule",
+    "path": "artifacts/recall-map/prereg.json",
+    "plan_sha256": "d17b2e65a20df83968886d307f7f9792491d02cb0ebb406ddeb45b1392e7ad25",
+    "plan_sha256_match": true,
+    "plan_sha256_over": [
+      "amendment_policy",
+      "arms",
+      "artifact",
+      "bar_notes",
+      "bar_source",
+      "consumed_rule",
+      "endpoints",
+      "honesty_bound",
+      "limitations",
+      "plan_sha256_over",
+      "positional_protocol",
+      "registered_by",
+      "seal_note",
+      "sealing_denominators",
+      "verdict_rule"
+    ],
+    "plan_sha256_recomputed": "d17b2e65a20df83968886d307f7f9792491d02cb0ebb406ddeb45b1392e7ad25",
+    "registered_at": "2026-08-19T18:39:57Z"
+  },
+  "protocol": {
+    "anchor_circularity": "anchor stratum EXCLUDED from the primary endpoint, reported separately",
+    "as_of": "2026-08-19T11:00:00Z",
+    "as_of_is_arm_specific": "the run's cutoff, and the map arm's; the organic arm's is pinned in the plan at 2026-08-19T11:00:00Z and does not move with this flag",
+    "cohort_restriction": "an event is scored only if it is opportunity-bearing: at least one qualifying later event exists within horizon_hours",
+    "consumed_limb_gating": "node_id only; the token limb is exploratory",
+    "endpoint": "node_id_consumption_non_anchor",
+    "head_cut": 3,
+    "horizon_hours": 24,
+    "items_per_event_cap": {
+      "map": 6,
+      "organic": 6
+    },
+    "min_token_overlap": 0.5,
+    "stratum_rule": "anchor stratum",
+    "tokenizer": "living_memory.embeddings.tokenize",
+    "tool": "scripts/recall_map_effect.py",
+    "unit_of_analysis": "the (delivering_event_id, item_node_id) pair; the rate is consumed items over items"
+  },
+  "protocol_fields_identical_check": {
+    "fields": [
+      "horizon_hours",
+      "min_token_overlap",
+      "items_per_event_cap",
+      "tokenizer",
+      "endpoint",
+      "stratum_rule",
+      "cohort_restriction",
+      "unit_of_analysis",
+      "tool"
+    ],
+    "identical": true,
+    "map": {
+      "cohort_restriction": "an event is scored only if it is opportunity-bearing: at least one qualifying later event exists within horizon_hours",
+      "endpoint": "node_id_consumption_non_anchor",
+      "horizon_hours": 24,
+      "items_per_event_cap": 6,
+      "min_token_overlap": 0.5,
+      "stratum_rule": "anchor stratum",
+      "tokenizer": "living_memory.embeddings.tokenize",
+      "tool": "scripts/recall_map_effect.py",
+      "unit_of_analysis": "the (delivering_event_id, item_node_id) pair; the rate is consumed items over items"
+    },
+    "mismatched": [],
+    "on_mismatch": "INCONCLUSIVE; the comparison is void whatever the two rates are",
+    "organic": {
+      "cohort_restriction": "an event is scored only if it is opportunity-bearing: at least one qualifying later event exists within horizon_hours",
+      "endpoint": "node_id_consumption_non_anchor",
+      "horizon_hours": 24,
+      "items_per_event_cap": 6,
+      "min_token_overlap": 0.5,
+      "stratum_rule": "anchor stratum",
+      "tokenizer": "living_memory.embeddings.tokenize",
+      "tool": "scripts/recall_map_effect.py",
+      "unit_of_analysis": "the (delivering_event_id, item_node_id) pair; the rate is consumed items over items"
+    }
+  },
+  "read_only": "living_memory.replay.open_readonly (file:...?mode=ro); MemoryStore never instantiated",
+  "sealing_denominator_check": {
+    "compared": {
+      "cohort_events_in_window": {
+        "measured": 5189,
+        "sealed": 5189
+      },
+      "observable_consumer_events_to_as_of": {
+        "measured": 5276,
+        "sealed": 5276
+      },
+      "opportunity_bearing_events_horizon_24h": {
+        "measured": 1748,
+        "sealed": 1748
+      },
+      "opportunity_bearing_events_tail_bearing": {
+        "measured": 1740,
+        "sealed": 1740
+      },
+      "organic_items_anchor_stratum": {
+        "measured": 3703,
+        "sealed": 3703
+      },
+      "organic_items_opportunity_bearing": {
+        "measured": 8214,
+        "sealed": 8214
+      },
+      "organic_items_primary_stratum": {
+        "measured": 4511,
+        "sealed": 4511
+      }
+    },
+    "drifted": [],
+    "note": "informational, never gating: the verdict rule names no such check",
+    "reproduced": true,
+    "why": "the sealing node and this tool read one frozen protocol independently; equal counts mean they read it the same way"
+  },
+  "verdict": {
+    "bar_source": "artifacts/recall-map/prereg.json#verdict_rule",
+    "consumption": {
+      "absolute_floor": 0.02,
+      "cohort_minimums": {
+        "measured_map_events": 0,
+        "measured_map_items": 0,
+        "measured_map_transport_sessions": 0,
+        "measured_organic_items": 4511,
+        "min_map_arm_events": 20,
+        "min_map_arm_items": 20,
+        "min_map_arm_transport_sessions": 10,
+        "min_organic_items": 100
+      },
+      "map_items": 0,
+      "map_rate": null,
+      "organic_items": 4511,
+      "organic_rate": 0.4662,
+      "reason": "map arm not measured: no map has been delivered yet",
+      "relative_floor": 0.5,
+      "relative_floor_required": 0.2331,
+      "verdict": "INCONCLUSIVE"
+    },
+    "never_pass_on_inconclusive": true,
+    "overall": "INCONCLUSIVE",
+    "positional": {
+      "direction": "up",
+      "min_recall_calls_per_arm": 50,
+      "minimum_magnitude_absolute": 0.1,
+      "post_mid_session_share": null,
+      "post_recall_calls": null,
+      "pre_mid_session_share": 0.4688,
+      "pre_recall_calls": 608,
+      "reason": "only one arm measured; the post arm needs a deployed map",
+      "rule": "PASS iff post_mid_session_share - pre_mid_session_share >= magnitude",
+      "verdict": "INCONCLUSIVE"
+    }
+  }
+}

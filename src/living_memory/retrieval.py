@@ -530,6 +530,11 @@ class MemoryRecallService:
         self.scope_resolver = ScopeResolver()
         self.feedback = FeedbackService(store)
         self.last_recall_event_id: str | None = None
+        # The ranked candidates beyond the max_results cut of the latest
+        # memory_recall call. Downstream consumers (recall-map construction)
+        # read it the same way server.py reads ``last_recall_event_id``; it
+        # never feeds back into ranking, access logging, or recall events.
+        self.last_residual: list[RecallResult] = []
         # Ablation switch, not a feature gate: anchors are on by default and
         # this only turns them *off*, so the leak-free with/without evaluation
         # can hold one snapshot, one goldset, and one code path fixed and vary
@@ -553,6 +558,7 @@ class MemoryRecallService:
         log_event: bool | None = None,
     ) -> list[RecallResult]:
         self.last_recall_event_id = None
+        self.last_residual = []
         if max_results <= 0:
             return []
 
@@ -605,6 +611,7 @@ class MemoryRecallService:
             decision_mode=decision_mode,
         )
         limited = ranked[:max_results]
+        self.last_residual = ranked[max_results:]
         if log_access:
             limited = [self._record_result_access(result) for result in limited]
         if log_event is None:

@@ -1,0 +1,462 @@
+{
+  "amendment_policy": [
+    "Amendments may touch only non-outcome-affecting fields: artifact naming, prose clarification, added diagnostics, added denominators.",
+    "No bar, floor, cutoff, window, horizon, head cut, cap, tokenizer, overlap threshold, band, cohort minimum or stratum rule may be changed by any amendment.",
+    "Anything in that list can change only by a new pre-registration under a new plan_sha256, sealed before the next number is read.",
+    "Every amendment is appended to $.amendments naming the phase it preceded. $.amendments is outside plan_sha256_over by construction, which is",
+    "exactly why the binding policy lives here, inside the hash."
+  ],
+  "amendments": [
+    "v1 (at sealing, before any recall-map item has ever been delivered): none. Bootstrap entry only.",
+    "No bar, floor, cutoff, window, horizon or stratum rule may be changed by any amendment.",
+    "v2 (2026-08-20, still before any recall-map item has ever been delivered). Attribution only: no bar, floor, cutoff, window, horizon, band, cap or stratum rule is touched, and plan_sha256 is unchanged.",
+    "$.positional_protocol.mid_session_band_derivation[4] cites 'memory_remember sits at median 0.96' with no source. That figure is a published prior, not a number measured by or for this gate.",
+    "Its sources are docs/post-session-attestation.md:9 and src/living_memory/postsession/insights.py:7, the same 2026-08-19 field measurement as the 0.02 at $.positional_protocol.published_reference.",
+    "It describes memory_remember write positions, not the recall mid_session_share this gate scores, so it constrains no endpoint and cannot have been tuned to any outcome of this plan.",
+    "$.honesty_bound[2] is therefore to be read as: no rate, median or share was COMPUTED by the sealing node, and none measured under this protocol appears here. Published priors do appear and are cited.",
+    "Not corrected in place: honesty_bound and positional_protocol are inside plan_sha256_over, and re-hashing now, after the organic and positional baselines have been read, would destroy the blind seal.",
+    "$.amendments is outside plan_sha256_over by construction, so this entry leaves plan_sha256 byte-identical at d17b2e65a20df83968886d307f7f9792491d02cb0ebb406ddeb45b1392e7ad25."
+  ],
+  "arms": {
+    "differs_by_construction": {
+      "as_of_and_window": [
+        "The map arm cannot exist in the pre-feature window, so as_of and window differ between the arms by construction and are arm-specific.",
+        "The organic arm's as_of and window are pinned here, before any map item exists; the map arm's are recorded by the field run.",
+        "The regime change this opens is registered at $.limitations.protocol_law_confound, not hidden."
+      ],
+      "head_cut": [
+        "head_cut selects organic-arm items only; a map item is a cluster and is not selected by rank. It is pinned once and applies unchanged",
+        "to the organic arm and to the non-gating organic_concurrent arm, so the two organic measurements stay comparable to each other."
+      ],
+      "item_source": [
+        "The map arm's items are the clusters of a map that was actually delivered; the organic arm's items are the tail of what a pre-feature",
+        "recall delivered. That difference is the whole experiment and is the only intended one."
+      ]
+    },
+    "identical_for_both_arms": true,
+    "identical_for_both_arms_means": "byte-identical over protocol_fields_identical; on any mismatch the tool must return INCONCLUSIVE, mirroring runner._protocol_fields, where the comparison is void whatever the two rates are",
+    "map": {
+      "as_of": "set by the mandatory --as-of at field-run time and recorded verbatim in the field artifact",
+      "as_of_constraint": "as_of must be at least horizon_hours after the window end, so no cohort event is right-censored",
+      "cap_note": "recall_map.MAX_CLUSTERS is 6 and already enforces items_per_event_cap on this arm; the field is carried so both arms declare it",
+      "gating": true,
+      "item_rule": [
+        "One item per delivered cluster, keyed by clusters[].medoid.node_id, read from recall_events.recall_map",
+        "(written by storage.attach_recall_map, read back by storage.recent_recall_map_history).",
+        "A map-arm event is exactly a recall_events row with a non-NULL recall_map. The column does not exist on databases opened only by",
+        "pre-feature code: storage._migrate_recall_map_column adds it on the first writable open, so every pre-feature event is genuinely map-free."
+      ],
+      "items_per_event_cap": 6,
+      "kind": "map",
+      "window": [
+        "feature_deploy_instant, recorded at field-run time as the created_at of the earliest recall_events row with a non-NULL recall_map",
+        "as_of minus horizon_hours"
+      ]
+    },
+    "one_code_path": "both gating arms are scored by one shared function; only the step that produces an arm's items differs",
+    "organic": {
+      "as_of": "2026-08-19T11:00:00Z",
+      "cap_derivation": "items_per_event_cap 6 is recall_map.MAX_CLUSTERS, the map's own item budget, so both arms carry at most six items per event",
+      "gating": true,
+      "head_cut": 3,
+      "head_cut_derivation": [
+        "head_cut 3 keeps 5157 of the 5189 cohort events tail-bearing; head_cut 5 keeps 2510.",
+        "The 5-cut survivors are exactly the callers who asked for more than five results, so a deeper cut would select on max_results rather",
+        "than on anything about memory, and would hand the organic arm a different caller population than the map arm sees."
+      ],
+      "item_rule": [
+        "Items are the recorded results of a pre-feature recall_events row at 0-based rank >= head_cut, the first items_per_event_cap of them,",
+        "taken as json.loads(results)[].node_id.",
+        "The residual candidate pool of a past recall is not recoverable read-only: recall_events.results holds only the delivered top-N and",
+        "replay.build_candidates rebuilds candidates from that same row's recorded results, never re-running retrieval. No replayed residual",
+        "pool exists to score, so the delivered tail is the observable stand-in and is registered as a proxy, not as the residual pool."
+      ],
+      "items_per_event_cap": 6,
+      "kind": "organic",
+      "window": [
+        "2026-08-01T00:00:00Z",
+        "2026-08-18T11:00:00Z"
+      ],
+      "window_end_rule": "window end equals as_of minus horizon_hours, so every cohort event carries a full observed horizon and the last events in the window are not right-censored"
+    },
+    "organic_concurrent": {
+      "as_of": "the map arm's as_of, unchanged",
+      "gating": false,
+      "item_rule": "the same tail rule, head_cut and cap, applied to the SAME post-feature events that carried a map, so the map items and the tail items come from one event",
+      "kind": "organic",
+      "why": [
+        "The only comparison in which as_of, window, traffic regime and session population are literally identical; it isolates the item source.",
+        "It is reported next to the verdict and never gates, because its value is not sealed in advance and could be read alongside the outcome."
+      ],
+      "window": "the map arm's window, unchanged"
+    },
+    "protocol_fields": [
+      "as_of",
+      "window",
+      "horizon_hours",
+      "min_token_overlap",
+      "head_cut",
+      "items_per_event_cap",
+      "tokenizer",
+      "endpoint",
+      "stratum_rule",
+      "cohort_restriction",
+      "unit_of_analysis",
+      "tool"
+    ],
+    "protocol_fields_identical": [
+      "horizon_hours",
+      "min_token_overlap",
+      "items_per_event_cap",
+      "tokenizer",
+      "endpoint",
+      "stratum_rule",
+      "cohort_restriction",
+      "unit_of_analysis",
+      "tool"
+    ],
+    "tool": "scripts/recall_map_effect.py"
+  },
+  "artifact": "recall-map-effect-preregistration",
+  "bar_notes": [
+    "The binding bar is this artifact's own decision procedure at $.verdict_rule, applied by scripts/recall_map_effect.py:",
+    "PASS iff the organic arm is admissible AND map_rate >= 0.5 * organic_rate AND map_rate >= 0.02 AND the map arm clears the cohort minimums,",
+    "AND the positional criterion at $.positional_protocol.criterion holds. All rates are the primary endpoint at $.endpoints.primary.",
+    "The organic rate is the one captured in artifacts/recall-map/baseline.json under this plan_sha256, before any map item existed.",
+    "That is what makes the relative floor a fixed number at verdict time rather than a control chosen alongside the result it judges."
+  ],
+  "bar_source": "artifacts/recall-map/prereg.json#verdict_rule",
+  "consumed_rule": {
+    "lookup_limb": [
+      "The rule names recall and lookup events. The lookup limb is registered and unobservable: memory_lookup in server.py calls store.get_nodes",
+      "and records neither a recall event nor an access row, so no lookup can ever satisfy the rule.",
+      "Both arms are therefore scored on recall_events rows only. The bias is downward and applies identically to both arms, so it depresses both",
+      "rates and leaves the relative floor, which is a ratio, approximately intact. It is registered here rather than dropped from the rule text."
+    ],
+    "parameters": {
+      "fallback_key": "(recall_events.scope, recall_events.task), both non-null and equal, used only when the transport_session_id limb does not match",
+      "horizon_derivation": "measured at sealing: widening the horizon from 6h to 72h moves the count of opportunity-bearing cohort events from 1746 to 1748, so 24 sits on a plateau and is not a tuned edge",
+      "horizon_hours": 24,
+      "item_token_set": "tokenize(item.label) | tokenize(item.ask_hint)",
+      "min_token_overlap": 0.5,
+      "min_token_overlap_definition": "|tokenize(query) & item_token_set| / |item_token_set|, containment over the item's own tokens; an item whose token set is empty never matches, fail-closed",
+      "ordering": "created_at strictly greater; equal timestamps never qualify, so the rule needs no tie-break",
+      "rate": "consumed items divided by items, both counted as (delivering_event_id, item_node_id) pairs",
+      "self_exclusion": "the delivering event is never its own consumer, which the strict inequality already guarantees",
+      "tokenizer": "living_memory.embeddings.tokenize",
+      "tokenizer_note": "the shared stop-word policy: camelCase/underscore/slash/dot split, lowercased, yo folded to e, digits and stop words dropped",
+      "transport_session_key": "recall_events.transport_session_id",
+      "unit_of_analysis": "the (delivering_event_id, item_node_id) pair; a node delivered by ten events contributes ten items"
+    },
+    "register": "fixed prose in the shape of usage_metric.CONSUMED_RULE: column-level, mechanical, and not to be tuned once sealed",
+    "rule": [
+      "a delivered item is CONSUMED when a qualifying later event lists the item's node_id in json.loads(recall_events.results)[].node_id,",
+      "or when that event's recall_events.query shares at least min_token_overlap of the item's own tokens with its label or ask_hint;",
+      "a qualifying later event is a recall_events row whose created_at is strictly greater than the delivering event's created_at and at most",
+      "horizon_hours later, and which shares the delivering event's recall_events.transport_session_id, or failing that its (scope, task) pair",
+      "with both values non-null."
+    ]
+  },
+  "endpoints": {
+    "cohort_restriction": {
+      "derivation": [
+        "Only an opportunity-bearing event can ever show consumption. Measured at sealing, 1748 of the 5189 pre-feature cohort events are",
+        "opportunity-bearing at horizon 24h. Scoring the other 3441 would write a structural zero into both denominators.",
+        "Worse, the share of opportunity-bearing events is exactly what the deployed mid-work recall law is expected to move, so leaving them in",
+        "would let the map arm's rate rise because agents recall more often rather than because they followed the map.",
+        "The recall-frequency change is the positional endpoint's job and is measured there, separately."
+      ],
+      "rule": "an event is scored only if it is opportunity-bearing: at least one qualifying later event exists within horizon_hours"
+    },
+    "exploratory_label_overlap": {
+      "definition": "the consumed_rule's token-overlap limb, map arm only",
+      "gating": false,
+      "name": "token_overlap_map_arm_only",
+      "why": "not comparable across arms and therefore never gating; reported because it is the limb that shows whether a label was asked back"
+    },
+    "primary": {
+      "anchor_circularity_choice": "anchor-stratum items are EXCLUDED from the primary endpoint and reported as a named secondary stratum; both, not one or the other",
+      "computable_on_both_arms": true,
+      "definition": "an item is consumed iff a qualifying later event lists the item's node_id in json.loads(recall_events.results)[].node_id",
+      "gating": true,
+      "item_set": "items of opportunity-bearing events, anchor stratum excluded",
+      "name": "node_id_consumption_non_anchor",
+      "why_this_limb": [
+        "The consumed_rule has two limbs. The node_id limb needs only a node_id and is symmetric across arms.",
+        "The token-overlap limb needs a label and an ask_hint, which a map item has and an organic tail item does not, so it cannot be computed",
+        "on the organic arm at all. Making it part of the primary endpoint would compare a two-limb rate against a one-limb rate.",
+        "The primary endpoint therefore restricts CONSUMED to the node_id limb. The full rule stays as sealed; only the gating limb is narrowed."
+      ]
+    },
+    "reported_next_to_the_verdict": [
+      "both gating rates and their item counts",
+      "both strata on both arms",
+      "the non-gating organic_concurrent rate",
+      "the exploratory token-overlap rate",
+      "every protocol field, both floors, and every cohort minimum with its measured value"
+    ],
+    "secondary_anchor_stratum": {
+      "definition": "the primary definition, restricted to anchor-stratum items, on both arms",
+      "gating": false,
+      "name": "node_id_consumption_anchor_stratum",
+      "why": "reported so the circularity is visible and quantified rather than merely excluded; it never enters the verdict"
+    },
+    "stratum_rule": {
+      "membership": [
+        "The delivered payload carries no stage: MapCluster.to_dict emits label, count, medoid, ask_hint and plan_item only, and _payload adds",
+        "pool, covered and optionally more. Membership is therefore re-derived read-only from the item's node_id, by the rule _stage_anchor applies:",
+        "list_query_anchor_edges(target_id=node_id), then get_query_anchor per edge, skipping anchors that are decayed or whose query is blank;",
+        "heaviest weight wins and the lowest anchor_id breaks ties. An item is in the anchor stratum iff that search returns an anchor.",
+        "The derivation needs only a node_id, so it is symmetric: organic-arm items, which have no label, are stratified by exactly the same code."
+      ],
+      "name": "anchor stratum",
+      "rejected_discriminator": "ask_hint != label is only the _disambiguate heuristic in recall_map, not a stage marker, and is not used to decide stratum membership",
+      "sealing_stratum_sizes": "on the organic arm at sealing: 4511 primary-stratum items and 3703 anchor-stratum items",
+      "why": [
+        "A stage-3 map label IS a past grounded query verbatim (recall_map STAGE_ANCHOR, _stage_anchor), so a later query matching it may only be",
+        "the agent repeating what it would have asked anyway. Crediting that item would credit the map for the agent's own habit."
+      ]
+    },
+    "unit_of_analysis": "the (delivering_event_id, item_node_id) pair; the rate is consumed items over items"
+  },
+  "honesty_bound": [
+    "This plan was authored by a node that owns only artifacts/recall-map/prereg.json: it wrote no measurement tool and captured no baseline.",
+    "Only denominators were probed read-only: event counts, item counts, transport counts, stratum sizes and corpus row counts.",
+    "No consumption rate, positional median or mid-session share was computed, and none appears here.",
+    "Every string satisfies usage_metric.SAFE_STRING; no query text, no node content and no label harvested from the database appears in this artifact."
+  ],
+  "limitations": {
+    "corpus_drift": [
+      "The transcript corpus drifts and its index is gitignored and absent, so every positional measurement starts with a rebuild that yields a",
+      "different corpus than the last one: 4011 sessions and holdout_sha256 b210dce3... at sealing against 3953 and e7042c4d... on 2026-08-19T01:14Z.",
+      "A rebuild today also sweeps in the sessions of the tree that built this feature, which is why the cohort is pinned by transcript-internal",
+      "ended_at before 2026-08-19T11:00:00Z rather than by any corpus digest, and why the digest is not part of this plan."
+    ],
+    "lookup_blindness": [
+      "memory_lookup leaves no trace: server.py calls store.get_nodes and records neither a recall event (the sole call site of",
+      "store.record_recall_event is retrieval.py:620) nor an access row (storage.record_access).",
+      "The rule's lookup limb can therefore never fire, both arms are scored on recall events only, and both rates are biased downward.",
+      "The bias is identical for both arms, so the relative floor, a ratio, survives it; the absolute floor does not, which is one more reason it is",
+      "set at an anti-degenerate 0.02 rather than at anything resembling a quality target."
+    ],
+    "organic_arm_bias_direction": [
+      "The proxy biases the gate AGAINST the map, and the direction is stated so it cannot later be presented as neutrality:",
+      "an organic tail item was shown to the agent, low in a delivered list, while a map medoid was never delivered at all.",
+      "A shown node is likelier to be delivered again by a later similar query, so the organic rate is inflated relative to a true residual pool and",
+      "the 0.5x relative floor is harder to clear than it looks. The non-gating organic_concurrent arm exists to make that visible."
+    ],
+    "organic_arm_is_a_proxy": [
+      "The organic arm is not a replayed residual pool and cannot be: recall_events.results holds only the delivered top-N, and",
+      "replay.build_candidates rebuilds candidates from that row's own recorded results without re-running retrieval.",
+      "The arm is the delivered tail at rank >= 3, capped at 6, which is a proxy for the residual pool and is registered as one."
+    ],
+    "protocol_law_confound": [
+      "Commit 7bc05ee deployed the mid-work recall law at 2026-08-19T11:16:37Z, between the organic arm's window and any future map-arm window,",
+      "so the two gating arms differ in protocol regime as well as in item source. The law cannot be un-deployed to fix this.",
+      "The cohort restriction to opportunity-bearing events absorbs the part of the effect that runs through recall frequency, and the",
+      "non-gating organic_concurrent arm, measured on the map arm's own events, is the only regime-matched read. Neither removes the confound."
+    ]
+  },
+  "plan_sha256": "d17b2e65a20df83968886d307f7f9792491d02cb0ebb406ddeb45b1392e7ad25",
+  "plan_sha256_over": [
+    "amendment_policy",
+    "arms",
+    "artifact",
+    "bar_notes",
+    "bar_source",
+    "consumed_rule",
+    "endpoints",
+    "honesty_bound",
+    "limitations",
+    "plan_sha256_over",
+    "positional_protocol",
+    "registered_by",
+    "seal_note",
+    "sealing_denominators",
+    "verdict_rule"
+  ],
+  "positional_protocol": {
+    "aggregator": "postsession corpus.recovery_stats median_position.recall, the quantity scripts/postsession_corpus.py --stats --deep reports",
+    "cohort_pin": {
+      "drift_note": [
+        "The corpus drifts. A rebuild at sealing time yielded 4011 sessions and holdout_sha256 b210dce3..., against the sealed",
+        "artifacts/post-session/corpus.json at 3953 sessions and e7042c4d..., generated 2026-08-19T01:14Z.",
+        "split_key is the union-find root over session keys and declared identifiers and equals the session's own key when the session has no",
+        "duplicate recording, and bucket = int(sha256(split_key), 16) % 10, so split assignment survives the drift for singleton sessions.",
+        "The cohort is therefore pinned by transcript-internal ended_at plus split, source, order and limit, and never by a corpus digest."
+      ],
+      "eligibility": [
+        "index rows whose split is train or eval; the holdout split is sealed for the post-session extraction field measurement and is not read here,",
+        "whose ended_at is present and strictly before pre_feature_cutoff for the pre arm, or strictly after feature_deploy_instant for the post arm.",
+        "A row with no ended_at is excluded, fail-closed: it cannot be proven pre-feature. 833 of the 3164 train+eval rows were in that state at sealing."
+      ],
+      "index": [
+        "The corpus index is gitignored and absent, so it must be rebuilt: scripts/postsession_corpus.py --build with --manifest and --index",
+        "pointed OUTSIDE artifacts/post-session. The tracked artifacts/post-session/corpus.json is sealed for the extraction field measurement",
+        "and must not be overwritten by this gate."
+      ],
+      "order": "index sha256 ascending, the order scripts/postsession_corpus.py --deep already uses",
+      "post_feature_rule": "the post arm takes sessions whose ended_at is strictly after the feature_deploy_instant recorded by the field run",
+      "pre_feature_cutoff": "2026-08-19T11:00:00Z",
+      "pre_feature_cutoff_derivation": [
+        "2026-08-19T11:00:00Z is strictly before commit 7bc05ee (2026-08-19T11:16:37Z UTC), which deployed the mid-work recall law, and",
+        "therefore also before commit 4815d1e (2026-08-19T14:26:25Z UTC), where the tree that built the recall map begins.",
+        "The pre arm is thus free of both halves of the intervention and of every session that built either half."
+      ],
+      "session_limit": 300,
+      "sources": "all adapters, no source restriction"
+    },
+    "criterion": {
+      "direction": "up",
+      "joint_intervention_note": [
+        "The positional endpoint measures the protocol law and the map together, not the map alone: commit 7bc05ee deployed the mid-work recall",
+        "law hours before the map tree began, and no session population exists between them large enough to separate the two.",
+        "It is registered as a joint endpoint. The map-specific endpoint is the consumption one."
+      ],
+      "min_recall_calls_per_arm": 50,
+      "minimum_magnitude_absolute": 0.1,
+      "minimum_magnitude_derivation": "the map's whole claim is that one start-of-session recall becomes a plan for later ones; a rise smaller than one call in ten is not that claim",
+      "rule": "positional PASS iff post_mid_session_share minus pre_mid_session_share >= minimum_magnitude_absolute; otherwise FAIL",
+      "small_n_rule": [
+        "If either arm observes fewer than 50 recall calls the positional verdict is INCONCLUSIVE, never FAIL.",
+        "At n = 50 the binomial standard error at a share of 0.1 is 0.042, comparable to the 0.10 magnitude the criterion asks for, so below that",
+        "the comparison cannot discriminate. The published reference itself rests on 57 calls."
+      ],
+      "unfalsifiable_guard": [
+        "If the pre share exceeds 0.90 a rise of 0.10 is arithmetically impossible and the criterion could only return FAIL.",
+        "That case is pre-registered as INCONCLUSIVE-pending-new-preregistration, never FAIL."
+      ]
+    },
+    "definition": "postsession session.RecallInteraction.position, filled by transcripts._finalize as record_index / max(1, record_count - 1) and capped at 1.0",
+    "metric": "fractional position of a memory_recall call within its transcript",
+    "mid_session_band": [
+      0.25,
+      0.9
+    ],
+    "mid_session_band_derivation": [
+      "There is no definition of mid-session anywhere in the code: corpus.recovery_stats emits median_position for recall and write and nothing",
+      "else, no threshold and no share, so the band is frozen here for the first time and before any share is computed.",
+      "0.25 is the lower edge: a call at or past the first quarter of a transcript cannot be the session-opening ritual, which the published",
+      "reference puts at median position 0.02, an order of magnitude below the edge.",
+      "0.90 is the upper edge: it keeps the closing-ritual region, where memory_remember sits at median 0.96, out of the numerator, so a wrap-up",
+      "recall is not credited as mid-work.",
+      "Both edges are on the fractional position, which is scale-free, so a 40-record session and a 4000-record session are treated alike."
+    ],
+    "published_reference": {
+      "ambiguity": [
+        "The sources disagree on the denominator: insights.py says '1 of 57 sessions recalled mid-session', tests/test_instructions_imperative.py",
+        "says '1 of 57 calls mid-session'. recall_map.py and docs/post-session-attestation.md carry only the median 0.02 and no count at all.",
+        "The threshold that produced the word mid-session is recorded nowhere in the code, so 1 of 57 is not comparable to any share computed",
+        "under mid_session_band."
+      ],
+      "sources": [
+        "src/living_memory/postsession/insights.py:5-7",
+        "src/living_memory/recall_map.py:5-10",
+        "tests/test_instructions_imperative.py:421-428",
+        "docs/post-session-attestation.md:6-10"
+      ],
+      "status": "recorded verbatim as the published prior. It is NOT the pre value of the criterion; the pre arm is re-measured under this protocol.",
+      "text": "median position 0.02 of session length; 1 of 57 mid-session; field measurement 2026-08-19, 30 tree sessions on the deployment host"
+    },
+    "statistic": "mid_session_share, the share of observed recall calls whose position lies inside mid_session_band"
+  },
+  "registered_at": "2026-08-19T18:39:57Z",
+  "registered_by": "goal node recall-map/effect-gate-prereg/prereg-protocol, which owns only this file: it produced no measurement tool and no measured rate",
+  "seal_note": [
+    "plan_sha256 is sha256 over judge.canonical_json({k: prereg[k] for k in plan_sha256_over}) encoded utf-8, the same construction",
+    "scripts/postsession_field_run.py cmd_preregister uses.",
+    "plan_sha256, registered_at and amendments are stamped after sealing and are therefore outside plan_sha256_over; the hashed set is exactly",
+    "what plan_sha256_over names, and plan_sha256_over names itself, so the choice of what is sealed is itself sealed."
+  ],
+  "sealing_denominators": {
+    "contains": "counts only, no rate, no median and no share",
+    "corpus": {
+      "rebuild_holdout_sha256": "b210dce3b8025c42787af5d380e26f0f00fdb0d262c751611aa7cf7cfaba90a8",
+      "rebuild_rows": 4011,
+      "sealed_corpus_json_holdout_sha256": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+      "sealed_corpus_json_rows": 3953,
+      "train_eval_rows": 3164,
+      "train_eval_rows_ended_at_or_after_cutoff": 38,
+      "train_eval_rows_ended_before_cutoff": 2293,
+      "train_eval_rows_without_ended_at": 833
+    },
+    "database": {
+      "cohort_distinct_transport_sessions": 4135,
+      "cohort_events_in_window": 5189,
+      "cohort_events_tail_bearing_head_cut_3": 5157,
+      "cohort_events_tail_bearing_head_cut_5": 2510,
+      "cohort_events_with_non_null_task": 2208,
+      "observable_consumer_events_to_as_of": 5276,
+      "opportunity_bearing_events_horizon_24h": 1748,
+      "opportunity_bearing_events_horizon_6h": 1746,
+      "opportunity_bearing_events_horizon_72h": 1748,
+      "opportunity_bearing_events_tail_bearing": 1740,
+      "organic_item_distinct_node_ids": 1225,
+      "organic_items_anchor_stratum": 3703,
+      "organic_items_opportunity_bearing": 8214,
+      "organic_items_primary_stratum": 4511,
+      "query_anchor_edges_rows": 7951,
+      "query_anchors_rows": 3344,
+      "recall_events_created_at_max": "2026-08-19T18:26:27Z",
+      "recall_events_created_at_min": "2026-05-14T20:05:23Z",
+      "recall_events_total": 54921,
+      "recall_map_column_present": false
+    },
+    "source": "read-only probes of ~/.local/share/living-memory/global.sqlite3 and one corpus rebuild, at sealing time 2026-08-19T18Z"
+  },
+  "verdict_rule": {
+    "absolute_floor": 0.02,
+    "absolute_floor_role": [
+      "Anti-degenerate only: at least one delivered item in fifty must resurface in a later event's results. It is not a quality target and carries",
+      "no protocol-invariant meaning.",
+      "It exists to stop a near-zero map arm from passing on a collapsed organic reference, which is the failure the relative floor alone cannot catch.",
+      "0.02 was set deliberately far below any plausible organic rate, and no organic rate had been computed by anyone when it was set."
+    ],
+    "cohort_minimums": {
+      "measured_headroom_at_sealing": "the pre-feature organic arm holds 4511 primary-stratum items over 1740 opportunity-bearing events",
+      "min_map_arm_events": 20,
+      "min_map_arm_events_derivation": "with a cap of six items per event, one event could otherwise supply almost a third of a 20-item arm",
+      "min_map_arm_items": 20,
+      "min_map_arm_items_derivation": "the field run used MIN_EXTRACTED_COHORT = 20 for exactly this reason: a two-item map arm scoring 1.0 must not PASS",
+      "min_map_arm_transport_sessions": 10,
+      "min_map_arm_transport_sessions_derivation": "a single unusually chatty session must not be able to decide the gate on its own",
+      "min_organic_items": 100,
+      "min_organic_items_derivation": "below 100 items the binomial standard error at a rate near 0.05 is 0.022, larger than the 0.02 absolute floor, so the reference cannot discriminate"
+    },
+    "decision_procedure": [
+      "1. Measure both gating arms in one invocation of scripts/recall_map_effect.py, through one shared scoring function, and name every protocol field in the output.",
+      "2. If any field in arms.protocol_fields_identical differs between the arms, stop: INCONCLUSIVE. The comparison is void whatever the two rates are.",
+      "3. If the organic arm is inadmissible under inconclusive_rule, stop: INCONCLUSIVE, never PASS.",
+      "4. If the map arm falls below any cohort minimum on the primary endpoint, stop: INCONCLUSIVE, never PASS.",
+      "5. consumption verdict is PASS iff map_rate >= relative_floor * organic_rate AND map_rate >= absolute_floor; otherwise FAIL.",
+      "6. positional verdict follows positional_protocol.criterion.",
+      "7. Overall PASS iff the consumption verdict is PASS and the positional verdict is PASS. INCONCLUSIVE anywhere means not PASS.",
+      "8. Report both rates, both floors, both strata, every cohort size and the non-gating organic_concurrent rate next to the verdict."
+    ],
+    "falsifiability_invariant": [
+      "If the organic primary rate measured under this protocol turns out to be at or below absolute_floor, the floor sits at or above the reference",
+      "and the gate can then only return FAIL, which makes it unfalsifiable.",
+      "That case is pre-registered as INCONCLUSIVE-pending-amendment, never FAIL.",
+      "The remedy is a NEW pre-registration under a new plan_sha256, sealed before the next number is read, and never an amendment to this one:",
+      "amendment_policy forbids changing any floor."
+    ],
+    "inconclusive_rule": {
+      "min_organic_rate": 0.04,
+      "min_organic_rate_derivation": "admissible iff organic_rate >= 2 * absolute_floor, which is exactly the condition under which the relative floor 0.5 * organic_rate is the binding one",
+      "never_pass": true,
+      "note": "INCONCLUSIVE judges the reference or the cohort size, never the map; it must not be reported as either PASS or FAIL",
+      "trigger": [
+        "any field in arms.protocol_fields_identical differs between the arms,",
+        "or the organic arm's primary-stratum item count is below min_organic_items,",
+        "or the organic primary rate is below min_organic_rate,",
+        "or the map arm is below any cohort minimum,",
+        "or the falsifiability_invariant fires."
+      ]
+    },
+    "on_fail": "the map is not scaled; the delivered-not-used lesson applies and the channel is given back rather than kept occupied",
+    "positional_criterion_ref": "artifacts/recall-map/prereg.json#positional_protocol.criterion",
+    "relative_floor": 0.5,
+    "relative_floor_is_primary": true,
+    "relative_floor_note": "the ratio against an organic arm scored by the same function is the protocol-invariant test: both arms carry the same endpoint, stratum rule and cohort restriction"
+  }
+}

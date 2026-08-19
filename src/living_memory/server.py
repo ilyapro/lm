@@ -39,7 +39,9 @@ from living_memory.delivery import (
     stats_compaction_enabled_from_env,
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
+from living_memory.instructions_map import map_section as _compose_map_section
 from living_memory.prompts import retrieval_context_prompt
+from living_memory.recall_map import RecallMapBuilder
 from living_memory.resources import (
     connection_to_dict,
     global_concepts,
@@ -118,7 +120,11 @@ def create_mcp_server(
     LocalEmbeddingModel(model_name=store.config.embedding_model).warmup()
     mcp_cls = mcp_factory or _load_fastmcp()
     factory_kwargs: dict[str, Any] = {
-        "instructions": _server_instructions(store.config.default_scope),
+        # Composed once here, and again after each recall/remember — see
+        # _InstructionsRefresh. Composing at boot rather than only on refresh
+        # is what lets a restarted process serve the map its predecessor
+        # persisted instead of an empty one.
+        "instructions": _instructions_with_map(store, store.config.default_scope),
     }
     # A token rotated earlier via POST /admin/token and persisted to the store
     # KV wins over the LM_AUTH_TOKEN env seed, so a rotation survives restart;
@@ -426,7 +432,22 @@ def _with_transport_identity(data: dict[str, Any] | None) -> dict[str, Any] | No
     return stamped
 
 
-def _server_instructions(default_scope: str) -> str:
+def _server_instructions(default_scope: str, map_section: str = "") -> str:
+    # ``map_section`` is spliced at the very TAIL, after the default-scope
+    # line, and nowhere else. Clients clip this text at 2048 chars from the
+    # FRONT, so a clip lands on whatever sits last: the tail is the only
+    # place for the lowest-priority, most volatile content, and the three
+    # laws and the bootstrap directive keep the positions that survive any
+    # clip. The section is also the only part of this text composed from
+    # stored data rather than written here, which is the second reason it
+    # goes last — a text that reorders itself between sessions is a text
+    # clients cache and agents re-read.
+    #
+    # An empty (or blank) section returns the static text byte-identical:
+    # a store with no map history, a store that cannot answer, and the
+    # rolled-back valve all degrade to exactly the text that shipped before
+    # any map existed, rather than to a heading with nothing under it.
+    #
     # Delivery contract (measured live 2026-08-09, claude-code 2.1.217):
     # clients clip MCP server instructions at 2048 chars (and GigaCode drops
     # them entirely), so this text carries only what must be visible before
@@ -436,41 +457,80 @@ def _server_instructions(default_scope: str) -> str:
     # as each stays within the per-tool client budgets (1024 chars for
     # OpenAI-compatible clients such as codex). Budgets are pinned by
     # tests/test_instructions_imperative.py.
-    return (
-        "You and Living Memory form ONE cognitive system. You supply "
-        "ephemeral reasoning; LM supplies durable memory. `memory_recall` "
-        "is perception, `memory_remember` is learning, and `memory_teach` "
-        "is self-correction. Without recall you act blind — inventing "
-        "what memory already holds; without remember you lose what you "
-        "just learned; without teach the system repeats corrected "
-        "mistakes. This is not a tool for when convenient — it is how "
-        "you think: recall is perception, not an extra step.\n"
+    #
+    # The clip is on the WHOLE string, and the string ends with the
+    # default-scope line, so its length grows one-for-one with the scope
+    # name: measured 2026-08-20, the pre-compression text was 2042 chars
+    # for "global" but already over budget for an ordinary project scope.
+    # The connective prose below was therefore reworded tighter — every
+    # protocol point still carried, nothing displaced — to leave room for
+    # both long scope names and a later tail section. Audited mapping of
+    # each rewording to the point (and pinned phrase) it preserves:
+    #
+    # - "You supply ephemeral reasoning; LM supplies durable memory."
+    #   -> folded into the opening clause after the colon; the division of
+    #   labour survives, as does the framing pin ("ONE cognitive system",
+    #   which must stay inside the first 600 chars).
+    # - "`memory_recall` is perception, `memory_remember` is learning, and
+    #   `memory_teach` is self-correction." + the three without-X clauses
+    #   -> merged so each role and its consequence is stated once instead
+    #   of twice. "inventing what memory already holds" survives
+    #   byte-identical; the four tool-name pins are carried by the
+    #   bootstrap paragraph (and law 3), never by this sentence.
+    # - "This is not a tool for when convenient — it is how you think:
+    #   recall is perception, not an extra step." -> dropped as a
+    #   restatement: "ONE cognitive system", "Recall is perception" and
+    #   the MUST register of the three laws already carry it.
+    # - Law 1's trigger enumeration (change, irreversible step, knowledge
+    #   search, design choice) -> the broader "Every action, decision";
+    #   the exact enumeration lives in _RECALL_DESCRIPTION, which is the
+    #   binding channel for triggers. "You MUST recall BEFORE you act" and
+    #   "When uncertain or stuck, recall" survive byte-identical.
+    # - "a miss costs one tool call; skipping can repeat an entire
+    #   debugging cycle." -> "a miss costs one call; skipping repeats
+    #   whole cycles of work." — same economics, no longer debugging-only.
+    # - Law 2's "Sessions end without warning — a deferred remember is
+    #   usually lost." -> same clause as a subordinate; the loss
+    #   consequence, not just the timing, still lands.
+    # - Law 3's tail "a correction stored as a remember trace keeps losing
+    #   to the stale node in every future recall." -> "a remember trace
+    #   keeps losing to the stale node."; "supersedes edge" survives.
+    # - Bootstrap "(exact BEFORE triggers)" -> "(BEFORE triggers)". Every
+    #   pin in this paragraph ("load the Living Memory tools NOW", "recall
+    #   the task at hand", "as protocol", "defers", the four tool names)
+    #   is untouched.
+    static = (
+        "You and Living Memory form ONE cognitive system: you supply "
+        "ephemeral reasoning, LM durable memory. Recall is perception — "
+        "without it you act blind, inventing what memory already holds; "
+        "remember is learning, teach is self-correction — without them "
+        "the system loses what you learn and repeats corrected "
+        "mistakes.\n"
         "\n"
         "## Three laws — always in force\n"
         "\n"
-        "1. You MUST recall BEFORE you act. Every change, irreversible "
-        "step, knowledge search, design choice, new task, and new turn "
-        "of thought has history here. When uncertain or stuck, recall: a miss "
-        "costs one tool call; skipping can repeat an entire debugging "
-        "cycle.\n"
+        "1. You MUST recall BEFORE you act. Every action, decision, new "
+        "task, and new turn of thought has history here. When uncertain "
+        "or stuck, recall: a miss costs one call; skipping repeats whole "
+        "cycles of work.\n"
         "2. You MUST remember at the moment of insight, before your next "
-        "action. Sessions end without warning — a deferred remember is "
-        "usually lost. One concrete fact per trace.\n"
+        "action — sessions end without warning, and a deferred remember "
+        "is lost. One concrete fact per trace.\n"
         "3. You MUST teach the moment a belief changes. When a recalled "
-        "fact proves wrong, call `memory_teach` immediately — only teach "
-        "creates the supersedes edge; a correction stored as a remember "
-        "trace keeps losing to the stale node in every future recall.\n"
+        "fact proves wrong, call `memory_teach` at once — only teach "
+        "creates the supersedes edge; a remember trace keeps losing to "
+        "the stale node.\n"
         "\n"
         "## The full protocol lives on the tools\n"
         "\n"
         "The binding trigger protocol is in the tool descriptions "
-        "themselves: `memory_recall` (exact BEFORE triggers), "
-        "`memory_remember` (write policy and closure notes), `memory_teach` "
-        "(correction rules), `memory_consolidate` (promotion to schemas). "
-        "If this session defers or hides tool schemas behind a search "
-        "step, you MUST load the Living Memory tools NOW, at session "
-        "start, recall the task at hand, and follow their descriptions "
-        "as protocol, not as reference.\n"
+        "themselves: `memory_recall` (BEFORE triggers), `memory_remember` "
+        "(write policy and closure notes), `memory_teach` (correction "
+        "rules), `memory_consolidate` (promotion to schemas). If this "
+        "session defers or hides tool schemas behind a search step, you "
+        "MUST load the Living Memory tools NOW, at session start, recall "
+        "the task at hand, and follow their descriptions as protocol, "
+        "not as reference.\n"
         "\n"
         "## Scope and context\n"
         "\n"
@@ -481,6 +541,103 @@ def _server_instructions(default_scope: str) -> str:
         "`session_id` in context to link work across sessions.\n"
         f"Your default scope is {default_scope}.\n"
     )
+    section = map_section.strip()
+    if not section:
+        return static
+    return f"{static}\n{section}\n"
+
+
+#: History rows the section is composed from, far below
+#: ``instructions_map.DEFAULT_HISTORY_LIMIT``. Two reasons, and the cheap one
+#: is not the main one.
+#:
+#: Recency is the point: this channel personalizes a session from what memory
+#: has *lately* been mapping, and a window reaching twenty recalls back drags
+#: in structure the work has moved on from. Three maps carry up to three times
+#: ``instructions_map.MAX_LABELS`` candidate labels for the six slots the
+#: section shows, so the cap binds long before the window does.
+#:
+#: It is also what keeps the refresh off the latency budget. Composition
+#: screens every label of every cluster of every row against the register ban
+#: battery, so its cost is linear in rows x clusters and it — not the indexed
+#: read — is what a wide window costs: measured 2026-08-20 over a 40-map
+#: history, twenty rows cost 0.14ms of read against 0.54ms of composition,
+#: and a whole refresh falls from 0.68ms there to 0.13ms at three.
+_INSTRUCTIONS_MAP_HISTORY_ROWS = 3
+
+
+def _instructions_with_map(store: MemoryStore, default_scope: str) -> str:
+    """The instructions text this store's persisted history composes right now.
+
+    Called once at construction and again after each recall/remember, never
+    on a path an agent waits on for anything else. The read is one bounded,
+    indexed query and the composition is pure — no LLM, no network — because
+    this text is also what ``initialize`` blocks on.
+
+    ``LM_RECALL_MAP=0`` removes the section as well as the response key: the
+    valve is the rollback for the whole map, and a rollback that left one
+    channel populated would not be one.
+    """
+
+    section = ""
+    if _recall_map_enabled():
+        try:
+            section = _compose_map_section(
+                store, limit=_INSTRUCTIONS_MAP_HISTORY_ROWS
+            )
+        except Exception:
+            # The instructions are the one text every client shows before any
+            # tool is considered. They render, whatever the store says.
+            section = ""
+    return _server_instructions(default_scope, map_section=section)
+
+
+class _InstructionsRefresh:
+    """Re-snapshot the served instructions between transport sessions.
+
+    ``FastMCP`` takes ``instructions`` as a construction kwarg and never
+    re-reads the composed text, so nothing here would ever change after boot.
+    What *is* re-read is the low-level attribute: ``Server.
+    create_initialization_options()`` reads ``instructions=self.instructions``
+    at call time, and ``StreamableHTTPSessionManager`` calls it inside each
+    ``app.run(...)`` — once per transport session. Assigning
+    ``_mcp_server.instructions`` therefore reaches the NEXT session's
+    ``initialize``; the current session, already initialized, is untouched.
+    Over stdio there is one session per process, so the map a session sees is
+    the state at its own boot.
+
+    Two properties this must have, because it hangs off the recall path:
+
+    * It never raises into the tool. A map is a decoration on instructions;
+      losing it must never lose a recall or a write.
+    * It is defensive about the object. ``create_mcp_server`` accepts an
+      ``mcp_factory``, and a test double is under no obligation to own a
+      ``_mcp_server`` — absent, this is a silent no-op.
+
+    The assignment is skipped when the composed text is unchanged, which is
+    the common case: history only moves when a recall delivers a new map.
+    """
+
+    def __init__(self, mcp: Any, store: MemoryStore) -> None:
+        self._mcp = mcp
+        self._store = store
+        self._default_scope = store.config.default_scope
+        # Whatever was composed at construction, so the first call assigns
+        # only if the history has actually moved since boot.
+        self._text = getattr(mcp, "instructions", None)
+
+    def __call__(self) -> None:
+        try:
+            server = getattr(self._mcp, "_mcp_server", None)
+            if server is None:
+                return
+            text = _instructions_with_map(self._store, self._default_scope)
+            if text == self._text:
+                return
+            self._text = text
+            server.instructions = text
+        except Exception:
+            return
 
 
 # MCP-visible tool descriptions. These are the binding protocol channel:
@@ -738,7 +895,15 @@ def main(argv: list[str] | None = None) -> int:
 
 def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
     recall_service = MemoryRecallService(store)
+    # One builder per server, like the service's own caches: the map's
+    # stability guarantee is "same task, same structure across sessions",
+    # which only holds if the thing remembering the structure outlives a call.
+    recall_map_builder = RecallMapBuilder(store)
     consolidation_service = ConsolidationService(store)
+    # Runs under ``runtime_lock`` with the rest of the tool body: the store
+    # holds one sqlite connection shared across threads, and the refresh reads
+    # it. One bounded indexed query, after the response is already built.
+    refresh_instructions = _InstructionsRefresh(mcp, store)
 
     @mcp.tool(description=_REMEMBER_DESCRIPTION)
     @_track_latency("memory_remember")
@@ -794,6 +959,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             }
             if rejected_alternatives is not None:
                 response["rejected_alternatives"] = rejected_alternatives
+            refresh_instructions()
             return response
 
     @mcp.tool(description=_TEACH_DESCRIPTION)
@@ -861,6 +1027,14 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         counts/truncations, bookkeeping stats and zero/null fields dropped —
         and ``memory_lookup`` restores the stored node byte-complete
         (``LM_DELIVERY_*`` env valves roll each cut back).
+
+        When the ranked candidate pool holds more than the delivered results,
+        an additive top-level ``recall_map`` describes the *residual*: a
+        handful of labelled clusters with counts, a medoid example and a
+        phrasing to ask with — what else memory holds for this task, as a plan
+        for the next recall. It never reorders or replaces ``results``, and it
+        is absent whenever there is no residual or nothing worth saying about
+        it (``LM_RECALL_MAP=0`` removes it outright).
         """
 
         ambient_context = _with_transport_identity(ambient_context)
@@ -940,7 +1114,7 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                     DELIVERY_TWIN_DUPLICATE,
                 ):
                     shaped.pop()
-            return {
+            response: dict[str, Any] = {
                 "query": query,
                 "scope": scope,
                 "recall_event_id": recall_service.last_recall_event_id,
@@ -948,6 +1122,32 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 "results": shaped,
                 "auto_decay": auto_decay,
             }
+            # The map of what the cut left behind, attached verbatim as one
+            # more top-level key — the same additive shape ``auto_decay``
+            # established. Everything about *what* it says lives in
+            # recall_map.py: the server decides only whether there is a
+            # residual to describe, and records what it delivered.
+            residual = recall_service.last_residual
+            if residual and _recall_map_enabled():
+                built = recall_map_builder.build(
+                    residual,
+                    scope=scope,
+                    task=_ambient_text(ambient_context, "task"),
+                    task_pattern=_ambient_text(ambient_context, "task_pattern"),
+                )
+                if built is not None:
+                    response["recall_map"] = built.to_dict()
+                    if recall_service.last_recall_event_id is not None:
+                        store.attach_recall_map(
+                            recall_service.last_recall_event_id,
+                            response["recall_map"],
+                        )
+            # The map this call just persisted is the signal the *next*
+            # session's instructions are composed from. Last, after the
+            # response is complete, so nothing an agent waits on depends on
+            # it — and swallowing, so nothing it can hit costs a recall.
+            refresh_instructions()
+            return response
 
     @mcp.tool
     @_track_latency("memory_attest")
@@ -1241,6 +1441,36 @@ def _adaptive_merge_floor(trace_count: int) -> int:
 
 def _auto_consolidate_policy() -> str:
     return os.environ.get("LM_AUTO_CONSOLIDATE_POLICY", "fixed").strip().lower()
+
+
+def _recall_map_enabled() -> bool:
+    """Read ``LM_RECALL_MAP``: default on, ``"0"`` removes the key.
+
+    The rollback valve for the additive ``recall_map``, in the shape of the
+    ``LM_DELIVERY_*`` valves: on unless explicitly switched off, and switching
+    it off restores a byte-identical pre-map response rather than an empty map.
+    """
+
+    return os.environ.get("LM_RECALL_MAP", "").strip() != "0"
+
+
+def _ambient_text(ambient_context: dict[str, Any] | None, key: str) -> str | None:
+    """One ambient field as a non-empty string, or None.
+
+    ``str()`` of whatever was passed, the same coercion storage stamps its
+    ``task`` column with, so the map's cache key is built from the value the
+    recall event records — plus: blank is absent. A whitespace-only ``task``
+    would otherwise key a cache entry that no later recall can hit and that
+    every task-less recall would collide on.
+    """
+
+    if not ambient_context:
+        return None
+    value = ambient_context.get(key)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 _DECAY_SWEEP_KV_KEY = "last_decay_sweep_at"

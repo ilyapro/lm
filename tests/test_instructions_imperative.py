@@ -26,21 +26,37 @@ These tests pin the imperative register of both channels, the budgets, and
 the abstract coverage — guarding against regressions toward advisory tone,
 against silent overflow past what clients actually deliver, and against
 nuance quietly dying in compression.
+
+One part of the instructions channel is not written here at all: the recall
+map section, composed at ``initialize`` from what earlier recalls persisted.
+Everything above pins the *static* half; the block at the end of this module
+pins the populated one to the same standard — the same budget across scope
+names, the same register bans run through the same scanners, the same pinned
+phrases still present underneath it, and — the point of a personalized
+channel — a section that is a function of real history rather than a
+constant.
 """
 
 from __future__ import annotations
 
+import inspect
 import re
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
 import pytest
 
+from living_memory.instructions_map import HEADING, MAX_SECTION_CHARS
 from living_memory.server import (
     _CONSOLIDATE_DESCRIPTION,
     _RECALL_DESCRIPTION,
     _REMEMBER_DESCRIPTION,
     _TEACH_DESCRIPTION,
+    _instructions_with_map,
     _server_instructions,
 )
+from living_memory.storage import MemoryStore
 
 # Client-side delivery limits, measured empirically — see module docstring.
 MAX_INSTRUCTION_CHARS = 2048
@@ -715,4 +731,448 @@ def test_consolidate_procedure_form_triple() -> None:
     assert "level:schema" in text
     assert "re-invented" in text, (
         "lookup-table-as-learning must keep its consequence, not just its name"
+    )
+
+
+# ── The recall map section: the one populated part of the channel ───────────
+#
+# Everything above this line pins text written in server.py. The map section
+# is composed at ``initialize`` from what earlier recalls persisted, so it is
+# the only part of the instructions an operator cannot read off the source —
+# and the only part whose content changes between sessions. It therefore gets
+# the same contract, not a weaker one.
+#
+# The pin set is not restated here. These tests re-run the *existing* contract
+# functions above against the populated text, so a phrase pinned once is
+# pinned in both halves of the channel by construction: adding an assertion
+# above automatically extends the populated contract too, and no literal can
+# drift between two copies because there is one copy.
+
+
+#: The budget applies to the WHOLE string, and the static text ends with the
+#: default-scope line — so its length grows one-for-one with the scope name
+#: and "global" is the *shortest* case, not a representative one. Measured
+#: 2026-08-20, before the compression that made room for the map: "global"
+#: was 2042 of 2048 while ``project:custom-scope`` was already 2056 and
+#: ``project:a-fairly-long-project-name`` 2070 — both over budget, and both
+#: invisible to a budget test that only ever measured "global".
+SCOPE_LENGTHS = (
+    "global",
+    "project:lm",
+    "project:custom-scope",
+    "project:a-fairly-long-project-name",
+    "project:a-fairly-long-scope-name-for-headroom",
+)
+
+#: A history whose map fills the section: enough clusters to exhaust the label
+#: slots, with ``more`` set so the breadth marker is on too. This is what the
+#: channel looks like for work that keeps coming back to the same subsystems.
+FULL_HISTORY = (
+    ("instructions channel", 9),
+    ("recall map clustering", 7),
+    ("delivery diet", 5),
+    ("transport identity", 4),
+    ("consolidation", 3),
+    ("latency budget", 2),
+)
+
+#: Two histories with no label, and no substring of a label, in common. The
+#: anti-hardcoding pin needs both directions: each section must name its own
+#: labels *and* none of the other's, which a constant string satisfies in
+#: neither direction and a "some section is present" check satisfies in both
+#: for the wrong reason.
+HISTORY_ONE = (("deploy recipes", 3), ("bundle layout", 2))
+HISTORY_TWO = (("transport identity", 5), ("latency budget", 4))
+
+#: Fixture names of the channel texts the contracts above consume.
+CHANNEL_FIXTURES = frozenset({"instructions", "union", "channels"})
+
+#: Below this the collection has rotted — an import error, a rename, or a
+#: signature change would otherwise leave the populated channel pinned by an
+#: empty loop that passes.
+MIN_CHANNEL_CONTRACTS = 12
+
+
+def _map_payload(
+    *labelled: tuple[str, int], pool: int = 60, more: int = 0
+) -> dict[str, Any]:
+    """A persisted ``recall_map`` payload, shaped as ``RecallMap.to_dict``."""
+
+    clusters = [
+        {
+            "label": label,
+            "count": count,
+            "medoid": {"node_id": f"node-{index}", "example": f"an example of {label}"},
+            "ask_hint": f"what does memory hold about {label}",
+        }
+        for index, (label, count) in enumerate(labelled)
+    ]
+    payload: dict[str, Any] = {
+        "clusters": clusters,
+        "pool": pool,
+        "covered": sum(count for _, count in labelled),
+    }
+    if more:
+        payload["more"] = more
+    return payload
+
+
+def _store_with_history(db_path: Path, *maps: dict[str, Any]) -> MemoryStore:
+    """A store that has already delivered ``maps``, oldest call first.
+
+    Written through ``record_recall_event`` rather than through the recall
+    tool: what the instructions channel reads is the persisted history, and
+    going through the builder would couple these tests to clustering
+    thresholds without exercising one line of the composition under test.
+    """
+
+    store = MemoryStore(db_path)
+    for index, payload in enumerate(maps):
+        store.record_recall_event(
+            query=f"what does memory hold about topic {index}",
+            scope="global",
+            recall_map=payload,
+        )
+    return store
+
+
+def _populated(store: MemoryStore, scope: str) -> str:
+    """The instructions this store composes, asserted to actually carry a map.
+
+    Every test below that claims something about a populated channel goes
+    through here, so none of them can quietly pass against an empty section.
+    """
+
+    text = _instructions_with_map(store, scope)
+    assert HEADING in text, (
+        "the history seeded for this test composed no map section — the "
+        "populated-channel contract would pass vacuously against the static "
+        "text it is supposed to be stronger than"
+    )
+    return text
+
+
+def _section_of(text: str, scope: str) -> str:
+    """Everything the splice added past the static text."""
+
+    static = _server_instructions(scope)
+    assert text.startswith(static), (
+        "the map section must be additive and tail-placed; the static text is "
+        "no longer this text's prefix"
+    )
+    return text[len(static) :]
+
+
+# Snapshot taken HERE, at import time, before a single test below is defined:
+# ``globals()`` at this point holds exactly the contracts above. Collecting
+# later would sweep these tests into their own pin set and recurse.
+_STATIC_CHANNEL_CONTRACTS: tuple[tuple[str, Any], ...] = tuple(
+    (name, obj)
+    for name, obj in sorted(globals().items())
+    if name.startswith("test_")
+    and callable(obj)
+    and (params := frozenset(inspect.signature(obj).parameters))
+    and params <= CHANNEL_FIXTURES
+)
+
+
+def _call_channel_contract(contract: Any, instructions_text: str) -> None:
+    """Run one collected contract against ``instructions_text``.
+
+    The populated instructions are substituted for the ``instructions``
+    fixture, and the ``union``/``channels`` views are rebuilt on top of them
+    exactly as their fixtures do — so the register scanners run over the map
+    section, and the presence pins are checked in its company.
+    """
+
+    supplied: dict[str, Any] = {
+        "instructions": instructions_text,
+        "union": "\n\n".join([instructions_text, *DESCRIPTIONS.values()]),
+        "channels": {"instructions": instructions_text, **DESCRIPTIONS},
+    }
+    contract(**{p: supplied[p] for p in inspect.signature(contract).parameters})
+
+
+def _run_channel_contracts(instructions_text: str) -> list[str]:
+    """Every channel contract above, re-run against ``instructions_text``.
+
+    Returns the contracts that ran, so a caller can prove the loop was not
+    empty.
+    """
+
+    assert len(_STATIC_CHANNEL_CONTRACTS) >= MIN_CHANNEL_CONTRACTS, (
+        f"only {len(_STATIC_CHANNEL_CONTRACTS)} channel contracts collected, "
+        f"expected at least {MIN_CHANNEL_CONTRACTS} — the populated channel "
+        "is being pinned by an almost-empty loop"
+    )
+    ran = []
+    for name, contract in _STATIC_CHANNEL_CONTRACTS:
+        _call_channel_contract(contract, instructions_text)
+        ran.append(name)
+    return ran
+
+
+@pytest.fixture(scope="module")
+def map_valve_open() -> Iterator[None]:
+    """``LM_RECALL_MAP=0`` in the ambient environment must not silence a test.
+
+    The valve is a real rollback and its off-state is pinned in
+    tests/test_instructions_refresh.py. Here it would turn every populated
+    assertion into an assertion about the static text.
+    """
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("LM_RECALL_MAP", raising=False)
+        yield
+
+
+@pytest.fixture(scope="module")
+def populated_store(tmp_path_factory: pytest.TempPathFactory) -> Iterator[MemoryStore]:
+    store = _store_with_history(
+        tmp_path_factory.mktemp("populated") / "memory.sqlite3",
+        _map_payload(*HISTORY_ONE),
+        _map_payload(*FULL_HISTORY, more=4),
+    )
+    try:
+        yield store
+    finally:
+        store.close()
+
+
+@pytest.fixture(scope="module")
+def populated_instructions(
+    populated_store: MemoryStore, map_valve_open: None
+) -> str:
+    return _populated(populated_store, "global")
+
+
+# ── Budget, with the section actually in the string ─────────────────────────
+
+
+@pytest.mark.parametrize("scope", SCOPE_LENGTHS)
+def test_populated_instructions_within_client_budget(
+    populated_store: MemoryStore, map_valve_open: None, scope: str
+) -> None:
+    """The budget test above measures ``_server_instructions("global")``.
+
+    That is the shortest text this channel ever serves: no map, and the
+    scope name that costs the fewest chars. What clients actually receive is
+    this — a real scope name and whatever the persisted history composed.
+    """
+
+    text = _populated(populated_store, scope)
+    size = len(text)
+    assert size <= MAX_INSTRUCTION_CHARS, (
+        f"instructions for scope {scope!r} with a populated map section are "
+        f"{size} chars; clients clip at {MAX_INSTRUCTION_CHARS} and the map "
+        "sits at the tail, so the clip eats it first — cut, do not raise the "
+        "budget"
+    )
+
+
+@pytest.mark.parametrize("scope", SCOPE_LENGTHS)
+def test_budget_holds_for_the_largest_section_composable(scope: str) -> None:
+    """Headroom for any history, not just the one seeded here.
+
+    The section's content is whatever a session happened to recall, so a
+    budget that holds for one sample history and not for a full one fails in
+    the field rather than in this suite. ``MAX_SECTION_CHARS`` is the
+    composer's own cap, so this is the worst case that can ever be spliced.
+    """
+
+    text = _server_instructions(scope, map_section="m" * MAX_SECTION_CHARS)
+    size = len(text)
+    assert size <= MAX_INSTRUCTION_CHARS, (
+        f"a full {MAX_SECTION_CHARS}-char map section takes scope {scope!r} "
+        f"to {size} chars, past the {MAX_INSTRUCTION_CHARS} clip: the channel "
+        "has no headroom for a history richer than today's — cut the static "
+        "text or the section cap, do not raise the budget"
+    )
+
+
+# ── Zero displacement, and the same register ────────────────────────────────
+
+
+def test_populated_channel_displaces_no_pinned_phrase(
+    populated_instructions: str,
+) -> None:
+    """Every contract above, re-run with the map section in the string.
+
+    This is the whole zero-displacement guarantee and the register guarantee
+    at once: the presence pins say the protocol survives underneath the
+    section, and the ban scanners — ``%``, ``" + "``, ``\\d+x``, the machinery
+    patterns, the weak-language list — now run over a text that includes it.
+    Because they are the same function objects, the section's register cannot
+    drift from the static text's: tightening one tightens both.
+    """
+
+    ran = _run_channel_contracts(populated_instructions)
+    assert len(ran) >= MIN_CHANNEL_CONTRACTS, ran
+
+
+def test_channel_contracts_actually_scan_the_map_section() -> None:
+    """The re-run must be able to fail on the section — one control per ban.
+
+    A pin set that passes no matter what is spliced pins nothing. Each poison
+    below is placed in the section and nowhere else, so the only way it can be
+    caught is by reading the section — and each is asserted against the
+    *named* contract that owns its ban, so a control cannot be quietly
+    satisfied by some unrelated assertion failing first.
+    """
+
+    owners = {
+        "test_protocol_channels_advertise_no_non_default_machinery": tuple(
+            PLANTED_ADVERTS.values()
+        ),
+        "test_no_measurement_artifacts": (
+            "memory also holds: 43% of storage",
+            "memory also holds: what changed + the invariant",
+            "memory also holds: a 3x smaller candidate pool",
+        ),
+        "test_no_weak_language": (
+            "consider recalling deploys before touching them",
+        ),
+    }
+    collected = dict(_STATIC_CHANNEL_CONTRACTS)
+    for name, poisons in owners.items():
+        contract = collected.get(name)
+        assert contract is not None, (
+            f"{name} is no longer collected — the ban it owns would stop "
+            "reaching the map section without a single test turning red"
+        )
+        for poison in poisons:
+            text = _server_instructions("global", map_section=poison)
+            assert poison in text
+            with pytest.raises(AssertionError):
+                _call_channel_contract(contract, text)
+            # And the whole re-run, which is what the populated contract uses.
+            with pytest.raises(AssertionError):
+                _run_channel_contracts(text)
+
+
+def test_map_section_advertises_no_non_default_machinery(
+    populated_instructions: str,
+) -> None:
+    """The machinery ban, aimed at the section alone.
+
+    Redundant with the re-run above by design: the section is composed from
+    user data — context values, file paths, the wording of past queries — so
+    it is the one part of this channel that can acquire a banned phrase
+    without anyone editing a line of source. Scanned on its own so a failure
+    names the section instead of the whole text.
+    """
+
+    section = _section_of(populated_instructions, "global")
+    hits = _machinery_hits(section)
+    assert not hits, (
+        f"the composed map section advertises machinery an agent cannot act "
+        f"on: {hits} — labels come from stored data and reach the channel "
+        "unedited; the composer must drop such a label, not ship it"
+    )
+
+
+# ── Degradation, and the anti-hardcoding pin ────────────────────────────────
+
+
+@pytest.mark.parametrize("scope", SCOPE_LENGTHS)
+def test_empty_history_degrades_to_the_static_text(
+    tmp_path: Path, map_valve_open: None, scope: str
+) -> None:
+    """No persisted map, no section — byte-identical, not "almost".
+
+    A heading over nothing, or a stray blank line, is a permanent one-line
+    tax on every session of every fresh install for zero information.
+    """
+
+    with _store_with_history(tmp_path / "memory.sqlite3") as store:
+        composed = _instructions_with_map(store, scope)
+
+    assert composed == _server_instructions(scope), (
+        "instructions composed from an empty history must be byte-identical "
+        "to the static text"
+    )
+    assert HEADING not in composed
+
+
+def test_section_reflects_its_own_history_and_no_other(
+    tmp_path: Path, map_valve_open: None
+) -> None:
+    """The section is a function of persisted history, not a constant.
+
+    Two histories, two stores, one scope. Separate stores are the point: the
+    composer merges a *window* of recent rows, so writing both histories into
+    one store would make "none of the other's labels" a statement about
+    ordering. Isolated, it is a statement about where the content comes from.
+
+    A fixed expected string passes neither direction of this; a check that
+    only asserts "a section is present" passes both directions against a
+    hardcoded one.
+    """
+
+    with _store_with_history(
+        tmp_path / "one.sqlite3", _map_payload(*HISTORY_ONE)
+    ) as store_one, _store_with_history(
+        tmp_path / "two.sqlite3", _map_payload(*HISTORY_TWO)
+    ) as store_two:
+        first = _populated(store_one, "global")
+        second = _populated(store_two, "global")
+
+    assert first != second, (
+        "two different persisted histories composed the same instructions — "
+        "the section is not reading history"
+    )
+    # And the difference lives entirely in the section.
+    static = _server_instructions("global")
+    assert first.startswith(static) and second.startswith(static)
+
+    one, two = _section_of(first, "global"), _section_of(second, "global")
+    for label, count in HISTORY_ONE:
+        assert f"{label}({count})" in one, (
+            f"the section composed from history one does not name {label!r} "
+            "with the count that history recorded"
+        )
+        assert label not in two, (
+            f"{label!r} belongs to history one and reached a section composed "
+            "from history two — the section carries content from somewhere "
+            "other than the store it was composed from"
+        )
+    for label, count in HISTORY_TWO:
+        assert f"{label}({count})" in two, (
+            f"the section composed from history two does not name {label!r} "
+            "with the count that history recorded"
+        )
+        assert label not in one
+
+
+def test_section_follows_the_history_as_it_grows(
+    tmp_path: Path, map_valve_open: None
+) -> None:
+    """Same store, one more delivery: the channel personalizes to the latest.
+
+    The complement of the two-store pin — that one covers *where* the content
+    comes from, this one covers *when*. A section cached into a constant at
+    first composition would pass that test and fail this one.
+    """
+
+    with _store_with_history(
+        tmp_path / "memory.sqlite3", _map_payload(*HISTORY_ONE)
+    ) as store:
+        before = _section_of(_populated(store, "global"), "global")
+        store.record_recall_event(
+            query="what does memory hold about transports",
+            scope="global",
+            recall_map=_map_payload(*HISTORY_TWO),
+        )
+        after = _section_of(_populated(store, "global"), "global")
+
+    assert after != before, (
+        "a newly delivered map did not change the section — the channel is "
+        "not tracking history, it is repeating a snapshot"
+    )
+    newest, older = HISTORY_TWO[0][0], HISTORY_ONE[0][0]
+    assert newest not in before
+    assert after.index(newest) < after.index(older), (
+        "the newest map must lead: this channel personalizes a session from "
+        "what memory has lately been mapping, not from the oldest thing it "
+        "still remembers"
     )

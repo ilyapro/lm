@@ -215,6 +215,30 @@ _RECALL_ATTESTATION_SCHEMA_SQL = """
         WHERE source_session_key IS NOT NULL;
 """
 
+#: Scratch tokenizer behind :meth:`MemoryStore.term_document_frequencies`. It
+#: folds caller-supplied terms with the *same* tokenizer that indexes
+#: ``nodes_fts``, so a DF lookup matches the index by construction instead of
+#: through a hand-written Python approximation of unicode61 — whose folding is
+#: easy to get subtly wrong (case folding everywhere, but diacritic removal on
+#: Latin characters only: "Café" folds to "cafe" while Cyrillic "й" survives).
+#: The ``tokenize`` option must stay identical to the ``nodes_fts`` DDL in
+#: ``_initialize_schema``. Both objects live in ``temp``: per-connection,
+#: never written to the database file, gone with the connection — so no
+#: migration concern attaches to them. The ``instance`` vocab type yields one
+#: row per (token, source rowid), which both attributes tokens back to the
+#: input term that produced them and exposes inputs that fold to more or
+#: fewer than one token.
+_FTS_TERM_TOKENIZER_SQL = (
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS temp.fts_term_tokenizer
+        USING fts5(term, tokenize = 'unicode61')
+    """,
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS temp.fts_term_tokenizer_instances
+        USING fts5vocab(temp, 'fts_term_tokenizer', 'instance')
+    """,
+)
+
 #: Batch encoder for chunk texts: takes the chunk texts of one node in order and
 #: returns one vector per text. Injected via :meth:`MemoryStore.set_chunk_embedder`
 #: so a caller that already holds a loaded model does not pay for a second one.
@@ -506,6 +530,9 @@ class MemoryStore:
         self._node_embedding_column_cache: bool | None = None
         self._chunk_table_cache: bool | None = None
         self._anchor_tables_cache: bool | None = None
+        # TEMP objects are per-connection, so this cache cannot go stale the
+        # way an on-disk schema probe can.
+        self._fts_term_tokenizer_ready = False
         if str(self.db_path) != ":memory:":
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1328,8 +1355,18 @@ class MemoryStore:
         depth: str | int | None = None,
         max_results: int = 10,
         results: Iterable[Mapping[str, Any]] | None = None,
+        recall_map: Mapping[str, Any] | None = None,
     ) -> RecallEvent:
-        """Persist one recall interaction for later feedback/provenance."""
+        """Persist one recall interaction for later feedback/provenance.
+
+        ``recall_map`` is the map served with this delivery, stored verbatim as
+        compact JSON. The live recall path leaves it unset and calls
+        :meth:`attach_recall_map` instead: the map is built from the residual
+        pool *this* call produced, so it does not exist until the event has been
+        recorded and the ranked results have been shaped. Callers that already
+        hold a map when they record the event pass it here and pay one write
+        instead of two.
+        """
 
         normalized_results = [dict(item) for item in results or []]
         event_id = new_ulid()
@@ -1350,9 +1387,9 @@ class MemoryStore:
                     id, query, scope, requested_scope, resolved_scopes, ambient_context,
                     depth, max_results, results, agent, task, session_id,
                     transport_session_id, fingerprint, gated, feedback_applied,
-                    feedback_trace_id, feedback_applied_at, created_at
+                    feedback_trace_id, feedback_applied_at, created_at, recall_map
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?, ?)
                 """,
                 (
                     event_id,
@@ -1370,10 +1407,99 @@ class MemoryStore:
                     transport_session_id,
                     fingerprint,
                     now,
+                    _encode_recall_map(recall_map),
                 ),
             )
             self._apply_recall_fingerprint_delivery(fingerprint, transport_session_id, now)
         return self.get_recall_event(event_id)  # type: ignore[return-value]
+
+    def attach_recall_map(
+        self, event_id: str, recall_map: Mapping[str, Any] | None
+    ) -> None:
+        """Record the map served with an already-recorded recall event.
+
+        One statement, no read-back: this runs on the live recall path, after
+        the response has been shaped, and its result is never consumed. An
+        unknown ``event_id`` raises ``KeyError`` rather than writing nothing
+        silently — an unattributable delivery is the failure this column exists
+        to prevent.
+        """
+
+        with self._conn:
+            updated = self._conn.execute(
+                "UPDATE recall_events SET recall_map = ? WHERE id = ?",
+                (_encode_recall_map(recall_map), event_id),
+            ).rowcount
+        if not updated:
+            raise KeyError(event_id)
+
+    def recent_recall_map_history(
+        self,
+        scope: str | None = None,
+        task: str | None = None,
+        transport_session_id: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Recent deliveries that carried a recall map, newest first.
+
+        The read side of ``recall_events.recall_map``, for the downstream
+        consumers of what was already shown: the server-instructions channel
+        (what did this session's earlier recalls map?), consumption curtailment
+        (which clusters keep being delivered and never followed?), and the
+        effect gate (what was on offer when the next recall came in?). Rows
+        without a map are not history and never appear.
+
+        Every filter is an equality probe on an indexed column, so the scan is
+        bounded by the window rather than by the table:
+        ``transport_session_id`` rides ``idx_recall_events_transport_created``
+        and ``scope`` the leading column of
+        ``idx_recall_events_scope_pending_created``. ``scope`` matches the
+        resolved ``scope`` column only — not the ``scope OR requested_scope``
+        disjunction :meth:`list_recall_events` uses, which no index can serve —
+        and ``task`` is a residual filter over whatever the indexed columns
+        already narrowed.
+
+        Each row is ``id``, ``created_at``, ``scope``, ``task``, ``query``,
+        ``transport_session_id`` and ``recall_map`` decoded back into the
+        payload that was delivered.
+        """
+
+        if limit <= 0:
+            return []
+        clauses = ["recall_map IS NOT NULL"]
+        params: list[Any] = []
+        if transport_session_id is not None:
+            clauses.append("transport_session_id = ?")
+            params.append(transport_session_id)
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(scope)
+        if task is not None:
+            clauses.append("task = ?")
+            params.append(task)
+        params.append(int(limit))
+        rows = self._conn.execute(
+            f"""
+            SELECT id, created_at, scope, task, query, transport_session_id, recall_map
+            FROM recall_events
+            WHERE {' AND '.join(clauses)}
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "created_at": row["created_at"],
+                "scope": row["scope"],
+                "task": row["task"],
+                "query": row["query"],
+                "transport_session_id": row["transport_session_id"],
+                "recall_map": _json_loads(row["recall_map"], None),
+            }
+            for row in rows
+        ]
 
     def _apply_recall_fingerprint_delivery(
         self,
@@ -1840,6 +1966,94 @@ class MemoryStore:
             params,
         ).fetchall()
         return [(_node_from_row(row), float(row["score"])) for row in rows]
+
+    def term_document_frequencies(self, terms: Sequence[str]) -> dict[str, int]:
+        """Document frequency per term, read from the ``nodes_fts_vocab`` index.
+
+        Returns ``{term: number of indexed documents whose content contains
+        the term}``, keyed by the terms exactly as given (duplicate inputs
+        collapse into one key). A term the index has never seen maps to 0.
+
+        Normalization contract: every input term is folded by the *same*
+        ``unicode61`` tokenizer that indexes ``nodes_fts`` — Unicode case
+        folding plus diacritic removal on Latin script characters — via the
+        scratch TEMP tables in ``_FTS_TERM_TOKENIZER_SQL``, so any casing or
+        accenting of a word matches the index by construction ("Café", "CAFE"
+        and "cafe" all count the same documents) and callers extracting
+        candidate terms from raw text get identical folding without
+        reimplementing it. An input that folds to anything other than exactly
+        one token — an empty or punctuation-only string, a multi-word phrase,
+        a separator-joined compound like ``recall_map`` — maps to 0; split
+        such inputs into single words before calling.
+
+        Counts cover the whole FTS index, which includes soft-deleted
+        (``decayed = 1``) nodes: soft deletion touches no FTS-synced column,
+        so the row stays indexed — the same corpus ``bm25()`` ranks over in
+        :meth:`search_content`. Cost per call: one TEMP-table round trip for
+        the fold plus one term-seek SELECT per distinct token (the fts5vocab
+        equality plan); no corpus scan.
+        """
+
+        result: dict[str, int] = {str(term): 0 for term in terms}
+        if not result:
+            return result
+        folded = self._fold_fts_terms(list(result))
+        token_frequency: dict[str, int] = {}
+        for term, token in folded.items():
+            if token is None:
+                continue
+            frequency = token_frequency.get(token)
+            if frequency is None:
+                row = self._conn.execute(
+                    "SELECT doc FROM nodes_fts_vocab WHERE term = ?", (token,)
+                ).fetchone()
+                frequency = int(row["doc"]) if row is not None else 0
+                token_frequency[token] = frequency
+            result[term] = frequency
+        return result
+
+    def fts_document_count(self) -> int:
+        """Total number of documents in the ``nodes_fts`` index (c-TF-IDF ``N``).
+
+        Counted from the ``nodes_fts_docsize`` shadow table — one small row
+        per indexed document, maintained by FTS5 because ``nodes_fts`` keeps
+        the default ``columnsize=1`` — so this reads a handful of pages where
+        ``COUNT(*)`` over ``nodes_fts`` itself would walk every content-bearing
+        row. Includes soft-deleted (decayed) nodes, matching the corpus
+        :meth:`term_document_frequencies` counts over.
+        """
+
+        row = self._conn.execute("SELECT COUNT(*) FROM nodes_fts_docsize").fetchone()
+        return int(row[0])
+
+    def _fold_fts_terms(self, terms: Sequence[str]) -> dict[str, str | None]:
+        """Fold each unique term to its single ``unicode61`` token, else None.
+
+        None marks a term the DF contract sends to 0: it folded to zero
+        tokens or to several. ``terms`` must be unique (the callers pass dict
+        keys); rowids attribute each token instance back to its input.
+        """
+
+        if not self._fts_term_tokenizer_ready:
+            for statement in _FTS_TERM_TOKENIZER_SQL:
+                self._conn.execute(statement)
+            self._fts_term_tokenizer_ready = True
+        with self._conn:
+            self._conn.execute("DELETE FROM temp.fts_term_tokenizer")
+            self._conn.executemany(
+                "INSERT INTO temp.fts_term_tokenizer(rowid, term) VALUES (?, ?)",
+                list(enumerate(terms)),
+            )
+            instances: dict[int, list[str]] = {}
+            for row in self._conn.execute(
+                "SELECT doc, term FROM temp.fts_term_tokenizer_instances"
+            ):
+                instances.setdefault(int(row["doc"]), []).append(str(row["term"]))
+        folded: dict[str, str | None] = {}
+        for index, term in enumerate(terms):
+            tokens = instances.get(index, [])
+            folded[term] = tokens[0] if len(tokens) == 1 else None
+        return folded
 
     def iter_embedding_rows(
         self,
@@ -3146,6 +3360,7 @@ class MemoryStore:
             self._migrate_pre_v5_schema()
             self._migrate_pre_v6_schema()
             self._migrate_pre_v7_schema()
+            self._migrate_recall_map_column()
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -3214,6 +3429,20 @@ class MemoryStore:
                     VALUES (new.rowid, new.id, new.content, new.level, new.scope);
                 END;
 
+                -- Document-frequency reader over the index the triggers above
+                -- maintain, for c-TF-IDF labeling (term_document_frequencies
+                -- and fts_document_count). 'row' type: one row per term with
+                -- doc = how many indexed documents contain it; only `content`
+                -- contributes tokens, the UNINDEXED columns none. fts5vocab
+                -- stores nothing — it is a stateless view of the FTS index —
+                -- so this CREATE on every open *is* the whole migration for
+                -- pre-existing databases (the _RECALL_ATTESTATION_SCHEMA_SQL
+                -- rationale), there is no data shape a SCHEMA_VERSION bump
+                -- could protect, and the statement is additive: no existing
+                -- table's DDL changes by a byte.
+                CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts_vocab
+                USING fts5vocab('nodes_fts', 'row');
+
                 CREATE TABLE IF NOT EXISTS connections (
                     id TEXT PRIMARY KEY,
                     source_id TEXT NOT NULL REFERENCES nodes(id),
@@ -3252,6 +3481,18 @@ class MemoryStore:
                     UNIQUE(node_id, chunk_index)
                 );
 
+                -- `recall_map` is the recall map served with this delivery,
+                -- verbatim (compact JSON: cluster labels, counts, medoid node
+                -- ids, ask hints), or NULL when no map was built: what the
+                -- agent was actually shown, recorded at delivery time so a
+                -- later pass can ask whether the next recall followed one of
+                -- its clusters. It is last in DDL order because
+                -- `_migrate_recall_map_column` appends it with ALTER TABLE,
+                -- and a migrated file and a fresh one must end up with the
+                -- same column order. Its comment lives out here rather than
+                -- beside the column: SQLite reconstructs this DDL text on
+                -- ALTER TABLE ... DROP COLUMN, and a comment attached to a
+                -- dropped column leaves the stored statement unparseable.
                 CREATE TABLE IF NOT EXISTS recall_events (
                     id TEXT PRIMARY KEY,
                     query TEXT NOT NULL,
@@ -3271,7 +3512,8 @@ class MemoryStore:
                     feedback_applied INTEGER NOT NULL DEFAULT 0 CHECK (feedback_applied IN (0, 1)),
                     feedback_trace_id TEXT REFERENCES nodes(id),
                     feedback_applied_at TEXT,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    recall_map TEXT
                 );
 
                 -- Per-fingerprint recall-signal accounting (schema v5):
@@ -3557,6 +3799,37 @@ class MemoryStore:
                     f"ALTER TABLE {QUERY_ANCHOR_EDGE_TABLE} "
                     f"ADD COLUMN {name} {declaration}"
                 )
+
+    def _migrate_recall_map_column(self) -> None:
+        """Add ``recall_events.recall_map`` to databases created without it.
+
+        Self-guarding and idempotent, in the shape of
+        :meth:`_migrate_pre_v4_schema` and :meth:`_migrate_pre_v5_schema`:
+        probe ``sqlite_master``, read ``PRAGMA table_info``, ``ALTER TABLE ...
+        ADD COLUMN`` only what is missing. Reopening a migrated file is a no-op
+        and the column keeps whatever it holds.
+
+        No ``SCHEMA_VERSION`` bump goes with it, and not for want of one: every
+        ``_migrate_*`` method here runs unconditionally on *every* open and
+        decides for itself, so the stamped version gates nothing and a bump
+        would protect no data shape. The change is additive — one nullable
+        column on one table, no existing column's DDL touched — so a database
+        opened by an older build simply carries a column that build never
+        reads. The naming break with the ``_migrate_pre_vN_schema`` siblings is
+        deliberate: this migration belongs to no version boundary.
+        """
+
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='recall_events'"
+        ).fetchone()
+        if row is None:
+            return
+        columns = {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(recall_events)").fetchall()
+        }
+        if "recall_map" not in columns:
+            self._conn.execute("ALTER TABLE recall_events ADD COLUMN recall_map TEXT")
 
     def _create_legacy_embedding_index(self) -> None:
         """Create the pre-chunk vector index, but only while its column exists."""
@@ -3844,6 +4117,19 @@ def _prefix_upper_bound(prefix: str) -> str | None:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def _encode_recall_map(payload: Mapping[str, Any] | None) -> str | None:
+    """Compact JSON for ``recall_events.recall_map``; nothing served stays NULL.
+
+    An empty map and no map are the same fact — no clusters were shown — and
+    both must read as NULL, so ``recall_map IS NOT NULL`` means "a map was
+    delivered" for every consumer of :meth:`MemoryStore.recent_recall_map_history`.
+    """
+
+    if not payload:
+        return None
+    return _json_dumps(dict(payload))
 
 
 def _json_loads(value: str | None, default: Any) -> Any:
