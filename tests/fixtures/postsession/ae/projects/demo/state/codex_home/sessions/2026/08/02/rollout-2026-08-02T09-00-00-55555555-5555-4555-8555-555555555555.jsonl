@@ -1,0 +1,3 @@
+{"timestamp": "2026-08-02T09:00:00.000Z", "type": "session_meta", "payload": {"session_id": "55555555-5555-4555-8555-555555555555", "cwd": "/home/user/p/demo/.worktrees/_node_exec_demo", "originator": "ae", "git": {"branch": "node-branch", "commit_hash": "fedcba9876543210"}}}
+{"timestamp": "2026-08-02T09:00:01.000Z", "type": "event_msg", "payload": {"type": "user_message", "message": "REDACTED-AE-NODE-PROMPT"}}
+{"timestamp": "2026-08-02T09:00:02.000Z", "type": "event_msg", "payload": {"type": "agent_message", "message": "REDACTED-AE-NODE-ANSWER"}}

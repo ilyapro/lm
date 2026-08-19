@@ -1,0 +1,417 @@
+{
+  "arms": {
+    "counterfactual_faithful": {
+      "coherence": {
+        "after_reinsert": {
+          "foreign_key_violations_introduced": 0,
+          "fts_integrity_checked": true,
+          "nodes": 16761,
+          "nodes_fts": 16761,
+          "orphan_chunk_rows": 0,
+          "orphan_fts_rows": 0,
+          "preexisting_foreign_key_violations": 35,
+          "stage": "after_reinsert"
+        },
+        "after_remove": {
+          "foreign_key_violations_introduced": 0,
+          "fts_integrity_checked": true,
+          "nodes": 15812,
+          "nodes_fts": 15812,
+          "orphan_chunk_rows": 0,
+          "orphan_fts_rows": 0,
+          "preexisting_foreign_key_violations": 35,
+          "stage": "after_remove"
+        },
+        "before": {
+          "foreign_key_violations_introduced": 0,
+          "fts_integrity_checked": true,
+          "nodes": 16761,
+          "nodes_fts": 16761,
+          "orphan_chunk_rows": 0,
+          "orphan_fts_rows": 0,
+          "preexisting_foreign_key_violations": 35,
+          "stage": "before"
+        }
+      },
+      "cohort_absent_after_remove": {
+        "connections": 0,
+        "node_chunk_embeddings": 0,
+        "nodes": 0,
+        "nodes_fts": 0,
+        "query_anchor_edges": 0,
+        "recall_events_feedback_trace_id": 0
+      },
+      "consumed_later": 110,
+      "consumed_within_7d": 110,
+      "grounded": {
+        "closed_event_share": 0.1933,
+        "consumed_later": 13,
+        "consumed_within_7d": 13,
+        "consuming_events": 538,
+        "consuming_events_closed_by_trace": 104,
+        "denominator": "nodes_with_closed_consumer",
+        "grounded_consuming_events": 18,
+        "min_containment": 0.25,
+        "nodes_with_closed_consumer": 88,
+        "rate": 0.1477,
+        "rate_over_cohort": 0.0137,
+        "rate_pct": 14.8,
+        "within_7d_rate": 0.1477,
+        "within_days": 7
+      },
+      "grounding_diagnostics": {
+        "corpus_events": 104,
+        "corpus_idf_agreement": 0.973978,
+        "graded_results": 807,
+        "grounded_results": 76,
+        "grounded_share": 0.094176,
+        "min_containment": 0.25
+      },
+      "nodes": 949,
+      "rate": 0.1159,
+      "rate_pct": 11.6,
+      "replay": {
+        "events": 1012,
+        "fidelity": {
+          "events": 1012,
+          "recorded_delivered": 8397,
+          "replayed_delivered": 8381,
+          "reproduced": 5109,
+          "reproduced_share_of_recorded": 0.6084,
+          "reproduced_share_of_replayed": 0.6096
+        },
+        "requests": 1012,
+        "seconds": 119.7,
+        "seconds_per_request": 0.118
+      },
+      "round_trip": {
+        "mismatched": 0,
+        "nodes_compared": 949
+      },
+      "surgery": {
+        "anchor_edge_rows": 83,
+        "chunk_rows": 1928,
+        "closed_event_refs": 261,
+        "collateral_decay_repaired": 0,
+        "connection_rows": 9212,
+        "dedup_connections_repaired": 0,
+        "nodes": 949,
+        "reinsert_mode": "faithful"
+      },
+      "within_7d_rate": 0.1159,
+      "within_days": 7
+    },
+    "counterfactual_fresh": {
+      "coherence": {
+        "after_reinsert": {
+          "foreign_key_violations_introduced": 0,
+          "fts_integrity_checked": true,
+          "nodes": 16761,
+          "nodes_fts": 16761,
+          "orphan_chunk_rows": 0,
+          "orphan_fts_rows": 0,
+          "preexisting_foreign_key_violations": 35,
+          "stage": "after_reinsert"
+        },
+        "after_remove": {
+          "foreign_key_violations_introduced": 0,
+          "fts_integrity_checked": true,
+          "nodes": 15812,
+          "nodes_fts": 15812,
+          "orphan_chunk_rows": 0,
+          "orphan_fts_rows": 0,
+          "preexisting_foreign_key_violations": 35,
+          "stage": "after_remove"
+        },
+        "before": {
+          "foreign_key_violations_introduced": 0,
+          "fts_integrity_checked": true,
+          "nodes": 16761,
+          "nodes_fts": 16761,
+          "orphan_chunk_rows": 0,
+          "orphan_fts_rows": 0,
+          "preexisting_foreign_key_violations": 35,
+          "stage": "before"
+        }
+      },
+      "cohort_absent_after_remove": {
+        "connections": 0,
+        "node_chunk_embeddings": 0,
+        "nodes": 0,
+        "nodes_fts": 0,
+        "query_anchor_edges": 0,
+        "recall_events_feedback_trace_id": 0
+      },
+      "consumed_later": 101,
+      "consumed_within_7d": 101,
+      "grounded": {
+        "closed_event_share": 0.1744,
+        "consumed_later": 15,
+        "consumed_within_7d": 15,
+        "consuming_events": 281,
+        "consuming_events_closed_by_trace": 49,
+        "denominator": "nodes_with_closed_consumer",
+        "grounded_consuming_events": 10,
+        "min_containment": 0.25,
+        "nodes_with_closed_consumer": 68,
+        "rate": 0.2206,
+        "rate_over_cohort": 0.0158,
+        "rate_pct": 22.1,
+        "within_7d_rate": 0.2206,
+        "within_days": 7
+      },
+      "grounding_diagnostics": {
+        "corpus_events": 49,
+        "corpus_idf_agreement": 0.971503,
+        "graded_results": 386,
+        "grounded_results": 52,
+        "grounded_share": 0.134715,
+        "min_containment": 0.25
+      },
+      "nodes": 949,
+      "rate": 0.1064,
+      "rate_pct": 10.6,
+      "replay": {
+        "events": 1012,
+        "fidelity": {
+          "events": 1012,
+          "recorded_delivered": 8397,
+          "replayed_delivered": 8381,
+          "reproduced": 4786,
+          "reproduced_share_of_recorded": 0.57,
+          "reproduced_share_of_replayed": 0.5711
+        },
+        "requests": 1012,
+        "seconds": 104.0,
+        "seconds_per_request": 0.103
+      },
+      "round_trip": {
+        "mismatched": null,
+        "nodes_compared": 949,
+        "skipped": "fresh mode deliberately drops history"
+      },
+      "surgery": {
+        "anchor_edge_rows": 83,
+        "chunk_rows": 1928,
+        "closed_event_refs": 261,
+        "collateral_decay_repaired": 0,
+        "connection_rows": 9212,
+        "dedup_connections_repaired": 0,
+        "nodes": 949,
+        "reinsert_mode": "fresh"
+      },
+      "within_7d_rate": 0.1064,
+      "within_days": 7
+    },
+    "retrospective": {
+      "consumed_later": 125,
+      "consumed_within_7d": 125,
+      "grounded": {
+        "closed_event_share": 0.4346,
+        "consumed_later": 25,
+        "consumed_within_7d": 25,
+        "consuming_events": 237,
+        "consuming_events_closed_by_trace": 103,
+        "denominator": "nodes_with_closed_consumer",
+        "grounded_consuming_events": 19,
+        "min_containment": 0.25,
+        "nodes_with_closed_consumer": 105,
+        "rate": 0.2381,
+        "rate_over_cohort": 0.0263,
+        "rate_pct": 23.8,
+        "within_7d_rate": 0.2381,
+        "within_days": 7
+      },
+      "grounding_diagnostics": {
+        "corpus_events": 103,
+        "corpus_idf_agreement": 0.971759,
+        "graded_results": 779,
+        "grounded_results": 60,
+        "grounded_share": 0.077022,
+        "min_containment": 0.25
+      },
+      "nodes": 949,
+      "rate": 0.1317,
+      "rate_pct": 13.2,
+      "within_7d_rate": 0.1317,
+      "within_days": 7
+    },
+    "retrospective_all_events": {
+      "consumed_later": 415,
+      "consumed_within_7d": 415,
+      "grounded": {
+        "closed_event_share": 0.2528,
+        "consumed_later": 61,
+        "consumed_within_7d": 61,
+        "consuming_events": 1159,
+        "consuming_events_closed_by_trace": 293,
+        "denominator": "nodes_with_closed_consumer",
+        "grounded_consuming_events": 60,
+        "min_containment": 0.25,
+        "nodes_with_closed_consumer": 250,
+        "rate": 0.244,
+        "rate_over_cohort": 0.0643,
+        "rate_pct": 24.4,
+        "within_7d_rate": 0.244,
+        "within_days": 7
+      },
+      "grounding_diagnostics": {
+        "corpus_events": 293,
+        "corpus_idf_agreement": 0.980633,
+        "graded_results": 2685,
+        "grounded_results": 116,
+        "grounded_share": 0.043203,
+        "min_containment": 0.25
+      },
+      "nodes": 949,
+      "rate": 0.4373,
+      "rate_pct": 43.7,
+      "within_7d_rate": 0.4373,
+      "within_days": 7
+    }
+  },
+  "diagnostics": {
+    "alternate_replay": {
+      "agreement": {
+        "both": 272,
+        "cohort_nodes": 949,
+        "counterfactual_consumed": 292,
+        "counterfactual_only": 20,
+        "jaccard": 0.6253,
+        "precision_vs_retrospective": 0.9315,
+        "recall_of_retrospective": 0.6554,
+        "retrospective_consumed": 415,
+        "retrospective_only": 143
+      },
+      "counterfactual_consumed_later": 292,
+      "counterfactual_rate": 0.3077,
+      "events_replayed": 2752,
+      "gap": 0.1296,
+      "grounded": {
+        "counterfactual_denominator": 183,
+        "counterfactual_rate": 0.2022,
+        "gap": 0.0418,
+        "retrospective_denominator": 250,
+        "retrospective_rate": 0.244
+      },
+      "replay_is_complete": true,
+      "replay_since": "2026-08-12T00:00:00Z",
+      "reproduced_share_of_recorded": 0.5697,
+      "requests": 2752,
+      "retrospective_consumed_later": 415,
+      "retrospective_rate": 0.4373,
+      "within_max_gap": false
+    },
+    "history_reset_arm": {
+      "counterfactual_rate": 0.1064,
+      "delta_vs_faithful": 0.0095,
+      "grounded_denominator": 68,
+      "grounded_rate": 0.2206,
+      "reproduced_share_of_recorded": 0.57
+    }
+  },
+  "meta": {
+    "artifact": "counterfactual_consumption",
+    "as_of": "2026-08-19T00:00:00Z",
+    "generated_at_utc": "2026-08-19T01:32:55Z",
+    "open_mode": "ro + sqlite backup api; MemoryStore only on the working copy",
+    "question": "if this cohort were written into the world again, would the recorded later queries surface it",
+    "snapshot_row_counts": {
+      "active_nodes": 12934,
+      "connections": 143573,
+      "nodes": 16761,
+      "recall_events": 54860
+    },
+    "snapshot_sha256": "fec09e672cf548f84503bf48500121e22a60af6bbc4432e70a2e98635dfcc465",
+    "source_db": null
+  },
+  "notes": [
+    "both rates use one definition, imported from postsession.usage_metric: only the delivered results differ between the arms",
+    "cutoff design: the cohort closes at replay_since, so both arms score only post-cutoff traffic and consumptions recorded before it are out of scope",
+    "a candidate cohort is written at one instant, which makes its replay complete by construction; the alternate window is the closer analogue",
+    "grounded.rate divides by nodes_with_closed_consumer per arm, never by the cohort: most recall events carry no feedback_trace_id",
+    "the replay runs on a disposable working copy; the source database is only ever opened mode=ro or through the SQLite backup API",
+    "recorded results came from older retrieval code on a smaller corpus, so a residual gap is expected; the bar is what bounds it",
+    "diagnostics.alternate_replay re-runs the protocol from 2026-08-12T00:00:00Z: gap 0.1296, within_max_gap False",
+    "that window replays traffic contemporaneous with the writes against today's corpus and ranker, reproducing 0.5697 of recorded deliveries"
+  ],
+  "protocol": {
+    "cohort_window": [
+      "2026-08-12T00:00:00Z",
+      "2026-08-15T00:00:00Z"
+    ],
+    "min_containment": 0.25,
+    "reinsert_mode": "faithful",
+    "reinsert_modes_available": [
+      "faithful",
+      "fresh"
+    ],
+    "replay_is_complete": false,
+    "replay_since": "2026-08-15T00:00:00Z",
+    "request_key": "query + requested scope + ambient context + depth + max_results",
+    "request_stats": {
+      "events": 1012,
+      "events_replayed": 1012,
+      "missing_spec": 0,
+      "requests": 1012,
+      "requests_dropped": 0,
+      "unusable_request": 0
+    },
+    "selector": {
+      "agent": null,
+      "agent_is_null": false,
+      "context_key": null,
+      "context_value": null,
+      "label": "holdout",
+      "window_end": "2026-08-15T00:00:00Z",
+      "window_start": "2026-08-12T00:00:00Z"
+    },
+    "steps": [
+      "freeze the source database with the SQLite backup API",
+      "take a disposable working copy of the frozen snapshot",
+      "remove the cohort and every row referencing it; assert coherence",
+      "re-insert through MemoryStore.create_node; assert the round trip",
+      "replay recorded requests via retrieval_harness.run_item (no logging)",
+      "measure consumption under postsession.usage_metric's definitions"
+    ],
+    "within_days": 7
+  },
+  "selfcheck": {
+    "agreement": {
+      "both": 105,
+      "cohort_nodes": 949,
+      "counterfactual_consumed": 110,
+      "counterfactual_only": 5,
+      "jaccard": 0.8077,
+      "precision_vs_retrospective": 0.9545,
+      "recall_of_retrospective": 0.84,
+      "retrospective_consumed": 125,
+      "retrospective_only": 20
+    },
+    "cohort_kind": "organic_holdout",
+    "cohort_nodes": 949,
+    "cohort_rule": "nodes.created_at in [2026-08-12,2026-08-15) UTC at as_of 2026-08-19T00:00:00Z; all levels, decayed included, no agent/context filter; disjoint from every published baseline cohort",
+    "counterfactual_consumed_later": 110,
+    "counterfactual_rate": 0.1159,
+    "gap": 0.0158,
+    "grounded": {
+      "counterfactual_consumed_later": 13,
+      "counterfactual_denominator": 88,
+      "counterfactual_rate": 0.1477,
+      "denominator": 88,
+      "denominator_basis": "nodes_with_closed_consumer",
+      "gap": 0.0904,
+      "min_containment": 0.25,
+      "retrospective_consumed_later": 25,
+      "retrospective_denominator": 105,
+      "retrospective_rate": 0.2381
+    },
+    "max_gap": 0.1,
+    "passed": true,
+    "reinsert_mode": "faithful",
+    "replay_is_complete": false,
+    "retrospective_consumed_later": 125,
+    "retrospective_rate": 0.1317,
+    "retrospective_rate_all_events": 0.4373
+  }
+}

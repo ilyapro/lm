@@ -1,0 +1,125 @@
+{
+  "schema_version": "1",
+  "metadata": {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "title": "REDACTED-DEEPSEEK-TITLE",
+    "created_at": "2026-08-04T13:00:00.000000000Z",
+    "updated_at": "2026-08-04T14:00:00.000000000Z",
+    "message_count": 8,
+    "total_tokens": 1000,
+    "model": "deepseek-v4-pro",
+    "workspace": "/home/user/p/demo",
+    "mode": "agent",
+    "cost": {
+      "session_cost_usd": 0.0
+    }
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "REDACTED-DEEPSEEK-PROMPT"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_d0",
+          "name": "mcp__living-memory__memory_recall",
+          "input": {
+            "query": "REDACTED-DEEPSEEK-QUERY",
+            "scope": "project:demo",
+            "max_results": 5
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_d0",
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"recall_event_id\": \"01EEEEEEEEEEEEEEEEEEEEEEE1\", \"query\": \"REDACTED-DEEPSEEK-QUERY\", \"scope\": \"project:demo\", \"count\": 1, \"results\": [{\"node\": {\"id\": \"01ND0EEEEEEEEEEEEEEEEEEEE1\", \"content\": \"REDACTED-DEEPSEEK-DELIVERED-NODE\", \"scope\": \"project:demo\", \"level\": \"trace\", \"created_at\": \"2026-08-04T13:10:00Z\"}, \"score\": 0.77, \"bm25_score\": 0.3, \"vector_score\": 0.41, \"graph_score\": 0.0, \"methods\": [\"bm25\", \"vector\"], \"delivery\": \"full\"}]}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "REDACTED-DEEPSEEK-THINKING"
+        },
+        {
+          "type": "tool_use",
+          "id": "call_d1",
+          "name": "edit_file",
+          "input": {
+            "path": "/home/user/p/demo/mod.py",
+            "search": "OLD_LINE",
+            "replace": "NEW_LINE"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_d1",
+          "content": "REDACTED-DEEPSEEK-TOOL-OUTPUT"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "REDACTED-DEEPSEEK-ANSWER"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_d2",
+          "name": "mcp__living-memory__memory_remember",
+          "input": {
+            "content": "REDACTED-DEEPSEEK-REMEMBERED-FACT",
+            "context": {
+              "scope": "project:demo",
+              "transport_session_id": "dddddddddddddddddddddddddddddddd"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_d2",
+          "content": "{\"node\": {\"id\": \"01ND0EEEEEEEEEEEEEEEEEEEE9\", \"level\": \"trace\", \"scope\": \"project:demo\", \"created_at\": \"2026-08-04T13:50:00Z\"}, \"implicit_feedback\": {\"recall_event_ids\": [\"01EEEEEEEEEEEEEEEEEEEEEEE1\"], \"linked_node_ids\": [\"01ND0EEEEEEEEEEEEEEEEEEEE1\"], \"feedback_applied\": true}}"
+        }
+      ]
+    }
+  ],
+  "system_prompt": "REDACTED-DEEPSEEK-SYSTEM-PROMPT",
+  "artifacts": []
+}

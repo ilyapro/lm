@@ -1,6 +1,6 @@
 # Living Memory MCP Interface
 
-The MCP server exposes four core operations through nine tools, four
+The MCP server exposes four core operations through ten tools, four
 browsable resources, and one prompt. Create it in Python with
 `living_memory.server:create_mcp_server`, run it from the repository with
 `npm run server -- ./living_memory.sqlite3`, or run
@@ -469,6 +469,93 @@ This refuted class-blind gate is distinct from the class-agnostic
 caller class the same way, preserves direct access through `memory_lookup`,
 passed its generalization gates, and remains enabled by default; its
 documented rollback valves do not opt the repeat path in.
+
+### `memory_attest`
+
+Core operation: retrieve (retroactive grounded credit). The offline write path
+for a finished session whose recall was never closed by an in-session
+`memory_remember`. Full rationale, closure semantics and the field measurement
+are in [docs/post-session-attestation.md](post-session-attestation.md).
+
+Input:
+
+```json
+{
+  "recall_event_id": "recall event id the server returned during the session",
+  "evidence": [
+    "@@ -1,4 +1,6 @@\n-old line\n+new line",
+    "$ python3 -m pytest -q\n1312 passed"
+  ],
+  "context": { "agent": "extractor", "source_session_key": "claude:<uuid>" },
+  "trace_id": "optional node id to close the event against"
+}
+```
+
+**The client submits evidence; the server decides.** The server loads *that
+event's own* result nodes from its own database and recomputes containment with
+`grounding.ground_results(..., min_containment=RECALL_CREDIT_MIN_CONTAINMENT)` —
+the same 0.25 gate the live credit path uses. A `grounded`, `containment` or
+`useful` verdict asserted anywhere in the payload is never read. Grounding runs
+**per evidence item**, and each node keeps its maximum across items.
+
+Evidence must be a list of strings, each lifted verbatim from the session's own
+artifacts (diff hunks, command output). Bounds, all enforced rather than
+applied — an over-cap submission is rejected, never silently truncated:
+
+| Cap | Value | Meaning |
+| --- | ---: | --- |
+| `EVIDENCE_MAX_ITEMS` | 32 | items per attestation |
+| `EVIDENCE_MAX_ITEM_CHARS` | 600 | characters per canonical item |
+| `EVIDENCE_MAX_TOTAL_CHARS` | 19200 | characters across all items |
+
+Items are canonicalized (CRLF normalized, trailing whitespace stripped, leading
+and trailing blank lines removed) and joined with `\x1e` to form
+`evidence_sha256`. `(recall_event_id, evidence_sha256)` is the idempotency key.
+
+Output:
+
+```json
+{
+  "attestation_id": "ledger row id",
+  "recall_event_id": "the event graded",
+  "scope": "scope of the event, which is the scope credit lands under",
+  "evidence_sha256": "digest over the canonical items",
+  "evidence_items": 12,
+  "evidence_chars": 6104,
+  "min_containment": 0.25,
+  "results": [
+    { "node_id": "…", "rank": 0, "containment": 0.41,
+      "grounded": true, "evidence_index": 3 }
+  ],
+  "grounded_node_ids": ["…"],
+  "credited": true,
+  "anchor_ids": ["query anchor reinforced for this event's question"],
+  "closed": false,
+  "closed_by_attestation": false,
+  "feedback_trace_id": null,
+  "replay": false
+}
+```
+
+* `results` carries one entry per result the server could resolve, with the
+  containment it recomputed and the `evidence_index` of the item that produced
+  it. A result whose node has since decayed or been forgotten is skipped.
+* `credited` means grounded results earned `feedback.apply_retrieval_feedback`
+  under the event's scope with the live `max(0.2, 1 / (rank + 1))` rank decay.
+  `anchor_ids` is written over the grounded subset only.
+* `closed` / `closed_by_attestation` / `feedback_trace_id` describe event
+  closure. Without `trace_id` credit is applied and the event stays open, which
+  keeps it available to the live pending-consumption path on purpose. With a
+  `trace_id` that resolves to a real node the event is closed exactly once;
+  an unresolvable `trace_id` is an error, not a downgrade to credit-only.
+* `replay: true` means this `(recall_event_id, evidence_sha256)` was already
+  recorded: the stored verdict is returned verbatim and **nothing is applied**.
+  Every other field then describes the recorded attestation, not this call.
+
+`memory_attest` is deliberately not one of the four protocol-bearing tools
+`scripts/check_deployed_protocol.py` compares byte-for-byte: it is an offline
+extractor's tool, not part of the in-session recall/remember/teach/consolidate
+discipline every connected client pays for on every request.
 
 ### `memory_lookup`
 

@@ -40,6 +40,7 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
         "memory_teach",
         "memory_connect",
         "memory_recall",
+        "memory_attest",
         "memory_lookup",
         "memory_consolidate",
         "memory_forget",
@@ -103,6 +104,27 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
         )
     )
     assert recalled["count"] >= 1
+
+    # Attest that delivery through the real FastMCP layer: a list[str] argument
+    # has to survive the runtime's own schema validation, and the event has to
+    # be gradable before memory_teach below closes it.
+    attestation = {
+        "recall_event_id": recalled["recall_event_id"],
+        "evidence": [
+            "diff --git a/runtime.py b/runtime.py\n"
+            "+# Confirmed against the recalled note: the real FastMCP runtime smoke\n"
+            "+# effect only follows the runtime smoke cause once the retry waits.\n"
+        ],
+        "context": {"agent": "extractor", "source_session_key": "runtime-smoke"},
+    }
+    attested = _structured(await mcp.call_tool("memory_attest", attestation))
+    assert attested["replay"] is False
+    assert attested["grounded_node_ids"], "the evidence reuses the recalled content"
+    assert attested["min_containment"] == 0.25
+    assert attested["closed"] is False, "no trace_id was passed"
+    replayed = _structured(await mcp.call_tool("memory_attest", attestation))
+    assert replayed["replay"] is True
+    assert replayed["attestation_id"] == attested["attestation_id"]
 
     looked_up = _structured(
         await mcp.call_tool(

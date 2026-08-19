@@ -11,10 +11,11 @@ The server is a Python package under `src/living_memory`.
 
 | Layer | Modules | Responsibility |
 | --- | --- | --- |
-| MCP surface | `server.py`, `delivery.py` | Registers the nine tools, four resources, and retrieval-context prompt; stamps transport-derived correlation identity into recall/remember/teach; shapes recall responses (session/twin dedup, snippets, context compaction) before serialization. |
+| MCP surface | `server.py`, `delivery.py` | Registers the ten tools, four resources, and retrieval-context prompt; stamps transport-derived correlation identity into recall/remember/teach; shapes recall responses (session/twin dedup, snippets, context compaction) before serialization. |
 | Storage | `storage.py`, `models.py` | Owns SQLite schema, uniform node CRUD, connections, FTS5, and retrieval weights. |
 | Retrieval | `retrieval.py`, `scope.py`, `embeddings.py`, `feedback.py` | Resolves scope, searches FTS5, computes multilingual embeddings, traverses graph edges, reranks, logs access, stores recall events, and tunes weights. |
 | Learning loop | `consolidation.py`, `decay.py`, `temporal.py` | Clusters similar traces into concepts, computes consensus and temporal hints, updates edge weights, records corrections, and soft-deletes expired or superseded records. |
+| Offline credit | `attestation.py`, `postsession/` | Grades a finished session's recall events against evidence lifted from that session's own artifacts and applies the credit the live loop missed. See [post-session-attestation.md](post-session-attestation.md). |
 | Read models | `resources.py`, `prompts.py` | Produces browsable resource payloads and formatted active memory context. |
 | Configuration | `config.py` | Loads TOML settings and supplies defaults. |
 
@@ -69,7 +70,28 @@ The server is a Python package under `src/living_memory`.
    (corrections) is exempt and always applies at full strength.
 7. `memory_teach` appends a corrective trace and creates a `supersedes` edge
    from the correction to the original.
-8. `memory_consolidate` clusters recent active traces, creates or updates
+8. `memory_attest` closes the same loop for events that step 6 never reached —
+   ~80% of them, because recall is a session-opening ritual and
+   `memory_remember` a session-closing one. An offline extractor submits the
+   `recall_event_id` plus evidence lifted verbatim from that session's
+   artifacts (diff hunks, command output — never agent prose, never a
+   `memory_*` payload); the server loads *that event's own* result nodes from
+   its own database and recomputes containment with the same 0.25 gate the
+   live path uses, so a verdict asserted by the client is never read. Grounded
+   results earn the same `feedback.apply_retrieval_feedback` call with the same
+   `max(0.2, 1 / (rank + 1))` decay under the *event's* scope, plus anchor
+   reinforcement over the grounded subset only. Idempotent per
+   `(recall_event_id, evidence_sha256)`. Credit does not close the event unless
+   a resolving `trace_id` is passed, so an attested event stays available to
+   step 6.
+   `attestation.py` is the **only** entry point for that offline credit, and it
+   deliberately funnels through the running server rather than opening the
+   database itself: `MemoryStore.__init__` (storage.py) migrates and writes
+   whatever file it opens, and the live server holds that file, so an offline
+   process opening `~/.local/share/living-memory/global.sqlite3` directly is a
+   schema write behind the server's back — not a read. Every offline writer
+   goes over MCP.
+9. `memory_consolidate` clusters recent active traces, creates or updates
    concept nodes, computes consensus confidence and weekly temporal hints,
    refreshes related-edge weights, and applies decay. Concept content is a
    deterministic extractive digest — the strongest source's lead sentences
@@ -84,8 +106,8 @@ The server is a Python package under `src/living_memory`.
    materializes one `level='schema'` node per group of three or more
    procedural traces, storing the normalized trigger and ordered procedure
    steps in `context`.
-9. `memory_status`, resources, and the retrieval-context prompt read the same
-   store without requiring external services.
+10. `memory_status`, resources, and the retrieval-context prompt read the same
+    store without requiring external services.
 
 ## SQLite Schema
 
@@ -178,6 +200,20 @@ written by default-on accounting rather than by the gate, it is the measured
 signal the refutation rests on, and `scripts/ap_baseline.py` reads it to
 reproduce that result. Do not drop it as gate leftovers.
 
+### `recall_attestations`
+
+Idempotency ledger for the offline credit path (schema v8, strictly additive —
+one new table touching no existing one). One row is one *graded submission* of
+session-artifact evidence against one recall event: the digest, the item and
+character counts, the containment the server recomputed per result, the grounded
+node ids, the anchors reinforced, and whether the event was closed.
+
+`UNIQUE(recall_event_id, evidence_sha256)` is the whole point. The row is
+claimed *before* any credit is applied, so a crash mid-apply leaves the key
+taken and the retry replays instead of double-crediting. See
+[post-session-attestation.md](post-session-attestation.md) for what that
+idempotency does and does not cover.
+
 ### `nodes_fts`
 
 SQLite FTS5 virtual table that indexes node content for BM25 retrieval.
@@ -265,4 +301,4 @@ npm run server -- --config ./memory.toml --transport stdio
 `.cache/python-deps`, then delegates to the Python test suite through
 `scripts/check.sh` and `scripts/test.sh`. This check path includes a real
 FastMCP server smoke test that verifies the documented runtime can instantiate
-the server surface and exercise the nine registered tools locally.
+the server surface and exercise the ten registered tools locally.

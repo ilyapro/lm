@@ -41,3 +41,25 @@ build/
 *.egg-info/
 *.sqlite3
 .claude/
+
+# Post-session transcript fixtures mirror real CLI home directories, so their
+# paths are made of dot-directories: `.claude/`, `.codex/`, `.gigacode/`,
+# `.deepseek/`. The `.claude/` rule above is unanchored, so it also matched
+# `tests/fixtures/postsession/home/.claude/`, and git never lists ignored
+# files -- `git status` stayed silent while the Claude adapter's only fixtures
+# were missing from the commit and the suite went green against the working
+# tree alone. Re-include the whole fixture root rather than one dot-directory,
+# so a later rule naming any of the others cannot re-open the same hole. The
+# directory has to be re-included *before* its contents: a file under an
+# excluded directory cannot be negated, because git never descends into it.
+!tests/fixtures/postsession/
+!tests/fixtures/postsession/**
+
+# Post-session corpus index: one compact row per accumulated transcript. It is
+# thousands of absolute paths under the user's home directory and is rebuilt
+# from disk by `scripts/postsession_corpus.py --build`, so tracking it would
+# add ~4000 churning lines for no evidence. The seal beside it --
+# artifacts/post-session/corpus.json, which is tracked -- carries
+# `index_sha256` over exactly these bytes, so a rebuilt index still has to
+# prove it is the one the manifest sealed.
+artifacts/post-session/corpus-index.jsonl

@@ -1,0 +1,402 @@
+{
+  "artifact": "usage-baseline",
+  "cohort_definition": {
+    "include_decayed": true,
+    "levels": "all",
+    "min_containment": 0.25,
+    "null_agent_tokens": [
+      "NULL",
+      "unattributed"
+    ],
+    "window_bounds": "half-open [start, end)",
+    "within_days": 7
+  },
+  "consumed_rule": "node.id appears in json.loads(recall_events.results)[].node_id of an event whose created_at is strictly greater than the node's created_at",
+  "grounded_rule": "the consuming event was closed by a memory_remember trace (feedback_trace_id not null) whose content grounds the node at IDF containment >= min_containment",
+  "notes": [
+    "cohort is every nodes row in the window, all levels, decayed included; level='trace' only does not reproduce the published baseline",
+    "grounded.rate divides by nodes_with_closed_consumer, not by the cohort: most recall events carry no feedback_trace_id",
+    "dividing grounded consumption by the whole cohort understates it several-fold; that figure is published as grounded.rate_over_cohort",
+    "consumed_later is a lower bound on usefulness: a node never delivered again may simply never have been queried for",
+    "this artifact republishes finished-tool aggregates; it re-implements no measurement",
+    "no node content and no verbatim query appears here, by construction and by check_privacy",
+    "the absolute floor is protocol-scoped: 0.15 was calibrated on the July retrospective rate 0.4942 and is not meaningful under the counterfactual replay protocol",
+    "the same 949-node organic holdout scores 0.1317 under replay set >= 2026-08-15 and 0.4373 under >= 2026-08-12, a 3.32x swing from replay-set choice alone",
+    "under the pinned >= 2026-08-15 arm a 0.15 floor would reject the known-good organic control itself (counterfactual 0.1159), so the bar as first published could only return FAIL",
+    "the bar was amended before any extracted cohort existed and before any code read pre_registered_bar, so it is still pre-registration"
+  ],
+  "per_agent": {
+    "2026-07-01..2026-08-01": {
+      "ae": {
+        "consumed_later": 62,
+        "consumed_within_7d": 58,
+        "grounded": {
+          "consumed_later": 29,
+          "consumed_within_7d": 28,
+          "consuming_events": 689,
+          "consuming_events_closed_by_trace": 231,
+          "denominator": 48,
+          "denominator_basis": "nodes_with_closed_consumer",
+          "grounded_consuming_events": 66,
+          "min_containment": 0.25,
+          "rate": 0.6042,
+          "rate_over_cohort": 0.2929,
+          "rate_pct": 60.4,
+          "within_7d_rate": 0.5833
+        },
+        "nodes": 99,
+        "rate": 0.6263,
+        "rate_pct": 62.6,
+        "within_7d_rate": 0.5859,
+        "within_7d_rate_pct": 58.6,
+        "within_days": 7
+      },
+      "claude": {
+        "consumed_later": 8,
+        "consumed_within_7d": 5,
+        "grounded": {
+          "consumed_later": 2,
+          "consumed_within_7d": 2,
+          "consuming_events": 376,
+          "consuming_events_closed_by_trace": 40,
+          "denominator": 7,
+          "denominator_basis": "nodes_with_closed_consumer",
+          "grounded_consuming_events": 3,
+          "min_containment": 0.25,
+          "rate": 0.2857,
+          "rate_over_cohort": 0.0833,
+          "rate_pct": 28.6,
+          "within_7d_rate": 0.2857
+        },
+        "nodes": 24,
+        "rate": 0.3333,
+        "rate_pct": 33.3,
+        "within_7d_rate": 0.2083,
+        "within_7d_rate_pct": 20.8,
+        "within_days": 7
+      },
+      "codex": {
+        "consumed_later": 4,
+        "consumed_within_7d": 3,
+        "grounded": {
+          "consumed_later": 3,
+          "consumed_within_7d": 3,
+          "consuming_events": 157,
+          "consuming_events_closed_by_trace": 30,
+          "denominator": 3,
+          "denominator_basis": "nodes_with_closed_consumer",
+          "grounded_consuming_events": 12,
+          "min_containment": 0.25,
+          "rate": 1.0,
+          "rate_over_cohort": 0.2143,
+          "rate_pct": 100.0,
+          "within_7d_rate": 1.0
+        },
+        "nodes": 14,
+        "rate": 0.2857,
+        "rate_pct": 28.6,
+        "within_7d_rate": 0.2143,
+        "within_7d_rate_pct": 21.4,
+        "within_days": 7
+      },
+      "memory_consolidate": {
+        "consumed_later": 41,
+        "consumed_within_7d": 28,
+        "grounded": {
+          "consumed_later": 6,
+          "consumed_within_7d": 2,
+          "consuming_events": 1266,
+          "consuming_events_closed_by_trace": 254,
+          "denominator": 39,
+          "denominator_basis": "nodes_with_closed_consumer",
+          "grounded_consuming_events": 10,
+          "min_containment": 0.25,
+          "rate": 0.1538,
+          "rate_over_cohort": 0.0938,
+          "rate_pct": 15.4,
+          "within_7d_rate": 0.0513
+        },
+        "nodes": 64,
+        "rate": 0.6406,
+        "rate_pct": 64.1,
+        "within_7d_rate": 0.4375,
+        "within_7d_rate_pct": 43.8,
+        "within_days": 7
+      },
+      "unattributed": {
+        "consumed_later": 405,
+        "consumed_within_7d": 337,
+        "grounded": {
+          "consumed_later": 120,
+          "consumed_within_7d": 108,
+          "consuming_events": 2107,
+          "consuming_events_closed_by_trace": 745,
+          "denominator": 349,
+          "denominator_basis": "nodes_with_closed_consumer",
+          "grounded_consuming_events": 139,
+          "min_containment": 0.25,
+          "rate": 0.3438,
+          "rate_over_cohort": 0.1368,
+          "rate_pct": 34.4,
+          "within_7d_rate": 0.3095
+        },
+        "nodes": 877,
+        "rate": 0.4618,
+        "rate_pct": 46.2,
+        "within_7d_rate": 0.3843,
+        "within_7d_rate_pct": 38.4,
+        "within_days": 7
+      }
+    }
+  },
+  "pre_registered_bar": {
+    "absolute_floor": 0.15,
+    "absolute_floor_by_protocol": {
+      "counterfactual_post_cutoff": 0.05,
+      "retrospective_long_window": 0.15
+    },
+    "absolute_floor_deprecated": true,
+    "absolute_floor_deprecation_note": "the scalar absolute_floor is retained only as an alias of absolute_floor_by_protocol.retrospective_long_window; readers must key the floor by protocol, never read the scalar",
+    "absolute_floor_derivation": {
+      "counterfactual_post_cutoff": [
+        "0.05 is anti-degenerate only: at least one cohort node in twenty must resurface in delivered results.",
+        "It sits 2.3x below the organic control 0.1159 measured under the same protocol (self_check.primary.counterfactual_rate), so traces consumed as well as organic memory clear it.",
+        "The July constant 0.15 exceeds that same organic control and therefore cannot apply to this protocol."
+      ],
+      "retrospective_long_window": [
+        "0.15 is the original July calibration: about 0.30x the retrospective organic reference 0.4942 over 2026-07-01..2026-08-01.",
+        "It is defensible only for full-history retrospective measurement over a window of weeks, which is the protocol it was calibrated on."
+      ]
+    },
+    "absolute_floor_protocol": "retrospective_long_window",
+    "absolute_floor_role": [
+      "The absolute floor is a backstop, not the test: it exists only to stop a degenerate near-zero extracted cohort from passing on a collapsed organic reference.",
+      "It is not a quality target and carries no protocol-invariant meaning: the same 949-node organic cohort scores 0.1317 or 0.4373 depending only on which recorded traffic is replayed.",
+      "A floor above the organic control measured under the same protocol makes the gate unfalsifiable, because it can then only return FAIL."
+    ],
+    "amended_at_utc": "2026-08-19T02:10:00Z",
+    "amended_before_any_extracted_cohort_exists": true,
+    "amendment": [
+      "The first publication registered a protocol-blind scalar floor of 0.15, calibrated on the July retrospective rate 0.4942.",
+      "Under the pinned replay set >= 2026-08-15 the known-good organic holdout scores 0.1159 counterfactual and 0.1317 retrospective, so the 0.15 floor would have rejected organic-quality memory.",
+      "A gate that cannot pass a cohort consumed exactly as well as organic memory is not falsifiable; the floor is therefore keyed by protocol and the replay set is pinned to the self-validated arm.",
+      "Amended while nothing read pre_registered_bar and no extracted cohort existed, so this is pre-registration, not post-hoc relaxation."
+    ],
+    "decision_procedure": [
+      "1. Measure both cohorts under one protocol, one replay set and one --as-of; name the protocol key in the verdict.",
+      "2. If the concurrently measured organic control fails inconclusive_rule admissibility, stop: the verdict is INCONCLUSIVE, never PASS.",
+      "3. PASS requires extracted_rate >= relative_floor * organic_rate; this relative test is the primary, protocol-invariant one.",
+      "4. PASS also requires extracted_rate >= absolute_floor_by_protocol[protocol], the anti-degenerate backstop.",
+      "5. Otherwise FAIL. Report protocol, replay set, both rates and both floors next to the verdict."
+    ],
+    "decision_rule": "PASS iff the organic control is admissible AND extracted_rate >= 0.5 * organic_rate AND extracted_rate >= absolute_floor_by_protocol[protocol]; an inadmissible control gives INCONCLUSIVE, never PASS",
+    "enforced_by": "src/living_memory/postsession/runner.py (child extraction-runner), reported by scripts/postsession_field_run.py",
+    "grounded_variant_note": "the grounded variant divides by nodes_with_closed_consumer, so an extracted-vs-organic grounded comparison must compare rate to rate, never counts",
+    "implied_floor_at_reference": 0.2471,
+    "implied_floor_at_reference_protocol": "retrospective_long_window",
+    "inconclusive_rule": {
+      "measured_control_margin": [
+        "The 2026-08-19 organic control 0.1159 clears min_control_rate_by_protocol 0.1 by only 1.16x, so admissibility must be rechecked on every run and never assumed.",
+        "That control cohort holds 949 nodes, comfortably above min_control_nodes."
+      ],
+      "min_control_nodes": 100,
+      "min_control_nodes_derivation": "below 100 cohort nodes the binomial standard error at rate 0.12 is 0.033, two thirds of the 0.05 floor, so the control cannot discriminate",
+      "min_control_rate_by_protocol": {
+        "counterfactual_post_cutoff": 0.1,
+        "retrospective_long_window": 0.3
+      },
+      "min_control_rate_derivation": "admissible iff organic_rate >= 2 * absolute_floor_by_protocol[protocol], which is exactly when the relative floor 0.5 * organic_rate is the binding condition",
+      "never_pass": true,
+      "note": "INCONCLUSIVE says the harness produced no usable reference this run; it judges the control, not the extracted cohort, and must not be reported as either PASS or FAIL",
+      "trigger": "the concurrently measured organic control is itself too weak to discriminate: its rate falls below min_control_rate_by_protocol, or its cohort below min_control_nodes",
+      "verdict": "INCONCLUSIVE"
+    },
+    "organic_reference_note": "the runner must recompute the organic reference under its own protocol; this value is the 2026-08-19 measurement, not a constant",
+    "organic_reference_protocol": "retrospective_long_window",
+    "organic_reference_rate": 0.4942,
+    "organic_reference_window": "2026-07-01..2026-08-01",
+    "pinned_protocol": "counterfactual_post_cutoff",
+    "primary_comparison": "relative",
+    "protocol": "extracted and organic cohorts must be measured under the IDENTICAL protocol: same tool, same --as-of, same within_days, same min_containment, same replay set",
+    "protocols": {
+      "counterfactual_post_cutoff": [
+        "Snapshot, remove the cohort, re-insert it, then replay recorded recall queries through the current retrieval code.",
+        "Consumed means the cohort node appears in the delivered results of a replayed query.",
+        "This is the protocol an extracted cohort is actually in: written at one instant, it can only be consumed by traffic recorded later."
+      ],
+      "retrospective_long_window": [
+        "Read-only join of nodes against recorded recall_events.results over a creation window of weeks, with no replay.",
+        "Consumed means the node id appears in a recorded event created strictly later than the node.",
+        "Unavailable to a fresh extracted cohort, which has no weeks of recorded later traffic yet."
+      ]
+    },
+    "registered_at": "2026-08-19T02:05:00Z",
+    "registered_before_any_extracted_cohort_exists": true,
+    "relative_floor": 0.5,
+    "relative_floor_is_primary": true,
+    "relative_floor_note": "the 0.5x comparison against a concurrently measured organic control is the primary and protocol-invariant test: both cohorts absorb the same replay drift, so their ratio survives it",
+    "replay_set_rule": {
+      "identical_for_both_cohorts": true,
+      "predicate": "every replayed event's created_at must be strictly later than the MAXIMUM created_at in the cohort, so the replay set is strictly post-cutoff for both cohorts alike",
+      "rationale": [
+        "The pinned arm is the only one that cleared the harness's own 10-point self-validation bar: gap 0.0158 against 0.1296 for the >= 2026-08-12 arm.",
+        "It also matches the situation an extracted cohort is in: written at one instant, it can only be consumed by traffic recorded after it.",
+        "Replay-set choice alone moved the same 949-node organic cohort by 3.32x (0.1317 against 0.4373), so the set is pinned once, never chosen per run.",
+        "Comparing an extracted cohort measured under one replay set against an organic control measured under another is void, whatever the two rates are."
+      ],
+      "validated_by": "2026-08-15T00:00:00Z",
+      "validated_by_field": "$.self_check.primary.replay_since"
+    },
+    "why_pre_registered": "the bar is fixed before the extractor writes anything, so it cannot be relaxed to fit a disappointing result"
+  },
+  "provenance": {
+    "as_of": "2026-08-19T00:00:00Z",
+    "as_of_semantics": "cuts BOTH nodes and recall_events on created_at <= as_of, so the run is reproducible as the live DB keeps growing",
+    "commands": {
+      "august": [
+        "python3 scripts/trace_usage_linkage.py",
+        "--as-of 2026-08-19T00:00:00Z",
+        "--window 2026-08-01..2026-08-12",
+        "--out august.json"
+      ],
+      "counterfactual": [
+        "python3 scripts/counterfactual_consumption.py --self-validate",
+        "--out artifacts/post-session/counterfactual-selfcheck.json"
+      ],
+      "july": [
+        "python3 scripts/trace_usage_linkage.py",
+        "--as-of 2026-08-19T00:00:00Z",
+        "--window 2026-07-01..2026-08-01",
+        "--agent ae --agent memory_consolidate --agent claude",
+        "--agent codex --agent unattributed",
+        "--out july.json"
+      ],
+      "shared_db_arg": "--db ~/.local/share/living-memory/global.sqlite3"
+    },
+    "counterfactual_snapshot_row_counts": {
+      "active_nodes": 12934,
+      "connections": 143573,
+      "nodes": 16761,
+      "recall_events": 54860
+    },
+    "counterfactual_snapshot_sha256": "fec09e672cf548f84503bf48500121e22a60af6bbc4432e70a2e98635dfcc465",
+    "generated_at_utc": "2026-08-19T02:10:00Z",
+    "lm_revision": "b1d42c6",
+    "merge_rule": "windows.<W> and per_agent.<W>.<agent> copy cohorts[id=='all'|'agent=<name>'] of the matching run; self_check copies $.selfcheck and $.diagnostics.alternate_replay",
+    "never_opened_by_memorystore": true,
+    "open_mode": "ro",
+    "privacy_guard": "living_memory.postsession.usage_metric.check_privacy (SAFE_STRING ^[\\x20-\\x7e]{0,200}$) ran over this whole document before it was written",
+    "row_counts_at_as_of": {
+      "distinct_delivered_nodes": 6095,
+      "events_closed_by_trace": 9141,
+      "events_with_deliveries": 54840,
+      "nodes": 16760,
+      "recall_events": 54860
+    },
+    "source_db": "/home/sfx/.local/share/living-memory/global.sqlite3",
+    "tool_generated_at": {
+      "counterfactual_consumption": "2026-08-19T01:32:55Z",
+      "trace_usage_linkage_august": "2026-08-19T01:55:45Z",
+      "trace_usage_linkage_july": "2026-08-19T01:55:39Z"
+    }
+  },
+  "question": "what share of organically written memory was actually delivered by a LATER recall, and what bar must extracted traces clear",
+  "self_check": {
+    "alternate_replay_set": {
+      "counterfactual_rate": 0.3077,
+      "events_replayed": 2752,
+      "gap": 0.1296,
+      "replay_since": "2026-08-12T00:00:00Z",
+      "reproduced_share_of_recorded": 0.5697,
+      "retrospective_rate": 0.4373,
+      "why_published": "the verdict depends on WHICH recorded traffic is replayed; the weaker arm is published, not hidden",
+      "within_max_gap": false
+    },
+    "caveat": "only the post-cutoff arm >= 2026-08-15 clears the 10-point bar (gap 0.0158 vs 0.1296), so it is pinned; the floor is protocol-scoped since this arm puts the organic control at 0.1159, not 0.4942",
+    "cohort_kind": "organic_holdout",
+    "cohort_nodes": 949,
+    "cohort_rule": "nodes.created_at in [2026-08-12,2026-08-15) UTC at as_of 2026-08-19T00:00:00Z; all levels, decayed included, no agent/context filter; disjoint from every published baseline cohort",
+    "disjoint_from_published_baselines": true,
+    "max_gap": 0.1,
+    "passed": true,
+    "primary": {
+      "counterfactual_consumed_later": 110,
+      "counterfactual_rate": 0.1159,
+      "events_replayed": 1012,
+      "gap": 0.0158,
+      "grounded": {
+        "counterfactual_denominator": 88,
+        "counterfactual_rate": 0.1477,
+        "gap": 0.0904,
+        "min_containment": 0.25,
+        "retrospective_denominator": 105,
+        "retrospective_rate": 0.2381
+      },
+      "per_node_jaccard": 0.8077,
+      "precision_vs_retrospective": 0.9545,
+      "recall_of_retrospective": 0.84,
+      "replay_since": "2026-08-15T00:00:00Z",
+      "retrospective_consumed_later": 125,
+      "retrospective_rate": 0.1317,
+      "within_max_gap": true
+    },
+    "purpose": "the counterfactual harness must reproduce a KNOWN organic rate before it may judge extracted traces",
+    "reinsert_mode": "faithful"
+  },
+  "windows": {
+    "2026-07-01..2026-08-01": {
+      "consumed_later": 558,
+      "consumed_within_7d": 464,
+      "grounded": {
+        "consumed_later": 173,
+        "consumed_within_7d": 156,
+        "consuming_events": 3688,
+        "consuming_events_closed_by_trace": 999,
+        "denominator": 479,
+        "denominator_basis": "nodes_with_closed_consumer",
+        "grounded_consuming_events": 223,
+        "min_containment": 0.25,
+        "rate": 0.3612,
+        "rate_over_cohort": 0.1532,
+        "rate_pct": 36.1,
+        "within_7d_rate": 0.3257
+      },
+      "nodes": 1129,
+      "rate": 0.4942,
+      "rate_pct": 49.4,
+      "window_bounds": "half-open [start, end)",
+      "window_end": "2026-08-01T00:00:00Z",
+      "window_start": "2026-07-01T00:00:00Z",
+      "within_7d_rate": 0.411,
+      "within_7d_rate_pct": 41.1,
+      "within_days": 7
+    },
+    "2026-08-01..2026-08-12": {
+      "consumed_later": 245,
+      "consumed_within_7d": 228,
+      "grounded": {
+        "consumed_later": 25,
+        "consumed_within_7d": 24,
+        "consuming_events": 2397,
+        "consuming_events_closed_by_trace": 386,
+        "denominator": 192,
+        "denominator_basis": "nodes_with_closed_consumer",
+        "grounded_consuming_events": 32,
+        "min_containment": 0.25,
+        "rate": 0.1302,
+        "rate_over_cohort": 0.0425,
+        "rate_pct": 13.0,
+        "within_7d_rate": 0.125
+      },
+      "nodes": 588,
+      "rate": 0.4167,
+      "rate_pct": 41.7,
+      "window_bounds": "half-open [start, end)",
+      "window_end": "2026-08-12T00:00:00Z",
+      "window_start": "2026-08-01T00:00:00Z",
+      "within_7d_rate": 0.3878,
+      "within_7d_rate_pct": 38.8,
+      "within_days": 7
+    }
+  }
+}

@@ -35,11 +35,12 @@ from living_memory.models import (
 from living_memory.phase import PhaseManager
 from living_memory.scope import normalize_scope
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 CHUNK_EMBEDDING_TABLE = "node_chunk_embeddings"
 QUERY_ANCHOR_TABLE = "query_anchors"
 QUERY_ANCHOR_EDGE_TABLE = "query_anchor_edges"
+RECALL_ATTESTATION_TABLE = "recall_attestations"
 #: numpy dtype string for a stored chunk BLOB. Part of the read contract that
 #: the vector channel consumes: ``np.frombuffer(blob, dtype=CHUNK_EMBEDDING_DTYPE)``.
 CHUNK_EMBEDDING_DTYPE = "<f4"
@@ -137,6 +138,82 @@ _QUERY_ANCHOR_EDGE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("weight", "REAL NOT NULL DEFAULT 0.0"),
     ("hits", "INTEGER NOT NULL DEFAULT 0"),
 )
+
+#: Grounded-usage attestation ledger DDL (schema v8). Held as one constant for
+#: the same reason ``_QUERY_ANCHOR_SCHEMA_SQL`` is: whatever creates this table
+#: must create exactly one shape. Right now that is a single caller,
+#: ``_initialize_schema``, and there is deliberately **no**
+#: ``_migrate_pre_v8_schema``:
+#:
+#: ``_initialize_schema`` runs its ``CREATE TABLE IF NOT EXISTS`` script on
+#: *every* open, so a v7-era file gains ``recall_attestations`` the moment it is
+#: reopened by this build — a migration method that only ran ``CREATE TABLE IF
+#: NOT EXISTS`` would be dead code. The v6 and v7 migrations exist for the two
+#: things that script genuinely cannot do: repair an index whose partial
+#: predicate names a dropped column (v6), and ``ALTER TABLE ... ADD COLUMN`` a
+#: table that a partial earlier rollout already created short (v7). Neither
+#: applies here: ``recall_attestations`` is a brand-new table that has never
+#: shipped in any other shape, so no deployed database can carry a short
+#: version of it. If a future release adds a column, *that* release adds the
+#: ``ALTER TABLE`` guard — the ``CREATE`` half stays here, never copied.
+#: ``tests/test_usage_attestation.py`` pins the reopen behaviour by dropping the
+#: table from a live file and reopening it.
+#:
+#: Strictly additive, like v7: one new table touching no existing one, so the
+#: ``nodes``/``connections`` DDL a large live database already carries stays
+#: byte-identical.
+_RECALL_ATTESTATION_SCHEMA_SQL = """
+    -- Grounded-usage attestations (schema v8): the idempotency ledger for the
+    -- retroactive credit path (living_memory.attestation). One row is one
+    -- graded submission of session-artifact evidence against one recall event.
+    --
+    -- UNIQUE(recall_event_id, evidence_sha256) is the whole point: the same
+    -- (event, evidence) pair is graded and credited exactly once, however many
+    -- times an offline extractor is re-run over the same transcript. The row is
+    -- claimed *before* any credit is applied, so a crash mid-apply leaves the
+    -- key taken and the retry replays instead of double-crediting.
+    --
+    -- `containments` is the full per-result verdict the server computed
+    -- (node_id, rank, containment, grounded, evidence_index) — recorded rather
+    -- than recomputed so a replay returns the same numbers the credited run
+    -- did, even after the graded nodes decay or their content changes.
+    -- `agent`/`task`/`session_id`/`transport_session_id`/`source_session_key`
+    -- are audit only: they say who attested and which finished session the
+    -- evidence came from. They are never a gate. The offline extractor connects
+    -- with a new transport session id by construction, so a same-session check
+    -- would break the feature outright; honesty comes from the server
+    -- recomputing containment over its own copy of the event's results.
+    CREATE TABLE IF NOT EXISTS recall_attestations (
+        id TEXT PRIMARY KEY,
+        recall_event_id TEXT NOT NULL REFERENCES recall_events(id),
+        evidence_sha256 TEXT NOT NULL,
+        evidence_items INTEGER NOT NULL,
+        evidence_chars INTEGER NOT NULL,
+        min_containment REAL NOT NULL,
+        containments TEXT NOT NULL DEFAULT '[]',
+        grounded_node_ids TEXT NOT NULL DEFAULT '[]',
+        anchor_ids TEXT NOT NULL DEFAULT '[]',
+        credited INTEGER NOT NULL DEFAULT 0 CHECK (credited IN (0, 1)),
+        closed INTEGER NOT NULL DEFAULT 0 CHECK (closed IN (0, 1)),
+        closed_by_attestation INTEGER NOT NULL DEFAULT 0
+            CHECK (closed_by_attestation IN (0, 1)),
+        feedback_trace_id TEXT REFERENCES nodes(id),
+        agent TEXT,
+        task TEXT,
+        session_id TEXT,
+        transport_session_id TEXT,
+        source_session_key TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(recall_event_id, evidence_sha256)
+    );
+
+    -- Audit driver: "everything attested out of one finished session". The
+    -- UNIQUE index above already serves the per-event probe the write path
+    -- makes, and cannot serve this one.
+    CREATE INDEX IF NOT EXISTS idx_recall_attestations_source_session
+        ON recall_attestations(source_session_key, created_at DESC)
+        WHERE source_session_key IS NOT NULL;
+"""
 
 #: Batch encoder for chunk texts: takes the chunk texts of one node in order and
 #: returns one vector per text. Injected via :meth:`MemoryStore.set_chunk_embedder`
@@ -262,6 +339,40 @@ class QueryAnchorEdge:
     hits: int
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class RecallAttestation:
+    """One graded submission of session evidence against one recall event.
+
+    The durable record of a server-side verdict: what was submitted
+    (``evidence_sha256`` over the canonical items, plus their count and size),
+    what the server decided about each of the event's own results
+    (``containments``), and what that decision was allowed to change
+    (``grounded_node_ids``, ``anchor_ids``, ``credited``, ``closed``). A repeat
+    of the same ``(recall_event_id, evidence_sha256)`` replays this record and
+    applies nothing.
+    """
+
+    id: str
+    recall_event_id: str
+    evidence_sha256: str
+    evidence_items: int
+    evidence_chars: int
+    min_containment: float
+    containments: list[dict[str, Any]]
+    grounded_node_ids: list[str]
+    anchor_ids: list[str]
+    credited: bool
+    closed: bool
+    closed_by_attestation: bool
+    feedback_trace_id: str | None
+    agent: str | None
+    task: str | None
+    session_id: str | None
+    transport_session_id: str | None
+    source_session_key: str | None
+    created_at: str
 
 
 @dataclass(frozen=True)
@@ -1537,6 +1648,162 @@ class MemoryStore:
                 (event_id,),
             )
         return self.get_recall_event(event_id)  # type: ignore[return-value]
+
+    # ------------------------------------------------------------------
+    # Grounded-usage attestation ledger (schema v8)
+    #
+    # Two-step by design: ``claim_recall_attestation`` takes the
+    # (event, evidence) key and records the verdict the server computed,
+    # ``complete_recall_attestation`` records what that verdict was allowed to
+    # change once the writes have actually happened. Claiming first is what
+    # makes the ledger a real guard: the key is unavailable for the whole
+    # window in which credit is being applied, so a concurrent or retried
+    # submission of the same evidence replays instead of crediting twice. The
+    # failure mode this leaves is a claimed-but-uncredited row after a crash
+    # mid-apply, i.e. under-crediting — the conservative direction for a signal
+    # whose whole purpose is to not be inflatable.
+    # ------------------------------------------------------------------
+
+    def find_recall_attestation(
+        self, recall_event_id: str, evidence_sha256: str
+    ) -> RecallAttestation | None:
+        """The recorded verdict for one (event, evidence) pair, if any."""
+
+        row = self._conn.execute(
+            """
+            SELECT * FROM recall_attestations
+            WHERE recall_event_id = ? AND evidence_sha256 = ?
+            """,
+            (recall_event_id, evidence_sha256),
+        ).fetchone()
+        return _recall_attestation_from_row(row) if row else None
+
+    def get_recall_attestation(self, attestation_id: str) -> RecallAttestation | None:
+        row = self._conn.execute(
+            "SELECT * FROM recall_attestations WHERE id = ?",
+            (attestation_id,),
+        ).fetchone()
+        return _recall_attestation_from_row(row) if row else None
+
+    def list_recall_attestations(
+        self,
+        *,
+        recall_event_id: str | None = None,
+        source_session_key: str | None = None,
+        limit: int = 100,
+    ) -> list[RecallAttestation]:
+        """Recorded attestations, newest first. Audit read, never a gate."""
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if recall_event_id is not None:
+            clauses.append("recall_event_id = ?")
+            params.append(recall_event_id)
+        if source_session_key is not None:
+            clauses.append("source_session_key = ?")
+            params.append(source_session_key)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(int(limit))
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM recall_attestations {where}
+            ORDER BY created_at DESC, rowid DESC LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [_recall_attestation_from_row(row) for row in rows]
+
+    def claim_recall_attestation(
+        self,
+        *,
+        recall_event_id: str,
+        evidence_sha256: str,
+        evidence_items: int,
+        evidence_chars: int,
+        min_containment: float,
+        containments: Iterable[Mapping[str, Any]] | None = None,
+        grounded_node_ids: Iterable[str] | None = None,
+        context: Mapping[str, Any] | None = None,
+    ) -> RecallAttestation | None:
+        """Take the (event, evidence) key, recording the computed verdict.
+
+        Returns ``None`` when the key is already held — the caller must then
+        replay the recorded verdict rather than apply anything. Nothing about
+        the attesting client is a gate: the context fields are stamped for
+        audit exactly as ``record_recall_event`` stamps a recall's ambient
+        context.
+        """
+
+        ambient = dict(context or {})
+        attestation_id = new_ulid()
+        now = _utc_now()
+        try:
+            with self._conn:
+                self._conn.execute(
+                    """
+                    INSERT INTO recall_attestations (
+                        id, recall_event_id, evidence_sha256, evidence_items,
+                        evidence_chars, min_containment, containments,
+                        grounded_node_ids, anchor_ids, credited, closed,
+                        closed_by_attestation, feedback_trace_id, agent, task,
+                        session_id, transport_session_id, source_session_key,
+                        created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', 0, 0, 0, NULL, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        attestation_id,
+                        recall_event_id,
+                        evidence_sha256,
+                        int(evidence_items),
+                        int(evidence_chars),
+                        float(min_containment),
+                        _json_dumps([dict(item) for item in containments or []]),
+                        _json_dumps([str(node_id) for node_id in grounded_node_ids or []]),
+                        _optional_str(ambient.get("agent")),
+                        _optional_str(ambient.get("task")),
+                        _optional_str(ambient.get("session_id") or ambient.get("session")),
+                        _optional_str(ambient.get("transport_session_id")),
+                        _optional_str(ambient.get("source_session_key")),
+                        now,
+                    ),
+                )
+        except sqlite3.IntegrityError:
+            return None
+        return self.get_recall_attestation(attestation_id)
+
+    def complete_recall_attestation(
+        self,
+        attestation_id: str,
+        *,
+        credited: bool,
+        closed: bool,
+        closed_by_attestation: bool,
+        anchor_ids: Iterable[str] | None = None,
+        feedback_trace_id: str | None = None,
+    ) -> RecallAttestation:
+        """Record what a claimed attestation actually changed."""
+
+        if self.get_recall_attestation(attestation_id) is None:
+            raise KeyError(attestation_id)
+        with self._conn:
+            self._conn.execute(
+                """
+                UPDATE recall_attestations
+                SET credited = ?, closed = ?, closed_by_attestation = ?,
+                    anchor_ids = ?, feedback_trace_id = ?
+                WHERE id = ?
+                """,
+                (
+                    1 if credited else 0,
+                    1 if closed else 0,
+                    1 if closed_by_attestation else 0,
+                    _json_dumps([str(anchor_id) for anchor_id in anchor_ids or []]),
+                    feedback_trace_id,
+                    attestation_id,
+                ),
+            )
+        return self.get_recall_attestation(attestation_id)  # type: ignore[return-value]
 
     def search_content(
         self,
@@ -3128,6 +3395,12 @@ class MemoryStore:
             # fresh database and a migrated one end up with identical objects.
             self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)
             self._anchor_tables_cache = None
+            # Attestation ledger (v8). Runs after the main script because its
+            # foreign keys name recall_events and nodes, and unconditionally on
+            # every open because that *is* the pre-v8 migration — see the note
+            # on _RECALL_ATTESTATION_SCHEMA_SQL for why no _migrate_pre_v8_schema
+            # exists.
+            self._conn.executescript(_RECALL_ATTESTATION_SCHEMA_SQL)
             self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
             self._backfill_recall_fingerprint_signal()
@@ -3740,6 +4013,30 @@ def _recall_event_from_row(row: sqlite3.Row) -> RecallEvent:
         feedback_applied=bool(row["feedback_applied"]),
         feedback_trace_id=row["feedback_trace_id"],
         feedback_applied_at=row["feedback_applied_at"],
+        created_at=str(row["created_at"]),
+    )
+
+
+def _recall_attestation_from_row(row: sqlite3.Row) -> RecallAttestation:
+    return RecallAttestation(
+        id=str(row["id"]),
+        recall_event_id=str(row["recall_event_id"]),
+        evidence_sha256=str(row["evidence_sha256"]),
+        evidence_items=int(row["evidence_items"]),
+        evidence_chars=int(row["evidence_chars"]),
+        min_containment=float(row["min_containment"]),
+        containments=[dict(item) for item in _json_loads(row["containments"], [])],
+        grounded_node_ids=[str(item) for item in _json_loads(row["grounded_node_ids"], [])],
+        anchor_ids=[str(item) for item in _json_loads(row["anchor_ids"], [])],
+        credited=bool(row["credited"]),
+        closed=bool(row["closed"]),
+        closed_by_attestation=bool(row["closed_by_attestation"]),
+        feedback_trace_id=row["feedback_trace_id"],
+        agent=row["agent"],
+        task=row["task"],
+        session_id=row["session_id"],
+        transport_session_id=row["transport_session_id"],
+        source_session_key=row["source_session_key"],
         created_at=str(row["created_at"]),
     )
 

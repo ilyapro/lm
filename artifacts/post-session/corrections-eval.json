@@ -1,0 +1,1394 @@
+{
+  "accepted": [],
+  "config": {
+    "excerpt_chars": 1200,
+    "judge_timeout_s": 180.0,
+    "max_correction_chars": 900,
+    "max_node_content_chars": 6000,
+    "max_nodes_per_session": 12,
+    "max_observation_chars": 40000,
+    "max_observations_per_node": 5,
+    "max_payload_bytes": 24000,
+    "min_confidence": 0.6,
+    "min_correction_chars": 100,
+    "min_node_content_chars": 40,
+    "min_pair_score": 1.2,
+    "min_quote_chars": 15,
+    "min_shared_anchors": 2,
+    "skip_already_taught": true
+  },
+  "detector_version": "corrections/1",
+  "generated_at": "2026-08-19T09:52:08Z",
+  "generator": "living_memory.postsession.corrections",
+  "ground_truth_recovery": {
+    "corrections": [
+      {
+        "op": {
+          "evidence": [
+            {
+              "locator": "codex:~/.codex/sessions/2026/08/12/rollout-2026-08-12T00-07-38-019ff1cb-441e-7f53-836d-db50fa8e96eb.jsonl#40:tool_calls[7].result_text",
+              "quote": "\\\"source_branch\\\": \\\"EZ-14246-empty-object-ids--deliver-mr-jira\\\",\\n  \\\"target_branch\\\": \\\"master\\\",\\n  \\\"diff_refs\\\": {\\n    \\\"base_sha\\\": \\\"53625e0f74c1f5526dab02c5645643d3e1834a2a\\\",\\n    \\\"head_sha\\\": \\\"268877fcba06fc919e5f3c4e4f949058c4104972\\\","
+            },
+            {
+              "locator": "codex:~/.codex/sessions/2026/08/12/rollout-2026-08-12T00-07-38-019ff1cb-441e-7f53-836d-db50fa8e96eb.jsonl#18:recalls[0].delivered[16].content",
+              "quote": "source `EZ-14246-empty-object-ids--deliver-mr-jira` at c49c6580e4a -> master"
+            }
+          ],
+          "kind": "teach",
+          "payload": {
+            "confidence": 0.7,
+            "context": {
+              "agent": "extractor",
+              "cli": "codex",
+              "contradicted_claim": "source `EZ-14246-empty-object-ids--deliver-mr-jira` at c49c6580e4a -> master",
+              "corrected_node_id": "01KZRRBBMJDK413Q2P6QQP5K17",
+              "extractor": "corrections/1",
+              "lesson_kind": "correction",
+              "observation_kind": "command_output",
+              "observation_locator": "codex:~/.codex/sessions/2026/08/12/rollout-2026-08-12T00-07-38-019ff1cb-441e-7f53-836d-db50fa8e96eb.jsonl#40:tool_calls[7].result_text",
+              "observation_quote": "\\\"source_branch\\\": \\\"EZ-14246-empty-object-ids--deliver-mr-jira\\\",\\n  \\\"target_branch\\\": \\\"master\\\",\\n  \\\"diff_refs\\\": {\\n    \\\"base_sha\\\": \\\"53625e0f74c1f5526dab02c5645643d3e1834a2a\\\",\\n    \\\"head_sha\\\": \\\"268877fcba06fc919e5f3c4e4f949058c4104972\\\",",
+              "quote_match": "exact",
+              "recall_event_id": "01KZRWQ2ZK51YNJZVBCJYQX6PT",
+              "recall_query": "EZ-14246 MR !9800 final parameters head SHA URL Jira comments terminal pipeline merge-ready deploy demo rollout timeout external linkage",
+              "scope": "project:online",
+              "session_id": "019ff1cb-441e-7f53-836d-db50fa8e96eb",
+              "source": "codex",
+              "source_session_key": "codex:019ff1cb-441e-7f53-836d-db50fa8e96eb",
+              "task": "post-session correction from codex:019ff1cb-441e-7f53-836d-db50fa8e96eb",
+              "transcript_sha256": "132e1cfb9b183a196eefc8e267d79ac360ddebca4fa1866719f2dd1408d0dcbd"
+            },
+            "correction": "The GitLab MR webdev/online!9800 source branch EZ-14246-empty-object-ids--deliver-mr-jira currently has head SHA 268877fcba06fc919e5f3c4e4f949058c4104972 (base SHA 53625e0f74c1f5526dab02c5645643d3e1834a2a) targeting master, not c49c6580e4a.",
+            "trace_id": "01KZRRBBMJDK413Q2P6QQP5K17"
+          },
+          "provenance": {
+            "session_key": "codex:019ff1cb-441e-7f53-836d-db50fa8e96eb",
+            "source_span": "codex:~/.codex/sessions/2026/08/12/rollout-2026-08-12T00-07-38-019ff1cb-441e-7f53-836d-db50fa8e96eb.jsonl#40:tool_calls[7].result_text",
+            "transcript_sha256": "132e1cfb9b183a196eefc8e267d79ac360ddebca4fa1866719f2dd1408d0dcbd"
+          }
+        },
+        "verdict": {
+          "accepted": true,
+          "confidence": 0.7,
+          "correction": "The GitLab MR webdev/online!9800 source branch EZ-14246-empty-object-ids--deliver-mr-jira currently has head SHA 268877fcba06fc919e5f3c4e4f949058c4104972 (base SHA 53625e0f74c1f5526dab02c5645643d3e1834a2a) targeting master, not c49c6580e4a.",
+          "judge_said_contradicted": true,
+          "node_id": "01KZRRBBMJDK413Q2P6QQP5K17",
+          "observation_kind": "command_output",
+          "observation_locator": "codex:~/.codex/sessions/2026/08/12/rollout-2026-08-12T00-07-38-019ff1cb-441e-7f53-836d-db50fa8e96eb.jsonl#40:tool_calls[7].result_text",
+          "quote_match": "exact",
+          "reason": "accepted",
+          "recall_ordinal": 0,
+          "session_key": "codex:019ff1cb-441e-7f53-836d-db50fa8e96eb"
+        }
+      },
+      {
+        "op": {
+          "evidence": [
+            {
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/20/rollout-2026-05-20T00-22-06-019e4142-52cb-7b11-9013-48c598f834cc.jsonl#273:file_mutations[5]",
+              "quote": "import { Types, useGeneralizingItems, bss } from '../model';\n-import { CatalogMarker, markersMap, entityModel } from 'entities/entity';\n-// eslint-disable-next-line @conarti/feature-sliced/public-api\n-import { CatalogTooltip } from 'entities/entity/ui/catalogTooltip';\n+import { CatalogMarker, markersMap, entityModel, CatalogTooltip } from 'entities/entity';\n import { MarkerTooltip } from 'shared/ui/markers/markerTooltip';"
+            },
+            {
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/20/rollout-2026-05-20T00-22-06-019e4142-52cb-7b11-9013-48c598f834cc.jsonl#262:recalls[5].delivered[3].content",
+              "quote": "Fix by removing CatalogTooltip from the broad entity barrel and importing it directly only at actual call sites such as widgets/favorites/favoritesSharedCollectionMap/ui/favoritesSharedCollectionMap.tsx."
+            }
+          ],
+          "kind": "teach",
+          "payload": {
+            "confidence": 0.75,
+            "context": {
+              "agent": "extractor",
+              "cli": "codex",
+              "contradicted_claim": "Fix by removing CatalogTooltip from the broad entity barrel and importing it directly only at actual call sites such as widgets/favorites/favoritesSharedCollectionMap/ui/favoritesSharedCollectionMap.tsx.",
+              "corrected_node_id": "01KS0MSBY3YBZ2E5DE9WKDT34Y",
+              "extractor": "corrections/1",
+              "lesson_kind": "correction",
+              "observation_kind": "file_diff",
+              "observation_locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/20/rollout-2026-05-20T00-22-06-019e4142-52cb-7b11-9013-48c598f834cc.jsonl#273:file_mutations[5]",
+              "observation_quote": "import { Types, useGeneralizingItems, bss } from '../model';\n-import { CatalogMarker, markersMap, entityModel } from 'entities/entity';\n-// eslint-disable-next-line @conarti/feature-sliced/public-api\n-import { CatalogTooltip } from 'entities/entity/ui/catalogTooltip';\n+import { CatalogMarker, markersMap, entityModel, CatalogTooltip } from 'entities/entity';\n import { MarkerTooltip } from 'shared/ui/markers/markerTooltip';",
+              "quote_match": "exact",
+              "recall_event_id": "01KS0N3AVC9VQ51MJSV211MZAD",
+              "recall_query": "before edit packages/desktop/src/frames/vacanciesFrame/model/bss/bss.spec.tsx packages/desktop/src/tests/integration/bss/realty/realtyCard.spec.tsx stabilize waits no new tests",
+              "scope": "project:online",
+              "session_id": "019e4142-52cb-7b11-9013-48c598f834cc",
+              "source": "codex",
+              "source_session_key": "codex:019e4142-52cb-7b11-9013-48c598f834cc",
+              "task": "post-session correction from codex:019e4142-52cb-7b11-9013-48c598f834cc",
+              "transcript_sha256": "9d3733babf22bd694c993f8972d9d825e37353ec6b793bd1ce34cd969c267331"
+            },
+            "correction": "In packages/desktop/src/widgets/favorites/favoritesSharedCollectionMap/ui/favoritesSharedCollectionMap.tsx, CatalogTooltip is imported from the barrel module 'entities/entity' alongside CatalogMarker, markersMap, and entityModel, rather than being imported directly from entities/entity/ui/catalogTooltip.",
+            "trace_id": "01KS0MSBY3YBZ2E5DE9WKDT34Y"
+          },
+          "provenance": {
+            "session_key": "codex:019e4142-52cb-7b11-9013-48c598f834cc",
+            "source_span": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/20/rollout-2026-05-20T00-22-06-019e4142-52cb-7b11-9013-48c598f834cc.jsonl#273:file_mutations[5]",
+            "transcript_sha256": "9d3733babf22bd694c993f8972d9d825e37353ec6b793bd1ce34cd969c267331"
+          }
+        },
+        "verdict": {
+          "accepted": true,
+          "confidence": 0.75,
+          "correction": "In packages/desktop/src/widgets/favorites/favoritesSharedCollectionMap/ui/favoritesSharedCollectionMap.tsx, CatalogTooltip is imported from the barrel module 'entities/entity' alongside CatalogMarker, markersMap, and entityModel, rather than being imported directly from entities/entity/ui/catalogTooltip.",
+          "judge_said_contradicted": true,
+          "node_id": "01KS0MSBY3YBZ2E5DE9WKDT34Y",
+          "observation_kind": "file_diff",
+          "observation_locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/20/rollout-2026-05-20T00-22-06-019e4142-52cb-7b11-9013-48c598f834cc.jsonl#273:file_mutations[5]",
+          "quote_match": "exact",
+          "reason": "accepted",
+          "recall_ordinal": 5,
+          "session_key": "codex:019e4142-52cb-7b11-9013-48c598f834cc"
+        }
+      },
+      {
+        "op": {
+          "evidence": [
+            {
+              "locator": "claude:~/.claude/projects/-home-sfx-p-ae/84e2160d-5590-4671-a43f-f32523c1db8f.jsonl#190:file_mutations[5]",
+              "quote": "+// The mcp__<server>__* entries are what actually grants MCP execution:\n+// --allowed-mcp-server-names below only decides visibility."
+            },
+            {
+              "locator": "claude:~/.claude/projects/-home-sfx-p-ae/84e2160d-5590-4671-a43f-f32523c1db8f.jsonl#12:recalls[0].delivered[0].content",
+              "quote": "Инструменты включает ТОЛЬКО явный `--allowed-tools=<список>`, а MCP поверх него `--allowed-mcp-server-names=<серверы>`."
+            }
+          ],
+          "kind": "teach",
+          "payload": {
+            "confidence": 0.72,
+            "context": {
+              "agent": "extractor",
+              "cli": "claude",
+              "contradicted_claim": "Инструменты включает ТОЛЬКО явный `--allowed-tools=<список>`, а MCP поверх него `--allowed-mcp-server-names=<серверы>`.",
+              "corrected_node_id": "01KZ9XPTKTSJ7VGH7KSPA4996B",
+              "extractor": "corrections/1",
+              "lesson_kind": "correction",
+              "observation_kind": "file_diff",
+              "observation_locator": "claude:~/.claude/projects/-home-sfx-p-ae/84e2160d-5590-4671-a43f-f32523c1db8f.jsonl#190:file_mutations[5]",
+              "observation_quote": "+// The mcp__<server>__* entries are what actually grants MCP execution:\n+// --allowed-mcp-server-names below only decides visibility.",
+              "quote_match": "exact",
+              "recall_event_id": "01KZKACVP225TS1GE29VG9H0NK",
+              "recall_query": "гигакод gigacode MCP подключение",
+              "scope": "global",
+              "session_id": "84e2160d-5590-4671-a43f-f32523c1db8f",
+              "source": "claude",
+              "source_session_key": "claude:84e2160d-5590-4671-a43f-f32523c1db8f",
+              "task": "post-session correction from claude:84e2160d-5590-4671-a43f-f32523c1db8f",
+              "transcript_sha256": "c3e1f74600afb10975cb50da2e124f51babd3b6e629c366e3077a388b24834d7"
+            },
+            "correction": "MCP execution in dashboard/server.js's GIGACODE_DEFAULT_ALLOWED_TOOLS is granted by including mcp__<server>__* entries (e.g. mcp__living-memory__*, mcp__playwright__*, mcp__fal__*, mcp__meshy__*) directly in --allowed-tools; --allowed-mcp-server-names only controls which MCP servers are visible, it does not by itself grant execution of their tools.",
+            "trace_id": "01KZ9XPTKTSJ7VGH7KSPA4996B"
+          },
+          "provenance": {
+            "session_key": "claude:84e2160d-5590-4671-a43f-f32523c1db8f",
+            "source_span": "claude:~/.claude/projects/-home-sfx-p-ae/84e2160d-5590-4671-a43f-f32523c1db8f.jsonl#190:file_mutations[5]",
+            "transcript_sha256": "c3e1f74600afb10975cb50da2e124f51babd3b6e629c366e3077a388b24834d7"
+          }
+        },
+        "verdict": {
+          "accepted": true,
+          "confidence": 0.72,
+          "correction": "MCP execution in dashboard/server.js's GIGACODE_DEFAULT_ALLOWED_TOOLS is granted by including mcp__<server>__* entries (e.g. mcp__living-memory__*, mcp__playwright__*, mcp__fal__*, mcp__meshy__*) directly in --allowed-tools; --allowed-mcp-server-names only controls which MCP servers are visible, it does not by itself grant execution of their tools.",
+          "judge_said_contradicted": true,
+          "node_id": "01KZ9XPTKTSJ7VGH7KSPA4996B",
+          "observation_kind": "file_diff",
+          "observation_locator": "claude:~/.claude/projects/-home-sfx-p-ae/84e2160d-5590-4671-a43f-f32523c1db8f.jsonl#190:file_mutations[5]",
+          "quote_match": "exact",
+          "reason": "accepted",
+          "recall_ordinal": 0,
+          "session_key": "claude:84e2160d-5590-4671-a43f-f32523c1db8f"
+        }
+      }
+    ],
+    "executable": false,
+    "judged": 15,
+    "recovered": 3,
+    "rejections": {
+      "judge_says_no": 9,
+      "judge_unavailable": 1,
+      "low_confidence": 1,
+      "quote_asserts_nothing": 1
+    },
+    "sessions": 22,
+    "what": "nodes the session itself corrected through memory_teach, re-judged with the production already-taught skip disabled"
+  },
+  "judge": {
+    "backend": "claude-cli",
+    "calls": 219,
+    "cost_usd": 9.1981,
+    "model": "sonnet",
+    "outcomes": {
+      "ok": 215,
+      "unavailable": 4
+    }
+  },
+  "living_memory_writes": 0,
+  "negative_controls": [
+    {
+      "judged": 1,
+      "name": "fact-matched-reality",
+      "ops": 0,
+      "pair_stats": {},
+      "passed": true,
+      "rejections": {
+        "judge_says_no": 1
+      },
+      "why": "The recalled fact is confirmed by the session's own measurements. A detector that treats 'the session talked about this node' as evidence of staleness would fire here."
+    },
+    {
+      "judged": 1,
+      "name": "fact-untouched",
+      "ops": 0,
+      "pair_stats": {},
+      "passed": true,
+      "rejections": {
+        "judge_says_no": 1
+      },
+      "why": "The session never touched the recalled fact's subject. Any op here would be an absence of evidence dressed up as a contradiction."
+    },
+    {
+      "judged": 1,
+      "name": "different-fact-superseded",
+      "ops": 0,
+      "pair_stats": {},
+      "passed": true,
+      "rejections": {
+        "judge_says_no": 1
+      },
+      "why": "The session really does correct a belief -- but a belief about max_results that was never recalled. The delivered node is about the depth parameter and is untouched. A detector that attaches any in-session correction to whatever node was recalled fires here."
+    }
+  ],
+  "notes": {
+    "judge_call_budget": 200,
+    "max_transcript_bytes": 40000000,
+    "recovery_cohort_preselected": 22,
+    "recovery_sessions_read": 22,
+    "sessions_available": 400,
+    "sessions_read": 70,
+    "sessions_skipped_for_judge_budget": 10,
+    "sessions_too_large_to_read": 3,
+    "sessions_without_a_recall": 184
+  },
+  "ops": [],
+  "ops_are_proposals": true,
+  "pair_filter": {
+    "already_taught_in_session": 8,
+    "duplicate_delivery": 311,
+    "no_observations": 0,
+    "no_related_observation": 535,
+    "node_has_no_anchors": 9,
+    "over_session_cap": 26
+  },
+  "redaction": "home directories are elided to ~, secret-shaped substrings are blanked, and the reserved split's name is masked to <reserved-split:...> before this file is written; quote_match records how each evidence quote was verified against the unredacted transcript, which is what the detector actually checked",
+  "rejection_samples": {
+    "better_matched_by_another_node": [
+      {
+        "accepted": false,
+        "detail": "01KZZA7869486NSD7RV1XTPVSY matches 3 anchors, 01KZZ8GAD9KCQQA3WWX3VGRVVB matches 2",
+        "judge_said_contradicted": true,
+        "node_id": "01KZZ8GAD9KCQQA3WWX3VGRVVB",
+        "reason": "better_matched_by_another_node",
+        "recall_ordinal": 0,
+        "session_key": "codex:019ffed1-42f7-7bf0-aad5-762fe6fd7e90"
+      }
+    ],
+    "judge_says_no": [
+      {
+        "accepted": false,
+        "detail": "Observations (Jira changelog, MR diffs, MR/discussion JSON) don't contradict the stored EZ-14246 snapshot (Bug/Major, backlog, labels no_testing/q3_2026, 0 comments/links/subtasks, EZ-13546 regression, two candidate fixes). The label rename 'no-testing q3_2026'→'no_testing q3_2026' matches the fact. A later RemoteIssueLink changelog entry just shows post-snapshot state change, not a contradiction ",
+        "judge_said_contradicted": false,
+        "node_id": "01KZRPXP1MY0ERYKRNRWVN76GV",
+        "reason": "judge_says_no",
+        "recall_ordinal": 1,
+        "session_key": "codex:019ff68e-2e5a-70a3-a0a2-1b908bbcafe9"
+      },
+      {
+        "accepted": false,
+        "detail": "The stored fact describes mock-layer naming conventions (unit-mock apiName='reviewsApi', not a new 'ratingsApi', for URL-matching in packages/mocks). The observations show application code calling services.ratingsApi.getRatingsLight() in shared/api/services/ratings — a different namespace (the actual API client/service object used in app code, not the mock's apiName routing key). These do not desc",
+        "judge_said_contradicted": false,
+        "node_id": "01KV85GCJM5TKR5GC8C877SR3A",
+        "reason": "judge_says_no",
+        "recall_ordinal": 1,
+        "session_key": "codex:019ff68e-2e5a-70a3-a0a2-1b908bbcafe9"
+      },
+      {
+        "accepted": false,
+        "detail": "The stored fact describes the deploy-demo failure (desiredReplicas=2, updatedReplicas=None, availableReplicas=None) on head c49c6580e4a, written 2026-08-11. The later observations are from 2026-08-12, after the session itself reopened the MR, producing a new head SHA and a new pipeline run whose trace shows availableReplicas=2 instead of None. This is a later state produced by the session's own ac",
+        "judge_said_contradicted": false,
+        "node_id": "01KZRSG4PFK5HFAN630GG59JBP",
+        "reason": "judge_says_no",
+        "recall_ordinal": 1,
+        "session_key": "codex:019ff68e-2e5a-70a3-a0a2-1b908bbcafe9"
+      }
+    ],
+    "judge_unavailable": [
+      {
+        "accepted": false,
+        "detail": "judge backend exceeded 180.0s",
+        "judge_said_contradicted": false,
+        "node_id": "01KRV99V1549YM762H7D6V0KZE",
+        "reason": "judge_unavailable",
+        "recall_ordinal": 0,
+        "session_key": "claude:29193a5d-ce9c-4cd0-ba83-be1dbd016b2f"
+      },
+      {
+        "accepted": false,
+        "detail": "judge backend exceeded 166.1s",
+        "judge_said_contradicted": false,
+        "node_id": "01KSSKZ8PJDPW0WXEQPPK7YXS7",
+        "reason": "judge_unavailable",
+        "recall_ordinal": 1,
+        "session_key": "codex:019e73f0-6c72-7a40-a73a-6521926d3e54"
+      },
+      {
+        "accepted": false,
+        "detail": "judge backend exceeded 6.5s",
+        "judge_said_contradicted": false,
+        "node_id": "01KRZNFV3FCG4YP8CPDV52MD6T",
+        "reason": "judge_unavailable",
+        "recall_ordinal": 0,
+        "session_key": "codex:019e500c-8ebc-7763-9368-44a31ee0f8a9"
+      }
+    ],
+    "no_shared_anchor": [
+      {
+        "accepted": false,
+        "detail": "claim=['searchbar/design'] quote=['/p/ae/projects/online/state/goals/ez-13870-dashboard-redesign/reopen_comment.md', '13870', 'reopen_comment', 'reopen_comment.md']",
+        "judge_said_contradicted": true,
+        "node_id": "01KTSB8N3197SD4V5BHHWDAZSR",
+        "reason": "no_shared_anchor",
+        "recall_ordinal": 0,
+        "session_key": "codex:019eca2b-d236-7311-a7b5-b6ace1ecb7c0"
+      },
+      {
+        "accepted": false,
+        "detail": "claim=['insufficient'] quote=[' returns nonzero, and does not\\\\nwrite', '--receipt', '\\\\\"status\\\\\":\\\\\"insufficient\\\\', 'emits only the allowlisted\\\\nterminal fragment', 'scan']",
+        "judge_said_contradicted": true,
+        "node_id": "01KZZA7869486NSD7RV1XTPVSY",
+        "reason": "no_shared_anchor",
+        "recall_ordinal": 0,
+        "session_key": "codex:019ffed1-42f7-7bf0-aad5-762fe6fd7e90"
+      }
+    ]
+  },
+  "rejections": {
+    "better_matched_by_another_node": 1,
+    "judge_says_no": 195,
+    "judge_unavailable": 3,
+    "no_shared_anchor": 2
+  },
+  "sessions": [
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:lm:archive/retrieval-signal-and-context-cost/archive/unlisted-children-20260814T083659Z-3291513/children/auto-recall-economics/children/server-repeat-gating",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 49,
+      "judged": 6,
+      "observations": 129,
+      "ops": 0,
+      "pair_stats": {
+        "already_taught_in_session": 1,
+        "duplicate_delivery": 15,
+        "no_related_observation": 42
+      },
+      "rejections": {
+        "judge_says_no": 6
+      },
+      "session_key": "codex:019ff68e-2e5a-70a3-a0a2-1b908bbcafe9",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:online:EZ-14246-empty-object-ids",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 32,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "codex:019e26a4-5781-7a83-b07b-91a368fcdf37",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 38,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "claude:46d8e431-10df-41ce-9954-092f1d2fbbab:agent-aad68fd3c125573f4",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:lm:archive/vector-recall-chunking-harness/children/phase1-gate",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 5,
+      "observations": 20,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 5
+      },
+      "rejections": {
+        "judge_says_no": 4,
+        "judge_unavailable": 1
+      },
+      "session_key": "claude:29193a5d-ce9c-4cd0-ba83-be1dbd016b2f",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 1,
+      "observations": 10,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 5,
+        "no_related_observation": 9
+      },
+      "rejections": {
+        "judge_says_no": 1
+      },
+      "session_key": "codex:019e98e8-b0be-7252-b1c7-ef365335c968",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 10,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "ae_chat:c1786221528285-15ed",
+      "source": "ae_chat",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 1,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "claude:70b86a16-8c55-4530-8e52-10c2629cd1ea",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 80,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "codex:019e2a53-f3f8-7f93-a84d-41902751f5a2",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 6,
+      "observations": 16,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 4
+      },
+      "rejections": {
+        "judge_says_no": 6
+      },
+      "session_key": "claude:badcf8b8-ee38-497c-b954-0dfa38dc0a25",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 27,
+      "judged": 12,
+      "observations": 45,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 13,
+        "no_related_observation": 14,
+        "over_session_cap": 1
+      },
+      "rejections": {
+        "judge_says_no": 11,
+        "no_shared_anchor": 1
+      },
+      "session_key": "codex:019eca2b-d236-7311-a7b5-b6ace1ecb7c0",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 16,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "ae_chat:c1784185348612-0c37",
+      "source": "ae_chat",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 16,
+      "judged": 3,
+      "observations": 96,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 2,
+        "no_related_observation": 13
+      },
+      "rejections": {
+        "judge_says_no": 3
+      },
+      "session_key": "codex:019e8515-ba64-7f52-8db7-3dc683e9b5ac",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:lm:archive/vector-recall-chunking-harness/children/retrieval-harness-baseline/children/harness-module",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 8,
+      "judged": 5,
+      "observations": 22,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 3
+      },
+      "rejections": {
+        "judge_says_no": 5
+      },
+      "session_key": "claude:281ac2a1-623b-43a5-8959-8bae2e87794f",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 35,
+      "judged": 12,
+      "observations": 63,
+      "ops": 0,
+      "pair_stats": {
+        "already_taught_in_session": 1,
+        "duplicate_delivery": 13,
+        "no_related_observation": 17,
+        "over_session_cap": 5
+      },
+      "rejections": {
+        "judge_says_no": 12
+      },
+      "session_key": "codex:019ffd0f-54bd-7413-a97b-d23534e3f799",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:ae:archive/dashboard-authorization/children/server-auth-split/children/auth-split-regression-coverage",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 65,
+      "judged": 12,
+      "observations": 25,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 45,
+        "no_related_observation": 49,
+        "over_session_cap": 4
+      },
+      "rejections": {
+        "judge_says_no": 12
+      },
+      "session_key": "codex:019ffae8-0c64-7fd2-a2e1-9e5150100be5",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 18,
+      "judged": 9,
+      "observations": 63,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 5,
+        "no_related_observation": 9
+      },
+      "rejections": {
+        "judge_says_no": 9
+      },
+      "session_key": "codex:019e41a9-4d05-7f61-9b2b-976f4aa45437",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 1,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "codex:019ed0f5-e5af-72c3-8d9e-38cdfd5f36ad",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 0,
+      "observations": 2,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 10
+      },
+      "rejections": {},
+      "session_key": "codex:019eb5b3-c0bd-7912-8c60-fcf81affd870",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 18,
+      "judged": 3,
+      "observations": 10,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 15
+      },
+      "rejections": {
+        "judge_says_no": 3
+      },
+      "session_key": "claude:cda9b450-31ee-4592-9446-276568d13602",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:ae:archive/lm-integration-remaining-gaps/children/prompt-path-class-coverage",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:online:archive/EZ-13771-tooltip-experiment.2026-06-10T09-26-08-152Z.1/children/playwright-review-recapture-repair/children/rebuild-storybook-and-recapture-fig8-evidence",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 7,
+      "judged": 3,
+      "observations": 41,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 3,
+        "no_related_observation": 4
+      },
+      "rejections": {
+        "judge_says_no": 3
+      },
+      "session_key": "codex:019e4fb7-9c1f-7c43-ae15-23e2f64902b9",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 1,
+      "observations": 8,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 5,
+        "node_has_no_anchors": 4
+      },
+      "rejections": {
+        "judge_says_no": 1
+      },
+      "session_key": "claude:46d8e431-10df-41ce-9954-092f1d2fbbab",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 25,
+      "judged": 7,
+      "observations": 116,
+      "ops": 0,
+      "pair_stats": {
+        "already_taught_in_session": 1,
+        "duplicate_delivery": 3,
+        "no_related_observation": 17
+      },
+      "rejections": {
+        "judge_says_no": 7
+      },
+      "session_key": "codex:019eef50-5dc2-71c3-8a54-3d3d22cfaad9",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 23,
+      "judged": 1,
+      "observations": 100,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 27,
+        "no_related_observation": 20,
+        "node_has_no_anchors": 2
+      },
+      "rejections": {
+        "judge_says_no": 1
+      },
+      "session_key": "codex:01a00231-252b-7ef1-bb0c-4e7cade70595",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 5,
+      "judged": 2,
+      "observations": 132,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 3
+      },
+      "rejections": {
+        "judge_says_no": 2
+      },
+      "session_key": "codex:019e2b32-6953-7232-bcc0-d8570ef61e19",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 13,
+      "judged": 8,
+      "observations": 23,
+      "ops": 0,
+      "pair_stats": {
+        "already_taught_in_session": 1,
+        "duplicate_delivery": 5,
+        "no_related_observation": 4
+      },
+      "rejections": {
+        "judge_says_no": 7,
+        "judge_unavailable": 1
+      },
+      "session_key": "codex:019e73f0-6c72-7a40-a73a-6521926d3e54",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 16,
+      "judged": 2,
+      "observations": 52,
+      "ops": 0,
+      "pair_stats": {
+        "already_taught_in_session": 1,
+        "no_related_observation": 13
+      },
+      "rejections": {
+        "judge_says_no": 2
+      },
+      "session_key": "claude:ca9db7f0-51b2-420e-8e71-3f5695dc3fe6",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 15,
+      "judged": 3,
+      "observations": 43,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 3,
+        "no_related_observation": 12
+      },
+      "rejections": {
+        "judge_says_no": 3
+      },
+      "session_key": "codex:019e8248-e807-7ad3-9f60-e23fa0b30288",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 5,
+      "judged": 1,
+      "observations": 25,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 4
+      },
+      "rejections": {
+        "judge_says_no": 1
+      },
+      "session_key": "claude:26fc90c2-f9df-45ac-bbd9-2a0101f6025f",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 5,
+      "judged": 2,
+      "observations": 4,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 3
+      },
+      "rejections": {
+        "judge_says_no": 2
+      },
+      "session_key": "claude:4be83319-2dbd-421d-bf78-7a0d72c56969",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:online:archive/routesearch-redesign/children/routesearch-contract-resolution",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 19,
+      "judged": 4,
+      "observations": 32,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 11,
+        "no_related_observation": 15
+      },
+      "rejections": {
+        "judge_says_no": 4
+      },
+      "session_key": "codex:019ff16a-602e-76d3-bbae-4f0e065d5119",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 2,
+      "judged": 2,
+      "observations": 244,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {
+        "judge_says_no": 2
+      },
+      "session_key": "codex:019e2af5-a53c-7a40-9fb9-3cf6517b4b26",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 14,
+      "judged": 4,
+      "observations": 93,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 10
+      },
+      "rejections": {
+        "judge_says_no": 4
+      },
+      "session_key": "claude:7102c4a5-92e6-4253-8334-e75443ca2d1e",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:lm:archive/https-tls-transport/children/tls-integration-acceptance",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 2,
+      "observations": 18,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 8
+      },
+      "rejections": {
+        "judge_says_no": 2
+      },
+      "session_key": "codex:019ed615-22e8-7640-b855-a3f82e807e94",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 29,
+      "judged": 9,
+      "observations": 19,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 11,
+        "no_related_observation": 20
+      },
+      "rejections": {
+        "judge_says_no": 8,
+        "judge_unavailable": 1
+      },
+      "session_key": "codex:019e500c-8ebc-7763-9368-44a31ee0f8a9",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 43,
+      "judged": 7,
+      "observations": 117,
+      "ops": 0,
+      "pair_stats": {
+        "already_taught_in_session": 2,
+        "duplicate_delivery": 17,
+        "no_related_observation": 34
+      },
+      "rejections": {
+        "judge_says_no": 7
+      },
+      "session_key": "codex:019ff1c7-8468-7773-b61b-19f36350565b",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:online:archive/EZ-13858-review.2026-06-15T12-11-12-092Z.1/children/review-ez-13858-diff/children/review-findings-classification",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 5,
+      "judged": 0,
+      "observations": 18,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 5
+      },
+      "rejections": {},
+      "session_key": "codex:019ea6b8-04a2-7b73-b87d-a19ce1cd0d2e",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 0,
+      "observations": 2,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 10
+      },
+      "rejections": {},
+      "session_key": "codex:019e4b77-e7be-79a1-b87a-a3306c406c17",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 2,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "codex:019e27dd-9a95-7c41-bd6b-e69a2e63c009",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 8,
+      "judged": 6,
+      "observations": 8,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 2
+      },
+      "rejections": {
+        "judge_says_no": 6
+      },
+      "session_key": "claude:1317e87f-8546-4a09-9962-47aecdf69df4",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 35,
+      "judged": 12,
+      "observations": 171,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 49,
+        "no_related_observation": 16,
+        "over_session_cap": 7
+      },
+      "rejections": {
+        "judge_says_no": 12
+      },
+      "session_key": "codex:019e8792-2f58-72c3-9ada-582ef8647139",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 8,
+      "judged": 2,
+      "observations": 7,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 6
+      },
+      "rejections": {
+        "judge_says_no": 2
+      },
+      "session_key": "claude:625b23f3-8132-443f-938d-b09e9fefa610",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 1,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "claude:ff8c9f79-5fc5-4b1f-bef6-aa990abc1fc1",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 8,
+      "judged": 2,
+      "observations": 14,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 6
+      },
+      "rejections": {
+        "judge_says_no": 2
+      },
+      "session_key": "codex:019eb0ab-d700-70f0-9d98-ed4ad269d13c",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:online:EZ-13370-rarity-package",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 5,
+      "judged": 0,
+      "observations": 13,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 5
+      },
+      "rejections": {},
+      "session_key": "codex:019e98d4-2c1d-74b2-b0db-09f24566a149",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 33,
+      "judged": 11,
+      "observations": 103,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 21,
+        "no_related_observation": 21,
+        "node_has_no_anchors": 1
+      },
+      "rejections": {
+        "judge_says_no": 11
+      },
+      "session_key": "codex:019fff78-ff2f-7831-8672-d4f5e6cdae47",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 41,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "codex:019e342f-9738-7ae1-8de2-a6c749188385",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 2,
+      "observations": 18,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 7,
+        "node_has_no_anchors": 1
+      },
+      "rejections": {
+        "better_matched_by_another_node": 1,
+        "no_shared_anchor": 1
+      },
+      "session_key": "codex:019ffed1-42f7-7bf0-aad5-762fe6fd7e90",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 15,
+      "judged": 7,
+      "observations": 20,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 5,
+        "no_related_observation": 7,
+        "node_has_no_anchors": 1
+      },
+      "rejections": {
+        "judge_says_no": 7
+      },
+      "session_key": "codex:01a0019f-a138-7141-a2e2-384e04bc7b96",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:online:archive/EZ-13870-dashboard-redesign/archive/unlisted-children-20260601T094655Z-555625/children/rubricator-rework/children/rubrics-integration-compat",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 34,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "codex:019e268a-2fe4-7520-80df-c4873af13a38",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 95,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "claude:1281f058-cc50-4459-9e31-cb79881b9383",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 1,
+      "ops": 0,
+      "pair_stats": {},
+      "rejections": {},
+      "session_key": "claude:cd93118c-b172-495e-bab4-27b404ad6c1b",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 19,
+      "judged": 3,
+      "observations": 49,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 9,
+        "no_related_observation": 16
+      },
+      "rejections": {
+        "judge_says_no": 3
+      },
+      "session_key": "codex:019e9471-7b94-7482-8d50-aa356562b17d",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 16,
+      "judged": 9,
+      "observations": 22,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 5,
+        "no_related_observation": 7
+      },
+      "rejections": {
+        "judge_says_no": 9
+      },
+      "session_key": "codex:019e93c4-0847-77c2-a6b6-c3459773aad1",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 10,
+      "judged": 1,
+      "observations": 26,
+      "ops": 0,
+      "pair_stats": {
+        "no_related_observation": 9
+      },
+      "rejections": {
+        "judge_says_no": 1
+      },
+      "session_key": "claude:c9b3d6f3-d7bc-4f42-88ba-8450436dd181",
+      "source": "claude",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 21,
+      "judged": 2,
+      "observations": 21,
+      "ops": 0,
+      "pair_stats": {
+        "duplicate_delivery": 15,
+        "no_related_observation": 19
+      },
+      "rejections": {
+        "judge_says_no": 2
+      },
+      "session_key": "codex:019e6f9e-028b-70d2-8116-bca02862f7a0",
+      "source": "codex",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:online:archive/EZ-13560-review/children/review-mr-diff",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 0,
+      "judged": 0,
+      "observations": 0,
+      "ops": 0,
+      "pair_stats": {
+        "no_observations": 0
+      },
+      "rejections": {},
+      "session_key": "ae_node:online:archive/EZ-13771-tooltip-experiment.2026-06-10T09-26-08-152Z.1/archive/unlisted-children-20260529T022113Z-1388365/children/tooltip-experiment-implementation/children/_verify",
+      "source": "ae_node_result",
+      "split": "eval"
+    },
+    {
+      "delivered_nodes": 59,
+      "judged": 12,
+      "observations": 36,
+      "ops": 0,
+      "pair_stats": {
+        "already_taught_in_session": 1,
+        "duplicate_delivery": 29,
+        "no_related_observation": 37,
+        "over_session_cap": 9
+      },
+      "rejections": {
+        "judge_says_no": 12
+      },
+      "session_key": "codex:019ff189-ec26-7530-b667-7e3187f191bf",
+      "source": "codex",
+      "split": "eval"
+    }
+  ],
+  "splits_read": [
+    "eval"
+  ],
+  "totals": {
+    "candidates_judged": 201,
+    "delivered_nodes": 779,
+    "observations": 2448,
+    "ops": 0,
+    "sessions": 70,
+    "sessions_with_ops": 0
+  }
+}

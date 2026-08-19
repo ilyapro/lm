@@ -1,0 +1,460 @@
+{
+  "artifact": "post-session-extraction-field-report",
+  "audit": {
+    "eval": {
+      "accepted_ops": 8,
+      "audited": 8,
+      "dump": 6,
+      "errors": 0,
+      "genuine": 2,
+      "inconclusive": false,
+      "judge_model": "opus",
+      "precision": 0.25,
+      "sampled": 8
+    },
+    "holdout": {
+      "accepted_ops": 9,
+      "audited": 9,
+      "dump": 3,
+      "errors": 0,
+      "genuine": 6,
+      "inconclusive": false,
+      "judge_model": "opus",
+      "precision": 0.6667,
+      "sampled": 9
+    }
+  },
+  "batch": "field-20260819",
+  "extraction": {
+    "eval": {
+      "attestations_proposed": 382,
+      "elapsed_seconds": 2073.9,
+      "gate_at_extraction": {
+        "mode": "control_bootstrap",
+        "status": "PASS"
+      },
+      "judge": {
+        "backends": {
+          "claude-cli": 366
+        },
+        "calls": 366,
+        "outcomes": {
+          "ok": 366
+        },
+        "total_cost_usd": 15.6211
+      },
+      "ops": {
+        "by_reason": {},
+        "by_status": {
+          "would_write": 8
+        },
+        "proposed": 8
+      },
+      "selection": {
+        "eligible": 308,
+        "excluded": {
+          "bucket_mismatch": 0,
+          "ended_after_cutoff": 19,
+          "grouped_identity": 149,
+          "named_by_dev_artifacts": 70,
+          "no_end_timestamp": 0,
+          "not_provably_pre_sealing": 9,
+          "too_large": 1,
+          "unstable_identity_source": 201
+        },
+        "failed_to_load": 0,
+        "loaded": 300,
+        "selected": 300,
+        "sessions_in_split": 757,
+        "split": "eval"
+      }
+    },
+    "holdout": {
+      "attestations_proposed": 455,
+      "elapsed_seconds": 2201.5,
+      "gate_at_extraction": {
+        "mode": "control_bootstrap",
+        "status": "PASS"
+      },
+      "judge": {
+        "backends": {
+          "claude-cli": 275
+        },
+        "calls": 275,
+        "outcomes": {
+          "ok": 275
+        },
+        "total_cost_usd": 12.8237
+      },
+      "ops": {
+        "by_reason": {},
+        "by_status": {
+          "would_write": 9
+        },
+        "proposed": 9
+      },
+      "selection": {
+        "eligible": 381,
+        "excluded": {
+          "bucket_mismatch": 0,
+          "ended_after_cutoff": 23,
+          "grouped_identity": 227,
+          "named_by_dev_artifacts": 0,
+          "no_end_timestamp": 0,
+          "not_provably_pre_sealing": 6,
+          "too_large": 2,
+          "unstable_identity_source": 206
+        },
+        "failed_to_load": 0,
+        "loaded": 300,
+        "selected": 300,
+        "sessions_in_split": 845,
+        "split": "holdout"
+      }
+    }
+  },
+  "generated_at": "2026-08-19T14:14:48Z",
+  "live_writes": {
+    "cap": 25,
+    "performed": false,
+    "reason": "verdict INCONCLUSIVE: the pre-registered bar was not cleared; the extractor signals and stops instead of writing",
+    "written_node_ids": []
+  },
+  "preregistration": {
+    "amendments": [
+      "v2 (before extract --split holdout): seal argument moved from digest re-derivation to a per-session membership proof",
+      "(AE archival renames path-derived ae_node_result keys; the CLI rolling window pruned the 2026-07-20 morning sliver).",
+      "v3 (before extract --split holdout; after observing EVAL yield only): sessions_per_split raised 30 -> 300 and",
+      "min_extracted_cohort 20 added, because the extractor's anti-dump gate is so selective",
+      "(49 proposals per 747 eval sessions in insights-eval.json) that 30 sessions cannot yield a decision-grade cohort.",
+      "No bar, floor, cutoff, replay set or audit rule was changed by any amendment."
+    ],
+    "artifact": "field-measurement-preregistration",
+    "audit": {
+      "judge_model": "opus",
+      "payload": "kind + trace text only (no evidence, no session context)",
+      "precision": "genuine / (genuine + dump); judge errors excluded from the denominator, reported, and > 20% errors makes the audit INCONCLUSIVE",
+      "precision_bar": 0.7,
+      "sample_order": "ops sorted by op fingerprint, first N",
+      "sample_per_split": 20,
+      "task_sha256": "686fb35ac1a86cf0d0b41cd5fd7c18b3c8b12a1254cbb439dfbc42bd95792e55"
+    },
+    "bar_notes": [
+      "The binding bar is the baseline's own decision procedure, applied by runner.evaluate_gate:",
+      "PASS iff the concurrently measured organic control is admissible AND extracted_rate >= 0.5 * organic_rate AND",
+      "extracted_rate >= absolute_floor_by_protocol[counterfactual_post_cutoff] = 0.05.",
+      "The goal text's scalar '>= 0.15 absolute' is the deprecated retrospective_long_window floor.",
+      "The baseline amended it before any extracted cohort existed: under the pinned replay arm a 0.15 floor",
+      "would reject the known-good organic control itself (0.1159). Both comparisons are reported;",
+      "the protocol-keyed floor is the binding one."
+    ],
+    "bar_source": "artifacts/post-session/usage-baseline.json#pre_registered_bar",
+    "batch": "field-20260819",
+    "extraction": {
+      "dry_run": true,
+      "judge": "claude-cli sonnet via recording cassette",
+      "lm_dedup": false,
+      "max_ops_per_session": 3,
+      "max_total_ops": 90,
+      "measured_cohort": "ops whose dry-run decision is would_write (remember+teach)",
+      "stages": [
+        "insights",
+        "corrections",
+        "attest"
+      ]
+    },
+    "generalization": {
+      "bar": 0.25,
+      "definition": "(precision_eval - precision_holdout) / precision_eval",
+      "diagnostic": "counterfactual consumption rate degradation eval -> holdout is reported alongside, not gated (unequal, small cohorts)",
+      "metric": "adversarial audit precision, eval -> holdout"
+    },
+    "on_fail": "zero live writes; the report states what would have to change",
+    "on_pass": "at most 25 holdout-derived traces written through scripts/post_session_extract.py --write, node ids and memory_forget reversal commands recorded in the field report",
+    "plan_sha256": "7361f0f10c72d15eb1b82922fd8d457254849c4efc46b53cb3203544b15a1bd6",
+    "protocol": {
+      "as_of": "2026-08-19T00:00:00Z",
+      "cohort_window": "2026-08-12..2026-08-15",
+      "identical_for_both_cohorts": true,
+      "reinsert_mode_control": "faithful",
+      "reinsert_mode_extracted": "fresh",
+      "replay_since": "2026-08-15T00:00:00Z",
+      "seed_created_at": "2026-08-14T23:59:59Z",
+      "seed_marker_context_key": "field_batch",
+      "tool": "scripts/counterfactual_consumption.py"
+    },
+    "registered_at": "2026-08-19T11:30:36Z",
+    "registered_by": "scripts/postsession_field_run.py",
+    "seal_strategy": [
+      "verify holdout_sha256 by full re-derivation, else by a witness search over mtime-undecided entries;",
+      "if the digest is unrecoverable because AE archival renamed path-derived ae_node_result keys",
+      "or the CLI rolling window pruned the oldest transcript sliver, fall back to a per-session membership proof:",
+      "stable-key source, transcript-internal started_at before the sealing instant, singleton identity group",
+      "(split_key == session_key, so the bucket is a pure function of the key), own-key bucket in the sealed split's buckets,",
+      "and absence from every session key named by tracked development artifacts. A session failing the proof is never read."
+    ],
+    "sealed_holdout_sha256": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+    "session_rule": {
+      "eligible": [
+        "corpus split member satisfying the per-session sealed-membership proof (see seal_strategy),",
+        "whose session ended before the replay cutoff 2026-08-15T00:00:00Z (transcript-internal ended_at),",
+        "and whose transcript is at most 12000000 bytes"
+      ],
+      "eval_set": "first 300 eligible eval-split sessions",
+      "holdout_set": "first 300 eligible sealed holdout-split sessions; read only by this measurement, seal proven first",
+      "order": "sha256(session_key), ascending (the runner's own sample rank)",
+      "sessions_per_split": 300,
+      "train_set": "train split (used by sibling children during development)"
+    },
+    "snapshot_row_counts": {
+      "active_nodes": 12965,
+      "connections": 143839,
+      "nodes": 16793,
+      "recall_events": 54892
+    },
+    "snapshot_sha256": "04e6276876453f7191696ddd45c79975869e65aafe9217d59b487370fb1420c7",
+    "verdict_rule": [
+      "PASS iff evaluate_gate(extracted vs concurrent organic control) is PASS AND holdout audit precision >= 0.7 AND audit precision degradation <= 0.25 AND the seeded holdout cohort holds >= 20 traces; INC",
+      "ONCLUSIVE anywhere means not PASS"
+    ]
+  },
+  "privacy": "aggregates, digests and node ids only; dry-run reports, op dumps and cassettes stay in the untracked state directory",
+  "question": [
+    "do traces extracted from sealed holdout sessions get consumed by recorded later recall traffic",
+    "at least half as often as organic memory, are they genuine one-fact insights,",
+    "and does extraction quality survive eval -> holdout"
+  ],
+  "seal": {
+    "checked_at": "2026-08-19T11:22:25Z",
+    "digest_rederivable": false,
+    "membership_proof": {
+      "available": true,
+      "rule": [
+        "each measured session must individually satisfy:",
+        "source with UUID/id-stable keys (never ae_node_result),",
+        "transcript-internal started_at earlier than the sealing instant,",
+        "singleton identity group with split_key == session_key (bucket is then a pure function of the key),",
+        "sha256-bucket of its own key inside the split's sealed buckets,",
+        "and absence from every session key named by tracked development artifacts"
+      ]
+    },
+    "per_source_reconciliation": {
+      "ae_chat": {
+        "missing_lower_bound": 0,
+        "mtime_undecided": 0,
+        "on_disk_pre_sealing": 184,
+        "sealed": 184
+      },
+      "ae_node_result": {
+        "missing_lower_bound": 0,
+        "mtime_undecided": 14,
+        "on_disk_pre_sealing": 1015,
+        "sealed": 1018
+      },
+      "claude": {
+        "missing_lower_bound": 7,
+        "mtime_undecided": 0,
+        "on_disk_pre_sealing": 1043,
+        "sealed": 1050
+      },
+      "codex": {
+        "missing_lower_bound": 0,
+        "mtime_undecided": 0,
+        "on_disk_pre_sealing": 1636,
+        "sealed": 1636
+      },
+      "deepseek": {
+        "missing_lower_bound": 0,
+        "mtime_undecided": 0,
+        "on_disk_pre_sealing": 7,
+        "sealed": 7
+      },
+      "gigacode": {
+        "missing_lower_bound": 0,
+        "mtime_undecided": 0,
+        "on_disk_pre_sealing": 58,
+        "sealed": 58
+      }
+    },
+    "sealed_holdout_sha256": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+    "why_not_rederivable": [
+      "ae_node_result session keys are path-derived and AE archival renames node paths post-sealing",
+      "(1 undecided keys carry /archive/ segments; every result.md mtime was touched after sealing),",
+      "and the Claude CLI rolling cleanup pruned the oldest sliver of claude transcripts (lower bound 7;",
+      "earliest survivor started 2026-07-20T10:26Z). Neither mechanism moves a surviving stable-key session between splits."
+    ]
+  },
+  "seeding": {
+    "eval": {
+      "accepted_ops": 8,
+      "created_at_stamp": "2026-08-14T23:59:59Z",
+      "decay_collateral": 0,
+      "seeded_nodes": 8
+    },
+    "holdout": {
+      "accepted_ops": 9,
+      "created_at_stamp": "2026-08-14T23:59:59Z",
+      "decay_collateral": 0,
+      "seeded_nodes": 9
+    }
+  },
+  "snapshot": {
+    "as_of_cut": "2026-08-19T00:00:00Z",
+    "bytes": 513495040,
+    "captured_at": "2026-08-19T11:22:47Z",
+    "frozen_in_seconds": 4.4,
+    "row_counts": {
+      "active_nodes": 12965,
+      "connections": 143839,
+      "nodes": 16793,
+      "recall_events": 54892
+    },
+    "sha256": "04e6276876453f7191696ddd45c79975869e65aafe9217d59b487370fb1420c7"
+  },
+  "state_inputs_sha256": {
+    "audit-eval.json": "45e2e21fe321353aaec399e3aab83fe4f1689c3b7bb31dae8cca6458c6952f45",
+    "audit-holdout.json": "32be62c20d55ba1e58bad0b30c80bc6a2be1591ee5a5fa257aef75647afc0ce5",
+    "counterfactual-control.json": "c3e3440933e013a15a833e715a23d21dede57f9cf7be51d632ba55bfb79949ae",
+    "counterfactual-extracted-eval.json": "49431b88c4033b54f7021b21556d75e2b096d445038b4a1e9802b999b61f9295",
+    "counterfactual-extracted-holdout.json": "07c3255c08ae5da9bbfb5014a5bf1efe93c0765fca41958eb1084383a01fb661",
+    "seeded-eval.json": "f7f878512b34decd7a0163297585b4a852bac7a2437ce74c7291850ca6170ea5",
+    "seeded-holdout.json": "27c9ac419b74583f71d6097fb5f580c093a17e14e7a5dec982bdadd603a06901"
+  },
+  "verdict": {
+    "cohorts": {
+      "extracted_eval": {
+        "cohort_kind": "extracted_eval",
+        "cohort_nodes": 8,
+        "counterfactual_consumed_later": 0,
+        "counterfactual_rate": 0.0,
+        "events_replayed": 1012,
+        "grounded_denominator": 0,
+        "grounded_rate": null,
+        "rate_ci95": [
+          0.0,
+          0.3244
+        ]
+      },
+      "extracted_holdout": {
+        "cohort_kind": "extracted_holdout",
+        "cohort_nodes": 9,
+        "counterfactual_consumed_later": 2,
+        "counterfactual_rate": 0.2222,
+        "events_replayed": 1012,
+        "grounded_denominator": 2,
+        "grounded_rate": 1.0,
+        "rate_ci95": [
+          0.0632,
+          0.5474
+        ]
+      },
+      "organic_control": {
+        "cohort_kind": "organic_holdout",
+        "cohort_nodes": 949,
+        "counterfactual_consumed_later": 111,
+        "counterfactual_rate": 0.117,
+        "events_replayed": 1012,
+        "grounded_denominator": 88,
+        "grounded_rate": 0.1591,
+        "rate_ci95": [
+          0.098,
+          0.139
+        ]
+      }
+    },
+    "four_numbers": {
+      "1_relative": {
+        "bar": "extracted >= 0.5 x organic",
+        "extracted_rate": 0.2222,
+        "organic_rate": 0.117,
+        "pass": true,
+        "ratio_vs_organic": 1.8991,
+        "required": 0.0585
+      },
+      "2_absolute": {
+        "bar": "absolute_floor_by_protocol[counterfactual_post_cutoff] = 0.05",
+        "extracted_rate": 0.2222,
+        "legacy_scalar_note": [
+          "the goal text's 0.15 is the deprecated retrospective-protocol floor;",
+          "against it the extracted rate meets 0.15,",
+          "but the baseline forbids reading the scalar and the organic control itself scores 0.117 under this protocol"
+        ],
+        "pass": true
+      },
+      "3_audit_precision": {
+        "bar": 0.7,
+        "ci95": [
+          0.3542,
+          0.8794
+        ],
+        "holdout_precision": 0.6667,
+        "pass": false
+      },
+      "4_generalization": {
+        "bar": 0.25,
+        "consumption_degradation_diagnostic": null,
+        "eval_precision": 0.25,
+        "holdout_precision": 0.6667,
+        "pass": true,
+        "relative_degradation": -1.6668
+      }
+    },
+    "gate": {
+      "authorized": true,
+      "details": {
+        "absolute_floor": 0.05,
+        "baseline": "artifacts/post-session/usage-baseline.json",
+        "checked_at": "2026-08-19T14:11:37Z",
+        "cohort_kind": "extracted_holdout",
+        "control": "/home/sfx/p/lm/.worktrees/_node_exec_post-session-extraction_field-measurement-contract/tmp/field-20260819/counterfactual-control.json",
+        "extracted_rate": 0.2222,
+        "max_age_days": 14.0,
+        "organic_rate": 0.117,
+        "pinned_protocol": "counterfactual_post_cutoff",
+        "protocol": {
+          "as_of": "2026-08-19T00:00:00Z",
+          "min_containment": 0.25,
+          "replay_since": "2026-08-15T00:00:00Z",
+          "within_days": 7
+        },
+        "relative_floor": 0.5,
+        "required_relative": 0.0585,
+        "verdict": "/home/sfx/p/lm/.worktrees/_node_exec_post-session-extraction_field-measurement-contract/tmp/field-20260819/counterfactual-extracted-holdout.json",
+        "verdict_age_days": 0.0,
+        "verdict_generated_at": "2026-08-19T14:07:23Z",
+        "verdict_sha256": "07c3255c08ae5da9bbfb5014a5bf1efe93c0765fca41958eb1084383a01fb661"
+      },
+      "mode": "extracted_vs_control",
+      "reasons": [
+        "extracted 0.2222 >= 0.5 x organic 0.117 and >= floor 0.05"
+      ],
+      "status": "PASS"
+    },
+    "generated_at": "2026-08-19T14:11:37Z",
+    "grounded_variant": {
+      "extracted": {
+        "denominator": 2,
+        "rate": 1.0
+      },
+      "note": "rate over nodes_with_closed_consumer per the baseline; compared rate to rate, never counts",
+      "organic": {
+        "denominator": 88,
+        "rate": 0.1591
+      }
+    },
+    "verdict": "INCONCLUSIVE"
+  },
+  "what_would_have_to_change": [
+    [
+      "cohort: 9 seeded holdout traces < minimum 20. At the observed yield (9 accepted ops per 300 sessions) a decision-grade cohort needs ~667 eligible sessions;",
+      "the whole sealed holdout holds 381 today. The corpus must accumulate more finished sessions; lowering the minimum is only admissible in a fresh pre-registration for a new batch."
+    ],
+    [
+      "audit: holdout anti-dump precision 0.6667 (6/9) is below 0.7; 7/9 was required. Raising it means tightening the extractor's gate,",
+      "which is extractor iteration: allowed against train/eval only, then re-measured on a NEW sealed batch - this batch's holdout sessions and numbers are burned."
+    ],
+    [
+      "invariant: no bar, floor, replay set or audit rule may be tuned to these numbers; any change re-runs the full protocol on a fresh sealed batch under a new pre-registration."
+    ]
+  ]
+}

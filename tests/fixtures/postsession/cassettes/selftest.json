@@ -1,0 +1,43 @@
+{
+  "entries": {
+    "8d4d2ecd5cb3ac9f0900b49b5a2afb7bd95fdb170b0d808482cca6810fa31ab8": {
+      "model": "sonnet",
+      "outcome": "ok",
+      "prompt": "# Task\nA session excerpt is given. Decide whether the stated fact is expensive to re-derive from code or git history (keep) or trivially re-derivable (drop). Answer with the verdict and one short sentence of reasoning.\n\n# Output schema (JSON Schema)\n{\n  \"additionalProperties\": false,\n  \"properties\": {\n    \"reason\": {\n      \"maxLength\": 300,\n      \"minLength\": 1,\n      \"type\": \"string\"\n    },\n    \"verdict\": {\n      \"enum\": [\n        \"keep\",\n        \"drop\"\n      ],\n      \"type\": \"string\"\n    }\n  },\n  \"required\": [\n    \"verdict\",\n    \"reason\"\n  ],\n  \"type\": \"object\"\n}\n\n# Payload\n{\n  \"evidence\": [\n    \"operator ran: cp ~/.local/share/living-memory/global.sqlite3 /tmp/snap.db\",\n    \"the copy was missing 1,204 rows written in the last 40 minutes\",\n    \"server config: LM_AUTH_TOKEN=<redacted>\",\n    \"Authorization: <redacted>\"\n  ],\n  \"fact\": \"sqlite WAL copies taken with `cp` are incomplete without the -wal file; snapshots must go through the sqlite backup API or `mode=ro`.\",\n  \"session_id\": \"selftest-0001\"\n}\n\nReply with one JSON object matching the schema, or {\"refusal\": \"...\"}.",
+      "prompt_sha256": "4e24575fdd13070376acbd1b020a5c5993b46eaf149711564752fee439a6e80a",
+      "recorded_at": "2026-08-18T23:38:25+00:00",
+      "response": {
+        "reason": "This is a hard-won operational lesson from a real incident (1,204 lost rows) that is not something you'd trivially rederive from code alone.",
+        "verdict": "keep"
+      },
+      "schema_sha256": "8b289ca9d4787effe812d5c3b98f874e2281662ecd2d2bc3f401ccd649315657",
+      "stats": {
+        "attempts": 1,
+        "backend": "claude-cli",
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "duration_api_ms": 2916,
+        "duration_ms": 2028,
+        "input_tokens": 887,
+        "model": "sonnet",
+        "num_turns": 1,
+        "outcome": "ok",
+        "output_tokens": 63,
+        "payload_truncated": false,
+        "prompt_bytes": 1088,
+        "prompt_sha256": "4e24575fdd13070376acbd1b020a5c5993b46eaf149711564752fee439a6e80a",
+        "replayed": false,
+        "schema_sha256": "8b289ca9d4787effe812d5c3b98f874e2281662ecd2d2bc3f401ccd649315657",
+        "session_ids": [
+          "106cd05d-a3c3-402c-be8f-8594f3179527"
+        ],
+        "system_sha256": "84b41ea2a76d01394f3ddf3f9a1710d925e5f04ad1017cefc9fa92588dde3a62",
+        "task": "A session excerpt is given. Decide whether the stated fact is expensive to re-derive from code or git history (keep) or trivially re-derivable (drop). Answer with the verdict and one short sentence of reasoning.",
+        "total_cost_usd": 0.004551
+      },
+      "system_sha256": "84b41ea2a76d01394f3ddf3f9a1710d925e5f04ad1017cefc9fa92588dde3a62",
+      "task": "A session excerpt is given. Decide whether the stated fact is expensive to re-derive from code or git history (keep) or trivially re-derivable (drop). Answer with the verdict and one short sentence of reasoning."
+    }
+  },
+  "version": 1
+}

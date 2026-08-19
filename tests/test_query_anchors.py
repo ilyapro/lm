@@ -174,7 +174,7 @@ def test_fresh_database_carries_v7_anchor_tables_and_indexes(tmp_path: Path) -> 
         version = store.connection.execute(
             "SELECT value FROM metadata WHERE key = 'schema_version'"
         ).fetchone()
-        assert version["value"] == str(SCHEMA_VERSION) == "7"
+        assert version["value"] == str(SCHEMA_VERSION) == "8"
 
         objects = {
             str(row["name"])
@@ -203,7 +203,7 @@ def test_v6_database_migrates_leaving_nodes_and_connections_ddl_identical(
         version = store.connection.execute(
             "SELECT value FROM metadata WHERE key = 'schema_version'"
         ).fetchone()
-        assert version["value"] == "7"
+        assert version["value"] == "8"
 
         # Additive: every legacy row survives the migration untouched.
         for node_id in seeded:

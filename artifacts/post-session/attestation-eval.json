@@ -1,0 +1,239 @@
+{
+  "bar": {
+    "eval_over_shuffled_min": 3.0,
+    "holdout_sessions_read_max": 0,
+    "sessions_min": 30,
+    "sessions_with_grounded_event_min": 3,
+    "shuffled_grounded_rate_max": 0.05
+  },
+  "bar_result": {
+    "eval_over_shuffled": 9.8887,
+    "passed": true,
+    "shuffled_rate_is_zero": false
+  },
+  "bounds": {
+    "min_containment": 0.25,
+    "run_caps": {
+      "max_item_chars": 600,
+      "max_items": 64,
+      "max_total_chars": 19200
+    },
+    "server_max_item_chars": 600,
+    "server_max_items": 64,
+    "server_max_total_chars": 19200
+  },
+  "code": {
+    "branch": "post-session-extraction--grounded-usage-attestation--attestation-field-check-and-docs",
+    "commit": "8ff02ee466bee9946b4274f7c498df05467d7ba6",
+    "measured_source_sha256": {
+      "scripts/attest_eval.py": "6afe5aa73e8aadc0c29ce45dd179b71403b09591e2c7ba5df36b2c57b7811b73",
+      "src/living_memory/attestation.py": "d492966236a09bc97d03a27f5a010cd70245c0c8391bd04e3334055e7b27fb26",
+      "src/living_memory/grounding.py": "02c627f8a4adf39669eac3ded0fc6ebc43f93ea7b116448927049ed98d458bfd",
+      "src/living_memory/postsession/evidence.py": "8c6440afb237626206420cda7bceac668157de6f2e75fea9d7467de5c162ec71"
+    },
+    "worktree_dirty": true
+  },
+  "commit": "8ff02ee466bee9946b4274f7c498df05467d7ba6",
+  "corpus": {
+    "manifest": "artifacts/post-session/corpus.json",
+    "manifest_generated_at": "2026-08-19T01:14:29.477340Z",
+    "manifest_holdout_sha256": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+    "manifest_index_sha256": "af011614c51b689a1cdaa1dd0f0b5cb8ccdfe5031fa2de12e9f052c7ed2dd85f",
+    "manifest_sha256": "625eb97f2f7120a4bd1634baf0e185d043810224c62aa6b2515feb36921a35fb",
+    "post_seal_rows_excluded": {
+      "eval": 7,
+      "holdout": 6,
+      "train": 7
+    },
+    "sealed_membership_recovered": true,
+    "sealed_sizes": {
+      "eval": 748,
+      "holdout": 837,
+      "train": 2368
+    },
+    "sealed_split_sha256": {
+      "eval": "51fd1409dfd1883fd3c29b1cf1ca2c3584c74f7cdcda6d578fa11b395289da28",
+      "holdout": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+      "train": "4eb290a0540265d73bae3f422c3294d114854ed5c66f77f6341950086b644012"
+    },
+    "working_index": ".cache/post-session/corpus-index.jsonl",
+    "working_index_note": "rebuilt from disk; deliberately not written to artifacts/post-session/corpus-index.jsonl, which is the seal's own slot",
+    "working_index_sha256": "3aa015161f95b52063716b2ce9462efd5dd4d6f0098642a53ebb7c0f33b5908f"
+  },
+  "corpus_recovery": {
+    "attest_seconds": 107.93,
+    "contentless_deliveries_excluded": 0,
+    "deliveries_gradable": 6951,
+    "deliveries_seen": 8484,
+    "events_without_gradable_node": 109,
+    "load_seconds": 5.27,
+    "recalls_seen": 1071,
+    "recalls_without_event_id": 6,
+    "sessions_considered": 748,
+    "sessions_unparsable": 0,
+    "sessions_unusable": 484,
+    "sessions_usable": 264,
+    "sessions_without_evidence": 64
+  },
+  "eval": {
+    "arm": "eval",
+    "containment": {
+      "per_pair_max": {
+        "max": 1.0,
+        "mean": 0.208498,
+        "min": 0.028149,
+        "p50": 0.185083,
+        "p90": 0.351105,
+        "p95": 0.413516,
+        "p99": 0.584817
+      },
+      "per_pair_max_histogram": {
+        "[0,0.02)": 0,
+        "[0.02,0.05)": 11,
+        "[0.05,0.1)": 62,
+        "[0.1,0.15)": 159,
+        "[0.15,0.2)": 205,
+        "[0.2,0.25)": 143,
+        "[0.25,0.35)": 100,
+        "[0.35,0.5)": 57,
+        "[0.5,0.75)": 15,
+        "[0.75,1)": 4,
+        "[1,inf)": 2
+      },
+      "per_result": {
+        "max": 1.0,
+        "mean": 0.107596,
+        "min": 0.0,
+        "p50": 0.089099,
+        "p90": 0.189454,
+        "p95": 0.237865,
+        "p99": 0.390993
+      },
+      "per_result_histogram": {
+        "[0,0.02)": 111,
+        "[0.02,0.05)": 885,
+        "[0.05,0.1)": 2427,
+        "[0.1,0.15)": 1328,
+        "[0.15,0.2)": 646,
+        "[0.2,0.25)": 252,
+        "[0.25,0.35)": 150,
+        "[0.35,0.5)": 74,
+        "[0.5,0.75)": 17,
+        "[0.75,1)": 4,
+        "[1,inf)": 2
+      }
+    },
+    "credited_pairs": 178,
+    "errors": [],
+    "graded_results": 5896,
+    "grounded_node_ids": 247,
+    "grounded_pairs": 178,
+    "grounded_rate": 0.234828,
+    "pairs": 758,
+    "pairs_attempted": 758,
+    "pairs_failed": 0,
+    "replayed_pairs": 0,
+    "sessions": 264,
+    "sessions_with_grounded_event": 114
+  },
+  "generated_at": "2026-08-19T03:51:38.530992Z",
+  "generator": "scripts/attest_eval.py",
+  "holdout_sessions_read": 0,
+  "pairing": {
+    "by_source": {
+      "claude": 93,
+      "codex": 171
+    },
+    "offset": 64,
+    "rule": "cyclic shift over sessions sorted by session_key",
+    "same_group_pairs": 0,
+    "seed": "sha256 over the sorted session keys, no random module",
+    "self_pairs": 0,
+    "sessions": 264
+  },
+  "scratch": {
+    "database": "temporary file, removed after the run",
+    "live_database_opened": false,
+    "live_port_contacted": false,
+    "nodes": 997,
+    "recall_events": 758,
+    "server_port": 35551
+  },
+  "shuffled": {
+    "arm": "shuffled",
+    "containment": {
+      "per_pair_max": {
+        "max": 0.453423,
+        "mean": 0.118744,
+        "min": 0.008569,
+        "p50": 0.108894,
+        "p90": 0.178575,
+        "p95": 0.210294,
+        "p99": 0.320077
+      },
+      "per_pair_max_histogram": {
+        "[0,0.02)": 6,
+        "[0.02,0.05)": 35,
+        "[0.05,0.1)": 281,
+        "[0.1,0.15)": 248,
+        "[0.15,0.2)": 132,
+        "[0.2,0.25)": 38,
+        "[0.25,0.35)": 14,
+        "[0.35,0.5)": 4,
+        "[0.5,0.75)": 0,
+        "[0.75,1)": 0,
+        "[1,inf)": 0
+      },
+      "per_result": {
+        "max": 0.453423,
+        "mean": 0.070401,
+        "min": 0.0,
+        "p50": 0.063419,
+        "p90": 0.119085,
+        "p95": 0.147238,
+        "p99": 0.201411
+      },
+      "per_result_histogram": {
+        "[0,0.02)": 206,
+        "[0.02,0.05)": 1737,
+        "[0.05,0.1)": 2956,
+        "[0.1,0.15)": 718,
+        "[0.15,0.2)": 213,
+        "[0.2,0.25)": 47,
+        "[0.25,0.35)": 15,
+        "[0.35,0.5)": 4,
+        "[0.5,0.75)": 0,
+        "[0.75,1)": 0,
+        "[1,inf)": 0
+      }
+    },
+    "credited_pairs": 18,
+    "errors": [],
+    "graded_results": 5896,
+    "grounded_node_ids": 19,
+    "grounded_pairs": 18,
+    "grounded_rate": 0.023747,
+    "pairs": 758,
+    "pairs_attempted": 758,
+    "pairs_failed": 0,
+    "replayed_pairs": 0,
+    "sessions": 264,
+    "sessions_with_grounded_event": 14
+  },
+  "split_accounting": {
+    "opens_refused_by_sealed_split": {
+      "eval": 0,
+      "holdout": 0,
+      "train": 0,
+      "unsealed": 0
+    },
+    "sessions_read_by_sealed_split": {
+      "eval": 748,
+      "holdout": 0,
+      "train": 0,
+      "unsealed": 0
+    },
+    "split_under_measurement": "eval"
+  },
+  "truncated_deliveries_excluded": 1533
+}

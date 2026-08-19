@@ -1,0 +1,1205 @@
+{
+  "attestations": {
+    "applied": 0,
+    "by_reason": {},
+    "by_status": {
+      "would_write": 9
+    },
+    "credited_events": 0,
+    "grounded_results": 0,
+    "proposed": 9,
+    "replayed": 0
+  },
+  "attribution": {
+    "note": "enforce_attribution stamps every accepted op; see decisions",
+    "required_keys": [
+      "agent",
+      "task",
+      "session_id",
+      "transport_session_id",
+      "source_transcript_sha256"
+    ]
+  },
+  "budgets": {
+    "dropped": 2,
+    "max_attests_per_session": 8,
+    "max_ops_per_session": 2,
+    "max_total_attests": 64,
+    "max_total_ops": 24
+  },
+  "decisions": [
+    {
+      "detail": "",
+      "fingerprint": "1909eb7685b0c099022c2b3425c65f36091582932ee698c2033e41eefe9b331e",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-retrieval-signal-and-context-cost-audit-replay-packet/3da92b3e-987f-46c0-91bd-20c0ca8906b1.jsonl#42:message.content.tool_use",
+      "preview": "On the alt host, counting animal-planet worktree transcripts with `ls ~/.claude/projects/*animal-planet*/*.jsonl | wc -l` returned 336 files; this count was cited as the reason the animal-planet audit must be window-bounded rather than anal…",
+      "reason": "",
+      "session_key": "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "baec608f42b090cc3b6063238b5cbb3138cd6fbe819aac5fefb7d13efe755492",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-retrieval-signal-and-context-cost-audit-replay-packet/3da92b3e-987f-46c0-91bd-20c0ca8906b1.jsonl#52:message.content.tool_use",
+      "preview": "In the animal-planet recon, querying the alt DB global.sqlite3 recall_events table for window W1 = [2026-08-06T20:00Z, 2026-08-09T11:00:23Z] (end = audit-node creation time) found that exactly 727 recall_events reproduce in that window; thi…",
+      "reason": "",
+      "session_key": "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "86fe3b56989609fce3839ca83a3e0026375acd7973a9da689b9aeb30d842bb8b",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-retrieval-signal-and-context-cost-audit-replay-packet/3da92b3e-987f-46c0-91bd-20c0ca8906b1.jsonl#62:message.content.tool_use",
+      "preview": "In the alt living-memory DB, recall_events counts by scope were project:octopus 12127, project:x 9080, project:online 7976; these three non-animal-planet scopes were chosen as <reserved-split:h> workload candidates for the retrieval-signal audit, with…",
+      "reason": "budget_session_ops",
+      "session_key": "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+      "status": "dropped"
+    },
+    {
+      "detail": "",
+      "fingerprint": "da6a3f93568a8028bc6b53c0f78dbe165b8b72fc05271703a43a18dd9d1913b6",
+      "kind": "attest",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-retrieval-signal-and-context-cost-audit-replay-packet/3da92b3e-987f-46c0-91bd-20c0ca8906b1.jsonl#24:mcpMeta.structuredContent",
+      "preview": "attest 01KZW1PP9NYG0NPM2VQJQ2DCTK (38 items)",
+      "reason": "",
+      "session_key": "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "80e73f818ac1f155a5485c5273d8d3e881889f755ce33cd7b5ba880bde80bb20",
+      "kind": "attest",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-retrieval-signal-and-context-cost-audit-replay-packet/3da92b3e-987f-46c0-91bd-20c0ca8906b1.jsonl#71:mcpMeta.structuredContent",
+      "preview": "attest 01KZW21G2P0KX1MM0D7QA8JGTC (38 items)",
+      "reason": "",
+      "session_key": "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "dffabdda1e687279bfda70a3d8d5b824a85276b159b4acec009d1c4bb5b44f79",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#69:message.content.tool_use",
+      "preview": "In AE's tools/lm_workload/compare.py gate, a negative-control test that removed the 'clarifications' dynamic-context block from the gm-reopen-quest render dropped baseline_context_class_coverage to 0.75 for that render, correctly failing th…",
+      "reason": "",
+      "session_key": "claude:8625b6b4-cc91-4573-bfc1-bde708711edf",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "3e433e5ce05aa01defa08543759fa0b611ef6b88488444863caed5b56f3db36b",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#171:message.content.tool_use",
+      "preview": "In the AE lm-integration test suite, a negative-control check that drops the 'decisions' block from goal gm-reopen-quest's dynamic context (while leaving prompt text intact) keeps relevant_context_retention at 1.0 but drops class coverage t…",
+      "reason": "",
+      "session_key": "claude:8625b6b4-cc91-4573-bfc1-bde708711edf",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "151d3d27615a3739df7f0cb61d511184b69c534c5542f67ba701f1562b912446",
+      "kind": "attest",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#16:mcpMeta.structuredContent",
+      "preview": "attest 01M03267AAZH6719DA9VAS050Q (38 items)",
+      "reason": "",
+      "session_key": "claude:8625b6b4-cc91-4573-bfc1-bde708711edf",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "5a18e89da120ab6e5db1505e110e4c693250bc5003eaca57dbf45905cf9672b2",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#13:message.content.tool_use",
+      "preview": "In this repo, baseline.json's pre-phase1 harness run recorded metrics.overall of hit@5=0.525641, mrr=0.323804, hit@1=0.175214, hit@10=0.688034 over 234 events, while the improved phase1 numbers (hit@5≈0.577, mrr≈0.354) are stored separately…",
+      "reason": "",
+      "session_key": "claude:a71e434e-ed3f-4163-bf37-1494a8828f0b:agent-a862cf8019171ebc6",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "e2d63703de37349d28d023d727e9031e85bdf32ea74acb8f28e75b8de545ecff",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#21:message.content.tool_use",
+      "preview": "In this repo's harness artifacts, artifacts/harness/baseline.json is the pre-phase1 run: metrics.overall shows hit@5=0.525641, mrr=0.323804, hit@1=0.175214, hit@10=0.688034 over 234 events. This distinguishes it from artifacts/harness/phase…",
+      "reason": "",
+      "session_key": "claude:a71e434e-ed3f-4163-bf37-1494a8828f0b:agent-a862cf8019171ebc6",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "a81f3e5501addeb464cc5970d16aa3254eebe20f63939cca00fe7b0c5479d64e",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#28:message.content.tool_use",
+      "preview": "In artifacts/replay/post-chunking-ab.json, the channel-weight scheme `explicit_b0.75_v0.10_g0.15` led on eval but failed the <reserved-split:h> generalization bar against the incumbent (hit@5 0.693405 vs incumbent 0.700535; MRR 0.387169 vs incumbent 0…",
+      "reason": "budget_session_ops",
+      "session_key": "claude:a71e434e-ed3f-4163-bf37-1494a8828f0b:agent-a862cf8019171ebc6",
+      "status": "dropped"
+    },
+    {
+      "detail": "",
+      "fingerprint": "f273fd3d30d11149567211979a7ffd95c6319324a7871611b48d01e211796623",
+      "kind": "remember",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-protocol-budget-and-measurement-debt-retire-confirmatory-campaign/b6d39c11-4367-46fe-95a2-ef9e03eca4da.jsonl#122:message.content.tool_use",
+      "preview": "In the lm repo, `python3 -m pytest --collect-only -q -p idsdump` collected 699 test IDs (written to /tmp/ids-after.txt), matching the 699 passed reported by npm test; this proved the merge gate's FAIL was not a failing test but pytest abort…",
+      "reason": "",
+      "session_key": "claude:b6d39c11-4367-46fe-95a2-ef9e03eca4da",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "153eb1659891e186bfeb31c86520d367769a85481f71a4186704471bcae9e493",
+      "kind": "attest",
+      "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-protocol-budget-and-measurement-debt-retire-confirmatory-campaign/b6d39c11-4367-46fe-95a2-ef9e03eca4da.jsonl#16:mcpMeta.structuredContent",
+      "preview": "attest 01M02K2MRMT2VMG7EMYB2JR807 (39 items)",
+      "reason": "",
+      "session_key": "claude:b6d39c11-4367-46fe-95a2-ef9e03eca4da",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "9be8e2bd659c8f358930005f7ea17b3d21ec28724af5f851fc73d4c8e421988d",
+      "kind": "remember",
+      "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#537:payload",
+      "preview": "In packages/desktop/src/modules/directions/__tests__/entry.spec.ts, the test suite fails (exit code 2) whenever the code path under test calls webApi.searchByPoint without mocking it: a console.error assertion fires with the message 'В тест…",
+      "reason": "",
+      "session_key": "codex:019e2af5-a53c-7a40-9fb9-3cf6517b4b26",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "3c485635fe4c7cf6876b04bfacb86548ef2555d52a1f4da11c60d3cd23767ba7",
+      "kind": "remember",
+      "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#556:payload",
+      "preview": "Running `npx tsc -p packages/desktop/tsconfig.json --noEmit --pretty false` failed with TS2345 at packages/desktop/src/modules/directions/hydrate.ts(50,7): a value of type 'false | \"\" | { type: string; payload: WithStateActionFunction<AppSt…",
+      "reason": "",
+      "session_key": "codex:019e2af5-a53c-7a40-9fb9-3cf6517b4b26",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "0ac1f32e187960d9f0f4923be83ac011a935e5c089d09bfd49c22fe97981f69e",
+      "kind": "attest",
+      "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#15:payload.result.Ok.structuredContent",
+      "preview": "attest 01KRNFBP713XEYC55RH7151Q6Q (54 items)",
+      "reason": "",
+      "session_key": "codex:019e2af5-a53c-7a40-9fb9-3cf6517b4b26",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "7046f2ec6d898713b4caa48db74f503c1172226d1be60bd8682e80b9174733e0",
+      "kind": "remember",
+      "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#108:payload",
+      "preview": "The `codex login --help` command documents a `-c, --config <key=value>` option that overrides a configuration value normally loaded from `~/.codex/config.toml`; keys use a dotted path like `foo.bar.baz`, and the value is parsed as TOML, fal…",
+      "reason": "",
+      "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "ed2a86d9c28bc3fee29ff06e72ad330a2a2e5914315345e80563c87354440ceb",
+      "kind": "remember",
+      "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#110:payload",
+      "preview": "Running `codex auth --help` on the codex CLI does not produce auth-specific help; it falls back to the general usage banner, showing there is no `auth` subcommand at all. The codex CLI's real subcommands for managing credentials are `login`…",
+      "reason": "",
+      "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "63cbe3039a6d30f09ef190e61189c1e9d084be9f6cf1ab1756889d35781cf883",
+      "kind": "attest",
+      "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#14:payload.result.Ok.structuredContent",
+      "preview": "attest 01KV8BCCCBRV3NTDVS0SJEJNZZ (47 items)",
+      "reason": "",
+      "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "36c4aafb3d40b56f5811eb48ce962f4960cf22cb70d6aa0be00c418d6a20d61d",
+      "kind": "attest",
+      "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#19:payload.result.Ok.structuredContent",
+      "preview": "attest 01KV8BCH3JSTP6FTTRCA87JQAV (47 items)",
+      "reason": "",
+      "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "ac840db63155d8d12b0d6b2faaca085a7940007a6204e796c9a563faf8358e9f",
+      "kind": "attest",
+      "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#201:payload.result.Ok.structuredContent",
+      "preview": "attest 01KV8CE30394C8NRM56XC7C5JS (47 items)",
+      "reason": "",
+      "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+      "status": "would_write"
+    },
+    {
+      "detail": "",
+      "fingerprint": "17c6a068b5c4563bfeebad205fcff2c0ff838541f1c06007f909ef32185b032b",
+      "kind": "attest",
+      "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#297:payload.result.Ok.structuredContent",
+      "preview": "attest 01KV8CN0AA3YYFS85KAASSD1CW (47 items)",
+      "reason": "",
+      "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+      "status": "would_write"
+    }
+  ],
+  "gate": {
+    "authorized": true,
+    "details": {
+      "absolute_floor": 0.05,
+      "baseline": "artifacts/post-session/usage-baseline.json",
+      "bootstrap_allowance": 200,
+      "checked_at": "2026-08-19T10:33:46Z",
+      "cohort_kind": "organic_<reserved-split:h>",
+      "control": null,
+      "max_age_days": 14.0,
+      "organic_rate": 0.1159,
+      "pinned_protocol": "counterfactual_post_cutoff",
+      "relative_floor": 0.5,
+      "verdict": "artifacts/post-session/counterfactual-selfcheck.json",
+      "verdict_age_days": 0.38,
+      "verdict_generated_at": "2026-08-19T01:32:55Z",
+      "verdict_sha256": "822bf4d70366b02a0918a516ddf687be5c2063fa20e9445a6d6ee0e618106b2b",
+      "written_nodes_total": 0
+    },
+    "mode": "control_bootstrap",
+    "reasons": [
+      "no extracted cohort exists to measure yet; the self-validated organic control authorizes a bounded bootstrap write"
+    ],
+    "status": "PASS"
+  },
+  "generated_at": "2026-08-19T10:37:53Z",
+  "generator": "scripts/post_session_extract.py",
+  "judge": {
+    "backends": {
+      "claude-cli": 55
+    },
+    "calls": 55,
+    "outcomes": {
+      "ok": 55
+    },
+    "total_cost_usd": 2.2392
+  },
+  "ledger": {
+    "entries": 0,
+    "path": "/tmp/psx-state-eval2/ledger.jsonl",
+    "written_nodes_total": 0
+  },
+  "mode": "dry-run",
+  "ops": {
+    "by_reason": {
+      "budget_session_ops": 2
+    },
+    "by_status": {
+      "dropped": 2,
+      "would_write": 11
+    },
+    "proposed": 13
+  },
+  "runner_version": "runner/1",
+  "selection": {
+    "session_keys": [
+      "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+      "claude:8625b6b4-cc91-4573-bfc1-bde708711edf",
+      "claude:a71e434e-ed3f-4163-bf37-1494a8828f0b:agent-a862cf8019171ebc6",
+      "claude:b6d39c11-4367-46fe-95a2-ef9e03eca4da",
+      "codex:019e2af5-a53c-7a40-9fb9-3cf6517b4b26",
+      "codex:019ed0b5-b844-7cf3-a668-9872b04168f5"
+    ],
+    "sessions_failed_to_load": 0,
+    "sessions_loaded": 6,
+    "sessions_selected": 6
+  },
+  "sessions": [
+    {
+      "cli": "claude",
+      "errors": [],
+      "proposed_attests": 2,
+      "proposed_ops": 3,
+      "session_key": "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+      "source": "claude",
+      "stages": {
+        "attest": {
+          "proposed": 2,
+          "recall_events": 2
+        },
+        "corrections": {
+          "delivered_nodes": 7,
+          "judged": 1,
+          "observations": 8,
+          "ops": 0,
+          "pair_stats": {
+            "duplicate_delivery": 3,
+            "no_related_observation": 6
+          },
+          "rejections": {
+            "judge_says_no": 1
+          },
+          "session_key": "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+          "source": "claude",
+          "split": ""
+        },
+        "insights": {
+          "candidates": 3,
+          "cli": "claude",
+          "judge_calls": 3,
+          "outcomes": [
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "On the alt host, counting animal-planet worktree transcripts with `ls ~/.claude/projects/*animal-planet*/*.jsonl | wc -l` returned 336 files; this count was cited as the reason the animal-planet audit must be window-bounded rather than analyzed over the full transcript set.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-retrieval-signal-and-context-cost-audit-replay-packet/3da92b3e-987f-46c0-91bd-20c0ca8906b1.jsonl#42:message.content.tool_use",
+              "ordinal": 0,
+              "signals": {
+                "identifiers": [
+                  "~/.claude/projects",
+                  "336"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Saves re-running the remote ssh/ls/wc scan to learn why the audit design switched to windowed slices instead of full-tree analysis."
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In the animal-planet recon, querying the alt DB global.sqlite3 recall_events table for window W1 = [2026-08-06T20:00Z, 2026-08-09T11:00:23Z] (end = audit-node creation time) found that exactly 727 recall_events reproduce in that window; this count was used to pin W1 as a reproducible baseline window for the audit and stored as LM trace 01KZW27BVVSZHZFH3J73PB4RE3.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-retrieval-signal-and-context-cost-audit-replay-packet/3da92b3e-987f-46c0-91bd-20c0ca8906b1.jsonl#52:message.content.tool_use",
+              "ordinal": 1,
+              "signals": {
+                "identifiers": [
+                  "global.sqlite3",
+                  "01KZW27BVVSZHZFH3J73PB4RE3",
+                  "2026",
+                  "727"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-deriving the exact reproducible-window count would require re-running the checkpoint+SQL query against the archived alt DB snapshot."
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In the alt living-memory DB, recall_events counts by scope were project:octopus 12127, project:x 9080, project:online 7976; these three non-animal-planet scopes were chosen as <reserved-split:h> workload candidates for the retrieval-signal audit, with a bounded recent slice capped at ≤1500 events per scope for the export.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-retrieval-signal-and-context-cost-audit-replay-packet/3da92b3e-987f-46c0-91bd-20c0ca8906b1.jsonl#62:message.content.tool_use",
+              "ordinal": 2,
+              "signals": {
+                "identifiers": [
+                  "12127",
+                  "9080",
+                  "7976",
+                  "1500"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-deriving which scopes and counts were picked as <reserved-split:h> workloads, and the ≤1500-event cap, would require rerunning the same DB query against the alt sqlite snapshot."
+            }
+          ],
+          "proposed": 3,
+          "session_key": "claude:3da92b3e-987f-46c0-91bd-20c0ca8906b1",
+          "source": "claude"
+        }
+      }
+    },
+    {
+      "cli": "claude",
+      "errors": [],
+      "proposed_attests": 1,
+      "proposed_ops": 2,
+      "session_key": "claude:8625b6b4-cc91-4573-bfc1-bde708711edf",
+      "source": "claude",
+      "stages": {
+        "attest": {
+          "proposed": 1,
+          "recall_events": 1
+        },
+        "corrections": {
+          "delivered_nodes": 8,
+          "judged": 4,
+          "observations": 58,
+          "ops": 0,
+          "pair_stats": {
+            "already_taught_in_session": 1,
+            "no_related_observation": 2,
+            "node_has_no_anchors": 1
+          },
+          "rejections": {
+            "judge_says_no": 4
+          },
+          "session_key": "claude:8625b6b4-cc91-4573-bfc1-bde708711edf",
+          "source": "claude",
+          "split": ""
+        },
+        "insights": {
+          "candidates": 6,
+          "cli": "claude",
+          "judge_calls": 6,
+          "outcomes": [
+            {
+              "code": "ungrounded_identifier",
+              "dedup": {},
+              "detail": "not in the evidence span: decisions/clarifications",
+              "fact": "In AE's lm-integration-remaining-gaps work, the `--max-injected-bytes-ratio` gate threshold was recalibrated from 0.8 to 0.95 because the original 0.8 bound had been calibrated against a measured injected-bytes ratio of ~0.75 (6149/8183 bytes) that came from a broken render state which had dropped the decisions/clarifications blocks and the wf-decisions-audit lessons block. Keeping 0.8 alongside `--min-class-coverage 1.0` would pre-register two thresholds that cannot both be satisfied, forcing context loss to persist.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#31:message.content.tool_use",
+              "ordinal": 0,
+              "signals": {
+                "ungrounded": [
+                  "decisions/clarifications"
+                ]
+              },
+              "status": "rejected",
+              "why_durable": "Re-deriving why 0.8 was loosened to 0.95 would require re-running the baseline measurement and reconstructing the conflict with --min-class-coverage 1.0, which the session already worked out."
+            },
+            {
+              "code": "rederivable_from_diff",
+              "dedup": {},
+              "detail": "containment 0.75 >= 0.60",
+              "fact": "In the AE lm-integration-remaining-gaps gate check (tools/lm_workload/compare.py comparing artifacts/lm-signal/baseline/local_baseline.json to artifacts/lm-signal/after/local_after.json), injected_dynamic_context_bytes dropped from 1636.6 to 1454.6 (ratio 0.8888), which satisfies the --max-injected-bytes-ratio 0.95 threshold used to gate the change.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#38:message.content.tool_use",
+              "ordinal": 1,
+              "signals": {
+                "diff_containment": 0.751766
+              },
+              "status": "rejected",
+              "why_durable": "Re-deriving whether the byte-overhead fix actually clears the compare.py gate threshold would require re-running the baseline/after harness and recomputing the ratio."
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quotes show compare.py's raw metric table and gate thresholds but never show the actual pass/fail decision or exit code, so it's unclear what the measured numbers determined.",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#53:message.content.tool_use",
+              "ordinal": 2,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In AE's tools/lm_workload/compare.py gate, a negative-control test that removed the 'clarifications' dynamic-context block from the gm-reopen-quest render dropped baseline_context_class_coverage to 0.75 for that render, correctly failing the --min-class-coverage 1.0 threshold check (reported as 'worst render gm-reopen-quest: 0.75 >= 1'). This confirms the gate detects whole-class context loss.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#69:message.content.tool_use",
+              "ordinal": 3,
+              "signals": {
+                "identifiers": [
+                  "--min-class-coverage",
+                  "compare.py",
+                  "tools/lm_workload/compare.py",
+                  "0.75"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-running this negative-control experiment to confirm the gate's sensitivity to class loss would require re-deriving the exact threshold and measured value from scratch."
+            },
+            {
+              "code": "journal_phrasing",
+              "dedup": {},
+              "detail": "completion claim: \"the gate threshold 'max recalls per render: 2 <= 2' (PASS\"",
+              "fact": "In AE worktree lm-integration-remaining-gaps, running tools/lm_workload/compare.py with --max-recalls-per-render 2 measured automatic_recall_count dropping from 4 (baseline) to 2 (after fix), exactly meeting the gate threshold 'max recalls per render: 2 <= 2' (PASS) with zero margin.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#126:message.content.tool_use",
+              "ordinal": 4,
+              "signals": {
+                "tier": "completion"
+              },
+              "status": "rejected",
+              "why_durable": "Re-deriving that the fix landed exactly at the gate threshold (no slack) would require re-running compare.py against both baseline and after artifacts."
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In the AE lm-integration test suite, a negative-control check that drops the 'decisions' block from goal gm-reopen-quest's dynamic context (while leaving prompt text intact) keeps relevant_context_retention at 1.0 but drops class coverage to 0.75, causing compare.py to exit 1 (min baseline class coverage 0.75 < 1). This shows retention alone can look perfect (1.0) even when a whole context class is missing, so the class-coverage metric is needed to catch that failure mode.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-ae--worktrees--node-exec-lm-integration-remaining-gaps/8625b6b4-cc91-4573-bfc1-bde708711edf.jsonl#171:message.content.tool_use",
+              "ordinal": 5,
+              "signals": {
+                "identifiers": [
+                  "compare.py",
+                  "0.75"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-deriving that retention and class-coverage metrics diverge on this exact negative control (0.75 vs 1.0) would require rerunning the same block-drop experiment against compare.py."
+            }
+          ],
+          "proposed": 2,
+          "session_key": "claude:8625b6b4-cc91-4573-bfc1-bde708711edf",
+          "source": "claude"
+        }
+      }
+    },
+    {
+      "cli": "claude",
+      "errors": [],
+      "proposed_attests": 0,
+      "proposed_ops": 3,
+      "session_key": "claude:a71e434e-ed3f-4163-bf37-1494a8828f0b:agent-a862cf8019171ebc6",
+      "source": "claude",
+      "stages": {
+        "attest": {
+          "proposed": 0,
+          "recall_events": 0
+        },
+        "corrections": {
+          "delivered_nodes": 0,
+          "judged": 0,
+          "observations": 19,
+          "ops": 0,
+          "pair_stats": {},
+          "rejections": {},
+          "session_key": "claude:a71e434e-ed3f-4163-bf37-1494a8828f0b:agent-a862cf8019171ebc6",
+          "source": "claude",
+          "split": ""
+        },
+        "insights": {
+          "candidates": 6,
+          "cli": "claude",
+          "judge_calls": 6,
+          "outcomes": [
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In this repo, baseline.json's pre-phase1 harness run recorded metrics.overall of hit@5=0.525641, mrr=0.323804, hit@1=0.175214, hit@10=0.688034 over 234 events, while the improved phase1 numbers (hit@5≈0.577, mrr≈0.354) are stored separately in phase1-gate.json, so the two files must be compared to see the phase1 gain over baseline.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#13:message.content.tool_use",
+              "ordinal": 0,
+              "signals": {
+                "identifiers": [
+                  "baseline.json",
+                  "metrics.overall",
+                  "gate.json",
+                  "phase1-gate.json",
+                  "0.525641",
+                  "0.323804",
+                  "0.175214",
+                  "0.688034",
+                  "234",
+                  "0.577"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-deriving which file holds the pre-phase1 baseline metrics versus the phase1-gate numbers would require re-running the harness and diffing JSON outputs."
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In this repo's harness artifacts, artifacts/harness/baseline.json is the pre-phase1 run: metrics.overall shows hit@5=0.525641, mrr=0.323804, hit@1=0.175214, hit@10=0.688034 over 234 events. This distinguishes it from artifacts/harness/phase1-gate.json, whose post-phase1 numbers are hit@5=0.577 and mrr=0.354.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#21:message.content.tool_use",
+              "ordinal": 1,
+              "signals": {
+                "identifiers": [
+                  "baseline.json",
+                  "metrics.overall",
+                  "gate.json",
+                  "artifacts/harness/baseline.json",
+                  "artifacts/harness/phase1-gate.json",
+                  "0.525641",
+                  "0.323804",
+                  "0.175214",
+                  "0.688034",
+                  "234"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-deriving which JSON file holds the pre- vs post-phase1 metrics would require re-running the harness and diffing raw JSON again."
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quotes show a metrics table (baseline.md) but no quote shows any specific number being used in a later decision or threshold; the flagged reused_number 0.162 is not shown being referenced anywhere",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#23:message.content.tool_use",
+              "ordinal": 2,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quotes show baseline vs phase1 quality metrics but never state a decision or threshold that was made from them (e.g., gate pass/fail), so what the numbers were used for is not shown.",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#26:message.content.tool_use",
+              "ordinal": 3,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In artifacts/replay/post-chunking-ab.json, the channel-weight scheme `explicit_b0.75_v0.10_g0.15` led on eval but failed the <reserved-split:h> generalization bar against the incumbent (hit@5 0.693405 vs incumbent 0.700535; MRR 0.387169 vs incumbent 0.403055), so decision.adopted=false and incumbent_live_weights stands.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#28:message.content.tool_use",
+              "ordinal": 4,
+              "signals": {
+                "identifiers": [
+                  "ab.json",
+                  "decision.adopted",
+                  "artifacts/replay/post-chunking-ab.json",
+                  "0.693405",
+                  "0.700535",
+                  "0.387169",
+                  "0.403055"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-deriving which channel-weight scheme was rejected and by what margin on hit@5/MRR would require rerunning the A/B replay and parsing the JSON report again."
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quotes show raw table rows and numbers but no column headers or explicit statement of what the measured values represent or what decision was made based on them, so the required WHY/mechanism cann",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees-goal-feedback-credit-grounding/a71e434e-ed3f-4163-bf37-1494a8828f0b/subagents/agent-a862cf8019171ebc6.jsonl#31:message.content.tool_use",
+              "ordinal": 5,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            }
+          ],
+          "proposed": 3,
+          "session_key": "claude:a71e434e-ed3f-4163-bf37-1494a8828f0b:agent-a862cf8019171ebc6",
+          "source": "claude"
+        }
+      }
+    },
+    {
+      "cli": "claude",
+      "errors": [],
+      "proposed_attests": 1,
+      "proposed_ops": 1,
+      "session_key": "claude:b6d39c11-4367-46fe-95a2-ef9e03eca4da",
+      "source": "claude",
+      "stages": {
+        "attest": {
+          "proposed": 1,
+          "recall_events": 1
+        },
+        "corrections": {
+          "delivered_nodes": 8,
+          "judged": 1,
+          "observations": 62,
+          "ops": 0,
+          "pair_stats": {
+            "already_taught_in_session": 2,
+            "no_related_observation": 5
+          },
+          "rejections": {
+            "judge_says_no": 1
+          },
+          "session_key": "claude:b6d39c11-4367-46fe-95a2-ef9e03eca4da",
+          "source": "claude",
+          "split": ""
+        },
+        "insights": {
+          "candidates": 6,
+          "cli": "claude",
+          "judge_calls": 6,
+          "outcomes": [
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "This fact (gate.sh targeted-test mode building pytest args from dirname of changed files, deletions included, line ~1518) is already captured verbatim in already_written.",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-protocol-budget-and-measurement-debt-retire-confirmatory-campaign/b6d39c11-4367-46fe-95a2-ef9e03eca4da.jsonl#37:message.content.tool_use",
+              "ordinal": 0,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The failing command (missing v4 recipe path) and the later passing command (test_stale_target_paths.py) are unrelated tests, so no causal diagnosis links the failure to the fix; and the underlying fac",
+              "fact": "",
+              "kind": "resolved_failure",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-protocol-budget-and-measurement-debt-retire-confirmatory-campaign/b6d39c11-4367-46fe-95a2-ef9e03eca4da.jsonl#59:message.content.tool_use",
+              "ordinal": 1,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "ungrounded_identifier",
+              "dedup": {},
+              "detail": "not in the evidence span: i.e",
+              "fact": "When the animal-planet v4 confirmatory-campaign test files were deleted (branch protocol-budget-and-measurement-debt), a pytest --collect-only test-id diff showed 1735 test ids before the deletion and 699 after, i.e. 1036 removed and 0 added; this was used to verify the deletion was clean because every removed id traced back to one of the 15 deleted campaign files and none of them still existed on disk.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-protocol-budget-and-measurement-debt-retire-confirmatory-campaign/b6d39c11-4367-46fe-95a2-ef9e03eca4da.jsonl#121:message.content.tool_use",
+              "ordinal": 2,
+              "signals": {
+                "ungrounded": [
+                  "i.e"
+                ]
+              },
+              "status": "rejected",
+              "why_durable": "Re-deriving this would require re-running the before/after pytest --collect-only diff across the deletion commit to confirm no unrelated tests were dropped."
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In the lm repo, `python3 -m pytest --collect-only -q -p idsdump` collected 699 test IDs (written to /tmp/ids-after.txt), matching the 699 passed reported by npm test; this proved the merge gate's FAIL was not a failing test but pytest aborting with rc=4 because a path under artifacts/animal-planet/evaluation/confirmatory-<reserved-split:h>-v4/recipe had been deleted. The fix was a root conftest.py hook (commit bdb84cc) rather than keeping the deleted path alive.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-protocol-budget-and-measurement-debt-retire-confirmatory-campaign/b6d39c11-4367-46fe-95a2-ef9e03eca4da.jsonl#122:message.content.tool_use",
+              "ordinal": 3,
+              "signals": {
+                "identifiers": [
+                  "--collect-only",
+                  "after.txt",
+                  "conftest.py",
+                  "/tmp/ids-after.txt",
+                  "artifacts/animal-planet/evaluation/confirmatory-<reserved-split:h>-v4/recipe",
+                  "bdb84cc",
+                  "699"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-deriving that the gate FAIL was a phantom collection error (not a real test failure) would require re-running the same collect-only diff and comparing counts against npm test output."
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "This is a verification log for a completed refactor (test-id diff confirming clean removal of v4 campaign test files) — an execution/audit journal rather than a durable fact about system behavior, and",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-protocol-budget-and-measurement-debt-retire-confirmatory-campaign/b6d39c11-4367-46fe-95a2-ef9e03eca4da.jsonl#126:message.content.tool_use",
+              "ordinal": 4,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "ungrounded_identifier",
+              "dedup": {},
+              "detail": "not in the evidence span: 425bf99",
+              "fact": "After retiring the v4 confirmatory campaign machinery on branch protocol-budget-and-measurement-debt (commit 425bf99, 15 campaign test files deleted), `npm test` passed 704 tests in 160.76s (699 surviving + 5 new), and the test-id diff went from 1735 to 699 ids with 1036 removed and 0 added, confirming every removed id belonged to one of the 15 deleted campaign files and none remained on disk.",
+              "kind": "measurement",
+              "locator": "claude:~/.claude/projects/-home-sfx-p-lm--worktrees--node-exec-protocol-budget-and-measurement-debt-retire-confirmatory-campaign/b6d39c11-4367-46fe-95a2-ef9e03eca4da.jsonl#174:message.content.tool_use",
+              "ordinal": 5,
+              "signals": {
+                "ungrounded": [
+                  "425bf99"
+                ]
+              },
+              "status": "rejected",
+              "why_durable": "Re-deriving this clean-removal proof would require re-running the full test suite and diffing test ids before/after the deletion."
+            }
+          ],
+          "proposed": 1,
+          "session_key": "claude:b6d39c11-4367-46fe-95a2-ef9e03eca4da",
+          "source": "claude"
+        }
+      }
+    },
+    {
+      "cli": "codex",
+      "errors": [],
+      "proposed_attests": 1,
+      "proposed_ops": 2,
+      "session_key": "codex:019e2af5-a53c-7a40-9fb9-3cf6517b4b26",
+      "source": "codex",
+      "stages": {
+        "attest": {
+          "proposed": 1,
+          "recall_events": 1
+        },
+        "corrections": {
+          "delivered_nodes": 2,
+          "judged": 2,
+          "observations": 244,
+          "ops": 0,
+          "pair_stats": {},
+          "rejections": {
+            "judge_says_no": 2
+          },
+          "session_key": "codex:019e2af5-a53c-7a40-9fb9-3cf6517b4b26",
+          "source": "codex",
+          "split": ""
+        },
+        "insights": {
+          "candidates": 7,
+          "cli": "codex",
+          "judge_calls": 7,
+          "outcomes": [
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quoted numbers are test fixture coordinates from a spec file, not a measurement whose result was used to make a decision.",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#95:payload",
+              "ordinal": 0,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The 'failure' is just a sed command hitting a nonexistent path during exploration, followed by a successful sed on an unrelated correct path; there's no diagnosed cause or mechanism, just a wrong gues",
+              "fact": "",
+              "kind": "resolved_failure",
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#302:payload",
+              "ordinal": 1,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "Quotes show a git-hook install error then a later green run, but no quote explains the cause of '.git/hooks/README.md: Not a directory' or what changed to fix it — only a before/after journal, not a d",
+              "fact": "",
+              "kind": "resolved_failure",
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#456:payload",
+              "ordinal": 2,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "Quotes show only that routeCache.spec.ts failed (exit code 2) then later passed; no diagnosis of the actual cause or mechanism is present in the evidence, so this is just a fixed/passed journal entry.",
+              "fact": "",
+              "kind": "resolved_failure",
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#484:payload",
+              "ordinal": 3,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quotes show only the failing error message and the later passing output, not the actual diagnosis of why originalServiceCreator was not a function or what change fixed it.",
+              "fact": "",
+              "kind": "resolved_failure",
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#501:payload",
+              "ordinal": 4,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "In packages/desktop/src/modules/directions/__tests__/entry.spec.ts, the test suite fails (exit code 2) whenever the code path under test calls webApi.searchByPoint without mocking it: a console.error assertion fires with the message 'В тесте дергается метод webApi.searchByPoint, но его имплементация не замокана. Такой тест нельзя сливать в мастер.', causing the FAIL.",
+              "kind": "resolved_failure",
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#537:payload",
+              "ordinal": 5,
+              "signals": {
+                "identifiers": [
+                  "entry.spec.ts",
+                  "webApi.searchByPoint",
+                  "console.error",
+                  "packages/desktop/src/modules/directions/__tests__/entry.spec.ts"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Saves a future engineer from re-diagnosing a cryptic Jest console.error failure back to an unmocked webApi.searchByPoint call convention."
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "Running `npx tsc -p packages/desktop/tsconfig.json --noEmit --pretty false` failed with TS2345 at packages/desktop/src/modules/directions/hydrate.ts(50,7): a value of type 'false | \"\" | { type: string; payload: WithStateActionFunction<AppState>; } | undefined' was passed where 'false | Action<any> | undefined' was expected, because the empty-string literal '\"\"' produced by a short-circuit expression is not assignable to the reducer's Action type.",
+              "kind": "resolved_failure",
+              "locator": "codex:~/p/ae/projects/online/state/codex_home/sessions/2026/05/15/rollout-2026-05-15T16-26-42-019e2af5-a53c-7a40-9fb9-3cf6517b4b26.jsonl#556:payload",
+              "ordinal": 6,
+              "signals": {
+                "identifiers": [
+                  "--noEmit",
+                  "--pretty",
+                  "tsconfig.json",
+                  "hydrate.ts",
+                  "packages/desktop/tsconfig.json",
+                  "packages/desktop/src/modules/directions/hydrate.ts"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Re-deriving this exact type-mismatch diagnosis would require re-running tsc against the file and reasoning through the union types again."
+            }
+          ],
+          "proposed": 2,
+          "session_key": "codex:019e2af5-a53c-7a40-9fb9-3cf6517b4b26",
+          "source": "codex"
+        }
+      }
+    },
+    {
+      "cli": "codex",
+      "errors": [],
+      "proposed_attests": 4,
+      "proposed_ops": 2,
+      "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+      "source": "codex",
+      "stages": {
+        "attest": {
+          "proposed": 4,
+          "recall_events": 4
+        },
+        "corrections": {
+          "delivered_nodes": 32,
+          "judged": 12,
+          "observations": 96,
+          "ops": 0,
+          "pair_stats": {
+            "duplicate_delivery": 8,
+            "no_related_observation": 16,
+            "over_session_cap": 4
+          },
+          "rejections": {
+            "judge_says_no": 12
+          },
+          "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+          "source": "codex",
+          "split": ""
+        },
+        "insights": {
+          "candidates": 7,
+          "cli": "codex",
+          "judge_calls": 7,
+          "outcomes": [
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "This is a restatement of the already_written fact about stale Codex auth causing 401 errors on 2026-06-16; the version number 0.140.0 is not used as a measurement threshold but merely referenced to av",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#38:payload",
+              "ordinal": 0,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quoted error log (401 token_expired) restates the root cause already captured in already_written; no new number-with-threshold decision is shown, and the Russian quote is a hedge/plan, not a settl",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#47:payload",
+              "ordinal": 1,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "This is a restatement of the already_written fact about the 2026-06-16 AE/online Codex auth failure (401/expired token); the version number 0.140.0 is incidental CLI metadata, not a genuine measuremen",
+              "fact": "",
+              "kind": "measurement",
+              "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#49:payload",
+              "ordinal": 2,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quotes are just raw `codex --help` output listing subcommands with no stated mechanism, cause, or condition explaining behavior—only a plan/journal-like observation, not a durable why.",
+              "fact": "",
+              "kind": "external_contract",
+              "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#107:payload",
+              "ordinal": 3,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "The `codex login --help` command documents a `-c, --config <key=value>` option that overrides a configuration value normally loaded from `~/.codex/config.toml`; keys use a dotted path like `foo.bar.baz`, and the value is parsed as TOML, falling back to the raw string as a literal if TOML parsing fails.",
+              "kind": "external_contract",
+              "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#108:payload",
+              "ordinal": 4,
+              "signals": {
+                "identifiers": [
+                  "--help",
+                  "--config",
+                  "config.toml",
+                  "foo.bar.baz",
+                  "~/.codex/config.toml"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Saves re-running `codex login --help` to rediscover this CLI's config-override syntax and its TOML-parse-with-literal-fallback behavior."
+            },
+            {
+              "code": "judge_refused",
+              "dedup": {},
+              "detail": "The quotes are just `codex logout --help` output; the flag documentation is trivially re-discoverable by rerunning --help and carries no session-specific mechanism or cause worth storing.",
+              "fact": "",
+              "kind": "external_contract",
+              "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#109:payload",
+              "ordinal": 5,
+              "signals": {},
+              "status": "rejected",
+              "why_durable": ""
+            },
+            {
+              "code": "",
+              "dedup": {
+                "available": false,
+                "channel": "",
+                "checked": 0,
+                "containment": 0.0,
+                "cosine": 0.0,
+                "duplicate": false,
+                "node_id": ""
+              },
+              "detail": "",
+              "fact": "Running `codex auth --help` on the codex CLI does not produce auth-specific help; it falls back to the general usage banner, showing there is no `auth` subcommand at all. The codex CLI's real subcommands for managing credentials are `login` and `logout` (alongside `exec`, `review`, `mcp`, `plugin`, `mcp-server`).",
+              "kind": "external_contract",
+              "locator": "codex:~/p/ae/projects/ae/state/codex_home/sessions/2026/06/16/rollout-2026-06-16T20-53-50-019ed0b5-b844-7cf3-a668-9872b04168f5.jsonl#110:payload",
+              "ordinal": 6,
+              "signals": {
+                "identifiers": [
+                  "--help"
+                ]
+              },
+              "status": "proposed",
+              "why_durable": "Saves a future agent from probing a nonexistent `codex auth` subcommand and pointing it straight to `codex login`/`codex logout` for credential management."
+            }
+          ],
+          "proposed": 2,
+          "session_key": "codex:019ed0b5-b844-7cf3-a668-9872b04168f5",
+          "source": "codex"
+        }
+      }
+    }
+  ],
+  "splits_read": [
+    "eval"
+  ],
+  "teach_edges": [],
+  "written_nodes": []
+}

@@ -1,0 +1,138 @@
+{
+  "counts": {
+    "by_cli": {
+      "ae": 184,
+      "claude": 1050,
+      "codex": 1998,
+      "deepseek": 7,
+      "gigacode": 58,
+      "unknown": 656
+    },
+    "by_source": {
+      "ae_chat": 184,
+      "ae_node_result": 1018,
+      "claude": 1050,
+      "codex": 1636,
+      "deepseek": 7,
+      "gigacode": 58
+    },
+    "by_split": {
+      "eval": 748,
+      "holdout": 837,
+      "train": 2368
+    },
+    "by_split_source": {
+      "eval": {
+        "ae_chat": 27,
+        "ae_node_result": 199,
+        "claude": 185,
+        "codex": 321,
+        "deepseek": 3,
+        "gigacode": 13
+      },
+      "holdout": {
+        "ae_chat": 42,
+        "ae_node_result": 202,
+        "claude": 261,
+        "codex": 317,
+        "deepseek": 2,
+        "gigacode": 13
+      },
+      "train": {
+        "ae_chat": 115,
+        "ae_node_result": 617,
+        "claude": 604,
+        "codex": 998,
+        "deepseek": 2,
+        "gigacode": 32
+      }
+    },
+    "bytes": 3082715422,
+    "identity_groups": 3270,
+    "largest_group": 43,
+    "records": 11343303,
+    "sessions": 3953,
+    "sessions_in_multi_transcript_groups": 1237,
+    "skipped": {}
+  },
+  "generated_at": "2026-08-19T01:14:29.477340Z",
+  "generator": "scripts/postsession_corpus.py",
+  "holdout_sha256": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+  "index": {
+    "bytes": 2989141,
+    "fields": [
+      "session_key",
+      "source",
+      "cli",
+      "path",
+      "bytes",
+      "sha256",
+      "records",
+      "started_at",
+      "ended_at",
+      "cwd",
+      "repo",
+      "git_branch",
+      "model",
+      "cli_session_id",
+      "linked_session_ids",
+      "split",
+      "bucket",
+      "split_key",
+      "group_size"
+    ],
+    "lines": 3953,
+    "note": "rebuildable from roots; holds absolute paths, so it is gitignored",
+    "path": "artifacts/post-session/corpus-index.jsonl",
+    "tracked": false
+  },
+  "index_sha256": "af011614c51b689a1cdaa1dd0f0b5cb8ccdfe5031fa2de12e9f052c7ed2dd85f",
+  "manifest_version": 2,
+  "roots": {
+    "ae_projects": "/home/sfx/p/ae/projects",
+    "claude_projects": "/home/sfx/.claude/projects",
+    "codex_sessions": [
+      "/home/sfx/.codex/sessions",
+      "/home/sfx/p/ae/projects/ae/state/codex_home/sessions",
+      "/home/sfx/p/ae/projects/lm/state/codex_home/sessions",
+      "/home/sfx/p/ae/projects/online/state/codex_home/sessions"
+    ],
+    "deepseek_sessions": "/home/sfx/.deepseek/sessions",
+    "gigacode_projects": "/home/sfx/.gigacode/projects"
+  },
+  "sources": [
+    "ae_chat",
+    "ae_node_result",
+    "claude",
+    "codex",
+    "deepseek",
+    "gigacode"
+  ],
+  "split_policy": {
+    "buckets": 10,
+    "eval": [
+      6,
+      7
+    ],
+    "holdout": [
+      8,
+      9
+    ],
+    "rule": "bucket = int(sha256(split_key).hexdigest(), 16) % 10",
+    "seal": "sha256(\"\\n\".join(sorted(session_keys)) + \"\\n\") per split",
+    "split_key": "union-find root over session keys and declared id:<uuid> identifiers; equal to the session's own key when it has no duplicate recording",
+    "train": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "split_sha256": {
+    "eval": "51fd1409dfd1883fd3c29b1cf1ca2c3584c74f7cdcda6d578fa11b395289da28",
+    "holdout": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+    "train": "4eb290a0540265d73bae3f422c3294d114854ed5c66f77f6341950086b644012"
+  }
+}

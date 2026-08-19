@@ -56,6 +56,7 @@ def test_server_registers_exact_tools_resources_and_prompt(tmp_path: Path) -> No
         "memory_teach",
         "memory_connect",
         "memory_recall",
+        "memory_attest",
         "memory_lookup",
         "memory_consolidate",
         "memory_forget",
