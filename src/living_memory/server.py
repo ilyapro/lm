@@ -1157,36 +1157,10 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
         context: dict[str, Any] | None = None,
         trace_id: str | None = None,
     ) -> dict[str, Any]:
-        """Attest, with evidence, that a past recall was actually used.
-
-        For a finished session whose recall was never closed by an in-session
-        memory_remember: submit the recall_event_id plus evidence items taken
-        verbatim from the session's own artifacts — diff hunks, command
-        output — and the grounded results earn the credit they would have
-        earned live.
-
-        You submit evidence; the server decides. It loads that event's own
-        result nodes from its own database and recomputes containment against
-        each evidence item separately, crediting only what clears the same
-        threshold the live path uses. A `grounded`/`containment`/`useful`
-        verdict asserted anywhere in your payload is never read, so quote the
-        artifacts rather than describing them: prose about a node does not
-        ground it, the text the node's content actually shares with your diff
-        does. Bounded: at most 64 items, 600 chars each, 19200 total; over
-        any cap is a rejection, never a silent truncation.
-
-        Credit lands under the recall event's scope. Grounded results also
-        reinforce the query anchor for that event's question, over the
-        grounded subset only. Idempotent per (recall_event_id, evidence): a
-        repeat returns the recorded verdict with replay=true and applies
-        nothing, so re-running an extractor over the same transcript is safe.
-
-        Pass trace_id to also close the event against a real node (typically
-        the trace this extraction wrote); without it credit is applied and the
-        event stays open, and an unresolvable trace_id is an error. Use
-        context for audit attribution: agent, task, session_id,
-        source_session_key.
-        """
+        """Offline attestation of a FINISHED session's recall — extraction
+        tooling, not an agent action. Recalls of the current session are
+        closed by your memory_remember automatically; do NOT attest them.
+        Full contract: docs/post-session-attestation.md."""
 
         context = _with_transport_identity(context)
         with runtime_lock:
