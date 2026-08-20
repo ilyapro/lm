@@ -29,6 +29,7 @@ foreign key both keep the map alive.
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -57,9 +58,24 @@ TASK = "recall-map-curtail"
 IDLE_QUERY = "unrelated housekeeping question"
 
 
+#: Corpus the label gate measures rarity against. Every scenario here needs a
+#: map to actually come back, and the gate withholds a cluster whose label is
+#: house vocabulary — which, on a store holding five notes, is every label:
+#: nothing is rare relative to nothing. Sized the same way
+#: ``tests/test_recall_map.py`` sizes its fixture, and the pools below are
+#: keyed on ``procedure_id`` values these documents never mention.
+CORPUS_DOCUMENTS = 32
+
+
 @pytest.fixture()
 def store(tmp_path: Path):
     with MemoryStore(tmp_path / "curtail.sqlite3") as opened:
+        for index in range(CORPUS_DOCUMENTS):
+            opened.create_node(
+                level="trace",
+                content=f"quarterly ledger reconciliation entry {index}",
+                context={"scope": SCOPE},
+            )
         yield opened
 
 
@@ -514,6 +530,14 @@ def test_a_dark_key_offers_again_once_its_evidence_leaves_the_window(
 def test_the_curtail_probe_writes_nothing(store: MemoryStore) -> None:
     """Read-only by construction: the map may not pay for itself with writes.
 
+    Measured with a SQLite authorizer rather than with ``total_changes``,
+    because the two answer different questions. The label gate asks the FTS
+    vocabulary index for document frequencies, and ``term_document_frequencies``
+    folds its terms through a scratch ``temp.`` table — real INSERTs, counted by
+    ``total_changes``, landing nowhere. What must stay untouched is the
+    *database*, so that is what is asserted: not one insert, update or delete
+    against ``main`` on either arm.
+
     Both arms measured on one pool, because building the pool is itself a
     write and would drown the thing under test.
     """
@@ -522,16 +546,28 @@ def test_the_curtail_probe_writes_nothing(store: MemoryStore) -> None:
     pool = residual(store)
     builder = RecallMapBuilder(store)
 
-    before = store.connection.total_changes
-    collapsed = builder.build(pool, scope=SCOPE, task=TASK)
-    assert collapsed is not None and collapsed.curtailed is True
-    assert store.connection.total_changes == before
+    written: list[tuple[int, str]] = []
+    mutations = {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
 
-    # The probe runs on the non-collapsing path too, where it is followed by a
-    # full build -- also read-only.
-    mapped = builder.build(pool, scope=SCOPE, task="a different task")
-    assert mapped is not None and mapped.clusters
-    assert store.connection.total_changes == before
+    def authorize(action: int, table: Any, column: Any, database: Any, trigger: Any) -> int:
+        if action in mutations and database == "main":
+            written.append((action, str(table)))
+        return sqlite3.SQLITE_OK
+
+    store.connection.set_authorizer(authorize)
+    try:
+        collapsed = builder.build(pool, scope=SCOPE, task=TASK)
+        assert collapsed is not None and collapsed.curtailed is True
+        assert written == []
+
+        # The probe runs on the non-collapsing path too, where it is followed
+        # by a full build -- label gate, term statistics and all -- also
+        # read-only.
+        mapped = builder.build(pool, scope=SCOPE, task="a different task")
+        assert mapped is not None and mapped.clusters
+        assert written == []
+    finally:
+        store.connection.set_authorizer(None)
 
 
 def test_the_rule_needs_no_flag() -> None:

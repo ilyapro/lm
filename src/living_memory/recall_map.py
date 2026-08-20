@@ -40,6 +40,37 @@ break, the greedy pass walks the pool in rank order, and stage precedence is
 fixed — a node with both a ``procedure_id`` and a file list is a structural
 cluster member, never a path one.
 
+Silence beats a word nobody can act on
+--------------------------------------
+The label *is* the interface. The first field window of this channel measured
+what happens when it degenerates: 27 delivered injections, 0 consumptions, and
+labels that had collapsed into single house words — ``public (73)``, ``test
+(37)``, ``mmo (8)`` — while a control run of the same code over a corpus whose
+labels read ``cleanup commit invariant`` was consumed on its first pass.
+
+Two rules follow, and they work as a pair. Stages 1 and 2 *enrich*: a cluster
+named after a structural value or a directory segment gets that name plus its
+own most distinguishing terms (:meth:`RecallMapBuilder._enrich`), so the label
+says something the corpus does not say everywhere. Then every label, from every
+stage, is *gated*: :meth:`RecallMapBuilder._deliverable` withholds a cluster
+whose best terms are collectively too common to distinguish anything
+(:data:`LABEL_GATE_MIN_IC`). Enrichment is the rescue and the gate is the net —
+after enrichment the gate should rarely fire, and when it does it is reporting a
+cluster with nothing to say.
+
+The gate is a corpus statistic, never a word list. "Generic" means generic to
+the corpus this recall searched, measured against the same document-frequency
+index the c-TF-IDF labeller already reads, so the rule transfers to a corpus
+whose house vocabulary is different words instead of memorizing the ones a
+field window happened to show.
+
+And nothing leaves quietly. Every cluster the gate withholds and every cluster
+the response budget drops is counted — and, as far as the budget allows, named
+— in the payload's additive ``filtered`` key (:func:`_filter_block`), which
+persists into ``recall_events.recall_map``. Without it a field reader cannot
+tell "memory had nothing to say" from "the filter was too harsh", which are
+opposite findings that both look like a short map.
+
 Stability across sessions
 -------------------------
 A task that asks twice should see the same shape twice, or the map is furniture
@@ -110,7 +141,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from math import log, sqrt
 from typing import TYPE_CHECKING, Any
 import json
@@ -146,11 +177,12 @@ MAX_CLUSTERS = 6
 #: serialized cluster costs 88 characters of JSON keys before a single
 #: character of content, so six of them spend 528 of this budget on
 #: punctuation: :data:`MAX_CLUSTERS` is the ceiling for short labels, and for
-#: anything richer *this* is the binding constraint. What gives way, in order,
-#: is the medoid example (:meth:`RecallMapBuilder._fit`) and only then whole
-#: clusters — and a dropped cluster is counted in the payload's ``more`` field
-#: rather than vanishing, because a map that silently truncates reads as "this
-#: is everything memory holds", which is the one thing it must never say.
+#: anything richer *this* is the binding constraint. Examples narrow to their
+#: informative floor, then tail clusters give way down to the breadth floor,
+#: then journal names yield before gist does (:meth:`RecallMapBuilder._fit`). A
+#: dropped cluster is counted in the payload's ``more`` field rather than
+#: vanishing, because a map that silently truncates reads as "this is
+#: everything memory holds", which is the one thing it must never say.
 MAX_RESPONSE_CHARS = 700
 
 #: Budget for :meth:`RecallMap.render_compact`, the single-string form the
@@ -162,6 +194,20 @@ MAX_INSTRUCTIONS_CHARS = 150
 #: Longest medoid example a map carries before the response budget starts
 #: taking it apart. See :meth:`RecallMapBuilder._fit`.
 MEDOID_EXAMPLE_CHARS = 120
+
+#: Shortest informative gist the response budget should buy for every medoid.
+#:
+#: This is a floor on what the source text can supply: a ten-character memory
+#: contributes all ten characters and satisfies the rule.  On the measured
+#: field corpus every medoid was longer than the floor, so the ordinary case
+#: is exactly forty or more characters in every delivered row.
+MIN_MEDOID_EXAMPLE_CHARS = 40
+
+#: Breadth that gist fitting may not cross.  Two clusters preserved 64 of 67
+#: historically followed deliveries; one preserved only 57.  The value is
+#: clamped to the number of clusters the configured builder actually kept, so
+#: a one-cluster pool (or ``max_clusters=1``) still yields a map.
+MIN_CLUSTERS = 2
 
 MAX_LABEL_CHARS = 40
 MAX_ASK_HINT_CHARS = 80
@@ -185,6 +231,68 @@ CTFIDF_TERM_BUDGET = 40
 
 #: Terms in a c-TF-IDF label.
 CTFIDF_LABEL_TERMS = 3
+
+#: Distinct label terms the delivery gate scores. Capping the sum at three is
+#: what makes :data:`LABEL_GATE_MIN_IC` mean anything: without it a label buys
+#: its way past the floor by concatenating house vocabulary. Measured on the
+#: field corpus, the four house words ``public``/``server``/``mmo``/``test``
+#: sum to 4.191 across all four and to 3.619 across their best three — the cap
+#: is the difference between a floor of 4.0 that admits them and one that does
+#: not.
+LABEL_GATE_TOP_TERMS = 3
+
+#: Information content, in nats, a label's best :data:`LABEL_GATE_TOP_TERMS`
+#: terms must carry for the cluster to be delivered at all.
+#:
+#: ``ic(t) = log((N + 1) / (1 + df(t)))`` against the same FTS
+#: document-frequency index :meth:`RecallMapBuilder._ranked_terms` reads, so
+#: "generic" means generic *to the corpus recall searches* and the rule
+#: transfers to a corpus whose house vocabulary is different words. That is the
+#: whole reason this is a statistic and not a word list: an enumerated
+#: blacklist of the labels a field window happened to show would be a lookup
+#: table wearing a threshold.
+#:
+#: Placed in a void rather than fitted to a boundary. Over every label the
+#: field ever delivered (294 clusters, 21 distinct labels, ``N = 2573``) the
+#: single-content-term population scored 0.57–2.72 and the multi-word one
+#: 4.89–15.53; the interval ``(2.72, 4.89)`` is empty and 4.0 sits inside it.
+#:
+#: The floor encodes the term-count half of the predicate implicitly, which is
+#: better than stating it twice: a *solo* term clears 4.0 only when it appears
+#: in ``(N + 1) / e**4 - 1`` documents — 1.79 % of the corpus. A one-word label
+#: is not banned by rule, it is admitted exactly when one word genuinely is
+#: that rare.
+LABEL_GATE_MIN_IC = 4.0
+
+#: Tokens an enriched ask-hint may carry on the path and structural stages.
+#:
+#: Not a style rule — the whole reason label enrichment does not silently
+#: retune :data:`CURTAIL_QUERY_OVERLAP`. ``_echoes`` needs ``ceil(n/2)`` shared
+#: tokens for a phrasing of ``n``, and ``ceil(1/2) == ceil(2/2) == 1``: a hint
+#: widened from one token to two asks a later query for exactly the evidence it
+#: asked for before, while a three-token hint would ask for two. Replayed over
+#: 2 524 (delivery, later-query) pairs in the field window, holding the hint at
+#: two tokens is bit-identical to baseline (688 echo fires, 67 of 77 deliveries
+#: judged followed) and letting it follow a three-token label destroys every
+#: one of them.
+#:
+#: The cap governs *enrichment*; it never shortens a hint that was already
+#: longer, because dropping a token breaks the same containment guarantee it
+#: exists to protect. Stage 3 is exempt outright — an anchor's hint is a
+#: question that already worked and is never rewritten.
+ASK_HINT_MAX_TOKENS = 2
+
+#: Name triples the filter journal carries. Four, because the counts beside
+#: them are the honesty guarantee and the names are the convenience: a reader
+#: who needs more than four examples of what was filtered is reading the
+#: persisted payloads, not the live map.
+FILTER_JOURNAL_NAMES = 4
+
+#: Journal names are shortened harder than delivered labels, for the same
+#: reason ``instructions_map`` shortens to 28: a journal name is a forensic
+#: breadcrumb, not an invitation, and it competes for the same
+#: :data:`MAX_RESPONSE_CHARS` as the medoid examples that are.
+FILTER_JOURNAL_LABEL_CHARS = 24
 
 #: Share of the current pool a cached structure must still cover to be reused.
 #: Below it the cached labels describe a pool that has moved on, and stability
@@ -265,6 +373,15 @@ _STAGE_ORDER: dict[str, int] = {
     STAGE_EMBEDDING: 3,
 }
 
+#: Which filter took a cluster off the wire. One character each, because they
+#: ride in the payload beside the names they qualify, and the distinction they
+#: carry is the one a forensic reader actually needs: ``w`` says the label gate
+#: refused to deliver the cluster at all, ``d`` says the response budget could
+#: not afford it. "The filter is too harsh" and "the budget is tight" are
+#: different findings and must not be read off one number.
+FILTER_TAG_WITHHELD = "w"
+FILTER_TAG_DROPPED = "d"
+
 _WHITESPACE_RE = re.compile(r"\s+")
 _TERM_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 _HEX_DIGITS = frozenset("0123456789abcdef")
@@ -318,6 +435,28 @@ class MapCluster:
 
 
 @dataclass(frozen=True, slots=True)
+class FilteredCluster:
+    """One cluster the map did not deliver, reduced to what a reader can use.
+
+    A name and a size, tagged with which filter took it. Deliberately *not* a
+    :class:`MapCluster`: a filtered cluster has no medoid, no ask-hint and no
+    plan item, because there is nothing here for the agent to act on — this is
+    forensics, and it lives in its own payload key precisely so that no
+    consumer can mistake it for something on offer.
+    """
+
+    #: :data:`FILTER_TAG_WITHHELD` or :data:`FILTER_TAG_DROPPED`.
+    tag: str
+    label: str
+    count: int
+
+    def to_list(self) -> list[Any]:
+        """The wire form: a triple, not an object, to save the JSON keys."""
+
+        return [self.tag, self.label, self.count]
+
+
+@dataclass(frozen=True, slots=True)
 class RecallMap:
     """A capped, ordered set of clusters over one recall's residual pool."""
 
@@ -331,6 +470,18 @@ class RecallMap:
     covered: int
     #: Clusters the caps dropped. Reported, never silent.
     dropped: int = 0
+    #: Clusters the label gate refused (:meth:`RecallMapBuilder._deliverable`).
+    #: Deliberately *not* folded into ``dropped``: a harsh filter and a tight
+    #: budget are different findings, and the field cannot tell them apart
+    #: after the fact if the map reports one number for both.
+    withheld: int = 0
+    #: Names of what the filter removed, most reportable first, already cut to
+    #: what :data:`MAX_RESPONSE_CHARS` afforded.
+    filtered: tuple[FilteredCluster, ...] = ()
+    #: Names the budget did not afford. The anti-silence field: the counts
+    #: above are unconditional, so the map never drops a cluster without a
+    #: number attached, and this says how many of them went unnamed.
+    filtered_omitted: int = 0
     #: Set when this key's last :data:`CURTAIL_STREAK` maps went unconsumed.
     #: A curtailed map carries no clusters: it has stopped describing the pool
     #: and started reporting that describing it was not worth the channel.
@@ -349,6 +500,9 @@ class RecallMap:
             self.dropped,
             curtailed=self.curtailed,
             streak=self.streak,
+            filtered=_filter_block(
+                self.withheld, self.dropped, self.filtered, self.filtered_omitted
+            ),
         )
 
     def plan_items(self) -> list[str]:
@@ -409,6 +563,51 @@ class _Group:
     #: served from cache picks the same member a fresh build would, without
     #: re-fetching the vectors that chose it.
     preferred_medoid: str | None = None
+
+
+@dataclass(slots=True)
+class _FilterJournal:
+    """What the filter removed on one build, before the budget names it.
+
+    Two populations, kept apart all the way to the wire. They answer different
+    questions — ``withheld`` says the gate found nothing worth saying,
+    ``dropped`` says the channel had no room for something that was — and the
+    no-silent-caps rule is only satisfied if a field reader can tell which.
+
+    Order is the report order: the gate's refusals first, largest first, then
+    the budget's drops newest-first. Both halves therefore lead with the
+    cluster whose removal cost the reader most, which is what survives when
+    :data:`FILTER_JOURNAL_NAMES` takes the tail.
+    """
+
+    withheld: list[FilteredCluster] = field(default_factory=list)
+    dropped: list[FilteredCluster] = field(default_factory=list)
+    #: Names are forensic convenience, not the honesty guarantee.  ``_fit``
+    #: lowers this only after breadth reaches its floor and before gist does.
+    name_limit: int = FILTER_JOURNAL_NAMES
+
+    def entries(self) -> list[FilteredCluster]:
+        return [*self.withheld, *self.dropped]
+
+    def names(self) -> tuple[FilteredCluster, ...]:
+        return tuple(self.entries()[: self.name_limit])
+
+    def omitted(self) -> int:
+        return max(0, len(self.entries()) - len(self.names()))
+
+    def drop_name(self) -> bool:
+        """Give one currently visible name to the gist budget."""
+
+        visible = len(self.names())
+        if visible <= 0:
+            return False
+        self.name_limit = visible - 1
+        return True
+
+    def block(self) -> dict[str, Any] | None:
+        return _filter_block(
+            len(self.withheld), len(self.dropped), self.names(), self.omitted()
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -601,6 +800,35 @@ def _phrase_from_content(content: str, *, words: int = 3) -> str:
     return " ".join(terms) if terms else _shorten(content, MAX_LABEL_CHARS)
 
 
+def _followed_hint(stage: str, label: str, previous: str) -> str:
+    """The ask-hint a disambiguated label leaves behind.
+
+    On stages 1 and 2 the hint follows the label's *head* rather than the whole
+    of it, capped at :data:`ASK_HINT_MAX_TOKENS`. Disambiguation appends a
+    distinguishing term to a label, and a hint that followed it there would
+    reach three tokens — which is where ``_echoes`` starts demanding two shared
+    tokens instead of one and quietly tightens a pre-registered rule.
+
+    The cap is never allowed to *shorten* a hint, and the containment check is
+    what makes that a guarantee rather than an intention: the widened hint must
+    still carry every token the old one had, under the same tokenizer
+    ``_echoes`` uses, or the old hint is kept unchanged. A query that cleared
+    the old phrasing therefore clears the new one by construction.
+
+    Stage 4's hint is left following its label exactly as before — a
+    c-TF-IDF label is already three tokens, so a fourth changes nothing about
+    what ``_echoes`` demands — and stage 3's is never rewritten at all.
+    """
+
+    if stage not in (STAGE_PATH, STAGE_STRUCTURAL):
+        return label
+    keep = max(ASK_HINT_MAX_TOKENS, len(previous.split()))
+    candidate = " ".join(label.split()[:keep])
+    if not candidate or not token_set(previous) <= token_set(candidate):
+        return previous
+    return candidate
+
+
 # ----------------------------------------------------------------------
 # Stage helpers
 # ----------------------------------------------------------------------
@@ -610,10 +838,10 @@ def _structural_key(node: Node) -> tuple[str, str] | None:
     """``(field, raw value)`` of the first structural key this node carries."""
 
     context = node.context if isinstance(node.context, Mapping) else {}
-    for field in STRUCTURAL_FIELDS:
-        value = context.get(field)
+    for key_field in STRUCTURAL_FIELDS:
+        value = context.get(key_field)
         if isinstance(value, str) and value.strip():
-            return (field, value.strip())
+            return (key_field, value.strip())
     return None
 
 
@@ -628,8 +856,8 @@ def _iter_path_strings(node: Node) -> Iterable[str]:
     """
 
     context = node.context if isinstance(node.context, Mapping) else {}
-    for field in _PATH_FIELDS:
-        value = context.get(field)
+    for path_field in _PATH_FIELDS:
+        value = context.get(path_field)
         if isinstance(value, str):
             yield value
         elif isinstance(value, (list, tuple)):
@@ -826,6 +1054,14 @@ class RecallMapBuilder:
         self._curtail_memo: dict[str, _CurtailMemo] = {}
         self._write_probe: tuple[int, int] | None = None
         self._revision: tuple[Any, ...] | None = None
+        #: Corpus statistics for the build in flight, reset by :meth:`build`.
+        #: Label enrichment asks the document-frequency index once per bucket
+        #: and the gate once per label, which without a memo would be one
+        #: ``COUNT(*)`` per question; the corpus cannot move under a single
+        #: build, so one read answers all of them.
+        self._fts_total: int | None = None
+        self._term_df: dict[str, int] = {}
+        self._df_available = True
 
     # -- public API ----------------------------------------------------
 
@@ -857,6 +1093,7 @@ class RecallMapBuilder:
 
         pool = self._pool(results)
         self.last_cache_hit = False
+        self._reset_corpus_memo()
         if not pool:
             return None
 
@@ -889,10 +1126,10 @@ class RecallMapBuilder:
             self._remember(key, revision, groups)
         built = self._finish(groups, scope=map_scope, key=key, pool_size=len(pool))
         if built is not None:
-            # A map that reaches the server is a map that gets delivered and
-            # recorded; one that came back None never happened and must not
-            # count against the key that nearly made it.
-            self._note_delivery(map_scope, task, offered=True)
+            # A journal-only map reaches the server so a fully gated pool does
+            # not disappear from field evidence, but it offered the agent no
+            # cluster and therefore must not advance the curtail offer count.
+            self._note_delivery(map_scope, task, offered=bool(built.clusters))
         return built
 
     # -- pool ----------------------------------------------------------
@@ -959,14 +1196,16 @@ class RecallMapBuilder:
         for group in groups:
             # An anchor's ask-hint is a query that already worked, and it is
             # never rewritten — not even though it starts out equal to the
-            # label. Everywhere else the hint *is* the label, so it follows it.
+            # label. Everywhere else a hint that *was* the label follows it,
+            # but only as far as :func:`_followed_hint` allows: on the enriched
+            # stages the hint tracks the label's head, not its whole width.
             hint_followed_label = (
                 group.stage != STAGE_ANCHOR and group.ask_hint == group.label
             )
             resolved = self._unique_label(group, seen)
             seen.add(resolved)
             if hint_followed_label:
-                group.ask_hint = resolved
+                group.ask_hint = _followed_hint(group.stage, resolved, group.ask_hint)
             group.label = resolved
         return groups
 
@@ -1004,25 +1243,44 @@ class RecallMapBuilder:
             buckets.setdefault(key, []).append(member)
 
         groups: list[_Group] = []
-        for (field, raw), bucket in sorted(buckets.items()):
+        for (structural_field, raw), bucket in sorted(buckets.items()):
             normalized = normalize_key(raw)
             if _looks_unreadable(raw):
                 # A hash groups perfectly and names nothing; the medoid does.
                 readable = _phrase_from_content(bucket[0].node.content)
             else:
                 readable = normalized
+            label, hint = readable, readable
+            if not self._deliverable(readable):
+                # A structural value that is one house word is exactly as
+                # undeliverable as a bare directory segment — 6 of the 55
+                # ``server`` clusters in the field window were structural, not
+                # path — so it gets the same rescue. A value that already
+                # passes is left alone: ``cleanup commit invariant`` needs no
+                # help, and rewriting a key the corpus actually stores would
+                # throw away the one label form the control run proved works.
+                label, hint = self._enrich(readable, bucket)
             groups.append(
                 _Group(
                     stage=STAGE_STRUCTURAL,
-                    signature=(STAGE_STRUCTURAL, field, raw),
-                    label=readable,
-                    ask_hint=readable,
+                    signature=(STAGE_STRUCTURAL, structural_field, raw),
+                    label=label,
+                    ask_hint=hint,
                     members=bucket,
                 )
             )
         return groups, rest
 
     def _stage_path(self, members: list[_Member]) -> tuple[list[_Group], list[_Member]]:
+        """Collapse paths to subsystems, then name the subsystem's own content.
+
+        The subsystem alone is a directory, and a directory is what the field
+        measured as the dominant failure of this map: enrichment is
+        unconditional here rather than gated on the score, because a path
+        segment is never the cluster's own vocabulary — it is where the files
+        happen to live.
+        """
+
         buckets: dict[str, list[_Member]] = {}
         rest: list[_Member] = []
         for member in members:
@@ -1032,16 +1290,18 @@ class RecallMapBuilder:
                 continue
             buckets.setdefault(subsystem, []).append(member)
 
-        groups = [
-            _Group(
-                stage=STAGE_PATH,
-                signature=(STAGE_PATH, subsystem),
-                label=normalize_key(subsystem),
-                ask_hint=normalize_key(subsystem),
-                members=bucket,
+        groups: list[_Group] = []
+        for subsystem, bucket in sorted(buckets.items()):
+            label, hint = self._enrich(normalize_key(subsystem), bucket)
+            groups.append(
+                _Group(
+                    stage=STAGE_PATH,
+                    signature=(STAGE_PATH, subsystem),
+                    label=label,
+                    ask_hint=hint,
+                    members=bucket,
+                )
             )
-            for subsystem, bucket in sorted(buckets.items())
-        ]
         return groups, rest
 
     def _stage_anchor(
@@ -1221,20 +1481,163 @@ class RecallMapBuilder:
             for term, _count in sorted(counted.items(), key=lambda item: (-item[1], item[0]))
         ][:CTFIDF_TERM_BUDGET]
 
-        try:
-            frequencies = self.store.term_document_frequencies(candidates)
-            total = self.store.fts_document_count()
-        except (AttributeError, sqlite3.OperationalError):  # pragma: no cover - old store
-            frequencies, total = {}, 0
+        frequencies = self._document_frequencies(candidates)
+        total = self._document_count()
 
         scored: list[tuple[float, str]] = []
         for term in candidates:
             weight = float(counted[term])
-            if total > 1:
+            if total > 1 and frequencies is not None:
                 weight *= log(total / (1.0 + float(frequencies.get(term, 0))))
             scored.append((weight, term))
         scored.sort(key=lambda item: (-item[0], item[1]))
         return [term for _weight, term in scored]
+
+    def _enrich(self, head: str, bucket: list[_Member]) -> tuple[str, str]:
+        """A multi-word label for a bucket that only knows one word for itself.
+
+        Stages 1 and 2 name a cluster after a thing the corpus stores — a
+        structural value, a directory segment — and the field measurement that
+        motivates this is what happens when that thing is a house word: 90.8 %
+        of delivered clusters in the live window were stage-2 path collapses,
+        and they read as ``public (73)``, ``test (37)``, ``mmo (8)``. A row
+        like that is not an invitation, it is a word.
+
+        So the head keeps its place and the cluster's own most distinguishing
+        terms are appended to it, taken from :meth:`_ranked_terms` — the
+        existing c-TF-IDF ranker, reused rather than reimplemented, so a path
+        label and an embedding label are distinguishing by the same measure
+        against the same index. Enrichment is what *rescues* those clusters
+        from the gate rather than leaving it to withhold them: ``public``
+        scores 1.58 alone, and two bucket terms seen in 100 documents each add
+        3.24 apiece.
+
+        The returned ask-hint is **not** the label. It is the head plus at most
+        enough terms to reach :data:`ASK_HINT_MAX_TOKENS`, so a head that is
+        already two words is handed back untouched — see that constant for why
+        widening it further would retune the curtail rule as a side effect.
+        """
+
+        head = _collapse(head)
+        head_tokens = head.split()
+        taken = set(head_tokens)
+        extra: list[str] = []
+        for term in self._ranked_terms(bucket):
+            if term in taken:
+                continue
+            extra.append(term)
+            taken.add(term)
+            if len(extra) >= CTFIDF_LABEL_TERMS - 1:
+                break
+        label = _shorten(" ".join([head, *extra]), MAX_LABEL_CHARS)
+        room = ASK_HINT_MAX_TOKENS - len(head_tokens)
+        # A head that normalized away to nothing is dropped rather than joined
+        # into a leading space; ``_cluster_of`` has the last fallback for a
+        # group that ends up with no name at all.
+        hint = " ".join(part for part in [head, *extra[:room]] if part) if room > 0 else head
+        return label, hint
+
+    # -- the delivery gate ---------------------------------------------
+
+    def _reset_corpus_memo(self) -> None:
+        """Forget the corpus statistics of the previous build.
+
+        Per :meth:`build`, not per builder: the memo exists to keep one build
+        from asking the same index the same question once per bucket, and a
+        memo that outlived the call would answer the *next* recall out of a
+        corpus that has since moved.
+        """
+
+        self._fts_total = None
+        self._term_df = {}
+        self._df_available = True
+
+    def _document_count(self) -> int:
+        """Indexed documents (c-TF-IDF ``N``), asked at most once per build."""
+
+        if self._fts_total is None:
+            try:
+                self._fts_total = int(self.store.fts_document_count())
+            except (AttributeError, sqlite3.OperationalError):  # pragma: no cover - old store
+                self._fts_total = 0
+        return self._fts_total
+
+    def _document_frequencies(self, terms: Sequence[str]) -> dict[str, int] | None:
+        """``term -> documents containing it``, or ``None`` if unanswerable.
+
+        ``None`` rather than an empty mapping, because the two mean opposite
+        things to a rarity measure: a term the index has never seen is
+        maximally rare, while an index that cannot be read says nothing about
+        rarity at all. Collapsing them would make a store with no vocabulary
+        table look like a store where every label is distinguishing.
+        """
+
+        wanted = [term for term in dict.fromkeys(terms) if term not in self._term_df]
+        if wanted and self._df_available:
+            try:
+                fetched = self.store.term_document_frequencies(wanted)
+            except (AttributeError, sqlite3.OperationalError):  # pragma: no cover - old store
+                self._df_available = False
+            else:
+                for term in wanted:
+                    self._term_df[term] = int(fetched.get(term, 0))
+        if not self._df_available:
+            return None
+        return {term: self._term_df.get(term, 0) for term in terms}
+
+    def _label_score(self, label: str) -> float | None:
+        """``S3``: the information content of ``label``'s best terms, in nats.
+
+        ``None`` when the corpus cannot answer — see :meth:`_deliverable` for
+        what happens then. Terms are taken unstemmed through :func:`_terms`,
+        because the document-frequency index is ``unicode61`` and does not
+        stem: a stemmed term reports ``df = 0``, scores as maximally rare, and
+        turns the gate inside out.
+        """
+
+        terms = list(dict.fromkeys(_terms(label)))
+        if not terms:
+            return 0.0
+        total = self._document_count()
+        frequencies = self._document_frequencies(terms)
+        if total <= 1 or frequencies is None:
+            return None
+        scale = float(total + 1)
+        scores = sorted(
+            (log(scale / (1.0 + float(frequencies.get(term, 0)))) for term in terms),
+            reverse=True,
+        )
+        return sum(scores[:LABEL_GATE_TOP_TERMS])
+
+    def _deliverable(self, label: str) -> bool:
+        """Whether a cluster carrying ``label`` may be delivered at all.
+
+        The whole rule, and the intent behind it restated: a cluster the
+        cascade could not give a distinguishing name is withheld rather than
+        shipped, because silence is cheaper than a row the agent cannot act on
+        — and after the response budget has taken its share the map has only a
+        handful of rows to spend, so a wasted one costs a large fraction of the
+        channel.
+
+        Withheld means *removed from delivery*, never relabelled to a catch-all
+        and never appended to ``clusters`` with a marker: anything inside
+        ``clusters`` is a delivered item to :func:`_delivered_items` and a
+        novelty-consuming hint to the ae probe, so a "noise" row would suppress
+        the curtail rule on a cluster nobody could ever follow. It goes to the
+        journal (:class:`_FilterJournal`) and nowhere else.
+
+        When the corpus cannot be measured — an old schema, an index with
+        nothing in it — the gate degrades to the purely structural half of the
+        predicate, ``two distinct content terms``. A store with no corpus
+        statistics is a store where "generic" is undefined, and a gate that
+        withholds everything on a missing index is worse than one that admits a
+        weak label.
+        """
+
+        score = self._label_score(label)
+        if score is None:
+            return len(set(_terms(label))) >= 2
+        return score >= LABEL_GATE_MIN_IC
 
     # -- curtail -------------------------------------------------------
 
@@ -1477,12 +1880,23 @@ class RecallMapBuilder:
         buckets: dict[int, list[_Member]] = {}
         covered = 0
         for member in pool:
+            matched = False
             for index, template in ordered:
                 if not self._matches(template, member.node):
                     continue
                 buckets.setdefault(index, []).append(member)
                 covered += 1
+                matched = True
                 break
+            if not matched and _structural_key(member.node) is not None:
+                # A fresh cascade would claim this node at stage 1.  If the
+                # cached pool never contained its structural signature, no
+                # cached later-stage template may stand in for it: rebuild so
+                # the new structural cluster gets its own label.  Merely
+                # leaving it unmatched would preserve the old shape by
+                # silently hiding precisely the richly named node the path
+                # cascade used to steal in the field.
+                return None
         if covered < CACHE_MIN_COVERAGE * len(pool):
             return None
         return [
@@ -1504,6 +1918,12 @@ class RecallMapBuilder:
             key = _structural_key(node)
             return key is not None and (STAGE_STRUCTURAL, *key) == template.signature
         if template.stage == STAGE_PATH:
+            # On a cold build stage 2 only sees the residual stage 1 declined.
+            # Re-establish that precondition on a cache hit; otherwise a path
+            # template can rename a node carrying a new structural value after
+            # its directory merely because that value had no cached template.
+            if _structural_key(node) is not None:
+                return False
             subsystem = _node_subsystem(node)
             return subsystem is not None and (STAGE_PATH, subsystem) == template.signature
         return node.id in template.member_ids
@@ -1518,75 +1938,222 @@ class RecallMapBuilder:
         key: str,
         pool_size: int,
     ) -> RecallMap | None:
-        """Order, cap and budget the groups into a map.
+        """Gate, order, cap and budget the groups into a map.
 
-        Largest first, because the map is a menu and the biggest pile is the
-        likeliest next question; then by stage, so a label the corpus actually
-        stores outranks one derived from term statistics; then by label, which
-        makes the order total.
+        The gate runs first and runs here rather than inside :meth:`_cluster`,
+        for two reasons. It must see the label ``_disambiguate`` settled on —
+        disambiguation can *lengthen* a label with a distinguishing term, which
+        can only raise its score, so gating earlier would withhold clusters
+        that were about to be rescued. And it must run on the cached path too:
+        the structure cache stores every group it built, gate verdict included,
+        because the verdict is a corpus statistic and the corpus moves under a
+        cache that is deliberately validated against something else.
+
+        What survives is ordered by expected usefulness for this query.  The
+        residual is already ranked best-first, so reciprocal-rank mass rewards
+        both a strong head and supporting members without letting either a
+        lone rank-zero result or a large low-ranked bucket decide the map by
+        itself.  Best rank, size, stage and the already-unique label make the
+        order total.
+
+        Order is deliberately not part of the cached structure.  A cached
+        recount supplies this call's :class:`_Member` objects and therefore
+        this call's ranks; this sort refreshes relevance on both the cold and
+        warm paths while labels, signatures and medoid choices remain stable.
+
+        A pool whose every cluster is withheld yields a journal-only map.  It
+        carries no delivered clusters (and therefore counts as no curtail
+        offer), but it must still reach ``recall_events.recall_map``: otherwise
+        the field cannot distinguish "the residual was empty" from "the label
+        gate rejected everything", exactly the ambiguity the journal exists
+        to remove.
         """
 
         populated = [group for group in groups if group.members]
         if not populated:
             return None
-        populated.sort(
-            key=lambda group: (
-                -len(group.members),
+
+        # One index round trip for every label on the table, rather than one
+        # per label. ``term_document_frequencies`` pays a scratch-table fold
+        # per call and then seeks per token, so the batch is nearly free where
+        # the calls are not — and this is the only new cost the gate puts on
+        # the *cached* path, where the cascade itself no longer runs.
+        self._document_frequencies(
+            [term for group in populated for term in _terms(group.label)]
+        )
+
+        journal = _FilterJournal()
+        deliverable: list[_Group] = []
+        for group in populated:
+            if self._deliverable(group.label):
+                deliverable.append(group)
+            else:
+                journal.withheld.append(_filtered_of(FILTER_TAG_WITHHELD, group))
+        journal.withheld.sort(key=lambda entry: (-entry.count, entry.label))
+        if not deliverable:
+            return RecallMap(
+                scope=scope,
+                key=key,
+                clusters=(),
+                pool_size=pool_size,
+                covered=0,
+                withheld=len(journal.withheld),
+                filtered=journal.names(),
+                filtered_omitted=journal.omitted(),
+            )
+
+        def usefulness_key(group: _Group) -> tuple[float, int, int, int, str]:
+            ranked = sorted(group.members, key=lambda member: member.rank)
+            reciprocal_rank_mass = sum(
+                1.0 / (1 + member.rank) for member in ranked
+            )
+            return (
+                -reciprocal_rank_mass,
+                ranked[0].rank,
+                -len(ranked),
                 _STAGE_ORDER.get(group.stage, 99),
                 group.label,
             )
+
+        deliverable.sort(key=usefulness_key)
+        kept = deliverable[: self.max_clusters]
+        journal.dropped.extend(
+            _filtered_of(FILTER_TAG_DROPPED, group)
+            for group in deliverable[self.max_clusters :]
         )
-        kept = populated[: self.max_clusters]
-        clusters, dropped = self._fit(kept, pool_size, len(populated) - len(kept))
+        clusters = self._fit(kept, pool_size, journal)
         if not clusters:
-            return None
+            # `_fit` may decide that even the breadth floor cannot carry an
+            # informative gist.  It records every remaining group as dropped;
+            # persist that decision instead of turning a budget refusal into
+            # the same `None` an empty residual returns.
+            return RecallMap(
+                scope=scope,
+                key=key,
+                clusters=(),
+                pool_size=pool_size,
+                covered=0,
+                dropped=len(journal.dropped),
+                withheld=len(journal.withheld),
+                filtered=journal.names(),
+                filtered_omitted=journal.omitted(),
+            )
         return RecallMap(
             scope=scope,
             key=key,
             clusters=tuple(clusters),
             pool_size=pool_size,
             covered=sum(cluster.count for cluster in clusters),
-            dropped=dropped,
+            dropped=len(journal.dropped),
+            withheld=len(journal.withheld),
+            filtered=journal.names(),
+            filtered_omitted=journal.omitted(),
         )
 
     def _fit(
-        self, kept: list[_Group], pool_size: int, dropped: int
-    ) -> tuple[list[MapCluster], int]:
-        """Squeeze the map into :data:`MAX_RESPONSE_CHARS`, breadth last.
+        self, kept: list[_Group], pool_size: int, journal: _FilterJournal
+    ) -> list[MapCluster]:
+        """Fit the widest common gist, trading tail breadth before gist quality.
 
-        Medoid examples give way first, and they give way *smoothly*: each pass
-        shaves every example down to just under the longest one, by at least the
-        per-cluster share of the overage, so a map one character over budget
-        loses one character rather than losing every example it has. The shave
-        strictly decreases the longest example, which is what bounds the loop.
+        Every pass searches the full ``[0, MEDOID_EXAMPLE_CHARS]`` interval
+        against the *current* payload.  That restart is load-bearing: the old
+        shave loop could reach zero, drop several clusters, and then return the
+        zero-width examples it had inherited even though the smaller map left
+        roughly two hundred characters unused.
 
-        Only when the examples are gone entirely — the medoid ``node_id``
-        survives, so "show me one" is still a ``memory_lookup`` away — does
-        breadth give way, from the tail, which the sort has already made the
-        smallest clusters. Every cluster lost that way is counted into
-        ``dropped`` and surfaces as the payload's ``more``.
+        A gist below :data:`MIN_MEDOID_EXAMPLE_CHARS` first buys room by
+        dropping the tail cluster, down to :data:`MIN_CLUSTERS`.  Each such
+        trade is journaled before the next search, so both the newly affordable
+        example space and the journal's own cost are remeasured.  At the
+        breadth floor, journal names give way one at a time; the unconditional
+        withheld/dropped counts and ``names_omitted`` never do.  Only after no
+        name remains may the widest affordable gist fall below the floor.
         """
 
-        example_chars = MEDOID_EXAMPLE_CHARS
-        clusters = [
-            self._cluster_of(group, example_chars=example_chars) for group in kept
+        active_groups = list(kept)
+        # Medoid choice does not depend on the example width.  Resolve it once
+        # per group — especially important for stage 4, whose true medoid is a
+        # pairwise-vector calculation — and make the binary search below a
+        # cheap rewrite of the quote only.
+        full = [
+            self._cluster_of(group, example_chars=MEDOID_EXAMPLE_CHARS)
+            for group in active_groups
         ]
-        while example_chars > 0:
-            overage = _payload_size(clusters, pool_size, dropped) - MAX_RESPONSE_CHARS
-            if overage <= 0:
-                return clusters, dropped
-            longest = max((len(cluster.medoid.example) for cluster in clusters), default=0)
-            if longest <= 0:
-                break
-            example_chars = max(0, longest - max(1, overage // len(clusters)))
-            clusters = [
-                self._cluster_of(group, example_chars=example_chars) for group in kept
+        breadth_floor = min(MIN_CLUSTERS, len(full))
+
+        def at_width(example_chars: int) -> list[MapCluster]:
+            return [
+                replace(
+                    cluster,
+                    medoid=replace(
+                        cluster.medoid,
+                        example=_shorten(cluster.medoid.example, example_chars),
+                    ),
+                )
+                for cluster in full
             ]
 
-        while clusters and _payload_size(clusters, pool_size, dropped) > MAX_RESPONSE_CHARS:
-            clusters = clusters[:-1]
-            dropped += 1
-        return clusters, dropped
+        def floor_met(clusters: Sequence[MapCluster]) -> bool:
+            return all(
+                bool(cluster.medoid.example)
+                and len(cluster.medoid.example)
+                >= min(MIN_MEDOID_EXAMPLE_CHARS, len(source.medoid.example))
+                for cluster, source in zip(clusters, full, strict=True)
+            )
+
+        def widest() -> tuple[int, list[MapCluster]]:
+            """Largest shared example cap whose measured payload fits."""
+
+            low = 0
+            high = MEDOID_EXAMPLE_CHARS
+            best_chars = -1
+            best: list[MapCluster] = []
+            while low <= high:
+                example_chars = (low + high) // 2
+                candidates = at_width(example_chars)
+                if (
+                    _payload_size(
+                        candidates,
+                        pool_size,
+                        len(journal.dropped),
+                        journal.block(),
+                    )
+                    <= MAX_RESPONSE_CHARS
+                ):
+                    best_chars = example_chars
+                    best = candidates
+                    low = example_chars + 1
+                else:
+                    high = example_chars - 1
+            return best_chars, best
+
+        while full:
+            example_chars, clusters = widest()
+            if example_chars >= 0 and floor_met(clusters):
+                return clusters
+
+            if len(full) > breadth_floor:
+                journal.dropped.insert(
+                    0, _filtered_of(FILTER_TAG_DROPPED, active_groups.pop())
+                )
+                full.pop()
+                continue
+
+            if journal.drop_name():
+                continue
+
+            # Long pre-existing anchor/structural hints can make even two
+            # clusters cost more than the ordinary worst-case model.  A gist
+            # below the floor is not an invitation, so fail closed: move the
+            # surviving breadth into the dropped journal and let `_finish`
+            # persist a journal-only map. With no delivered rows competing for
+            # the budget, restore the normal forensic name allowance.
+            journal.dropped[0:0] = [
+                _filtered_of(FILTER_TAG_DROPPED, group) for group in active_groups
+            ]
+            journal.name_limit = FILTER_JOURNAL_NAMES
+            return []
+        return []
 
     def _cluster_of(self, group: _Group, *, example_chars: int) -> MapCluster:
         medoid = self._medoid(group)
@@ -1678,6 +2245,48 @@ def _dominant_scope(pool: list[_Member]) -> str:
     return min(counted.items(), key=lambda item: (-item[1], item[0]))[0]
 
 
+def _filtered_of(tag: str, group: _Group) -> FilteredCluster:
+    """One journal entry for a group that will not be delivered."""
+
+    return FilteredCluster(
+        tag=tag,
+        label=_shorten(group.label, FILTER_JOURNAL_LABEL_CHARS),
+        count=len(group.members),
+    )
+
+
+def _filter_block(
+    withheld: int,
+    dropped: int,
+    names: Sequence[FilteredCluster],
+    omitted: int,
+) -> dict[str, Any] | None:
+    """The ``filtered`` payload key, or ``None`` when nothing was filtered.
+
+    Strictly additive, and emitted only when it has something to say, so an
+    unfiltered map is byte-identical to what this module shipped before the
+    journal existed. Both counts are unconditional whenever the block is
+    present — that is the no-silent-caps rule in its exact form: the *names*
+    are convenience and may be taken by the budget, the *numbers* never are, so
+    a field reader can always tell "memory had nothing to say" (``withheld``
+    high) from "the channel was full" (``dropped`` high) from "the filter is
+    too harsh" (both, against a large pool).
+
+    ``dropped`` deliberately mirrors the top-level ``more``. The duplication
+    costs about fourteen characters and buys a block that is self-contained
+    and greppable in a persisted payload.
+    """
+
+    if withheld <= 0 and dropped <= 0:
+        return None
+    block: dict[str, Any] = {"withheld": withheld, "dropped": dropped}
+    if names:
+        block["names"] = [entry.to_list() for entry in names]
+    if omitted > 0:
+        block["names_omitted"] = omitted
+    return block
+
+
 def _payload(
     clusters: Sequence[MapCluster],
     pool_size: int,
@@ -1685,6 +2294,7 @@ def _payload(
     *,
     curtailed: bool = False,
     streak: int = 0,
+    filtered: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The wire form. Curtailed maps keep the shape and drop the content.
 
@@ -1693,6 +2303,13 @@ def _payload(
     this module's own :meth:`RecallMapBuilder._curtailment` — reads one shape
     and reaches the collapse through ``curtailed`` instead of through a
     ``KeyError``.
+
+    ``filtered`` is a *sibling* key and never an entry inside ``clusters``.
+    That is the hard rule the additive shape rests on: ``_delivered_items`` is
+    paranoid about the shape of a cluster but not about extra ones, so a
+    journal row inside the list would be read as a delivered item by the
+    curtail probe and as a novelty-consuming hint by the ae probe — corrupting
+    both on a cluster nobody was ever offered.
     """
 
     payload: dict[str, Any] = {
@@ -1702,16 +2319,23 @@ def _payload(
     }
     if dropped > 0:
         payload["more"] = dropped
+    if filtered:
+        payload["filtered"] = dict(filtered)
     if curtailed:
         payload["curtailed"] = True
         payload["streak"] = streak
     return payload
 
 
-def _payload_size(clusters: Sequence[MapCluster], pool_size: int, dropped: int) -> int:
+def _payload_size(
+    clusters: Sequence[MapCluster],
+    pool_size: int,
+    dropped: int,
+    filtered: Mapping[str, Any] | None = None,
+) -> int:
     return len(
         json.dumps(
-            _payload(clusters, pool_size, dropped),
+            _payload(clusters, pool_size, dropped, filtered=filtered),
             ensure_ascii=False,
             separators=(",", ":"),
         )
@@ -1719,12 +2343,19 @@ def _payload_size(clusters: Sequence[MapCluster], pool_size: int, dropped: int) 
 
 
 __all__ = [
+    "ASK_HINT_MAX_TOKENS",
     "CACHE_MIN_COVERAGE",
     "CTFIDF_LABEL_TERMS",
     "CURTAIL_HISTORY_LIMIT",
     "CURTAIL_QUERY_OVERLAP",
     "CURTAIL_STREAK",
     "EMBEDDING_CLUSTER_COSINE",
+    "FILTER_JOURNAL_LABEL_CHARS",
+    "FILTER_JOURNAL_NAMES",
+    "FILTER_TAG_DROPPED",
+    "FILTER_TAG_WITHHELD",
+    "LABEL_GATE_MIN_IC",
+    "LABEL_GATE_TOP_TERMS",
     "MAX_ASK_HINT_CHARS",
     "MAX_CLUSTERS",
     "MAX_INSTRUCTIONS_CHARS",
@@ -1732,11 +2363,14 @@ __all__ = [
     "MAX_POOL_NODES",
     "MAX_RESPONSE_CHARS",
     "MEDOID_EXAMPLE_CHARS",
+    "MIN_CLUSTERS",
+    "MIN_MEDOID_EXAMPLE_CHARS",
     "STAGE_ANCHOR",
     "STAGE_EMBEDDING",
     "STAGE_PATH",
     "STAGE_STRUCTURAL",
     "STRUCTURAL_FIELDS",
+    "FilteredCluster",
     "MapCluster",
     "MapMedoid",
     "RecallMap",

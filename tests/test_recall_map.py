@@ -15,6 +15,11 @@ budget and answers nothing. And it is *stable*: the same key returns the same
 labels until the corpus moves, at which point the revision probe — not a timer
 — invalidates it.
 
+Every scenario runs against a *corpus*, not a handful of nodes — see
+:func:`seed_corpus`. The delivery gate is a corpus statistic, so on a store of
+four notes it has nothing to measure and degrades; a fixture that never gave it
+a corpus would pin the degraded branch and call it the rule.
+
 The two deliberate mirrors in ``recall_map`` are pinned against their originals
 here rather than trusted: ``normalize_key`` against
 ``consolidation._normalize_trigger`` and ``_chunk_table_revision`` against
@@ -23,24 +28,34 @@ here rather than trusted: ``normalize_key`` against
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from living_memory import recall_map
 from living_memory.chunking import TextChunk
+from living_memory.grounding import token_set
 from living_memory.models import Node
 from living_memory.recall_map import (
+    ASK_HINT_MAX_TOKENS,
+    FILTER_JOURNAL_LABEL_CHARS,
+    FILTER_JOURNAL_NAMES,
+    LABEL_GATE_MIN_IC,
     MAX_CLUSTERS,
     MAX_INSTRUCTIONS_CHARS,
     MAX_LABEL_CHARS,
     MAX_RESPONSE_CHARS,
     MEDOID_EXAMPLE_CHARS,
+    MIN_CLUSTERS,
+    MIN_MEDOID_EXAMPLE_CHARS,
     STAGE_ANCHOR,
     STAGE_EMBEDDING,
     STAGE_PATH,
     STAGE_STRUCTURAL,
     RecallMapBuilder,
+    _echoes,
     _payload_size,
     cache_key,
     normalize_key,
@@ -50,10 +65,51 @@ from living_memory.storage import MemoryStore, recall_fingerprint
 
 SCOPE = "project:lm"
 
+#: Documents the fixture store carries before a test writes anything.
+#:
+#: Derived, not picked. The gate scores a label's best terms by
+#: ``log((N + 1) / (1 + df))`` against a floor of :data:`LABEL_GATE_MIN_IC`, so
+#: the corpus size decides what the gate *can* say. Below ``2 * e**2 - 1 = 13.8``
+#: documents even a two-word label of terms the corpus has never seen fails the
+#: floor, and above ``e**4 - 1 = 53.6`` a single such word starts clearing it.
+#: Anywhere between, and every test here sits between with room for the dozen
+#: nodes a scenario adds, the fixture pins exactly the property under test:
+#: **one generic word never passes, two distinguishing ones always do.**
+CORPUS_DOCUMENTS = 32
+
+#: Vocabulary the scenarios below never use, so seeding a corpus moves no
+#: label's document frequency.
+_CORPUS_FILLER = "quarterly ledger reconciliation entry"
+
+
+def seed_corpus(store: MemoryStore, count: int = CORPUS_DOCUMENTS) -> None:
+    """Give the delivery gate a corpus to measure rarity against.
+
+    These nodes never enter a pool. They exist only in the FTS index, which is
+    where ``_deliverable`` reads document frequencies from, and they are what
+    makes "generic" a statement about a corpus rather than about four notes.
+    """
+
+    for index in range(count):
+        store.create_node(
+            level="trace",
+            content=f"{_CORPUS_FILLER} {index}",
+            context={"scope": SCOPE},
+        )
+
+
+@pytest.fixture()
+def bare_store(tmp_path: Path):
+    """A store with no corpus at all: the gate's degraded branch lives here."""
+
+    with MemoryStore(tmp_path / "recall-map-bare.sqlite3") as opened:
+        yield opened
+
 
 @pytest.fixture()
 def store(tmp_path: Path):
     with MemoryStore(tmp_path / "recall-map.sqlite3") as opened:
+        seed_corpus(opened)
         yield opened
 
 
@@ -64,6 +120,12 @@ def make_node(
     payload.update(context or {})
     payload.update(extra)
     return store.create_node(level="trace", content=content, context=payload)
+
+
+def payload_chars(built) -> int:
+    """The map's real size on the wire, journal block included."""
+
+    return len(json.dumps(built.to_dict(), ensure_ascii=False, separators=(",", ":")))
 
 
 def pool(nodes) -> list[RecallResult]:
@@ -169,6 +231,14 @@ def test_readable_task_pattern_keeps_its_own_wording(store: MemoryStore) -> None
 
 
 def test_paths_collapse_to_subsystems(store: MemoryStore) -> None:
+    """The subsystem is the head of the label, never the whole of it.
+
+    A directory is where the files happen to live, not what the cluster is
+    about, and the field measured what a bare directory reads like on the
+    wire: ``public (73)``. So the subsystem keeps its place and the bucket's
+    own most distinguishing terms are appended to it.
+    """
+
     nodes = [
         make_node(store, "extraction phase", {"files": ["src/living_memory/postsession/extract.py"]}),
         make_node(store, "attestation phase", {"files": ["src/living_memory/postsession/attest.py"]}),
@@ -182,22 +252,48 @@ def test_paths_collapse_to_subsystems(store: MemoryStore) -> None:
     assert built is not None
     assert {cluster.stage for cluster in built.clusters} == {STAGE_PATH}
     assert {cluster.label: cluster.count for cluster in built.clusters} == {
-        "postsession": 3,
-        "scripts": 1,
-        "living memory": 1,
+        "postsession phase attestation": 3,
+        "scripts field runner": 1,
     }
+    # The lowest-ranked row gives way so the delivered rows can carry a real
+    # gist; size no longer lets it jump the higher residual hit.
+    assert built.dropped == 1
+    # Every delivered path label is multi-word and still starts at the
+    # subsystem, which is what makes it findable by someone who knows the tree.
+    for cluster in built.clusters:
+        assert len(cluster.label.split()) >= 2
+        assert len(cluster.label) <= MAX_LABEL_CHARS
+    # The ask-hint does *not* follow the label to three tokens: it carries the
+    # head plus at most one term, so a later query needs exactly the evidence
+    # it needed before the labels got richer.
+    for cluster in built.clusters:
+        assert len(cluster.ask_hint.split()) <= max(
+            ASK_HINT_MAX_TOKENS, len(cluster.label.split(" ", 1)[0].split())
+        )
+        assert cluster.label.startswith(cluster.ask_hint.split()[0])
 
 
 def test_subsystem_collapse_handles_absolute_paths_and_line_refs(store: MemoryStore) -> None:
     nodes = [
-        make_node(store, "one", {"files": ["/home/u/p/lm/src/living_memory/postsession/a.py"]}),
-        make_node(store, "two", {"files": ["src/living_memory/postsession/b.py:1426-1434"]}),
+        make_node(
+            store,
+            "the migration rewrites checkpoints",
+            {"files": ["/home/u/p/lm/src/living_memory/postsession/a.py"]},
+        ),
+        make_node(
+            store,
+            "the migration replays checkpoints",
+            {"files": ["src/living_memory/postsession/b.py:1426-1434"]},
+        ),
     ]
 
     built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE)
 
     assert built is not None
-    assert [(c.label, c.count) for c in built.clusters] == [("postsession", 2)]
+    assert [c.count for c in built.clusters] == [2]
+    # Both spellings of the path collapsed onto one subsystem, which is still
+    # the head of the label the enrichment built on top of it.
+    assert built.clusters[0].label.startswith("postsession ")
 
 
 def test_summarized_file_context_is_not_mistaken_for_a_path(store: MemoryStore) -> None:
@@ -269,9 +365,12 @@ def embed(store: MemoryStore, node: Node, vector: list[float]) -> None:
     store.replace_node_chunks(node.id, [(chunk_of(node.content), vector)])
 
 
-def test_embedding_fallback_clusters_and_labels_by_ctfidf(store: MemoryStore) -> None:
-    # Corpus noise, so document frequency has something to discount against.
-    for index in range(6):
+def test_embedding_fallback_clusters_and_labels_by_ctfidf(bare_store: MemoryStore) -> None:
+    # The corpus noise is the point of this test, so it is built here rather
+    # than taken from the fixture: every document says "memory server", which
+    # is what makes those two words house vocabulary the label must not use.
+    store = bare_store
+    for index in range(CORPUS_DOCUMENTS):
         make_node(store, f"the memory server records a recall event number {index}")
 
     deploy = [
@@ -422,10 +521,14 @@ def test_mixed_pool_reaches_every_stage(monkeypatch: pytest.MonkeyPatch, store: 
     assert by_stage[STAGE_STRUCTURAL].count == 2
     assert structural[0].id in by_stage[STAGE_STRUCTURAL].member_ids
     assert structural[0].id not in by_stage[STAGE_PATH].member_ids
-    assert by_stage[STAGE_PATH].label == "delivery"
+    assert by_stage[STAGE_PATH].label.startswith("delivery ")
     assert by_stage[STAGE_ANCHOR].label == "what did we decide about anchors"
     assert built.covered == 7
     assert built.dropped == 0
+    assert built.withheld == 0
+    # Nothing was filtered, so the payload is byte-identical to the pre-journal
+    # shape: the block is additive and it is also *conditional*.
+    assert "filtered" not in built.to_dict()
 
 
 # ----------------------------------------------------------------------
@@ -458,6 +561,52 @@ def test_two_builds_of_the_same_pool_are_identical(store: MemoryStore) -> None:
     assert first.render_compact() == third.render_compact()
 
 
+def test_clusters_are_ordered_by_reciprocal_rank_mass_before_size(
+    store: MemoryStore,
+) -> None:
+    """A larger tail bucket is not more useful than the best residual hit."""
+
+    alpha = make_node(store, "alpha head", {"procedure_id": "alpha-ritual"})
+    beta = [
+        make_node(store, "beta middle", {"procedure_id": "beta-ritual"}),
+        make_node(store, "beta tail", {"procedure_id": "beta-ritual"}),
+    ]
+
+    built = RecallMapBuilder(store).build(pool([alpha, *beta]), scope=SCOPE)
+
+    assert built is not None
+    # alpha: 1/(1+0) = 1.0; beta: 1/2 + 1/3 = 0.833...
+    assert [cluster.label for cluster in built.clusters] == [
+        "alpha ritual",
+        "beta ritual",
+    ]
+    assert [cluster.count for cluster in built.clusters] == [1, 2]
+
+
+def test_equal_reciprocal_rank_mass_uses_best_member_rank(store: MemoryStore) -> None:
+    """The first tie-break is explicit, not inherited from cascade order."""
+
+    gamma = [
+        make_node(store, f"gamma {index}", {"procedure_id": "gamma-ritual"})
+        for index in range(3)
+    ]
+    alpha = make_node(store, "alpha", {"procedure_id": "alpha-ritual"})
+    beta = [
+        make_node(store, "beta head", {"procedure_id": "beta-ritual"}),
+        make_node(store, "beta tail", {"procedure_id": "beta-ritual"}),
+    ]
+
+    # alpha occupies rank 1: 1/2.  Beta occupies ranks 2 and 5:
+    # 1/3 + 1/6 = 1/2.  Alpha therefore wins on best rank even though beta is
+    # larger.  Gamma merely fills the otherwise-unused ranks 0, 3 and 4.
+    candidates = pool([gamma[0], alpha, beta[0], gamma[1], gamma[2], beta[1]])
+    built = RecallMapBuilder(store).build(candidates, scope=SCOPE)
+
+    assert built is not None
+    labels = [cluster.label for cluster in built.clusters]
+    assert labels.index("alpha ritual") < labels.index("beta ritual")
+
+
 def test_structural_keys_that_normalize_alike_still_get_distinct_labels(
     store: MemoryStore,
 ) -> None:
@@ -472,14 +621,19 @@ def test_structural_keys_that_normalize_alike_still_get_distinct_labels(
 
     assert built is not None
     labels = [cluster.label for cluster in built.clusters]
-    assert labels == ["root cause", "root cause deploy"]
+    assert labels == ["root cause deploy", "root cause"]
     assert [cluster.count for cluster in built.clusters] == [1, 1]
     # Not merged: each keeps its own member, and its own way to ask.
     assert [cluster.member_ids for cluster in built.clusters] == [
-        (nodes[1].id,),
         (nodes[0].id,),
+        (nodes[1].id,),
     ]
-    assert built.clusters[1].ask_hint == "root cause deploy"
+    # The *label* took the distinguishing term; the ask-hint did not follow it
+    # there. A third token is where ``_echoes`` starts demanding two shared
+    # tokens instead of one, so a hint that tracked the whole label would
+    # tighten the curtail rule as a side effect of a naming fix.
+    assert built.clusters[0].ask_hint == "root cause"
+    assert len(built.clusters[0].ask_hint.split()) <= ASK_HINT_MAX_TOKENS
 
 
 def test_vector_regions_sharing_their_top_terms_still_get_distinct_labels(
@@ -519,10 +673,11 @@ def test_anchor_queries_sharing_a_long_prefix_stay_distinguishable(
     case, not a pathological one.
     """
 
-    first = make_node(store, "the august retrieval weights")
-    second = make_node(store, "the september retrieval weights")
-    seed_anchor(store, "what did we decide about the retrieval weights in august", [first])
-    seed_anchor(store, "what did we decide about the retrieval weights in september", [second])
+    first = make_node(store, "a")
+    second = make_node(store, "s")
+    prefix = "what did retrieval weights decide about "
+    seed_anchor(store, prefix + "august", [first])
+    seed_anchor(store, prefix + "september", [second])
 
     built = RecallMapBuilder(store).build(pool([first, second]), scope=SCOPE)
 
@@ -533,8 +688,8 @@ def test_anchor_queries_sharing_a_long_prefix_stay_distinguishable(
     # The ask-hint is the anchor's own wording, untouched by disambiguation.
     hints = sorted(cluster.ask_hint for cluster in built.clusters)
     assert hints == [
-        "what did we decide about the retrieval weights in august",
-        "what did we decide about the retrieval weights in september",
+        "what did retrieval weights decide about august",
+        "what did retrieval weights decide about september",
     ]
 
 
@@ -630,8 +785,8 @@ def test_examples_are_shaved_before_a_cluster_is_dropped(store: MemoryStore) -> 
 
     long_tail = "content that runs on and on " * 6
     nodes = [
-        make_node(store, f"note {index}: {long_tail}", {"topic": f"area-{index}"})
-        for index in range(3)
+        make_node(store, f"note {index}: {long_tail}", {"topic": f"area-{name}"})
+        for index, name in enumerate(("alpha", "beta", "gamma"))
     ]
 
     built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE)
@@ -643,7 +798,145 @@ def test_examples_are_shaved_before_a_cluster_is_dropped(store: MemoryStore) -> 
     # Every example survived, shortened rather than discarded.
     examples = [cluster.medoid.example for cluster in built.clusters]
     assert all(example.endswith("…") for example in examples)
-    assert all(0 < len(example) < MEDOID_EXAMPLE_CHARS for example in examples)
+    assert all(
+        MIN_MEDOID_EXAMPLE_CHARS <= len(example) < MEDOID_EXAMPLE_CHARS
+        for example in examples
+    )
+
+
+def _rich_gist_pool(store: MemoryStore) -> list[Node]:
+    """A deterministic pool whose labels and medoids make the 700-char cap bind."""
+
+    topics = (
+        "cobalt-verification-handoff",
+        "saffron-rollout-checkpoint",
+        "indigo-ledger-attestation",
+        "marble-retention-protocol",
+        "quartz-snapshot-invariant",
+        "willow-recovery-playbook",
+        "zephyr-latency-envelope",
+        "ember-consumption-signal",
+    )
+    return [
+        make_node(
+            store,
+            f"{topic} preserves a detailed operational account: "
+            + "plain material for the medoid example " * 8,
+            {"topic": topic},
+        )
+        for topic in topics
+    ]
+
+
+def test_every_delivered_cluster_carries_an_informative_example(
+    store: MemoryStore,
+) -> None:
+    built = RecallMapBuilder(store).build(
+        pool(_rich_gist_pool(store)), scope=SCOPE, task="gist-present"
+    )
+
+    assert built is not None
+    assert len(built.clusters) == MIN_CLUSTERS
+    assert all(
+        len(cluster.medoid.example) >= MIN_MEDOID_EXAMPLE_CHARS
+        for cluster in built.clusters
+    )
+    assert all(cluster.medoid.example.endswith("…") for cluster in built.clusters)
+
+
+def test_example_budget_reflows_from_scratch_after_cluster_drops(
+    store: MemoryStore,
+) -> None:
+    candidates = pool(_rich_gist_pool(store))
+
+    reflowed = RecallMapBuilder(store).build(candidates, scope=SCOPE, task="reflow")
+    direct = RecallMapBuilder(store, max_clusters=MIN_CLUSTERS).build(
+        candidates, scope=SCOPE, task="reflow"
+    )
+
+    assert reflowed is not None and direct is not None
+    assert reflowed.dropped == direct.dropped == len(candidates) - MIN_CLUSTERS
+    assert reflowed.to_dict() == direct.to_dict()
+    assert all(cluster.medoid.example for cluster in reflowed.clusters)
+    journal = reflowed.to_dict()["filtered"]
+    assert journal["dropped"] == reflowed.dropped
+    assert journal["names_omitted"] == reflowed.dropped
+    assert "names" not in journal  # names give way before the gist floor does
+
+
+def test_rich_pool_uses_nearly_the_whole_response_budget(store: MemoryStore) -> None:
+    built = RecallMapBuilder(store).build(
+        pool(_rich_gist_pool(store)), scope=SCOPE, task="budget-utilization"
+    )
+
+    assert built is not None
+    unused = MAX_RESPONSE_CHARS - payload_chars(built)
+    assert 0 <= unused < len(built.clusters)
+
+
+def test_gist_floor_fitting_is_deterministic_cold_and_warm(store: MemoryStore) -> None:
+    candidates = pool(_rich_gist_pool(store))
+    warm_builder = RecallMapBuilder(store)
+
+    first = warm_builder.build(candidates, scope=SCOPE, task="gist-determinism")
+    second = warm_builder.build(candidates, scope=SCOPE, task="gist-determinism")
+    cold = RecallMapBuilder(store).build(
+        candidates, scope=SCOPE, task="gist-determinism"
+    )
+
+    assert first is not None and second is not None and cold is not None
+    assert warm_builder.last_cache_hit is True
+    assert first.to_dict() == second.to_dict() == cold.to_dict()
+
+
+def test_a_map_that_cannot_afford_the_gist_floor_is_journal_only(
+    store: MemoryStore,
+) -> None:
+    """Long proven hints do not buy breadth by shipping sub-floor gists."""
+
+    nodes = [
+        make_node(
+            store,
+            f"medoid {index} carries enough explanatory material " + "detail " * 16,
+        )
+        for index in range(2)
+    ]
+    for index, node in enumerate(nodes):
+        seed_anchor(
+            store,
+            " ".join(
+                [
+                    f"anchor{index}",
+                    "production",
+                    "equivalence",
+                    "verification",
+                    "boundary",
+                    "evidence",
+                    "handoff",
+                    "protocol",
+                ]
+            ),
+            [node],
+        )
+
+    builder = RecallMapBuilder(store)
+    built = builder.build(pool(nodes), scope=SCOPE, task="unaffordable-floor")
+
+    assert built is not None
+    assert built.clusters == ()
+    assert built.dropped == 2
+    assert built.withheld == 0
+    assert built.render_compact() == ""
+    assert payload_chars(built) <= MAX_RESPONSE_CHARS
+    assert built.to_dict()["filtered"] == {
+        "withheld": 0,
+        "dropped": 2,
+        "names": [
+            ["d", "anchor0 production equi…", 1],
+            ["d", "anchor1 production equi…", 1],
+        ],
+    }
+    assert builder.last_curtailment.offers == 0
 
 
 def test_a_map_with_nothing_to_say_is_no_map_at_all(store: MemoryStore) -> None:
@@ -693,6 +986,61 @@ def test_cached_structure_survives_a_changed_pool_and_refreshes_counts(
     assert [c.ask_hint for c in first.clusters] == [c.ask_hint for c in second.clusters]
     assert [c.count for c in first.clusters] == [3, 1]
     assert [c.count for c in second.clusters] == [2, 1]
+
+
+def test_cached_structure_refreshes_order_from_the_current_residual(
+    store: MemoryStore,
+) -> None:
+    alpha = make_node(store, "alpha head", {"procedure_id": "alpha-ritual"})
+    beta = [
+        make_node(store, "beta head", {"procedure_id": "beta-ritual"}),
+        make_node(store, "beta tail", {"procedure_id": "beta-ritual"}),
+    ]
+    builder = RecallMapBuilder(store)
+
+    first = builder.build(
+        pool([alpha, *beta]), scope=SCOPE, task="rank-refresh"
+    )
+    assert first is not None
+    assert builder.last_cache_hit is False
+
+    second_candidates = pool([beta[0], alpha, beta[1]])
+    second = builder.build(second_candidates, scope=SCOPE, task="rank-refresh")
+    assert second is not None
+    assert builder.last_cache_hit is True
+
+    # The templates retain their labels, hints and medoid choices, but their
+    # presentation order follows this call's ranks: beta moves from ranks 1/2
+    # (mass 5/6) to ranks 0/2 (mass 4/3).
+    assert [cluster.label for cluster in first.clusters] == [
+        "alpha ritual",
+        "beta ritual",
+    ]
+    assert [cluster.label for cluster in second.clusters] == [
+        "beta ritual",
+        "alpha ritual",
+    ]
+    first_structure = {
+        cluster.label: (cluster.ask_hint, cluster.medoid.node_id)
+        for cluster in first.clusters
+    }
+    second_structure = {
+        cluster.label: (cluster.ask_hint, cluster.medoid.node_id)
+        for cluster in second.clusters
+    }
+    assert first_structure == second_structure
+    assert {cluster.label: cluster.count for cluster in second.clusters} == {
+        "alpha ritual": 1,
+        "beta ritual": 2,
+    }
+
+    cold = RecallMapBuilder(store).build(
+        second_candidates, scope=SCOPE, task="rank-refresh"
+    )
+    assert cold is not None
+    assert [cluster.label for cluster in cold.clusters] == [
+        cluster.label for cluster in second.clusters
+    ]
 
 
 def test_a_different_key_does_not_share_a_structure(store: MemoryStore) -> None:
@@ -781,6 +1129,521 @@ def test_cached_structural_template_admits_a_node_it_never_saw(store: MemoryStor
     assert refitted is not None
     assert [cluster.count for cluster in refitted.clusters] == [3]
     assert newcomer.id in refitted.clusters[0].member_ids
+
+
+def test_cached_path_template_cannot_steal_a_new_structural_cluster(
+    store: MemoryStore,
+) -> None:
+    """Cache recount preserves the cascade's structural-before-path rule."""
+
+    path_context = {"files": ["src/living_memory/recall_map.py"]}
+    path_nodes = [
+        make_node(store, f"path cache evidence {index}", path_context)
+        for index in range(4)
+    ]
+    builder = RecallMapBuilder(store)
+    first = builder.build(pool(path_nodes), scope=SCOPE, task="stage-precedence")
+    assert first is not None
+    assert builder.last_cache_hit is False
+    assert {cluster.stage for cluster in first.clusters} == {STAGE_PATH}
+
+    newcomer = make_node(
+        store,
+        "a structural lesson with the same file path",
+        {**path_context, "lesson_kind": "production-equivalence-gap"},
+    )
+    rebuilt = builder.build(
+        pool([*path_nodes, newcomer]), scope=SCOPE, task="stage-precedence"
+    )
+
+    # A path-only cached shape is not allowed to absorb the new stage-1
+    # signature. Rebuilding recovers the name rather than silently omitting or
+    # renaming the node after ``living_memory``.
+    assert builder.last_cache_hit is False
+    assert rebuilt is not None
+    by_stage = {cluster.stage: cluster for cluster in rebuilt.clusters}
+    assert newcomer.id in by_stage[STAGE_STRUCTURAL].member_ids
+    assert newcomer.id not in by_stage[STAGE_PATH].member_ids
+
+
+# ----------------------------------------------------------------------
+# The delivery gate: a corpus statistic, and what it withholds
+# ----------------------------------------------------------------------
+
+
+def house_corpus(store: MemoryStore, word: str, count: int = CORPUS_DOCUMENTS) -> None:
+    """A corpus whose every document carries ``word``: its house vocabulary."""
+
+    for index in range(count):
+        make_node(store, f"{word} routine {index} about scheduled maintenance")
+
+
+def test_a_cluster_the_cascade_could_not_name_is_withheld(bare_store: MemoryStore) -> None:
+    """Silence is cheaper than a row nobody can act on.
+
+    ``widget`` is in every document of this corpus, so a cluster named after it
+    says nothing that distinguishes it from the corpus — and a row like that
+    costs a slot of a channel with a handful of them.
+    """
+
+    store = bare_store
+    house_corpus(store, "widget")
+    nodes = [
+        make_node(store, f"widget upkeep {index}", {"topic": "widget"})
+        for index in range(3)
+    ]
+    nodes.append(
+        make_node(store, "the sealed holdout attestation", {"topic": "sealed-holdout"})
+    )
+
+    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="gate")
+
+    assert built is not None
+    # The house word never reaches the wire, under any spelling and under no
+    # catch-all label: it is removed, not renamed.
+    assert [cluster.label for cluster in built.clusters] == ["sealed holdout"]
+    assert all("widget" not in cluster.label for cluster in built.clusters)
+    assert built.withheld == 1
+    # ``covered`` still counts only what was delivered, and ``more`` still
+    # means only what the budget dropped.
+    assert built.covered == 1
+    assert built.dropped == 0
+
+
+def test_the_gate_is_a_corpus_statistic_not_a_word_list(
+    bare_store: MemoryStore, tmp_path: Path
+) -> None:
+    """Two corpora, the same two labels, opposite verdicts.
+
+    This is the property an enumerated blacklist cannot have, and it is the
+    whole reason the gate is a statistic. Nothing in ``recall_map`` names
+    ``widget`` or ``шестерёнка``. Each corpus withholds whichever of the two
+    labels is built from *its own* house word and delivers the other, so the
+    rule that was placed on one field corpus transfers to a corpus whose house
+    vocabulary is different words — in a different script.
+    """
+
+    def verdicts(store: MemoryStore, house: str) -> set[str]:
+        house_corpus(store, house)
+        # Content that offers the enrichment nothing the key does not already
+        # say, so each cluster reaches the gate on its key's own two words and
+        # the verdict is the gate's alone.
+        nodes = [
+            make_node(store, f"widget cadence {index}", {"topic": "widget-cadence"})
+            for index in range(2)
+        ]
+        nodes += [
+            make_node(store, f"шестерёнка tempo {index}", {"topic": "шестерёнка-tempo"})
+            for index in range(2)
+        ]
+        built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="transfer")
+        return {cluster.label for cluster in built.clusters} if built else set()
+
+    latin = verdicts(bare_store, "widget")
+    with MemoryStore(tmp_path / "other-corpus.sqlite3") as other:
+        cyrillic = verdicts(other, "шестерёнка")
+
+    assert latin == {"шестерёнка tempo"}
+    assert cyrillic == {"widget cadence"}
+
+
+def test_no_observed_label_is_written_into_the_module() -> None:
+    """The gate may not become a lookup table of what the field happened to show.
+
+    Docstrings quote the field's degenerate labels because that is the evidence
+    for the rule; *code* that compared against them would be a blacklist wearing
+    a threshold, and would not transfer to the next corpus. So the check is on
+    the module's real string constants, with every docstring removed first.
+    """
+
+    import ast
+
+    source = (
+        Path(__file__).resolve().parents[1] / "src" / "living_memory" / "recall_map.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if ast.get_docstring(node) is not None:
+                node.body = node.body[1:]
+
+    literals = {
+        node.value.lower()
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    observed = {"public", "test", "mmo", "server", "tools", "camera", "showcase"}
+    # The one legitimate overlap is the path-container list stage 2 reads
+    # directory names against, which predates this rule and decides where a
+    # subsystem *starts*, not whether a label may be delivered.
+    assert literals & observed <= recall_map._PATH_ROOT_SEGMENTS, sorted(
+        (literals & observed) - recall_map._PATH_ROOT_SEGMENTS
+    )
+
+
+def test_a_pool_the_gate_empties_is_journaled_without_counting_an_offer(
+    bare_store: MemoryStore,
+) -> None:
+    """A fully withheld pool persists why it is silent, without curtail cost."""
+
+    store = bare_store
+    house_corpus(store, "widget")
+    nodes = [
+        make_node(store, f"widget upkeep {index}", {"topic": "widget"})
+        for index in range(3)
+    ]
+
+    builder = RecallMapBuilder(store)
+    built = builder.build(pool(nodes), scope=SCOPE, task="silent")
+    assert built is not None
+    assert built.clusters == ()
+    assert built.render_compact() == ""
+    assert built.to_dict() == {
+        "clusters": [],
+        "pool": 3,
+        "covered": 0,
+        "filtered": {
+            "withheld": 1,
+            "dropped": 0,
+            "names": [["w", "widget upkeep", 3]],
+        },
+    }
+
+    event = store.record_recall_event(
+        query="what else is here",
+        scope=SCOPE,
+        ambient_context={"task": "silent"},
+        recall_map=built.to_dict(),
+    )
+    (persisted,) = store.recent_recall_map_history(scope=SCOPE, task="silent")
+    assert persisted["id"] == event.id
+    assert persisted["recall_map"] == built.to_dict()
+
+    # Journal-only payloads are observable but not offers: a key that keeps
+    # going quiet never curtails itself into a collapse it cannot leave.
+    for _ in range(4):
+        again = builder.build(pool(nodes), scope=SCOPE, task="silent")
+        assert again is not None and again.clusters == ()
+    assert builder.last_curtailment.offers == 0
+
+
+def test_without_corpus_statistics_the_gate_degrades_to_two_terms(
+    bare_store: MemoryStore,
+) -> None:
+    """A store where "generic" is undefined admits a weak label rather than none.
+
+    The empty store has no document frequencies to measure against, so the
+    ``ic`` scale would call every label maximally rare or maximally common
+    depending on which way the missing index is read. Withholding everything on
+    a missing index is the worse failure, so what is left is the structural
+    half of the predicate: two distinct content terms.
+    """
+
+    store = bare_store
+    only = make_node(store, "the note", {"topic": "sealed-holdout"})
+
+    builder = RecallMapBuilder(store)
+    assert builder._document_count() <= 1
+    assert builder._deliverable("sealed holdout") is True
+    assert builder._deliverable("widget") is False
+    assert builder._deliverable("") is False
+
+    built = builder.build(pool([only]), scope=SCOPE, task="degraded")
+    assert built is not None
+    assert [cluster.label for cluster in built.clusters] == ["sealed holdout"]
+
+
+def test_a_store_that_cannot_answer_the_index_still_builds_a_map(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An old schema is not a reason to go quiet."""
+
+    def unavailable(*_args, **_kwargs):
+        raise sqlite3.OperationalError("no such table: nodes_fts_vocab")
+
+    monkeypatch.setattr(type(store), "term_document_frequencies", unavailable)
+
+    nodes = [
+        make_node(store, "the first note", {"topic": "sealed-holdout"}),
+        make_node(store, "the second note", {"topic": "sealed-holdout"}),
+    ]
+    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="old-store")
+
+    assert built is not None
+    assert [cluster.label for cluster in built.clusters] == ["sealed holdout"]
+
+
+def test_a_house_word_structural_key_is_enriched_rather_than_lost(
+    bare_store: MemoryStore,
+) -> None:
+    """Stage 1 gets the same rescue stage 2 gets, and only when it needs it.
+
+    Six of the fifty-five ``server`` clusters in the field window were
+    structural, not path: a stored key whose value is one house word is exactly
+    as undeliverable as a bare directory segment. A key that already says
+    something is left exactly alone.
+    """
+
+    store = bare_store
+    house_corpus(store, "widget")
+    generic = [
+        make_node(store, "widget rotation drills the arm", {"procedure_id": "widget"}),
+        make_node(store, "widget rotation seals the arm", {"procedure_id": "widget"}),
+    ]
+    specific = [
+        make_node(store, "the ledger reconciles", {"procedure_id": "sealed-holdout-drill"}),
+    ]
+
+    built = RecallMapBuilder(store).build(
+        pool(generic + specific), scope=SCOPE, task="structural-enrichment"
+    )
+
+    assert built is not None
+    by_count = {cluster.count: cluster for cluster in built.clusters}
+    enriched = by_count[2]
+    assert enriched.label.startswith("widget ")
+    assert len(enriched.label.split()) >= 2
+    # Rescued rather than withheld: enrichment runs first, the gate is the net.
+    assert built.withheld == 0
+    # And the key that already said something keeps its own wording.
+    assert by_count[1].label == "sealed holdout drill"
+    assert by_count[1].ask_hint == "sealed holdout drill"
+
+
+def test_enriched_ask_hints_still_clear_the_curtail_echo(bare_store: MemoryStore) -> None:
+    """Richer labels must not tighten a pre-registered rule as a side effect.
+
+    ``_echoes`` needs ``ceil(n/2)`` shared tokens for an ``n``-token phrasing,
+    so one and two tokens ask for the same evidence and three asks for more.
+    The enriched hint's tokens are a *superset* of the bare subsystem's, and it
+    is still at most two tokens, so a query that cleared the old phrasing
+    clears the new one by construction.
+    """
+
+    store = bare_store
+    house_corpus(store, "widget")
+    nodes = [
+        make_node(
+            store,
+            f"the ledger reconciles checkpoint {index}",
+            {"files": [f"src/living_memory/postsession/step{index}.py"]},
+        )
+        for index in range(3)
+    ]
+
+    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="echo")
+
+    assert built is not None
+    (cluster,) = built.clusters
+    bare = frozenset({"postsession"})
+    enriched = token_set(cluster.ask_hint)
+    assert len(cluster.ask_hint.split()) <= ASK_HINT_MAX_TOKENS
+    assert bare <= enriched
+    # Every query that used to clear the bare subsystem still clears the hint.
+    for query in ("what did postsession decide", "postsession"):
+        assert _echoes(bare, token_set(query))
+        assert _echoes(enriched, token_set(query))
+
+
+# ----------------------------------------------------------------------
+# The filter journal: caps are allowed, being quiet about them is not
+# ----------------------------------------------------------------------
+
+
+def test_withheld_and_dropped_clusters_are_journaled_by_name_and_count(
+    bare_store: MemoryStore,
+) -> None:
+    """Both filters report, and they report separately.
+
+    "The memory had nothing to say" and "the channel was full" are opposite
+    findings that both look like a short map from the outside, so the payload
+    carries one number for each and never folds them together.
+    """
+
+    store = bare_store
+    house_corpus(store, "widget")
+    nodes: list[Node] = []
+    for index in range(3):  # withheld: named after the corpus's house word
+        nodes.append(make_node(store, f"widget upkeep {index}", {"topic": "widget"}))
+    for index in range(8):  # deliverable, and more than the caps can carry
+        nodes.append(
+            make_node(
+                store,
+                f"sealed holdout attestation {index}: " + "material that runs on " * 8,
+                {"topic": f"holdout-a{index}"},
+            )
+        )
+
+    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="journal")
+
+    assert built is not None
+    payload = built.to_dict()
+    block = payload["filtered"]
+
+    assert block["withheld"] == 1
+    assert block["dropped"] == built.dropped > 0
+    # ``dropped`` mirrors ``more`` so the block is self-contained; ``more``
+    # itself keeps its exact old meaning and gains nothing from the gate.
+    assert block["dropped"] == payload["more"]
+    assert built.covered == sum(c["count"] for c in payload["clusters"])
+
+    names = block["names"]
+    assert 0 < len(names) <= FILTER_JOURNAL_NAMES
+    # The gate's refusal leads, under the *enriched* name: stage 1 tried to
+    # rescue the cluster and the terms it had to offer were house vocabulary
+    # too, which is the case the gate exists for. Enrichment is the rescue, the
+    # gate is the net, and the net reports what it caught.
+    assert names[0] == ["w", "widget upkeep", 3]
+    for tag, label, count in names:
+        assert tag in ("w", "d")
+        assert len(label) <= FILTER_JOURNAL_LABEL_CHARS
+        assert count > 0
+    # Names are convenience and give way to the budget; the count of what went
+    # unnamed does not.
+    assert block.get("names_omitted", 0) == block["withheld"] + block["dropped"] - len(names)
+    assert block["names_omitted"] > 0
+
+
+def test_a_filtered_cluster_never_appears_among_the_delivered_ones(
+    bare_store: MemoryStore,
+) -> None:
+    """The hard rule the additive shape rests on.
+
+    ``_delivered_items`` is paranoid about the *shape* of a cluster and not at
+    all about extra ones, so a journal row inside ``clusters`` would be read as
+    a delivered item by the curtail probe and as a novelty-consuming hint by
+    the ae probe — on a cluster nobody was ever offered.
+    """
+
+    store = bare_store
+    house_corpus(store, "widget")
+    nodes = [make_node(store, f"widget upkeep {index}", {"topic": "widget"}) for index in range(2)]
+    nodes.append(make_node(store, "the ledger reconciles", {"topic": "sealed-holdout"}))
+
+    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="never-inside")
+
+    assert built is not None
+    payload = built.to_dict()
+    assert payload["filtered"]["withheld"] == 1
+    assert len(payload["clusters"]) == 1
+    for cluster in payload["clusters"]:
+        assert set(cluster) == {"label", "count", "medoid", "ask_hint", "plan_item"}
+        assert "widget" not in cluster["label"]
+    assert built.render_compact() == "memory also holds: sealed holdout(1)"
+
+
+def test_the_journal_block_is_absent_when_nothing_was_filtered(store: MemoryStore) -> None:
+    """An unfiltered map is byte-identical to what shipped before the journal."""
+
+    nodes = [
+        make_node(store, "the first note", {"topic": "sealed-holdout"}),
+        make_node(store, "the second note", {"topic": "anchor-bench-rotation"}),
+    ]
+
+    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="unfiltered")
+
+    assert built is not None
+    assert built.withheld == 0 and built.dropped == 0
+    assert list(built.to_dict()) == ["clusters", "pool", "covered"]
+
+
+def test_the_journal_is_inside_the_response_budget(bare_store: MemoryStore) -> None:
+    """The journal spends the same 700 characters the examples do."""
+
+    store = bare_store
+    house_corpus(store, "widget")
+    nodes: list[Node] = [
+        make_node(store, f"widget upkeep {index}", {"topic": f"widget-{'ab'[index % 2]}"})
+        for index in range(4)
+    ]
+    for index in range(8):
+        nodes.append(
+            make_node(
+                store,
+                f"sealed holdout attestation {index}: " + "material that runs on " * 12,
+                {"topic": f"sealed-holdout-chapter-{'ab'[index % 2]}{index}"},
+            )
+        )
+
+    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="budget")
+
+    assert built is not None
+    assert "filtered" in built.to_dict()
+    assert payload_chars(built) <= MAX_RESPONSE_CHARS
+    assert len(built.render_compact()) <= MAX_INSTRUCTIONS_CHARS
+
+
+def test_the_journal_survives_persistence_and_read_back(bare_store: MemoryStore) -> None:
+    """The additive fields are what the field measurement will actually read."""
+
+    store = bare_store
+    house_corpus(store, "widget")
+    nodes = [
+        make_node(store, "the ledger reconciles", {"topic": "sealed-holdout"}),
+        make_node(store, "widget maintenance", {"topic": "widget"}),
+    ]
+    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE, task="persisted")
+    assert built is not None
+    assert built.withheld == 1
+
+    event = store.record_recall_event(
+        query="what else is here",
+        scope=SCOPE,
+        ambient_context={"task": "persisted"},
+        recall_map=built.to_dict(),
+    )
+    (row,) = store.recent_recall_map_history(scope=SCOPE, task="persisted")
+    assert row["id"] == event.id
+    assert row["recall_map"] == built.to_dict()
+    assert row["recall_map"]["filtered"] == {
+        "withheld": 1,
+        "dropped": 0,
+        "names": [["w", "widget maintenance", 1]],
+    }
+
+
+def test_the_journal_changes_nothing_for_the_consumers_that_read_the_payload() -> None:
+    """Additive means additive: every downstream reader is bit-identical.
+
+    Checked against the two consumers this repository owns — the curtail
+    probe's ``_delivered_items`` and the instructions channel's
+    ``compose_map_section`` — because the third (the ae probe) reads the same
+    ``clusters`` entries and reaching it would mean editing another repo.
+    """
+
+    from living_memory.instructions_map import _clusters_of, compose_map_section
+    from living_memory.recall_map import _delivered_items
+
+    plain = {
+        "clusters": [
+            {
+                "label": "sealed holdout drill",
+                "count": 4,
+                "medoid": {"node_id": "01MEDOID", "example": "the note"},
+                "ask_hint": "sealed holdout",
+                "plan_item": "on touching sealed holdout drill - recall 'sealed holdout' (4)",
+            }
+        ],
+        "pool": 40,
+        "covered": 4,
+        "more": 2,
+    }
+    journaled = {
+        **plain,
+        "filtered": {
+            "withheld": 9,
+            "dropped": 2,
+            "names": [["w", "widget", 7], ["d", "anchor bench", 3]],
+            "names_omitted": 5,
+        },
+    }
+
+    assert _delivered_items(journaled) == _delivered_items(plain)
+    assert _clusters_of(journaled) == _clusters_of(plain)
+    rows = [{"recall_map": plain}], [{"recall_map": journaled}]
+    assert compose_map_section(rows[1]) == compose_map_section(rows[0])
+    assert compose_map_section(rows[0]) != ""
 
 
 # ----------------------------------------------------------------------

@@ -1,0 +1,323 @@
+{
+  "code": {
+    "commit": "c1f87cc58462cc9a9909393842d719773047eab2",
+    "measured_source_sha256": {
+      "scripts/recall_map_polish_eval.py": "5046be1254653ce595ca1838c9c7eb7d2bafac3cfedadd73ca76a2c7ec289441",
+      "src/living_memory/recall_map.py": "9a97d573915612a052b00478d8887af5ad3439e87f1e46f7473262b786822969"
+    },
+    "worktree_dirty": true
+  },
+  "generated_at": "2026-08-20T10:34:08Z",
+  "hardcoding_check": {
+    "diagnosed_single_term_labels": 7,
+    "executable_label_literal_violations": [],
+    "passed": true
+  },
+  "inputs": {
+    "diagnosis": "artifacts/recall-map/field/diagnosis.md",
+    "diagnosis_sha256": "dde7a6cfc735880238f470a75b9a9aea604be8ec19d76fadca04279823312e01",
+    "manifest": "artifacts/recall-map/field/manifest.json",
+    "manifest_sha256": "ca48d5c3cd0b1c6be1df2eac733d8607de177e85663340dc1d1c340f88f3853e",
+    "snapshots": {
+      "e2e_local": {
+        "bytes": 516186112,
+        "sha256": "53a4945b9e5ed0c16c5b86f43f6ac8e98149a82b850c3c1f7182369b771452af",
+        "verified": true
+      },
+      "field_alt": {
+        "bytes": 110927872,
+        "sha256": "12932fd8b38c3b025653b3d568a44f0b6ea198823edb00e760fbdac3d644f42a",
+        "verified": true
+      }
+    }
+  },
+  "passed": true,
+  "privacy": {
+    "case_level_material_emitted": false,
+    "holdout_output": "aggregate_only"
+  },
+  "protocol": {
+    "elapsed_seconds": 129.367,
+    "fresh_working_copy_per_snapshot_per_run": true,
+    "quality_scoring_uses_diagnosed_label_lookup": false,
+    "real_recall_map_builder": true,
+    "real_retrieval_service": true,
+    "replay_order": "created_at_then_case_id_within_snapshot",
+    "run_seconds_by_snapshot": {
+      "run_1": {
+        "e2e_local": 10.597,
+        "field_alt": 51.767
+      },
+      "run_2": {
+        "e2e_local": 7.069,
+        "field_alt": 59.911
+      }
+    },
+    "runs": 2
+  },
+  "purpose": "Offline replay gate for recall-map polish P2 thresholds.",
+  "schema_version": 1,
+  "splits": {
+    "eval": {
+      "cache_hit_cases": 0,
+      "cases": 32,
+      "delivered_clusters": 58,
+      "determinism": {
+        "cases_compared": 32,
+        "ordering_deterministic_rate": 1.0,
+        "ordering_mismatch_cases": 0,
+        "payload_mismatch_cases": 0,
+        "runs": 2
+      },
+      "enforced": true,
+      "evaluable": true,
+      "filter_journaling": {
+        "complete_maps": 32,
+        "complete_rate": 1.0,
+        "failures": 0,
+        "maps_with_filtering": 32
+      },
+      "gist_quality": {
+        "design_floor_chars": 40,
+        "distinct_from_label_clusters": 58,
+        "distinct_from_label_rate": 1.0,
+        "floor_met_clusters": 58,
+        "floor_met_rate": 1.0
+      },
+      "head_replay": {
+        "mismatches_between_runs": 0,
+        "rate": 0.6875,
+        "reproduced_cases": 22
+      },
+      "label_quality": {
+        "degenerate_clusters": 0,
+        "multiword_content_clusters": 54,
+        "multiword_content_rate": 0.931034
+      },
+      "map_outcomes": {
+        "curtailed": 0,
+        "delivered": 32,
+        "none": 0
+      },
+      "passed": true,
+      "payload_budget_failures": 0,
+      "thresholds": {
+        "filter_journaling_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "gist_design_floor_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "gist_distinct_from_label_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "multiword_content_rate": {
+          "actual": 0.931034,
+          "comparator": ">=",
+          "passed": true,
+          "target": 0.9
+        },
+        "no_degenerate_labels": {
+          "actual": 0,
+          "comparator": "<=",
+          "passed": true,
+          "target": 0
+        },
+        "ordering_mismatch_cases": {
+          "actual": 0,
+          "comparator": "<=",
+          "passed": true,
+          "target": 0
+        }
+      },
+      "thresholds_met": true
+    },
+    "holdout": {
+      "cache_hit_cases": 0,
+      "cases": 25,
+      "delivered_clusters": 48,
+      "determinism": {
+        "cases_compared": 25,
+        "ordering_deterministic_rate": 1.0,
+        "ordering_mismatch_cases": 0,
+        "payload_mismatch_cases": 0,
+        "runs": 2
+      },
+      "enforced": true,
+      "evaluable": true,
+      "filter_journaling": {
+        "complete_maps": 25,
+        "complete_rate": 1.0,
+        "failures": 0,
+        "maps_with_filtering": 25
+      },
+      "gist_quality": {
+        "design_floor_chars": 40,
+        "distinct_from_label_clusters": 48,
+        "distinct_from_label_rate": 1.0,
+        "floor_met_clusters": 48,
+        "floor_met_rate": 1.0
+      },
+      "head_replay": {
+        "mismatches_between_runs": 0,
+        "rate": 0.84,
+        "reproduced_cases": 21
+      },
+      "label_quality": {
+        "degenerate_clusters": 0,
+        "multiword_content_clusters": 47,
+        "multiword_content_rate": 0.979167
+      },
+      "map_outcomes": {
+        "curtailed": 0,
+        "delivered": 25,
+        "none": 0
+      },
+      "passed": true,
+      "payload_budget_failures": 0,
+      "thresholds": {
+        "filter_journaling_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "gist_design_floor_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "gist_distinct_from_label_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "multiword_content_rate": {
+          "actual": 0.979167,
+          "comparator": ">=",
+          "passed": true,
+          "target": 0.9
+        },
+        "no_degenerate_labels": {
+          "actual": 0,
+          "comparator": "<=",
+          "passed": true,
+          "target": 0
+        },
+        "ordering_mismatch_cases": {
+          "actual": 0,
+          "comparator": "<=",
+          "passed": true,
+          "target": 0
+        }
+      },
+      "thresholds_met": true
+    },
+    "train": {
+      "cache_hit_cases": 0,
+      "cases": 62,
+      "delivered_clusters": 98,
+      "determinism": {
+        "cases_compared": 62,
+        "ordering_deterministic_rate": 1.0,
+        "ordering_mismatch_cases": 0,
+        "payload_mismatch_cases": 0,
+        "runs": 2
+      },
+      "enforced": false,
+      "evaluable": true,
+      "filter_journaling": {
+        "complete_maps": 57,
+        "complete_rate": 1.0,
+        "failures": 0,
+        "maps_with_filtering": 57
+      },
+      "gist_quality": {
+        "design_floor_chars": 40,
+        "distinct_from_label_clusters": 98,
+        "distinct_from_label_rate": 1.0,
+        "floor_met_clusters": 98,
+        "floor_met_rate": 1.0
+      },
+      "head_replay": {
+        "mismatches_between_runs": 0,
+        "rate": 0.919355,
+        "reproduced_cases": 57
+      },
+      "label_quality": {
+        "degenerate_clusters": 0,
+        "multiword_content_clusters": 94,
+        "multiword_content_rate": 0.959184
+      },
+      "map_outcomes": {
+        "curtailed": 5,
+        "delivered": 57,
+        "none": 0
+      },
+      "passed": null,
+      "payload_budget_failures": 0,
+      "thresholds": {
+        "filter_journaling_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "gist_design_floor_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "gist_distinct_from_label_rate": {
+          "actual": 1.0,
+          "comparator": ">=",
+          "passed": true,
+          "target": 1.0
+        },
+        "multiword_content_rate": {
+          "actual": 0.959184,
+          "comparator": ">=",
+          "passed": true,
+          "target": 0.9
+        },
+        "no_degenerate_labels": {
+          "actual": 0,
+          "comparator": "<=",
+          "passed": true,
+          "target": 0
+        },
+        "ordering_mismatch_cases": {
+          "actual": 0,
+          "comparator": "<=",
+          "passed": true,
+          "target": 0
+        }
+      },
+      "thresholds_met": true
+    }
+  },
+  "thresholds": {
+    "enforced_splits": [
+      "eval",
+      "holdout"
+    ],
+    "maximum_degenerate_label_clusters": 0,
+    "maximum_ordering_mismatch_cases": 0,
+    "minimum_filter_journaling_rate_when_filtering_occurs": 1.0,
+    "minimum_gist_design_floor_rate": 1.0,
+    "minimum_gist_distinct_from_label_rate": 1.0,
+    "minimum_multiword_content_rate": 0.9
+  }
+}

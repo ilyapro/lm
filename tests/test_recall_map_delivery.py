@@ -22,6 +22,12 @@ that trade from both sides:
 Seeds are synthetic and carry explicit ``procedure_id`` keys, so the map's
 label cascade stops at its first (structural) stage: these tests are about
 delivery, and ``tests/test_recall_map.py`` owns what the labels say.
+
+They do have to be *deliverable*, which is why the procedure names below are
+distinctive and why :func:`_seed_corpus` exists. The label gate withholds a
+cluster whose name is house vocabulary, measured against the FTS index as a
+whole; a scenario whose every document repeated its own labels back at it would
+have every cluster withheld and would be testing the gate by accident.
 """
 
 from __future__ import annotations
@@ -46,13 +52,27 @@ MAP_QUERY = "deployment failure database migration rollback"
 
 #: Three procedures, unevenly filled, all matching ``MAP_QUERY`` on content.
 #: Uneven on purpose: the map orders clusters largest-first, so equal piles
-#: would make the ordering unobservable.
+#: would make the ordering unobservable. Their names deliberately share no word
+#: with ``MAP_QUERY``: a procedure called ``deploy-rollback`` in a corpus whose
+#: every document says "rollback" is house vocabulary, and the label gate would
+#: correctly withhold it — which is a different test than this one.
 SEED_PROCEDURES: tuple[tuple[str, int], ...] = (
-    ("deploy-rollback", 6),
-    ("migration-repair", 4),
-    ("failure-triage", 3),
+    ("canary-cutover-window", 6),
+    ("checkpoint-repair-drill", 4),
+    ("throttle-triage-runbook", 3),
 )
-SEED_LABELS = {"deploy rollback", "migration repair", "failure triage"}
+SEED_LABELS = {
+    "canary cutover window",
+    "checkpoint repair drill",
+    "throttle triage runbook",
+}
+
+#: Documents in *another scope*, so they inflate the corpus the label gate
+#: measures rarity against without ever entering a scoped recall's pool.
+#: Sized from the gate's own arithmetic: a three-word label whose words appear
+#: in the six largest seed documents clears ``LABEL_GATE_MIN_IC`` once the
+#: index holds about 26 documents, and this leaves margin over that.
+SEED_CORPUS_DOCUMENTS = 32
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +90,16 @@ def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(env, raising=False)
 
 
+def _seed_corpus(store: MemoryStore, count: int = SEED_CORPUS_DOCUMENTS) -> None:
+    for index in range(count):
+        store.append_trace(
+            f"quarterly ledger reconciliation entry {index}",
+            {"scope": "project:mapdelivery-elsewhere"},
+        )
+
+
 def _seed(store: MemoryStore) -> None:
+    _seed_corpus(store)
     for procedure, count in SEED_PROCEDURES:
         for index in range(count):
             store.append_trace(
@@ -103,7 +132,7 @@ def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
     assert "recall_map" in response
     payload = response["recall_map"]
     # The payload shape is the builder's; the server contributes no keys.
-    assert set(payload) <= {"clusters", "pool", "covered", "more"}
+    assert set(payload) <= {"clusters", "pool", "covered", "more", "filtered"}
     assert {"clusters", "pool", "covered"} <= set(payload)
     assert payload["pool"] == 13 - 3  # everything ranked, minus the delivered cut
     assert payload["clusters"]

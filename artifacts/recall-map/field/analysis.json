@@ -1,0 +1,3520 @@
+{
+  "generated_from": {
+    "field_snapshot": "/home/sfx/.cache/living-memory-field/recall-map-field-alt-20260820.sqlite3",
+    "field_snapshot_manifest": {
+      "captured_at": "2026-08-20T07:35:27Z",
+      "harness_version": 2,
+      "recall_events_created_at": {
+        "max": "2026-08-20T07:31:34Z",
+        "min": "2026-07-26T20:06:24Z"
+      },
+      "row_counts": {
+        "active_nodes": 2344,
+        "connections": 33698,
+        "nodes": 2573,
+        "recall_events": 6380
+      },
+      "snapshot_bytes": 110927872,
+      "snapshot_path": "/home/sfx/.cache/living-memory-field/recall-map-field-alt-20260820.sqlite3",
+      "snapshot_sha256": "12932fd8b38c3b025653b3d568a44f0b6ea198823edb00e760fbdac3d644f42a",
+      "source_bytes": 110927872,
+      "source_path": "/tmp/lmdb/global.sqlite3"
+    },
+    "e2e_snapshot": "/home/sfx/.cache/living-memory-field/recall-map-e2e-local-20260820.sqlite3",
+    "e2e_snapshot_manifest": {
+      "captured_at": "2026-08-20T07:35:33Z",
+      "harness_version": 2,
+      "recall_events_created_at": {
+        "max": "2026-08-20T07:30:08Z",
+        "min": "2026-05-14T20:05:23Z"
+      },
+      "row_counts": {
+        "active_nodes": 13030,
+        "connections": 144419,
+        "nodes": 16865,
+        "recall_events": 54991
+      },
+      "snapshot_bytes": 516186112,
+      "snapshot_path": "/home/sfx/.cache/living-memory-field/recall-map-e2e-local-20260820.sqlite3",
+      "snapshot_sha256": "53a4945b9e5ed0c16c5b86f43f6ac8e98149a82b850c3c1f7182369b771452af",
+      "source_bytes": 516026368,
+      "source_path": "/home/sfx/.local/share/living-memory/global.sqlite3"
+    },
+    "streams": "/tmp/fieldstream"
+  },
+  "journals": {
+    "files": [
+      "feeling-control/stream_inject/claude_feeling-control_1787209718_3110789.jsonl",
+      "feeling-control/stream_inject/claude_feeling-control_1787210309_3110789.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T055412Z-2999496/children/idle-rest-clips/stream_inject/claude_quality_1787200826_2906911.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T055412Z-2999496/children/idle-rest-clips/stream_inject/claude_quality_1787201563_2906911.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T055412Z-2999496/children/idle-rest-clips/stream_inject/claude_quality_1787202444_2906911.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T055412Z-2999496/children/idle-rest-clips/stream_inject/claude_quality_1787203393_2906911.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T055412Z-2999496/children/registry-refresh/stream_inject/claude_quality_1787200826_2906931.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T055412Z-2999496/children/registry-refresh/stream_inject/claude_quality_1787201603_2906931.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T055412Z-2999496/children/registry-refresh/stream_inject/claude_quality_1787202325_2906931.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T062034Z-3033657/children/clips-restore/stream_inject/claude_quality_1787205263_2999593.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/archive/unlisted-children-20260820T062034Z-3033657/children/clips-restore/stream_inject/claude_quality_1787205737_2999593.jsonl",
+      "quality/archive/unlisted-children-20260820T064443Z-3062551/children/clips-coverage/children/rest-clips-land/stream_inject/claude_quality_1787206845_3033761.jsonl",
+      "quality/children/clips-land/stream_inject/claude_quality_1787208294_3062874.jsonl",
+      "quality/children/footslip-rest/children/gait-reach/stream_inject/claude_quality_1787210659_3179996.jsonl",
+      "quality/children/footslip-rest/children/proc-footlock/stream_inject/claude_quality_1787210659_3180018.jsonl",
+      "quality/children/footslip-rest/stream_inject/claude_quality_1787208852_3084502.jsonl",
+      "quality/children/meter-honesty/stream_inject/claude_quality_1787208294_3062852.jsonl",
+      "quality/children/meter-honesty/stream_inject/claude_quality_1787210719_3062852.jsonl"
+    ],
+    "sessions": 18,
+    "events_by_kind": {
+      "capability": 18,
+      "probe": 191,
+      "inject": 37,
+      "session": 14,
+      "curtail": 15,
+      "consume": 1
+    },
+    "probe_outcomes": {
+      "hit": 47,
+      "miss": 59,
+      "dedup": 85
+    },
+    "ts_min": "2026-08-20T04:40:33.365Z",
+    "ts_max": "2026-08-20T07:30:45.255Z",
+    "probes_unmatched_in_store": 0,
+    "consume_events": [
+      {
+        "file": "quality/children/footslip-rest/children/proc-footlock/stream_inject/claude_quality_1787210659_3180018.jsonl",
+        "ts": "2026-08-20T07:24:51.448Z",
+        "goal_path": "quality/footslip-rest/proc-footlock",
+        "ref": "01M0ER54TB54ZESC2YMGDVQRC4",
+        "tool": "memory_lookup",
+        "distance": 1,
+        "inject_seq": 1
+      }
+    ]
+  },
+  "e2e_journals": {
+    "journals": [
+      "/tmp/ae-stream-live-e2e.7iMOXO/journal.jsonl",
+      "/tmp/ae-stream-live-e2e.D4BFGi/journal.jsonl",
+      "/tmp/ae-stream-live-e2e.MAp1sn/journal.jsonl",
+      "/tmp/ae-stream-live-e2e.daNpaQ/journal.jsonl"
+    ],
+    "events_by_kind": {
+      "capability": 4,
+      "probe": 8,
+      "inject": 3,
+      "session": 4,
+      "consume": 2,
+      "curtail": 2
+    },
+    "consume_events": [
+      {
+        "file": "/tmp/ae-stream-live-e2e.D4BFGi/journal.jsonl",
+        "ts": "2026-08-20T07:06:34.496Z",
+        "ref": "01KRRPZ1VD39G8R84BR6SB6B7Q",
+        "tool": "memory_lookup",
+        "distance": 2
+      },
+      {
+        "file": "/tmp/ae-stream-live-e2e.MAp1sn/journal.jsonl",
+        "ts": "2026-08-20T00:54:21.305Z",
+        "ref": "01KRT6FDDMT1306AVQZTFKYHKT",
+        "tool": "memory_lookup",
+        "distance": 3
+      }
+    ]
+  },
+  "replay": {
+    "field_alt": {
+      "pool_structural": 7052,
+      "pool_path": 9249,
+      "pool_embedding": 3298,
+      "pool_anchor": 965,
+      "cases": 106,
+      "head_reproduced": 87,
+      "cold_labels_overlap": 100,
+      "warm_labels_overlap": 100,
+      "warm_labels_identical": 60,
+      "cold_labels_identical": 14
+    },
+    "e2e_local": {
+      "pool_anchor": 113,
+      "pool_structural": 1358,
+      "pool_embedding": 766,
+      "pool_path": 363,
+      "cases": 13,
+      "head_reproduced": 13,
+      "cold_labels_identical": 3,
+      "cold_labels_overlap": 5,
+      "warm_labels_identical": 3,
+      "warm_labels_overlap": 5
+    }
+  },
+  "attribution_reconciliation": {
+    "field_alt": {
+      "replay_cold": 244,
+      "agree": 267,
+      "replay_warm": 109,
+      "disagree": 86,
+      "medoid_precedence": 30
+    },
+    "e2e_local": {
+      "medoid_precedence": 22,
+      "replay_cold": 11,
+      "agree": 11
+    }
+  },
+  "recount_drift_probe": {
+    "pairs_probed": 7,
+    "pairs_with_drift": 7,
+    "members_renamed_after_a_directory": 239,
+    "examples": [
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M0DMG4TMSJQY11GMX8AV5R0B",
+        "path_label": "content",
+        "structural_field": "lesson_kind",
+        "structural_key": "recipe",
+        "label_stage_1_would_have_built": "recipe"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M0EY8G60CYX3AE7KGWR0AFVH",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "instrument-scope-pitfall",
+        "label_stage_1_would_have_built": "instrument scope pitfall"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M013VF7E7HSE9J4EAHKCPQJG",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "post-gate-delta-risk",
+        "label_stage_1_would_have_built": "post gate delta risk"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M013NE2RY64S1MF5YY36D50Q",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "production-equivalence-gap",
+        "label_stage_1_would_have_built": "production equivalence gap"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M0EQY9525W3EB5VKSHVHNNJS",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "closure",
+        "label_stage_1_would_have_built": "closure"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M0EYSY4GBME0NRXY7TT73W59",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "gotcha",
+        "label_stage_1_would_have_built": "gotcha"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M014Y389KE1WDGRVPYRG4461",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "focused-test-production-parity-gap",
+        "label_stage_1_would_have_built": "focused test production parity gap"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M0EW53FQ5ZQ86RSYBGDHMVDK",
+        "path_label": "public",
+        "structural_field": "topic",
+        "structural_key": "clip-reproducibility-sidecars",
+        "label_stage_1_would_have_built": "clip reproducibility sidecars"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M014YME3TNMQTH6D2K14BHXS",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "species-publication-catalog-sidecar-pitfall",
+        "label_stage_1_would_have_built": "species publication catalog sidecar pit…"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M0EXTBK8RNDQJ9HWCTBE33V2",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "blocking-pitfall-and-measurement",
+        "label_stage_1_would_have_built": "blocking pitfall and measurement"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M014Z747JEZ71MHMEXX32BAD",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "production-species-ownership-gap",
+        "label_stage_1_would_have_built": "production species ownership gap"
+      },
+      {
+        "cache_key": "project:game|quality clips coverage idle rest clips",
+        "node_id": "01M0EQ7GQ4R5719MPSETBV2YWQ",
+        "path_label": "public",
+        "structural_field": "lesson_kind",
+        "structural_key": "correction-measurement",
+        "label_stage_1_would_have_built": "correction measurement"
+      }
+    ]
+  },
+  "all_field": {
+    "cases": 106,
+    "delivered": 100,
+    "curtailed": 6,
+    "no_map": 0,
+    "clusters": 383,
+    "clusters_with_example": 0,
+    "stage_histogram": {
+      "path": 351,
+      "embedding": 23,
+      "structural": 9
+    },
+    "stage_source_histogram": {
+      "replay_cold": 244,
+      "replay_warm": 109,
+      "medoid_precedence": 30
+    },
+    "path_clusters_whose_medoid_carries_a_structural_key": 86,
+    "drift_medoids_written_before_delivery": 56,
+    "cluster_count_histogram": {
+      "3": 17,
+      "4": 83
+    },
+    "budget_dropped_histogram": {
+      "3": 17,
+      "2": 83
+    },
+    "label_match_histogram": {
+      "exact": 265,
+      "unconstrained": 23,
+      "mismatch": 95
+    },
+    "label_frequency": {
+      "public": 100,
+      "test": 97,
+      "mmo": 81,
+      "server": 76,
+      "aether scene file": 4,
+      "tools": 3,
+      "aether hand pose": 3,
+      "showcase": 2,
+      "webgl view planet": 2,
+      "gpu facade фасада": 2,
+      "props aether cls": 1,
+      "pbr light soak": 1,
+      "kills cls pbr": 1,
+      "planet animal species": 1,
+      "planet outcome species": 1,
+      "webgl outcome species": 1,
+      "master aether file": 1,
+      "server цели login": 1,
+      "обновление незнакомые resource": 1,
+      "hand lines aether": 1,
+      "master git merge": 1,
+      "camera": 1,
+      "light scene sky": 1
+    },
+    "label_stage": {
+      "aether hand pose": [
+        "embedding"
+      ],
+      "planet outcome species": [
+        "embedding"
+      ],
+      "showcase": [
+        "path",
+        "structural"
+      ],
+      "webgl outcome species": [
+        "embedding"
+      ],
+      "webgl view planet": [
+        "embedding"
+      ],
+      "kills cls pbr": [
+        "embedding"
+      ],
+      "camera": [
+        "path"
+      ],
+      "public": [
+        "path"
+      ],
+      "planet animal species": [
+        "embedding"
+      ],
+      "master git merge": [
+        "embedding"
+      ],
+      "light scene sky": [
+        "embedding"
+      ],
+      "test": [
+        "path",
+        "structural"
+      ],
+      "hand lines aether": [
+        "embedding"
+      ],
+      "tools": [
+        "path"
+      ],
+      "aether scene file": [
+        "embedding"
+      ],
+      "master aether file": [
+        "embedding"
+      ],
+      "props aether cls": [
+        "embedding"
+      ],
+      "server": [
+        "path",
+        "structural"
+      ],
+      "mmo": [
+        "path",
+        "structural"
+      ],
+      "pbr light soak": [
+        "embedding"
+      ],
+      "gpu facade фасада": [
+        "embedding"
+      ],
+      "server цели login": [
+        "embedding"
+      ],
+      "обновление незнакомые resource": [
+        "embedding"
+      ]
+    },
+    "label_statistics": {
+      "aether hand pose": {
+        "tokens": 3,
+        "content_terms": [
+          "aether",
+          "hand",
+          "pose"
+        ],
+        "term_document_frequency": {
+          "aether": 1154,
+          "hand": 20,
+          "pose": 22
+        },
+        "term_document_share": {
+          "aether": 0.448504,
+          "hand": 0.007773,
+          "pose": 0.00855
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "planet outcome species": {
+        "tokens": 3,
+        "content_terms": [
+          "planet",
+          "outcome",
+          "species"
+        ],
+        "term_document_frequency": {
+          "planet": 548,
+          "outcome": 301,
+          "species": 330
+        },
+        "term_document_share": {
+          "planet": 0.212981,
+          "outcome": 0.116984,
+          "species": 0.128255
+        },
+        "max_document_share": 0.212981,
+        "fts_document_count": 2573
+      },
+      "showcase": {
+        "tokens": 1,
+        "content_terms": [
+          "showcase"
+        ],
+        "term_document_frequency": {
+          "showcase": 200
+        },
+        "term_document_share": {
+          "showcase": 0.07773
+        },
+        "max_document_share": 0.07773,
+        "fts_document_count": 2573
+      },
+      "webgl outcome species": {
+        "tokens": 3,
+        "content_terms": [
+          "webgl",
+          "outcome",
+          "species"
+        ],
+        "term_document_frequency": {
+          "webgl": 95,
+          "outcome": 301,
+          "species": 330
+        },
+        "term_document_share": {
+          "webgl": 0.036922,
+          "outcome": 0.116984,
+          "species": 0.128255
+        },
+        "max_document_share": 0.128255,
+        "fts_document_count": 2573
+      },
+      "webgl view planet": {
+        "tokens": 3,
+        "content_terms": [
+          "webgl",
+          "view",
+          "planet"
+        ],
+        "term_document_frequency": {
+          "webgl": 95,
+          "view": 418,
+          "planet": 548
+        },
+        "term_document_share": {
+          "webgl": 0.036922,
+          "view": 0.162456,
+          "planet": 0.212981
+        },
+        "max_document_share": 0.212981,
+        "fts_document_count": 2573
+      },
+      "kills cls pbr": {
+        "tokens": 3,
+        "content_terms": [
+          "kills",
+          "cls",
+          "pbr"
+        ],
+        "term_document_frequency": {
+          "kills": 53,
+          "cls": 127,
+          "pbr": 238
+        },
+        "term_document_share": {
+          "kills": 0.020599,
+          "cls": 0.049359,
+          "pbr": 0.092499
+        },
+        "max_document_share": 0.092499,
+        "fts_document_count": 2573
+      },
+      "camera": {
+        "tokens": 1,
+        "content_terms": [
+          "camera"
+        ],
+        "term_document_frequency": {
+          "camera": 246
+        },
+        "term_document_share": {
+          "camera": 0.095608
+        },
+        "max_document_share": 0.095608,
+        "fts_document_count": 2573
+      },
+      "public": {
+        "tokens": 1,
+        "content_terms": [
+          "public"
+        ],
+        "term_document_frequency": {
+          "public": 531
+        },
+        "term_document_share": {
+          "public": 0.206374
+        },
+        "max_document_share": 0.206374,
+        "fts_document_count": 2573
+      },
+      "planet animal species": {
+        "tokens": 3,
+        "content_terms": [
+          "planet",
+          "animal",
+          "species"
+        ],
+        "term_document_frequency": {
+          "planet": 548,
+          "animal": 544,
+          "species": 330
+        },
+        "term_document_share": {
+          "planet": 0.212981,
+          "animal": 0.211426,
+          "species": 0.128255
+        },
+        "max_document_share": 0.212981,
+        "fts_document_count": 2573
+      },
+      "master git merge": {
+        "tokens": 3,
+        "content_terms": [
+          "master",
+          "git",
+          "merge"
+        ],
+        "term_document_frequency": {
+          "master": 70,
+          "git": 389,
+          "merge": 177
+        },
+        "term_document_share": {
+          "master": 0.027206,
+          "git": 0.151185,
+          "merge": 0.068791
+        },
+        "max_document_share": 0.151185,
+        "fts_document_count": 2573
+      },
+      "light scene sky": {
+        "tokens": 3,
+        "content_terms": [
+          "light",
+          "scene",
+          "sky"
+        ],
+        "term_document_frequency": {
+          "light": 201,
+          "scene": 427,
+          "sky": 146
+        },
+        "term_document_share": {
+          "light": 0.078119,
+          "scene": 0.165954,
+          "sky": 0.056743
+        },
+        "max_document_share": 0.165954,
+        "fts_document_count": 2573
+      },
+      "test": {
+        "tokens": 1,
+        "content_terms": [
+          "test"
+        ],
+        "term_document_frequency": {
+          "test": 1452
+        },
+        "term_document_share": {
+          "test": 0.564322
+        },
+        "max_document_share": 0.564322,
+        "fts_document_count": 2573
+      },
+      "hand lines aether": {
+        "tokens": 3,
+        "content_terms": [
+          "hand",
+          "lines",
+          "aether"
+        ],
+        "term_document_frequency": {
+          "hand": 20,
+          "lines": 33,
+          "aether": 1154
+        },
+        "term_document_share": {
+          "hand": 0.007773,
+          "lines": 0.012825,
+          "aether": 0.448504
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "tools": {
+        "tokens": 1,
+        "content_terms": [
+          "tools"
+        ],
+        "term_document_frequency": {
+          "tools": 168
+        },
+        "term_document_share": {
+          "tools": 0.065293
+        },
+        "max_document_share": 0.065293,
+        "fts_document_count": 2573
+      },
+      "aether scene file": {
+        "tokens": 3,
+        "content_terms": [
+          "aether",
+          "scene",
+          "file"
+        ],
+        "term_document_frequency": {
+          "aether": 1154,
+          "scene": 427,
+          "file": 259
+        },
+        "term_document_share": {
+          "aether": 0.448504,
+          "scene": 0.165954,
+          "file": 0.100661
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "master aether file": {
+        "tokens": 3,
+        "content_terms": [
+          "master",
+          "aether",
+          "file"
+        ],
+        "term_document_frequency": {
+          "master": 70,
+          "aether": 1154,
+          "file": 259
+        },
+        "term_document_share": {
+          "master": 0.027206,
+          "aether": 0.448504,
+          "file": 0.100661
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "props aether cls": {
+        "tokens": 3,
+        "content_terms": [
+          "props",
+          "aether",
+          "cls"
+        ],
+        "term_document_frequency": {
+          "props": 446,
+          "aether": 1154,
+          "cls": 127
+        },
+        "term_document_share": {
+          "props": 0.173339,
+          "aether": 0.448504,
+          "cls": 0.049359
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "server": {
+        "tokens": 1,
+        "content_terms": [
+          "server"
+        ],
+        "term_document_frequency": {
+          "server": 596
+        },
+        "term_document_share": {
+          "server": 0.231636
+        },
+        "max_document_share": 0.231636,
+        "fts_document_count": 2573
+      },
+      "mmo": {
+        "tokens": 1,
+        "content_terms": [
+          "mmo"
+        ],
+        "term_document_frequency": {
+          "mmo": 1439
+        },
+        "term_document_share": {
+          "mmo": 0.559269
+        },
+        "max_document_share": 0.559269,
+        "fts_document_count": 2573
+      },
+      "pbr light soak": {
+        "tokens": 3,
+        "content_terms": [
+          "pbr",
+          "light",
+          "soak"
+        ],
+        "term_document_frequency": {
+          "pbr": 238,
+          "light": 201,
+          "soak": 32
+        },
+        "term_document_share": {
+          "pbr": 0.092499,
+          "light": 0.078119,
+          "soak": 0.012437
+        },
+        "max_document_share": 0.092499,
+        "fts_document_count": 2573
+      },
+      "gpu facade фасада": {
+        "tokens": 3,
+        "content_terms": [
+          "gpu",
+          "facade",
+          "фасада"
+        ],
+        "term_document_frequency": {
+          "gpu": 237,
+          "facade": 36,
+          "фасада": 27
+        },
+        "term_document_share": {
+          "gpu": 0.09211,
+          "facade": 0.013991,
+          "фасада": 0.010494
+        },
+        "max_document_share": 0.09211,
+        "fts_document_count": 2573
+      },
+      "server цели login": {
+        "tokens": 3,
+        "content_terms": [
+          "server",
+          "цели",
+          "login"
+        ],
+        "term_document_frequency": {
+          "server": 596,
+          "цели": 242,
+          "login": 89
+        },
+        "term_document_share": {
+          "server": 0.231636,
+          "цели": 0.094054,
+          "login": 0.03459
+        },
+        "max_document_share": 0.231636,
+        "fts_document_count": 2573
+      },
+      "обновление незнакомые resource": {
+        "tokens": 3,
+        "content_terms": [
+          "обновление",
+          "незнакомые",
+          "resource"
+        ],
+        "term_document_frequency": {
+          "обновление": 15,
+          "незнакомые": 5,
+          "resource": 31
+        },
+        "term_document_share": {
+          "обновление": 0.00583,
+          "незнакомые": 0.001943,
+          "resource": 0.012048
+        },
+        "max_document_share": 0.012048,
+        "fts_document_count": 2573
+      }
+    },
+    "payload_chars": [
+      497,
+      506,
+      508,
+      508,
+      548,
+      548,
+      552,
+      552,
+      553,
+      553,
+      556,
+      560,
+      560,
+      568,
+      572,
+      576,
+      603,
+      646,
+      646,
+      647,
+      649,
+      649,
+      649,
+      650,
+      650,
+      650,
+      650,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      652,
+      652,
+      652,
+      652,
+      652,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      659,
+      659,
+      666,
+      678,
+      689,
+      689,
+      689,
+      690,
+      692,
+      694,
+      694,
+      695,
+      695
+    ],
+    "headroom_chars": [
+      5,
+      5,
+      6,
+      6,
+      8,
+      10,
+      11,
+      11,
+      11,
+      22,
+      34,
+      41,
+      41,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      48,
+      48,
+      48,
+      48,
+      48,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      50,
+      50,
+      50,
+      50,
+      51,
+      51,
+      51,
+      53,
+      54,
+      54,
+      97,
+      124,
+      128,
+      132,
+      140,
+      140,
+      144,
+      147,
+      147,
+      148,
+      148,
+      152,
+      152,
+      192,
+      192,
+      194,
+      203
+    ],
+    "largest_fitting_example_chars": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      19,
+      28,
+      29,
+      31,
+      33,
+      33,
+      35,
+      36,
+      36,
+      36,
+      36,
+      37,
+      37,
+      51,
+      51,
+      51,
+      54
+    ],
+    "maps_with_room_for_a_gist": 17,
+    "maps_that_dropped_clusters": 100
+  },
+  "train_eval_field": {
+    "cases": 81,
+    "delivered": 77,
+    "curtailed": 4,
+    "no_map": 0,
+    "clusters": 294,
+    "clusters_with_example": 0,
+    "stage_histogram": {
+      "path": 267,
+      "embedding": 20,
+      "structural": 7
+    },
+    "stage_source_histogram": {
+      "replay_cold": 189,
+      "medoid_precedence": 26,
+      "replay_warm": 79
+    },
+    "path_clusters_whose_medoid_carries_a_structural_key": 62,
+    "drift_medoids_written_before_delivery": 38,
+    "cluster_count_histogram": {
+      "3": 14,
+      "4": 63
+    },
+    "budget_dropped_histogram": {
+      "3": 14,
+      "2": 63
+    },
+    "label_match_histogram": {
+      "exact": 205,
+      "unconstrained": 20,
+      "mismatch": 69
+    },
+    "label_frequency": {
+      "public": 77,
+      "test": 74,
+      "mmo": 62,
+      "server": 55,
+      "aether scene file": 4,
+      "tools": 3,
+      "showcase": 2,
+      "webgl view planet": 2,
+      "gpu facade фасада": 2,
+      "aether hand pose": 2,
+      "kills cls pbr": 1,
+      "planet animal species": 1,
+      "planet outcome species": 1,
+      "webgl outcome species": 1,
+      "master aether file": 1,
+      "server цели login": 1,
+      "обновление незнакомые resource": 1,
+      "hand lines aether": 1,
+      "master git merge": 1,
+      "camera": 1,
+      "light scene sky": 1
+    },
+    "label_stage": {
+      "aether hand pose": [
+        "embedding"
+      ],
+      "planet outcome species": [
+        "embedding"
+      ],
+      "showcase": [
+        "path",
+        "structural"
+      ],
+      "webgl outcome species": [
+        "embedding"
+      ],
+      "webgl view planet": [
+        "embedding"
+      ],
+      "kills cls pbr": [
+        "embedding"
+      ],
+      "camera": [
+        "path"
+      ],
+      "public": [
+        "path"
+      ],
+      "planet animal species": [
+        "embedding"
+      ],
+      "master git merge": [
+        "embedding"
+      ],
+      "light scene sky": [
+        "embedding"
+      ],
+      "test": [
+        "path"
+      ],
+      "hand lines aether": [
+        "embedding"
+      ],
+      "tools": [
+        "path"
+      ],
+      "aether scene file": [
+        "embedding"
+      ],
+      "master aether file": [
+        "embedding"
+      ],
+      "server": [
+        "path",
+        "structural"
+      ],
+      "mmo": [
+        "path"
+      ],
+      "gpu facade фасада": [
+        "embedding"
+      ],
+      "server цели login": [
+        "embedding"
+      ],
+      "обновление незнакомые resource": [
+        "embedding"
+      ]
+    },
+    "label_statistics": {
+      "aether hand pose": {
+        "tokens": 3,
+        "content_terms": [
+          "aether",
+          "hand",
+          "pose"
+        ],
+        "term_document_frequency": {
+          "aether": 1154,
+          "hand": 20,
+          "pose": 22
+        },
+        "term_document_share": {
+          "aether": 0.448504,
+          "hand": 0.007773,
+          "pose": 0.00855
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "planet outcome species": {
+        "tokens": 3,
+        "content_terms": [
+          "planet",
+          "outcome",
+          "species"
+        ],
+        "term_document_frequency": {
+          "planet": 548,
+          "outcome": 301,
+          "species": 330
+        },
+        "term_document_share": {
+          "planet": 0.212981,
+          "outcome": 0.116984,
+          "species": 0.128255
+        },
+        "max_document_share": 0.212981,
+        "fts_document_count": 2573
+      },
+      "showcase": {
+        "tokens": 1,
+        "content_terms": [
+          "showcase"
+        ],
+        "term_document_frequency": {
+          "showcase": 200
+        },
+        "term_document_share": {
+          "showcase": 0.07773
+        },
+        "max_document_share": 0.07773,
+        "fts_document_count": 2573
+      },
+      "webgl outcome species": {
+        "tokens": 3,
+        "content_terms": [
+          "webgl",
+          "outcome",
+          "species"
+        ],
+        "term_document_frequency": {
+          "webgl": 95,
+          "outcome": 301,
+          "species": 330
+        },
+        "term_document_share": {
+          "webgl": 0.036922,
+          "outcome": 0.116984,
+          "species": 0.128255
+        },
+        "max_document_share": 0.128255,
+        "fts_document_count": 2573
+      },
+      "webgl view planet": {
+        "tokens": 3,
+        "content_terms": [
+          "webgl",
+          "view",
+          "planet"
+        ],
+        "term_document_frequency": {
+          "webgl": 95,
+          "view": 418,
+          "planet": 548
+        },
+        "term_document_share": {
+          "webgl": 0.036922,
+          "view": 0.162456,
+          "planet": 0.212981
+        },
+        "max_document_share": 0.212981,
+        "fts_document_count": 2573
+      },
+      "kills cls pbr": {
+        "tokens": 3,
+        "content_terms": [
+          "kills",
+          "cls",
+          "pbr"
+        ],
+        "term_document_frequency": {
+          "kills": 53,
+          "cls": 127,
+          "pbr": 238
+        },
+        "term_document_share": {
+          "kills": 0.020599,
+          "cls": 0.049359,
+          "pbr": 0.092499
+        },
+        "max_document_share": 0.092499,
+        "fts_document_count": 2573
+      },
+      "camera": {
+        "tokens": 1,
+        "content_terms": [
+          "camera"
+        ],
+        "term_document_frequency": {
+          "camera": 246
+        },
+        "term_document_share": {
+          "camera": 0.095608
+        },
+        "max_document_share": 0.095608,
+        "fts_document_count": 2573
+      },
+      "public": {
+        "tokens": 1,
+        "content_terms": [
+          "public"
+        ],
+        "term_document_frequency": {
+          "public": 531
+        },
+        "term_document_share": {
+          "public": 0.206374
+        },
+        "max_document_share": 0.206374,
+        "fts_document_count": 2573
+      },
+      "planet animal species": {
+        "tokens": 3,
+        "content_terms": [
+          "planet",
+          "animal",
+          "species"
+        ],
+        "term_document_frequency": {
+          "planet": 548,
+          "animal": 544,
+          "species": 330
+        },
+        "term_document_share": {
+          "planet": 0.212981,
+          "animal": 0.211426,
+          "species": 0.128255
+        },
+        "max_document_share": 0.212981,
+        "fts_document_count": 2573
+      },
+      "master git merge": {
+        "tokens": 3,
+        "content_terms": [
+          "master",
+          "git",
+          "merge"
+        ],
+        "term_document_frequency": {
+          "master": 70,
+          "git": 389,
+          "merge": 177
+        },
+        "term_document_share": {
+          "master": 0.027206,
+          "git": 0.151185,
+          "merge": 0.068791
+        },
+        "max_document_share": 0.151185,
+        "fts_document_count": 2573
+      },
+      "light scene sky": {
+        "tokens": 3,
+        "content_terms": [
+          "light",
+          "scene",
+          "sky"
+        ],
+        "term_document_frequency": {
+          "light": 201,
+          "scene": 427,
+          "sky": 146
+        },
+        "term_document_share": {
+          "light": 0.078119,
+          "scene": 0.165954,
+          "sky": 0.056743
+        },
+        "max_document_share": 0.165954,
+        "fts_document_count": 2573
+      },
+      "test": {
+        "tokens": 1,
+        "content_terms": [
+          "test"
+        ],
+        "term_document_frequency": {
+          "test": 1452
+        },
+        "term_document_share": {
+          "test": 0.564322
+        },
+        "max_document_share": 0.564322,
+        "fts_document_count": 2573
+      },
+      "hand lines aether": {
+        "tokens": 3,
+        "content_terms": [
+          "hand",
+          "lines",
+          "aether"
+        ],
+        "term_document_frequency": {
+          "hand": 20,
+          "lines": 33,
+          "aether": 1154
+        },
+        "term_document_share": {
+          "hand": 0.007773,
+          "lines": 0.012825,
+          "aether": 0.448504
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "tools": {
+        "tokens": 1,
+        "content_terms": [
+          "tools"
+        ],
+        "term_document_frequency": {
+          "tools": 168
+        },
+        "term_document_share": {
+          "tools": 0.065293
+        },
+        "max_document_share": 0.065293,
+        "fts_document_count": 2573
+      },
+      "aether scene file": {
+        "tokens": 3,
+        "content_terms": [
+          "aether",
+          "scene",
+          "file"
+        ],
+        "term_document_frequency": {
+          "aether": 1154,
+          "scene": 427,
+          "file": 259
+        },
+        "term_document_share": {
+          "aether": 0.448504,
+          "scene": 0.165954,
+          "file": 0.100661
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "master aether file": {
+        "tokens": 3,
+        "content_terms": [
+          "master",
+          "aether",
+          "file"
+        ],
+        "term_document_frequency": {
+          "master": 70,
+          "aether": 1154,
+          "file": 259
+        },
+        "term_document_share": {
+          "master": 0.027206,
+          "aether": 0.448504,
+          "file": 0.100661
+        },
+        "max_document_share": 0.448504,
+        "fts_document_count": 2573
+      },
+      "server": {
+        "tokens": 1,
+        "content_terms": [
+          "server"
+        ],
+        "term_document_frequency": {
+          "server": 596
+        },
+        "term_document_share": {
+          "server": 0.231636
+        },
+        "max_document_share": 0.231636,
+        "fts_document_count": 2573
+      },
+      "mmo": {
+        "tokens": 1,
+        "content_terms": [
+          "mmo"
+        ],
+        "term_document_frequency": {
+          "mmo": 1439
+        },
+        "term_document_share": {
+          "mmo": 0.559269
+        },
+        "max_document_share": 0.559269,
+        "fts_document_count": 2573
+      },
+      "gpu facade фасада": {
+        "tokens": 3,
+        "content_terms": [
+          "gpu",
+          "facade",
+          "фасада"
+        ],
+        "term_document_frequency": {
+          "gpu": 237,
+          "facade": 36,
+          "фасада": 27
+        },
+        "term_document_share": {
+          "gpu": 0.09211,
+          "facade": 0.013991,
+          "фасада": 0.010494
+        },
+        "max_document_share": 0.09211,
+        "fts_document_count": 2573
+      },
+      "server цели login": {
+        "tokens": 3,
+        "content_terms": [
+          "server",
+          "цели",
+          "login"
+        ],
+        "term_document_frequency": {
+          "server": 596,
+          "цели": 242,
+          "login": 89
+        },
+        "term_document_share": {
+          "server": 0.231636,
+          "цели": 0.094054,
+          "login": 0.03459
+        },
+        "max_document_share": 0.231636,
+        "fts_document_count": 2573
+      },
+      "обновление незнакомые resource": {
+        "tokens": 3,
+        "content_terms": [
+          "обновление",
+          "незнакомые",
+          "resource"
+        ],
+        "term_document_frequency": {
+          "обновление": 15,
+          "незнакомые": 5,
+          "resource": 31
+        },
+        "term_document_share": {
+          "обновление": 0.00583,
+          "незнакомые": 0.001943,
+          "resource": 0.012048
+        },
+        "max_document_share": 0.012048,
+        "fts_document_count": 2573
+      }
+    },
+    "payload_chars": [
+      497,
+      506,
+      508,
+      552,
+      552,
+      553,
+      553,
+      556,
+      560,
+      560,
+      568,
+      572,
+      576,
+      603,
+      646,
+      647,
+      649,
+      649,
+      650,
+      650,
+      650,
+      650,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      651,
+      652,
+      652,
+      652,
+      652,
+      652,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      653,
+      659,
+      659,
+      666,
+      678,
+      689,
+      689,
+      689,
+      690,
+      694,
+      694,
+      695,
+      695
+    ],
+    "headroom_chars": [
+      5,
+      5,
+      6,
+      6,
+      10,
+      11,
+      11,
+      11,
+      22,
+      34,
+      41,
+      41,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      47,
+      48,
+      48,
+      48,
+      48,
+      48,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      50,
+      50,
+      50,
+      50,
+      51,
+      51,
+      53,
+      54,
+      97,
+      124,
+      128,
+      132,
+      140,
+      140,
+      144,
+      147,
+      147,
+      148,
+      148,
+      192,
+      194,
+      203
+    ],
+    "largest_fitting_example_chars": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      19,
+      28,
+      29,
+      31,
+      33,
+      33,
+      35,
+      36,
+      36,
+      36,
+      36,
+      51,
+      51,
+      54
+    ],
+    "maps_with_room_for_a_gist": 14,
+    "maps_that_dropped_clusters": 77
+  },
+  "per_split": {
+    "train": {
+      "cases": 49,
+      "delivered": 48,
+      "curtailed": 1,
+      "no_map": 0,
+      "clusters": 184,
+      "clusters_with_example": 0,
+      "stage_histogram": {
+        "embedding": 13,
+        "path": 166,
+        "structural": 5
+      },
+      "stage_source_histogram": {
+        "medoid_precedence": 20,
+        "replay_cold": 112,
+        "replay_warm": 52
+      },
+      "path_clusters_whose_medoid_carries_a_structural_key": 39,
+      "drift_medoids_written_before_delivery": 21,
+      "cluster_count_histogram": {
+        "3": 8,
+        "4": 40
+      },
+      "budget_dropped_histogram": {
+        "3": 8,
+        "2": 40
+      },
+      "label_match_histogram": {
+        "unconstrained": 13,
+        "exact": 127,
+        "mismatch": 44
+      },
+      "label_frequency": {
+        "public": 48,
+        "test": 47,
+        "mmo": 39,
+        "server": 34,
+        "aether scene file": 2,
+        "webgl view planet": 2,
+        "tools": 2,
+        "aether hand pose": 2,
+        "planet outcome species": 1,
+        "webgl outcome species": 1,
+        "master aether file": 1,
+        "server цели login": 1,
+        "обновление незнакомые resource": 1,
+        "camera": 1,
+        "light scene sky": 1,
+        "gpu facade фасада": 1
+      },
+      "label_stage": {
+        "camera": [
+          "path"
+        ],
+        "gpu facade фасада": [
+          "embedding"
+        ],
+        "server цели login": [
+          "embedding"
+        ],
+        "обновление незнакомые resource": [
+          "embedding"
+        ],
+        "public": [
+          "path"
+        ],
+        "tools": [
+          "path"
+        ],
+        "aether scene file": [
+          "embedding"
+        ],
+        "aether hand pose": [
+          "embedding"
+        ],
+        "light scene sky": [
+          "embedding"
+        ],
+        "test": [
+          "path"
+        ],
+        "planet outcome species": [
+          "embedding"
+        ],
+        "webgl outcome species": [
+          "embedding"
+        ],
+        "webgl view planet": [
+          "embedding"
+        ],
+        "master aether file": [
+          "embedding"
+        ],
+        "server": [
+          "path",
+          "structural"
+        ],
+        "mmo": [
+          "path"
+        ]
+      },
+      "label_statistics": {
+        "camera": {
+          "tokens": 1,
+          "content_terms": [
+            "camera"
+          ],
+          "term_document_frequency": {
+            "camera": 246
+          },
+          "term_document_share": {
+            "camera": 0.095608
+          },
+          "max_document_share": 0.095608,
+          "fts_document_count": 2573
+        },
+        "gpu facade фасада": {
+          "tokens": 3,
+          "content_terms": [
+            "gpu",
+            "facade",
+            "фасада"
+          ],
+          "term_document_frequency": {
+            "gpu": 237,
+            "facade": 36,
+            "фасада": 27
+          },
+          "term_document_share": {
+            "gpu": 0.09211,
+            "facade": 0.013991,
+            "фасада": 0.010494
+          },
+          "max_document_share": 0.09211,
+          "fts_document_count": 2573
+        },
+        "server цели login": {
+          "tokens": 3,
+          "content_terms": [
+            "server",
+            "цели",
+            "login"
+          ],
+          "term_document_frequency": {
+            "server": 596,
+            "цели": 242,
+            "login": 89
+          },
+          "term_document_share": {
+            "server": 0.231636,
+            "цели": 0.094054,
+            "login": 0.03459
+          },
+          "max_document_share": 0.231636,
+          "fts_document_count": 2573
+        },
+        "обновление незнакомые resource": {
+          "tokens": 3,
+          "content_terms": [
+            "обновление",
+            "незнакомые",
+            "resource"
+          ],
+          "term_document_frequency": {
+            "обновление": 15,
+            "незнакомые": 5,
+            "resource": 31
+          },
+          "term_document_share": {
+            "обновление": 0.00583,
+            "незнакомые": 0.001943,
+            "resource": 0.012048
+          },
+          "max_document_share": 0.012048,
+          "fts_document_count": 2573
+        },
+        "public": {
+          "tokens": 1,
+          "content_terms": [
+            "public"
+          ],
+          "term_document_frequency": {
+            "public": 531
+          },
+          "term_document_share": {
+            "public": 0.206374
+          },
+          "max_document_share": 0.206374,
+          "fts_document_count": 2573
+        },
+        "tools": {
+          "tokens": 1,
+          "content_terms": [
+            "tools"
+          ],
+          "term_document_frequency": {
+            "tools": 168
+          },
+          "term_document_share": {
+            "tools": 0.065293
+          },
+          "max_document_share": 0.065293,
+          "fts_document_count": 2573
+        },
+        "aether scene file": {
+          "tokens": 3,
+          "content_terms": [
+            "aether",
+            "scene",
+            "file"
+          ],
+          "term_document_frequency": {
+            "aether": 1154,
+            "scene": 427,
+            "file": 259
+          },
+          "term_document_share": {
+            "aether": 0.448504,
+            "scene": 0.165954,
+            "file": 0.100661
+          },
+          "max_document_share": 0.448504,
+          "fts_document_count": 2573
+        },
+        "aether hand pose": {
+          "tokens": 3,
+          "content_terms": [
+            "aether",
+            "hand",
+            "pose"
+          ],
+          "term_document_frequency": {
+            "aether": 1154,
+            "hand": 20,
+            "pose": 22
+          },
+          "term_document_share": {
+            "aether": 0.448504,
+            "hand": 0.007773,
+            "pose": 0.00855
+          },
+          "max_document_share": 0.448504,
+          "fts_document_count": 2573
+        },
+        "light scene sky": {
+          "tokens": 3,
+          "content_terms": [
+            "light",
+            "scene",
+            "sky"
+          ],
+          "term_document_frequency": {
+            "light": 201,
+            "scene": 427,
+            "sky": 146
+          },
+          "term_document_share": {
+            "light": 0.078119,
+            "scene": 0.165954,
+            "sky": 0.056743
+          },
+          "max_document_share": 0.165954,
+          "fts_document_count": 2573
+        },
+        "test": {
+          "tokens": 1,
+          "content_terms": [
+            "test"
+          ],
+          "term_document_frequency": {
+            "test": 1452
+          },
+          "term_document_share": {
+            "test": 0.564322
+          },
+          "max_document_share": 0.564322,
+          "fts_document_count": 2573
+        },
+        "planet outcome species": {
+          "tokens": 3,
+          "content_terms": [
+            "planet",
+            "outcome",
+            "species"
+          ],
+          "term_document_frequency": {
+            "planet": 548,
+            "outcome": 301,
+            "species": 330
+          },
+          "term_document_share": {
+            "planet": 0.212981,
+            "outcome": 0.116984,
+            "species": 0.128255
+          },
+          "max_document_share": 0.212981,
+          "fts_document_count": 2573
+        },
+        "webgl outcome species": {
+          "tokens": 3,
+          "content_terms": [
+            "webgl",
+            "outcome",
+            "species"
+          ],
+          "term_document_frequency": {
+            "webgl": 95,
+            "outcome": 301,
+            "species": 330
+          },
+          "term_document_share": {
+            "webgl": 0.036922,
+            "outcome": 0.116984,
+            "species": 0.128255
+          },
+          "max_document_share": 0.128255,
+          "fts_document_count": 2573
+        },
+        "webgl view planet": {
+          "tokens": 3,
+          "content_terms": [
+            "webgl",
+            "view",
+            "planet"
+          ],
+          "term_document_frequency": {
+            "webgl": 95,
+            "view": 418,
+            "planet": 548
+          },
+          "term_document_share": {
+            "webgl": 0.036922,
+            "view": 0.162456,
+            "planet": 0.212981
+          },
+          "max_document_share": 0.212981,
+          "fts_document_count": 2573
+        },
+        "master aether file": {
+          "tokens": 3,
+          "content_terms": [
+            "master",
+            "aether",
+            "file"
+          ],
+          "term_document_frequency": {
+            "master": 70,
+            "aether": 1154,
+            "file": 259
+          },
+          "term_document_share": {
+            "master": 0.027206,
+            "aether": 0.448504,
+            "file": 0.100661
+          },
+          "max_document_share": 0.448504,
+          "fts_document_count": 2573
+        },
+        "server": {
+          "tokens": 1,
+          "content_terms": [
+            "server"
+          ],
+          "term_document_frequency": {
+            "server": 596
+          },
+          "term_document_share": {
+            "server": 0.231636
+          },
+          "max_document_share": 0.231636,
+          "fts_document_count": 2573
+        },
+        "mmo": {
+          "tokens": 1,
+          "content_terms": [
+            "mmo"
+          ],
+          "term_document_frequency": {
+            "mmo": 1439
+          },
+          "term_document_share": {
+            "mmo": 0.559269
+          },
+          "max_document_share": 0.559269,
+          "fts_document_count": 2573
+        }
+      },
+      "payload_chars": [
+        508,
+        552,
+        553,
+        556,
+        560,
+        568,
+        572,
+        603,
+        646,
+        649,
+        649,
+        650,
+        650,
+        650,
+        651,
+        651,
+        651,
+        651,
+        651,
+        651,
+        651,
+        651,
+        652,
+        652,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        659,
+        689,
+        689,
+        689,
+        694,
+        695,
+        695
+      ],
+      "headroom_chars": [
+        5,
+        5,
+        6,
+        11,
+        11,
+        11,
+        41,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        48,
+        48,
+        49,
+        49,
+        49,
+        49,
+        49,
+        49,
+        49,
+        49,
+        50,
+        50,
+        50,
+        51,
+        51,
+        54,
+        97,
+        128,
+        132,
+        140,
+        144,
+        147,
+        148,
+        192
+      ],
+      "largest_fitting_example_chars": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        19,
+        29,
+        31,
+        33,
+        35,
+        36,
+        36,
+        51
+      ],
+      "maps_with_room_for_a_gist": 8,
+      "maps_that_dropped_clusters": 48
+    },
+    "eval": {
+      "cases": 32,
+      "delivered": 29,
+      "curtailed": 3,
+      "no_map": 0,
+      "clusters": 110,
+      "clusters_with_example": 0,
+      "stage_histogram": {
+        "path": 101,
+        "embedding": 7,
+        "structural": 2
+      },
+      "stage_source_histogram": {
+        "replay_cold": 77,
+        "medoid_precedence": 6,
+        "replay_warm": 27
+      },
+      "path_clusters_whose_medoid_carries_a_structural_key": 23,
+      "drift_medoids_written_before_delivery": 17,
+      "cluster_count_histogram": {
+        "3": 6,
+        "4": 23
+      },
+      "budget_dropped_histogram": {
+        "3": 6,
+        "2": 23
+      },
+      "label_match_histogram": {
+        "exact": 78,
+        "unconstrained": 7,
+        "mismatch": 25
+      },
+      "label_frequency": {
+        "public": 29,
+        "test": 27,
+        "mmo": 23,
+        "server": 21,
+        "aether scene file": 2,
+        "showcase": 2,
+        "tools": 1,
+        "kills cls pbr": 1,
+        "planet animal species": 1,
+        "hand lines aether": 1,
+        "master git merge": 1,
+        "gpu facade фасада": 1
+      },
+      "label_stage": {
+        "gpu facade фасада": [
+          "embedding"
+        ],
+        "hand lines aether": [
+          "embedding"
+        ],
+        "public": [
+          "path"
+        ],
+        "tools": [
+          "path"
+        ],
+        "aether scene file": [
+          "embedding"
+        ],
+        "planet animal species": [
+          "embedding"
+        ],
+        "master git merge": [
+          "embedding"
+        ],
+        "test": [
+          "path"
+        ],
+        "showcase": [
+          "path",
+          "structural"
+        ],
+        "kills cls pbr": [
+          "embedding"
+        ],
+        "server": [
+          "path",
+          "structural"
+        ],
+        "mmo": [
+          "path"
+        ]
+      },
+      "label_statistics": {
+        "gpu facade фасада": {
+          "tokens": 3,
+          "content_terms": [
+            "gpu",
+            "facade",
+            "фасада"
+          ],
+          "term_document_frequency": {
+            "gpu": 237,
+            "facade": 36,
+            "фасада": 27
+          },
+          "term_document_share": {
+            "gpu": 0.09211,
+            "facade": 0.013991,
+            "фасада": 0.010494
+          },
+          "max_document_share": 0.09211,
+          "fts_document_count": 2573
+        },
+        "hand lines aether": {
+          "tokens": 3,
+          "content_terms": [
+            "hand",
+            "lines",
+            "aether"
+          ],
+          "term_document_frequency": {
+            "hand": 20,
+            "lines": 33,
+            "aether": 1154
+          },
+          "term_document_share": {
+            "hand": 0.007773,
+            "lines": 0.012825,
+            "aether": 0.448504
+          },
+          "max_document_share": 0.448504,
+          "fts_document_count": 2573
+        },
+        "public": {
+          "tokens": 1,
+          "content_terms": [
+            "public"
+          ],
+          "term_document_frequency": {
+            "public": 531
+          },
+          "term_document_share": {
+            "public": 0.206374
+          },
+          "max_document_share": 0.206374,
+          "fts_document_count": 2573
+        },
+        "tools": {
+          "tokens": 1,
+          "content_terms": [
+            "tools"
+          ],
+          "term_document_frequency": {
+            "tools": 168
+          },
+          "term_document_share": {
+            "tools": 0.065293
+          },
+          "max_document_share": 0.065293,
+          "fts_document_count": 2573
+        },
+        "aether scene file": {
+          "tokens": 3,
+          "content_terms": [
+            "aether",
+            "scene",
+            "file"
+          ],
+          "term_document_frequency": {
+            "aether": 1154,
+            "scene": 427,
+            "file": 259
+          },
+          "term_document_share": {
+            "aether": 0.448504,
+            "scene": 0.165954,
+            "file": 0.100661
+          },
+          "max_document_share": 0.448504,
+          "fts_document_count": 2573
+        },
+        "planet animal species": {
+          "tokens": 3,
+          "content_terms": [
+            "planet",
+            "animal",
+            "species"
+          ],
+          "term_document_frequency": {
+            "planet": 548,
+            "animal": 544,
+            "species": 330
+          },
+          "term_document_share": {
+            "planet": 0.212981,
+            "animal": 0.211426,
+            "species": 0.128255
+          },
+          "max_document_share": 0.212981,
+          "fts_document_count": 2573
+        },
+        "master git merge": {
+          "tokens": 3,
+          "content_terms": [
+            "master",
+            "git",
+            "merge"
+          ],
+          "term_document_frequency": {
+            "master": 70,
+            "git": 389,
+            "merge": 177
+          },
+          "term_document_share": {
+            "master": 0.027206,
+            "git": 0.151185,
+            "merge": 0.068791
+          },
+          "max_document_share": 0.151185,
+          "fts_document_count": 2573
+        },
+        "test": {
+          "tokens": 1,
+          "content_terms": [
+            "test"
+          ],
+          "term_document_frequency": {
+            "test": 1452
+          },
+          "term_document_share": {
+            "test": 0.564322
+          },
+          "max_document_share": 0.564322,
+          "fts_document_count": 2573
+        },
+        "showcase": {
+          "tokens": 1,
+          "content_terms": [
+            "showcase"
+          ],
+          "term_document_frequency": {
+            "showcase": 200
+          },
+          "term_document_share": {
+            "showcase": 0.07773
+          },
+          "max_document_share": 0.07773,
+          "fts_document_count": 2573
+        },
+        "kills cls pbr": {
+          "tokens": 3,
+          "content_terms": [
+            "kills",
+            "cls",
+            "pbr"
+          ],
+          "term_document_frequency": {
+            "kills": 53,
+            "cls": 127,
+            "pbr": 238
+          },
+          "term_document_share": {
+            "kills": 0.020599,
+            "cls": 0.049359,
+            "pbr": 0.092499
+          },
+          "max_document_share": 0.092499,
+          "fts_document_count": 2573
+        },
+        "server": {
+          "tokens": 1,
+          "content_terms": [
+            "server"
+          ],
+          "term_document_frequency": {
+            "server": 596
+          },
+          "term_document_share": {
+            "server": 0.231636
+          },
+          "max_document_share": 0.231636,
+          "fts_document_count": 2573
+        },
+        "mmo": {
+          "tokens": 1,
+          "content_terms": [
+            "mmo"
+          ],
+          "term_document_frequency": {
+            "mmo": 1439
+          },
+          "term_document_share": {
+            "mmo": 0.559269
+          },
+          "max_document_share": 0.559269,
+          "fts_document_count": 2573
+        }
+      },
+      "payload_chars": [
+        497,
+        506,
+        552,
+        553,
+        560,
+        576,
+        647,
+        650,
+        651,
+        651,
+        651,
+        651,
+        651,
+        652,
+        652,
+        652,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        659,
+        666,
+        678,
+        690,
+        694
+      ],
+      "headroom_chars": [
+        6,
+        10,
+        22,
+        34,
+        41,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        48,
+        48,
+        48,
+        49,
+        49,
+        49,
+        49,
+        49,
+        50,
+        53,
+        124,
+        140,
+        147,
+        148,
+        194,
+        203
+      ],
+      "largest_fitting_example_chars": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        28,
+        33,
+        36,
+        36,
+        51,
+        54
+      ],
+      "maps_with_room_for_a_gist": 6,
+      "maps_that_dropped_clusters": 29
+    },
+    "holdout": {
+      "cases": 25,
+      "delivered": 23,
+      "curtailed": 2,
+      "no_map": 0,
+      "clusters": 89,
+      "clusters_with_example": 0,
+      "stage_histogram": {
+        "path": 84,
+        "embedding": 3,
+        "structural": 2
+      },
+      "stage_source_histogram": {
+        "replay_cold": 55,
+        "replay_warm": 30,
+        "medoid_precedence": 4
+      },
+      "path_clusters_whose_medoid_carries_a_structural_key": 24,
+      "drift_medoids_written_before_delivery": 18,
+      "cluster_count_histogram": {
+        "3": 3,
+        "4": 20
+      },
+      "budget_dropped_histogram": {
+        "3": 3,
+        "2": 20
+      },
+      "label_match_histogram": {
+        "exact": 60,
+        "unconstrained": 3,
+        "mismatch": 26
+      },
+      "label_frequency": {
+        "public": 23,
+        "test": 23,
+        "server": 21,
+        "mmo": 19,
+        "props aether cls": 1,
+        "pbr light soak": 1,
+        "aether hand pose": 1
+      },
+      "label_stage": {
+        "pbr light soak": [
+          "embedding"
+        ],
+        "public": [
+          "path"
+        ],
+        "aether hand pose": [
+          "embedding"
+        ],
+        "test": [
+          "path",
+          "structural"
+        ],
+        "props aether cls": [
+          "embedding"
+        ],
+        "server": [
+          "path"
+        ],
+        "mmo": [
+          "path",
+          "structural"
+        ]
+      },
+      "label_statistics": {
+        "pbr light soak": {
+          "tokens": 3,
+          "content_terms": [
+            "pbr",
+            "light",
+            "soak"
+          ],
+          "term_document_frequency": {
+            "pbr": 238,
+            "light": 201,
+            "soak": 32
+          },
+          "term_document_share": {
+            "pbr": 0.092499,
+            "light": 0.078119,
+            "soak": 0.012437
+          },
+          "max_document_share": 0.092499,
+          "fts_document_count": 2573
+        },
+        "public": {
+          "tokens": 1,
+          "content_terms": [
+            "public"
+          ],
+          "term_document_frequency": {
+            "public": 531
+          },
+          "term_document_share": {
+            "public": 0.206374
+          },
+          "max_document_share": 0.206374,
+          "fts_document_count": 2573
+        },
+        "aether hand pose": {
+          "tokens": 3,
+          "content_terms": [
+            "aether",
+            "hand",
+            "pose"
+          ],
+          "term_document_frequency": {
+            "aether": 1154,
+            "hand": 20,
+            "pose": 22
+          },
+          "term_document_share": {
+            "aether": 0.448504,
+            "hand": 0.007773,
+            "pose": 0.00855
+          },
+          "max_document_share": 0.448504,
+          "fts_document_count": 2573
+        },
+        "test": {
+          "tokens": 1,
+          "content_terms": [
+            "test"
+          ],
+          "term_document_frequency": {
+            "test": 1452
+          },
+          "term_document_share": {
+            "test": 0.564322
+          },
+          "max_document_share": 0.564322,
+          "fts_document_count": 2573
+        },
+        "props aether cls": {
+          "tokens": 3,
+          "content_terms": [
+            "props",
+            "aether",
+            "cls"
+          ],
+          "term_document_frequency": {
+            "props": 446,
+            "aether": 1154,
+            "cls": 127
+          },
+          "term_document_share": {
+            "props": 0.173339,
+            "aether": 0.448504,
+            "cls": 0.049359
+          },
+          "max_document_share": 0.448504,
+          "fts_document_count": 2573
+        },
+        "server": {
+          "tokens": 1,
+          "content_terms": [
+            "server"
+          ],
+          "term_document_frequency": {
+            "server": 596
+          },
+          "term_document_share": {
+            "server": 0.231636
+          },
+          "max_document_share": 0.231636,
+          "fts_document_count": 2573
+        },
+        "mmo": {
+          "tokens": 1,
+          "content_terms": [
+            "mmo"
+          ],
+          "term_document_frequency": {
+            "mmo": 1439
+          },
+          "term_document_share": {
+            "mmo": 0.559269
+          },
+          "max_document_share": 0.559269,
+          "fts_document_count": 2573
+        }
+      },
+      "payload_chars": [
+        508,
+        548,
+        548,
+        646,
+        649,
+        651,
+        651,
+        651,
+        651,
+        651,
+        651,
+        651,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        653,
+        692
+      ],
+      "headroom_chars": [
+        8,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        47,
+        49,
+        49,
+        49,
+        49,
+        49,
+        49,
+        49,
+        51,
+        54,
+        152,
+        152,
+        192
+      ],
+      "largest_fitting_example_chars": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        37,
+        37,
+        51
+      ],
+      "maps_with_room_for_a_gist": 3,
+      "maps_that_dropped_clusters": 23
+    }
+  },
+  "controls": {
+    "cases": 13,
+    "delivered": 11,
+    "curtailed": 2,
+    "no_map": 0,
+    "clusters": 33,
+    "clusters_with_example": 0,
+    "stage_histogram": {
+      "embedding": 16,
+      "structural": 10,
+      "path": 7
+    },
+    "stage_source_histogram": {
+      "medoid_precedence": 22,
+      "replay_cold": 11
+    },
+    "path_clusters_whose_medoid_carries_a_structural_key": 0,
+    "drift_medoids_written_before_delivery": 0,
+    "cluster_count_histogram": {
+      "3": 11
+    },
+    "budget_dropped_histogram": {
+      "3": 11
+    },
+    "label_match_histogram": {
+      "unconstrained": 16,
+      "disambiguated": 5,
+      "exact": 12
+    },
+    "label_frequency": {
+      "dir dev null": 5,
+      "dir rev router": 3,
+      "npm kind command": 3,
+      "components": 3,
+      "cleanup commit": 3,
+      "router goal cheap": 3,
+      "dashboard": 2,
+      "cleanup commit ceiling": 2,
+      "implementation note augment": 1,
+      "active goal supervision": 1,
+      "stagnation detection": 1,
+      "prompts": 1,
+      "tests": 1,
+      "goal ingress patterns": 1,
+      "dir pid dev": 1,
+      "cleanup commit invariant": 1,
+      "implementation note prompt": 1
+    },
+    "label_stage": {
+      "prompts": [
+        "path"
+      ],
+      "cleanup commit ceiling": [
+        "structural"
+      ],
+      "implementation note prompt": [
+        "structural"
+      ],
+      "dir rev router": [
+        "embedding"
+      ],
+      "components": [
+        "path"
+      ],
+      "tests": [
+        "path"
+      ],
+      "router goal cheap": [
+        "embedding"
+      ],
+      "cleanup commit invariant": [
+        "structural"
+      ],
+      "dashboard": [
+        "path"
+      ],
+      "goal ingress patterns": [
+        "embedding"
+      ],
+      "npm kind command": [
+        "embedding"
+      ],
+      "dir dev null": [
+        "embedding"
+      ],
+      "active goal supervision": [
+        "structural"
+      ],
+      "stagnation detection": [
+        "structural"
+      ],
+      "cleanup commit": [
+        "structural"
+      ],
+      "implementation note augment": [
+        "structural"
+      ],
+      "dir pid dev": [
+        "embedding"
+      ]
+    },
+    "label_statistics": {
+      "prompts": {
+        "tokens": 1,
+        "content_terms": [
+          "prompts"
+        ],
+        "term_document_frequency": {
+          "prompts": 362
+        },
+        "term_document_share": {
+          "prompts": 0.021465
+        },
+        "max_document_share": 0.021465,
+        "fts_document_count": 16865
+      },
+      "cleanup commit ceiling": {
+        "tokens": 3,
+        "content_terms": [
+          "cleanup",
+          "commit",
+          "ceiling"
+        ],
+        "term_document_frequency": {
+          "cleanup": 437,
+          "commit": 1990,
+          "ceiling": 359
+        },
+        "term_document_share": {
+          "cleanup": 0.025912,
+          "commit": 0.117996,
+          "ceiling": 0.021287
+        },
+        "max_document_share": 0.117996,
+        "fts_document_count": 16865
+      },
+      "implementation note prompt": {
+        "tokens": 3,
+        "content_terms": [
+          "implementation",
+          "note",
+          "prompt"
+        ],
+        "term_document_frequency": {
+          "implementation": 790,
+          "note": 545,
+          "prompt": 1108
+        },
+        "term_document_share": {
+          "implementation": 0.046843,
+          "note": 0.032315,
+          "prompt": 0.065698
+        },
+        "max_document_share": 0.065698,
+        "fts_document_count": 16865
+      },
+      "dir rev router": {
+        "tokens": 3,
+        "content_terms": [
+          "dir",
+          "rev",
+          "router"
+        ],
+        "term_document_frequency": {
+          "dir": 1976,
+          "rev": 142,
+          "router": 215
+        },
+        "term_document_share": {
+          "dir": 0.117166,
+          "rev": 0.00842,
+          "router": 0.012748
+        },
+        "max_document_share": 0.117166,
+        "fts_document_count": 16865
+      },
+      "components": {
+        "tokens": 1,
+        "content_terms": [
+          "components"
+        ],
+        "term_document_frequency": {
+          "components": 382
+        },
+        "term_document_share": {
+          "components": 0.02265
+        },
+        "max_document_share": 0.02265,
+        "fts_document_count": 16865
+      },
+      "tests": {
+        "tokens": 1,
+        "content_terms": [
+          "tests"
+        ],
+        "term_document_frequency": {
+          "tests": 4158
+        },
+        "term_document_share": {
+          "tests": 0.246546
+        },
+        "max_document_share": 0.246546,
+        "fts_document_count": 16865
+      },
+      "router goal cheap": {
+        "tokens": 3,
+        "content_terms": [
+          "router",
+          "goal",
+          "cheap"
+        ],
+        "term_document_frequency": {
+          "router": 215,
+          "goal": 3197,
+          "cheap": 145
+        },
+        "term_document_share": {
+          "router": 0.012748,
+          "goal": 0.189564,
+          "cheap": 0.008598
+        },
+        "max_document_share": 0.189564,
+        "fts_document_count": 16865
+      },
+      "cleanup commit invariant": {
+        "tokens": 3,
+        "content_terms": [
+          "cleanup",
+          "commit",
+          "invariant"
+        ],
+        "term_document_frequency": {
+          "cleanup": 437,
+          "commit": 1990,
+          "invariant": 318
+        },
+        "term_document_share": {
+          "cleanup": 0.025912,
+          "commit": 0.117996,
+          "invariant": 0.018856
+        },
+        "max_document_share": 0.117996,
+        "fts_document_count": 16865
+      },
+      "dashboard": {
+        "tokens": 1,
+        "content_terms": [
+          "dashboard"
+        ],
+        "term_document_frequency": {
+          "dashboard": 2341
+        },
+        "term_document_share": {
+          "dashboard": 0.138808
+        },
+        "max_document_share": 0.138808,
+        "fts_document_count": 16865
+      },
+      "goal ingress patterns": {
+        "tokens": 3,
+        "content_terms": [
+          "goal",
+          "ingress",
+          "patterns"
+        ],
+        "term_document_frequency": {
+          "goal": 3197,
+          "ingress": 45,
+          "patterns": 371
+        },
+        "term_document_share": {
+          "goal": 0.189564,
+          "ingress": 0.002668,
+          "patterns": 0.021998
+        },
+        "max_document_share": 0.189564,
+        "fts_document_count": 16865
+      },
+      "npm kind command": {
+        "tokens": 3,
+        "content_terms": [
+          "npm",
+          "kind",
+          "command"
+        ],
+        "term_document_frequency": {
+          "npm": 347,
+          "kind": 3838,
+          "command": 1621
+        },
+        "term_document_share": {
+          "npm": 0.020575,
+          "kind": 0.227572,
+          "command": 0.096116
+        },
+        "max_document_share": 0.227572,
+        "fts_document_count": 16865
+      },
+      "dir dev null": {
+        "tokens": 3,
+        "content_terms": [
+          "dir",
+          "dev",
+          "null"
+        ],
+        "term_document_frequency": {
+          "dir": 1976,
+          "dev": 1600,
+          "null": 1861
+        },
+        "term_document_share": {
+          "dir": 0.117166,
+          "dev": 0.094871,
+          "null": 0.110347
+        },
+        "max_document_share": 0.117166,
+        "fts_document_count": 16865
+      },
+      "active goal supervision": {
+        "tokens": 3,
+        "content_terms": [
+          "active",
+          "goal",
+          "supervision"
+        ],
+        "term_document_frequency": {
+          "active": 1459,
+          "goal": 3197,
+          "supervision": 248
+        },
+        "term_document_share": {
+          "active": 0.086511,
+          "goal": 0.189564,
+          "supervision": 0.014705
+        },
+        "max_document_share": 0.189564,
+        "fts_document_count": 16865
+      },
+      "stagnation detection": {
+        "tokens": 2,
+        "content_terms": [
+          "stagnation",
+          "detection"
+        ],
+        "term_document_frequency": {
+          "stagnation": 119,
+          "detection": 111
+        },
+        "term_document_share": {
+          "stagnation": 0.007056,
+          "detection": 0.006582
+        },
+        "max_document_share": 0.007056,
+        "fts_document_count": 16865
+      },
+      "cleanup commit": {
+        "tokens": 2,
+        "content_terms": [
+          "cleanup",
+          "commit"
+        ],
+        "term_document_frequency": {
+          "cleanup": 437,
+          "commit": 1990
+        },
+        "term_document_share": {
+          "cleanup": 0.025912,
+          "commit": 0.117996
+        },
+        "max_document_share": 0.117996,
+        "fts_document_count": 16865
+      },
+      "implementation note augment": {
+        "tokens": 3,
+        "content_terms": [
+          "implementation",
+          "note",
+          "augment"
+        ],
+        "term_document_frequency": {
+          "implementation": 790,
+          "note": 545,
+          "augment": 83
+        },
+        "term_document_share": {
+          "implementation": 0.046843,
+          "note": 0.032315,
+          "augment": 0.004921
+        },
+        "max_document_share": 0.046843,
+        "fts_document_count": 16865
+      },
+      "dir pid dev": {
+        "tokens": 3,
+        "content_terms": [
+          "dir",
+          "pid",
+          "dev"
+        ],
+        "term_document_frequency": {
+          "dir": 1976,
+          "pid": 675,
+          "dev": 1600
+        },
+        "term_document_share": {
+          "dir": 0.117166,
+          "pid": 0.040024,
+          "dev": 0.094871
+        },
+        "max_document_share": 0.117166,
+        "fts_document_count": 16865
+      }
+    },
+    "payload_chars": [
+      526,
+      586,
+      596,
+      602,
+      616,
+      630,
+      646,
+      646,
+      650,
+      671,
+      684
+    ],
+    "headroom_chars": [
+      16,
+      29,
+      50,
+      54,
+      54,
+      70,
+      84,
+      98,
+      104,
+      114,
+      174
+    ],
+    "largest_fitting_example_chars": [
+      0,
+      0,
+      3,
+      5,
+      5,
+      10,
+      15,
+      18,
+      21,
+      24,
+      42
+    ],
+    "maps_with_room_for_a_gist": 9,
+    "maps_that_dropped_clusters": 11
+  }
+}
