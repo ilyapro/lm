@@ -566,6 +566,10 @@ def _free_port() -> int:
 def _server_env() -> dict[str, str]:
     env = os.environ.copy()
     env["LM_AUTH_TOKEN"] = TOKEN
+    # The runner is the consumer the guarded memory_attest registration
+    # exists for: mirror the documented production setting for an
+    # extraction-enabled deployment (server.py _register_tools).
+    env["LM_EXPOSE_ATTEST"] = "1"
     env.setdefault("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     parts = [str(SRC_DIR)]
     if DEPS_DIR.exists():

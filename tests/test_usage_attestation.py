@@ -274,7 +274,7 @@ def _seed(db_path: Path, order: list[int] | None = None) -> tuple[Any, MemorySto
     instead of by the ranker. ``order`` lists node indices in delivery order.
     """
 
-    mcp = create_mcp_server(db_path, mcp_factory=FakeMCP)
+    mcp = create_mcp_server(db_path, mcp_factory=FakeMCP, expose_attest=True)
     store: MemoryStore = mcp.memory_store
     node_ids = [
         store.append_trace(f"{QUERY} {body}", {"scope": SCOPE, **AMBIENT}).id
@@ -525,7 +525,7 @@ def test_client_asserted_verdict_changes_nothing(tmp_path: Path) -> None:
     """
 
     honest_db = tmp_path / "honest.sqlite3"
-    mcp = create_mcp_server(honest_db, mcp_factory=FakeMCP)
+    mcp = create_mcp_server(honest_db, mcp_factory=FakeMCP, expose_attest=True)
     store: MemoryStore = mcp.memory_store
     node_ids = [
         mcp.tools["memory_remember"](
@@ -558,7 +558,7 @@ def test_client_asserted_verdict_changes_nothing(tmp_path: Path) -> None:
         store.connection.backup(destination)
     finally:
         destination.close()
-    spoofed = create_mcp_server(spoofed_db, mcp_factory=FakeMCP)
+    spoofed = create_mcp_server(spoofed_db, mcp_factory=FakeMCP, expose_attest=True)
 
     poisoned = dict(
         EXTRACTOR_CONTEXT,

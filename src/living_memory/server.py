@@ -54,7 +54,6 @@ from living_memory.resources import (
 )
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import normalize_scope, resolve_scope
-from living_memory.attestation import attest_recall_usage
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.feedback import apply_pending_recall_feedback
 from living_memory.storage import (
@@ -105,6 +104,7 @@ def create_mcp_server(
     name: str = "Living Memory",
     mcp_factory: Any | None = None,
     auth_token: str | None = None,
+    expose_attest: bool | None = None,
 ) -> Any:
     """Create a FastMCP server bound to one SQLite store."""
 
@@ -141,7 +141,9 @@ def create_mcp_server(
     runtime_lock = RLock()
     _attach(mcp, "memory_store", store)
     _attach(mcp, "auth_token_state", auth_state)
-    _register_tools(mcp, store, runtime_lock)
+    if expose_attest is None:
+        expose_attest = os.environ.get("LM_EXPOSE_ATTEST", "") == "1"
+    _register_tools(mcp, store, runtime_lock, expose_attest=expose_attest)
     _register_resources(mcp, store, runtime_lock)
     _register_prompts(mcp, store, runtime_lock)
     _register_admin_routes(
@@ -893,7 +895,9 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
+def _register_tools(
+    mcp: Any, store: MemoryStore, runtime_lock: Any, *, expose_attest: bool = False
+) -> None:
     recall_service = MemoryRecallService(store)
     # One builder per server, like the service's own caches: the map's
     # stability guarantee is "same task, same structure across sessions",
@@ -1149,28 +1153,42 @@ def _register_tools(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             refresh_instructions()
             return response
 
-    @mcp.tool
-    @_track_latency("memory_attest")
-    def memory_attest(
-        recall_event_id: str,
-        evidence: list[str],
-        context: dict[str, Any] | None = None,
-        trace_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Offline attestation of a FINISHED session's recall — extraction
-        tooling, not an agent action. Recalls of the current session are
-        closed by your memory_remember automatically; do NOT attest them.
-        Full contract: docs/post-session-attestation.md."""
+    # memory_attest is NOT registered by default (expose_attest=False). Field
+    # data (2026-08-20, both hosts): agents folded it into their closure
+    # ritual, attesting their own same-session recalls — the case
+    # memory_remember already closes implicitly — with prose evidence that
+    # fails containment (credited 0/21 and 1/6). Every session paid ~250
+    # context tokens for a tool that never earned credit. The machinery
+    # stays: attestation.py, the recall_attestations table, and this guarded
+    # registration serve the post-session extraction runner — enable via
+    # LM_EXPOSE_ATTEST=1 (or expose_attest=True) when that stage goes live
+    # (contract: docs/post-session-attestation.md).
+    if expose_attest:
+        from living_memory.attestation import attest_recall_usage
 
-        context = _with_transport_identity(context)
-        with runtime_lock:
-            return attest_recall_usage(
-                store,
-                recall_event_id,
-                evidence,
-                context=context,
-                trace_id=trace_id,
-            )
+        @mcp.tool
+        @_track_latency("memory_attest")
+        def memory_attest(
+            recall_event_id: str,
+            evidence: list[str],
+            context: dict[str, Any] | None = None,
+            trace_id: str | None = None,
+        ) -> dict[str, Any]:
+            """Offline attestation of a FINISHED session's recall — extraction
+            tooling, not an agent action. Recalls of the current session are
+            closed by your memory_remember automatically; do NOT attest them.
+            Full contract: docs/post-session-attestation.md."""
+
+            context = _with_transport_identity(context)
+            with runtime_lock:
+                return attest_recall_usage(
+                    store,
+                    recall_event_id,
+                    evidence,
+                    context=context,
+                    trace_id=trace_id,
+                )
+
 
     @mcp.tool
     @_track_latency("memory_lookup")
