@@ -142,7 +142,8 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from math import log, sqrt
+from datetime import UTC, datetime
+from math import fsum, log, log1p, sqrt
 from typing import TYPE_CHECKING, Any
 import json
 import re
@@ -152,7 +153,11 @@ from living_memory.embeddings import cosine_similarity, tokenize
 from living_memory.grounding import token_set
 from living_memory.models import Node
 from living_memory.scope import GLOBAL_SCOPE, normalize_scope
-from living_memory.storage import CHUNK_EMBEDDING_TABLE, MemoryStore
+from living_memory.storage import (
+    CHUNK_EMBEDDING_TABLE,
+    MAX_RECALL_HISTORY_CANDIDATES,
+    MemoryStore,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from living_memory.retrieval import RecallResult
@@ -212,11 +217,53 @@ MIN_CLUSTERS = 2
 MAX_LABEL_CHARS = 40
 MAX_ASK_HINT_CHARS = 80
 
-#: Residual pools are unbounded in principle; the map reads context of every
-#: member and, at stage 3, issues one indexed edge lookup per unclaimed node.
-#: Past this many ranked members the tail contributes nothing a six-cluster map
-#: can show, so it is not paid for.
+#: Clustering cap, applied only after the complete residual has passed frozen
+#: eligibility and relevance scoring.  That ordering is load-bearing: applying
+#: the cap while scanning would let a machine-ballast head crowd useful members
+#: out before the selector saw them.  Only the admitted 200 pay for the heavier
+#: four-stage cascade and its per-node anchor/vector reads.
 MAX_POOL_NODES = 200
+
+#: Frozen member-selection policy.  These are literals rather than a runtime
+#: read of ``artifacts/``: a deployed server must not depend on its source
+#: checkout being present, and changing any value is a policy revision rather
+#: than configuration.  The digest binds the canonical ``selected_policy``
+#: object in ``artifacts/recall-map/relevance/policy.json``.
+RELEVANCE_POLICY_ID = "directional-zsum-r1"
+RELEVANCE_POLICY_DIGEST = (
+    "3acad3d92db2538bf3096ab99d2c4d337ea3c8aebddc226646527b4d277660ea"
+)
+RELEVANCE_FEATURE_MEANS: tuple[float, ...] = (
+    0.26434558349451964,
+    2.856678070667311,
+    2.789348366105738,
+    1.5799800264635717,
+    0.06059739660863959,
+)
+RELEVANCE_FEATURE_SCALES: tuple[float, ...] = (
+    0.4409841221421261,
+    2.5772848149641323,
+    2.5560016163553305,
+    1.765967625291225,
+    0.11674776461860277,
+)
+RELEVANCE_THRESHOLD = 3.8708378402511
+
+#: Compact exclusion vector order frozen in the additive ``sel`` contract.
+#: Do not alphabetize it: both persistence and the evaluator interpret counts
+#: positionally.
+SELECTION_REASON_CODES: tuple[str, ...] = (
+    "iv",
+    "du",
+    "fc",
+    "ss",
+    "sj",
+    "lr",
+    "pc",
+)
+SELECTION_SAMPLE_GIST_CHARS = 24
+SELECTION_SAMPLE_LIMIT = 2
+_SAMPLEABLE_REASONS = frozenset({"fc", "ss", "sj", "lr", "pc"})
 
 #: Cosine at or above which greedy leader clustering admits a node to an
 #: existing cluster. A fallback stage's threshold, deliberately loose: whatever
@@ -386,6 +433,22 @@ _WHITESPACE_RE = re.compile(r"\s+")
 _TERM_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 _HEX_DIGITS = frozenset("0123456789abcdef")
 _VOWELS = frozenset("aeiouyаеёиоуыэюя")
+_STRATEGY_STAGNATION_RE = re.compile(
+    r"^Strategy stagnation detected on [^\r\n]{1,160}(?:\r?\n"
+    r"(?:attempts|strategy|window|reason):[^\r\n]{1,160}){0,4}\s*$"
+)
+_FILE_CHUNK_INDEX_RE = re.compile(r"^[1-9][0-9]*/[1-9][0-9]*$")
+_FILE_CHUNK_LINES_RE = re.compile(r"^[1-9][0-9]*-[1-9][0-9]*$")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_JOURNAL_KINDS = frozenset(
+    {
+        "supervision_journal",
+        "monitoring_journal",
+        "execution_journal",
+        "goal_tree_journal",
+    }
+)
+_JOURNAL_METADATA_KEYS = ("kind", "type", "lesson_kind", "record_kind")
 
 
 # ----------------------------------------------------------------------
@@ -457,6 +520,93 @@ class FilteredCluster:
 
 
 @dataclass(frozen=True, slots=True)
+class SelectionSample:
+    """One identity-free example of a member-level exclusion.
+
+    ``ordinal`` is retained only while fitting the additive selection block;
+    it is never serialized.  It makes the choice independently auditable
+    without turning a node id into policy input or wire content.
+    """
+
+    reason: str
+    gist: str
+    ordinal: int
+
+    def to_list(self) -> list[str]:
+        return [self.reason, self.gist]
+
+
+@dataclass(frozen=True, slots=True)
+class SelectionAccounting:
+    """Complete frozen-policy accounting for one inspected residual.
+
+    The response fitter added by the delivery integration can vary only how
+    many of ``samples`` it buys.  ``inspected``, ``admitted`` and ``excluded``
+    are unconditional, and ``to_dict`` recomputes ``o`` from the chosen sample
+    count so dropping examples can never falsify the accounting equation.
+    """
+
+    inspected: int
+    admitted: int
+    excluded: tuple[int, ...]
+    samples: tuple[SelectionSample, ...] = ()
+    sampleable: int = 0
+
+    def __post_init__(self) -> None:
+        if len(self.excluded) != len(SELECTION_REASON_CODES):
+            raise ValueError("selection exclusion vector has the wrong width")
+        if self.inspected < 0 or self.admitted < 0 or any(
+            count < 0 for count in self.excluded
+        ):
+            raise ValueError("selection counts must be non-negative")
+        if self.inspected != self.admitted + sum(self.excluded):
+            raise ValueError("selection accounting does not cover the residual")
+        if self.sampleable < len(self.samples):
+            raise ValueError("selection samples exceed the sampleable population")
+        sampleable_cap = sum(
+            self.excluded[index]
+            for index, reason in enumerate(SELECTION_REASON_CODES)
+            if reason in _SAMPLEABLE_REASONS
+        )
+        if self.sampleable > sampleable_cap:
+            raise ValueError("selection sampleable count exceeds exclusions")
+
+        reason_order = {reason: index for index, reason in enumerate(SELECTION_REASON_CODES)}
+        prior = -1
+        seen: set[str] = set()
+        for sample in self.samples:
+            if sample.reason not in _SAMPLEABLE_REASONS:
+                raise ValueError("selection sample has a non-sampleable reason")
+            current = reason_order[sample.reason]
+            if self.excluded[current] <= 0:
+                raise ValueError("selection sample has no matching exclusion")
+            if current <= prior or sample.reason in seen:
+                raise ValueError("selection samples are not in fixed reason order")
+            if not sample.gist or len(sample.gist) > SELECTION_SAMPLE_GIST_CHARS:
+                raise ValueError("selection sample gist is empty or over budget")
+            if sample.ordinal < 0:
+                raise ValueError("selection sample ordinal must be non-negative")
+            prior = current
+            seen.add(sample.reason)
+
+    def to_dict(self, *, sample_limit: int = SELECTION_SAMPLE_LIMIT) -> dict[str, Any]:
+        """Return the additive ``sel`` shape with a budgeted ``q``."""
+
+        limit = min(SELECTION_SAMPLE_LIMIT, max(0, int(sample_limit)))
+        chosen = self.samples[:limit]
+        payload: dict[str, Any] = {
+            "v": "r1",
+            "n": self.inspected,
+            "e": self.admitted,
+            "x": list(self.excluded),
+            "o": self.sampleable - len(chosen),
+        }
+        if chosen:
+            payload["q"] = [sample.to_list() for sample in chosen]
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class RecallMap:
     """A capped, ordered set of clusters over one recall's residual pool."""
 
@@ -490,6 +640,13 @@ class RecallMap:
     #: the number is what tells an operator (and the effect gate) that the map
     #: went quiet and how long it has been quiet for.
     streak: int = 0
+    #: Member eligibility and relevance selection, computed before clustering.
+    #: It travels with every inspected residual so no later layer has to
+    #: reconstruct unconditional counts from the capped pool.
+    selection: SelectionAccounting | None = None
+    #: Optional ``q`` examples that survived the response budget.  The core is
+    #: never conditional; only these identity-free examples may be removed.
+    selection_sample_limit: int = SELECTION_SAMPLE_LIMIT
 
     def to_dict(self) -> dict[str, Any]:
         """The response-shaped form, budgeted by :data:`MAX_RESPONSE_CHARS`."""
@@ -503,6 +660,8 @@ class RecallMap:
             filtered=_filter_block(
                 self.withheld, self.dropped, self.filtered, self.filtered_omitted
             ),
+            selection=self.selection,
+            selection_sample_limit=self.selection_sample_limit,
         )
 
     def plan_items(self) -> list[str]:
@@ -540,10 +699,47 @@ class RecallMap:
 
 @dataclass(slots=True)
 class _Member:
-    """One pool entry, carrying the rank that breaks every tie about it."""
+    """One admitted entry with its frozen score and original residual ordinal."""
 
     rank: int
     node: Node
+    relevance_score: float = 0.0
+
+
+@dataclass(slots=True)
+class _SelectionLedger:
+    """Mutable accounting while the complete residual is classified."""
+
+    inspected: int
+    excluded: Counter[str] = field(default_factory=Counter)
+    first_samples: dict[str, SelectionSample] = field(default_factory=dict)
+    sampleable: int = 0
+
+    def exclude(self, reason: str, *, ordinal: int, node: Any = None) -> None:
+        self.excluded[reason] += 1
+        if reason not in _SAMPLEABLE_REASONS or node is None:
+            return
+        gist = _selection_gist(node)
+        if not gist:
+            return
+        self.sampleable += 1
+        self.first_samples.setdefault(
+            reason, SelectionSample(reason=reason, gist=gist, ordinal=ordinal)
+        )
+
+    def freeze(self, admitted: int) -> SelectionAccounting:
+        samples = tuple(
+            self.first_samples[reason]
+            for reason in SELECTION_REASON_CODES
+            if reason in self.first_samples
+        )
+        return SelectionAccounting(
+            inspected=self.inspected,
+            admitted=admitted,
+            excluded=tuple(self.excluded[reason] for reason in SELECTION_REASON_CODES),
+            samples=samples,
+            sampleable=self.sampleable,
+        )
 
 
 @dataclass(slots=True)
@@ -559,10 +755,6 @@ class _Group:
     members: list[_Member]
     #: Set only by stage 4, which is the only stage holding vectors.
     vectors: dict[str, list[float]] | None = None
-    #: The medoid a cached structure already chose. Carried so that a map
-    #: served from cache picks the same member a fresh build would, without
-    #: re-fetching the vectors that chose it.
-    preferred_medoid: str | None = None
 
 
 @dataclass(slots=True)
@@ -619,11 +811,6 @@ class _ClusterTemplate:
     label: str
     ask_hint: str
     member_ids: frozenset[str]
-    #: The member the full build chose to speak for this cluster. Part of the
-    #: structure, not of the counts: stage 4 picks it with vectors the cache
-    #: path deliberately does not re-read, so without remembering it here the
-    #: same pool would get one medoid cold and another warm.
-    medoid_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -631,6 +818,9 @@ class _CachedStructure:
     """One cache entry: templates plus the corpus revision that validates them."""
 
     revision: tuple[Any, ...]
+    #: Empty only for a freshly selected empty pool.  This is a revision-bound
+    #: negative structure result, not a wildcard: a later non-empty pool must
+    #: rebuild rather than treating it as a reusable structure.
     templates: tuple[_ClusterTemplate, ...]
 
 
@@ -766,6 +956,172 @@ def _shorten(text: str, limit: int) -> str:
     if len(collapsed) <= limit:
         return collapsed
     return collapsed[: limit - 1].rstrip() + "…"
+
+
+def _utc_now() -> str:
+    """One canonical map-build instant, captured before any history read."""
+
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _is_file_chunk_envelope(envelope: Any) -> bool:
+    """The evaluator's strict file-chunk schema, with no provenance lookup."""
+
+    if not isinstance(envelope, dict):
+        return False
+    chunk = envelope.get("chunk")
+    lines = envelope.get("lines")
+    if not isinstance(chunk, str) or _FILE_CHUNK_INDEX_RE.fullmatch(chunk) is None:
+        return False
+    if not isinstance(lines, str) or _FILE_CHUNK_LINES_RE.fullmatch(lines) is None:
+        return False
+    part, total = (int(value) for value in chunk.split("/"))
+    first_line, last_line = (int(value) for value in lines.split("-"))
+    return (
+        part <= total
+        and first_line <= last_line
+        and isinstance(envelope.get("path"), str)
+        and bool(envelope["path"].strip())
+        and isinstance(envelope.get("kind"), str)
+        and bool(envelope["kind"].strip())
+        and isinstance(envelope.get("language"), str)
+        and isinstance(envelope.get("sha256"), str)
+        and _SHA256_RE.fullmatch(envelope["sha256"]) is not None
+    )
+
+
+def _ballast_reason(
+    content: Any,
+    context: Any = None,
+    provenance: Any = None,
+) -> str | None:
+    """Return ``fc``/``ss``/``sj`` for an exact machine envelope.
+
+    Every parsing and shape failure is eligible.  In particular, marker words
+    embedded in prose and journal names under ``topic`` are not classifiers.
+    This function reads only the candidate's own form/schema/provenance; it has
+    no emitter, host, project, task, label or identity surface.
+    """
+
+    if not isinstance(content, str):
+        return None
+
+    if content.startswith("[file-chunk]"):
+        suffix = content[len("[file-chunk]") :]
+        separator = suffix[:1]
+        header = ""
+        if separator in {" ", "\t"}:
+            lines = suffix.lstrip(" \t").splitlines()
+            header = lines[0].strip() if lines else ""
+        try:
+            envelope = json.loads(header)
+        except (TypeError, ValueError):
+            envelope = None
+        if _is_file_chunk_envelope(envelope):
+            return "fc"
+
+    if _STRATEGY_STAGNATION_RE.fullmatch(content):
+        return "ss"
+
+    kind_values: set[str] = set()
+    for mapping in (context, provenance):
+        if not isinstance(mapping, Mapping):
+            continue
+        for key in _JOURNAL_METADATA_KEYS:
+            try:
+                value = mapping.get(key)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            kind_values.add(str(value or "").strip().lower().replace("-", "_"))
+    first_line = content.splitlines()[:1]
+    marker = (first_line[0] if first_line else "").strip().lower().replace("-", "_")
+    if kind_values & _JOURNAL_KINDS or marker in {
+        "[supervision_journal]",
+        "[monitoring_journal]",
+    }:
+        return "sj"
+    return None
+
+
+def _history_features(history: Any) -> tuple[float, float, float, float]:
+    """Frozen evaluator features, or train means when history is unavailable."""
+
+    unavailable = (
+        RELEVANCE_FEATURE_MEANS[1],
+        RELEVANCE_FEATURE_MEANS[2],
+        RELEVANCE_FEATURE_MEANS[3],
+        RELEVANCE_FEATURE_MEANS[4],
+    )
+    if history is None or getattr(history, "available", False) is not True:
+        return unavailable
+
+    values = (
+        getattr(history, "matured", None),
+        getattr(history, "consumed", None),
+        getattr(history, "trailing_nonconsumed", None),
+    )
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
+        return unavailable
+    matured, consumed, streak = values
+    if (
+        matured < 0
+        or consumed < 0
+        or consumed > matured
+        or streak < 0
+        or streak > matured - consumed
+    ):
+        return unavailable
+
+    # ``round(..., 8)`` is part of the unchanged evaluator's feature
+    # arithmetic.  Keeping it here is necessary to reproduce threshold ties.
+    return (
+        round(log1p(matured), 8),
+        round(log1p(matured - consumed), 8),
+        round(log1p(streak), 8),
+        round(consumed / matured, 8) if matured else 0.0,
+    )
+
+
+def _relevance_features(node: Any, history: Any) -> tuple[float, ...]:
+    level = getattr(node, "level", None)
+    level_schema = (
+        float(level == "schema")
+        if level in {"trace", "concept", "schema"}
+        else RELEVANCE_FEATURE_MEANS[0]
+    )
+    return (level_schema, *_history_features(history))
+
+
+def _directional_zsum(features: Sequence[float]) -> float:
+    """Exact equal-weight directional-zsum-r1 arithmetic."""
+
+    if len(features) != len(RELEVANCE_FEATURE_MEANS):
+        raise ValueError("relevance feature vector has the wrong width")
+    return sum(
+        (float(value) - mean) / scale
+        for value, mean, scale in zip(
+            features,
+            RELEVANCE_FEATURE_MEANS,
+            RELEVANCE_FEATURE_SCALES,
+            strict=True,
+        )
+    )
+
+
+def relevance_score(node: Any, history: Any) -> float:
+    """Score one node from only its level and strictly matured history."""
+
+    return _directional_zsum(_relevance_features(node, history))
+
+
+def _selection_gist(node: Any) -> str:
+    """An identity-free, compact content example for selection forensics."""
+
+    content = _collapse(getattr(node, "content", ""))
+    node_id = getattr(node, "id", None)
+    if isinstance(node_id, str) and node_id:
+        content = _collapse(content.replace(node_id, ""))
+    return _shorten(content, SELECTION_SAMPLE_GIST_CHARS)
 
 
 def _terms(text: str) -> list[str]:
@@ -1076,14 +1432,20 @@ class RecallMapBuilder:
         scope: str | None = None,
         task: str | None = None,
         task_pattern: str | None = None,
+        decision_at: str | datetime | None = None,
     ) -> RecallMap | None:
         """Cluster one residual pool. ``None`` when there is nothing to say.
 
         ``results`` is the ranked residual — ``MemoryRecallService.last_residual``
-        — best first; its order is the tie break of last resort throughout.
+        — best first. Its original order supplies the frozen ordinal after
+        relevance selection; the selected pool itself is ordered by score.
         ``task``/``task_pattern`` name the work the recall belongs to and, with
         ``scope``, form the cache key; without either, the key degrades to the
         scope alone, which is still stable and merely coarser.
+
+        ``decision_at`` is captured once per call so every bounded history
+        batch sees one boundary. Supplying it is useful for deterministic
+        replay; production callers omit it and receive the current UTC instant.
 
         A key whose last :data:`CURTAIL_STREAK` maps were delivered and never
         followed gets the collapsed form instead — clusters empty, ``curtailed``
@@ -1091,14 +1453,48 @@ class RecallMapBuilder:
         a channel nobody reads also stops costing what it costs to fill.
         """
 
-        pool = self._pool(results)
         self.last_cache_hit = False
         self._reset_corpus_memo()
-        if not pool:
+        if not results:
             return None
 
-        map_scope = normalize_scope(scope) if scope else _dominant_scope(pool)
+        instant = decision_at if decision_at is not None else datetime.now(UTC)
+        pool, selection = self._pool(results, decision_at=instant)
+        map_scope = (
+            normalize_scope(scope) if scope else _dominant_residual_scope(results)
+        )
         key = cache_key(map_scope, task=task, task_pattern=task_pattern)
+        if not pool:
+            # A non-empty residual that policy filtered completely is evidence,
+            # not the same event as an empty residual.  It offered no cluster
+            # and therefore cannot advance curtailment.  Its empty structure
+            # is still a useful negative cache result, but only for a fresh
+            # empty selection under this exact corpus/policy revision.  Keep
+            # this branch explicit: `_recount((), pool)` deliberately rejects
+            # so an empty entry can never hide a later eligible pool.
+            revision = self._corpus_revision()
+            cached = self._cache.get(key)
+            if (
+                cached is not None
+                and cached.revision == revision
+                and not cached.templates
+            ):
+                self.last_cache_hit = True
+            else:
+                self._remember(key, revision, [])
+            self.last_curtailment = _Curtailment(streak=0, offers=0)
+            self._note_delivery(map_scope, task, offered=False)
+            return RecallMap(
+                scope=map_scope,
+                key=key,
+                clusters=(),
+                pool_size=0,
+                covered=0,
+                selection=selection,
+                selection_sample_limit=_selection_sample_limit(
+                    (), 0, 0, selection=selection
+                ),
+            )
 
         curtailment = self._curtailment(map_scope, task)
         self.last_curtailment = curtailment
@@ -1112,19 +1508,37 @@ class RecallMapBuilder:
                 covered=0,
                 curtailed=True,
                 streak=curtailment.streak,
+                selection=selection,
+                selection_sample_limit=_selection_sample_limit(
+                    (),
+                    len(pool),
+                    0,
+                    selection=selection,
+                    curtailed=True,
+                    streak=curtailment.streak,
+                ),
             )
 
         revision = self._corpus_revision()
-
         cached = self._cache.get(key)
         groups: list[_Group] | None = None
-        if cached is not None and cached.revision == revision:
+        if (
+            cached is not None
+            and cached.revision == revision
+            and cached.templates
+        ):
             groups = self._recount(cached.templates, pool)
             self.last_cache_hit = groups is not None
         if groups is None:
             groups = self._cluster(pool)
             self._remember(key, revision, groups)
-        built = self._finish(groups, scope=map_scope, key=key, pool_size=len(pool))
+        built = self._finish(
+            groups,
+            scope=map_scope,
+            key=key,
+            pool_size=len(pool),
+            selection=selection,
+        )
         if built is not None:
             # A journal-only map reaches the server so a fully gated pool does
             # not disappear from field evidence, but it offered the agent no
@@ -1134,20 +1548,95 @@ class RecallMapBuilder:
 
     # -- pool ----------------------------------------------------------
 
-    def _pool(self, results: Sequence["RecallResult"]) -> list[_Member]:
-        members: list[_Member] = []
+    def _pool(
+        self,
+        results: Sequence["RecallResult"],
+        *,
+        decision_at: str | datetime,
+    ) -> tuple[list[_Member], SelectionAccounting]:
+        """Apply the frozen member pipeline before the pool cap.
+
+        Classification is one ordinal pass.  History is then read only for
+        first-occurrence, structurally eligible identities, in batches no
+        larger than storage's frozen bound.  Every survivor is scored before
+        the stable relevance sort and cap, so machine ballast and low-score
+        head entries cannot crowd a useful tail member out of the 200.
+        """
+
+        ledger = _SelectionLedger(inspected=len(results))
         seen: set[str] = set()
-        for result in results:
+        eligible: list[tuple[int, Node]] = []
+        for ordinal, result in enumerate(results):
             node = getattr(result, "node", None)
-            if node is None or not getattr(node, "id", ""):
+            node_id = getattr(node, "id", None) if node is not None else None
+            if not isinstance(node_id, str) or not node_id.strip():
+                ledger.exclude("iv", ordinal=ordinal)
                 continue
-            if node.id in seen:
+            if node_id in seen:
+                ledger.exclude("du", ordinal=ordinal)
                 continue
-            seen.add(node.id)
-            members.append(_Member(rank=len(members), node=node))
-            if len(members) >= self.max_pool_nodes:
-                break
-        return members
+            seen.add(node_id)
+
+            reason = _ballast_reason(
+                getattr(node, "content", None),
+                getattr(node, "context", None),
+                getattr(node, "provenance", None),
+            )
+            if reason is not None:
+                ledger.exclude(reason, ordinal=ordinal, node=node)
+                continue
+            eligible.append((ordinal, node))
+
+        histories = self._matured_history(
+            [node.id for _ordinal, node in eligible], decision_at=decision_at
+        )
+        survivors: list[_Member] = []
+        for ordinal, node in eligible:
+            score = relevance_score(node, histories.get(node.id))
+            if score < RELEVANCE_THRESHOLD:
+                ledger.exclude("lr", ordinal=ordinal, node=node)
+                continue
+            survivors.append(
+                _Member(rank=ordinal, node=node, relevance_score=score)
+            )
+
+        survivors.sort(key=lambda member: (-member.relevance_score, member.rank))
+        admitted = survivors[: self.max_pool_nodes]
+        for member in sorted(
+            survivors[self.max_pool_nodes :], key=lambda item: item.rank
+        ):
+            ledger.exclude("pc", ordinal=member.rank, node=member.node)
+        accounting = ledger.freeze(len(admitted))
+        return admitted, accounting
+
+    def _matured_history(
+        self,
+        node_ids: Sequence[str],
+        *,
+        decision_at: str | datetime,
+    ) -> dict[str, Any]:
+        """Read every candidate's history through fixed-size bounded batches.
+
+        A missing method, failed batch, absent id, malformed row, truncation or
+        unavailable ledger remains absent in this mapping (or carries the
+        reader's unavailable object) and therefore receives frozen train means
+        in :func:`relevance_score`.  A real zero-history row is present with
+        ``available=True`` and M=C=K=0, preserving the cold-start distinction.
+        """
+
+        histories: dict[str, Any] = {}
+        for offset in range(0, len(node_ids), MAX_RECALL_HISTORY_CANDIDATES):
+            batch = node_ids[offset : offset + MAX_RECALL_HISTORY_CANDIDATES]
+            try:
+                fetched = self.store.matured_recall_history(batch, decision_at)
+            except (AttributeError, sqlite3.Error, TypeError, ValueError):
+                continue
+            if not isinstance(fetched, Mapping):
+                continue
+            for node_id in batch:
+                if node_id in fetched:
+                    histories[node_id] = fetched[node_id]
+        return histories
 
     # -- cascade -------------------------------------------------------
 
@@ -1824,9 +2313,14 @@ class RecallMapBuilder:
         connection = self.store.connection
         probe = (int(connection.total_changes), _data_version(connection))
         cached = self._revision
-        if cached is not None and probe == self._write_probe:
+        if (
+            cached is not None
+            and cached[0] == RELEVANCE_POLICY_DIGEST
+            and probe == self._write_probe
+        ):
             return cached
         revision = (
+            RELEVANCE_POLICY_DIGEST,
             _chunk_table_revision(connection),
             tuple(self.store.query_anchor_revision()),
         )
@@ -1844,7 +2338,6 @@ class RecallMapBuilder:
                 label=group.label,
                 ask_hint=group.ask_hint,
                 member_ids=frozenset(member.node.id for member in group.members),
-                medoid_id=self._medoid(group).node.id,
             )
             for group in groups
         )
@@ -1888,29 +2381,74 @@ class RecallMapBuilder:
                 covered += 1
                 matched = True
                 break
-            if not matched and _structural_key(member.node) is not None:
-                # A fresh cascade would claim this node at stage 1.  If the
-                # cached pool never contained its structural signature, no
-                # cached later-stage template may stand in for it: rebuild so
-                # the new structural cluster gets its own label.  Merely
-                # leaving it unmatched would preserve the old shape by
-                # silently hiding precisely the richly named node the path
-                # cascade used to steal in the field.
+            if not matched:
+                # A fresh cascade may have a new structural/path/anchor
+                # signature or seed a new embedding cluster. A template cache
+                # has no authority to silently omit that member.
                 return None
         if covered < CACHE_MIN_COVERAGE * len(pool):
             return None
-        return [
-            _Group(
-                stage=templates[index].stage,
-                signature=templates[index].signature,
-                label=templates[index].label,
-                ask_hint=templates[index].ask_hint,
-                members=buckets[index],
-                preferred_medoid=templates[index].medoid_id,
-            )
-            for index, _template in ordered
-            if index in buckets
+
+        # Stage 4 is a relevance-ordered greedy walk. Re-run that membership
+        # rule from fresh vectors and fresh scores, but retain cached labels
+        # only if it reproduces the current template buckets exactly. This
+        # keeps the cache template-only: no score, low-relevance verdict,
+        # relevance order, or medoid identity survives a build boundary.
+        embedding_indexes = [
+            index
+            for index, template in ordered
+            if template.stage == STAGE_EMBEDDING and index in buckets
         ]
+        embedding_vectors: dict[frozenset[str], dict[str, list[float]]] = {}
+        if embedding_indexes:
+            embedding_ids = {
+                member.node.id
+                for index in embedding_indexes
+                for member in buckets[index]
+            }
+            embedding_members = [
+                member for member in pool if member.node.id in embedding_ids
+            ]
+            fresh, rest = self._stage_embedding(embedding_members)
+            if rest:
+                return None
+            current_sets = {
+                frozenset(member.node.id for member in buckets[index])
+                for index in embedding_indexes
+            }
+            fresh_sets = {
+                frozenset(member.node.id for member in group.members) for group in fresh
+            }
+            if fresh_sets != current_sets or len(fresh) != len(embedding_indexes):
+                return None
+            embedding_vectors = {
+                frozenset(member.node.id for member in group.members): group.vectors or {}
+                for group in fresh
+            }
+
+        groups: list[_Group] = []
+        for index, template in ordered:
+            members = buckets.get(index)
+            if not members:
+                continue
+            vectors = None
+            if template.stage == STAGE_EMBEDDING:
+                vectors = embedding_vectors.get(
+                    frozenset(member.node.id for member in members)
+                )
+                if not vectors:
+                    return None
+            groups.append(
+                _Group(
+                    stage=template.stage,
+                    signature=template.signature,
+                    label=template.label,
+                    ask_hint=template.ask_hint,
+                    members=members,
+                    vectors=vectors,
+                )
+            )
+        return groups
 
     @staticmethod
     def _matches(template: _ClusterTemplate, node: Node) -> bool:
@@ -1937,6 +2475,7 @@ class RecallMapBuilder:
         scope: str,
         key: str,
         pool_size: int,
+        selection: SelectionAccounting,
     ) -> RecallMap | None:
         """Gate, order, cap and budget the groups into a map.
 
@@ -1949,17 +2488,17 @@ class RecallMapBuilder:
         because the verdict is a corpus statistic and the corpus moves under a
         cache that is deliberately validated against something else.
 
-        What survives is ordered by expected usefulness for this query.  The
-        residual is already ranked best-first, so reciprocal-rank mass rewards
-        both a strong head and supporting members without letting either a
-        lone rank-zero result or a large low-ranked bucket decide the map by
-        itself.  Best rank, size, stage and the already-unique label make the
-        order total.
+        What survives is ordered only by the frozen member policy: descending
+        maximum member score, descending mean member score, then the unique
+        best original residual ordinal. The mean uses :func:`math.fsum` over
+        original residual order. Size, cascade stage, label, task and identity
+        are deliberately absent from the relevance order.
 
         Order is deliberately not part of the cached structure.  A cached
         recount supplies this call's :class:`_Member` objects and therefore
-        this call's ranks; this sort refreshes relevance on both the cold and
-        warm paths while labels, signatures and medoid choices remain stable.
+        this call's ranks and scores; this sort and medoid tie logic refresh
+        relevance-derived presentation on both cold and warm paths while
+        labels and signatures remain stable.
 
         A pool whose every cluster is withheld yields a journal-only map.  It
         carries no delivered clusters (and therefore counts as no curtail
@@ -1971,7 +2510,17 @@ class RecallMapBuilder:
 
         populated = [group for group in groups if group.members]
         if not populated:
-            return None
+            return RecallMap(
+                scope=scope,
+                key=key,
+                clusters=(),
+                pool_size=pool_size,
+                covered=0,
+                selection=selection,
+                selection_sample_limit=_selection_sample_limit(
+                    (), pool_size, 0, selection=selection
+                ),
+            )
 
         # One index round trip for every label on the table, rather than one
         # per label. ``term_document_frequencies`` pays a scratch-table fold
@@ -1991,6 +2540,7 @@ class RecallMapBuilder:
                 journal.withheld.append(_filtered_of(FILTER_TAG_WITHHELD, group))
         journal.withheld.sort(key=lambda entry: (-entry.count, entry.label))
         if not deliverable:
+            filtered = journal.block()
             return RecallMap(
                 scope=scope,
                 key=key,
@@ -2000,28 +2550,30 @@ class RecallMapBuilder:
                 withheld=len(journal.withheld),
                 filtered=journal.names(),
                 filtered_omitted=journal.omitted(),
+                selection=selection,
+                selection_sample_limit=_selection_sample_limit(
+                    (), pool_size, 0, filtered, selection=selection
+                ),
             )
 
-        def usefulness_key(group: _Group) -> tuple[float, int, int, int, str]:
-            ranked = sorted(group.members, key=lambda member: member.rank)
-            reciprocal_rank_mass = sum(
-                1.0 / (1 + member.rank) for member in ranked
-            )
+        def relevance_key(group: _Group) -> tuple[float, float, int]:
+            members = sorted(group.members, key=lambda member: member.rank)
+            scores = [member.relevance_score for member in members]
             return (
-                -reciprocal_rank_mass,
-                ranked[0].rank,
-                -len(ranked),
-                _STAGE_ORDER.get(group.stage, 99),
-                group.label,
+                -max(scores),
+                -(fsum(scores) / len(scores)),
+                members[0].rank,
             )
 
-        deliverable.sort(key=usefulness_key)
+        deliverable.sort(key=relevance_key)
         kept = deliverable[: self.max_clusters]
         journal.dropped.extend(
             _filtered_of(FILTER_TAG_DROPPED, group)
             for group in deliverable[self.max_clusters :]
         )
-        clusters = self._fit(kept, pool_size, journal)
+        clusters, sample_limit = self._fit(
+            kept, pool_size, journal, selection=selection
+        )
         if not clusters:
             # `_fit` may decide that even the breadth floor cannot carry an
             # informative gist.  It records every remaining group as dropped;
@@ -2037,6 +2589,14 @@ class RecallMapBuilder:
                 withheld=len(journal.withheld),
                 filtered=journal.names(),
                 filtered_omitted=journal.omitted(),
+                selection=selection,
+                selection_sample_limit=_selection_sample_limit(
+                    (),
+                    pool_size,
+                    len(journal.dropped),
+                    journal.block(),
+                    selection=selection,
+                ),
             )
         return RecallMap(
             scope=scope,
@@ -2048,11 +2608,18 @@ class RecallMapBuilder:
             withheld=len(journal.withheld),
             filtered=journal.names(),
             filtered_omitted=journal.omitted(),
+            selection=selection,
+            selection_sample_limit=sample_limit,
         )
 
     def _fit(
-        self, kept: list[_Group], pool_size: int, journal: _FilterJournal
-    ) -> list[MapCluster]:
+        self,
+        kept: list[_Group],
+        pool_size: int,
+        journal: _FilterJournal,
+        *,
+        selection: SelectionAccounting,
+    ) -> tuple[list[MapCluster], int]:
         """Fit the widest common gist, trading tail breadth before gist quality.
 
         Every pass searches the full ``[0, MEDOID_EXAMPLE_CHARS]`` interval
@@ -2067,7 +2634,10 @@ class RecallMapBuilder:
         example space and the journal's own cost are remeasured.  At the
         breadth floor, journal names give way one at a time; the unconditional
         withheld/dropped counts and ``names_omitted`` never do.  Only after no
-        name remains may the widest affordable gist fall below the floor.
+        name remains may the widest affordable gist fall below the floor. The
+        mandatory ``sel`` core participates in every measurement. Optional
+        ``q`` samples are added only after the existing cluster shape fits, so
+        they are always the first selection detail sacrificed to the budget.
         """
 
         active_groups = list(kept)
@@ -2117,6 +2687,8 @@ class RecallMapBuilder:
                         pool_size,
                         len(journal.dropped),
                         journal.block(),
+                        selection=selection,
+                        selection_sample_limit=0,
                     )
                     <= MAX_RESPONSE_CHARS
                 ):
@@ -2130,7 +2702,13 @@ class RecallMapBuilder:
         while full:
             example_chars, clusters = widest()
             if example_chars >= 0 and floor_met(clusters):
-                return clusters
+                return clusters, _selection_sample_limit(
+                    clusters,
+                    pool_size,
+                    len(journal.dropped),
+                    journal.block(),
+                    selection=selection,
+                )
 
             if len(full) > breadth_floor:
                 journal.dropped.insert(
@@ -2152,8 +2730,8 @@ class RecallMapBuilder:
                 _filtered_of(FILTER_TAG_DROPPED, group) for group in active_groups
             ]
             journal.name_limit = FILTER_JOURNAL_NAMES
-            return []
-        return []
+            return [], 0
+        return [], 0
 
     def _cluster_of(self, group: _Group, *, example_chars: int) -> MapCluster:
         medoid = self._medoid(group)
@@ -2179,27 +2757,18 @@ class RecallMapBuilder:
     def _medoid(group: _Group) -> _Member:
         """The member that speaks for the cluster.
 
-        A cached choice wins whenever that member is still in the pool: it was
-        made by a full build, with whatever evidence that build had, and
-        re-deciding it here would hand the same pool one medoid cold and
-        another warm.
-
-        Otherwise, with vectors in play — stage 4 only, the one stage that has
-        them — the member of maximum mean similarity to the rest, which is the
-        medoid proper. Everywhere else the highest-ranked member, because rank
-        is the only evidence of centrality those stages hold and inventing
-        another would cost a vector fetch the fast path exists to avoid.
+        With vectors in play — stage 4 only, the one stage that has them — use
+        the member of maximum mean similarity to the rest, which is the medoid
+        proper. Everywhere else use the best original residual ordinal. That
+        ordinal is unique, so it closes every tie without an identity fallback.
+        Cached embedding groups carry freshly read vectors and therefore make
+        the same choice as a cold group.
         """
-
-        if group.preferred_medoid:
-            for member in group.members:
-                if member.node.id == group.preferred_medoid:
-                    return member
 
         vectors = group.vectors
         if not vectors or len(group.members) < 2:
-            return min(group.members, key=lambda member: (member.rank, member.node.id))
-        scored: list[tuple[float, int, str, _Member]] = []
+            return min(group.members, key=lambda member: member.rank)
+        scored: list[tuple[float, int, _Member]] = []
         for member in group.members:
             own = vectors.get(member.node.id)
             if own is None:  # pragma: no cover - members always carry a vector
@@ -2210,10 +2779,10 @@ class RecallMapBuilder:
                 if other.node.id != member.node.id and other.node.id in vectors
             ]
             mean = sum(others) / len(others) if others else 0.0
-            scored.append((-mean, member.rank, member.node.id, member))
+            scored.append((-mean, member.rank, member))
         if not scored:  # pragma: no cover - defensive
-            return group.members[0]
-        return min(scored, key=lambda item: item[:3])[3]
+            return min(group.members, key=lambda member: member.rank)
+        return min(scored, key=lambda item: item[:2])[2]
 
 
 # ----------------------------------------------------------------------
@@ -2239,6 +2808,21 @@ def _dominant_scope(pool: list[_Member]) -> str:
     counted: Counter[str] = Counter()
     for member in pool:
         scope = getattr(member.node, "scope", "") or GLOBAL_SCOPE
+        counted[str(scope)] += 1
+    if not counted:
+        return GLOBAL_SCOPE
+    return min(counted.items(), key=lambda item: (-item[1], item[0]))[0]
+
+
+def _dominant_residual_scope(results: Sequence[Any]) -> str:
+    """Fallback scope when a non-empty residual admits no members."""
+
+    counted: Counter[str] = Counter()
+    for result in results:
+        node = getattr(result, "node", None)
+        if node is None:
+            continue
+        scope = getattr(node, "scope", "") or GLOBAL_SCOPE
         counted[str(scope)] += 1
     if not counted:
         return GLOBAL_SCOPE
@@ -2295,6 +2879,8 @@ def _payload(
     curtailed: bool = False,
     streak: int = 0,
     filtered: Mapping[str, Any] | None = None,
+    selection: SelectionAccounting | None = None,
+    selection_sample_limit: int = SELECTION_SAMPLE_LIMIT,
 ) -> dict[str, Any]:
     """The wire form. Curtailed maps keep the shape and drop the content.
 
@@ -2321,10 +2907,43 @@ def _payload(
         payload["more"] = dropped
     if filtered:
         payload["filtered"] = dict(filtered)
+    if selection is not None:
+        payload["sel"] = selection.to_dict(sample_limit=selection_sample_limit)
     if curtailed:
         payload["curtailed"] = True
         payload["streak"] = streak
     return payload
+
+
+def _selection_sample_limit(
+    clusters: Sequence[MapCluster],
+    pool_size: int,
+    dropped: int,
+    filtered: Mapping[str, Any] | None = None,
+    *,
+    selection: SelectionAccounting,
+    curtailed: bool = False,
+    streak: int = 0,
+) -> int:
+    """Most ``q`` examples that fit without changing existing semantics."""
+
+    maximum = min(SELECTION_SAMPLE_LIMIT, len(selection.samples))
+    for sample_limit in range(maximum, -1, -1):
+        payload = _payload(
+            clusters,
+            pool_size,
+            dropped,
+            curtailed=curtailed,
+            streak=streak,
+            filtered=filtered,
+            selection=selection,
+            selection_sample_limit=sample_limit,
+        )
+        if len(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        ) <= MAX_RESPONSE_CHARS:
+            return sample_limit
+    return 0
 
 
 def _payload_size(
@@ -2332,10 +2951,20 @@ def _payload_size(
     pool_size: int,
     dropped: int,
     filtered: Mapping[str, Any] | None = None,
+    *,
+    selection: SelectionAccounting | None = None,
+    selection_sample_limit: int = SELECTION_SAMPLE_LIMIT,
 ) -> int:
     return len(
         json.dumps(
-            _payload(clusters, pool_size, dropped, filtered=filtered),
+            _payload(
+                clusters,
+                pool_size,
+                dropped,
+                filtered=filtered,
+                selection=selection,
+                selection_sample_limit=selection_sample_limit,
+            ),
             ensure_ascii=False,
             separators=(",", ":"),
         )
@@ -2365,6 +2994,14 @@ __all__ = [
     "MEDOID_EXAMPLE_CHARS",
     "MIN_CLUSTERS",
     "MIN_MEDOID_EXAMPLE_CHARS",
+    "RELEVANCE_FEATURE_MEANS",
+    "RELEVANCE_FEATURE_SCALES",
+    "RELEVANCE_POLICY_DIGEST",
+    "RELEVANCE_POLICY_ID",
+    "RELEVANCE_THRESHOLD",
+    "SELECTION_REASON_CODES",
+    "SELECTION_SAMPLE_GIST_CHARS",
+    "SELECTION_SAMPLE_LIMIT",
     "STAGE_ANCHOR",
     "STAGE_EMBEDDING",
     "STAGE_PATH",
@@ -2375,6 +3012,9 @@ __all__ = [
     "MapMedoid",
     "RecallMap",
     "RecallMapBuilder",
+    "SelectionAccounting",
+    "SelectionSample",
     "cache_key",
     "normalize_key",
+    "relevance_score",
 ]

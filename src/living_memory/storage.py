@@ -15,7 +15,7 @@ import secrets
 import sqlite3
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from living_memory.chunking import TextChunk, chunk_text
 from living_memory.config import MemoryConfig, RetrievalWeightConfig
@@ -34,6 +34,7 @@ from living_memory.models import (
 )
 from living_memory.phase import PhaseManager
 from living_memory.scope import normalize_scope
+from living_memory.temporal import parse_timestamp
 
 SCHEMA_VERSION = 8
 
@@ -41,6 +42,21 @@ CHUNK_EMBEDDING_TABLE = "node_chunk_embeddings"
 QUERY_ANCHOR_TABLE = "query_anchors"
 QUERY_ANCHOR_EDGE_TABLE = "query_anchor_edges"
 RECALL_ATTESTATION_TABLE = "recall_attestations"
+RECALL_HISTORY_EVENT_TABLE = "recall_history_events"
+RECALL_HISTORY_RESULT_TABLE = "recall_history_result_nodes"
+RECALL_DELIVERY_HISTORY_TABLE = "recall_delivery_history"
+RECALL_DELIVERY_HISTORY_STATE_TABLE = "recall_delivery_history_state"
+
+# Frozen by artifacts/recall-map/prereg.json and
+# artifacts/recall-map/relevance/policy.json.  Keep these literals local to
+# storage: the history ledger is the production reconstruction of those
+# delivery/outcome definitions, not a generic record of every result.
+RECALL_DELIVERY_HISTORY_HORIZON_HOURS = 24
+RECALL_DELIVERY_HISTORY_HEAD_CUT = 3
+RECALL_DELIVERY_HISTORY_ITEMS_PER_EVENT = 6
+MAX_RECALL_HISTORY_CANDIDATES = 200
+MAX_RECALL_HISTORY_DELIVERIES_PER_NODE = 1024
+_RECALL_DELIVERY_HISTORY_FORMAT = 1
 #: numpy dtype string for a stored chunk BLOB. Part of the read contract that
 #: the vector channel consumes: ``np.frombuffer(blob, dtype=CHUNK_EMBEDDING_DTYPE)``.
 CHUNK_EMBEDDING_DTYPE = "<f4"
@@ -213,6 +229,106 @@ _RECALL_ATTESTATION_SCHEMA_SQL = """
     CREATE INDEX IF NOT EXISTS idx_recall_attestations_source_session
         ON recall_attestations(source_session_key, created_at DESC)
         WHERE source_session_key IS NOT NULL;
+"""
+
+# Frozen recall-map relevance history (additive to schema v8).  The three data tables are
+# deliberately normalized instead of reparsing recall_events JSON in the map
+# builder:
+#
+# * recall_history_events preserves every possible consumer, including an
+#   event with no result ids (its mere presence suppresses scope/task fallback
+#   when its transport matches);
+# * recall_history_result_nodes preserves the node-id limb of consumption;
+# * recall_delivery_history contains the union, per event, of the organic tail
+#   and delivered map medoids.  The PRIMARY KEY implements the evaluator's
+#   per-event de-duplication when a node appears in both sources.
+#
+# ``transport_matched`` must stay separate from the two consumed bits.  The
+# frozen rule is transport first and scope/task only when no later transport
+# event exists, so a later transport near-miss can invalidate an earlier
+# fallback hit.  Storing only one eager ``consumed`` bit would make that case
+# irrecoverable.
+_RECALL_DELIVERY_HISTORY_SCHEMA_SQL = f"""
+    CREATE TABLE IF NOT EXISTS {RECALL_HISTORY_EVENT_TABLE} (
+        recall_event_id TEXT PRIMARY KEY REFERENCES recall_events(id),
+        occurred_at TEXT NOT NULL,
+        transport_session_id TEXT,
+        scope TEXT NOT NULL,
+        task TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS {RECALL_HISTORY_RESULT_TABLE} (
+        recall_event_id TEXT NOT NULL
+            REFERENCES {RECALL_HISTORY_EVENT_TABLE}(recall_event_id),
+        node_id TEXT NOT NULL,
+        PRIMARY KEY (recall_event_id, node_id)
+    ) WITHOUT ROWID;
+
+    CREATE TABLE IF NOT EXISTS {RECALL_DELIVERY_HISTORY_TABLE} (
+        delivery_event_id TEXT NOT NULL
+            REFERENCES {RECALL_HISTORY_EVENT_TABLE}(recall_event_id),
+        node_id TEXT NOT NULL,
+        delivered_at TEXT NOT NULL,
+        outcome_end TEXT NOT NULL,
+        transport_session_id TEXT,
+        scope TEXT NOT NULL,
+        task TEXT,
+        transport_matched INTEGER NOT NULL DEFAULT 0
+            CHECK (transport_matched IN (0, 1)),
+        transport_consumed INTEGER NOT NULL DEFAULT 0
+            CHECK (transport_consumed IN (0, 1)),
+        fallback_consumed INTEGER NOT NULL DEFAULT 0
+            CHECK (fallback_consumed IN (0, 1)),
+        PRIMARY KEY (delivery_event_id, node_id)
+    ) WITHOUT ROWID;
+
+    CREATE TABLE IF NOT EXISTS {RECALL_DELIVERY_HISTORY_STATE_TABLE} (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        format_version INTEGER NOT NULL,
+        complete INTEGER NOT NULL CHECK (complete IN (0, 1)),
+        unavailable_reason TEXT,
+        updated_at TEXT NOT NULL,
+        CHECK (
+            (complete = 1 AND unavailable_reason IS NULL)
+            OR (complete = 0 AND unavailable_reason IS NOT NULL)
+        )
+    );
+
+    -- Selection performs one bounded range scan per candidate.  The resolved
+    -- consumed expression is part of the order because the frozen evaluator
+    -- sorts equal delivery instants by the boolean outcome before walking the
+    -- tail streak in reverse.
+    CREATE INDEX IF NOT EXISTS idx_recall_delivery_history_node_matured
+        ON {RECALL_DELIVERY_HISTORY_TABLE}(
+            node_id,
+            outcome_end DESC,
+            delivered_at DESC,
+            (CASE WHEN transport_matched = 1
+                THEN transport_consumed ELSE fallback_consumed END) DESC,
+            delivery_event_id DESC
+        );
+
+    -- Online outcome maintenance touches only the preceding 24-hour ranges
+    -- compatible with the new event.
+    CREATE INDEX IF NOT EXISTS idx_recall_delivery_history_transport_time
+        ON {RECALL_DELIVERY_HISTORY_TABLE}(
+            transport_session_id, delivered_at, outcome_end
+        )
+        WHERE transport_session_id IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_recall_delivery_history_scope_task_time
+        ON {RECALL_DELIVERY_HISTORY_TABLE}(scope, task, delivered_at, outcome_end)
+        WHERE task IS NOT NULL;
+
+    -- Late attach_recall_map calls resolve already-recorded consumers from
+    -- these normalized rows without touching legacy JSON.
+    CREATE INDEX IF NOT EXISTS idx_recall_history_events_transport_time
+        ON {RECALL_HISTORY_EVENT_TABLE}(transport_session_id, occurred_at)
+        WHERE transport_session_id IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_recall_history_events_scope_task_time
+        ON {RECALL_HISTORY_EVENT_TABLE}(scope, task, occurred_at)
+        WHERE task IS NOT NULL;
 """
 
 #: Scratch tokenizer behind :meth:`MemoryStore.term_document_frequencies`. It
@@ -397,6 +513,58 @@ class RecallAttestation:
     transport_session_id: str | None
     source_session_key: str | None
     created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class MaturedRecallHistory:
+    """Frozen 24-hour delivery outcomes for one candidate node.
+
+    ``available`` is intentionally not inferred from the counts.  Known
+    absence is ``available=True`` with three zeroes; truncation, a malformed
+    legacy ledger, and SQLite read failure carry ``None`` counts so a selector
+    cannot accidentally turn an unknown history into the cold-start feature.
+    """
+
+    available: bool
+    matured: int | None
+    consumed: int | None
+    trailing_nonconsumed: int | None
+    unavailable_reason: str | None = None
+
+    @classmethod
+    def known(
+        cls, matured: int, consumed: int, trailing_nonconsumed: int
+    ) -> "MaturedRecallHistory":
+        return cls(
+            available=True,
+            matured=int(matured),
+            consumed=int(consumed),
+            trailing_nonconsumed=int(trailing_nonconsumed),
+        )
+
+    @classmethod
+    def unavailable(cls, reason: str) -> "MaturedRecallHistory":
+        return cls(
+            available=False,
+            matured=None,
+            consumed=None,
+            trailing_nonconsumed=None,
+            unavailable_reason=str(reason),
+        )
+
+    # Short aliases mirror the M/C/K notation in the frozen policy without
+    # forcing callers to use unexplained one-letter constructor fields.
+    @property
+    def m(self) -> int | None:
+        return self.matured
+
+    @property
+    def c(self) -> int | None:
+        return self.consumed
+
+    @property
+    def k(self) -> int | None:
+        return self.trailing_nonconsumed
 
 
 @dataclass(frozen=True)
@@ -1376,6 +1544,7 @@ class MemoryStore:
         task = _optional_str(ambient.get("task"))
         session_id = _optional_str(ambient.get("session_id") or ambient.get("session"))
         transport_session_id = _optional_str(ambient.get("transport_session_id"))
+        encoded_recall_map = _encode_recall_map(recall_map)
         # Stamped from the same value the requested_scope column stores, so
         # callers can reproduce the fingerprint from (query, requested scope)
         # without any storage round-trip.
@@ -1407,8 +1576,17 @@ class MemoryStore:
                     transport_session_id,
                     fingerprint,
                     now,
-                    _encode_recall_map(recall_map),
+                    encoded_recall_map,
                 ),
+            )
+            self._record_recall_history_event(
+                event_id=event_id,
+                occurred_at=now,
+                transport_session_id=transport_session_id,
+                scope=scope,
+                task=task,
+                results=normalized_results,
+                recall_map=recall_map,
             )
             self._apply_recall_fingerprint_delivery(fingerprint, transport_session_id, now)
         return self.get_recall_event(event_id)  # type: ignore[return-value]
@@ -1425,13 +1603,402 @@ class MemoryStore:
         to prevent.
         """
 
+        encoded = _encode_recall_map(recall_map)
         with self._conn:
             updated = self._conn.execute(
                 "UPDATE recall_events SET recall_map = ? WHERE id = ?",
-                (_encode_recall_map(recall_map), event_id),
+                (encoded, event_id),
             ).rowcount
+            if updated:
+                self._replace_recall_history_deliveries(event_id, recall_map)
         if not updated:
             raise KeyError(event_id)
+
+    def matured_recall_history(
+        self,
+        candidate_ids: Iterable[str],
+        decision_at: str | datetime,
+    ) -> dict[str, MaturedRecallHistory]:
+        """Read exact matured M/C/K for a bounded candidate-id batch.
+
+        A delivery is visible only when it predates ``decision_at`` and its
+        frozen 24-hour ``outcome_end`` is no later than that instant.  Rows are
+        newest first under the evaluator's ordering, so the leading false run
+        is K.  Each candidate range stops at
+        ``MAX_RECALL_HISTORY_DELIVERIES_PER_NODE + 1``: the extra row detects
+        truncation, which is reported as unavailable rather than silently
+        producing an inexact feature.
+
+        This method issues SELECT statements only.  In particular it never
+        repairs or backfills from selection; schema initialization and the two
+        recall-event write paths own all ledger maintenance.
+        """
+
+        ids = list(dict.fromkeys(str(node_id) for node_id in candidate_ids))
+        if not ids:
+            return {}
+
+        def unavailable(reason: str) -> dict[str, MaturedRecallHistory]:
+            return {
+                node_id: MaturedRecallHistory.unavailable(reason)
+                for node_id in ids
+            }
+
+        if any(not node_id for node_id in ids):
+            return unavailable("invalid_candidate_id")
+        if len(ids) > MAX_RECALL_HISTORY_CANDIDATES:
+            return unavailable("candidate_batch_truncated")
+        instant = _normalize_recall_history_instant(decision_at)
+        if instant is None:
+            return unavailable("invalid_decision_instant")
+
+        try:
+            state = self._conn.execute(
+                f"""
+                SELECT format_version, complete, unavailable_reason
+                FROM {RECALL_DELIVERY_HISTORY_STATE_TABLE}
+                WHERE singleton = 1
+                """
+            ).fetchone()
+            if state is None:
+                return unavailable("history_ledger_unavailable")
+            if int(state["format_version"]) != _RECALL_DELIVERY_HISTORY_FORMAT:
+                return unavailable("history_format_unavailable")
+            if not int(state["complete"]):
+                return unavailable(
+                    str(state["unavailable_reason"] or "history_ledger_unavailable")
+                )
+
+            histories: dict[str, MaturedRecallHistory] = {}
+            for node_id in ids:
+                rows = self._conn.execute(
+                    f"""
+                    SELECT transport_matched, transport_consumed, fallback_consumed
+                    FROM {RECALL_DELIVERY_HISTORY_TABLE}
+                    WHERE node_id = ?
+                      AND delivered_at < ?
+                      AND outcome_end <= ?
+                    ORDER BY
+                        outcome_end DESC,
+                        delivered_at DESC,
+                        (CASE WHEN transport_matched = 1
+                            THEN transport_consumed ELSE fallback_consumed END) DESC,
+                        delivery_event_id DESC
+                    LIMIT ?
+                    """,
+                    (
+                        node_id,
+                        instant,
+                        instant,
+                        MAX_RECALL_HISTORY_DELIVERIES_PER_NODE + 1,
+                    ),
+                ).fetchall()
+                if len(rows) > MAX_RECALL_HISTORY_DELIVERIES_PER_NODE:
+                    histories[node_id] = MaturedRecallHistory.unavailable(
+                        "history_truncated"
+                    )
+                    continue
+                outcomes = [
+                    bool(
+                        row["transport_consumed"]
+                        if row["transport_matched"]
+                        else row["fallback_consumed"]
+                    )
+                    for row in rows
+                ]
+                trailing = 0
+                for consumed in outcomes:
+                    if consumed:
+                        break
+                    trailing += 1
+                histories[node_id] = MaturedRecallHistory.known(
+                    matured=len(outcomes),
+                    consumed=sum(outcomes),
+                    trailing_nonconsumed=trailing,
+                )
+            return histories
+        except sqlite3.Error:
+            return unavailable("history_read_failed")
+        except (TypeError, ValueError):
+            return unavailable("malformed_history_data")
+
+    def _record_recall_history_event(
+        self,
+        *,
+        event_id: str,
+        occurred_at: str,
+        transport_session_id: str | None,
+        scope: str,
+        task: str | None,
+        results: Sequence[Mapping[str, Any]],
+        recall_map: Mapping[str, Any] | None,
+    ) -> None:
+        """Normalize one new event, its result ids, and its deliveries."""
+
+        normalized_at = _normalize_recall_history_instant(occurred_at)
+        if normalized_at is None:  # pragma: no cover - _utc_now is canonical
+            self._mark_recall_history_unavailable("malformed_event_timestamp")
+            return
+        result_ids = _recall_result_node_ids(results)
+        self._conn.execute(
+            f"""
+            INSERT INTO {RECALL_HISTORY_EVENT_TABLE} (
+                recall_event_id, occurred_at, transport_session_id, scope, task
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(recall_event_id) DO UPDATE SET
+                occurred_at = excluded.occurred_at,
+                transport_session_id = excluded.transport_session_id,
+                scope = excluded.scope,
+                task = excluded.task
+            """,
+            (event_id, normalized_at, transport_session_id, scope, task),
+        )
+        self._conn.execute(
+            f"DELETE FROM {RECALL_HISTORY_RESULT_TABLE} WHERE recall_event_id = ?",
+            (event_id,),
+        )
+        self._conn.executemany(
+            f"""
+            INSERT INTO {RECALL_HISTORY_RESULT_TABLE} (recall_event_id, node_id)
+            VALUES (?, ?)
+            """,
+            ((event_id, node_id) for node_id in dict.fromkeys(result_ids)),
+        )
+        self._replace_recall_history_deliveries(
+            event_id,
+            recall_map,
+            result_ids=result_ids,
+        )
+        self._apply_recall_history_consumer(
+            occurred_at=normalized_at,
+            transport_session_id=transport_session_id,
+            scope=scope,
+            task=task,
+            result_ids=result_ids,
+        )
+
+    def _replace_recall_history_deliveries(
+        self,
+        event_id: str,
+        recall_map: Mapping[str, Any] | None,
+        *,
+        result_ids: Sequence[str] | None = None,
+    ) -> None:
+        """Replace one event's organic/map union and resolve later outcomes."""
+
+        event = self._conn.execute(
+            f"""
+            SELECT occurred_at, transport_session_id, scope, task
+            FROM {RECALL_HISTORY_EVENT_TABLE}
+            WHERE recall_event_id = ?
+            """,
+            (event_id,),
+        ).fetchone()
+        if event is None:
+            self._mark_recall_history_unavailable("history_event_missing")
+            return
+        if result_ids is None:
+            raw = self._conn.execute(
+                "SELECT results FROM recall_events WHERE id = ?", (event_id,)
+            ).fetchone()
+            parsed = _decode_recall_results(None if raw is None else raw["results"])
+            if parsed is None:
+                self._mark_recall_history_unavailable("malformed_legacy_results")
+                return
+            result_ids = _recall_result_node_ids(parsed)
+
+        delivered_ids = _organic_tail_node_ids(result_ids)
+        delivered_ids.extend(_recall_map_medoid_ids(recall_map))
+        delivered_ids = list(dict.fromkeys(delivered_ids))
+        delivered_at = str(event["occurred_at"])
+        outcome_end = _shift_recall_history_hours(
+            delivered_at, RECALL_DELIVERY_HISTORY_HORIZON_HOURS
+        )
+        if outcome_end is None:  # pragma: no cover - normalized table invariant
+            self._mark_recall_history_unavailable("malformed_event_timestamp")
+            return
+        self._conn.execute(
+            f"DELETE FROM {RECALL_DELIVERY_HISTORY_TABLE} WHERE delivery_event_id = ?",
+            (event_id,),
+        )
+        self._conn.executemany(
+            f"""
+            INSERT INTO {RECALL_DELIVERY_HISTORY_TABLE} (
+                delivery_event_id, node_id, delivered_at, outcome_end,
+                transport_session_id, scope, task
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (
+                    event_id,
+                    node_id,
+                    delivered_at,
+                    outcome_end,
+                    event["transport_session_id"],
+                    event["scope"],
+                    event["task"],
+                )
+                for node_id in delivered_ids
+            ),
+        )
+        if delivered_ids:
+            self._refresh_recall_history_delivery_outcomes(
+                event_id, delivered_ids, delivered_at, outcome_end
+            )
+
+    def _refresh_recall_history_delivery_outcomes(
+        self,
+        event_id: str,
+        node_ids: Sequence[str],
+        delivered_at: str,
+        outcome_end: str,
+    ) -> None:
+        """Resolve consumers already present when a map is attached late."""
+
+        event = self._conn.execute(
+            f"""
+            SELECT transport_session_id, scope, task
+            FROM {RECALL_HISTORY_EVENT_TABLE}
+            WHERE recall_event_id = ?
+            """,
+            (event_id,),
+        ).fetchone()
+        if event is None:  # pragma: no cover - caller just fetched this row
+            return
+        marks = ",".join("?" for _ in node_ids)
+        transport_matched = False
+        transport_consumed: set[str] = set()
+        transport = _optional_str(event["transport_session_id"])
+        if transport:
+            transport_matched = self._conn.execute(
+                f"""
+                SELECT 1 FROM {RECALL_HISTORY_EVENT_TABLE}
+                WHERE transport_session_id = ?
+                  AND occurred_at > ? AND occurred_at <= ?
+                LIMIT 1
+                """,
+                (transport, delivered_at, outcome_end),
+            ).fetchone() is not None
+            if transport_matched:
+                transport_consumed = {
+                    str(row["node_id"])
+                    for row in self._conn.execute(
+                        f"""
+                        SELECT DISTINCT result.node_id
+                        FROM {RECALL_HISTORY_EVENT_TABLE} AS consumer
+                        JOIN {RECALL_HISTORY_RESULT_TABLE} AS result
+                          ON result.recall_event_id = consumer.recall_event_id
+                        WHERE consumer.transport_session_id = ?
+                          AND consumer.occurred_at > ?
+                          AND consumer.occurred_at <= ?
+                          AND result.node_id IN ({marks})
+                        """,
+                        (transport, delivered_at, outcome_end, *node_ids),
+                    )
+                }
+
+        fallback_consumed: set[str] = set()
+        task = _optional_str(event["task"])
+        if event["scope"] and task:
+            fallback_consumed = {
+                str(row["node_id"])
+                for row in self._conn.execute(
+                    f"""
+                    SELECT DISTINCT result.node_id
+                    FROM {RECALL_HISTORY_EVENT_TABLE} AS consumer
+                    JOIN {RECALL_HISTORY_RESULT_TABLE} AS result
+                      ON result.recall_event_id = consumer.recall_event_id
+                    WHERE consumer.scope = ? AND consumer.task = ?
+                      AND consumer.occurred_at > ?
+                      AND consumer.occurred_at <= ?
+                      AND result.node_id IN ({marks})
+                    """,
+                    (event["scope"], task, delivered_at, outcome_end, *node_ids),
+                )
+            }
+        self._conn.executemany(
+            f"""
+            UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
+            SET transport_matched = ?, transport_consumed = ?,
+                fallback_consumed = ?
+            WHERE delivery_event_id = ? AND node_id = ?
+            """,
+            (
+                (
+                    int(transport_matched),
+                    int(node_id in transport_consumed),
+                    int(node_id in fallback_consumed),
+                    event_id,
+                    node_id,
+                )
+                for node_id in node_ids
+            ),
+        )
+
+    def _apply_recall_history_consumer(
+        self,
+        *,
+        occurred_at: str,
+        transport_session_id: str | None,
+        scope: str,
+        task: str | None,
+        result_ids: Sequence[str],
+    ) -> None:
+        """Apply one new event to compatible deliveries in its prior 24h."""
+
+        unique_results = tuple(dict.fromkeys(result_ids))
+        if transport_session_id:
+            self._conn.execute(
+                f"""
+                UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
+                SET transport_matched = 1
+                WHERE transport_session_id = ?
+                  AND delivered_at < ? AND outcome_end >= ?
+                """,
+                (transport_session_id, occurred_at, occurred_at),
+            )
+            self._conn.executemany(
+                f"""
+                UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
+                SET transport_consumed = 1
+                WHERE transport_session_id = ?
+                  AND delivered_at < ? AND outcome_end >= ?
+                  AND node_id = ?
+                """,
+                (
+                    (transport_session_id, occurred_at, occurred_at, node_id)
+                    for node_id in unique_results
+                ),
+            )
+        if scope and task:
+            self._conn.executemany(
+                f"""
+                UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
+                SET fallback_consumed = 1
+                WHERE scope = ? AND task = ?
+                  AND delivered_at < ? AND outcome_end >= ?
+                  AND node_id = ?
+                """,
+                (
+                    (scope, task, occurred_at, occurred_at, node_id)
+                    for node_id in unique_results
+                ),
+            )
+
+    def _mark_recall_history_unavailable(self, reason: str) -> None:
+        self._conn.execute(
+            f"""
+            INSERT INTO {RECALL_DELIVERY_HISTORY_STATE_TABLE} (
+                singleton, format_version, complete, unavailable_reason, updated_at
+            ) VALUES (1, ?, 0, ?, ?)
+            ON CONFLICT(singleton) DO UPDATE SET
+                format_version = excluded.format_version,
+                complete = 0,
+                unavailable_reason = excluded.unavailable_reason,
+                updated_at = excluded.updated_at
+            """,
+            (_RECALL_DELIVERY_HISTORY_FORMAT, reason, _utc_now()),
+        )
 
     def recent_recall_map_history(
         self,
@@ -3643,6 +4210,11 @@ class MemoryStore:
             # on _RECALL_ATTESTATION_SCHEMA_SQL for why no _migrate_pre_v8_schema
             # exists.
             self._conn.executescript(_RECALL_ATTESTATION_SCHEMA_SQL)
+            # Frozen relevance history. The schema is additive; the
+            # idempotent reconstruction below is what populates it for a live
+            # database whose recall_events predate this release.
+            self._conn.executescript(_RECALL_DELIVERY_HISTORY_SCHEMA_SQL)
+            self._backfill_recall_delivery_history()
             self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
             self._backfill_recall_fingerprint_signal()
@@ -3830,6 +4402,90 @@ class MemoryStore:
         }
         if "recall_map" not in columns:
             self._conn.execute("ALTER TABLE recall_events ADD COLUMN recall_map TEXT")
+
+    def _backfill_recall_delivery_history(self) -> None:
+        """Idempotently reconstruct the frozen normalized history ledger.
+
+        One state row is the commit marker.  A completed reconstruction and a
+        recorded malformed-legacy verdict are both terminal and therefore
+        cheap on every later open.  If the process dies before the marker is
+        written, SQLite rolls the surrounding initialization transaction back;
+        the next open starts the reconstruction again.
+        """
+
+        state = self._conn.execute(
+            f"""
+            SELECT format_version, complete, unavailable_reason
+            FROM {RECALL_DELIVERY_HISTORY_STATE_TABLE}
+            WHERE singleton = 1
+            """
+        ).fetchone()
+        if (
+            state is not None
+            and int(state["format_version"]) == _RECALL_DELIVERY_HISTORY_FORMAT
+            and (int(state["complete"]) or state["unavailable_reason"] is not None)
+        ):
+            return
+
+        for table in (
+            RECALL_DELIVERY_HISTORY_TABLE,
+            RECALL_HISTORY_RESULT_TABLE,
+            RECALL_HISTORY_EVENT_TABLE,
+        ):
+            self._conn.execute(f"DELETE FROM {table}")
+        self._conn.execute(f"DELETE FROM {RECALL_DELIVERY_HISTORY_STATE_TABLE}")
+
+        rows = self._conn.execute(
+            """
+            SELECT id, created_at, transport_session_id, scope, task,
+                   results, recall_map
+            FROM recall_events
+            ORDER BY created_at, rowid
+            """
+        ).fetchall()
+        for row in rows:
+            occurred_at = _normalize_recall_history_instant(row["created_at"])
+            results = _decode_recall_results(row["results"])
+            map_ok, recall_map = _decode_recall_map(row["recall_map"])
+            if occurred_at is None or results is None or not map_ok:
+                for table in (
+                    RECALL_DELIVERY_HISTORY_TABLE,
+                    RECALL_HISTORY_RESULT_TABLE,
+                    RECALL_HISTORY_EVENT_TABLE,
+                ):
+                    self._conn.execute(f"DELETE FROM {table}")
+                reason = (
+                    "malformed_legacy_timestamp"
+                    if occurred_at is None
+                    else "malformed_legacy_results"
+                    if results is None
+                    else "malformed_legacy_recall_map"
+                )
+                self._mark_recall_history_unavailable(reason)
+                return
+            self._record_recall_history_event(
+                event_id=str(row["id"]),
+                occurred_at=occurred_at,
+                transport_session_id=_optional_str(row["transport_session_id"] or None),
+                scope=str(row["scope"]),
+                task=_optional_str(row["task"] or None),
+                results=results,
+                recall_map=recall_map,
+            )
+
+        self._conn.execute(
+            f"""
+            INSERT INTO {RECALL_DELIVERY_HISTORY_STATE_TABLE} (
+                singleton, format_version, complete, unavailable_reason, updated_at
+            ) VALUES (1, ?, 1, NULL, ?)
+            ON CONFLICT(singleton) DO UPDATE SET
+                format_version = excluded.format_version,
+                complete = 1,
+                unavailable_reason = NULL,
+                updated_at = excluded.updated_at
+            """,
+            (_RECALL_DELIVERY_HISTORY_FORMAT, _utc_now()),
+        )
 
     def _create_legacy_embedding_index(self) -> None:
         """Create the pre-chunk vector index, but only while its column exists."""
@@ -4117,6 +4773,105 @@ def _prefix_upper_bound(prefix: str) -> str | None:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def _normalize_recall_history_instant(value: str | datetime | Any) -> str | None:
+    """Canonical fixed-width UTC text for exact indexed time comparisons."""
+
+    if isinstance(value, datetime):
+        parsed = value
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        else:
+            parsed = parsed.astimezone(UTC)
+    else:
+        parsed = parse_timestamp(value)
+    if parsed is None:
+        return None
+    return parsed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _shift_recall_history_hours(value: str, hours: int) -> str | None:
+    parsed = parse_timestamp(value)
+    if parsed is None:
+        return None
+    return (parsed + timedelta(hours=int(hours))).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ"
+    )
+
+
+def _decode_recall_results(value: Any) -> list[dict[str, Any]] | None:
+    """Decode legacy results; ``None`` means the top-level data is malformed."""
+
+    if isinstance(value, list):
+        parsed = value
+    else:
+        try:
+            parsed = json.loads(str(value or "[]"))
+        except (TypeError, ValueError):
+            return None
+    if not isinstance(parsed, list):
+        return None
+    # The frozen evaluator ignores non-object entries rather than inventing an
+    # identity for them; preserve that narrow fail-open behaviour.
+    return [dict(item) for item in parsed if isinstance(item, Mapping)]
+
+
+def _decode_recall_map(value: Any) -> tuple[bool, dict[str, Any] | None]:
+    """Decode a stored map, distinguishing SQL NULL from malformed JSON."""
+
+    if value is None or value == "":
+        return True, None
+    if isinstance(value, Mapping):
+        return True, dict(value)
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError):
+        return False, None
+    if not isinstance(parsed, Mapping):
+        return False, None
+    return True, dict(parsed)
+
+
+def _recall_result_node_ids(results: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The evaluator's result-id sequence, before tail slicing."""
+
+    return [
+        str(item["node_id"])
+        for item in results
+        if isinstance(item, Mapping) and item.get("node_id")
+    ]
+
+
+def _organic_tail_node_ids(result_ids: Sequence[str]) -> list[str]:
+    """Frozen organic delivery: result-id ranks 3..8, de-duplicated there."""
+
+    start = RECALL_DELIVERY_HISTORY_HEAD_CUT
+    stop = start + RECALL_DELIVERY_HISTORY_ITEMS_PER_EVENT
+    return list(dict.fromkeys(str(node_id) for node_id in result_ids[start:stop]))
+
+
+def _recall_map_medoid_ids(recall_map: Mapping[str, Any] | None) -> list[str]:
+    """Frozen map delivery: first six clusters' unique medoid node ids."""
+
+    if not isinstance(recall_map, Mapping):
+        return []
+    clusters = recall_map.get("clusters")
+    if not isinstance(clusters, list):
+        return []
+    node_ids: list[str] = []
+    for cluster in clusters[:RECALL_DELIVERY_HISTORY_ITEMS_PER_EVENT]:
+        if not isinstance(cluster, Mapping):
+            continue
+        medoid = cluster.get("medoid")
+        node_id = (
+            str(medoid.get("node_id") or "")
+            if isinstance(medoid, Mapping)
+            else ""
+        )
+        if node_id:
+            node_ids.append(node_id)
+    return list(dict.fromkeys(node_ids))
 
 
 def _encode_recall_map(payload: Mapping[str, Any] | None) -> str | None:

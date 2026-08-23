@@ -43,7 +43,7 @@ import pytest
 from living_memory import storage as storage_module
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.server import create_mcp_server
-from living_memory.storage import SCHEMA_VERSION, MemoryStore
+from living_memory.storage import MaturedRecallHistory, SCHEMA_VERSION, MemoryStore
 
 from test_transport_identity import FakeMCP
 
@@ -51,28 +51,28 @@ MAP_SCOPE = "project:mapdelivery"
 MAP_QUERY = "deployment failure database migration rollback"
 
 #: Three procedures, unevenly filled, all matching ``MAP_QUERY`` on content.
-#: Uneven on purpose: the map orders clusters largest-first, so equal piles
-#: would make the ordering unobservable. Their names deliberately share no word
+#: Their names deliberately share no word
 #: with ``MAP_QUERY``: a procedure called ``deploy-rollback`` in a corpus whose
 #: every document says "rollback" is house vocabulary, and the label gate would
 #: correctly withhold it — which is a different test than this one.
 SEED_PROCEDURES: tuple[tuple[str, int], ...] = (
-    ("canary-cutover-window", 6),
-    ("checkpoint-repair-drill", 4),
-    ("throttle-triage-runbook", 3),
+    ("canary-window", 6),
+    ("checkpoint-drill", 4),
+    ("throttle-runbook", 3),
 )
 SEED_LABELS = {
-    "canary cutover window",
-    "checkpoint repair drill",
-    "throttle triage runbook",
+    "canary window",
+    "checkpoint drill",
+    "throttle runbook",
 }
 
 #: Documents in *another scope*, so they inflate the corpus the label gate
 #: measures rarity against without ever entering a scoped recall's pool.
-#: Sized from the gate's own arithmetic: a three-word label whose words appear
-#: in the six largest seed documents clears ``LABEL_GATE_MIN_IC`` once the
-#: index holds about 26 documents, and this leaves margin over that.
-SEED_CORPUS_DOCUMENTS = 32
+#: Sized from the gate's own arithmetic: the two-word label whose words appear
+#: in the six largest seed documents needs 51 total indexed documents to clear
+#: ``LABEL_GATE_MIN_IC``.  Thirteen seed documents plus forty unrelated ones
+#: leave margin over that no matter which procedure the delivered cut removes.
+SEED_CORPUS_DOCUMENTS = 40
 
 
 @pytest.fixture(autouse=True)
@@ -88,6 +88,14 @@ def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
         "LM_DECAY_SWEEP_INTERVAL_SEC",
     ):
         monkeypatch.delenv(env, raising=False)
+
+    def eligible_history(_store, candidate_ids, _decision_at):
+        return {
+            node_id: MaturedRecallHistory.known(100, 50, 50)
+            for node_id in candidate_ids
+        }
+
+    monkeypatch.setattr(MemoryStore, "matured_recall_history", eligible_history)
 
 
 def _seed_corpus(store: MemoryStore, count: int = SEED_CORPUS_DOCUMENTS) -> None:
@@ -132,8 +140,12 @@ def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
     assert "recall_map" in response
     payload = response["recall_map"]
     # The payload shape is the builder's; the server contributes no keys.
-    assert set(payload) <= {"clusters", "pool", "covered", "more", "filtered"}
-    assert {"clusters", "pool", "covered"} <= set(payload)
+    assert set(payload) <= {
+        "clusters", "pool", "covered", "more", "filtered", "sel"
+    }
+    assert {"clusters", "pool", "covered", "sel"} <= set(payload)
+    assert payload["sel"]["e"] == payload["pool"]
+    assert payload["sel"]["n"] == payload["sel"]["e"] + sum(payload["sel"]["x"])
     assert payload["pool"] == 13 - 3  # everything ranked, minus the delivered cut
     assert payload["clusters"]
 
@@ -141,7 +153,6 @@ def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
     counts = [cluster["count"] for cluster in payload["clusters"]]
     assert set(labels) <= SEED_LABELS
     assert len(set(labels)) == len(labels)  # no cluster is delivered twice
-    assert counts == sorted(counts, reverse=True)
     assert sum(counts) == payload["covered"] <= payload["pool"]
 
     for cluster in payload["clusters"]:
@@ -155,6 +166,8 @@ def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
     delivered = {entry["node"]["id"] for entry in response["results"]}
     mapped = {cluster["medoid"]["node_id"] for cluster in payload["clusters"]}
     assert delivered.isdisjoint(mapped)
+    history = mcp.memory_store.recent_recall_map_history()
+    assert [row["recall_map"] for row in history] == [payload]
 
 
 # --- (b) ... and absent when there is not ------------------------------------

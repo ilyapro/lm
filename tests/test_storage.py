@@ -5,8 +5,14 @@ from pathlib import Path
 
 import pytest
 
+import living_memory.storage as storage_module
 from living_memory.config import MemoryConfig, load_config
 from living_memory.storage import (
+    MAX_RECALL_HISTORY_CANDIDATES,
+    RECALL_DELIVERY_HISTORY_TABLE,
+    RECALL_DELIVERY_HISTORY_STATE_TABLE,
+    RECALL_HISTORY_EVENT_TABLE,
+    RECALL_HISTORY_RESULT_TABLE,
     SCHEMA_VERSION,
     FingerprintGatePolicy,
     MemoryStore,
@@ -30,6 +36,10 @@ def test_storage_schema_has_uniform_nodes_fts_edges_indexes_and_weights(tmp_path
         assert "nodes_fts" in tables
         assert "connections" in tables
         assert "recall_events" in tables
+        assert RECALL_HISTORY_EVENT_TABLE in tables
+        assert RECALL_HISTORY_RESULT_TABLE in tables
+        assert RECALL_DELIVERY_HISTORY_TABLE in tables
+        assert RECALL_DELIVERY_HISTORY_STATE_TABLE in tables
         assert "recall_fingerprints" in tables
         assert "retrieval_weights" in tables
 
@@ -467,6 +477,302 @@ def test_repeated_initialize_does_not_rewrite_existing_fingerprints(
             "SELECT content_fingerprint FROM nodes WHERE id = ?", (trace.id,)
         ).fetchone()
         assert row["content_fingerprint"] == original_fp
+
+
+def _record_event_at(
+    store: MemoryStore,
+    monkeypatch: pytest.MonkeyPatch,
+    at: str,
+    *,
+    results: list[dict[str, object]],
+    scope: str = "project:history",
+    task: str | None = "task-a",
+    transport: str | None = None,
+):
+    monkeypatch.setattr(storage_module, "_utc_now", lambda: at)
+    ambient: dict[str, str] = {}
+    if task is not None:
+        ambient["task"] = task
+    if transport is not None:
+        ambient["transport_session_id"] = transport
+    return store.record_recall_event(
+        query=f"query at {at}",
+        scope=scope,
+        ambient_context=ambient,
+        results=results,
+    )
+
+
+def _organic_tail(node_id: str, prefix: str) -> list[dict[str, object]]:
+    return [
+        {"node_id": f"{prefix}-HEAD-0"},
+        {"node_id": f"{prefix}-HEAD-1"},
+        {"node_id": f"{prefix}-HEAD-2"},
+        {"node_id": node_id},
+    ]
+
+
+def test_matured_recall_history_matches_frozen_delivery_and_consumption_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        # D1: a scope/task fallback repeats A, but a later same-transport event
+        # exists without A. Transport-first therefore makes D1 nonconsumed.
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-01-01T00:00:00Z",
+            results=_organic_tail("NODE-A", "D1"),
+            transport="transport-1",
+        )
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-01-01T01:00:00Z",
+            results=[{"node_id": "NODE-A"}],
+            transport="different-transport",
+        )
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-01-01T02:00:00Z",
+            results=[{"node_id": "OTHER"}],
+            transport="transport-1",
+        )
+
+        # D2 is consumed through its transport; D3 has no consumer.  At the
+        # exact D3 maturity boundary the expected history is M=3,C=1,K=1.
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-01-02T06:00:00Z",
+            results=_organic_tail("NODE-A", "D2"),
+            transport="transport-2",
+        )
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-01-02T07:00:00Z",
+            results=[{"node_id": "NODE-A"}],
+            transport="transport-2",
+        )
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-01-03T12:00:00Z",
+            results=_organic_tail("NODE-A", "D3"),
+            transport=None,
+        )
+
+        before_boundary = store.matured_recall_history(
+            ["NODE-A", "NEVER-DELIVERED"], "2026-01-04T11:59:59Z"
+        )
+        assert before_boundary["NODE-A"].available is True
+        assert (
+            before_boundary["NODE-A"].m,
+            before_boundary["NODE-A"].c,
+            before_boundary["NODE-A"].k,
+        ) == (2, 1, 0)
+        assert before_boundary["NEVER-DELIVERED"].available is True
+        assert (
+            before_boundary["NEVER-DELIVERED"].m,
+            before_boundary["NEVER-DELIVERED"].c,
+            before_boundary["NEVER-DELIVERED"].k,
+        ) == (0, 0, 0)
+
+        at_boundary = store.matured_recall_history(
+            ["NODE-A"], "2026-01-04T12:00:00Z"
+        )["NODE-A"]
+        assert (at_boundary.m, at_boundary.c, at_boundary.k) == (3, 1, 1)
+
+        # A delivery at the decision instant and a later delivery are both
+        # present in the ledger, but neither has a matured outcome.
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-01-04T12:00:00Z",
+            results=_organic_tail("NODE-A", "CURRENT"),
+            task="other-task",
+        )
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-01-04T13:00:00Z",
+            results=_organic_tail("NODE-A", "FUTURE"),
+            task="other-task",
+        )
+        unchanged = store.matured_recall_history(
+            ["NODE-A"], "2026-01-04T12:00:00Z"
+        )["NODE-A"]
+        assert (unchanged.m, unchanged.c, unchanged.k) == (3, 1, 1)
+
+
+def test_attach_recall_map_adds_medoid_and_resolves_existing_later_consumer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        delivery = _record_event_at(
+            store,
+            monkeypatch,
+            "2026-02-01T00:00:00Z",
+            results=[{"node_id": "ONLY-A-HEAD-RESULT"}],
+            transport="map-transport",
+        )
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-02-01T01:00:00Z",
+            results=[{"node_id": "MAP-MEDOID"}],
+            transport="map-transport",
+        )
+        store.attach_recall_map(
+            delivery.id,
+            {
+                "clusters": [
+                    {"medoid": {"node_id": "MAP-MEDOID"}},
+                    # The organic/map union de-duplicates within one event.
+                    {"medoid": {"node_id": "MAP-MEDOID"}},
+                ]
+            },
+        )
+
+        history = store.matured_recall_history(
+            ["MAP-MEDOID"], "2026-02-02T00:00:00Z"
+        )["MAP-MEDOID"]
+        assert history.available is True
+        assert (history.m, history.c, history.k) == (1, 1, 0)
+
+
+def test_matured_recall_history_is_indexed_bounded_and_select_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for index, at in enumerate(
+            (
+                "2026-03-01T00:00:00Z",
+                "2026-03-03T00:00:00Z",
+                "2026-03-05T00:00:00Z",
+            )
+        ):
+            _record_event_at(
+                store,
+                monkeypatch,
+                at,
+                results=_organic_tail("FREQUENT", f"F{index}"),
+                task=None,
+            )
+
+        plan = " ".join(
+            row["detail"]
+            for row in store.connection.execute(
+                f"""
+                EXPLAIN QUERY PLAN
+                SELECT transport_matched, transport_consumed, fallback_consumed
+                FROM {RECALL_DELIVERY_HISTORY_TABLE}
+                WHERE node_id = 'FREQUENT'
+                  AND delivered_at < '2026-03-07T00:00:00.000000Z'
+                  AND outcome_end <= '2026-03-07T00:00:00.000000Z'
+                ORDER BY outcome_end DESC, delivered_at DESC,
+                    (CASE WHEN transport_matched = 1
+                        THEN transport_consumed ELSE fallback_consumed END) DESC,
+                    delivery_event_id DESC
+                LIMIT 1025
+                """
+            ).fetchall()
+        )
+        assert "idx_recall_delivery_history_node_matured" in plan
+
+        statements: list[str] = []
+        before_changes = store.connection.total_changes
+        store.connection.set_trace_callback(statements.append)
+        history = store.matured_recall_history(
+            ["FREQUENT", "ABSENT"], "2026-03-07T00:00:00Z"
+        )
+        store.connection.set_trace_callback(None)
+        assert history["FREQUENT"].m == 3
+        assert store.connection.total_changes == before_changes
+        assert not any(
+            statement.lstrip().upper().startswith(
+                ("INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP", "ALTER")
+            )
+            for statement in statements
+        )
+
+        monkeypatch.setattr(
+            storage_module, "MAX_RECALL_HISTORY_DELIVERIES_PER_NODE", 2
+        )
+        truncated = store.matured_recall_history(
+            ["FREQUENT"], "2026-03-07T00:00:00Z"
+        )["FREQUENT"]
+        assert truncated.available is False
+        assert truncated.unavailable_reason == "history_truncated"
+        assert (truncated.m, truncated.c, truncated.k) == (None, None, None)
+
+        too_many = store.matured_recall_history(
+            [f"NODE-{index}" for index in range(MAX_RECALL_HISTORY_CANDIDATES + 1)],
+            "2026-03-07T00:00:00Z",
+        )
+        assert {item.unavailable_reason for item in too_many.values()} == {
+            "candidate_batch_truncated"
+        }
+
+
+def test_recall_history_backfill_is_idempotent_and_malformed_legacy_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "legacy.sqlite3"
+    with MemoryStore(db) as store:
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-04-01T00:00:00Z",
+            results=_organic_tail("LEGACY-NODE", "LEGACY"),
+        )
+        for table in (
+            RECALL_DELIVERY_HISTORY_TABLE,
+            RECALL_HISTORY_RESULT_TABLE,
+            RECALL_HISTORY_EVENT_TABLE,
+            RECALL_DELIVERY_HISTORY_STATE_TABLE,
+        ):
+            store.connection.execute(f"DELETE FROM {table}")
+        store.connection.commit()
+
+    with MemoryStore(db) as store:
+        rebuilt = store.matured_recall_history(
+            ["LEGACY-NODE"], "2026-04-02T00:00:00Z"
+        )["LEGACY-NODE"]
+        assert (rebuilt.m, rebuilt.c, rebuilt.k) == (1, 0, 1)
+        row_count = store.connection.execute(
+            f"SELECT COUNT(*) FROM {RECALL_DELIVERY_HISTORY_TABLE}"
+        ).fetchone()[0]
+
+    with MemoryStore(db) as store:
+        assert store.connection.execute(
+            f"SELECT COUNT(*) FROM {RECALL_DELIVERY_HISTORY_TABLE}"
+        ).fetchone()[0] == row_count
+        store.connection.execute("UPDATE recall_events SET results = '{'")
+        for table in (
+            RECALL_DELIVERY_HISTORY_TABLE,
+            RECALL_HISTORY_RESULT_TABLE,
+            RECALL_HISTORY_EVENT_TABLE,
+            RECALL_DELIVERY_HISTORY_STATE_TABLE,
+        ):
+            store.connection.execute(f"DELETE FROM {table}")
+        store.connection.commit()
+
+    store = MemoryStore(db)
+    malformed = store.matured_recall_history(
+        ["LEGACY-NODE"], "2026-04-02T00:00:00Z"
+    )["LEGACY-NODE"]
+    assert malformed.available is False
+    assert malformed.unavailable_reason == "malformed_legacy_results"
+    store.close()
+
+    failed = store.matured_recall_history(
+        ["LEGACY-NODE"], "2026-04-02T00:00:00Z"
+    )["LEGACY-NODE"]
+    assert failed.available is False
+    assert failed.unavailable_reason == "history_read_failed"
 
 
 def test_delivered_node_ids_accumulates_per_transport_session(tmp_path: Path) -> None:

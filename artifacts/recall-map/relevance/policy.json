@@ -1,0 +1,368 @@
+{
+  "artifact": "recall-map-relevance-policy",
+  "as_of": "2026-08-22T18:00:00Z",
+  "bindings": {
+    "canonical_subobjects": {
+      "expected_wire_additions_sha256": "7848191b20dce5de844ef7668246b7757aed47cf2d0af5150f52a1c8bc64a0d5",
+      "holdout_boundary_sha256": "ae9321d0d58cc32e467bbc8c0a76fa1e9b3acb1718361b9f2802e2435b551a1f",
+      "selected_policy_sha256": "3acad3d92db2538bf3096ab99d2c4d337ea3c8aebddc226646527b4d277660ea"
+    },
+    "dataset_manifest": {
+      "canonical_json_sha256": "af9bb44b41fefa2a0582212c0e909afbf41c7784a5014c05f47343ffcb291e5c",
+      "path": "artifacts/recall-map/relevance/dataset-manifest.json",
+      "stored_bytes_sha256": "54ee3bcc9d77b99b7b2c057db3e45b747c92a18d14ccec69eb2903dfe7cbf308"
+    },
+    "evidence_checkout": "652e98484ec9f208808401fc2aa0d4dfab0ba4cb",
+    "feature_analysis": {
+      "path": "artifacts/recall-map/relevance/feature-analysis.json",
+      "stored_bytes_sha256": "d17711a3bd9afe24aaf3f1fff5e07b53437988d4cf19ac4abfb527a904621f8b"
+    },
+    "historical_evaluator": {
+      "path": "scripts/recall_map_relevance_eval.py",
+      "sha256": "dfa25689cfa71bf79de34e8943b7b6a8c68e11f5b148cf04c52e16a2e354cb41"
+    },
+    "source_snapshot": {
+      "database_bytes": 529993728,
+      "database_sha256": "b839891eb5a45f759dcc4fd89f77fdde7cc8125b28948b35fb256778578957ba",
+      "logical_name": "local",
+      "parts_receipt_sha256": "295cf59af63104d6ba17836086f405416acca4e1801f600782b190f0672a0035",
+      "redacted_path": "$SNAPSHOT/local.sqlite3",
+      "schema_sha256": "b2b7965b3cac45692f96a21644a9646d3877ff718bfa917199c0cb8ded109039"
+    }
+  },
+  "expected_wire_additions": {
+    "additive_only": true,
+    "budget_precedence": [
+      "drop_sel_samples",
+      "drop_tail_clusters_to_existing_breadth_floor",
+      "drop_existing_filtered_names",
+      "never_drop_sel_core_or_existing_unconditional_counts"
+    ],
+    "existing_fields_unchanged": [
+      "clusters",
+      "pool",
+      "covered",
+      "more",
+      "filtered",
+      "curtailed",
+      "streak"
+    ],
+    "reason_code_order": [
+      "iv",
+      "du",
+      "fc",
+      "ss",
+      "sj",
+      "lr",
+      "pc"
+    ],
+    "reason_codes": {
+      "du": "duplicate residual entry after the first occurrence of a valid node identity",
+      "fc": "strict file-chunk machine envelope",
+      "iv": "residual entry has no node object or no non-empty node identity",
+      "lr": "member relevance score is below the frozen threshold",
+      "pc": "otherwise eligible member is beyond MAX_POOL_NODES after relevance ordering",
+      "sj": "strict structured supervision or monitoring journal",
+      "ss": "strict strategy-stagnation machine emission"
+    },
+    "sel_shape": {
+      "e": "integer count admitted to the capped clustering pool",
+      "n": "integer count of raw residual entries inspected",
+      "o": "integer count of sampleable excluded nodes not represented in q",
+      "q": "optional list of at most two [reason_code, content_gist] samples, each gist at most 24 characters, with no node identity",
+      "v": "r1",
+      "x": "fixed seven-integer vector ordered by reason_code_order"
+    },
+    "wire_key": "sel",
+    "wire_limits": {
+      "ae_injection_render_chars": 400,
+      "instructions_chars": 150,
+      "recall_payload_chars": 700,
+      "sample_gist_chars": 24,
+      "sample_limit": 2
+    },
+    "wire_semantics": {
+      "accounting_equation": "sel.n == sel.e + sum(sel.x)",
+      "core_always_present_when_a_nonempty_residual_is_inspected": [
+        "v",
+        "n",
+        "e",
+        "x",
+        "o"
+      ],
+      "existing_pool_relation": "pool == sel.e",
+      "persistence": "the exact response-shaped sel object is persisted inside recall_events.recall_map",
+      "sample_order": "reason_code_order, taking the first excluded unique node by original residual ordinal for each represented reason; increment o for every excluded sampleable node not represented after fitting"
+    }
+  },
+  "frozen_gates": {
+    "agent_stream_prereg": {
+      "path": "~/p/ae/docs/agent-stream-prereg.md",
+      "sha256": "68a3d4a597539a0a00d65d3dd792f3e2e6d734db263c0f79f086b0edbe98d9cb"
+    },
+    "recall_map_effect": {
+      "path": "scripts/recall_map_effect.py",
+      "sha256": "e92aceeafb27ae736378f1b1866886cf8446b1cf17c1269a7cd6ad61a039eeea"
+    },
+    "recall_map_latency_bench": {
+      "path": "scripts/recall_map_latency_bench.py",
+      "sha256": "f9f238f31a1e795a929ec8e97eb1d2090e8474beac0db4a07a8d3ea3767b8550"
+    },
+    "recall_map_prereg": {
+      "path": "artifacts/recall-map/prereg.json",
+      "sha256": "9eb6a170459bb68138a972b4ba76b76abb044cbb00024cdb04e38e038a85b1b0"
+    },
+    "stream_injection_metrics": {
+      "path": "~/p/ae/tools/lm_workload/stream_injection_metrics.py",
+      "sha256": "da9923fe37ad3c51c0c91fe6f3bb7e80083bcb17add9c0b983a6ced25ce7235d"
+    }
+  },
+  "holdout_boundary": {
+    "candidate_deployment_instant": "UNINSTANTIATED_UNTIL_CANDIDATE_DEPLOYMENT",
+    "candidate_holdout_ref": "artifacts/recall-map/relevance/field/manifest.json#candidate_holdout",
+    "creation_rule": "candidate-only recall-map events and AE journals with created_at strictly after the sealed candidate deployment instant",
+    "disjointness_keys": [
+      "source-qualified event identity",
+      "source-qualified transport session identity",
+      "source-qualified session identity",
+      "source-qualified cache identity"
+    ],
+    "eval_ref": "artifacts/recall-map/relevance/dataset-manifest.json#eval",
+    "freeze_read_audit": {
+      "candidate_holdout_accessed": false,
+      "candidate_holdout_created": false,
+      "field_subtree_accessed": false
+    },
+    "instantiation_rule": "the deployment node must seal the candidate commit, selected_policy digest, host configurations, deployment instant, and journal roots before reading any candidate outcome",
+    "no_overlap": "no event, transport session, session, or cache identity may occur in train, eval, and candidate_holdout more than once across those partitions",
+    "outcome_rule": "no candidate outcome may be read before membership and hashes are sealed; evaluation uses the unchanged gate tools without refitting",
+    "status": "semantic_boundary_frozen_population_not_created",
+    "train_ref": "artifacts/recall-map/relevance/dataset-manifest.json#train"
+  },
+  "schema_version": 1,
+  "selected_policy": {
+    "availability": {
+      "history": "derived during map build only from already-matured recall_events",
+      "level_schema": "read from the candidate node's level at map build",
+      "missing_value_policy": "substitute the frozen organic-train mean for a genuinely unavailable selected feature; do not add a missingness feature",
+      "no_history": "known zero counts, zero streak, and zero rate, not missing"
+    },
+    "ballast_filter": {
+      "classifier_id": "emitter_invariant_form_schema_provenance_v1",
+      "evaluation_role": "mandatory structural eligibility rule, never a fitted predictor or a score term",
+      "fail_open": "parse failures and near misses are eligible",
+      "precedence": [
+        "fc",
+        "ss",
+        "sj",
+        "eligible"
+      ],
+      "rules": {
+        "fc": {
+          "content_prefix": "[file-chunk]",
+          "envelope": "after one space or tab, parse the first line as JSON object; require non-empty string path and kind, string language, lowercase 64-hex sha256, positive chunk part/total with part <= total, and positive line first/last with first <= last",
+          "forbidden_shortcuts": "no path, project, host, emitter, task, or node-id lookup"
+        },
+        "sj": {
+          "content_marker": "first stripped line normalized by lowercase and hyphen-to-underscore is exactly [supervision_journal] or [monitoring_journal]",
+          "schema_marker": "one of context/provenance keys kind,type,lesson_kind,record_kind normalizes by strip/lowercase/hyphen-to-underscore to supervision_journal, monitoring_journal, execution_journal, or goal_tree_journal",
+          "topic_is_not_a_marker": true
+        },
+        "ss": {
+          "regex": "^Strategy stagnation detected on [^\\r\\n]{1,160}(?:\\r?\\n(?:attempts|strategy|window|reason):[^\\r\\n]{1,160}){0,4}\\s*$"
+        }
+      },
+      "synthetic_controls": {
+        "false_negatives": 0,
+        "false_positives": 0,
+        "seed": 20260823,
+        "true_negatives": 10,
+        "true_positives": 96
+      }
+    },
+    "bans": {
+      "forbidden_enablement": [
+        "feature flags",
+        "host checks",
+        "environment-variable gates",
+        "project-specific gates",
+        "skill gates"
+      ],
+      "forbidden_predictors_or_ties": [
+        "node ids or hashes/surrogates of node identity",
+        "literal observed cluster labels or lookup tables",
+        "task names or project task metadata",
+        "hosts or source identity",
+        "cache keys or sessions",
+        "outcome labels",
+        "current access_count, usefulness_score, last_accessed, or updated_at-derived usage",
+        "the current delivery outcome, future outcomes, or any outcome whose 24-hour window ends after the map-build instant"
+      ],
+      "narrow_nonpredictive_uses": "node identity may only deduplicate entries, remain in the pre-existing medoid wire field, and support later outcome measurement; task/cache/session/source identity may retain existing cache partitioning and evidence-split roles but cannot change eligibility, score, threshold, ties, or enablement"
+    },
+    "cache_contract": {
+      "cold_cached_equivalence": "identical residual, node values, matured history, build instant, and corpus state produce byte-identical selection and ordering",
+      "history_scores": "recompute on every build; do not store scores or low-relevance verdicts in the structure cache",
+      "if_score_memo_is_added_later": "bind it to selected_policy_sha256, recall-event revision, history horizon, and next outcome-maturity instant; invalidate on any earlier boundary",
+      "policy_revision": "include selected_policy_sha256 in any reusable structure revision and clear pre-policy in-process cache state at deployment",
+      "structure_cache": "may reuse only clustering templates; recount against the freshly filtered and relevance-ordered pool before the existing coverage check"
+    },
+    "cluster_scoring": {
+      "grouping": "keep the existing four-stage cascade and label gate",
+      "medoid": "keep the existing stage-specific medoid choice, but choose only among admitted members, so every delivered medoid clears the frozen member threshold",
+      "order": [
+        "descending maximum member relevance score",
+        "descending math.fsum(member relevance scores in original residual order) divided by member count",
+        "ascending best original residual ordinal, which is unique because clusters partition the pool"
+      ],
+      "score_inputs": "member relevance scores only; cluster size, stage, label text, task, host, and identity are not relevance features or tie-breaks"
+    },
+    "feature_order": [
+      "level_schema",
+      "prior_matured_log_count",
+      "prior_nonconsumed_log_count",
+      "prior_nonconsumption_streak_log",
+      "prior_consumption_rate"
+    ],
+    "fit": {
+      "equal_weights": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "fit_cohort": "organic_train_primary_stratum_only",
+      "fit_items": 3102,
+      "minimum_train_selection_fraction": 0.2,
+      "no_eval_refit": true,
+      "scales": [
+        0.4409841221421261,
+        2.5772848149641323,
+        2.5560016163553305,
+        1.765967625291225,
+        0.11674776461860277
+      ],
+      "standardization_means": [
+        0.26434558349451964,
+        2.856678070667311,
+        2.789348366105738,
+        1.5799800264635717,
+        0.06059739660863959
+      ],
+      "threshold": 3.8708378402511,
+      "threshold_comparison": ">=",
+      "threshold_fit": "score every organic-train item, take the score at one-indexed rank ceil(0.20 * 3102) = 621 in descending order, and include every tie",
+      "threshold_tie_count_in_train": 37,
+      "train_direction_constraint": "each selected feature has positive consumed-minus-nonconsumed association in organic train, organic eval, and observed-map eval",
+      "weights_rule": "equal positive weight for all and only transferable decision-time features; no coefficient or threshold was optimized on eval labels"
+    },
+    "history_definition": {
+      "consumed": "the frozen node-id consumption outcome for that prior delivery",
+      "eligible_prior_delivery": "same node, prior delivery created before the current map-build instant, with outcome_end <= current map-build instant",
+      "horizon_hours": 24,
+      "prior_consumption_rate": "consumed / matured, or 0 when matured is 0",
+      "prior_matured_log_count": "log1p(matured prior deliveries)",
+      "prior_nonconsumed_log_count": "log1p(matured - consumed)",
+      "prior_nonconsumption_streak_log": "log1p(consecutive nonconsumed outcomes at the tail of matured history, ordered by outcome_end then delivery instant)",
+      "strictly_predecision": true
+    },
+    "id": "directional-zsum-r1",
+    "member_pipeline": [
+      "inspect every residual entry and classify iv or first valid occurrence/du without using identity as a predictor",
+      "apply fc/ss/sj ballast eligibility before any pool cap",
+      "derive the five frozen decision-time features and compute S = sum_i((x_i - mean_i) / scale_i)",
+      "classify S < 3.8708378402511 as lr",
+      "stable-sort admitted nodes by descending S then ascending original residual ordinal",
+      "classify admitted nodes after the first MAX_POOL_NODES=200 as pc",
+      "cluster and order the remaining sel.e nodes"
+    ],
+    "nonconsumption_prior": "positive, not negative: prior nonconsumed count and streak receive the same +1 standardized weight because their measured direction is positive in all three cohorts; treat them as exposure proxies, not evidence that nonconsumption is causally useful",
+    "recency_decay": "none: node_age_log_days reverses from positive in organic train/eval to negative in observed-map eval, so age, freshness boosts, age penalties, time decay, and memory cleanup are outside this policy",
+    "rejected_features": {
+      "cascade_anchor": "unavailable historically and not reconstructed",
+      "content_context_provenance_shape": "snapshot-only and not versioned; only the separately specified strict ballast eligibility classifier may read form/schema/provenance",
+      "level_concept": "association direction reverses",
+      "level_trace": "association direction reverses",
+      "node_age_log_days": "association direction reverses",
+      "recorded_delivery_scores": "absent from all 686 observed-map eval items",
+      "mutable_or_post_outcome_stats": "leakage-prone and unavailable as-of delivery"
+    },
+    "transfer_directions": {
+      "level_schema": [
+        "positive",
+        "positive",
+        "positive"
+      ],
+      "prior_consumption_rate": [
+        "positive",
+        "positive",
+        "positive"
+      ],
+      "prior_matured_log_count": [
+        "positive",
+        "positive",
+        "positive"
+      ],
+      "prior_nonconsumed_log_count": [
+        "positive",
+        "positive",
+        "positive"
+      ],
+      "prior_nonconsumption_streak_log": [
+        "positive",
+        "positive",
+        "positive"
+      ]
+    },
+    "transfer_direction_order": [
+      "organic_train",
+      "organic_eval",
+      "observed_map_eval"
+    ]
+  },
+  "status": "frozen_for_implementation",
+  "transfer_verification": {
+    "ballast_diagnostic": {
+      "observed_map_ballast_consumed": 0,
+      "observed_map_ballast_items": 34,
+      "role": "structural eligibility sensitivity evidence, not a fitted score feature"
+    },
+    "cohort_minimums": {
+      "events": 20,
+      "items": 20,
+      "transport_sessions": 10
+    },
+    "eval_application": {
+      "eligible_after_ballast": 652,
+      "events": 37,
+      "items": 37,
+      "rate": 0.24324324324324326,
+      "selected_consumed": 9,
+      "total_items_before_ballast": 686,
+      "transport_sessions": 33
+    },
+    "floor": 0.233,
+    "floor_margin": 0.010243243243243257,
+    "floor_pass": true,
+    "minimums_pass": true,
+    "organic_eval_sensitivity": {
+      "eligible_after_ballast": 1381,
+      "items": 216,
+      "rate": 0.6111111111111112,
+      "selected_consumed": 132,
+      "total_items_before_ballast": 1389
+    },
+    "refit_on_eval": false,
+    "train_application": {
+      "eligible_after_ballast": 3065,
+      "events": 250,
+      "items": 627,
+      "rate": 0.7240829346092504,
+      "selected_consumed": 454,
+      "total_items_before_ballast": 3102,
+      "transport_sessions": 239
+    },
+    "verdict": "PASS"
+  }
+}

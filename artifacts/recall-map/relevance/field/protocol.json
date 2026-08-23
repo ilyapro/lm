@@ -1,0 +1,1598 @@
+{
+  "artifact": "recall-map-relevance-field-protocol",
+  "schema_version": 2,
+  "protocol_id": "directional-zsum-r1-fresh-field-20260823",
+  "phase": "preseal_restored_store_receipts_pending",
+  "prebound_at_utc": "2026-08-23T08:38:18Z",
+  "baseline_source_bound_at_utc": "2026-08-23T02:16:04Z",
+  "restoration_audit": {
+    "historical_commit_reviewed": "652d79500c9005df73808c5402a325f05c952244",
+    "current_lineage_anchor": "24db9bbb33f30e507a1b58af7eedc6163bc962ab",
+    "verified_at_utc": "2026-08-23T08:38:18Z",
+    "reuse_rule": "Historical material is only a checklist. Every descriptive hash, byte count, source invariant, and organic aggregate retained here was reproduced from the current lineage or the exact bound source in this restoration; all external receipt and deployment evidence remains pending."
+  },
+  "scope": "map-relevance-gate/restore-field-preseal",
+  "rollout_authorized": false,
+  "authorization": {
+    "state": "pending_both_store_preparation_receipts",
+    "preparation_authority": "While rollout_authorized=false, this committed preseal authorizes only the metadata_only_store_construction_contract: prepare sfx from the exact authoritative stable source, produce the closed sfx alt seed, and have the operator manually transfer and prepare alt from those exact seed bytes at the host-qualified pending roots. No candidate process may open either prepared store.",
+    "effect": "Preparation-only copying and immutable store-receipt production do not constitute rollout. This preseal does not authorize candidate promotion, a service database or configuration change, code installation, service restart, candidate accrual, manifest outcome content, embargo release, or outcome scoring.",
+    "only_authorizer": "A later committed revision of this file may set rollout_authorized=true only after validating and hash-binding both prebound store-preparation receipts.",
+    "required_before_true": [
+      "sfx and alt preparation receipts exist at their prebound paths and are immutable",
+      "both receipts identify baseline_compatible_source_binding.binding_id and the sfx receipt independently rechecks both exact bound source paths before constructing a field store",
+      "both receipts satisfy metadata_only_store_construction_contract and its inherited-violation baseline",
+      "both prepared stores have zero non-NULL recall_events.recall_map values",
+      "both receipts reproduce the frozen organic arm and its complete dependency closure",
+      "source and field foreign-key metadata, violation tuple count, and violation tuple digest are exactly equal; there are zero new violations and zero violations in the sealed organic closure",
+      "the alt store bytes equal the sfx sanitized seed bytes",
+      "all four resolved store and AE-journal roots are pairwise distinct by host-qualified identity",
+      "the five sealed instruments still have their bound byte hashes",
+      "neither scripts/recall_map_effect.py nor artifacts/recall-map/prereg.json required a change",
+      "no outcome-access embargo violation has occurred"
+    ],
+    "on_failure": "Keep rollout_authorized=false, record the exact protocol conflict, and escalate without deployment."
+  },
+  "generalization_contract": {
+    "train_set": "artifacts/recall-map/relevance/dataset-manifest.json#train",
+    "eval_set": "artifacts/recall-map/relevance/dataset-manifest.json#eval",
+    "holdout_set": "artifacts/recall-map/relevance/field/manifest.json#candidate_holdout",
+    "policy_refit_allowed": false,
+    "frozen_eval": {
+      "consumed": 9,
+      "items": 37,
+      "rate": 0.243243,
+      "minimum_rate": 0.233,
+      "passed": true
+    },
+    "fresh_recall_map_gate": {
+      "per_host": true,
+      "endpoint": "node_id_consumption_non_anchor",
+      "minimum_map_events": 20,
+      "minimum_map_items": 20,
+      "minimum_transport_sessions": 10,
+      "sealed_organic_rate": 0.4662,
+      "absolute_floor": 0.02,
+      "relative_floor_multiplier": 0.5,
+      "required_rate": 0.233,
+      "required_consumption_verdict": "PASS",
+      "formula": "max(absolute_floor, relative_floor_multiplier * sealed_organic_rate)",
+      "instrument": "scripts/recall_map_effect.py"
+    },
+    "fresh_ae_structural_gate": {
+      "per_host": true,
+      "minimum_scorable_injections": 20,
+      "minimum_scorable_share": 0.5,
+      "instrument": "/home/sfx/p/ae/tools/lm_workload/stream_injection_metrics.py",
+      "unchanged_rules_required": true
+    },
+    "fresh_holdout_rule": "After deployment and maturation, each host is measured separately and must clear the unchanged recall-map and AE gates; hosts are never pooled, substituted, or dropped."
+  },
+  "frozen_candidate": {
+    "policy_id": "directional-zsum-r1",
+    "implementation_commit": "5b7f4c0c3ba94b1d4d36fc0b9fcb00a6e8bcdf64",
+    "implementation_git_tree": "a0e8e5357da0959b1eca6fbbe5769f80881f6d48",
+    "implementation_parent": "1dc498a55e7cb2af7616139aa1f438c00b1dabf2",
+    "source_subtrees": {
+      "repository_src": {
+        "path": "src",
+        "git_tree": "f45eeb5a17375340c6f3a7dc6ec7674f96b251df"
+      },
+      "deployed_package": {
+        "path": "src/living_memory",
+        "git_tree": "0181c33c6d3d0763beb856176a9f0cdb155a5b6c",
+        "typed_content_sha256": "b302ede43343532dddda437c12c8b3ed7a54d07a18b9c67248dfe9944b1eb4ce",
+        "files": 49,
+        "content_bytes": 1635984,
+        "hash_algorithm": "Walk git ls-tree -r -z --full-tree COMMIT -- src/living_memory/ in path-byte order. For each blob hash P||u64be(len(relative_path))||relative_path||M||u64be(len(mode))||mode||B||u64be(len(blob_bytes))||blob_bytes; sha256 the concatenation."
+      },
+      "primary_runtime_source": {
+        "path": "src/living_memory/recall_map.py",
+        "bytes": 125834,
+        "git_blob": "80758542ea58650a9feebbee5e8371c0dc4debff",
+        "sha256": "61413ad7d8e86e5c25ceb5acc82c87587934c67a20f2b3d2f8f3f4b1a8b284d7"
+      }
+    },
+    "selector_origin": {
+      "commit": "39baef9443da31029d532d7db10a0077911bec11",
+      "git_tree": "9fddf0d022bb0b8d3792212fc6a4910ce13b8c03",
+      "deployed_package_git_tree": "0181c33c6d3d0763beb856176a9f0cdb155a5b6c",
+      "relationship": "The integration commit is not required to descend from this development tip; its deployed package subtree is byte-identical."
+    },
+    "deployment_carrier_contract": {
+      "actual_carriers": {
+        "sfx": {
+          "state": "pending_deployment_receipt"
+        },
+        "alt": {
+          "state": "pending_operator_deployment_receipt"
+        }
+      },
+    "lineage_anchor": {
+      "commit": "24db9bbb33f30e507a1b58af7eedc6163bc962ab",
+      "git_tree": "7c143d17749934b64447504303d4cc141c374762",
+      "relationship": "This is a direct candidate-descending lineage commit: relative to implementation_commit it adds only the two exact runtime-neutral P7 renderer files listed in exact_nonruntime_allowlist."
+    },
+    "permitted_relationship": "A carrier must descend from both implementation_commit and lineage_anchor.commit. Relative to implementation_commit it may contain only the exact two blobs in exact_nonruntime_allowlist plus the six tracked field artifacts; it must preserve every frozen source, policy, instrument, and deployment-document binding below.",
+    "exact_nonruntime_allowlist": {
+      "closed": true,
+      "introduced_by_commit": "24db9bbb33f30e507a1b58af7eedc6163bc962ab",
+      "runtime_import_allowed": false,
+      "files": [
+        {
+          "path": "scripts/render_recall_map_relevance_report.py",
+          "mode": "100644",
+          "bytes": 43205,
+          "git_blob": "8e2c052be174d9c16f82017363abb98740a53df1",
+          "sha256": "4f8f0c07e884d321c76d681348b1291bcdd9947508e289f376947ad809075bbb",
+          "purpose": "Standalone deterministic rendering of the already-frozen historical aggregate report; it accepts no candidate-holdout input."
+        },
+        {
+          "path": "tests/test_recall_map_relevance_report.py",
+          "mode": "100644",
+          "bytes": 6768,
+          "git_blob": "34cc98e30d299b1803d79c7306d693b4a1e9d905",
+          "sha256": "277ab006232b37191b8061e0cbeb00c89b501a0da8ea107e2e6ae1663fd80fc2",
+          "purpose": "Tests for the standalone historical-report renderer; not installed or imported by the Living Memory runtime."
+        }
+      ],
+      "acceptance": "Both paths, modes, byte lengths, Git blobs, and SHA-256 values must match exactly. No additional non-field path is allowed."
+    },
+    "tracked_field_allowlist": [
+      "artifacts/recall-map/relevance/field/protocol.json",
+      "artifacts/recall-map/relevance/field/manifest.json",
+      "artifacts/recall-map/relevance/field/map-effect.json",
+      "artifacts/recall-map/relevance/field/injection-sfx.json",
+      "artifacts/recall-map/relevance/field/injection-alt.json",
+      "artifacts/recall-map/relevance/field/verdict.md"
+    ],
+      "required_checks": [
+        "git merge-base --is-ancestor 5b7f4c0c3ba94b1d4d36fc0b9fcb00a6e8bcdf64 CARRIER exits 0",
+        "git merge-base --is-ancestor 24db9bbb33f30e507a1b58af7eedc6163bc962ab CARRIER exits 0",
+        "git diff --name-only 5b7f4c0c3ba94b1d4d36fc0b9fcb00a6e8bcdf64 CARRIER contains only exact_nonruntime_allowlist.files and tracked_field_allowlist",
+        "both exact_nonruntime_allowlist files reproduce their exact mode, byte length, Git blob, and SHA-256; absence, modification, replacement, or any third non-field path rejects",
+        "CARRIER:src has Git tree f45eeb5a17375340c6f3a7dc6ec7674f96b251df",
+        "CARRIER:src/living_memory has Git tree 0181c33c6d3d0763beb856176a9f0cdb155a5b6c",
+        "the independent deployed-package typed-content sha256 reproduces b302ede43343532dddda437c12c8b3ed7a54d07a18b9c67248dfe9944b1eb4ce",
+        "the carrier policy file and all LM-repository sealed instruments reproduce their bound byte hashes"
+      ],
+      "forbidden": [
+        "host-specific source branches",
+        "host, identity, task, flag, skill, cache-key, or outcome-driven policy gates",
+        "policy refitting or threshold changes",
+        "treating a path-only match as sufficient for either exact non-runtime allowlist entry",
+        "any tracked receipt, snapshot, seed, journal, operator log, or supporting evidence outside tracked_field_allowlist",
+        "a carrier with source equivalence asserted only by commit ancestry"
+      ]
+    }
+  },
+  "policy_binding": {
+    "path": "artifacts/recall-map/relevance/policy.json",
+    "bytes": 16815,
+    "stored_bytes_sha256": "1f065b9e0e86b415ba8f7ea94649c9590b8e1f36aa1f312eb12d9afe6f9afe2b",
+    "git_blob": "fc8f68537449949616000a7d4b18415b80c48ae8",
+    "selected_policy_sha256": "3acad3d92db2538bf3096ab99d2c4d337ea3c8aebddc226646527b4d277660ea",
+    "selected_policy_canonicalization": "sha256(UTF-8 json.dumps(policy['selected_policy'], ensure_ascii=True, sort_keys=True, separators=(',', ':')))",
+    "selected_policy_canonical_bytes": 7750,
+    "runtime_constant": "src/living_memory/recall_map.py::RELEVANCE_POLICY_DIGEST",
+    "runtime_constant_must_equal_selected_policy_sha256": true,
+    "refit_status": "forbidden"
+  },
+  "sealed_instruments": {
+    "count": 5,
+    "verification_rule": "Verify byte size and sha256 before each store proof, each deployment receipt, final protocol sealing, and every outcome invocation; any mismatch is a protocol conflict, not a warning.",
+    "items": [
+      {
+        "id": "recall-map-prereg",
+        "repository": "lm",
+        "path": "artifacts/recall-map/prereg.json",
+        "bytes": 33003,
+        "sha256": "9eb6a170459bb68138a972b4ba76b76abb044cbb00024cdb04e38e038a85b1b0"
+      },
+      {
+        "id": "recall-map-effect",
+        "repository": "lm",
+        "path": "scripts/recall_map_effect.py",
+        "bytes": 70157,
+        "sha256": "e92aceeafb27ae736378f1b1866886cf8446b1cf17c1269a7cd6ad61a039eeea"
+      },
+      {
+        "id": "recall-map-latency-bench",
+        "repository": "lm",
+        "path": "scripts/recall_map_latency_bench.py",
+        "bytes": 25652,
+        "sha256": "f9f238f31a1e795a929ec8e97eb1d2090e8474beac0db4a07a8d3ea3767b8550"
+      },
+      {
+        "id": "agent-stream-prereg",
+        "repository": "ae",
+        "path": "docs/agent-stream-prereg.md",
+        "observed_path_on_sfx": "/home/sfx/p/ae/docs/agent-stream-prereg.md",
+        "bytes": 24211,
+        "sha256": "68a3d4a597539a0a00d65d3dd792f3e2e6d734db263c0f79f086b0edbe98d9cb"
+      },
+      {
+        "id": "stream-injection-metrics",
+        "repository": "ae",
+        "path": "tools/lm_workload/stream_injection_metrics.py",
+        "observed_path_on_sfx": "/home/sfx/p/ae/tools/lm_workload/stream_injection_metrics.py",
+        "bytes": 58105,
+        "sha256": "da9923fe37ad3c51c0c91fe6f3bb7e80083bcb17add9c0b983a6ced25ce7235d"
+      }
+    ]
+  },
+  "supporting_bindings": {
+    "dataset_manifest": {
+      "path": "artifacts/recall-map/relevance/dataset-manifest.json",
+      "bytes": 93512,
+      "stored_bytes_sha256": "54ee3bcc9d77b99b7b2c057db3e45b747c92a18d14ccec69eb2903dfe7cbf308",
+      "canonical_json_sha256": "af9bb44b41fefa2a0582212c0e909afbf41c7784a5014c05f47343ffcb291e5c"
+    },
+    "baseline": {
+      "path": "artifacts/recall-map/baseline.json",
+      "bytes": 12452,
+      "stored_bytes_sha256": "d1322b5d46664f81f8c19f3d0ee80f11942a33c001932987ee5cc1023c801905",
+      "organic_canonical_json_sha256": "cc2f1a645d8031c22552f24417d3b1411ec6f9ccad124b28f0fadb23c70f5fac",
+      "organic_canonical_bytes": 1154
+    },
+    "latency_before": {
+      "path": "artifacts/recall-map/relevance/latency-before.json",
+      "bytes": 18166,
+      "stored_bytes_sha256": "deb17a7444f17d337c12e81a9cdd17f1790558ad64a586055e969dfa13dc1d7d"
+    },
+    "latency_after": {
+      "path": "artifacts/recall-map/relevance/latency-after.json",
+      "bytes": 16889,
+      "stored_bytes_sha256": "287de70031f8328b79003680dd5fb722c76c5743ee6e82597d4e61c249f57438",
+      "measured_candidate_commit": "39baef9443da31029d532d7db10a0077911bec11",
+      "measured_source_subtree_git_tree": "0181c33c6d3d0763beb856176a9f0cdb155a5b6c",
+      "benchmark_sha256": "f9f238f31a1e795a929ec8e97eb1d2090e8474beac0db4a07a8d3ea3767b8550",
+      "snapshot_sha256": "5201b10682fcc0e597785371c613f5050afce5e7e1d9d5e66b6521bd62ee8e9d",
+      "queries_measured": 24,
+      "warm_cache_hit_share": 1.0,
+      "pooled_warm_p95_overhead": 0.1958,
+      "maximum": 0.2,
+      "within_budget": true,
+      "non_gating_diagnostics": {
+        "warm_paired_p95_overhead": 0.8526,
+        "warm_paired_p95_within_budget": false,
+        "warm_paired_delta_median_ms": 71.138,
+        "cold_p95_overhead": 0.2251,
+        "cold_p95_budgeted": false
+      },
+      "budget_basis": "Pooled p95 of the warm arm over pooled p95 of the map-off arm; paired-query and cold diagnostics remain disclosed but are not the preregistered budget endpoint.",
+      "binding_rule": "The measured commit and frozen_candidate.implementation_commit have the same src/living_memory Git tree and typed-content SHA-256; every deployment carrier must retain that exact subtree and benchmark hash."
+    },
+    "deployment_runbook": {
+      "path": "docs/deployment.md",
+      "bytes": 9119,
+      "sha256": "107fe0811c75e8a370430c213ada13394cc95fb3eae70435e84a04ddbadd4c12"
+    },
+    "served_protocol_checker": {
+      "path": "scripts/check_deployed_protocol.py",
+      "bytes": 17825,
+      "sha256": "4cbe882a0c9de5c3511616db84967e3a10812895e963571c0db3c0d047ee7035"
+    }
+  },
+  "baseline_compatible_source_binding": {
+    "binding_id": "sfx-mapdemo-snap-9f00abf4-v1",
+    "state": "exact_bytes_preserved_and_bound",
+    "selection_is_outcome_blind": true,
+    "reverified_at_utc": "2026-08-23T08:38:18Z",
+    "origin_observation": {
+      "path": "/tmp/mapdemo-snap.sqlite3",
+      "regular_file_required": true,
+      "symlink_allowed": false,
+      "required_bytes": 514121728,
+      "required_sha256": "9f00abf4467b96bfb6f3cdce9123edfc275a392030da6833e3f7b58b3dcbabcc",
+      "observed_birth_utc": "2026-08-19T18:22:21.887032296Z",
+      "observed_mtime_utc": "2026-08-19T18:22:48.035026221Z",
+      "must_remain_exact_until_source_acceptance": true
+    },
+    "authoritative_stable_source": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/sfx/source.sqlite3",
+      "regular_file_required": true,
+      "symlink_allowed": false,
+      "required_mode": "0444",
+      "bytes": 514121728,
+      "sha256": "9f00abf4467b96bfb6f3cdce9123edfc275a392030da6833e3f7b58b3dcbabcc",
+      "observed_birth_utc": "2026-08-23T02:16:04.695787421Z",
+      "observed_mtime_utc": "2026-08-23T02:16:04.947787353Z",
+      "required_preservation_method": "Recheck the origin main-file size, SHA-256, regular-file identity, zero-byte WAL, and absence of an open handle; byte-copy to a same-directory temporary regular file; recheck size and SHA-256; chmod 0444; fsync the file; atomic rename to the previously absent path; fsync the directory; then require cmp equality and both hashes again.",
+      "byte_equal_to_origin_at_verification": true,
+      "current_sidecar_observation": {
+        "wal_present": true,
+        "wal_bytes": 0,
+        "shm_present": true,
+        "shm_bytes": 32768,
+        "sidecar_mode": "0444"
+      },
+      "authoritative_input_rule": "This exact main file is the only permitted source for sfx field-store preparation. Copy its bytes while closed; never rebuild it through SQLite or application APIs."
+    },
+    "sqlite_main_file_and_sidecar_rule": {
+      "database_header_write_version": 2,
+      "database_header_read_version": 2,
+      "main_file_only_is_hash_bound": true,
+      "origin_wal_bytes_observed": 0,
+      "origin_shm_bytes_observed": 32768,
+      "sidecars_are_not_source_data": true,
+      "closed_copy_precondition": "No process may hold the main file. A -wal sidecar must be absent or exactly zero bytes before every copy; a nonzero WAL is an immediate protocol conflict. A stale -shm may be ignored only after proving no open handle and an absent-or-zero WAL. Hash the main file before and after any read by the unchanged tool."
+    },
+    "observed_creation_provenance": {
+      "evidence_path": "/tmp/mapdemo.py",
+      "evidence_bytes": 1482,
+      "evidence_sha256": "85956b5fd6b180a4d781ab657fa611b0220696989bdb3b2338daede2278acdb4",
+      "evidence_birth_utc": "2026-08-19T18:22:29.003030277Z",
+      "evidence_mtime_utc": "2026-08-19T18:22:29.003030277Z",
+      "observed_workflow": [
+        "The script binds live to expanduser('~/.local/share/living-memory/global.sqlite3') and snap to /tmp/mapdemo-snap.sqlite3.",
+        "Only when snap does not exist, it opens the named live path with sqlite3 mode=ro, creates snap with sqlite3.connect, and invokes src.backup(dst) before closing both connections.",
+        "After the existence guard, it unconditionally configures MemoryConfig(db_path=Path(snap)) and constructs MemoryStore(cfg) before running no-event RecallMapBuilder demonstrations."
+      ],
+      "prior_memory_store_opening_observed": true,
+      "opening_effect_bound_not_repeated": "The exact post-open bytes contain the recall_map column with zero non-NULL rows. That prior opening is historical provenance, not permission to open either bound source path through MemoryStore again.",
+      "attribution_limit": "The database birth timestamp precedes this observed script file's birth timestamp by about seven seconds, so the script is bound as the observed local backup-and-demo workflow, not falsely claimed as a signed literal creation receipt.",
+      "attribution_decision": "Sufficient for this pre-candidate source only in conjunction with the parent-supplied exact path and hash, byte-identical stable preservation, the exact sealed organic reproduction, the event extent, and the post-backup MemoryStore schema footprint. No substitute may inherit this attribution."
+    },
+    "observed_sqlite_state": {
+      "integrity_check": "ok",
+      "integrity_open_mode": "file URI mode=ro&immutable=1 over the hash-bound main file",
+      "application_id": 0,
+      "user_version": 0,
+      "schema_version": 3,
+      "encoding": "UTF-8",
+      "page_size": 4096,
+      "page_count": 125518,
+      "freelist_count": 8,
+      "schema": {
+        "sqlite_schema_rows_total": 55,
+        "sql_defined_objects": 40,
+        "type_counts": {
+          "index": 34,
+          "table": 18,
+          "trigger": 3
+        },
+        "user_table_count": 18,
+        "foreign_key_declaration_count": 8,
+        "canonicalization": "Query SELECT type,name,tbl_name,rootpage,sql FROM sqlite_schema ORDER BY type,name,tbl_name,rootpage,coalesce(sql,''); convert rows to objects and encode UTF-8 json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(',',':')).",
+        "canonical_json_bytes": 16347,
+        "canonical_json_sha256": "6db329c60a656c52b9df85e6226a7e40bcc721859be9785d8e2e7bc3cfb7c2ee",
+        "recall_events_columns": [
+          "id",
+          "query",
+          "scope",
+          "requested_scope",
+          "resolved_scopes",
+          "ambient_context",
+          "depth",
+          "max_results",
+          "results",
+          "agent",
+          "task",
+          "session_id",
+          "feedback_applied",
+          "feedback_trace_id",
+          "feedback_applied_at",
+          "created_at",
+          "transport_session_id",
+          "fingerprint",
+          "gated",
+          "recall_map"
+        ],
+        "recall_events_table_xinfo_canonical_json_bytes": 1883,
+        "recall_events_table_xinfo_canonical_json_sha256": "0afe95208e8b853bc07ee82896beb19288128da0c865c956a67611e5ca5d7f5e"
+      },
+      "recall_events_extent": {
+        "rows": 54917,
+        "created_at_min": "2026-05-14T20:05:23Z",
+        "created_at_max": "2026-08-19T18:19:32Z",
+        "recall_map_column_present": true,
+        "nonnull_recall_map_rows": 0
+      },
+      "inherited_foreign_key_observation": {
+        "tuple_count": 35,
+        "tuple_table_counts": {
+          "recall_events": 35
+        },
+        "closure_violation_count": 0,
+        "unresolved_closure_rows": 0,
+        "supplementary_canonicalization": "Fetch PRAGMA foreign_key_check to exhaustion using cursor columns [table,rowid,parent,fkid]; encode each row as a compact sorted-key JSON object; sort rows by those UTF-8 bytes; encode {'columns': columns, 'rows': rows} with ensure_ascii=False, sort_keys=True, separators=(',',':'). This supplementary digest does not replace sqlite-foreign-key-inherited-baseline-v1 source-to-field comparison.",
+        "supplementary_canonical_json_bytes": 2314,
+        "supplementary_canonical_json_sha256": "c32fa5bfb5c8d5fc74bb9c36b708ce2d3eb1bdc111625d6a4bd75c2b0540c8eb"
+      }
+    },
+    "sealed_organic_reproduction": {
+      "tool_path": "scripts/recall_map_effect.py",
+      "tool_sha256": "e92aceeafb27ae736378f1b1866886cf8446b1cf17c1269a7cd6ad61a039eeea",
+      "prereg_path": "artifacts/recall-map/prereg.json",
+      "prereg_sha256": "9eb6a170459bb68138a972b4ba76b76abb044cbb00024cdb04e38e038a85b1b0",
+      "as_of": "2026-08-19T11:00:00Z",
+      "invocation": "PYTHONPATH=src python3 scripts/recall_map_effect.py --db SOURCE --as-of 2026-08-19T11:00:00Z --no-positional --quiet --out TEMP",
+      "canonicalization": "UTF-8 json.dumps(report['arms']['organic'], ensure_ascii=False, sort_keys=True, separators=(',',':')) with no trailing newline",
+      "canonical_bytes": 1154,
+      "canonical_sha256": "cc2f1a645d8031c22552f24417d3b1411ec6f9ccad124b28f0fadb23c70f5fac",
+      "primary": {
+        "items": 4511,
+        "consumed": 2103,
+        "rate": 0.4662
+      },
+      "anchor": {
+        "items": 3703,
+        "consumed": 1500,
+        "rate": 0.4051
+      },
+      "matches_sealed_baseline": true
+    },
+    "pre_candidate_relation": {
+      "source_last_event_utc": "2026-08-19T18:19:32Z",
+      "source_main_file_mtime_utc": "2026-08-19T18:22:48.035026221Z",
+      "candidate_implementation_commit": "5b7f4c0c3ba94b1d4d36fc0b9fcb00a6e8bcdf64",
+      "candidate_implementation_commit_utc": "2026-08-23T00:20:12Z",
+      "source_predates_candidate_implementation": true,
+      "source_nonnull_recall_map_rows_before_candidate": 0,
+      "candidate_deployment_before_binding": false
+    },
+    "selection_rationale": {
+      "rule": "Bind the exact parent-specified already-frozen source only after its required bytes, sealed organic reproduction, provenance observations, integrity, schema, event extent, zero-map state, and inherited-FK baseline all reproduce.",
+      "decision": "The supplied /tmp/mapdemo-snap.sqlite3 and the stable source independently reproduce every retained invariant and are byte-identical at this verification. This node performed no substitute search and read no candidate outcome.",
+      "forbidden_fallbacks": [
+        "the current or future mutable live database",
+        "the later drifted relevance-evidence snapshot",
+        "any newly captured or reconstructed snapshot",
+        "sanitizing a drifted live database",
+        "selecting another source because it produces a convenient score"
+      ]
+    },
+    "fail_closed_rules": [
+      "If either the origin observation path or authoritative stable path is absent, a symlink, non-regular, wrong-sized, or not SHA-256 exact, keep rollout_authorized=false and escalate without searching for a replacement.",
+      "If the stable source is writable, differs from the origin, has a nonzero WAL, is held open, or fails integrity_check=ok, do not repair, checkpoint, vacuum, recreate, or recopy from any other source; escalate.",
+      "If schema, recall-event extent, recall_map column state, zero non-NULL count, inherited FK count/digest/closure classification, or sealed organic digest differs, do not sanitize the source and do not amend either sealed instrument; escalate.",
+      "If /tmp/mapdemo.py is absent or its bytes differ, its observed workflow no longer supports attribution; do not substitute another provenance narrative or source.",
+      "Never open either bound source path through MemoryStore. The historical prior MemoryStore opening is bound provenance, not a repeatable preparation step.",
+      "No candidate deployment, restart, accrual, outcome access, or alt operation is authorized by this binding."
+    ]
+  },
+  "root_bindings": {
+    "namespace": "directional-zsum-r1-fresh-field-20260823",
+    "pairwise_distinct": false,
+    "pairwise_distinct_state": "pending_both_store_preparation_receipts",
+    "resolution_rule": "${HOME} is resolved by the operator on the named host before any copy; the receipt records the absolute realpath. No root may be a symlink, alias a live store, or resolve inside another bound root.",
+    "sfx": {
+      "field_store_root": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/sfx",
+      "source_snapshot_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/sfx/source.sqlite3",
+      "field_store_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/sfx/field.sqlite3",
+      "sanitized_seed_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/sfx/alt-seed.sqlite3",
+      "ae_journal_root": "/home/sfx/.local/share/ae/field/directional-zsum-r1-fresh-field-20260823/sfx",
+      "rollback_material_root": "/home/sfx/.local/share/living-memory/rollback/directional-zsum-r1-fresh-field-20260823/sfx"
+    },
+    "alt": {
+      "field_store_root_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt",
+      "field_store_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/field.sqlite3",
+      "received_seed_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/received-seed.sqlite3",
+      "ae_journal_root_template": "${HOME}/.local/share/ae/field/directional-zsum-r1-fresh-field-20260823/alt",
+      "rollback_material_root_template": "${HOME}/.local/share/living-memory/rollback/directional-zsum-r1-fresh-field-20260823/alt",
+      "absolute_paths_state": "pending_operator_store_preparation_receipt"
+    },
+    "distinctness_contract": [
+      "Within each host, field_store_root and ae_journal_root resolve to different non-nested directories.",
+      "Across hosts, roots are distinct by the tuple (host_id, filesystem identity, absolute realpath); identical path text on separate hosts does not merge evidence.",
+      "Neither field store may resolve to baseline_compatible_source_binding.authoritative_stable_source.path, the mutable live store, or the other host's store.",
+      "Each AE journal root is an immutable field archive root; the actual unchanged producer roots are captured separately in host configuration and copied into the archive without inspecting record contents only after accrual closes.",
+      "Each rollback_material_root is host-resolved, non-symlink, non-nested with the field-store and AE-journal roots, and distinct from every live store; the deployment receipt binds its filesystem identity before candidate start."
+    ]
+  },
+  "tracked_outputs": {
+    "closed": true,
+    "count": 6,
+    "paths": [
+      "artifacts/recall-map/relevance/field/protocol.json",
+      "artifacts/recall-map/relevance/field/manifest.json",
+      "artifacts/recall-map/relevance/field/map-effect.json",
+      "artifacts/recall-map/relevance/field/injection-sfx.json",
+      "artifacts/recall-map/relevance/field/injection-alt.json",
+      "artifacts/recall-map/relevance/field/verdict.md"
+    ],
+    "rule": "These are the only repository-tracked outputs of the fresh-field subtree. Stores, seeds, snapshots, journal archives, promotion evidence, deployment evidence, and every preparation, deployment, accrual, or rollback receipt are supporting immutable external inputs and must never be copied under the repository worktree."
+  },
+  "deployment_invariants": {
+    "payload_format": "additive_only",
+    "budgets": {
+      "recall_map_response_characters_max": 700,
+      "instructions_characters_max": 150,
+      "injection_render_characters_max": 400,
+      "expansion_forbidden": true
+    },
+    "filter_accounting": {
+      "payload_required": true,
+      "persisted_recall_events_recall_map_required": true,
+      "silent_caps_forbidden": true,
+      "required_semantics": "Every dropped candidate class and count remains attributable in the additive map payload and the persisted recall_events.recall_map value."
+    },
+    "delivery_channels": {
+      "configuration_change_allowed": false,
+      "silence_violations_allowed": 0,
+      "cap_violations_allowed": 0,
+      "preserve": [
+        "triggers",
+        "renderers",
+        "chat paths",
+        "caps",
+        "silence rules",
+        "probes",
+        "endpoints",
+        "scope",
+        "wire budgets"
+      ]
+    },
+    "frozen_measurement": {
+      "preregistration_changes_allowed": false,
+      "instrument_changes_allowed": false,
+      "policy_refit_allowed": false,
+      "host_specific_policy_allowed": false
+    },
+    "receipt_rule": "Both deployment receipts bind sanitized before/after host configurations and require byte-equal delivery-channel digests. Any budget, payload, accounting, preregistration, instrument, or delivery drift rejects the deployment before accrual."
+  },
+  "external_receipts": {
+    "tracked": false,
+    "input_only": true,
+    "sfx_root": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts",
+    "alt_operator_root_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts",
+    "alt_accepted_copy_root": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt",
+    "sfx_store_preparation": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-store-preparation.json",
+      "producer_host": "sfx",
+      "state": "absent_pending"
+    },
+    "alt_store_preparation": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt/alt-store-preparation.json",
+      "producer_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts/alt-store-preparation.json",
+      "producer_host": "alt",
+      "state": "absent_pending_manual_alt"
+    },
+    "sfx_candidate_promotion": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-candidate-promotion.json",
+      "producer_host": "sfx",
+      "state": "absent_pending_external_operator"
+    },
+    "sfx_deployment": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-deployment.json",
+      "producer_host": "sfx",
+      "state": "absent_pending_authorization"
+    },
+    "alt_deployment": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt/alt-deployment.json",
+      "producer_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts/alt-deployment.json",
+      "producer_host": "alt",
+      "state": "absent_pending_manual_alt_and_authorization"
+    },
+    "sfx_accrual": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-accrual.json",
+      "producer_host": "sfx",
+      "state": "absent_pending_deployment"
+    },
+    "alt_accrual": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt/alt-accrual.json",
+      "producer_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts/alt-accrual.json",
+      "producer_host": "alt",
+      "state": "absent_pending_manual_alt_deployment"
+    },
+    "sfx_rollback": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-rollback.json",
+      "producer_host": "sfx",
+      "state": "absent_not_invoked"
+    },
+    "alt_rollback": {
+      "path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt/alt-rollback.json",
+      "producer_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts/alt-rollback.json",
+      "producer_host": "alt",
+      "state": "absent_not_invoked"
+    },
+    "immutability_rule": "Each producer writes once using a same-directory temporary file, fsync, atomic rename, and read-only mode. For alt, the operator transfers the already immutable bytes to the prebound accepted-copy path; the local copy must match producer byte length and SHA-256. Every consuming protocol or manifest revision binds path, producer path when applicable, bytes, SHA-256, producer host, production instant, and the protocol revision the receipt attests.",
+    "rejection_rule": "Reject a symlink, non-regular file, writable replacement, repo-relative path, receipt produced on the wrong host, hash mismatch, duplicate semantic receipt with different bytes, or any receipt containing outcome fields forbidden by its schema."
+  },
+  "commitment_chain": {
+    "acyclic": true,
+    "order": [
+      "preseal_protocol",
+      "manifest",
+      "final_protocol"
+    ],
+    "preseal_protocol": {
+      "path": "artifacts/recall-map/relevance/field/protocol.json",
+      "state": "this and later pre-manifest revisions",
+      "definition": "The last committed revision of protocol.json before manifest creation, after exact store, deployment, accrual, configuration, root, snapshot, journal, and receipt bindings are complete.",
+      "must_not_bind": [
+        "manifest Git blob or bytes SHA-256",
+        "final_protocol Git commit, Git blob, or bytes SHA-256"
+      ]
+    },
+    "manifest": {
+      "path": "artifacts/recall-map/relevance/field/manifest.json",
+      "state": "absent_pending_outcome_blind_accrual_close",
+      "must_bind": [
+        "preseal_protocol Git commit, Git blob, byte length, and SHA-256",
+        "every accepted external receipt path, byte length, and SHA-256",
+        "closed per-host store snapshot and AE journal archive paths, byte lengths, and SHA-256",
+        "per-host deployment instant, fixed as-of instant, inclusion boundary, cache generation, and domain-separated identity-set digests"
+      ],
+      "must_not_bind": [
+        "final_protocol Git commit, Git blob, or bytes SHA-256",
+        "any consumption value, consume record, rate, decision, or verdict"
+      ]
+    },
+    "final_protocol": {
+      "path": "artifacts/recall-map/relevance/field/protocol.json",
+      "state": "future_revision_forbidden_until_manifest_commit",
+      "must_be_committed_after_manifest": true,
+      "must_bind": [
+        "the exact preseal_protocol Git commit, Git blob, byte length, and SHA-256 already named by manifest",
+        "the committed manifest Git commit, Git blob, byte length, and SHA-256"
+      ],
+      "must_not_be_referenced_by_manifest": true,
+      "only_effect_on_embargo": "After all manifest validations pass, this later revision may set outcome_access_embargo.release_authorized=true for the exact sealed inputs; failure leaves it false."
+    },
+    "cycle_rejection": "Reject any manifest that names the final protocol or any final protocol that was committed before the manifest it claims to bind. No digest is defined by replacing a self-field, canonicalizing away a commitment, or predicting a future Git object."
+  },
+  "metadata_only_store_construction_contract": {
+    "purpose": "Create two production-compatible stores that preserve the sealed organic reference exactly while preventing any earlier non-NULL recall_map from defining the candidate boundary.",
+    "source": {
+      "binding_ref": "baseline_compatible_source_binding",
+      "only_permitted_source_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/sfx/source.sqlite3",
+      "required_bytes": 514121728,
+      "required_sha256": "9f00abf4467b96bfb6f3cdce9123edfc275a392030da6833e3f7b58b3dcbabcc",
+      "construction_method": "After revalidating both bound paths and every baseline_compatible_source_binding fail-closed invariant, byte-copy only the closed authoritative stable main file to a same-directory temporary field-store path, fsync, atomically rename, and prove initial byte equality. Do not invoke SQLite backup against any live or replacement database.",
+      "forbidden_source_actions": [
+        "using the current live database, any later snapshot, or any alternative source",
+        "opening either bound source path through MemoryStore",
+        "writing, migrating, checkpointing, vacuuming, recreating, or changing either bound source path",
+        "using SQLite backup, dump/restore, or logical export to replace the exact bound main-file bytes",
+        "sanitizing a drifted source as a fallback",
+        "printing or exporting row values"
+      ],
+      "conflict_rule": "Any missing path, size/hash drift, attribution failure, nonzero WAL, open handle, integrity/schema/event/FK/map/organic mismatch, or need for another source is a protocol conflict. Abort and escalate; do not search, recapture, repair, or sanitize."
+    },
+    "approved_history_isolation_transform": {
+      "precondition": "The exact bound source has recall_events, a present recall_map column, zero non-NULL recall_map rows globally, and every row in the frozen organic event closure has recall_map IS NULL.",
+      "only_permitted_logical_change": "If the recall_map column exists, execute UPDATE recall_events SET recall_map = NULL WHERE recall_map IS NOT NULL inside one immediate transaction on the copied field store.",
+      "bound_source_result": "The exact bound source has zero target rows, so preparation requires no logical transform and the initial prepared field store and alt seed must remain byte-identical to the bound source. A nonzero pre-transform count is source drift, not permission to sanitize.",
+      "column_absent_rule": "The bound schema has recall_map present. If it is absent on any recheck, reject as schema drift rather than migrating it during preparation.",
+      "forbidden_changes": [
+        "row insertion or deletion",
+        "changing any recall_events column other than recall_map outside the frozen organic closure",
+        "changing nodes, connections, query_anchors, query_anchor_edges, retrieval policy, feedback, or configuration rows",
+        "VACUUM, dump-and-restore, filtering by node identity, or rebuilding the store through application APIs"
+      ],
+      "postcondition": "SELECT count(*) FROM recall_events WHERE recall_map IS NOT NULL equals 0 before any candidate process opens the field store.",
+      "conflict_rule": "If the bound source or initial copy has any transform target, if a transform would alter a frozen organic-closure row, if the field cannot remain byte-identical without repair, or if evaluator/preregistration changes appear necessary, abort and escalate."
+    },
+    "inherited_foreign_key_baseline": {
+      "schema_id": "sqlite-foreign-key-inherited-baseline-v1",
+      "purpose": "Preserve and hash-bind any pre-existing violations outside the sealed organic closure without repairing inherited rows, while rejecting every new violation and every violation that could invalidate the sealed organic evidence.",
+      "global_zero_required": false,
+      "no_row_repair_or_removal": true,
+      "bound_source_expectation": {
+        "user_table_count": 18,
+        "foreign_key_declaration_count": 8,
+        "tuple_count": 35,
+        "tuple_table_counts": {
+          "recall_events": 35
+        },
+        "supplementary_canonical_json_bytes": 2314,
+        "supplementary_canonical_json_sha256": "c32fa5bfb5c8d5fc74bb9c36b708ce2d3eb1bdc111625d6a4bd75c2b0540c8eb",
+        "source_closure_violations": 0,
+        "unresolved_closure_rows": 0
+      },
+      "closed_copy_rule": "Run all PRAGMAs on the exact closed authoritative source and on the closed prepared field store, never on the mutable live database and never through MemoryStore. The bound source expectation must reproduce before source-to-field comparison begins.",
+      "metadata_serialization": {
+        "table_inventory": "Enumerate every non-sqlite table from sqlite_schema in UTF-8 path-byte order. For each table serialize its name, sqlite_schema SQL, the PRAGMA foreign_key_list(table) cursor column names in returned order, and every returned foreign_key_list row sorted by its canonical row bytes. Empty lists are represented explicitly.",
+        "value_encoding": "Use the same one-byte type/domain tag plus u64be payload length encoding as frozen_organic_dependency_closure. INTEGER is canonical signed decimal ASCII, TEXT is UTF-8, BLOB is raw bytes, REAL is IEEE-754 binary64 big-endian, and NULL is a zero-length N value.",
+        "outputs_per_copy": [
+          "user_table_count",
+          "foreign_key_declaration_count",
+          "serialized_bytes",
+          "sha256"
+        ],
+        "equality": "Source and field user_table_count, foreign_key_declaration_count, serialized_bytes, and sha256 must be exactly equal."
+      },
+      "violation_tuple_serialization": {
+        "query": "PRAGMA foreign_key_check with no table argument",
+        "tuple_fields": [
+          "table",
+          "rowid",
+          "parent",
+          "fkid"
+        ],
+        "completeness": "Fetch to exhaustion and serialize every returned four-field tuple. Do not cap, sample, deduplicate, summarize by table, or stop after the first violation.",
+        "ordering": "Encode each tuple independently with the typed length-prefix encoding, sort the complete encoded records lexicographically by raw bytes, retain duplicate records, then hash a domain-separated stream containing the exact cursor column metadata, tuple count, and each length-prefixed encoded record.",
+        "outputs_per_copy": [
+          "cursor_metadata_sha256",
+          "tuple_count",
+          "serialized_bytes",
+          "tuples_sha256"
+        ],
+        "source_field_equality": "cursor_metadata_sha256, tuple_count, serialized_bytes, and tuples_sha256 must be exactly equal between source and field.",
+        "new_violations": "Compute multiset subtraction over the canonical encoded records, field minus source; the count must be exactly 0 even when the inherited tuple_count is nonzero."
+      },
+      "sealed_organic_closure_rule": {
+        "tables": [
+          "recall_events rows whose created_at is in frozen_organic_dependency_closure.event_interval",
+          "every query_anchor_edges row",
+          "every query_anchors row"
+        ],
+        "classification": "Classify each foreign_key_check child tuple by its table and rowid against the exact source and field closure row inventories. A NULL or unresolvable rowid for a named closure table is a protocol conflict, not an outside-closure assumption.",
+        "source_violations_required": 0,
+        "field_violations_required": 0,
+        "closure_violations_required": 0
+      },
+      "required_receipt_booleans": {
+        "source_field_metadata_equal": true,
+        "source_field_count_equal": true,
+        "source_field_digest_equal": true,
+        "source_field_equal": true
+      },
+      "required_receipt_counts": {
+        "new_violations": 0,
+        "closure_violations": 0
+      },
+      "acceptance": "Accept a globally nonempty inherited baseline only when metadata, complete tuple count, serialized byte length, and digest match source to field, multiset new_violations is zero, both closure-local counts are zero, and the receipt binds every reported value. Otherwise abort without changing inherited rows."
+    },
+    "frozen_organic_dependency_closure": {
+      "event_interval": {
+        "start_inclusive": "2026-08-01T00:00:00Z",
+        "end_inclusive": "2026-08-19T11:00:00Z"
+      },
+      "tables_and_rows": [
+        "recall_events: every declared column of every row in event_interval, including all delivering and qualifying consumer events read by load_events",
+        "query_anchor_edges: every declared column of the complete table, a conservative superset of the rows AnchorStratum can read for organic result ids",
+        "query_anchors: every declared column of the complete table, a conservative superset of anchors reachable from those edges"
+      ],
+      "schema_binding": "Include sqlite_schema SQL and PRAGMA table_xinfo metadata for each closure table before row records.",
+      "row_order": {
+        "recall_events": "id ascending after applying the interval predicate",
+        "query_anchor_edges": "anchor_id ascending, target_id ascending",
+        "query_anchors": "id ascending"
+      },
+      "typed_length_prefix_serialization": "For table headers, column metadata, and each row value, emit a one-byte domain/type tag, u64be payload length, and payload. NULL has tag N and zero length; INTEGER uses canonical signed decimal ASCII; REAL uses IEEE-754 binary64 big-endian; TEXT uses UTF-8; BLOB uses raw bytes. Hash the concatenation with sha256.",
+      "comparison": "Compute independently on the closed source snapshot and prepared field store. Schema digest, per-table row counts, per-table digests, and the combined closure digest must be byte-equal; organic_closure_equal must be true. Receipts expose only names, counts, lengths, and digests.",
+      "sealed_organic_expectations": {
+        "events_in_window": 5189,
+        "observable_consumer_events": 5276,
+        "opportunity_bearing_events": 1748,
+        "events_scored": 1740,
+        "items": 8214,
+        "primary_items": 4511,
+        "primary_consumed": 2103,
+        "primary_rate": 0.4662,
+        "anchor_items": 3703,
+        "anchor_consumed": 1500,
+        "anchor_rate": 0.4051,
+        "transport_sessions": 1055,
+        "organic_canonical_json_bytes": 1154,
+        "organic_canonical_json_sha256": "cc2f1a645d8031c22552f24417d3b1411ec6f9ccad124b28f0fadb23c70f5fac",
+        "organic_canonicalization": "UTF-8 json.dumps(report['arms']['organic'], ensure_ascii=False, sort_keys=True, separators=(',',':')) with no trailing newline"
+      }
+    },
+    "safe_verification_allowlist": [
+      "SQLite integrity_check and the complete inherited_foreign_key_baseline procedure on closed copies",
+      "schema names, column metadata, row counts, byte lengths, SHA-256 digests, foreign-key tuple counts, closure-local violation counts, and recall_map non-NULL counts",
+      "scripts/recall_map_effect.py --verify-prereg --as-of 2026-08-19T11:00:00Z",
+      "one organic-only reproduction at the frozen as-of, with the exact 1154-byte compact sorted-key arms.organic canonicalization compared to cc2f1a645d8031c22552f24417d3b1411ec6f9ccad124b28f0fadb23c70f5fac"
+    ],
+    "receipt_content_rule": "Preparation receipts are metadata-only. They must not contain a query, result JSON, recall_map payload, node id, transport/session id, anchor text, row serialization, AE journal record, consumption record, or consume record.",
+    "sfx_to_alt_seed": {
+      "construction": "After the sfx prepared store passes, copy its closed bytes to sanitized_seed_path without reopening them.",
+      "expected_bytes": 514121728,
+      "expected_sha256": "9f00abf4467b96bfb6f3cdce9123edfc275a392030da6833e3f7b58b3dcbabcc",
+      "byte_identity_reason": "The exact bound source already has zero non-NULL recall_map rows, so no approved transform has a target and both the prepared sfx store before candidate open and the closed alt seed must retain the source bytes exactly.",
+      "alt_acceptance": "The operator must manually copy the exact seed bytes on alt, verify size and sha256 before any application open, and prove the alt field store initially equals the seed byte-for-byte."
+    }
+  },
+  "schemas": {
+    "common_external_receipt_rules": {
+      "unknown_fields": "reject",
+      "regular_file_required": true,
+      "symlink_allowed": false,
+      "atomic_write_required": true,
+      "immutable_after_publish": true,
+      "success_conflict_value": null,
+      "binding_rule": "The consumer hashes the exact raw receipt bytes before parsing, validates the exact schema and producer identity, then binds raw byte length and SHA-256 in the next tracked protocol or manifest revision."
+    },
+    "host_configuration": {
+      "schema_id": "host-configuration-v1",
+      "required_fields": [
+        "captured_at_utc",
+        "host_id",
+        "hostname",
+        "service_manager_scope",
+        "service_unit",
+        "tls_unit",
+        "unit_fragment_paths",
+        "unit_fragment_bytes_sha256",
+        "exec_start_argv",
+        "environment_file_paths",
+        "environment_file_sanitized_sha256",
+        "effective_db_path",
+        "config_file_path",
+        "config_file_bytes_sha256",
+        "default_scope",
+        "transport",
+        "bind_host",
+        "port",
+        "tls_enabled",
+        "python_executable",
+        "console_script_path",
+        "install_mode",
+        "editable_project_location",
+        "installed_distribution_location",
+        "checkout_root",
+        "checkout_commit",
+        "checkout_tree",
+        "source_subtree_git_tree",
+        "source_subtree_typed_content_sha256",
+        "policy_bytes_sha256",
+        "selected_policy_sha256",
+        "lm_environment",
+        "secret_presence",
+        "delivery_channel"
+      ],
+      "enums": {
+        "host_id": [
+          "sfx",
+          "alt"
+        ],
+        "service_manager_scope": [
+          "user",
+          "system"
+        ],
+        "install_mode": [
+          "editable",
+          "copied-package"
+        ],
+        "transport": [
+          "http",
+          "sse"
+        ]
+      },
+      "nullable_only_when_absent": [
+        "tls_unit",
+        "config_file_path",
+        "config_file_bytes_sha256",
+        "editable_project_location"
+      ],
+      "lm_environment_names": [
+        "LM_RECALL_MAP",
+        "LM_DEFAULT_SCOPE",
+        "LM_SCOPE",
+        "LM_EXPOSE_ATTEST",
+        "LM_AUTO_CONSOLIDATE_POLICY",
+        "LM_DECAY_SWEEP_INTERVAL_SEC",
+        "LM_RECALL_CREDIT_POLICY",
+        "LM_RETRIEVAL_TUNING_POLICY",
+        "LM_RECALL_REPEAT_GATING",
+        "LM_RECALL_REPEAT_MIN_UNLINKED",
+        "LM_RECALL_REPEAT_MAX_LINK_RATE",
+        "LM_RECALL_REPEAT_MIN_SESSIONS",
+        "LM_RECALL_REPEAT_PROBE_EVERY",
+        "LM_RECALL_REPEAT_DROP_TRAILING_STUBS",
+        "LM_DELIVERY_SNIPPET_LADDER",
+        "LM_DELIVERY_SNIPPET_CHARS",
+        "LM_DELIVERY_SESSION_DEDUP",
+        "LM_DELIVERY_CONTEXT_VALUE_CHARS",
+        "LM_DELIVERY_FULL_NODE_DIET",
+        "LM_DELIVERY_PROVENANCE_VALUE_CHARS",
+        "LM_DELIVERY_STATS_COMPACTION",
+        "LM_DELIVERY_SPARSE",
+        "LIVING_MEMORY_EMBEDDING_BACKEND",
+        "LIVING_MEMORY_CHUNK_TOKENIZER",
+        "LM_TLS_CERT",
+        "LM_TLS_KEY"
+      ],
+      "environment_completeness_rule": "Record every effective variable whose name begins LM_, LIVING_MEMORY_, AE_STREAM_, or AE_CHAT_, plus STATE_DIR, PROJECT_NAME, and LM_URL. Record unset explicitly. Values matching TOKEN, SECRET, PASSWORD, CREDENTIAL, or a private-key value are never recorded; only presence and source are recorded.",
+      "delivery_channel": {
+        "required_fields": [
+          "lm_url",
+          "node_journal_producer_root",
+          "chat_journal_producer_roots",
+          "AE_STREAM_PROBE",
+          "AE_STREAM_JOURNAL",
+          "AE_STREAM_JOURNAL_DIR",
+          "STATE_DIR",
+          "AE_STREAM_INJECT_SILENCE_TOOLS",
+          "AE_STREAM_INJECT_CAP",
+          "AE_CHAT_LM_PROBE",
+          "AE_CHAT_OPERATOR_MESSAGE_MAP",
+          "AE_CHAT_INJECT_MIN_TOOLS",
+          "before_canonical_sha256",
+          "after_canonical_sha256",
+          "unchanged"
+        ],
+        "unchanged_rule": "before_canonical_sha256 must equal after_canonical_sha256 and unchanged must be true. No trigger, renderer, chat, cap, silence, probe, or wire-budget setting may change for this rollout."
+      },
+      "canonicalization": "sha256 of UTF-8 compact JSON with sorted keys after secret-value redaction and absolute realpath resolution"
+    },
+    "store_preparation_receipt": {
+      "schema_id": "store-preparation-receipt-v2",
+      "required_fields": [
+        "schema_id",
+        "accepted",
+        "producer_host",
+        "produced_on_host",
+        "produced_at_utc",
+        "protocol_id",
+        "protocol_git_commit",
+        "protocol_git_blob",
+        "protocol_bytes",
+        "protocol_bytes_sha256",
+        "source_binding_id",
+        "origin_observation_realpath",
+        "origin_observation_bytes",
+        "origin_observation_sha256",
+        "authoritative_source_realpath",
+        "authoritative_source_bytes",
+        "authoritative_source_sha256",
+        "source_paths_byte_equal",
+        "source_wal_bytes",
+        "source_open_handle_absent",
+        "source_provenance_evidence_sha256",
+        "source_invariants_match",
+        "source_host_configuration",
+        "source_snapshot_realpath",
+        "source_snapshot_bytes",
+        "source_snapshot_sha256",
+        "field_store_realpath",
+        "field_store_bytes",
+        "field_store_sha256",
+        "sqlite_integrity_ok",
+        "inherited_foreign_key_baseline",
+        "recall_map_column_state",
+        "pre_transform_nonnull_recall_map_rows",
+        "post_transform_nonnull_recall_map_rows",
+        "transform_statement_sha256",
+        "closure_schema_sha256_source",
+        "closure_schema_sha256_field",
+        "closure_combined_sha256_source",
+        "closure_combined_sha256_field",
+        "closure_table_counts",
+        "closure_table_sha256",
+        "organic_closure_equal",
+        "organic_canonical_json_sha256",
+        "organic_expectations_match",
+        "sealed_instrument_checks",
+        "evaluator_changed",
+        "preregistration_changed",
+        "candidate_process_opened_store",
+        "outcome_accessed",
+        "protocol_conflict"
+      ],
+      "inherited_foreign_key_baseline_required_fields": [
+        "schema_id",
+        "source",
+        "field",
+        "source_field_metadata_equal",
+        "source_field_count_equal",
+        "source_field_digest_equal",
+        "source_field_equal",
+        "new_violations",
+        "source_closure_violations",
+        "field_closure_violations",
+        "closure_violations"
+      ],
+      "inherited_foreign_key_copy_required_fields": [
+        "metadata_user_table_count",
+        "metadata_declaration_count",
+        "metadata_serialized_bytes",
+        "metadata_sha256",
+        "tuple_cursor_metadata_sha256",
+        "tuple_count",
+        "tuple_serialized_bytes",
+        "tuples_sha256",
+        "closure_violation_count"
+      ],
+      "acceptance": "accepted=true; source_binding_id is exact; both bound source paths recheck to 514121728 bytes and 9f00abf4467b96bfb6f3cdce9123edfc275a392030da6833e3f7b58b3dcbabcc and are byte-equal; source_wal_bytes=0; source_open_handle_absent=true; provenance evidence matches; source_invariants_match=true; field and alt-seed bytes remain exact; integrity succeeds; pre- and post-transform non-NULL recall_map rows are 0; exact organic closure digests match and organic_closure_equal=true; the complete inherited foreign-key baseline reports the bound 35-tuple source expectation, all four source/field equality booleans true, new_violations=0, both closure counts=0, and closure_violations=0; the 1154-byte organic digest is exact; organic_expectations_match=true; evaluator_changed=false; preregistration_changed=false; candidate_process_opened_store=false; outcome_accessed=false; protocol_conflict=null. A nonzero inherited global tuple_count is accepted only at the exact bound count and digests."
+    },
+    "candidate_promotion_receipt": {
+      "schema_id": "candidate-promotion-receipt-v1",
+      "required_fields": [
+        "schema_id",
+        "producer_host",
+        "produced_at_utc",
+        "protocol_id",
+        "authorization_protocol_git_commit",
+        "authorization_protocol_bytes_sha256",
+        "shared_checkout_realpath",
+        "before_commit",
+        "after_commit",
+        "fast_forward_only",
+        "worktree_clean_before",
+        "worktree_clean_after",
+        "carrier_tree",
+        "carrier_relationship_checks",
+        "exact_nonruntime_allowlist_checks",
+        "tracked_field_allowlist_checks",
+        "source_policy_instrument_checks",
+        "service_restarted",
+        "outcome_accessed"
+      ],
+      "acceptance": "The external operator alone fast-forwards the clean shared checkout from the observed base to the exact authorized carrier; every carrier check is exact, service_restarted=false, and outcome_accessed=false."
+    },
+    "rollback_binding": {
+      "schema_id": "rollback-binding-v1",
+      "required_fields": [
+        "host_id",
+        "captured_at_utc",
+        "predeployment_host_configuration_sha256",
+        "predeployment_carrier_commit",
+        "predeployment_carrier_tree",
+        "predeployment_checkout_root",
+        "predeployment_install_mode",
+        "predeployment_distribution_location",
+        "predeployment_effective_db_realpath",
+        "predeployment_db_bytes",
+        "predeployment_db_sha256",
+        "predeployment_store_closed",
+        "predeployment_store_parts",
+        "rollback_material_root_realpath",
+        "predeployment_rollback_bundle_realpath",
+        "predeployment_rollback_bundle_bytes",
+        "predeployment_rollback_bundle_sha256",
+        "predeployment_service_unit",
+        "predeployment_exec_start_argv",
+        "predeployment_boot_id",
+        "predeployment_delivery_configuration_sha256",
+        "restore_material_available",
+        "operator_only"
+      ],
+      "acceptance": "Every path is host-resolved and non-secret; rollback_material_root_realpath equals the host's prebound non-nested rollback root; after stopping the old process and before starting the candidate, the previous carrier/configuration and a closed byte-for-byte bundle of the database main file plus every present sidecar are hash-bound; predeployment_store_closed=true; restore_material_available=true; operator_only=true; and the delivery digest equals host_configuration_before.delivery_channel.before_canonical_sha256."
+    },
+    "deployment_receipt": {
+      "schema_id": "deployment-receipt-v2",
+      "required_fields": [
+        "schema_id",
+        "producer_host",
+        "produced_on_host",
+        "produced_at_utc",
+        "protocol_id",
+        "protocol_bytes_sha256",
+        "rollout_authorization_protocol_bytes_sha256",
+        "store_preparation_receipt_bytes_sha256",
+        "carrier_commit",
+        "carrier_tree",
+        "carrier_relationship_checks",
+        "host_configuration_before",
+        "host_configuration_after",
+        "rollback_binding",
+        "rollback_ready",
+        "delivery_configuration_unchanged",
+        "field_store_realpath",
+        "initial_store_bytes",
+        "initial_store_sha256",
+        "before_boot_id",
+        "after_boot_id",
+        "boot_ids_distinct",
+        "process_started_at_utc",
+        "candidate_deployment_instant_utc",
+        "pid",
+        "effective_argv",
+        "served_checkout_root",
+        "served_protocol_check_exit",
+        "served_protocol_check_json_sha256",
+        "served_source_subtree_git_tree",
+        "served_source_subtree_typed_content_sha256",
+        "served_policy_bytes_sha256",
+        "served_selected_policy_sha256",
+        "cache_generation_id",
+        "cache_generation_fresh",
+        "ae_journal_producer_roots",
+        "ae_journal_archive_root",
+        "sealed_instrument_checks",
+        "restart_count",
+        "outcome_accessed"
+      ],
+      "acceptance": "Exact authorized store and carrier, valid rollback-binding-v1 with rollback_ready=true, distinct boot ids, restart_count=1, served checker exit 0, exact source/policy hashes, both exact_nonruntime_allowlist files exact, fresh cache generation, unchanged delivery configuration, all instruments exact, and outcome_accessed=false."
+    },
+    "accrual_receipt": {
+      "schema_id": "outcome-blind-accrual-receipt-v1",
+      "required_fields": [
+        "schema_id",
+        "producer_host",
+        "produced_on_host",
+        "produced_at_utc",
+        "protocol_id",
+        "preseal_protocol_git_commit",
+        "preseal_protocol_bytes_sha256",
+        "deployment_receipt_bytes_sha256",
+        "candidate_deployment_instant_utc",
+        "candidate_cutoff_utc",
+        "fixed_as_of_utc",
+        "closed_store_snapshot_realpath",
+        "closed_store_snapshot_bytes",
+        "closed_store_snapshot_sha256",
+        "closed_ae_journal_archive_realpath",
+        "closed_ae_journal_archive_bytes",
+        "closed_ae_journal_archive_sha256",
+        "structural_inventory_schema_id",
+        "structural_inventory_sha256",
+        "structural_stopping_rule_reproduced",
+        "map_events",
+        "map_items",
+        "map_transport_sessions",
+        "injections_total",
+        "injections_scorable",
+        "scorable_share",
+        "full_horizon_hours",
+        "all_admitted_complete",
+        "earliest_nonnull_recall_map_at_or_after_deployment",
+        "organic_closure_equal",
+        "sealed_instrument_checks",
+        "outcome_accessed",
+        "protocol_conflict"
+      ],
+      "acceptance": "The inventory uses only outcome_blind_preseal_inventory; candidate_cutoff_utc is the first qualifying structural boundary; fixed_as_of_utc equals candidate_cutoff_utc plus 24 hours; structural_stopping_rule_reproduced=true; map_events>=20, map_items>=20, map_transport_sessions>=10, injections_scorable>=20, scorable_share>=0.50, full_horizon_hours>=24, every admitted unit is complete, earliest map is not before deployment, organic closure remains exact, all instruments match, outcome_accessed=false, and protocol_conflict=null."
+    },
+    "rollback_receipt": {
+      "schema_id": "rollback-receipt-v1",
+      "required_fields": [
+        "schema_id",
+        "producer_host",
+        "produced_on_host",
+        "produced_at_utc",
+        "protocol_id",
+        "trigger",
+        "deployment_receipt_bytes_sha256",
+        "rollback_binding_sha256",
+        "candidate_service_stopped_at_utc",
+        "restored_carrier_commit",
+        "restored_carrier_tree",
+        "restored_checkout_root",
+        "restored_install_mode",
+        "restored_effective_db_realpath",
+        "restored_db_bytes",
+        "restored_db_sha256",
+        "restored_store_parts",
+        "restored_rollback_bundle_sha256",
+        "before_rollback_boot_id",
+        "after_rollback_boot_id",
+        "boot_ids_distinct",
+        "restart_count",
+        "health_ok",
+        "served_protocol_check_exit",
+        "restored_delivery_configuration_sha256",
+        "delivery_configuration_restored",
+        "candidate_inputs_preserved_read_only",
+        "candidate_cohort_void",
+        "outcome_accessed",
+        "protocol_conflict"
+      ],
+      "acceptance": "The receipt is produced on the rolled-back host, binds the exact deployment and rollback binding, restores every bound previous carrier/install/configuration value plus the exact closed main-file/sidecar bundle, changes boot id with restart_count=1, passes health and served-protocol verification, preserves candidate inputs read-only, marks the candidate cohort void, records outcome_accessed=false, and has protocol_conflict=null."
+    }
+  },
+  "hosts": {
+    "sfx": {
+      "configuration_before": {
+        "state": "pending_read_only_capture"
+      },
+      "configuration_after": {
+        "state": "pending_authorized_deployment"
+      },
+      "store_preparation": {
+        "state": "pending",
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-store-preparation.json",
+        "receipt_tracked": false
+      },
+      "candidate_promotion": {
+        "state": "pending_external_operator",
+        "shared_checkout": "/home/sfx/p/lm",
+        "agent_mutation_allowed": false,
+        "external_operator_fast_forward_required": true,
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-candidate-promotion.json",
+        "receipt_tracked": false
+      },
+      "deployment": {
+        "state": "pending_rollout_authorization_and_promotion_proof",
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-deployment.json",
+        "receipt_tracked": false
+      },
+      "accrual": {
+        "state": "pending_deployment",
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-accrual.json",
+        "receipt_tracked": false
+      },
+      "rollback": {
+        "state": "not_invoked_pending_deployment_binding",
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/receipts/sfx-rollback.json",
+        "receipt_tracked": false
+      }
+    },
+    "alt": {
+      "configuration_before": {
+        "state": "pending_operator_capture_on_alt"
+      },
+      "configuration_after": {
+        "state": "pending_operator_deployment_on_alt"
+      },
+      "store_preparation": {
+        "state": "pending_manual_alt_receipt",
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt/alt-store-preparation.json",
+        "producer_receipt_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts/alt-store-preparation.json",
+        "receipt_tracked": false
+      },
+      "deployment": {
+        "state": "pending_rollout_authorization_and_manual_alt_receipt",
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt/alt-deployment.json",
+        "producer_receipt_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts/alt-deployment.json",
+        "receipt_tracked": false
+      },
+      "accrual": {
+        "state": "pending_manual_alt_deployment",
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt/alt-accrual.json",
+        "producer_receipt_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts/alt-accrual.json",
+        "receipt_tracked": false
+      },
+      "rollback": {
+        "state": "not_invoked_pending_operator_deployment_binding",
+        "receipt_path": "/home/sfx/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/operator-inputs/alt/alt-rollback.json",
+        "producer_receipt_path_template": "${HOME}/.local/share/living-memory/field/directional-zsum-r1-fresh-field-20260823/alt/receipts/alt-rollback.json",
+        "receipt_tracked": false
+      },
+      "automation_allowed": false
+    }
+  },
+  "cache_generation_semantics": {
+    "implementation_fact": "One RecallMapBuilder is constructed per server process and its structure cache, negative-cache entries, curtail memo, and revision memo are process-local only.",
+    "freshness_rule": "A valid deployment starts a new process after the authorized store and exact candidate are already in place. It must not restore, serialize, preseed, or carry over any RecallMapBuilder state from a prior process.",
+    "generation_start": "The /admin/info started_at instant for the new boot is candidate_deployment_instant_utc and is strictly earlier than every admitted candidate event.",
+    "generation_id_canonical_object_fields": [
+      "protocol_id",
+      "host_id",
+      "after_boot_id",
+      "process_started_at_utc",
+      "field_store_initial_sha256",
+      "carrier_commit",
+      "source_subtree_typed_content_sha256",
+      "selected_policy_sha256"
+    ],
+    "generation_id": "sha256 of UTF-8 compact sorted-key JSON over generation_id_canonical_object_fields",
+    "pre_policy_cache_carry_over_allowed": false,
+    "actual_generations": {
+      "sfx": {
+        "state": "pending_deployment_receipt"
+      },
+      "alt": {
+        "state": "pending_operator_deployment_receipt"
+      }
+    }
+  },
+  "accepted_store_receipts": {
+    "sfx": {
+      "state": "pending_external_input_validation"
+    },
+    "alt": {
+      "state": "pending_operator_external_input_validation"
+    },
+    "authorization_rule": "A later committed preseal revision may replace each pending object with the exact external path, bytes, SHA-256, producer host/instant, attested protocol commit/hash, baseline_compatible_source_binding.binding_id, exact source/store/seed hashes, and accepted=true only after independent validation. Missing, mutable, stale, substitute-source, or conflicting evidence keeps rollout_authorized=false and requires escalation."
+  },
+  "deployment_bindings": {
+    "sfx": {
+      "complete": false,
+      "state": "pending_external_operator_receipt"
+    },
+    "alt": {
+      "complete": false,
+      "state": "pending_operator_on_alt_receipt"
+    },
+    "binding_rule": "Before accrual, a committed preseal revision binds each immutable deployment receipt and its actual carrier/tree, full sanitized before/after configuration, deployment instant, boot IDs, cache generation, initial store hash, journal roots, served provenance, unchanged delivery configuration, and instrument checks."
+  },
+  "rollback_plan": {
+    "state": "predeclared_not_invoked",
+    "scope": "per_host_independent",
+    "authority": "Only the external operator may mutate a deployed checkout, install, service configuration, database selection, or service state. Alt rollback is produced manually on alt; no local agent or automation may connect to alt.",
+    "binding_precondition": "The deployment workflow must capture the sanitized prior configuration first, stop the old process, create and hash a closed byte-for-byte rollback bundle of its database main file and every present sidecar, and establish a valid rollback-binding-v1 with rollback_ready=true before starting the candidate process. Deployment-receipt-v2 records that already established binding; absence rejects deployment.",
+    "triggers": [
+      "carrier, source, policy, instrument, store, root, cache-generation, served-provenance, or receipt mismatch",
+      "health or served-protocol verification failure",
+      "delivery-channel, payload, budget, silence, cap, or persisted-filter-accounting drift",
+      "outcome-access embargo violation or any attempt to score before release",
+      "operator-directed abort"
+    ],
+    "procedure": [
+      "Stop the affected candidate service and record the trigger without inspecting a candidate outcome.",
+      "Restore the exact predeployment carrier, install mode, distribution location, effective database path and closed main-file/sidecar bundle, sanitized host configuration, service argv, and delivery configuration bound by rollback-binding-v1.",
+      "Restart the affected service exactly once, require a new boot id, health ok, the restored database byte hash, and served-protocol checker exit 0 from the restored checkout.",
+      "Do not delete, rewrite, reopen through application APIs, merge, or reuse the candidate field store, seed, snapshot, journal archive, or receipts; preserve them read-only for protocol-conflict audit.",
+      "Publish one immutable external rollback-receipt-v1 on the producer host and bind its raw bytes in any later tracked protocol revision."
+    ],
+    "cohort_effect": {
+      "before_manifest": "The affected host cohort is permanently void and must not be scored or reused; a replacement attempt requires a new protocol id, fresh store, fresh cache generation, and new receipts.",
+      "after_manifest_before_release": "Keep outcome_access_embargo.active=true and release_authorized=false, mark the manifest invalid in a later protocol revision, and do not run either outcome tool.",
+      "host_isolation": "A rollback decision or receipt on one host neither supplies evidence for nor changes membership on the other host; success still requires two independently valid hosts under one unmodified protocol."
+    },
+    "outcome_rule": "Rollback never authorizes outcome access, never converts a failed or void cohort into alt evidence, and never changes rollout_authorized or release_authorized to true."
+  },
+  "outcome_access_embargo": {
+    "active": true,
+    "release_authorized": false,
+    "started_at_utc": "2026-08-23T08:38:18Z",
+    "applies_to": [
+      "candidate recall-event queries, result payloads, later follow-up rows, delivery-history outcomes, and consumption state",
+      "AE consume records, consume links or payloads, probe outcomes, curtail outcomes, outcome aggregates, decisions, and verdicts",
+      "recall-map or stream-injection outcome tools and their outputs"
+    ],
+    "outcome_blind_preseal_inventory": {
+      "schema_id": "fresh-field-outcome-blind-structural-inventory-v1",
+      "prebound_before_accrual": true,
+      "purpose": "Determine fixed membership, exposure floors, complete horizons, identity disjointness, earliest-map validity, and immutable input hashes before outcomes are available, without reading any field that can establish follow-up consumption.",
+      "membership_rule": "For each host, after binding the exact deployment instant and fresh cache generation, choose fixed_as_of_utc solely from structural exposure and clock/horizon completion. Let candidate_cutoff_utc equal fixed_as_of_utc minus 24 hours; admit every unchanged-tool-eligible map-bearing event from the earliest non-NULL recall_map through candidate_cutoff_utc and every delivered AE injection through the same cutoff. Later event timestamps and allowlisted session records may prove closure or structural scorability only and never enter membership. Never include, exclude, extend, stop, or choose either instant from consume presence, rates, decisions, or verdicts.",
+      "structural_stopping_rule": {
+        "per_host": true,
+        "pooling_forbidden": true,
+        "candidate_cutoff_candidates": "For one host, sort the unique created_at/timestamp values of all structurally eligible post-deployment map events and delivered injections. Equal timestamps form one indivisible boundary.",
+        "prefix_rule": "For each candidate cutoff C in ascending order, include every eligible map event and delivered injection on that host with timestamp <= C. Use allowlisted session records through C plus 24 hours only to determine whether injections in that prefix are structurally scorable.",
+        "first_qualifying_cutoff": "Choose the earliest C whose complete prefix has map_events>=20, map_items>=20, distinct map transport sessions>=10, injections_scorable>=20, and injections_scorable/injections_total>=0.50. No later cutoff may replace it.",
+        "fixed_as_of_rule": "Set fixed_as_of_utc exactly to C plus 24 hours. Close on the first structural poll whose wall clock and closed inputs cover that instant; records after fixed_as_of_utc may prove archive closure but may not change membership or floors.",
+        "incomplete_rule": "If no qualifying C exists, continue accrual without outcome inspection. If a protocol conflict, unknown field, missing timestamp, or embargo violation occurs, fail closed; do not skip the unit, move the cutoff, or substitute the other host.",
+        "forbidden_inputs": [
+          "consumption presence, count, linkage, distance, rate, decision, or verdict",
+          "candidate query, result, node, label, hint, thinking, probe, curtail, or payload content",
+          "the other host's traffic, cutoff, or outcome"
+        ]
+      },
+      "recall_event_projection": {
+        "permitted_columns": [
+          "id",
+          "created_at",
+          "transport_session_id",
+          "session_id",
+          "scope",
+          "task",
+          "ambient_context.task_pattern only",
+          "recall_map"
+        ],
+        "recall_map_permitted_uses": [
+          "test NULL versus non-NULL",
+          "validate additive payload shape",
+          "count opportunity-bearing map events and ordered offered items",
+          "derive offered item positions and domain-separated exposed-item identities"
+        ],
+        "identity_only_uses": "session_id supplies the source-qualified session identity. scope, task, and only ambient_context.task_pattern may be passed through the exact frozen src/living_memory/recall_map.py cache_key function to derive the source-qualified cache identity; they may not be emitted, grouped for outcomes, or used for membership or policy decisions.",
+        "prohibited_columns": [
+          "query",
+          "results",
+          "all ambient_context members except task_pattern"
+        ],
+        "later_event_rule": "Later recall rows may contribute only created_at to prove the closed snapshot reaches fixed_as_of_utc. Their query, results, recall_map payload, scope, task, session_id, ambient_context, and any delivery-history join are forbidden."
+      },
+      "ae_journal_projection": {
+        "permitted_record_kinds": [
+          "inject",
+          "session"
+        ],
+        "permitted_fields": [
+          "v",
+          "kind",
+          "session_id",
+          "seq",
+          "delivered",
+          "created_at or timestamp",
+          "position.tool_calls_seen"
+        ],
+        "permitted_uses": "Count delivered exposure, calculate at least five subsequent tool calls from an inject position to its closing session position, compute scorable_share, freeze session identities and inclusion boundaries, and prove a complete 24-hour wall-clock horizon.",
+        "forbidden_record_kinds": [
+          "consume",
+          "curtail",
+          "probe",
+          "capability"
+        ],
+        "forbidden_fields": [
+          "inject_seq on any consume record",
+          "consume distance or position",
+          "probe outcome",
+          "curtail source or reason",
+          "node_ids",
+          "ask_hints",
+          "thinking text",
+          "query",
+          "injection body"
+        ],
+        "unknown_field_rule": "Fail closed before reading a field or record kind not explicitly allowlisted; do not inspect it to decide whether it is harmless."
+      },
+      "identity_domains": {
+        "source_identity": "local",
+        "source_identity_binding": "Both candidate stores inherit the same exact stable seed SHA-256 9f00abf4467b96bfb6f3cdce9123edfc275a392030da6833e3f7b58b3dcbabcc and therefore deliberately use source_identity=local. The train/eval manifest independently names its later hash-bound historical snapshot logical_name=local; the snapshots are not claimed byte-equal. Host id is recorded separately and is not mixed into disjointness keys, so reuse across either historical snapshot or candidate host remains detectable.",
+        "source_qualified_event": "sha256('recall-map-relevance-event-v1\\0' || source_identity || '\\0' || event_id), byte-identical to scripts/recall_map_relevance_eval.py::_event_digest",
+        "source_qualified_transport_session": "sha256('lm-field-transport-v1\\0' || source_identity || '\\0transport\\0' || transport_session_id)",
+        "source_qualified_session": "sha256('lm-field-session-v1\\0' || source_identity || '\\0session\\0' || session_id)",
+        "source_qualified_cache": "sha256('lm-field-cache-v1\\0' || source_identity || '\\0cache\\0' || cache_key(scope_or_global, task, ambient_context.task_pattern))",
+        "identity_set_digest": "For each host/partition and identity domain, parse each lower-case SHA-256 hex identity to 32 raw bytes, deduplicate, sort lexicographically, and hash UTF-8 'lm-field-identity-set-v1\\0' || UTF-8 domain || NUL || u64be(count) || the concatenated 32-byte values. Emit only domain, count, and digest.",
+        "cache_generation": "The separate deployment cache_generation_id is also sealed and must differ across hosts and every prior process, but it does not replace the source-qualified per-event cache identity required by the frozen policy.",
+        "historical_reference_rule": "Reconstruct complete train and eval identity sets from only the immutable source bytes hash-bound by dataset-manifest.json and the frozen split inputs, using the same source identity and exact cache_key implementation. Opaque component summaries alone are insufficient. If the complete registered reference cannot be reproduced without hash drift, manifest sealing is forbidden.",
+        "comparison_rule": "For source-qualified event, transport-session, session, and cache sets, require zero candidate overlap with train, eval, and the other candidate host. Because both candidate hosts share source_identity=local, raw identity reuse across sfx and alt remains detectable.",
+        "set_construction_rule": "Deduplicate only after domain separation. Event id is mandatory. Missing transport_session_id or session_id contributes no identity in that domain and may not be invented, but every present value contributes exactly once; cache identity is mandatory for every admitted map event.",
+        "required_zero_intersections": [
+          "train x eval for event, transport-session, session, and cache identities",
+          "sfx candidate x train and sfx candidate x eval for all four identity domains",
+          "alt candidate x train and alt candidate x eval for all four identity domains",
+          "sfx candidate x alt candidate for all four identity domains"
+        ],
+        "failure_rule": "Any nonzero intersection, incomplete historical reconstruction, missing mandatory event/cache identity, hash drift, or use of host id inside a source-qualified key rejects the manifest. Never drop a conflicting unit or host to manufacture disjointness."
+      },
+      "inventory_output": "Expose only schema id, host, fixed boundaries, counts, minima booleans, full-horizon booleans, domain-separated sorted identity-set counts/digests, closure digests, and closed input byte metadata. Raw ids, recall_map JSON, labels, node ids, journal records, and row serializations stay outside tracked artifacts.",
+      "outcome_accessed_value": false
+    },
+    "manifest_seal": {
+      "allowed_while_active": true,
+      "path": "artifacts/recall-map/relevance/field/manifest.json",
+      "input_projection": "outcome_blind_preseal_inventory only",
+      "required_checks": [
+        "manifest binds the exact committed preseal protocol and every external receipt and closed input by path, byte length, and SHA-256",
+        "sfx and alt independently meet 20 map events, 20 map items, 10 transport sessions, 20 scorable injections, scorable_share at least 0.50, and complete 24-hour horizons",
+        "each candidate_cutoff_utc is the first qualifying boundary under structural_stopping_rule and each fixed_as_of_utc is exactly 24 hours later",
+        "source-qualified event, transport-session, session, and cache identity sets have zero overlap with train, eval, and the other host in every registered comparison",
+        "the earliest non-NULL recall_map in each snapshot is at or after its exact deployment instant",
+        "the sealed organic schema, counts, per-table digests, combined digest, and canonical aggregate reproduce exactly",
+        "outcome_inspected_before_seal is false"
+      ],
+      "forbidden_content": "No consumption value, consume record, query, result list, raw recall_map, raw identity, rate, decision, verdict, or final-protocol forward reference may enter the manifest.",
+      "commitment": "The manifest binds only the already committed preseal protocol. The later final protocol binds the committed manifest, as specified by commitment_chain."
+    },
+    "prohibited_while_active": [
+      "SELECT, dump, print, tail, grep, parse, join, count, or otherwise inspect candidate queries, result lists, later follow-up contents, delivery-history outcomes, or consumption state",
+      "open or parse any AE field or record kind outside outcome_blind_preseal_inventory.ae_journal_projection",
+      "inspect even the presence, count, linkage, payload, position, or distance of a consume record",
+      "run scripts/recall_map_effect.py on a candidate as-of or stream_injection_metrics.py on field journals",
+      "refit, tune, branch, or gate the policy from any field observation",
+      "use a health check, row count, cache hit, or operator report as a proxy outcome"
+    ],
+    "allowed_while_active": [
+      "the frozen pre-feature organic verification explicitly allowlisted by metadata_only_store_construction_contract",
+      "health, boot id, process start, PID, argv, unit, install, checkout, source, policy, protocol, instrument, path, and byte-hash provenance",
+      "SQLite integrity, schema metadata, total byte sizes, the inherited foreign-key baseline, and the zero/nonzero recall_map count required before deployment",
+      "the exact outcome_blind_preseal_inventory projection for exposure, identity, fixed membership, disjointness, and horizon completion",
+      "blind copying and hashing of closed store or journal bytes after accrual",
+      "constructing and committing manifest_seal from only the prebound structural projection"
+    ],
+    "release_preconditions": [
+      "both deployments and actual UTC instants are committed in protocol.json",
+      "both cache generations, complete non-secret host configurations, distinct roots, initial store hashes, and all receipt hashes are committed",
+      "accrual is closed and every admitted candidate unit has matured for the full 24-hour horizon",
+      "the outcome-blind manifest is committed and binds source-qualified membership plus byte hashes of the completed closed store snapshots and AE journal archives",
+      "a later final protocol revision binds that exact committed manifest without a backward reference from manifest to final protocol",
+      "the final protocol sets release_authorized=true for only those exact inputs and is committed before either outcome tool is invoked"
+    ],
+    "violation_rule": "Any access outside the allowlist permanently voids this candidate holdout; record the violation and escalate rather than continuing."
+  },
+  "final_preoutcome_seal": {
+    "state": "pending_committed_manifest",
+    "pending_fields_are_absent": true,
+    "required_fields_when_sealed": [
+      "sealed_at_utc",
+      "preseal_protocol_git_commit",
+      "preseal_protocol_git_blob",
+      "preseal_protocol_bytes",
+      "preseal_protocol_sha256",
+      "manifest_git_commit",
+      "manifest_git_blob",
+      "manifest_bytes",
+      "manifest_sha256"
+    ],
+    "release_rule": "Only a protocol revision committed after the manifest may add every required scalar field with exact values and set outcome_access_embargo.release_authorized=true. It must leave the fields absent and release_authorized=false on any structural, provenance, disjointness, horizon, closure, instrument, or embargo failure."
+  },
+  "alt_operator_checklist": {
+    "source": {
+      "path": "docs/deployment.md",
+      "sha256": "107fe0811c75e8a370430c213ada13394cc95fb3eae70435e84a04ddbadd4c12"
+    },
+    "operator_only": true,
+    "agent_prohibitions": [
+      "Do not connect to alt.",
+      "Do not run ssh, scp, rsync, remote shell, remote copy, package install, service restart, health check, or receipt command against alt.",
+      "Do not generate or edit either alt receipt off-host and label it as on-host evidence."
+    ],
+    "store_preparation_steps": [
+      "On alt, the operator resolves ${HOME}, creates the prebound alt field-store and AE-journal roots manually, verifies they are non-symlink, non-nested, and distinct from all live roots, and records absolute realpaths.",
+      "Do not copy until protocol.json contains the sfx-preparation-bound expected sanitized seed byte length and sha256; rollout_authorized must still be false at this stage.",
+      "The operator manually transfers the exact sanitized seed to alt and performs every filesystem copy into received_seed_path and field_store_path from an interactive process on alt.",
+      "Before any application opens the bytes, verify byte length and sha256 against the protocol, clone received_seed_path to field_store_path while closed, and verify byte-for-byte equality again.",
+      "Run integrity, the complete inherited-foreign-key metadata/tuple baseline, zero-new and zero-closure-violation checks, organic-closure equality, organic-digest, zero-prior-map, path-distinctness, policy, and five-instrument checks on alt without printing row values or opening candidate outcomes.",
+      "Produce alt-store-preparation.json manually on alt at external_receipts.alt_store_preparation.producer_path_template using store-preparation-receipt-v2, atomic rename, and read-only mode; then manually transfer only those immutable bytes to external_receipts.alt_store_preparation.path and reverify length and SHA-256. Do not deploy or restart yet."
+    ],
+    "deployment_preconditions": [
+      "A committed protocol revision sets rollout_authorized=true and hash-binds both accepted preparation receipts and exact initial store bytes.",
+      "The operator has the exact authorized carrier and all bound LM and AE instrument bytes available on alt.",
+      "The outcome-access embargo remains active and no candidate journal or store outcome has been inspected."
+    ],
+    "deployment_steps": [
+      "On alt, capture the pre-change host configuration and pre-restart /health boot_id manually, including the complete sanitized LM and AE delivery configuration required by host-configuration-v1.",
+      "Manually deliver the authorized carrier. Because non-interactive GitHub access is unavailable, use an operator-delivered git bundle with git pull --ff-only /tmp/<bundle> <branch>, or an operator-owned temporary local branch, and verify the carrier contract before installation.",
+      "Inspect pip show living-memory on alt. If editable, verify Editable project location is the authorized checkout; reinstall only if dependencies or project scripts changed. If copied-package, manually run that environment's pip install --no-deps --force-reinstall <authorized-checkout> before restart.",
+      "Manually change only the Living Memory database selection to the proven alt field_store_path. Preserve every delivery trigger, renderer, chat, cap, silence, probe, endpoint, scope, and wire-budget value byte-for-byte.",
+      "After the candidate, install mode, authorized store, and pending configuration are proven, manually stop the actual alt living-memory.service using its existing unit scope; bind the now-closed prior main file and every present sidecar into rollback-binding-v1; then apply the database-selection change and start the service exactly once. Do not start until rollback_ready=true.",
+      "From alt itself, verify both relevant units are active, read localhost /health and /admin/info, require a new boot_id, and record the actual UTC process started_at, PID, effective argv, default scope, and candidate deployment instant.",
+      "From the authorized checkout on alt, run scripts/check_deployed_protocol.py with alt's actual default scope and require exit 0; capture its JSON as a hash-bound receipt input without exposing credentials.",
+      "Recompute carrier ancestry, the exact two-file non-runtime allowlist, tracked-field allowlist, deployed source subtree, policy bytes, selected-policy constant, protocol bytes, instrument hashes, field-store identity, fresh cache-generation id, and unchanged before/after delivery-configuration digests on alt.",
+      "Produce alt-deployment.json manually on alt at external_receipts.alt_deployment.producer_path_template using deployment-receipt-v2, atomic rename, and read-only mode; then manually transfer only those immutable bytes to external_receipts.alt_deployment.path and reverify length and SHA-256."
+    ],
+    "accrual_steps": [
+      "Use only outcome_access_embargo.outcome_blind_preseal_inventory. Do not read consume records, probe outcomes, curtail records, queries, later result lists, rates, decisions, or verdicts.",
+      "Choose the closed archive boundary and fixed_as_of_utc solely from prebound exposure floors and completion of every 24-hour horizon; include all structurally eligible units rather than cherry-picking membership.",
+      "Close and hash the exact alt store snapshot and AE archive, then produce alt-accrual.json manually on alt at external_receipts.alt_accrual.producer_path_template using outcome-blind-accrual-receipt-v1.",
+      "Transfer only the immutable receipt and separately approved sealed bytes to their prebound external input paths; reverify lengths and SHA-256 before manifest construction."
+    ],
+    "rollback_steps": [
+      "Before candidate restart, produce the rollback-binding-v1 portion of alt's deployment receipt from alt's own predeployment checkout, install, store, unit, argv, boot, and delivery state; do not deploy unless rollback_ready=true.",
+      "On any rollback_plan trigger, stop the candidate service, restore only the exact values in rollback-binding-v1, restart exactly once, and verify the new boot, health, restored database hash, served protocol, and delivery digest on alt itself.",
+      "Preserve candidate stores, journals, snapshots, and receipts read-only, mark the cohort void, and produce alt-rollback.json manually on alt using rollback-receipt-v1 before transferring those immutable receipt bytes to the accepted-copy path."
+    ],
+    "receipt_rejection_rules": [
+      "Reject a receipt produced, rewritten, or completed off alt.",
+      "Reject stale timestamps, a wrong protocol hash, missing raw provenance digests, unresolved path templates, or a receipt created before its claimed operation.",
+      "Reject install ambiguity, a non-editable package not reinstalled, a checkout-only proof with no served-protocol proof, identical boot ids, restart_count other than 1, or a non-fresh cache generation.",
+      "Reject any delivery-configuration drift, wrong store, source/policy/instrument drift, outcome access, automated alt action, or incomplete field."
+    ]
+  },
+  "actual_deployment_fields": {
+    "sfx": {
+      "carrier_commit": {
+        "state": "pending"
+      },
+      "carrier_tree": {
+        "state": "pending"
+      },
+      "deployment_instant_utc": {
+        "state": "pending"
+      },
+      "before_boot_id": {
+        "state": "pending"
+      },
+      "after_boot_id": {
+        "state": "pending"
+      },
+      "cache_generation_id": {
+        "state": "pending"
+      },
+      "initial_store_sha256": {
+        "state": "pending"
+      },
+      "served_provenance": {
+        "state": "pending"
+      },
+      "rollback_binding": {
+        "state": "pending"
+      }
+    },
+    "alt": {
+      "carrier_commit": {
+        "state": "pending_operator_receipt"
+      },
+      "carrier_tree": {
+        "state": "pending_operator_receipt"
+      },
+      "deployment_instant_utc": {
+        "state": "pending_operator_receipt"
+      },
+      "before_boot_id": {
+        "state": "pending_operator_receipt"
+      },
+      "after_boot_id": {
+        "state": "pending_operator_receipt"
+      },
+      "cache_generation_id": {
+        "state": "pending_operator_receipt"
+      },
+      "initial_store_sha256": {
+        "state": "pending_operator_receipt"
+      },
+      "served_provenance": {
+        "state": "pending_operator_receipt"
+      },
+      "rollback_binding": {
+        "state": "pending_operator_receipt"
+      }
+    },
+    "pending_fields_cannot_authorize_rollout": true
+  },
+  "external_execution": {
+    "performed_by": "operator_post_merge",
+    "performed_inside_tree": false,
+    "runbook": "docs/recall-map-field-verification.md"
+  }
+}

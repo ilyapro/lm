@@ -61,9 +61,10 @@ from living_memory.recall_map import (
     normalize_key,
 )
 from living_memory.retrieval import RecallResult
-from living_memory.storage import MemoryStore, recall_fingerprint
+from living_memory.storage import MaturedRecallHistory, MemoryStore, recall_fingerprint
 
 SCOPE = "project:lm"
+DECISION_AT = "2026-08-23T12:00:00Z"
 
 #: Documents the fixture store carries before a test writes anything.
 #:
@@ -80,6 +81,15 @@ CORPUS_DOCUMENTS = 32
 #: Vocabulary the scenarios below never use, so seeding a corpus moves no
 #: label's document frequency.
 _CORPUS_FILLER = "quarterly ledger reconciliation entry"
+
+
+def eligible_history(candidate_ids, _decision_at):
+    """A frozen-feature history that clears the production threshold."""
+
+    return {
+        node_id: MaturedRecallHistory.known(100, 50, 50)
+        for node_id in candidate_ids
+    }
 
 
 def seed_corpus(store: MemoryStore, count: int = CORPUS_DOCUMENTS) -> None:
@@ -99,16 +109,18 @@ def seed_corpus(store: MemoryStore, count: int = CORPUS_DOCUMENTS) -> None:
 
 
 @pytest.fixture()
-def bare_store(tmp_path: Path):
+def bare_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A store with no corpus at all: the gate's degraded branch lives here."""
 
     with MemoryStore(tmp_path / "recall-map-bare.sqlite3") as opened:
+        monkeypatch.setattr(opened, "matured_recall_history", eligible_history)
         yield opened
 
 
 @pytest.fixture()
-def store(tmp_path: Path):
+def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     with MemoryStore(tmp_path / "recall-map.sqlite3") as opened:
+        monkeypatch.setattr(opened, "matured_recall_history", eligible_history)
         seed_corpus(opened)
         yield opened
 
@@ -126,6 +138,12 @@ def payload_chars(built) -> int:
     """The map's real size on the wire, journal block included."""
 
     return len(json.dumps(built.to_dict(), ensure_ascii=False, separators=(",", ":")))
+
+
+def payload_bytes(built) -> bytes:
+    return json.dumps(
+        built.to_dict(), ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
 
 
 def pool(nodes) -> list[RecallResult]:
@@ -153,7 +171,11 @@ def chunk_of(text: str) -> TextChunk:
 # ----------------------------------------------------------------------
 
 
-def test_structural_keys_label_their_own_clusters(store: MemoryStore) -> None:
+def test_structural_keys_label_their_own_clusters(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # This test owns cascade membership, not response fitting.
+    monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", 10_000)
     nodes = [
         make_node(store, "ritual step one", {"procedure_id": "session-bootstrap"}),
         make_node(store, "ritual step two", {"procedure_id": "session-bootstrap"}),
@@ -423,7 +445,18 @@ def test_embedding_medoid_is_the_most_central_member(store: MemoryStore) -> None
 def test_unembeddable_nodes_are_left_out_rather_than_guessed(store: MemoryStore) -> None:
     node = make_node(store, "no structural key, no path, no anchor, no chunks")
 
-    assert RecallMapBuilder(store).build(pool([node]), scope=SCOPE) is None
+    built = RecallMapBuilder(store).build(pool([node]), scope=SCOPE)
+
+    assert built is not None
+    assert built.clusters == ()
+    assert built.pool_size == 1
+    assert built.to_dict()["sel"] == {
+        "v": "r1",
+        "n": 1,
+        "e": 1,
+        "x": [0, 0, 0, 0, 0, 0, 0],
+        "o": 0,
+    }
 
 
 # ----------------------------------------------------------------------
@@ -526,8 +559,8 @@ def test_mixed_pool_reaches_every_stage(monkeypatch: pytest.MonkeyPatch, store: 
     assert built.covered == 7
     assert built.dropped == 0
     assert built.withheld == 0
-    # Nothing was filtered, so the payload is byte-identical to the pre-journal
-    # shape: the block is additive and it is also *conditional*.
+    # Nothing was filtered, so the conditional cluster journal stays absent;
+    # mandatory member-selection accounting is a separate additive sibling.
     assert "filtered" not in built.to_dict()
 
 
@@ -561,21 +594,32 @@ def test_two_builds_of_the_same_pool_are_identical(store: MemoryStore) -> None:
     assert first.render_compact() == third.render_compact()
 
 
-def test_clusters_are_ordered_by_reciprocal_rank_mass_before_size(
-    store: MemoryStore,
+def test_cluster_maximum_relevance_precedes_size_and_original_ordinal(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A larger tail bucket is not more useful than the best residual hit."""
+    """A stronger selected member outranks size and retrieval position."""
 
-    alpha = make_node(store, "alpha head", {"procedure_id": "alpha-ritual"})
+    alpha = make_node(store, "alpha tail", {"procedure_id": "alpha-ritual"})
     beta = [
+        make_node(store, "beta head", {"procedure_id": "beta-ritual"}),
         make_node(store, "beta middle", {"procedure_id": "beta-ritual"}),
-        make_node(store, "beta tail", {"procedure_id": "beta-ritual"}),
     ]
+    histories = {
+        alpha.id: MaturedRecallHistory.known(200, 100, 100),
+        beta[0].id: MaturedRecallHistory.known(100, 50, 50),
+        beta[1].id: MaturedRecallHistory.known(100, 50, 50),
+    }
+    monkeypatch.setattr(
+        store,
+        "matured_recall_history",
+        lambda ids, _at: {node_id: histories[node_id] for node_id in ids},
+    )
 
-    built = RecallMapBuilder(store).build(pool([alpha, *beta]), scope=SCOPE)
+    built = RecallMapBuilder(store).build(
+        pool([*beta, alpha]), scope=SCOPE, decision_at=DECISION_AT
+    )
 
     assert built is not None
-    # alpha: 1/(1+0) = 1.0; beta: 1/2 + 1/3 = 0.833...
     assert [cluster.label for cluster in built.clusters] == [
         "alpha ritual",
         "beta ritual",
@@ -583,28 +627,84 @@ def test_clusters_are_ordered_by_reciprocal_rank_mass_before_size(
     assert [cluster.count for cluster in built.clusters] == [1, 2]
 
 
-def test_equal_reciprocal_rank_mass_uses_best_member_rank(store: MemoryStore) -> None:
-    """The first tie-break is explicit, not inherited from cascade order."""
-
-    gamma = [
-        make_node(store, f"gamma {index}", {"procedure_id": "gamma-ritual"})
-        for index in range(3)
+def test_equal_cluster_maximum_uses_descending_fsum_mean(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alpha = [
+        make_node(store, "alpha high", {"procedure_id": "alpha-ritual"}),
+        make_node(store, "alpha low", {"procedure_id": "alpha-ritual"}),
     ]
-    alpha = make_node(store, "alpha", {"procedure_id": "alpha-ritual"})
     beta = [
-        make_node(store, "beta head", {"procedure_id": "beta-ritual"}),
-        make_node(store, "beta tail", {"procedure_id": "beta-ritual"}),
+        make_node(store, "beta high", {"procedure_id": "beta-ritual"}),
+        make_node(store, "beta middle", {"procedure_id": "beta-ritual"}),
     ]
+    histories = {
+        alpha[0].id: MaturedRecallHistory.known(200, 100, 100),
+        alpha[1].id: MaturedRecallHistory.known(100, 50, 2),
+        beta[0].id: MaturedRecallHistory.known(200, 100, 100),
+        beta[1].id: MaturedRecallHistory.known(100, 50, 50),
+    }
+    monkeypatch.setattr(
+        store,
+        "matured_recall_history",
+        lambda ids, _at: {node_id: histories[node_id] for node_id in ids},
+    )
 
-    # alpha occupies rank 1: 1/2.  Beta occupies ranks 2 and 5:
-    # 1/3 + 1/6 = 1/2.  Alpha therefore wins on best rank even though beta is
-    # larger.  Gamma merely fills the otherwise-unused ranks 0, 3 and 4.
-    candidates = pool([gamma[0], alpha, beta[0], gamma[1], gamma[2], beta[1]])
-    built = RecallMapBuilder(store).build(candidates, scope=SCOPE)
+    built = RecallMapBuilder(store).build(
+        pool([*alpha, *beta]), scope=SCOPE, decision_at=DECISION_AT
+    )
 
     assert built is not None
-    labels = [cluster.label for cluster in built.clusters]
-    assert labels.index("alpha ritual") < labels.index("beta ritual")
+    assert [cluster.label for cluster in built.clusters] == [
+        "beta ritual",
+        "alpha ritual",
+    ]
+
+
+def test_cluster_mean_uses_fsum_in_original_residual_order(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alpha = [
+        make_node(store, "alpha early", {"procedure_id": "alpha-ritual"}),
+        make_node(store, "alpha late", {"procedure_id": "alpha-ritual"}),
+    ]
+    beta = make_node(store, "beta", {"procedure_id": "beta-ritual"})
+    scores = {alpha[0].id: 5.0, alpha[1].id: 7.0, beta.id: 6.0}
+    calls: list[list[float]] = []
+    real_fsum = __import__("math").fsum
+    monkeypatch.setattr(
+        recall_map, "relevance_score", lambda node, _history: scores[node.id]
+    )
+
+    def observed_fsum(values) -> float:
+        materialized = list(values)
+        calls.append(materialized)
+        return real_fsum(materialized)
+
+    monkeypatch.setattr(recall_map, "fsum", observed_fsum)
+    built = RecallMapBuilder(store).build(
+        pool([alpha[0], beta, alpha[1]]), scope=SCOPE, decision_at=DECISION_AT
+    )
+
+    assert built is not None
+    assert [5.0, 7.0] in calls
+
+
+def test_equal_cluster_scores_use_unique_best_original_ordinal(
+    store: MemoryStore,
+) -> None:
+    beta = make_node(store, "beta", {"procedure_id": "beta-ritual"})
+    alpha = make_node(store, "alpha", {"procedure_id": "alpha-ritual"})
+
+    built = RecallMapBuilder(store).build(
+        pool([beta, alpha]), scope=SCOPE, decision_at=DECISION_AT
+    )
+
+    assert built is not None
+    assert [cluster.label for cluster in built.clusters] == [
+        "beta ritual",
+        "alpha ritual",
+    ]
 
 
 def test_structural_keys_that_normalize_alike_still_get_distinct_labels(
@@ -664,7 +764,7 @@ def test_vector_regions_sharing_their_top_terms_still_get_distinct_labels(
 
 
 def test_anchor_queries_sharing_a_long_prefix_stay_distinguishable(
-    store: MemoryStore,
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Uniqueness is decided on the label the reader actually sees.
 
@@ -673,6 +773,7 @@ def test_anchor_queries_sharing_a_long_prefix_stay_distinguishable(
     case, not a pathological one.
     """
 
+    monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", 10_000)
     first = make_node(store, "a")
     second = make_node(store, "s")
     prefix = "what did retrieval weights decide about "
@@ -696,13 +797,7 @@ def test_anchor_queries_sharing_a_long_prefix_stay_distinguishable(
 def test_a_cached_build_agrees_with_a_cold_one_on_embedding_clusters(
     store: MemoryStore,
 ) -> None:
-    """The medoid is structure, so the cache must not re-decide it.
-
-    Stage 4 picks its medoid by mean intra-cluster similarity, using vectors
-    the cache path deliberately does not re-read. Without carrying the choice
-    across, the same pool would report the most central member cold and the
-    highest-ranked one warm.
-    """
+    """Warm stage 4 revalidates vectors and recomputes the same medoid."""
 
     outlier = make_node(store, "an outlying note about caching layers")
     centre = make_node(store, "a central note about caching layers")
@@ -720,6 +815,48 @@ def test_a_cached_build_agrees_with_a_cold_one_on_embedding_clusters(
     assert cold == warm
     assert cold is not None
     assert cold.clusters[0].medoid.node_id == partner.id  # not the top-ranked one
+
+
+def test_relevance_reorder_invalidates_a_greedy_embedding_template(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    left = make_node(store, "left vector deployment evidence")
+    right = make_node(store, "right vector rollback evidence")
+    bridge = make_node(store, "bridge vector transition evidence")
+    embed(store, left, [1.0, 0.0])
+    embed(store, right, [0.0, 1.0])
+    embed(store, bridge, [1.0, 1.0])
+    histories = {
+        left.id: MaturedRecallHistory.known(500, 250, 250),
+        right.id: MaturedRecallHistory.known(200, 100, 100),
+        bridge.id: MaturedRecallHistory.known(100, 50, 50),
+    }
+    monkeypatch.setattr(
+        store,
+        "matured_recall_history",
+        lambda ids, _at: {node_id: histories[node_id] for node_id in ids},
+    )
+    candidates = pool([left, right, bridge])
+    builder = RecallMapBuilder(store)
+    first = builder.build(
+        candidates, scope=SCOPE, task="embedding-order", decision_at=DECISION_AT
+    )
+
+    assert first is not None
+    assert [cluster.count for cluster in first.clusters] == [2, 1]
+
+    histories[bridge.id] = MaturedRecallHistory.known(1000, 500, 500)
+    rebuilt = builder.build(
+        candidates, scope=SCOPE, task="embedding-order", decision_at=DECISION_AT
+    )
+    cold = RecallMapBuilder(store).build(
+        candidates, scope=SCOPE, task="embedding-order", decision_at=DECISION_AT
+    )
+
+    assert builder.last_cache_hit is False
+    assert rebuilt is not None and cold is not None
+    assert [cluster.count for cluster in rebuilt.clusters] == [3]
+    assert payload_bytes(rebuilt) == payload_bytes(cold)
 
 
 def test_distinct_structural_keys_do_not_collapse_into_one_cluster(store: MemoryStore) -> None:
@@ -763,7 +900,7 @@ def test_map_is_capped_in_clusters_and_in_characters(store: MemoryStore) -> None
 
     assert built is not None
     assert len(built.clusters) <= MAX_CLUSTERS
-    assert _payload_size(built.clusters, built.pool_size, built.dropped) <= MAX_RESPONSE_CHARS
+    assert payload_chars(built) <= MAX_RESPONSE_CHARS
     assert len(built.render_compact()) <= MAX_INSTRUCTIONS_CHARS
     assert built.render_compact().startswith("memory also holds: ")
     assert built.to_dict()["pool"] == 12
@@ -780,26 +917,26 @@ def test_map_is_capped_in_clusters_and_in_characters(store: MemoryStore) -> None
     assert built.to_dict()["more"] == built.dropped
 
 
-def test_examples_are_shaved_before_a_cluster_is_dropped(store: MemoryStore) -> None:
-    """One character over budget costs one character, not every example."""
+def test_examples_are_preserved_before_a_cluster_is_dropped(store: MemoryStore) -> None:
+    """Two affordable clusters retain informative bounded examples."""
 
     long_tail = "content that runs on and on " * 6
     nodes = [
         make_node(store, f"note {index}: {long_tail}", {"topic": f"area-{name}"})
-        for index, name in enumerate(("alpha", "beta", "gamma"))
+        for index, name in enumerate(("alpha", "beta"))
     ]
 
     built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE)
 
     assert built is not None
-    assert len(built.clusters) == 3
+    assert len(built.clusters) == 2
     assert built.dropped == 0
-    assert _payload_size(built.clusters, built.pool_size, built.dropped) <= MAX_RESPONSE_CHARS
-    # Every example survived, shortened rather than discarded.
+    assert payload_chars(built) <= MAX_RESPONSE_CHARS
+    # Every example survived, bounded rather than discarded.
     examples = [cluster.medoid.example for cluster in built.clusters]
     assert all(example.endswith("…") for example in examples)
     assert all(
-        MIN_MEDOID_EXAMPLE_CHARS <= len(example) < MEDOID_EXAMPLE_CHARS
+        MIN_MEDOID_EXAMPLE_CHARS <= len(example) <= MEDOID_EXAMPLE_CHARS
         for example in examples
     )
 
@@ -808,14 +945,14 @@ def _rich_gist_pool(store: MemoryStore) -> list[Node]:
     """A deterministic pool whose labels and medoids make the 700-char cap bind."""
 
     topics = (
-        "cobalt-verification-handoff",
-        "saffron-rollout-checkpoint",
-        "indigo-ledger-attestation",
-        "marble-retention-protocol",
-        "quartz-snapshot-invariant",
-        "willow-recovery-playbook",
-        "zephyr-latency-envelope",
-        "ember-consumption-signal",
+        "cobalt-handoff",
+        "saffron-checkpoint",
+        "indigo-attestation",
+        "marble-retention",
+        "quartz-snapshot",
+        "willow-recovery",
+        "zephyr-latency",
+        "ember-consumption",
     )
     return [
         make_node(
@@ -860,8 +997,9 @@ def test_example_budget_reflows_from_scratch_after_cluster_drops(
     assert all(cluster.medoid.example for cluster in reflowed.clusters)
     journal = reflowed.to_dict()["filtered"]
     assert journal["dropped"] == reflowed.dropped
-    assert journal["names_omitted"] == reflowed.dropped
-    assert "names" not in journal  # names give way before the gist floor does
+    assert journal.get("names_omitted", 0) + len(journal.get("names", [])) == (
+        reflowed.dropped
+    )
 
 
 def test_rich_pool_uses_nearly_the_whole_response_budget(store: MemoryStore) -> None:
@@ -872,6 +1010,34 @@ def test_rich_pool_uses_nearly_the_whole_response_budget(store: MemoryStore) -> 
     assert built is not None
     unused = MAX_RESPONSE_CHARS - payload_chars(built)
     assert 0 <= unused < len(built.clusters)
+
+
+def test_selector_samples_yield_before_existing_cluster_content(
+    store: MemoryStore,
+) -> None:
+    header = {
+        "path": "src/generated.py",
+        "kind": "source",
+        "language": "python",
+        "sha256": "a" * 64,
+        "chunk": "1/1",
+        "lines": "1-20",
+    }
+    ballast = make_node(store, "[file-chunk] " + json.dumps(header))
+    built = RecallMapBuilder(store).build(
+        pool([ballast, *_rich_gist_pool(store)]),
+        scope=SCOPE,
+        task="selector-budget",
+        decision_at=DECISION_AT,
+    )
+
+    assert built is not None
+    payload = built.to_dict()
+    assert payload_chars(built) <= MAX_RESPONSE_CHARS
+    assert len(payload["clusters"]) == MIN_CLUSTERS
+    assert payload["sel"]["x"] == [0, 0, 1, 0, 0, 0, 0]
+    assert payload["sel"]["o"] == 1
+    assert "q" not in payload["sel"]
 
 
 def test_gist_floor_fitting_is_deterministic_cold_and_warm(store: MemoryStore) -> None:
@@ -1043,6 +1209,52 @@ def test_cached_structure_refreshes_order_from_the_current_residual(
     ]
 
 
+def test_cached_build_recomputes_history_and_selection_every_time(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alpha = make_node(store, "alpha", {"procedure_id": "alpha-ritual"})
+    beta = make_node(store, "beta", {"procedure_id": "beta-ritual"})
+    histories = {
+        alpha.id: MaturedRecallHistory.known(200, 100, 100),
+        beta.id: MaturedRecallHistory.known(100, 50, 50),
+    }
+    reads: list[tuple[tuple[str, ...], str]] = []
+
+    def read(candidate_ids, decision_at):
+        ids = tuple(candidate_ids)
+        reads.append((ids, str(decision_at)))
+        return {node_id: histories[node_id] for node_id in ids}
+
+    monkeypatch.setattr(store, "matured_recall_history", read)
+    candidates = pool([alpha, beta])
+    builder = RecallMapBuilder(store)
+    first = builder.build(
+        candidates, scope=SCOPE, task="fresh-history", decision_at=DECISION_AT
+    )
+    assert first is not None
+    assert [cluster.label for cluster in first.clusters] == [
+        "alpha ritual",
+        "beta ritual",
+    ]
+
+    histories[alpha.id] = MaturedRecallHistory.known(0, 0, 0)
+    warm = builder.build(
+        candidates, scope=SCOPE, task="fresh-history", decision_at=DECISION_AT
+    )
+    cold = RecallMapBuilder(store).build(
+        candidates, scope=SCOPE, task="fresh-history", decision_at=DECISION_AT
+    )
+
+    assert builder.last_cache_hit is True
+    assert warm is not None and cold is not None
+    assert payload_bytes(warm) == payload_bytes(cold)
+    assert warm.pool_size == 1
+    assert [cluster.label for cluster in warm.clusters] == ["beta ritual"]
+    assert warm.to_dict()["sel"]["x"] == [0, 0, 0, 0, 0, 1, 0]
+    assert len(reads) == 3
+    assert all(instant == DECISION_AT for _ids, instant in reads)
+
+
 def test_a_different_key_does_not_share_a_structure(store: MemoryStore) -> None:
     nodes = [make_node(store, "one", {"procedure_id": "alpha-ritual"})]
     builder = RecallMapBuilder(store)
@@ -1073,6 +1285,34 @@ def test_corpus_movement_invalidates_the_cache_without_a_timer(store: MemoryStor
 
     builder.build(candidates, scope=SCOPE, task="caching")
     assert builder.last_cache_hit is False
+
+
+def test_policy_digest_change_invalidates_even_an_unchanged_corpus(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    node = make_node(store, "one", {"procedure_id": "policy-bound-ritual"})
+    candidates = pool([node])
+    builder = RecallMapBuilder(store)
+
+    first = builder.build(
+        candidates, scope=SCOPE, task="policy-revision", decision_at=DECISION_AT
+    )
+    second = builder.build(
+        candidates, scope=SCOPE, task="policy-revision", decision_at=DECISION_AT
+    )
+    assert first == second
+    assert builder.last_cache_hit is True
+
+    changed_digest = "0" * 64
+    monkeypatch.setattr(recall_map, "RELEVANCE_POLICY_DIGEST", changed_digest)
+    rebuilt = builder.build(
+        candidates, scope=SCOPE, task="policy-revision", decision_at=DECISION_AT
+    )
+
+    assert rebuilt == first
+    assert builder.last_cache_hit is False
+    key = cache_key(SCOPE, task="policy-revision")
+    assert builder._cache[key].revision[0] == changed_digest
 
 
 def test_anchor_movement_invalidates_the_cache(store: MemoryStore) -> None:
@@ -1241,6 +1481,7 @@ def test_the_gate_is_a_corpus_statistic_not_a_word_list(
 
     latin = verdicts(bare_store, "widget")
     with MemoryStore(tmp_path / "other-corpus.sqlite3") as other:
+        other.matured_recall_history = eligible_history  # type: ignore[method-assign]
         cyrillic = verdicts(other, "шестерёнка")
 
     assert latin == {"шестерёнка tempo"}
@@ -1307,6 +1548,13 @@ def test_a_pool_the_gate_empties_is_journaled_without_counting_an_offer(
             "withheld": 1,
             "dropped": 0,
             "names": [["w", "widget upkeep", 3]],
+        },
+        "sel": {
+            "v": "r1",
+            "n": 3,
+            "e": 3,
+            "x": [0, 0, 0, 0, 0, 0, 0],
+            "o": 0,
         },
     }
 
@@ -1534,7 +1782,7 @@ def test_a_filtered_cluster_never_appears_among_the_delivered_ones(
 
 
 def test_the_journal_block_is_absent_when_nothing_was_filtered(store: MemoryStore) -> None:
-    """An unfiltered map is byte-identical to what shipped before the journal."""
+    """An unfiltered map adds only the mandatory selector accounting."""
 
     nodes = [
         make_node(store, "the first note", {"topic": "sealed-holdout"}),
@@ -1545,7 +1793,7 @@ def test_the_journal_block_is_absent_when_nothing_was_filtered(store: MemoryStor
 
     assert built is not None
     assert built.withheld == 0 and built.dropped == 0
-    assert list(built.to_dict()) == ["clusters", "pool", "covered"]
+    assert list(built.to_dict()) == ["clusters", "pool", "covered", "sel"]
 
 
 def test_the_journal_is_inside_the_response_budget(bare_store: MemoryStore) -> None:

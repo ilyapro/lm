@@ -47,7 +47,7 @@ from living_memory.recall_map import (
 )
 from living_memory.grounding import token_set
 from living_memory.retrieval import RecallResult
-from living_memory.storage import MemoryStore
+from living_memory.storage import MaturedRecallHistory, MemoryStore
 
 SCOPE = "project:curtail"
 TASK = "recall-map-curtail"
@@ -68,8 +68,16 @@ CORPUS_DOCUMENTS = 32
 
 
 @pytest.fixture()
-def store(tmp_path: Path):
+def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     with MemoryStore(tmp_path / "curtail.sqlite3") as opened:
+        monkeypatch.setattr(
+            opened,
+            "matured_recall_history",
+            lambda candidate_ids, _decision_at: {
+                node_id: MaturedRecallHistory.known(100, 50, 50)
+                for node_id in candidate_ids
+            },
+        )
         for index in range(CORPUS_DOCUMENTS):
             opened.create_node(
                 level="trace",
