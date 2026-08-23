@@ -1,0 +1,1214 @@
+{
+  "active_nodes": 13463,
+  "applied": true,
+  "collapses": [
+    {
+      "bearer_chars": 3650,
+      "candidate_chars": 3650,
+      "cosine": 0.9999996423721313,
+      "keep": "01KRVVE5XQ9CJ7JPVPWFW9102F",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KY5HQA417E6882ZRBVZD0ATP"
+    },
+    {
+      "bearer_chars": 3650,
+      "candidate_chars": 3650,
+      "cosine": 0.9999996423721313,
+      "keep": "01KRVVE5XQ9CJ7JPVPWFW9102F",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZ8RYAPF3JZ6RN65FFRG9WR8"
+    },
+    {
+      "bearer_chars": 3650,
+      "candidate_chars": 3650,
+      "cosine": 0.9999996423721313,
+      "keep": "01KRVVE5XQ9CJ7JPVPWFW9102F",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZEXTZYEXQVQTQMD9DQRJZBB"
+    },
+    {
+      "bearer_chars": 3650,
+      "candidate_chars": 3650,
+      "cosine": 0.9999995827674866,
+      "keep": "01KRVVE5XQ9CJ7JPVPWFW9102F",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZZP9QFWVKZWP2KVK55PNRPN"
+    },
+    {
+      "bearer_chars": 3650,
+      "candidate_chars": 3650,
+      "cosine": 0.9999995827674866,
+      "keep": "01KRVVE5XQ9CJ7JPVPWFW9102F",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01M0FAA18EPMCPF2PSNMK2Y81S"
+    },
+    {
+      "bearer_chars": 3700,
+      "candidate_chars": 3700,
+      "cosine": 0.9999997019767761,
+      "keep": "01KRWVEF08GR0365E296ZDNDWH",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KY5HQA2V9M9VRY3V7HXT4Z6Z"
+    },
+    {
+      "bearer_chars": 3700,
+      "candidate_chars": 3700,
+      "cosine": 0.9999997019767761,
+      "keep": "01KRWVEF08GR0365E296ZDNDWH",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZ8RYAN6A419XNF07RTDG2WM"
+    },
+    {
+      "bearer_chars": 3700,
+      "candidate_chars": 3700,
+      "cosine": 0.9999997019767761,
+      "keep": "01KRWVEF08GR0365E296ZDNDWH",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZEXTZXDHSHCMQ2Z8Q3CC28Z"
+    },
+    {
+      "bearer_chars": 3700,
+      "candidate_chars": 3700,
+      "cosine": 0.9999998211860657,
+      "keep": "01KRWVEF08GR0365E296ZDNDWH",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZZP9QEPF01F8CCZZQ2J79XQ"
+    },
+    {
+      "bearer_chars": 3700,
+      "candidate_chars": 3700,
+      "cosine": 0.9999998211860657,
+      "keep": "01KRWVEF08GR0365E296ZDNDWH",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01M0FAA1814NGB93T61EAECX23"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 22660,
+      "cosine": 1.0,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KY5HQ9QYAPMMTAV8T9074VRS"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 22660,
+      "cosine": 1.0,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZ8RYAC3N836NFZ7DJBS03HM"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 22660,
+      "cosine": 1.0,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZEXTZJV576E1PH4J9ZQN8B4"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 22660,
+      "cosine": 1.0,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZZP9Q3YB1DZT0FHGZY17QSN"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 22660,
+      "cosine": 1.0,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01M0FAA12QJEG9181F01BX7M0P"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 22660,
+      "cosine": 1.0,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01M0FBSBYAN6BRMRWH67C2HSE4"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 32797,
+      "cosine": 0.9999997615814209,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KY5HQ9VB4Q89YNA0GAVT6V89"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 32797,
+      "cosine": 0.9999997615814209,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZ8RYAFD04XJJFE50HHGSJHK"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 32797,
+      "cosine": 0.9999997615814209,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZEXTZP52XF5ZFT2EA7WQDSQ"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 32797,
+      "cosine": 0.9999997615814209,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KZZP9Q7PSB52RCCK8A353MKR"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 32797,
+      "cosine": 0.9999997615814209,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01M0FAA14G62BRDMTYQZDEMBNR"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 32797,
+      "cosine": 0.9999997615814209,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01M0FBSBZYD124QFSGDY2EQPP8"
+    },
+    {
+      "bearer_chars": 2631,
+      "candidate_chars": 2631,
+      "cosine": 1.0,
+      "keep": "01KVC1S19AN2KEJ851B5BZTYT6",
+      "level": "schema",
+      "scope": "project:x",
+      "supersede": "01KWHYQJZQBBAMN234WKXD4JJG"
+    },
+    {
+      "bearer_chars": 18695,
+      "candidate_chars": 19768,
+      "cosine": 0.999265193939209,
+      "keep": "01KSMXRB8VZXD89HJCAY996JEK",
+      "level": "schema",
+      "scope": "project:octopus",
+      "supersede": "01KSQ335AEA39CEWX5HHMVW0Q0"
+    },
+    {
+      "bearer_chars": 285,
+      "candidate_chars": 285,
+      "cosine": 0.9976224899291992,
+      "keep": "01KSAZD1N0HKFG9TE4YQ78CAYJ",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KSAZD11GAJ1PX2C9AVPGQ1GA"
+    },
+    {
+      "bearer_chars": 147,
+      "candidate_chars": 158,
+      "cosine": 0.994468092918396,
+      "keep": "01KS81EPTT5AVNHRMA933ENKBC",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KSR8A5P3D6C2FEBME1MHXWT5"
+    },
+    {
+      "bearer_chars": 155,
+      "candidate_chars": 160,
+      "cosine": 0.9936783313751221,
+      "keep": "01KRYA6QAC7KAA3SP1N1JZJJMT",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS18Y9GFY5N4ZPYDHJCZ71PR"
+    },
+    {
+      "bearer_chars": 211,
+      "candidate_chars": 220,
+      "cosine": 0.9934987425804138,
+      "keep": "01KTRJCB5FQ7ZT2WKD02TQ20B3",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KTRR6WHFXFW16M691Q1N98E1"
+    },
+    {
+      "bearer_chars": 147,
+      "candidate_chars": 150,
+      "cosine": 0.9930658340454102,
+      "keep": "01KRVQNC96TW2K70A3JENYZXMP",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRX759ASWP7GKSG4NX3K0284"
+    },
+    {
+      "bearer_chars": 78,
+      "candidate_chars": 81,
+      "cosine": 0.9930598139762878,
+      "keep": "01KSB3T1DJRNS2SMCR9189FBZS",
+      "level": "trace",
+      "scope": "global",
+      "supersede": "01KSB3ZT0S8E97Q53TH3TT6DR6"
+    },
+    {
+      "bearer_chars": 18695,
+      "candidate_chars": 14568,
+      "cosine": 0.9919565916061401,
+      "keep": "01KSMXRB8VZXD89HJCAY996JEK",
+      "level": "schema",
+      "scope": "project:octopus",
+      "supersede": "01KSFNCKH3Y443YS9CFCXPK5PC"
+    },
+    {
+      "bearer_chars": 350,
+      "candidate_chars": 338,
+      "cosine": 0.9906445145606995,
+      "keep": "01KVRKQM12J1E3QZB1DM7550TX",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVRQ3FPY8R649R1VG984KA5K"
+    },
+    {
+      "bearer_chars": 332,
+      "candidate_chars": 352,
+      "cosine": 0.9901147484779358,
+      "keep": "01KVRJZ9TYQ4VBTAMN19FE6TFK",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVRQAP2ADN6YWCRVKKYMMDC3"
+    },
+    {
+      "bearer_chars": 2326,
+      "candidate_chars": 2252,
+      "cosine": 0.9899471998214722,
+      "keep": "01KRT6P4EPHQS2DD2SWQXPZT0A",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRRPZ1Y81TDQBB2B5M5FM2YH"
+    },
+    {
+      "bearer_chars": 373,
+      "candidate_chars": 339,
+      "cosine": 0.9897280335426331,
+      "keep": "01KSQRZ18QF1AY3TE4FKSGZJRZ",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KSQK8ECMZPQQS28HWR3P14BT"
+    },
+    {
+      "bearer_chars": 1191,
+      "candidate_chars": 1195,
+      "cosine": 0.9883158206939697,
+      "keep": "01KZW430B4PPQPJ2ZG4AC7DG5Z",
+      "level": "concept",
+      "scope": "project:lm",
+      "supersede": "01KZYJR01MQMFGMRZEMMQGRXBC"
+    },
+    {
+      "bearer_chars": 1180,
+      "candidate_chars": 1180,
+      "cosine": 0.9871401786804199,
+      "keep": "01KZYRW9VJQHBS90MWBY8AQ58P",
+      "level": "concept",
+      "scope": "project:lm",
+      "supersede": "01KZW4308WTF6ZRMJ9ZRY7G6ED"
+    },
+    {
+      "bearer_chars": 1163,
+      "candidate_chars": 1163,
+      "cosine": 0.9864198565483093,
+      "keep": "01M0FKQ19SXWTJG7ZMQWZQ4PGR",
+      "level": "concept",
+      "scope": "project:living-memory",
+      "supersede": "01M0Q2JG25A59JN0Z7WC3ND791"
+    },
+    {
+      "bearer_chars": 3762,
+      "candidate_chars": 2804,
+      "cosine": 0.9862862229347229,
+      "keep": "01KRS0ZYEWWNVNN70MSRRCZWYC",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS10087DBPPZ6DG0GT0E60E"
+    },
+    {
+      "bearer_chars": 163,
+      "candidate_chars": 147,
+      "cosine": 0.986032247543335,
+      "keep": "01KRXG9E6GYN291EQJGWSB2RNF",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRXJKFDR6H2JSYR2NBZEMNR7"
+    },
+    {
+      "bearer_chars": 163,
+      "candidate_chars": 155,
+      "cosine": 0.9857080578804016,
+      "keep": "01KRXG9E6GYN291EQJGWSB2RNF",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRXJB5BAG6N6HKJDXVWN12G1"
+    },
+    {
+      "bearer_chars": 399,
+      "candidate_chars": 399,
+      "cosine": 0.9856647849082947,
+      "keep": "01KS80ZEFV23M0RCGCH8ZHSHPC",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KS7X135RRBYH3HZJG7C23CV9"
+    },
+    {
+      "bearer_chars": 2041,
+      "candidate_chars": 1934,
+      "cosine": 0.9849708080291748,
+      "keep": "01KS93EKA45V7BKP7JBB034K4B",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS97R8GQXW3EC48PWETVKCNS"
+    },
+    {
+      "bearer_chars": 516,
+      "candidate_chars": 529,
+      "cosine": 0.9841793775558472,
+      "keep": "01KT9SGNF0A9TS70NJK5K7WC3Z",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KT9ZPG3AT3KD63NTEVFT2BWC"
+    },
+    {
+      "bearer_chars": 9024,
+      "candidate_chars": 2044,
+      "cosine": 0.9836325645446777,
+      "keep": "01KRVDY1Q1NTDHFV9S5G9D9VW7",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KRWVEF09CJ2N7F7E1YKVWAR3"
+    },
+    {
+      "bearer_chars": 373,
+      "candidate_chars": 358,
+      "cosine": 0.9828700423240662,
+      "keep": "01KSQRZ18QF1AY3TE4FKSGZJRZ",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KSRQ2YS0PMYKP3C1QBPNY7NE"
+    },
+    {
+      "bearer_chars": 403,
+      "candidate_chars": 403,
+      "cosine": 0.9818276166915894,
+      "keep": "01KRNWYMPWFHK9C2031EBJKW3H",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KRP2RBD1AQ6RC4QK7XASYBST"
+    },
+    {
+      "bearer_chars": 187,
+      "candidate_chars": 155,
+      "cosine": 0.9815961718559265,
+      "keep": "01KSQ1DFNZ83GSGDKG4JVA4415",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KSR5FCJ9MK1AM94704ZJM7JX"
+    },
+    {
+      "bearer_chars": 516,
+      "candidate_chars": 540,
+      "cosine": 0.9815528392791748,
+      "keep": "01KT9SGNF0A9TS70NJK5K7WC3Z",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KT9T6BBQYVZN5DW5XJYWD3C8"
+    },
+    {
+      "bearer_chars": 325,
+      "candidate_chars": 327,
+      "cosine": 0.9807916283607483,
+      "keep": "01KVRJ23147XQRAW8PBE6HMT7C",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVRMA23KK80DMTVT11JWTQH3"
+    },
+    {
+      "bearer_chars": 373,
+      "candidate_chars": 408,
+      "cosine": 0.9806941747665405,
+      "keep": "01KSQRZ18QF1AY3TE4FKSGZJRZ",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KSQWRG4ET22RZTC2TKSG0T11"
+    },
+    {
+      "bearer_chars": 148,
+      "candidate_chars": 125,
+      "cosine": 0.9806205630302429,
+      "keep": "01KS7W7T241MMGFJPP9BVE1K74",
+      "level": "trace",
+      "scope": "project:lm",
+      "supersede": "01KS7WV2Q3XWTYQB1TMMY0KMXC"
+    },
+    {
+      "bearer_chars": 147,
+      "candidate_chars": 150,
+      "cosine": 0.9803576469421387,
+      "keep": "01KRVQNC96TW2K70A3JENYZXMP",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRXJWQV9BJ56Z4GQSWB6B19H"
+    },
+    {
+      "bearer_chars": 3762,
+      "candidate_chars": 3771,
+      "cosine": 0.9796158075332642,
+      "keep": "01KRS0ZYEWWNVNN70MSRRCZWYC",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS0ZZ35Z11X5EWZ2KVE0GZR"
+    },
+    {
+      "bearer_chars": 192,
+      "candidate_chars": 188,
+      "cosine": 0.9779161214828491,
+      "keep": "01KV1JWWXN9PDVWK14JBVB3TET",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KV1KRH09QCRAQXWP6CVVHQT6"
+    },
+    {
+      "bearer_chars": 214,
+      "candidate_chars": 209,
+      "cosine": 0.977725625038147,
+      "keep": "01KRW09XRXC9Z15M826C9DZFR1",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRW0A276M9TBN0SVYMD3S0ZQ"
+    },
+    {
+      "bearer_chars": 308,
+      "candidate_chars": 308,
+      "cosine": 0.9768020510673523,
+      "keep": "01KS9R2PGCX3PK1Z3Z34NSYG0E",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS9R3QJA8JBJ7QFEBWDTABX8"
+    },
+    {
+      "bearer_chars": 1023,
+      "candidate_chars": 999,
+      "cosine": 0.9767863750457764,
+      "keep": "01KS1AB6RPV3JBKADJFZFQ32ZW",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS1BK2H7YT02PS8KTR6YZH2S"
+    },
+    {
+      "bearer_chars": 516,
+      "candidate_chars": 540,
+      "cosine": 0.9765444993972778,
+      "keep": "01KT9SGNF0A9TS70NJK5K7WC3Z",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KT9VDSW0YEFZKQFJDNEQA1MJ"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 7532,
+      "cosine": 0.9758858680725098,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KT6GV0JCNAVKH2G2JRDWJND0"
+    },
+    {
+      "bearer_chars": 373,
+      "candidate_chars": 374,
+      "cosine": 0.9754387140274048,
+      "keep": "01KSQRZ18QF1AY3TE4FKSGZJRZ",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KSRV8SQ69PGJ296XW4F16HMZ"
+    },
+    {
+      "bearer_chars": 509,
+      "candidate_chars": 518,
+      "cosine": 0.9726848602294922,
+      "keep": "01KV4B73BJ7HBSCRM3QWHKDYTM",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KV5BP2ENKPSRK9GME40S2CMX"
+    },
+    {
+      "bearer_chars": 381,
+      "candidate_chars": 381,
+      "cosine": 0.97102952003479,
+      "keep": "01KT3THPSVF31R7MET6KJTVA8H",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KTV02NVWMZF49M3TF3XD104Z"
+    },
+    {
+      "bearer_chars": 2044,
+      "candidate_chars": 2190,
+      "cosine": 0.9707229733467102,
+      "keep": "01KS95H5T1D5VD2GZ47GBFF49S",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS9AJF5EXN200JQC7MV8BASS"
+    },
+    {
+      "bearer_chars": 335,
+      "candidate_chars": 344,
+      "cosine": 0.9705923199653625,
+      "keep": "01KVRJKRB5XJJJD0J00RMT9EQR",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVRP0W933R3C4ZBK4VYT0EVA"
+    },
+    {
+      "bearer_chars": 162,
+      "candidate_chars": 170,
+      "cosine": 0.9700482487678528,
+      "keep": "01KRWHQTBDBGQC6WJ1YGYTY6YT",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRXZS1MJYZYVZ0H8JMRNG2QN"
+    },
+    {
+      "bearer_chars": 553,
+      "candidate_chars": 531,
+      "cosine": 0.9699475169181824,
+      "keep": "01KT9S3S7TAXRED02Y40VGX2EV",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KT9W9R2C1ZTH0TS2JJGAJDWH"
+    },
+    {
+      "bearer_chars": 177,
+      "candidate_chars": 179,
+      "cosine": 0.9690973162651062,
+      "keep": "01KRVAJ5QMT3HHS08DF7P17PVM",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRZ8EKDXN4H7JZCYFMFG8J6M"
+    },
+    {
+      "bearer_chars": 2044,
+      "candidate_chars": 2070,
+      "cosine": 0.9686321020126343,
+      "keep": "01KS95H5T1D5VD2GZ47GBFF49S",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS962WHBDTE6X9QRZJ81P6D5"
+    },
+    {
+      "bearer_chars": 325,
+      "candidate_chars": 322,
+      "cosine": 0.9679193496704102,
+      "keep": "01KVRJ23147XQRAW8PBE6HMT7C",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVRPGQHBEBANSCG0F8R5RBP0"
+    },
+    {
+      "bearer_chars": 516,
+      "candidate_chars": 498,
+      "cosine": 0.9673967957496643,
+      "keep": "01KT9SGNF0A9TS70NJK5K7WC3Z",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KTA24P3NVX47HXCS2269PQR1"
+    },
+    {
+      "bearer_chars": 2044,
+      "candidate_chars": 1898,
+      "cosine": 0.9669684767723083,
+      "keep": "01KS95H5T1D5VD2GZ47GBFF49S",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS97Q68YZKHZ3T1NY27XKBH1"
+    },
+    {
+      "bearer_chars": 1111,
+      "candidate_chars": 1192,
+      "cosine": 0.9658843874931335,
+      "keep": "01KZYJR05YBA7DB9TM2MH49AER",
+      "level": "concept",
+      "scope": "project:lm",
+      "supersede": "01KZYJFS26HV0NGHAEXFZP42T3"
+    },
+    {
+      "bearer_chars": 1837,
+      "candidate_chars": 1971,
+      "cosine": 0.9653952121734619,
+      "keep": "01KS9A9MXW40DM7NSS43X0JZWN",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS98AA0M2Q25C4102M4TE59V"
+    },
+    {
+      "bearer_chars": 167,
+      "candidate_chars": 148,
+      "cosine": 0.9653425216674805,
+      "keep": "01KSRCNV043HHTY3JGVYMDW8TJ",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KSRE9QW0JZ1MVSZC72ACYB2H"
+    },
+    {
+      "bearer_chars": 171,
+      "candidate_chars": 185,
+      "cosine": 0.9646633267402649,
+      "keep": "01KS8PWBW0TQWT2BRG5FTQ86PH",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS8PVNM3N2YA862ZXQ8G1QSB"
+    },
+    {
+      "bearer_chars": 2358,
+      "candidate_chars": 2263,
+      "cosine": 0.9634537100791931,
+      "keep": "01KS98J9FFB1GNKC7R22DYKDS3",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS9AYJP06KVE4X4BJ9N8RKBF"
+    },
+    {
+      "bearer_chars": 553,
+      "candidate_chars": 583,
+      "cosine": 0.9631782174110413,
+      "keep": "01KT9S3S7TAXRED02Y40VGX2EV",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KT9WKGW680HRF1CY3NJ4WYWX"
+    },
+    {
+      "bearer_chars": 64472,
+      "candidate_chars": 5278,
+      "cosine": 0.9624002575874329,
+      "keep": "01KRS1G6DGHCVTR1N2JCHCEDBS",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS1GA0APCM203G6AFGH37D8"
+    },
+    {
+      "bearer_chars": 3762,
+      "candidate_chars": 3784,
+      "cosine": 0.9619986414909363,
+      "keep": "01KRS0ZYEWWNVNN70MSRRCZWYC",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS0ZZJR11FHSG7YSC3TTJ23"
+    },
+    {
+      "bearer_chars": 142,
+      "candidate_chars": 144,
+      "cosine": 0.9617115259170532,
+      "keep": "01KRWHQKPCX9ZYHFZYVWCYJT5Z",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KRX4WCDG1YCWH2XF6SMGD7DX"
+    },
+    {
+      "bearer_chars": 318,
+      "candidate_chars": 335,
+      "cosine": 0.9615399241447449,
+      "keep": "01KVRJHA2QYPX56APZMS9R21TR",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVRMSQ6M920CAZGTW2MS1YWG"
+    },
+    {
+      "bearer_chars": 1161,
+      "candidate_chars": 1241,
+      "cosine": 0.9613381624221802,
+      "keep": "01KTCH9T0TJJV17H9K3KB6WSV1",
+      "level": "schema",
+      "scope": "project:online",
+      "supersede": "01KTSB8N2E6HA4CSF2DXBQYK80"
+    },
+    {
+      "bearer_chars": 210,
+      "candidate_chars": 214,
+      "cosine": 0.961016833782196,
+      "keep": "01KRTS512MXHCQTFMKKS2XEP3A",
+      "level": "concept",
+      "scope": "project:lm",
+      "supersede": "01KRTS51PQCC82F0ADC83ZSYAN"
+    },
+    {
+      "bearer_chars": 1283,
+      "candidate_chars": 1135,
+      "cosine": 0.9608410000801086,
+      "keep": "01KSMR8833BF6Q714W752YPHVA",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KSMSAPP3JJAV82729M17EV0V"
+    },
+    {
+      "bearer_chars": 332,
+      "candidate_chars": 354,
+      "cosine": 0.9603586196899414,
+      "keep": "01KVRJZ9TYQ4VBTAMN19FE6TFK",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVRN4A6AFYBF3GQQP0TNY3KT"
+    },
+    {
+      "bearer_chars": 1161,
+      "candidate_chars": 1274,
+      "cosine": 0.9602458477020264,
+      "keep": "01KTCH9T0TJJV17H9K3KB6WSV1",
+      "level": "schema",
+      "scope": "project:online",
+      "supersede": "01KTNGMYMNYS1RB8EKX5HHBDAB"
+    },
+    {
+      "bearer_chars": 566,
+      "candidate_chars": 558,
+      "cosine": 0.959913969039917,
+      "keep": "01KS5JZ6VQNB1GDGPY8TR65F28",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KS5HMWJJ237D6FFCEPWVFJHB"
+    },
+    {
+      "bearer_chars": 557,
+      "candidate_chars": 564,
+      "cosine": 0.9597445726394653,
+      "keep": "01KS969ESDE1D0Q5HBHT0BDFM2",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS9BE9XS1SBPYSQR8MFP8Q73"
+    },
+    {
+      "bearer_chars": 260,
+      "candidate_chars": 266,
+      "cosine": 0.9590539336204529,
+      "keep": "01KRTS51DCF505AXAK7RMNWKT2",
+      "level": "concept",
+      "scope": "project:lm",
+      "supersede": "01KRTS51PRKS1YEJ29NP6T96GZ"
+    },
+    {
+      "bearer_chars": 64472,
+      "candidate_chars": 57088,
+      "cosine": 0.9579899311065674,
+      "keep": "01KRS1G6DGHCVTR1N2JCHCEDBS",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS1G0R59DE97ZDY4J1W72V3"
+    },
+    {
+      "bearer_chars": 4126,
+      "candidate_chars": 1499,
+      "cosine": 0.9578025341033936,
+      "keep": "01KRXY78C47DT7F4Z1M4DRWEVZ",
+      "level": "schema",
+      "scope": "project:octopus",
+      "supersede": "01KTSKWPGKT0WDQWXE6J8DWXFS"
+    },
+    {
+      "bearer_chars": 1156,
+      "candidate_chars": 1156,
+      "cosine": 0.9577065706253052,
+      "keep": "01KZYRW9YTA5YG8WAQ5VPVMK66",
+      "level": "concept",
+      "scope": "project:lm",
+      "supersede": "01KZW430ENB75WE2FYSSFFTQ1A"
+    },
+    {
+      "bearer_chars": 2950,
+      "candidate_chars": 2682,
+      "cosine": 0.957210123538971,
+      "keep": "01KVHDM4T4GESY5YR5W7W8WXY1",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVHDAAX6B1MHJNERES076V3Q"
+    },
+    {
+      "bearer_chars": 3683,
+      "candidate_chars": 3730,
+      "cosine": 0.9571949243545532,
+      "keep": "01KRS109KSGEDX2DCCC2AFGC3K",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS10A6BJPXWXXYDXJQQMKQ3"
+    },
+    {
+      "bearer_chars": 2248,
+      "candidate_chars": 2227,
+      "cosine": 0.9569011926651001,
+      "keep": "01KZ8S65TXD79TJE7XV056Y2EE",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KWWHB79A84X915J0YR7WNKEY"
+    },
+    {
+      "bearer_chars": 158,
+      "candidate_chars": 116,
+      "cosine": 0.9568058848381042,
+      "keep": "01KTA3NCKN4GJYEME42FBZSPE3",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KTA5KTCP2B7Y103W9NP53H1D"
+    },
+    {
+      "bearer_chars": 561,
+      "candidate_chars": 520,
+      "cosine": 0.9566919803619385,
+      "keep": "01KS5EYX0ADB13Q5A1CKQGS9G6",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KS5FWP7E5EC0YCCFSDJMA3GF"
+    },
+    {
+      "bearer_chars": 187,
+      "candidate_chars": 201,
+      "cosine": 0.9560721516609192,
+      "keep": "01KSQ1DFNZ83GSGDKG4JVA4415",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KSRC3KY2J9TYG2SEGAZG3HV8"
+    },
+    {
+      "bearer_chars": 32797,
+      "candidate_chars": 22660,
+      "cosine": 0.9560608267784119,
+      "keep": "01KT7QN1M6RD8NK4RZB5N5X9MR",
+      "level": "schema",
+      "scope": "project:ae",
+      "supersede": "01KT7QN1JK2CAWM34QADEA3YCP"
+    },
+    {
+      "bearer_chars": 1880,
+      "candidate_chars": 1641,
+      "cosine": 0.9557722806930542,
+      "keep": "01KVDKN3FQ50EFC30QSEMDV77N",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KVDSMECAM29A7PDX8GZ6H6J6"
+    },
+    {
+      "bearer_chars": 553,
+      "candidate_chars": 590,
+      "cosine": 0.9557175040245056,
+      "keep": "01KT9S3S7TAXRED02Y40VGX2EV",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KT9W4BK1JKTWK2KY6W6D8JZ8"
+    },
+    {
+      "bearer_chars": 161,
+      "candidate_chars": 148,
+      "cosine": 0.9548773765563965,
+      "keep": "01KS0T38SEE6713ZWN0JA45C47",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KS17D4E1NVF6QMJ3JJZE6JEQ"
+    },
+    {
+      "bearer_chars": 4788,
+      "candidate_chars": 4134,
+      "cosine": 0.9548848867416382,
+      "keep": "01KW6WE0WDRXF17N1R9WRNXGW8",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KW6X7SC2TGJDGDV4M8G61ANG"
+    },
+    {
+      "bearer_chars": 553,
+      "candidate_chars": 493,
+      "cosine": 0.9547350406646729,
+      "keep": "01KT9S3S7TAXRED02Y40VGX2EV",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KT9WF6ST66BMN50R1JVES3K4"
+    },
+    {
+      "bearer_chars": 1161,
+      "candidate_chars": 1206,
+      "cosine": 0.9544535875320435,
+      "keep": "01KTCH9T0TJJV17H9K3KB6WSV1",
+      "level": "schema",
+      "scope": "project:online",
+      "supersede": "01KVYS3SMZ01CZBDX04QJ0NS4T"
+    },
+    {
+      "bearer_chars": 5129,
+      "candidate_chars": 2144,
+      "cosine": 0.9543827772140503,
+      "keep": "01KVRSYKJYA1C8YD9K4F59J8XS",
+      "level": "schema",
+      "scope": "project:x",
+      "supersede": "01KVRSYKKJ2R02EC5BTSEF7NT6"
+    },
+    {
+      "bearer_chars": 162,
+      "candidate_chars": 162,
+      "cosine": 0.9539808630943298,
+      "keep": "01KX34DMJECNK45KC1F8XY2836",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KX374MMT5N096HC3CQAWCX02"
+    },
+    {
+      "bearer_chars": 5280,
+      "candidate_chars": 2055,
+      "cosine": 0.9539545774459839,
+      "keep": "01KT7C5RKYQRGRYE8FR4ZAWCV1",
+      "level": "schema",
+      "scope": "project:octopus",
+      "supersede": "01KT873561Z5ZY1NE8R6VJBRPK"
+    },
+    {
+      "bearer_chars": 3702,
+      "candidate_chars": 3738,
+      "cosine": 0.9539350867271423,
+      "keep": "01KRS12HZEZ2B4V5FNYZDS7C65",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS128TH842BV8BXA0ZGAA79"
+    },
+    {
+      "bearer_chars": 212,
+      "candidate_chars": 212,
+      "cosine": 0.9538220167160034,
+      "keep": "01KV2947ZM9EPRHTQZ7Z55DP48",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KV2BQR4GB87MF0G0YS4ZWDQ0"
+    },
+    {
+      "bearer_chars": 210,
+      "candidate_chars": 212,
+      "cosine": 0.953363835811615,
+      "keep": "01KRTS512MXHCQTFMKKS2XEP3A",
+      "level": "concept",
+      "scope": "project:lm",
+      "supersede": "01KRTS51PNR91GP1K8M329DYJY"
+    },
+    {
+      "bearer_chars": 5005,
+      "candidate_chars": 2232,
+      "cosine": 0.9530686736106873,
+      "keep": "01KRS1E3XX8H48ZJ9678EBR849",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS1EMMJEF0X3VXW1PETNWT1"
+    },
+    {
+      "bearer_chars": 583,
+      "candidate_chars": 620,
+      "cosine": 0.9524920582771301,
+      "keep": "01KS0XVB1RPVS27HJZ8ZGS0ES6",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS0QKC6GA350T4HKWM0R4BNS"
+    },
+    {
+      "bearer_chars": 2692,
+      "candidate_chars": 2530,
+      "cosine": 0.9524279832839966,
+      "keep": "01KV68151P7F05H6NVR85BPQEH",
+      "level": "schema",
+      "scope": "project:x",
+      "supersede": "01KVFRV26V42KX58EF6B9PCNFJ"
+    },
+    {
+      "bearer_chars": 4600,
+      "candidate_chars": 4955,
+      "cosine": 0.9524064064025879,
+      "keep": "01KT4WNA0M9Q2Z7111XWQ8EFV9",
+      "level": "schema",
+      "scope": "project:octopus",
+      "supersede": "01KT7C5RKH6QAV6Z8SB19G5QDP"
+    },
+    {
+      "bearer_chars": 1405,
+      "candidate_chars": 1435,
+      "cosine": 0.9519705176353455,
+      "keep": "01KTBYKNVF4YWZED016PH7T1VT",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KTBXTAP97M36K2MAKFW5DSK9"
+    },
+    {
+      "bearer_chars": 4048,
+      "candidate_chars": 2205,
+      "cosine": 0.9518907070159912,
+      "keep": "01KSQG2M6PJ3KQSN67PMBSQ46D",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KSQ3BX7VD6FY7K55BYJGM7QQ"
+    },
+    {
+      "bearer_chars": 1188,
+      "candidate_chars": 988,
+      "cosine": 0.951555609703064,
+      "keep": "01KRYAJ4M7M3S8YXCGJNBA0CJM",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRYC860HQVM92Y5KZ3RQ09FN"
+    },
+    {
+      "bearer_chars": 155,
+      "candidate_chars": 158,
+      "cosine": 0.9514936804771423,
+      "keep": "01KRYA6QAC7KAA3SP1N1JZJJMT",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KS1KFEBXREX4FXPN4NR1ZYH8"
+    },
+    {
+      "bearer_chars": 373,
+      "candidate_chars": 382,
+      "cosine": 0.9514387249946594,
+      "keep": "01KSQRZ18QF1AY3TE4FKSGZJRZ",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KSRAH8J0DR0XC485SYDBWGSE"
+    },
+    {
+      "bearer_chars": 5005,
+      "candidate_chars": 4880,
+      "cosine": 0.9512008428573608,
+      "keep": "01KRS1E3XX8H48ZJ9678EBR849",
+      "level": "trace",
+      "scope": "project:octopus",
+      "supersede": "01KRS1C3DYJP8YVZT3TF00SKMK"
+    },
+    {
+      "bearer_chars": 516,
+      "candidate_chars": 475,
+      "cosine": 0.9508271217346191,
+      "keep": "01KT9SGNF0A9TS70NJK5K7WC3Z",
+      "level": "trace",
+      "scope": "project:online",
+      "supersede": "01KT9V2XFDW8SF5N0B5ZYHZR2J"
+    },
+    {
+      "bearer_chars": 1671,
+      "candidate_chars": 1782,
+      "cosine": 0.9507508873939514,
+      "keep": "01KWPN6CAQ3GEA6ZPDYF3EYPD4",
+      "level": "trace",
+      "scope": "project:ae",
+      "supersede": "01KZ8S2JP2PMKQ4JSWQFATR1EE"
+    },
+    {
+      "bearer_chars": 211,
+      "candidate_chars": 200,
+      "cosine": 0.9504304528236389,
+      "keep": "01KTRJCB5FQ7ZT2WKD02TQ20B3",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KTRECZGVHN4T07WBB0TTXDC5"
+    },
+    {
+      "bearer_chars": 917,
+      "candidate_chars": 636,
+      "cosine": 0.9502093195915222,
+      "keep": "01KSB3GDH7JCATXNGKP69TA7HG",
+      "level": "schema",
+      "scope": "project:octopus",
+      "supersede": "01KTSKWP4F5CPNA5EB558XGVCW"
+    },
+    {
+      "bearer_chars": 2436,
+      "candidate_chars": 1709,
+      "cosine": 0.9501895308494568,
+      "keep": "01KV8PQZQGJR91EBW2NXA7VBD7",
+      "level": "trace",
+      "scope": "project:x",
+      "supersede": "01KV8VK3HBTS21NG9APW522GKW"
+    }
+  ],
+  "counts_at_threshold": {
+    "0.800": {
+      "nodes": 8308,
+      "pairs": 115776
+    },
+    "0.850": {
+      "nodes": 5745,
+      "pairs": 25505
+    },
+    "0.900": {
+      "nodes": 2850,
+      "pairs": 6611
+    },
+    "0.925": {
+      "nodes": 1756,
+      "pairs": 3563
+    },
+    "0.950": {
+      "nodes": 994,
+      "pairs": 1475
+    },
+    "0.970": {
+      "nodes": 549,
+      "pairs": 520
+    },
+    "0.990": {
+      "nodes": 236,
+      "pairs": 231
+    },
+    "0.999": {
+      "nodes": 141,
+      "pairs": 132
+    }
+  },
+  "coverage": 0.9988115576023174,
+  "database": "/home/sfx/.local/share/living-memory/global.sqlite3",
+  "length_margin": 0.1,
+  "nodes_compared": 13434,
+  "nodes_with_chunks": 13447,
+  "pairs_at_threshold": 1475,
+  "pairs_compared": 16884831,
+  "percentiles": {
+    "p10": 0.7070544123649598,
+    "p25": 0.7626248598098755,
+    "p50": 0.8320584893226624,
+    "p75": 0.8905677795410156,
+    "p90": 0.9371830105781556,
+    "p95": 0.9631320774555205,
+    "p99": 0.9992414528131485
+  },
+  "provenance_levels": [
+    "concept",
+    "schema"
+  ],
+  "scope_mode": "same",
+  "skips": {
+    "bearer_already_superseded": 2,
+    "candidate_already_collapsed": 237,
+    "candidate_is_correction": 4,
+    "level_mismatch": 223,
+    "longer_than_bearer": 35,
+    "provenance_source_trace": 847
+  },
+  "threshold": 0.95,
+  "vector_width": 384
+}
