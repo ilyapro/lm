@@ -95,7 +95,7 @@ where a map would have spent 700.
 
 Consumption is measured, never assumed, from evidence the server already
 writes (:meth:`RecallMapBuilder._curtailment`). A delivered cluster counts as
-consumed when either probe fires after the delivery that offered it:
+consumed when any of three probes fires after the delivery that offered it:
 
 * **the ask was asked** — a later recall under the same key phrased a query
   covering :data:`CURTAIL_QUERY_OVERLAP` of the cluster's label or ask-hint
@@ -104,19 +104,35 @@ consumed when either probe fires after the delivery that offered it:
 * **the example was reached** — the cluster's medoid node was accessed after
   the delivery. ``retrieval`` stamps ``nodes.last_accessed`` on every result it
   delivers, so this fires the moment a later recall actually hands the agent
-  the node the map pointed at.
+  the node the map pointed at;
+* **the example was fetched** — a ``memory_lookup`` named the cluster's medoid
+  by id inside the delivery's frozen outcome window. This is the only one of
+  the three that no ranker can produce for itself: the two above both reduce to
+  "a later recall returned this node again", which a hub schema satisfies
+  forever without anybody reading it, while an id-fetch of one exact ULID is an
+  act only a reader who was handed that ULID performs. The endogenous pair
+  stays regardless — in curtail an ambiguity is resolved against collapsing, so
+  a weak probe is evidence, not noise.
 
-Both probes read tables the recall path already writes — a bounded window over
-``recall_events`` via ``MemoryStore.recent_recall_map_history``, and one
-primary-key batch over ``nodes``. Nothing new is written and no LLM is asked.
+All three probes read tables the recall path already writes — a bounded window
+over ``recall_events`` via ``MemoryStore.recent_recall_map_history``, one
+primary-key batch over ``nodes``, and one over the delivery ledger that already
+correlates lookups with their windows. Nothing new is written and no LLM is
+asked.
 
 The window read is not free, and pretending otherwise would be the wrong kind
-of quiet: no index covers "this key's deliveries that carried a map, newest
-first", so SQLite walks the scope's whole partition and sorts — 8.5 ms on a
-21k-event scope, measured, and rising with it. It is therefore *gated* rather
-than paid per recall: :class:`_CurtailMemo` counts the offers this builder has
-made since it last read, and asks for a read only once that count could reach
-the threshold. The gate can delay a collapse and can ask for a read it did not
+of quiet: before the ``task_pattern`` column no index covered "this key's
+deliveries that carried a map, newest first", so SQLite walked the scope's
+whole partition and sorted — 8.5 ms on a 21k-event scope, measured, and rising
+with it. ``idx_recall_events_scope_pattern_created`` narrows the pattern-keyed
+form of that question to two bounded index ranges, but the read stays *gated*
+rather than paid per recall, because the task-keyed form is unchanged and
+because a narrower read is still a read: :class:`_CurtailMemo` counts the
+offers this builder has made since it last read, and asks for a read only once
+that count could reach the threshold. Its key is the map's key, both components
+of it, or a per-turn client would seed a fresh memo every turn and pay on every
+delivery the read the gate exists to avoid. The gate can delay a collapse and
+can ask for a read it did not
 need; it can never collapse a map by itself. What is left after the gate,
 isolated by running ``scripts/recall_map_latency_bench.py`` twice over one
 snapshot with the probe stubbed out of the second: +1.0 ms on the map stage's
@@ -140,12 +156,13 @@ of one more unread map.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from math import fsum, log, log1p, sqrt
 from typing import TYPE_CHECKING, Any
 import json
+import os
 import re
 import sqlite3
 
@@ -156,6 +173,7 @@ from living_memory.scope import GLOBAL_SCOPE, normalize_scope
 from living_memory.storage import (
     CHUNK_EMBEDDING_TABLE,
     MAX_RECALL_HISTORY_CANDIDATES,
+    RECALL_DELIVERY_HISTORY_TABLE,
     MemoryStore,
 )
 
@@ -261,9 +279,96 @@ SELECTION_REASON_CODES: tuple[str, ...] = (
     "lr",
     "pc",
 )
+#: Reason codes the two env-gated pool gates add *after* the frozen vector.
+#:
+#: Appended, never interleaved: a reader that knows the seven above keeps
+#: reading them at the same indices, which is the whole content of the
+#: positional contract. The other half of keeping that promise is
+#: :meth:`_SelectionLedger.freeze`, which trims trailing zeros back to the
+#: frozen width — so a server with both valves unset emits exactly the
+#: seven-wide ``x`` it emitted before these codes existed, and a longer vector
+#: is itself the statement that a gate fired.
+POOL_GATE_REASON_CODES: tuple[str, ...] = (
+    #: Below the usefulness floor of :data:`POOL_USEFULNESS_FLOOR_ENV`.
+    "uf",
+    #: Demoted after :data:`POOL_DEMOTION_WINDOWS_ENV` known delivery windows
+    #: that nobody followed.
+    "nf",
+)
+SELECTION_LEDGER_REASON_CODES: tuple[str, ...] = (
+    *SELECTION_REASON_CODES,
+    *POOL_GATE_REASON_CODES,
+)
 SELECTION_SAMPLE_GIST_CHARS = 24
 SELECTION_SAMPLE_LIMIT = 2
-_SAMPLEABLE_REASONS = frozenset({"fc", "ss", "sj", "lr", "pc"})
+#: Both gate codes are sampleable, and that is a decision rather than a
+#: default. The three ballast codes are sampleable because an operator reading
+#: the journal needs to see *what* a machine-shaped rule swallowed; ``lr`` and
+#: ``pc`` because a frozen score and a cap are invisible otherwise. The gate
+#: codes are the strongest case of the same argument: their thresholds are the
+#: one part of this module an operator sets by hand from field numbers, and a
+#: journal that says "the floor dropped 14" without ever naming one of them
+#: gives the operator no way to tell a floor that is working from a floor set
+#: one decimal place too high. The gist is already identity-free and capped at
+#: :data:`SELECTION_SAMPLE_GIST_CHARS`, so admitting them costs the payload
+#: nothing it does not already spend on the codes beside them — and costs it
+#: only when a valve is on, since with both unset neither code ever fires.
+_SAMPLEABLE_REASONS = frozenset({"fc", "ss", "sj", "lr", "pc", "uf", "nf"})
+
+# ----------------------------------------------------------------------
+# Pool gates behind env valves
+# ----------------------------------------------------------------------
+#
+# Two admission rules that ``_pool`` applies *around* the frozen selector,
+# never inside it: :data:`RELEVANCE_FEATURE_MEANS`,
+# :data:`RELEVANCE_FEATURE_SCALES` and :func:`relevance_score` see exactly what
+# they saw before, and every new signal enters as a separate yes/no on a
+# candidate the frozen pipeline already judged.
+#
+# Both follow ``retrieval.DRAIN_NEAR_DUP_ENV`` and take it one step further.
+# There the flag is a whole env var — rather than a threshold of zero — because
+# turning the behaviour on has to be a sentence an operator said. Here the
+# *number* is a second env var with no shipped default at all, because unlike
+# the drain's cosine there is no measured value to ship: the field distribution
+# these thresholds come from is a sibling goal's artifact, and the operator
+# reads them off it. A valve that is on with no number is inert, which is the
+# only safe reading of "on, but at what?".
+
+#: ``1``/``true``/``yes``/``on``, exactly as the drain valve parses. Anything
+#: else — unset, empty, ``0``, a typo — is off, because a misread flag here
+#: silently removes rows from the one channel that says what memory holds.
+_POOL_GATE_ON_FLAGS = frozenset({"1", "true", "yes", "on"})
+
+#: Valve for gate (a): drop a candidate whose ``usefulness_score`` sits below
+#: the floor. The score is already on the node the residual carries, so this
+#: gate costs one attribute read per candidate and no query at all.
+POOL_USEFULNESS_GATE_ENV = "LM_MAP_POOL_USEFULNESS_GATE"
+#: The floor itself. No default: see the block comment above.
+POOL_USEFULNESS_FLOOR_ENV = "LM_MAP_POOL_MIN_USEFULNESS"
+
+#: Valve for gate (b): demote a row that has been delivered into N known
+#: windows in a row without anybody following it.
+POOL_DEMOTION_GATE_ENV = "LM_MAP_POOL_DEMOTION_GATE"
+#: N itself, in windows. No default: see the block comment above.
+POOL_DEMOTION_WINDOWS_ENV = "LM_MAP_POOL_DEMOTE_AFTER"
+
+#: What one re-delivered window is worth against the demotion run.
+#:
+#: Re-delivery — "a later recall returned this node again" — is the ranker's
+#: own echo: the schema-trigger boost mixes hub schemas into nearly every
+#: recall, so a hub carries ``consumed == matured`` forever without a reader
+#: ever opening it. It is still evidence of *something*, so it softens; it may
+#: never veto, because a veto is precisely what makes those hubs immortal and
+#: is the failure this gate exists to fix.
+#:
+#: Hence a weight strictly inside ``(0, 1)``: ``0`` is no softening at all and
+#: ``1`` is the veto. Which value inside the interval is not a threshold to
+#: tune here — the run is compared against the operator's N, so any fixed
+#: weight is absorbed by their choice of N. At ``0.5`` the arithmetic states
+#: itself: a row nothing ever re-delivered sinks after N windows, a row
+#: re-delivered every single time needs 2N, and every mixture lands in
+#: between.
+DEMOTION_REDELIVERY_WEIGHT = 0.5
 
 #: Cosine at or above which greedy leader clustering admits a node to an
 #: existing cluster. A fallback stage's threshold, deliberately loose: whatever
@@ -544,6 +649,15 @@ class SelectionAccounting:
     many of ``samples`` it buys.  ``inspected``, ``admitted`` and ``excluded``
     are unconditional, and ``to_dict`` recomputes ``o`` from the chosen sample
     count so dropping examples can never falsify the accounting equation.
+
+    ``excluded`` is the frozen :data:`SELECTION_REASON_CODES` vector,
+    optionally extended by the :data:`POOL_GATE_REASON_CODES` an env valve
+    turned on.  The extension is *canonically trimmed*: a trailing zero past
+    the frozen width is rejected rather than accepted-and-ignored, so there is
+    exactly one encoding of "no gate fired" and it is byte-identical to what a
+    build with no gates at all produced.  That is the invariant, not a
+    convention — an accounting that could spell the same fact two ways would
+    make the byte-identity claim unfalsifiable.
     """
 
     inspected: int
@@ -553,8 +667,12 @@ class SelectionAccounting:
     sampleable: int = 0
 
     def __post_init__(self) -> None:
-        if len(self.excluded) != len(SELECTION_REASON_CODES):
+        frozen_width = len(SELECTION_REASON_CODES)
+        width = len(self.excluded)
+        if not frozen_width <= width <= len(SELECTION_LEDGER_REASON_CODES):
             raise ValueError("selection exclusion vector has the wrong width")
+        if width > frozen_width and not self.excluded[-1]:
+            raise ValueError("selection exclusion vector is not canonically trimmed")
         if self.inspected < 0 or self.admitted < 0 or any(
             count < 0 for count in self.excluded
         ):
@@ -564,21 +682,26 @@ class SelectionAccounting:
         if self.sampleable < len(self.samples):
             raise ValueError("selection samples exceed the sampleable population")
         sampleable_cap = sum(
-            self.excluded[index]
-            for index, reason in enumerate(SELECTION_REASON_CODES)
+            count
+            for count, reason in zip(
+                self.excluded, SELECTION_LEDGER_REASON_CODES, strict=False
+            )
             if reason in _SAMPLEABLE_REASONS
         )
         if self.sampleable > sampleable_cap:
             raise ValueError("selection sampleable count exceeds exclusions")
 
-        reason_order = {reason: index for index, reason in enumerate(SELECTION_REASON_CODES)}
+        reason_order = {
+            reason: index
+            for index, reason in enumerate(SELECTION_LEDGER_REASON_CODES)
+        }
         prior = -1
         seen: set[str] = set()
         for sample in self.samples:
             if sample.reason not in _SAMPLEABLE_REASONS:
                 raise ValueError("selection sample has a non-sampleable reason")
             current = reason_order[sample.reason]
-            if self.excluded[current] <= 0:
+            if current >= width or self.excluded[current] <= 0:
                 raise ValueError("selection sample has no matching exclusion")
             if current <= prior or sample.reason in seen:
                 raise ValueError("selection samples are not in fixed reason order")
@@ -728,15 +851,27 @@ class _SelectionLedger:
         )
 
     def freeze(self, admitted: int) -> SelectionAccounting:
+        """Close the ledger into the canonical, trimmed accounting.
+
+        The exclusion vector is built over every code this module knows and
+        then cut back to :data:`SELECTION_REASON_CODES` while its tail is
+        zero. With both pool valves unset that cut always reaches the frozen
+        width, so the payload is the one this module emitted before the gate
+        codes existed — down to the length of ``x``.
+        """
+
         samples = tuple(
             self.first_samples[reason]
-            for reason in SELECTION_REASON_CODES
+            for reason in SELECTION_LEDGER_REASON_CODES
             if reason in self.first_samples
         )
+        counts = [self.excluded[reason] for reason in SELECTION_LEDGER_REASON_CODES]
+        while len(counts) > len(SELECTION_REASON_CODES) and not counts[-1]:
+            counts.pop()
         return SelectionAccounting(
             inspected=self.inspected,
             admitted=admitted,
-            excluded=tuple(self.excluded[reason] for reason in SELECTION_REASON_CODES),
+            excluded=tuple(counts),
             samples=samples,
             sampleable=self.sampleable,
         )
@@ -893,6 +1028,15 @@ class _CurtailMemo:
     offers: int = 0
     #: All of them, collapsed markers included.
     total: int = 0
+    #: Medoids of this key's window whose label or ask-hint a later query
+    #: echoed — the ask-echo probe, harvested from the read that was happening
+    #: anyway so the pool gate costs no second walk of the same rows.
+    ask_followed: frozenset[str] = frozenset()
+    #: Whether the read that seeded this memo was asked to harvest them. A
+    #: memo seeded without them cannot serve the gate: an empty set would read
+    #: as "nobody asked", which is the one direction that costs a row its
+    #: place in the pool.
+    ask_collected: bool = False
 
     def estimate(self) -> _Curtailment:
         return _Curtailment(
@@ -1112,6 +1256,156 @@ def relevance_score(node: Any, history: Any) -> float:
     """Score one node from only its level and strictly matured history."""
 
     return _directional_zsum(_relevance_features(node, history))
+
+
+# ----------------------------------------------------------------------
+# Pool gates: reading the valves, and the two predicates behind them
+# ----------------------------------------------------------------------
+
+
+def _gate_flag(name: str) -> bool:
+    """Whether an operator turned this gate on, drain-valve spelling."""
+
+    return os.environ.get(name, "").strip().lower() in _POOL_GATE_ON_FLAGS
+
+
+def pool_usefulness_floor_from_env() -> float | None:
+    """The usefulness floor, or ``None`` when gate (a) is not armed.
+
+    Armed means both halves: ``LM_MAP_POOL_USEFULNESS_GATE`` on *and*
+    ``LM_MAP_POOL_MIN_USEFULNESS`` holding a number. Unlike the drain's
+    cosine there is no default to fall back to — the value comes off a field
+    measurement, and inventing one here would be this module deciding a
+    production threshold it has no evidence for. A valve on with no number,
+    or with a number that does not parse, therefore leaves the pool exactly as
+    it was: the operator asked for a floor and did not say where, and the
+    honest answer to that is no floor rather than a guess.
+    """
+
+    if not _gate_flag(POOL_USEFULNESS_GATE_ENV):
+        return None
+    raw = os.environ.get(POOL_USEFULNESS_FLOOR_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    if value != value:  # NaN compares false against everything, gate included
+        return None
+    return value
+
+
+def pool_demotion_windows_from_env() -> int | None:
+    """N in "N known windows without a follow", or ``None`` when unarmed.
+
+    Same two-part rule as :func:`pool_usefulness_floor_from_env`. ``N`` counts
+    windows, so it is a positive integer; ``0`` would demote every row with no
+    evidence at all and is rejected as the misconfiguration it is rather than
+    silently emptying the map.
+    """
+
+    if not _gate_flag(POOL_DEMOTION_GATE_ENV):
+        return None
+    raw = os.environ.get(POOL_DEMOTION_WINDOWS_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value >= 1 else None
+
+
+def _below_usefulness(node: Any, floor: float) -> bool:
+    """Whether this candidate's usefulness verdict sits under the floor.
+
+    Read off the node the residual already carries, so no query joins the hot
+    path for it. A node whose score is missing or not a real number is *not*
+    below the floor: absence of a verdict is not a low verdict, and this gate
+    only ever removes rows, so the unknown case has to resolve towards keeping
+    them.
+
+    That case is about the *object*, not the corpus. ``nodes.usefulness_score``
+    is ``NOT NULL DEFAULT 0.0``, so a node nobody has ever scored arrives here
+    as a genuine ``0.0`` and is judged against the floor like any other number
+    — which is right, because the floor is chosen from a census of that same
+    distribution, zeroes included. The guard is for the duck-typed faces this
+    module reads through everywhere else: a result object from another layer
+    that has no such attribute must not be silently read as worthless.
+    """
+
+    value = getattr(node, "usefulness_score", None)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    score = float(value)
+    if score != score:
+        return False
+    return score < floor
+
+
+def _unfollowed_run(history: Any) -> float | None:
+    """Softened run of known windows this row was delivered into unfollowed.
+
+    Every input is an aggregate the bounded batched ledger read already
+    returned for this candidate (``MemoryStore.matured_recall_history``), so
+    the gate adds no query and no per-row work beyond this arithmetic.
+
+    ``lookup_trailing_absent`` is the run itself, and it is already exactly
+    what this gate needs: newest-first known windows with no id-fetch,
+    stopping at the first followed one, with unobservable (``NULL``) windows
+    *skipped* rather than counted — a window that closed before this database
+    recorded lookups is not evidence that nobody followed it.
+
+    ``consumed / matured`` is the softening, and it is the row's whole
+    re-delivery record rather than a per-window pairing because the ledger
+    aggregate is what a batched read can afford. See
+    :data:`DEMOTION_REDELIVERY_WEIGHT` for why it may not reach zero.
+
+    ``None`` — unavailable, truncated or self-inconsistent history — means the
+    gate abstains. Every other reading of an unreadable history would demote a
+    row on the strength of not knowing anything about it.
+    """
+
+    if history is None or getattr(history, "available", False) is not True:
+        return None
+    values = (
+        getattr(history, "lookup_trailing_absent", None),
+        getattr(history, "lookup_known", None),
+        getattr(history, "matured", None),
+        getattr(history, "consumed", None),
+    )
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
+        return None
+    run, known, matured, consumed = values
+    if run < 0 or known < 0 or matured < 0 or consumed < 0:
+        return None
+    if run > known or known > matured or consumed > matured:
+        return None
+    if not run:
+        return 0.0
+    share = consumed / matured if matured else 0.0
+    return run * (1.0 - DEMOTION_REDELIVERY_WEIGHT * share)
+
+
+def _demoted(history: Any, *, ask_followed: bool, after: int) -> bool:
+    """Whether gate (b) sinks this row.
+
+    Two exogenous probes, and only exogenous ones. ``ask_followed`` is the
+    query-echo probe :meth:`RecallMapBuilder._was_followed` runs, over the
+    same window and the same tokenizer, so the two consumers of "did anybody
+    follow this" cannot disagree about it; the id-fetch probe arrives inside
+    ``history``. The third probe curtail uses — the medoid's ``last_accessed``
+    — is deliberately absent, and its absence is the point: it is bumped by
+    any recall that returns the node, which is the endogenous echo a hub
+    satisfies forever. A gate whose veto is endogenous cannot sink a hub, and
+    sinking hubs is the entire job.
+    """
+
+    if ask_followed:
+        return False
+    run = _unfollowed_run(history)
+    return run is not None and run >= after
 
 
 def _selection_gist(node: Any) -> str:
@@ -1406,6 +1700,11 @@ class RecallMapBuilder:
         #: Whether the last :meth:`build` paid for a history read, or answered
         #: the curtail question from what it had already delivered itself.
         self.last_curtail_read: bool = False
+        #: Medoids the last curtail question found ask-echoed under that key,
+        #: empty unless the demotion valve asked for them. Exposed the way the
+        #: three above are: a by-product of a read the build already paid for,
+        #: which the pool gate consumes and tests can inspect.
+        self.last_ask_follows: frozenset[str] = frozenset()
         self._cache: dict[str, _CachedStructure] = {}
         self._curtail_memo: dict[str, _CurtailMemo] = {}
         self._write_probe: tuple[int, int] | None = None
@@ -1451,6 +1750,13 @@ class RecallMapBuilder:
         followed gets the collapsed form instead — clusters empty, ``curtailed``
         set, the streak carried — and gets it *before* any clustering runs, so
         a channel nobody reads also stops costing what it costs to fill.
+
+        With :data:`POOL_DEMOTION_GATE_ENV` armed the curtail verdict is read
+        *before* the pool instead of after it, because the gate needs the
+        ask-echo probe that read already computes. Nothing else moves: the
+        read is the same read behind the same memo, the verdict is carried
+        forward rather than asked for twice, and with the valve unset the
+        order below is untouched.
         """
 
         self.last_cache_hit = False
@@ -1459,11 +1765,36 @@ class RecallMapBuilder:
             return None
 
         instant = decision_at if decision_at is not None else datetime.now(UTC)
-        pool, selection = self._pool(results, decision_at=instant)
+        # Hoisted above `_pool` so the gate can be handed this key's evidence.
+        # Pure string work on arguments already in hand — no read, no cache
+        # touch — so an unarmed build computes exactly what it always did, in
+        # a different order that nothing downstream can observe.
         map_scope = (
             normalize_scope(scope) if scope else _dominant_residual_scope(results)
         )
         key = cache_key(map_scope, task=task, task_pattern=task_pattern)
+        demote_after = pool_demotion_windows_from_env()
+        curtailment: _Curtailment | None = None
+        ask_followed: frozenset[str] = frozenset()
+        if demote_after is not None:
+            # One consequence of asking early is worth naming rather than
+            # discovering: a build whose pool comes back empty now seeds a
+            # curtail memo where it previously seeded none, so `_note_delivery`
+            # counts it. That is the honest count — the build did deliver, and
+            # it did offer nothing — and it cannot cause a collapse, because a
+            # collapse is decided by `offers`, which an empty pool never
+            # advances. It can only make the reported streak estimate less of
+            # an undercount.
+            curtailment = self._curtailment(
+                map_scope, task, task_pattern, want_ask_follows=True
+            )
+            ask_followed = self.last_ask_follows
+        pool, selection = self._pool(
+            results,
+            decision_at=instant,
+            demote_after=demote_after,
+            ask_followed=ask_followed,
+        )
         if not pool:
             # A non-empty residual that policy filtered completely is evidence,
             # not the same event as an empty residual.  It offered no cluster
@@ -1483,7 +1814,7 @@ class RecallMapBuilder:
             else:
                 self._remember(key, revision, [])
             self.last_curtailment = _Curtailment(streak=0, offers=0)
-            self._note_delivery(map_scope, task, offered=False)
+            self._note_delivery(map_scope, task, task_pattern, offered=False)
             return RecallMap(
                 scope=map_scope,
                 key=key,
@@ -1496,10 +1827,11 @@ class RecallMapBuilder:
                 ),
             )
 
-        curtailment = self._curtailment(map_scope, task)
+        if curtailment is None:
+            curtailment = self._curtailment(map_scope, task, task_pattern)
         self.last_curtailment = curtailment
         if curtailment.collapse:
-            self._note_delivery(map_scope, task, offered=False)
+            self._note_delivery(map_scope, task, task_pattern, offered=False)
             return RecallMap(
                 scope=map_scope,
                 key=key,
@@ -1543,7 +1875,9 @@ class RecallMapBuilder:
             # A journal-only map reaches the server so a fully gated pool does
             # not disappear from field evidence, but it offered the agent no
             # cluster and therefore must not advance the curtail offer count.
-            self._note_delivery(map_scope, task, offered=bool(built.clusters))
+            self._note_delivery(
+                map_scope, task, task_pattern, offered=bool(built.clusters)
+            )
         return built
 
     # -- pool ----------------------------------------------------------
@@ -1553,6 +1887,8 @@ class RecallMapBuilder:
         results: Sequence["RecallResult"],
         *,
         decision_at: str | datetime,
+        demote_after: int | None = None,
+        ask_followed: Collection[str] = (),
     ) -> tuple[list[_Member], SelectionAccounting]:
         """Apply the frozen member pipeline before the pool cap.
 
@@ -1561,8 +1897,33 @@ class RecallMapBuilder:
         larger than storage's frozen bound.  Every survivor is scored before
         the stable relevance sort and cap, so machine ballast and low-score
         head entries cannot crowd a useful tail member out of the 200.
+
+        Two env-gated gates sit *around* that pipeline and never inside it.
+        Gate (a) — a ``usefulness_score`` floor — runs with the ballast rules,
+        before history is read, because a candidate the floor rejects should
+        not cost a ledger row.  Gate (b) — the unfollowed-window demotion —
+        runs after the frozen threshold has spoken, so ``nf`` counts exactly
+        the rows the gate newly removed rather than re-labelling rows ``lr``
+        would have dropped anyway.  Both read only what is already in hand:
+        the score off the node the residual carries, the window aggregates off
+        the same bounded batch :meth:`_matured_history` already fetches, and
+        ``ask_followed`` off the curtail read the build did before calling
+        here.  Neither adds a query, and neither adds a per-row one.
+
+        The two valves are read in different places, and the asymmetry is
+        deliberate. Gate (a) needs nothing but this method's own arguments, so
+        it reads its valve here. Gate (b) needs the ask-echo evidence, which
+        only :meth:`build` can obtain and only when it knows in advance that
+        the gate is armed — so ``demote_after`` arrives as an argument, and a
+        caller that reaches ``_pool`` directly gets no demotion rather than a
+        demotion decided without the evidence that holds rows back.
+
+        With both valves unset ``demote_after`` is ``None``, the floor is
+        ``None``, nothing below branches, and the ledger trims back to the
+        frozen seven-code vector.
         """
 
+        usefulness_floor = pool_usefulness_floor_from_env()
         ledger = _SelectionLedger(inspected=len(results))
         seen: set[str] = set()
         eligible: list[tuple[int, Node]] = []
@@ -1585,6 +1946,11 @@ class RecallMapBuilder:
             if reason is not None:
                 ledger.exclude(reason, ordinal=ordinal, node=node)
                 continue
+            if usefulness_floor is not None and _below_usefulness(
+                node, usefulness_floor
+            ):
+                ledger.exclude("uf", ordinal=ordinal, node=node)
+                continue
             eligible.append((ordinal, node))
 
         histories = self._matured_history(
@@ -1592,9 +1958,17 @@ class RecallMapBuilder:
         )
         survivors: list[_Member] = []
         for ordinal, node in eligible:
-            score = relevance_score(node, histories.get(node.id))
+            history = histories.get(node.id)
+            score = relevance_score(node, history)
             if score < RELEVANCE_THRESHOLD:
                 ledger.exclude("lr", ordinal=ordinal, node=node)
+                continue
+            if demote_after is not None and _demoted(
+                history,
+                ask_followed=node.id in ask_followed,
+                after=demote_after,
+            ):
+                ledger.exclude("nf", ordinal=ordinal, node=node)
                 continue
             survivors.append(
                 _Member(rank=ordinal, node=node, relevance_score=score)
@@ -2130,30 +2504,75 @@ class RecallMapBuilder:
 
     # -- curtail -------------------------------------------------------
 
-    def _curtailment(self, scope: str, task: str | None) -> _Curtailment:
+    def _curtailment(
+        self,
+        scope: str,
+        task: str | None,
+        task_pattern: str | None = None,
+        *,
+        want_ask_follows: bool = False,
+    ) -> _Curtailment:
         """This key's unaccepted-offer streak, read only when it could bite.
 
         The gate in front of the read is :class:`_CurtailMemo`, and the whole
         argument for it is there. What matters here: a verdict returned from
         the memo is an estimate and never collapses anything, because the
         estimate is only trusted while it stays *below* the threshold.
+
+        ``task_pattern`` is threaded in for one reason and it is not a
+        refinement: the memo must be keyed by :func:`cache_key` with *both*
+        components, exactly as the map's structure cache is, or a client whose
+        ``task`` changes every turn gets a fresh memo per turn while its map
+        keeps hitting one cached structure — the counter and the thing it
+        counts would be describing different keys.
+
+        ``want_ask_follows`` asks the read for the ask-echo probe as well, and
+        forces a read when the memo in hand was seeded without it. It buys no
+        extra query — the probe is computed from rows the read already walks —
+        and it changes no verdict. What it does buy is staleness of exactly
+        the kind the memo already accepts: an ask that landed since the read
+        is invisible until the next one, so the gate can miss a follow and
+        demote a row it should have kept. That is the same window curtail
+        judges by, deliberately, so the two rules cannot disagree about
+        whether one delivery was followed.
         """
 
-        key = cache_key(scope, task=task)
+        key = cache_key(scope, task=task, task_pattern=task_pattern)
         memo = self._curtail_memo.get(key)
-        if memo is not None and not memo.estimate().collapse:
+        if (
+            memo is not None
+            and not memo.estimate().collapse
+            and (memo.ask_collected or not want_ask_follows)
+        ):
             self.last_curtail_read = False
+            self.last_ask_follows = memo.ask_followed
             return memo.estimate()
 
         self.last_curtail_read = True
-        verdict = self._read_curtailment(scope, task)
+        ask_follows: set[str] | None = set() if want_ask_follows else None
+        verdict = self._read_curtailment(
+            scope, task, task_pattern, ask_follows=ask_follows
+        )
+        followed = frozenset(ask_follows or ())
         self._curtail_memo.pop(key, None)
-        self._curtail_memo[key] = _CurtailMemo(verdict=verdict)
+        self._curtail_memo[key] = _CurtailMemo(
+            verdict=verdict,
+            ask_followed=followed,
+            ask_collected=want_ask_follows,
+        )
         while len(self._curtail_memo) > MAX_CACHE_ENTRIES:
             self._curtail_memo.pop(next(iter(self._curtail_memo)))
+        self.last_ask_follows = followed
         return verdict
 
-    def _note_delivery(self, scope: str, task: str | None, *, offered: bool) -> None:
+    def _note_delivery(
+        self,
+        scope: str,
+        task: str | None,
+        task_pattern: str | None = None,
+        *,
+        offered: bool,
+    ) -> None:
         """Count one map this builder just handed the server to deliver.
 
         ``offered`` separates a map from a collapsed marker, because only a
@@ -2162,14 +2581,23 @@ class RecallMapBuilder:
         knows it did.
         """
 
-        memo = self._curtail_memo.get(cache_key(scope, task=task))
+        memo = self._curtail_memo.get(
+            cache_key(scope, task=task, task_pattern=task_pattern)
+        )
         if memo is None:  # pragma: no cover - the read always seeds one
             return
         memo.total += 1
         if offered:
             memo.offers += 1
 
-    def _read_curtailment(self, scope: str, task: str | None) -> _Curtailment:
+    def _read_curtailment(
+        self,
+        scope: str,
+        task: str | None,
+        task_pattern: str | None = None,
+        *,
+        ask_follows: set[str] | None = None,
+    ) -> _Curtailment:
         """Walk this key's deliveries back until one of them was followed.
 
         Newest first, stopping at the first delivery with a consumed cluster:
@@ -2177,17 +2605,30 @@ class RecallMapBuilder:
         because the channel demonstrably was used. Everything walked past is
         the streak; the offers among it are what decides the collapse.
 
-        Two reads for the whole window, not two per delivery: the medoid
-        timestamps come back in one batch and every query is tokenized once,
-        because this is the expensive half of the rule and
-        :class:`_CurtailMemo` exists to keep it from being asked often. Any
-        store that cannot answer either read — an older schema, a ranking-only
-        store face — yields an empty verdict, and an empty verdict never
+        Three reads for the whole window, not three per delivery: the medoid
+        timestamps and the ledger's lookup verdicts each come back in one
+        batch and every query is tokenized once, because this is the expensive
+        half of the rule and :class:`_CurtailMemo` exists to keep it from being
+        asked often. Any store that cannot answer a read — an older schema, a
+        ranking-only store face — contributes no evidence from it, and a store
+        that can answer none of them yields an empty verdict, which never
         collapses anything.
+
+        ``ask_follows``, when a set is passed, is filled with the medoids whose
+        label or ask-hint a later query in this window echoed — the ask-echo
+        probe of :meth:`_was_followed`, reported per medoid instead of per
+        delivery so :func:`_demoted` can ask it about one row. It is an out
+        parameter rather than a second return value because it is a by-product:
+        the verdict is what this method decides, and the harvest must not be
+        able to change it. Two properties make that literal — the walk below
+        covers the *whole* window rather than stopping at the streak boundary
+        (a follow before the boundary is still a follow of that row), and it
+        runs over the rows and tokens already in hand, so asking for it costs
+        no read.
         """
 
         try:
-            history = self._delivery_history(scope, task)
+            history = self._delivery_history(scope, task, task_pattern)
         except (AttributeError, sqlite3.Error):  # pragma: no cover - old store
             return _Curtailment(streak=0, offers=0)
         if not history:
@@ -2198,7 +2639,25 @@ class RecallMapBuilder:
             accessed = self._medoid_access(items)
         except sqlite3.Error:  # pragma: no cover - defensive
             accessed = {}
+        try:
+            looked_up = self._medoid_lookups(history)
+        except (AttributeError, sqlite3.Error):  # pragma: no cover - old store
+            looked_up = {}
         queries = [token_set(str(row.get("query") or "")) for row in history]
+
+        if ask_follows is not None:
+            for index, delivered in enumerate(items):
+                later = queries[:index]
+                if not later:
+                    continue
+                for item in delivered:
+                    if not item.medoid_id or item.medoid_id in ask_follows:
+                        continue
+                    if any(
+                        _echoes(item.label, query) or _echoes(item.ask_hint, query)
+                        for query in later
+                    ):
+                        ask_follows.add(item.medoid_id)
 
         streak = 0
         offers = 0
@@ -2209,6 +2668,7 @@ class RecallMapBuilder:
                 delivered_at=str(row.get("created_at") or ""),
                 later_queries=queries[:index],
                 accessed=accessed,
+                looked_up=looked_up.get(str(row.get("id") or ""), frozenset()),
             ):
                 break
             streak += 1
@@ -2216,28 +2676,61 @@ class RecallMapBuilder:
                 offers += 1
         return _Curtailment(streak=streak, offers=offers)
 
-    def _delivery_history(self, scope: str, task: str | None) -> list[dict[str, Any]]:
+    def _delivery_history(
+        self, scope: str, task: str | None, task_pattern: str | None = None
+    ) -> list[dict[str, Any]]:
         """This key's recent deliveries, newest first.
 
-        The storage read filters on the two columns ``recall_events`` actually
-        stores — the resolved ``scope`` and the ambient ``task`` — and the
-        ``task`` re-check here is what makes a *task-less* key its own key
-        rather than a bucket collecting every task in the scope.
+        The read is keyed the way :func:`cache_key` keys the map: on the
+        ``task_pattern`` when there is one, on the ``task`` when there is not.
+        That alignment is the whole point of this method. Before
+        ``recall_events`` had a ``task_pattern`` column the read could only ask
+        for the ``task``, and the docstring here called that a safe compromise
+        because it merges tasks rather than splitting them — which was true of
+        a stable ``task`` and false of the client that matters. An AE chat
+        sends ``task=chat:<id>/turn-<N>`` per the section 9 contract, a fresh
+        string every turn, so the window under a stable ``task_pattern`` key
+        was not merely coarse: it was empty on every single turn, and
+        :data:`CURTAIL_STREAK` could never accumulate for the one channel most
+        in need of going quiet.
 
-        Two ways this can under-see, both of which end in "no history", and
-        both of which are therefore safe: a ``task_pattern``-keyed map looks
-        for its ``task`` (the only one of the two the table has, and the
-        coarser, so it can only merge deliveries of one task and never split
-        one), and a scope resolved differently from the one the map is built
-        under simply matches nothing. Seeing less history can only shorten a
-        streak, and a shorter streak is a map that keeps being delivered.
+        Storage carries the pattern-or-legacy-task disjunction, so a row is
+        counted when it names this pattern, or when it names no pattern at all
+        and its ``task`` matches — the only identity a row written before the
+        column can offer. The ``task`` re-check below therefore runs *only* for
+        a key with no pattern, where it still does its original job: make a
+        task-less key its own key instead of a bucket collecting every task in
+        the scope.
+
+        What is left is under-seeing, in two shapes, both of which end in "less
+        history": a stored pattern spelled differently from this call's
+        (storage matches strings, the key folds them), and a scope resolved
+        differently from the one the map is built under. Seeing less history
+        can only shorten a streak, and a shorter streak is a map that keeps
+        being delivered, which is this module's standing answer to every
+        ambiguity. A key with no pattern is affected by neither: those rows are
+        matched exactly as they always were.
+
+        One over-see survives and is named rather than hidden: a key with no
+        pattern still counts rows that carry one, because the storage filter
+        for that case is byte-identical to what it always was. It takes a
+        client that sends a ``task_pattern`` on some calls and not others under
+        the same ``task``; the rows are still that task's own deliveries, and
+        the fix would be a behaviour change to every existing caller of
+        :meth:`~living_memory.storage.MemoryStore.recent_recall_map_history`
+        for a case no client produces.
         """
 
         rows = self.store.recent_recall_map_history(
             scope=scope,
             task=task,
+            task_pattern=task_pattern or None,
             limit=CURTAIL_HISTORY_LIMIT,
         )
+        if task_pattern:
+            return [
+                row for row in rows if isinstance(row.get("recall_map"), Mapping)
+            ]
         wanted = normalize_key(task) if task else ""
         return [
             row
@@ -2270,6 +2763,58 @@ class RecallMapBuilder:
         ).fetchall()
         return {str(row["id"]): str(row["last_accessed"] or "") for row in rows}
 
+    def _medoid_lookups(
+        self, history: Sequence[Mapping[str, Any]]
+    ) -> dict[str, frozenset[str]]:
+        """``delivery event id -> node ids fetched inside that delivery's window``.
+
+        Read off the frozen delivery ledger rather than recomputed here, and
+        that is the point: ``lookup_consumed`` is maintained by storage over
+        the same ``(delivered_at, outcome_end]`` range the M/C/K triple uses,
+        so the two consumers of "was this delivery followed" cannot disagree
+        about the same delivery by owning two definitions of its window.
+
+        One primary-key probe per delivery in the window — at most
+        :data:`CURTAIL_HISTORY_LIMIT` of them — because the ledger's key leads
+        with the delivery event id. Measured over a full 24-delivery window of
+        six-cluster maps: 0.014 ms, against 0.097 ms for the ``nodes`` batch it
+        sits beside and 0.118 ms for the history read itself. It is behind the
+        same :class:`_CurtailMemo` gate as both.
+
+        Only ``lookup_consumed = 1`` is evidence. NULL is the ledger's honest
+        "unobservable" for a window that closed before this database recorded
+        lookups at all, and reading it as a follow would hand every historical
+        delivery a free pass and switch the curtail rule off for exactly the
+        corpus it was built to describe. Those deliveries keep being judged by
+        the two probes that always judged them.
+        """
+
+        ids = [
+            event_id
+            for event_id in dict.fromkeys(
+                str(row.get("id") or "") for row in history
+            )
+            if event_id
+        ]
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = self.store.connection.execute(
+            f"""
+            SELECT delivery_event_id, node_id
+            FROM {RECALL_DELIVERY_HISTORY_TABLE}
+            WHERE delivery_event_id IN ({placeholders})
+              AND lookup_consumed = 1
+            """,
+            ids,
+        ).fetchall()
+        followed: dict[str, set[str]] = {}
+        for row in rows:
+            followed.setdefault(str(row["delivery_event_id"]), set()).add(
+                str(row["node_id"])
+            )
+        return {event_id: frozenset(nodes) for event_id, nodes in followed.items()}
+
     @staticmethod
     def _was_followed(
         delivered: Sequence[_DeliveredItem],
@@ -2277,8 +2822,18 @@ class RecallMapBuilder:
         delivered_at: str,
         later_queries: Sequence[frozenset[str]],
         accessed: Mapping[str, str],
+        looked_up: Collection[str] = (),
     ) -> bool:
         """Whether any cluster of one delivered map was acted on afterwards.
+
+        Three probes, and they are not redundant. ``looked_up`` is the only
+        *exogenous* one: an id-fetch of a specific ULID is an act only a reader
+        who was handed that ULID performs. The other two are endogenous — a
+        medoid's ``last_accessed`` is bumped by any recall that returns it, and
+        the trigger boost mixes hub schemas into nearly every recall, so a hub
+        reads as "used" forever on that probe alone. Both stay anyway: in
+        curtail every ambiguity resolves against collapsing, and dropping a
+        probe would remove evidence, not noise.
 
         Timestamps are compared as strings because they are stored as
         second-resolution UTC ISO-8601, where lexical order *is* chronological.
@@ -2288,6 +2843,8 @@ class RecallMapBuilder:
         """
 
         for item in delivered:
+            if item.medoid_id and item.medoid_id in looked_up:
+                return True
             touched = accessed.get(item.medoid_id, "")
             if delivered_at and touched and touched >= delivered_at:
                 return True
@@ -2978,6 +3535,7 @@ __all__ = [
     "CURTAIL_HISTORY_LIMIT",
     "CURTAIL_QUERY_OVERLAP",
     "CURTAIL_STREAK",
+    "DEMOTION_REDELIVERY_WEIGHT",
     "EMBEDDING_CLUSTER_COSINE",
     "FILTER_JOURNAL_LABEL_CHARS",
     "FILTER_JOURNAL_NAMES",
@@ -2994,11 +3552,17 @@ __all__ = [
     "MEDOID_EXAMPLE_CHARS",
     "MIN_CLUSTERS",
     "MIN_MEDOID_EXAMPLE_CHARS",
+    "POOL_DEMOTION_GATE_ENV",
+    "POOL_DEMOTION_WINDOWS_ENV",
+    "POOL_GATE_REASON_CODES",
+    "POOL_USEFULNESS_FLOOR_ENV",
+    "POOL_USEFULNESS_GATE_ENV",
     "RELEVANCE_FEATURE_MEANS",
     "RELEVANCE_FEATURE_SCALES",
     "RELEVANCE_POLICY_DIGEST",
     "RELEVANCE_POLICY_ID",
     "RELEVANCE_THRESHOLD",
+    "SELECTION_LEDGER_REASON_CODES",
     "SELECTION_REASON_CODES",
     "SELECTION_SAMPLE_GIST_CHARS",
     "SELECTION_SAMPLE_LIMIT",
@@ -3016,5 +3580,7 @@ __all__ = [
     "SelectionSample",
     "cache_key",
     "normalize_key",
+    "pool_demotion_windows_from_env",
+    "pool_usefulness_floor_from_env",
     "relevance_score",
 ]

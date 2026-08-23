@@ -75,6 +75,11 @@ SEED_LABELS = {
 SEED_CORPUS_DOCUMENTS = 40
 
 
+#: Captured before the autouse fixture below replaces it, so the one test that
+#: needs the real ledger reader can put it back.
+_REAL_MATURED_RECALL_HISTORY = MemoryStore.matured_recall_history
+
+
 @pytest.fixture(autouse=True)
 def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every scenario starts with the map valve and its neighbours unset."""
@@ -392,6 +397,86 @@ def test_attach_recall_map_overwrites_and_rejects_unknown_events(
 
         with pytest.raises(KeyError):
             store.attach_recall_map("01NOSUCHEVENT", {"clusters": []})
+
+
+# --- (e2) A card that was offered, and actually read --------------------------
+
+
+def test_a_lookup_of_a_delivered_medoid_is_the_only_outcome_that_moves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end, the case the tri-state was added for.
+
+    The map offers a medoid; nobody recalls it again, so all three frozen
+    consumed bits stay 0 and the evaluator's triple keeps reading "delivered,
+    never used". Somebody fetches that exact ULID inside the window, and the
+    fourth column — and only the fourth column — flips.
+    """
+
+    # Frozen clock, so the delivery window and the lookup instant are exact.
+    # The sweep has to go with it: seeds stamped in 2026 against a real-clock
+    # TTL would be swept before the query ever ran.
+    monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
+    monkeypatch.setattr(storage_module, "_utc_now", lambda: "2026-01-01T00:00:00Z")
+
+    mcp = _server(tmp_path / "memory.sqlite3")
+    store = mcp.memory_store
+    _seed(store)
+    medoid_id = store.append_trace(
+        "deployment failure canary-window medoid the map will offer",
+        {"scope": MAP_SCOPE, "procedure_id": "canary-window"},
+    ).id
+
+    class _Stub:
+        def to_dict(self) -> dict[str, Any]:
+            return {"clusters": [{"label": "canary window", "count": 6,
+                                  "medoid": {"node_id": medoid_id}}], "pool": 6}
+
+    monkeypatch.setattr(RecallMapBuilder, "build", lambda self, results, **kwargs: _Stub())
+    assert _recall(mcp, max_results=3)["recall_map"]["clusters"]
+
+    def ledger() -> dict[str, Any]:
+        return dict(
+            store.connection.execute(
+                """
+                SELECT transport_matched, transport_consumed, fallback_consumed,
+                       lookup_consumed
+                FROM recall_delivery_history WHERE node_id = ?
+                """,
+                (medoid_id,),
+            ).fetchone()
+        )
+
+    # Delivered into a database that has never seen a lookup: unknown, not
+    # absent. Nothing about this delivery is a verdict yet.
+    assert ledger() == {
+        "transport_matched": 0,
+        "transport_consumed": 0,
+        "fallback_consumed": 0,
+        "lookup_consumed": None,
+    }
+
+    monkeypatch.setattr(storage_module, "_utc_now", lambda: "2026-01-01T04:00:00Z")
+    assert mcp.tools["memory_lookup"](node_id=medoid_id)["count"] == 1
+
+    assert ledger() == {
+        "transport_matched": 0,
+        "transport_consumed": 0,
+        "fallback_consumed": 0,
+        "lookup_consumed": 1,
+    }
+
+    # The pool gate above runs on the fixture's stubbed history; the ledger
+    # verdict itself has to come from the real reader.
+    monkeypatch.setattr(
+        MemoryStore, "matured_recall_history", _REAL_MATURED_RECALL_HISTORY
+    )
+    history = store.matured_recall_history([medoid_id], "2026-01-03T00:00:00Z")[medoid_id]
+    # The frozen triple is unmoved and still says nobody used it...
+    assert (history.m, history.c, history.k) == (1, 0, 1)
+    # ...while the honest signal says somebody did.
+    assert (history.lookup_known, history.lookup_consumed) == (1, 1)
+    assert history.lookup_trailing_absent == 0
 
 
 # --- (f) The column arrives on databases that predate it ---------------------

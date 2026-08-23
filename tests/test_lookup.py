@@ -5,9 +5,10 @@ from typing import Any
 
 import pytest
 
+import living_memory.server as server_module
 from living_memory.resources import node_to_dict
 from living_memory.server import create_mcp_server
-from living_memory.storage import MemoryStore
+from living_memory.storage import RECALL_LOOKUP_EVENT_TABLE, MemoryStore
 
 
 class FakeMCP:
@@ -372,3 +373,125 @@ def test_memory_lookup_scope_optional_only_for_id_fetch(tmp_path: Path) -> None:
     nothing = mcp.tools["memory_lookup"]()
     assert nothing["error"] == "at least one exact context filter is required"
     assert nothing["results"] == []
+
+
+# --- The lookup as a follow signal -----------------------------------------
+#
+# Fetching a named ULID is the one act that proves somebody read a card the
+# recall map offered, and until now the server threw it away. These pin both
+# halves of the trade: the event is written, and the read stays a read.
+
+
+def _lookup_events(store: MemoryStore) -> list[dict[str, Any]]:
+    return [
+        dict(row)
+        for row in store.connection.execute(
+            f"""
+            SELECT lookup_event_id, node_id, occurred_at, transport_session_id
+            FROM {RECALL_LOOKUP_EVENT_TABLE}
+            ORDER BY occurred_at, node_id
+            """
+        )
+    ]
+
+
+def test_memory_lookup_id_fetch_records_the_requested_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        server_module, "_transport_session_id", lambda: "agent-connection"
+    )
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store = mcp.memory_store
+    remembered = mcp.tools["memory_remember"]("followed card", {"scope": "project:follow"})
+    target_id = remembered["node"]["id"]
+
+    fetched = mcp.tools["memory_lookup"](
+        node_ids=[target_id, "01NOPEnotarealnodeid000000"]
+    )
+    assert [entry["id"] for entry in fetched["results"]] == [target_id]
+    # The response contract is untouched: a missing id is still reported.
+    assert fetched["missing"] == ["01NOPEnotarealnodeid000000"]
+
+    events = _lookup_events(store)
+    # Both ids are recorded, including the one that resolved to nothing: the
+    # request is the signal, and asking for a node that is gone is still a
+    # follow of whatever offered it.
+    assert {event["node_id"] for event in events} == {
+        target_id,
+        "01NOPEnotarealnodeid000000",
+    }
+    assert len({event["lookup_event_id"] for event in events}) == 1
+    assert {event["transport_session_id"] for event in events} == {"agent-connection"}
+    assert all(event["occurred_at"] for event in events)
+
+    # A second fetch is a second event, not an update of the first.
+    mcp.tools["memory_lookup"](node_id=target_id)
+    assert len({event["lookup_event_id"] for event in _lookup_events(store)}) == 2
+
+
+def test_memory_lookup_id_fetch_leaves_the_node_untouched(tmp_path: Path) -> None:
+    """The regression this whole signal exists to avoid feeding.
+
+    ``access_count`` and ``last_accessed`` are what the map's own
+    ``_was_followed`` probe and the usefulness score read. If a lookup bumped
+    them, the signal would certify itself and the hub nodes it is meant to
+    demote would be immortal by construction.
+    """
+
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store = mcp.memory_store
+    remembered = mcp.tools["memory_remember"]("untouched by reading", {"scope": "project:pure"})
+    target_id = remembered["node"]["id"]
+
+    def snapshot() -> dict[str, Any]:
+        row = store.connection.execute(
+            """
+            SELECT access_count, last_accessed, usefulness_score, updated_at
+            FROM nodes WHERE id = ?
+            """,
+            (target_id,),
+        ).fetchone()
+        return dict(row)
+
+    before = snapshot()
+    before_events = len(store.list_recall_events())
+
+    for _ in range(5):
+        mcp.tools["memory_lookup"](node_id=target_id)
+
+    assert snapshot() == before
+    # No recall event, so no delivery, no pending feedback, no ledger window.
+    assert len(store.list_recall_events()) == before_events
+    assert store.connection.execute(
+        "SELECT COUNT(*) FROM recall_delivery_history"
+    ).fetchone()[0] == 0
+    # ...and the lookups themselves were recorded all the same.
+    assert len(_lookup_events(store)) == 5
+
+
+def test_memory_lookup_records_nothing_off_the_id_fetch_path(tmp_path: Path) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store = mcp.memory_store
+    remembered = mcp.tools["memory_remember"](
+        "context-filter probe",
+        {"scope": "project:nolookup", "task_pattern": "no-event-pattern"},
+    )
+
+    # A context-filter query is a search, not a follow of a named id.
+    by_filter = mcp.tools["memory_lookup"](
+        scope="project:nolookup", task_pattern="no-event-pattern"
+    )
+    assert [entry["id"] for entry in by_filter["results"]] == [remembered["node"]["id"]]
+    assert _lookup_events(store) == []
+
+    # Rejected requests fetched nothing, so they followed nothing.
+    for rejected in (
+        lambda: mcp.tools["memory_lookup"](
+            node_id=remembered["node"]["id"], task_pattern="no-event-pattern"
+        ),
+        lambda: mcp.tools["memory_lookup"](task_pattern="no-event-pattern"),
+        lambda: mcp.tools["memory_lookup"](),
+    ):
+        assert "error" in rejected()
+    assert _lookup_events(store) == []

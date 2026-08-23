@@ -13,6 +13,11 @@ framings the protocol prose fixes, independently of the module under test.  The
 implementation-scoped digests (typed foreign-key and closure streams) are never
 pinned to a literal; what is asserted about them is the property the contract
 actually needs — that source and field agree, and that any drift breaks them.
+
+The sealed instrument set is synthesized alongside the store, for the reason
+given on ``Namespace.write_instruments``: two of the shipped instruments live in
+another repository on the host, and a unit run cannot be bound to a working tree
+it does not own.
 """
 
 from __future__ import annotations
@@ -220,6 +225,7 @@ class Namespace:
         self.seed = self.sfx / "alt-seed.sqlite3"
         self.receipt = base / "receipts" / "sfx-store-preparation.json"
         self.protocol = base / "protocol.json"
+        self.instruments = base / "instruments"
 
         build_store(self.origin, **store_kwargs)
         self.provenance.write_text("# synthetic provenance evidence\n")
@@ -227,6 +233,26 @@ class Namespace:
         os.chmod(self.source, 0o444)
         self.expectations = measure_expectations(self.source)
         self.write_protocol()
+
+    def write_instruments(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Seal a synthetic instrument set — same ids and count as the shipped one.
+
+        Two of the five shipped instruments are sealed by absolute path inside a
+        *different* repository on this host.  A unit test owns neither that
+        working tree nor its release cadence, so binding the synthetic namespace
+        to it makes every run of this file hostage to unrelated work over there.
+        The instruments are therefore synthesized here like every other binding;
+        the seals this repository is actually answerable for are asserted by
+        ``test_the_repo_holds_the_sealed_instruments_it_owns``.
+        """
+        self.instruments.mkdir(parents=True, exist_ok=True)
+        sealed = []
+        for item in items:
+            path = self.instruments / f"{item['id']}.sealed"
+            path.write_text(f"synthetic sealed instrument {item['id']}\n")
+            sealed.append({**item, "observed_path_on_sfx": str(path),
+                           "bytes": path.stat().st_size, "sha256": pfs.sha_file(path)})
+        return sealed
 
     @property
     def required_bytes(self) -> int:
@@ -271,6 +297,8 @@ class Namespace:
             rollback_material_root=str(self.base / "rollback"),
         )
         doc["external_receipts"]["sfx_store_preparation"]["path"] = str(self.receipt)
+        doc["sealed_instruments"]["items"] = self.write_instruments(
+            doc["sealed_instruments"]["items"])
         self.protocol.write_bytes(canonical(doc) + b"\n")
 
     def invoke(self, *args: str, expect: int | None = None) -> subprocess.CompletedProcess:
@@ -443,6 +471,27 @@ def test_a_drifted_sealed_instrument_is_a_conflict(namespace: Namespace) -> None
     namespace.protocol.write_bytes(canonical(doc) + b"\n")
     result = namespace.invoke("prepare", expect=1)
     assert "sealed instrument recall-map-prereg drifted" in result.stdout
+
+
+def test_the_repo_holds_the_sealed_instruments_it_owns() -> None:
+    """The shipped preseal still describes this checkout's own sealed files.
+
+    Only the instruments sealed in *this* repository are asserted.  The ones
+    sealed in another repository are host state — their bytes drift with work
+    that has nothing to do with this suite, and the operator verifies them at
+    field-verification time, per the runbook in docs/.  Sealing them into a unit
+    test turns a foreign commit into a red suite here.
+    """
+    items = json.loads(REAL_PROTOCOL.read_bytes())["sealed_instruments"]["items"]
+    owned = [item for item in items if item["repository"] == "lm"]
+    assert owned, "the preseal seals nothing in this repository — check the fixture"
+    drifted = []
+    for item in owned:
+        path = ROOT_DIR / item["path"]
+        assert path.exists(), f"sealed instrument {item['id']} absent at {path}"
+        if (path.stat().st_size, pfs.sha_file(path)) != (item["bytes"], item["sha256"]):
+            drifted.append(item["id"])
+    assert not drifted, f"sealed instruments drifted: {drifted}"
 
 
 def test_a_non_null_recall_map_in_the_source_is_a_conflict(tmp_path: Path) -> None:

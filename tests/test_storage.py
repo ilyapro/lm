@@ -1,4 +1,5 @@
 import hashlib
+import json
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
@@ -13,6 +14,7 @@ from living_memory.storage import (
     RECALL_DELIVERY_HISTORY_STATE_TABLE,
     RECALL_HISTORY_EVENT_TABLE,
     RECALL_HISTORY_RESULT_TABLE,
+    RECALL_LOOKUP_EVENT_TABLE,
     SCHEMA_VERSION,
     FingerprintGatePolicy,
     MemoryStore,
@@ -40,6 +42,7 @@ def test_storage_schema_has_uniform_nodes_fts_edges_indexes_and_weights(tmp_path
         assert RECALL_HISTORY_RESULT_TABLE in tables
         assert RECALL_DELIVERY_HISTORY_TABLE in tables
         assert RECALL_DELIVERY_HISTORY_STATE_TABLE in tables
+        assert RECALL_LOOKUP_EVENT_TABLE in tables
         assert "recall_fingerprints" in tables
         assert "retrieval_weights" in tables
 
@@ -667,7 +670,8 @@ def test_matured_recall_history_is_indexed_bounded_and_select_only(
             for row in store.connection.execute(
                 f"""
                 EXPLAIN QUERY PLAN
-                SELECT transport_matched, transport_consumed, fallback_consumed
+                SELECT transport_matched, transport_consumed,
+                       fallback_consumed, lookup_consumed
                 FROM {RECALL_DELIVERY_HISTORY_TABLE}
                 WHERE node_id = 'FREQUENT'
                   AND delivered_at < '2026-03-07T00:00:00.000000Z'
@@ -773,6 +777,518 @@ def test_recall_history_backfill_is_idempotent_and_malformed_legacy_is_unavailab
     )["LEGACY-NODE"]
     assert failed.available is False
     assert failed.unavailable_reason == "history_read_failed"
+
+
+def _lookup_column(store: MemoryStore, node_id: str) -> list:
+    return [
+        row["lookup_consumed"]
+        for row in store.connection.execute(
+            f"""
+            SELECT lookup_consumed FROM {RECALL_DELIVERY_HISTORY_TABLE}
+            WHERE node_id = ? ORDER BY delivered_at
+            """,
+            (node_id,),
+        )
+    ]
+
+
+def test_record_lookup_event_stores_exactly_what_was_requested(
+    tmp_path: Path,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        event_id = store.record_lookup_event(
+            # A duplicate, a blank, and an id that resolves to nothing.
+            ["ASKED-A", "ASKED-A", "  ", "ASKED-GONE"],
+            transport_session_id="agent-transport",
+            occurred_at="2026-08-01T00:00:00Z",
+        )
+        assert event_id
+        rows = [
+            dict(row)
+            for row in store.connection.execute(
+                f"SELECT * FROM {RECALL_LOOKUP_EVENT_TABLE} ORDER BY node_id"
+            )
+        ]
+        assert [row["node_id"] for row in rows] == ["ASKED-A", "ASKED-GONE"]
+        assert {row["lookup_event_id"] for row in rows} == {event_id}
+        assert {row["occurred_at"] for row in rows} == {
+            "2026-08-01T00:00:00.000000Z"
+        }
+        assert {row["transport_session_id"] for row in rows} == {"agent-transport"}
+
+        # Nothing to record is not an event.
+        assert store.record_lookup_event([]) is None
+        assert store.record_lookup_event(["", None]) is None  # type: ignore[list-item]
+        assert (
+            store.connection.execute(
+                f"SELECT COUNT(*) FROM {RECALL_LOOKUP_EVENT_TABLE}"
+            ).fetchone()[0]
+            == 2
+        )
+
+        with pytest.raises(ValueError):
+            store.record_lookup_event(["ASKED-A"], occurred_at="not a timestamp")
+
+
+def test_lookup_consumption_is_global_and_bounded_by_the_open_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        # An unrelated lookup first, so the delivery below lands inside the
+        # observable era and its windows resolve to a known 0 rather than NULL.
+        store.record_lookup_event(
+            ["EPOCH-ONLY"], occurred_at="2026-05-31T00:00:00Z"
+        )
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-06-01T00:00:00Z",
+            results=[
+                {"node_id": f"HEAD-{index}"} for index in range(3)
+            ] + [
+                {"node_id": "BOUND-OPEN"},
+                {"node_id": "BOUND-MID"},
+                {"node_id": "BOUND-END"},
+                {"node_id": "BOUND-LATE"},
+            ],
+            transport="delivering-transport",
+        )
+        assert _lookup_column(store, "BOUND-MID") == [0]
+
+        # (delivered_at, outcome_end]: open at the left, closed at the right.
+        store.record_lookup_event(
+            ["BOUND-OPEN"], occurred_at="2026-06-01T00:00:00Z"
+        )
+        store.record_lookup_event(
+            ["BOUND-END"], occurred_at="2026-06-02T00:00:00Z"
+        )
+        store.record_lookup_event(
+            ["BOUND-LATE"], occurred_at="2026-06-02T00:00:00.000001Z"
+        )
+        # Mid-window, from a transport that never saw the delivery — the
+        # dashboard-probe-vs-agent split the global correlation exists for.
+        store.record_lookup_event(
+            ["BOUND-MID"],
+            transport_session_id="a-completely-different-transport",
+            occurred_at="2026-06-01T12:00:00Z",
+        )
+
+        assert _lookup_column(store, "BOUND-OPEN") == [0]
+        assert _lookup_column(store, "BOUND-END") == [1]
+        assert _lookup_column(store, "BOUND-LATE") == [0]
+        assert _lookup_column(store, "BOUND-MID") == [1]
+
+        # Both directions of the correlation are index range probes, not
+        # scans: this runs on the live lookup path and on every delivery.
+        def plan(sql: str) -> str:
+            return " ".join(
+                row["detail"]
+                for row in store.connection.execute(f"EXPLAIN QUERY PLAN {sql}")
+            )
+
+        assert "idx_recall_lookup_events_node_time" in plan(
+            f"""
+            SELECT DISTINCT node_id FROM {RECALL_LOOKUP_EVENT_TABLE}
+            WHERE node_id IN ('BOUND-MID')
+              AND occurred_at > '2026-06-01T00:00:00.000000Z'
+              AND occurred_at <= '2026-06-02T00:00:00.000000Z'
+            """
+        )
+        assert "idx_recall_lookup_events_time" in plan(
+            f"SELECT MIN(occurred_at) FROM {RECALL_LOOKUP_EVENT_TABLE}"
+        )
+        assert "idx_recall_delivery_history_node_matured" in plan(
+            f"""
+            UPDATE {RECALL_DELIVERY_HISTORY_TABLE} SET lookup_consumed = 1
+            WHERE node_id = 'BOUND-MID'
+              AND delivered_at < '2026-06-01T12:00:00.000000Z'
+              AND outcome_end >= '2026-06-01T12:00:00.000000Z'
+            """
+        )
+
+        # The lookup path touches the lookup column and nothing else.
+        frozen = store.connection.execute(
+            f"""
+            SELECT DISTINCT transport_matched, transport_consumed,
+                            fallback_consumed
+            FROM {RECALL_DELIVERY_HISTORY_TABLE}
+            """
+        ).fetchall()
+        assert [tuple(row) for row in frozen] == [(0, 0, 0)]
+
+
+def test_rebuilt_windows_predating_the_first_lookup_are_unknown_not_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "coldstart.sqlite3"
+
+    def rebuild() -> None:
+        """Force the reconstruction the format bump performs on a live file."""
+
+        with MemoryStore(db) as store:
+            for table in (
+                RECALL_DELIVERY_HISTORY_TABLE,
+                RECALL_HISTORY_RESULT_TABLE,
+                RECALL_HISTORY_EVENT_TABLE,
+                RECALL_DELIVERY_HISTORY_STATE_TABLE,
+            ):
+                store.connection.execute(f"DELETE FROM {table}")
+            store.connection.commit()
+
+    with MemoryStore(db) as store:
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-07-01T00:00:00Z",
+            results=_organic_tail("OLD-NODE", "OLD"),
+        )
+
+    # (a) No lookup was ever recorded: day one, and every window is unknown.
+    rebuild()
+    with MemoryStore(db) as store:
+        assert _lookup_column(store, "OLD-NODE") == [None]
+        history = store.matured_recall_history(
+            ["OLD-NODE"], "2026-07-20T00:00:00Z"
+        )["OLD-NODE"]
+        assert (history.m, history.c, history.k) == (1, 0, 1)
+        assert history.lookup_known == 0
+        assert history.lookup_consumed == 0
+
+        # (b) The first lookup arrives long after this window closed. It still
+        # says nothing about the window, so the window stays unknown — the
+        # false-absence this rule exists to prevent.
+        store.record_lookup_event(
+            ["UNRELATED"], occurred_at="2026-07-10T00:00:00Z"
+        )
+    rebuild()
+    with MemoryStore(db) as store:
+        assert _lookup_column(store, "OLD-NODE") == [None]
+        assert store.matured_recall_history(
+            ["OLD-NODE"], "2026-07-20T00:00:00Z"
+        )["OLD-NODE"].lookup_known == 0
+
+        # (c) A lookup predating the window makes it observable. It is outside
+        # the window, so the answer is a known absence: 0, not NULL.
+        store.record_lookup_event(
+            ["OLD-NODE"], occurred_at="2026-06-30T12:00:00Z"
+        )
+    rebuild()
+    with MemoryStore(db) as store:
+        assert _lookup_column(store, "OLD-NODE") == [0]
+        history = store.matured_recall_history(
+            ["OLD-NODE"], "2026-07-20T00:00:00Z"
+        )["OLD-NODE"]
+        assert (history.lookup_known, history.lookup_consumed) == (1, 0)
+        # Re-derivation never invents the frozen triple either.
+        assert (history.m, history.c, history.k) == (1, 0, 1)
+        # The primary record survives its own rebuild.
+        assert store.connection.execute(
+            f"SELECT COUNT(*) FROM {RECALL_LOOKUP_EVENT_TABLE}"
+        ).fetchone()[0] == 2
+
+
+def test_matured_recall_history_reports_the_tristate_skipping_unknown_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for index, at in enumerate(
+            (
+                "2026-09-01T00:00:00Z",
+                "2026-09-03T00:00:00Z",
+                "2026-09-05T00:00:00Z",
+                "2026-09-07T00:00:00Z",
+            )
+        ):
+            _record_event_at(
+                store, monkeypatch, at, results=_organic_tail("TRI", f"T{index}")
+            )
+        # Followed inside the second window only.
+        store.record_lookup_event(["TRI"], occurred_at="2026-09-03T06:00:00Z")
+
+        # The reader's contract, stated on a ledger written by hand because the
+        # online rule cannot produce an unknown window newer than a known one:
+        # newest-first the outcomes are 0, NULL, 0, 1, so the run counts two
+        # known absences, steps over the unknown, and stops at the follow.
+        store.connection.execute(
+            f"""
+            UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
+            SET lookup_consumed = CASE delivered_at
+                WHEN '2026-09-01T00:00:00.000000Z' THEN 1
+                WHEN '2026-09-03T00:00:00.000000Z' THEN 0
+                WHEN '2026-09-05T00:00:00.000000Z' THEN NULL
+                ELSE 0 END
+            WHERE node_id = 'TRI'
+            """
+        )
+        store.connection.commit()
+
+        history = store.matured_recall_history(["TRI"], "2026-09-09T00:00:00Z")["TRI"]
+        assert (history.m, history.c, history.k) == (4, 0, 4)
+        assert history.lookup_known == 3
+        assert history.lookup_consumed == 1
+        assert history.lookup_trailing_absent == 2
+
+        # Unavailability is tri-state-aware: no count is a stand-in for zero.
+        monkeypatch.setattr(
+            storage_module, "MAX_RECALL_HISTORY_DELIVERIES_PER_NODE", 2
+        )
+        truncated = store.matured_recall_history(["TRI"], "2026-09-09T00:00:00Z")["TRI"]
+        assert truncated.available is False
+        assert (
+            truncated.lookup_known,
+            truncated.lookup_consumed,
+            truncated.lookup_trailing_absent,
+        ) == (None, None, None)
+
+
+def test_lookup_column_is_added_to_a_ledger_that_predates_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "prelookup.sqlite3"
+    with MemoryStore(db) as store:
+        _record_event_at(
+            store,
+            monkeypatch,
+            "2026-10-01T00:00:00Z",
+            results=_organic_tail("PRE-NODE", "PRE"),
+        )
+
+    # A file written by the release before this one: no column, and a state
+    # row still claiming the previous ledger format.
+    connection = sqlite3.connect(db)
+    connection.execute(
+        f"ALTER TABLE {RECALL_DELIVERY_HISTORY_TABLE} DROP COLUMN lookup_consumed"
+    )
+    connection.execute(
+        f"UPDATE {RECALL_DELIVERY_HISTORY_STATE_TABLE} SET format_version = 1"
+    )
+    connection.commit()
+    connection.close()
+
+    def columns(store: MemoryStore) -> set[str]:
+        return {
+            row["name"]
+            for row in store.connection.execute(
+                f"PRAGMA table_info({RECALL_DELIVERY_HISTORY_TABLE})"
+            )
+        }
+
+    # Opening migrates the column and the format bump re-derives the rows.
+    for _ in range(2):
+        with MemoryStore(db) as store:
+            assert "lookup_consumed" in columns(store)
+            assert store.connection.execute(
+                f"SELECT format_version FROM {RECALL_DELIVERY_HISTORY_STATE_TABLE}"
+            ).fetchone()["format_version"] == storage_module._RECALL_DELIVERY_HISTORY_FORMAT
+            assert _lookup_column(store, "PRE-NODE") == [None]
+            history = store.matured_recall_history(
+                ["PRE-NODE"], "2026-10-03T00:00:00Z"
+            )["PRE-NODE"]
+            assert history.available is True
+            assert (history.m, history.c, history.k) == (1, 0, 1)
+            assert history.lookup_known == 0
+
+
+#: One replay that exercises every frozen mechanic at once: transport-first
+#: invalidation of a fallback hit, a transport consumer, a scope/task consumer,
+#: a late-attached map medoid resolved against an already-recorded consumer,
+#: and a delivery nobody ever answers.  Kept free of pytest fixtures on purpose
+#: — ``scripts`` reproducing the golden below runs it against a checkout of the
+#: pre-lookup code, where no fixture of this module exists.
+FROZEN_SCENARIO_SCOPE = "project:frozen"
+FROZEN_SCENARIO_NODES = ("FROZEN-A", "FROZEN-B", "FROZEN-MEDOID", "FROZEN-NEVER")
+FROZEN_SCENARIO_INSTANTS = (
+    "2026-05-02T00:00:00Z",
+    "2026-05-04T00:00:00Z",
+    "2026-05-07T00:00:00Z",
+)
+
+
+def _replay_frozen_scenario(store, set_now, *, record_lookups: bool) -> None:
+    def event(at, results, *, task, transport=None):
+        set_now(at)
+        ambient: dict[str, str] = {}
+        if task is not None:
+            ambient["task"] = task
+        if transport is not None:
+            ambient["transport_session_id"] = transport
+        return store.record_recall_event(
+            query=f"query at {at}",
+            scope=FROZEN_SCENARIO_SCOPE,
+            ambient_context=ambient,
+            results=results,
+        )
+
+    # D1: a scope/task fallback repeats A, but a later same-transport event
+    # exists without A, so transport-first leaves D1 nonconsumed.
+    event(
+        "2026-05-01T00:00:00Z",
+        _organic_tail("FROZEN-A", "D1"),
+        task="alpha",
+        transport="T1",
+    )
+    event(
+        "2026-05-01T01:00:00Z",
+        [{"node_id": "FROZEN-A"}],
+        task="alpha",
+        transport="T2",
+    )
+    if record_lookups:
+        # Inside D1's window, from a transport that never delivered it: the
+        # case the whole tri-state exists for, and the one the three frozen
+        # bits must keep calling nonconsumed.
+        store.record_lookup_event(
+            ["FROZEN-A"],
+            transport_session_id="dashboard-probe",
+            occurred_at="2026-05-01T03:00:00Z",
+        )
+    event("2026-05-01T02:00:00Z", [{"node_id": "OTHER"}], task="beta", transport="T1")
+
+    # D2 is consumed through its own transport.
+    event(
+        "2026-05-02T00:00:00Z",
+        _organic_tail("FROZEN-B", "D2"),
+        task="gamma",
+        transport="T3",
+    )
+    event(
+        "2026-05-02T03:00:00Z",
+        [{"node_id": "FROZEN-B"}],
+        task="gamma",
+        transport="T3",
+    )
+
+    # D3 has no transport at all and is consumed through scope/task.
+    event("2026-05-03T00:00:00Z", _organic_tail("FROZEN-A", "D3"), task="delta")
+    event("2026-05-03T04:00:00Z", [{"node_id": "FROZEN-A"}], task="delta")
+
+    # A map medoid attached after its consumer was already recorded.
+    delivery = event(
+        "2026-05-04T00:00:00Z",
+        [{"node_id": "HEAD-ONLY"}],
+        task="epsilon",
+        transport="T4",
+    )
+    event(
+        "2026-05-04T06:00:00Z",
+        [{"node_id": "FROZEN-MEDOID"}],
+        task="epsilon",
+        transport="T4",
+    )
+    store.attach_recall_map(
+        delivery.id, {"clusters": [{"medoid": {"node_id": "FROZEN-MEDOID"}}]}
+    )
+
+    # D5: delivered into silence.
+    event("2026-05-05T00:00:00Z", _organic_tail("FROZEN-B", "D5"), task=None)
+    if record_lookups:
+        # A fetch of something never delivered: recorded as an event, matching
+        # no window, changing no outcome.
+        store.record_lookup_event(
+            ["FROZEN-NEVER"], occurred_at="2026-05-05T12:00:00Z"
+        )
+
+
+def _frozen_ledger_dump(store) -> dict:
+    """Every frozen field of the ledger, plus the M/C/K the evaluator reads.
+
+    ``delivery_event_id`` is excluded because it is a fresh ULID per run; the
+    remaining key ``(node_id, delivered_at)`` is unique within this scenario.
+    """
+
+    rows = [
+        [
+            row["node_id"],
+            row["delivered_at"],
+            row["outcome_end"],
+            row["transport_session_id"],
+            row["scope"],
+            row["task"],
+            row["transport_matched"],
+            row["transport_consumed"],
+            row["fallback_consumed"],
+        ]
+        for row in store.connection.execute(
+            f"""
+            SELECT node_id, delivered_at, outcome_end, transport_session_id,
+                   scope, task, transport_matched, transport_consumed,
+                   fallback_consumed
+            FROM {RECALL_DELIVERY_HISTORY_TABLE}
+            ORDER BY node_id, delivered_at, delivery_event_id
+            """
+        )
+    ]
+    mck = {
+        instant: {
+            node_id: [history.available, history.m, history.c, history.k]
+            for node_id, history in sorted(
+                store.matured_recall_history(
+                    list(FROZEN_SCENARIO_NODES), instant
+                ).items()
+            )
+        }
+        for instant in FROZEN_SCENARIO_INSTANTS
+    }
+    return {"rows": rows, "mck": mck}
+
+
+#: Captured by replaying ``_replay_frozen_scenario`` against the pre-lookup
+#: code (``git archive HEAD`` of the commit that introduced the column), where
+#: ``lookup_consumed`` and ``recall_lookup_events`` do not exist.  It is the
+#: evidence for the claim that the tri-state is additive: not an assertion that
+#: nothing moved, but the previous release's own answer, kept verbatim.
+FROZEN_LEDGER_GOLDEN: dict = {
+    "rows": [
+        # D1: transport-matched, transport-nonconsumed, and a fallback hit that
+        # transport-first overrides. The run that records lookups scores this
+        # same window lookup_consumed = 1 — which is exactly the divergence the
+        # goal is about, and it moves none of these three bits.
+        ["FROZEN-A", "2026-05-01T00:00:00.000000Z", "2026-05-02T00:00:00.000000Z", "T1", "project:frozen", "alpha", 1, 0, 1],
+        ["FROZEN-A", "2026-05-03T00:00:00.000000Z", "2026-05-04T00:00:00.000000Z", None, "project:frozen", "delta", 0, 0, 1],
+        ["FROZEN-B", "2026-05-02T00:00:00.000000Z", "2026-05-03T00:00:00.000000Z", "T3", "project:frozen", "gamma", 1, 1, 1],
+        ["FROZEN-B", "2026-05-05T00:00:00.000000Z", "2026-05-06T00:00:00.000000Z", None, "project:frozen", None, 0, 0, 0],
+        ["FROZEN-MEDOID", "2026-05-04T00:00:00.000000Z", "2026-05-05T00:00:00.000000Z", "T4", "project:frozen", "epsilon", 1, 1, 1],
+    ],
+    "mck": {
+        "2026-05-02T00:00:00Z": {
+            "FROZEN-A": [True, 1, 0, 1],
+            "FROZEN-B": [True, 0, 0, 0],
+            "FROZEN-MEDOID": [True, 0, 0, 0],
+            "FROZEN-NEVER": [True, 0, 0, 0],
+        },
+        "2026-05-04T00:00:00Z": {
+            "FROZEN-A": [True, 2, 1, 0],
+            "FROZEN-B": [True, 1, 1, 0],
+            "FROZEN-MEDOID": [True, 0, 0, 0],
+            "FROZEN-NEVER": [True, 0, 0, 0],
+        },
+        "2026-05-07T00:00:00Z": {
+            "FROZEN-A": [True, 2, 1, 0],
+            "FROZEN-B": [True, 2, 1, 1],
+            "FROZEN-MEDOID": [True, 1, 1, 0],
+            "FROZEN-NEVER": [True, 0, 0, 0],
+        },
+    },
+}
+
+
+def test_lookup_column_leaves_the_frozen_ledger_byte_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def set_now(at: str) -> None:
+        monkeypatch.setattr(storage_module, "_utc_now", lambda: at)
+
+    dumps = []
+    for index, record_lookups in enumerate((False, True)):
+        with MemoryStore(tmp_path / f"frozen-{index}.sqlite3") as store:
+            _replay_frozen_scenario(store, set_now, record_lookups=record_lookups)
+            dumps.append(_frozen_ledger_dump(store))
+
+    without_lookups, with_lookups = dumps
+    # The golden is the pre-change release's answer; both of today's runs must
+    # reproduce it, including the run where lookups were recorded throughout.
+    assert without_lookups == FROZEN_LEDGER_GOLDEN
+    assert with_lookups == FROZEN_LEDGER_GOLDEN
 
 
 def test_delivered_node_ids_accumulates_per_transport_session(tmp_path: Path) -> None:
@@ -1561,3 +2077,305 @@ def test_fingerprint_gate_policy_from_env_defaults_to_process_environ(
     assert policy.enabled is True
     assert policy.drop_trailing_stubs is True
     assert policy.min_unlinked == 9
+
+
+# ----------------------------------------------------------------------
+# recall_events.task_pattern — the map's cache label, as a column
+# ----------------------------------------------------------------------
+
+
+def _recall_event_columns(store: MemoryStore) -> list[str]:
+    return [
+        str(row["name"])
+        for row in store.connection.execute("PRAGMA table_info(recall_events)")
+    ]
+
+
+def test_recall_events_lifts_task_pattern_out_of_the_ambient_context(
+    tmp_path: Path,
+) -> None:
+    """Written on the same pass as ``task``, from the same place.
+
+    ``task_pattern`` is the label the recall map keys its cache on, and until
+    it was a column the delivery history could not be filtered by it — so a
+    client whose ``task`` changes every turn had an empty history under every
+    key it ever used. The value was never missing, only unqueryable: it has
+    always been in the ambient JSON.
+    """
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        event = store.record_recall_event(
+            query="what is nearby",
+            scope="project:lm",
+            ambient_context={
+                "task": "chat:5f3a91/turn-7",
+                "task_pattern": "lm/recall-map",
+            },
+        )
+        row = store.connection.execute(
+            "SELECT task, task_pattern, ambient_context FROM recall_events WHERE id = ?",
+            (event.id,),
+        ).fetchone()
+
+        assert row["task"] == "chat:5f3a91/turn-7"
+        assert row["task_pattern"] == "lm/recall-map"
+        # The column is a lift, not a move: the ambient JSON is unchanged, so
+        # every existing reader of it keeps working.
+        assert json.loads(row["ambient_context"])["task_pattern"] == "lm/recall-map"
+
+        # A caller that sends none leaves NULL, which is what the read's
+        # fallback to `task` keys on.
+        bare = store.record_recall_event(query="q", scope="project:lm")
+        assert (
+            store.connection.execute(
+                "SELECT task_pattern FROM recall_events WHERE id = ?", (bare.id,)
+            ).fetchone()["task_pattern"]
+            is None
+        )
+
+
+def test_recent_recall_map_history_filters_on_the_map_key_label(
+    tmp_path: Path,
+) -> None:
+    """The read the curtail rule needs: one pattern, whatever the turn said.
+
+    Three deliveries of one tree-goal, each under a task string no other
+    delivery uses. Filtering by ``task`` returns one row per turn — which is
+    why the streak never accumulated. Filtering by the pattern returns the
+    history that actually belongs to the key.
+    """
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        ids = [
+            store.record_recall_event(
+                query=f"turn {index}",
+                scope="project:lm",
+                ambient_context={
+                    "task": f"chat:5f3a91/turn-{index}",
+                    "task_pattern": "lm/recall-map",
+                },
+                recall_map={"clusters": [{"label": "alpha", "count": 2}], "pool": 9},
+            ).id
+            for index in range(3)
+        ]
+        other = store.record_recall_event(
+            query="a different tree goal",
+            scope="project:lm",
+            ambient_context={
+                "task": "chat:5f3a91/turn-9",
+                "task_pattern": "lm/decay-sweep",
+            },
+            recall_map={"clusters": [{"label": "beta", "count": 1}], "pool": 4},
+        ).id
+
+        by_pattern = store.recent_recall_map_history(
+            scope="project:lm", task="chat:5f3a91/turn-3", task_pattern="lm/recall-map"
+        )
+        assert [row["id"] for row in by_pattern] == list(reversed(ids))
+
+        # ...and the neighbouring pattern in the same scope is not in it.
+        assert other not in {row["id"] for row in by_pattern}
+        assert [
+            row["id"]
+            for row in store.recent_recall_map_history(
+                scope="project:lm", task_pattern="lm/decay-sweep"
+            )
+        ] == [other]
+
+        # The task-only read is untouched: same call, same answer as before
+        # the column existed.
+        assert [
+            row["id"]
+            for row in store.recent_recall_map_history(
+                scope="project:lm", task="chat:5f3a91/turn-1"
+            )
+        ] == [ids[1]]
+
+
+def test_recent_recall_map_history_falls_back_to_task_for_patternless_rows(
+    tmp_path: Path,
+) -> None:
+    """A row with no pattern is offered its only other identity, and no more.
+
+    Every row written before the column existed is this shape. Without the
+    fallback, deploying the column would blank every accrued delivery history
+    in the database; with a fallback that ignored ``task`` it would merge every
+    legacy delivery in the scope into whichever pattern asked first.
+    """
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        payload = {"clusters": [{"label": "alpha", "count": 2}], "pool": 9}
+        legacy = store.record_recall_event(
+            query="before the column",
+            scope="project:lm",
+            ambient_context={"task": "recall-map/ae-contract-doc"},
+            recall_map=payload,
+        ).id
+        stranger = store.record_recall_event(
+            query="somebody else's legacy row",
+            scope="project:lm",
+            ambient_context={"task": "decay/ttl-sweep"},
+            recall_map=payload,
+        ).id
+
+        matched = store.recent_recall_map_history(
+            scope="project:lm",
+            task="recall-map/ae-contract-doc",
+            task_pattern="lm/recall-map",
+        )
+        assert [row["id"] for row in matched] == [legacy]
+        assert stranger not in {row["id"] for row in matched}
+
+        # A task-less pattern key sees only task-less legacy rows.
+        assert (
+            store.recent_recall_map_history(
+                scope="project:lm", task_pattern="lm/recall-map"
+            )
+            == []
+        )
+
+
+def test_task_pattern_column_migrates_additively_and_keeps_column_order(
+    tmp_path: Path,
+) -> None:
+    """A migrated file and a fresh one must be indistinguishable.
+
+    Column *order* and not merely membership, because the DDL text is what
+    SQLite reconstructs on ``ALTER TABLE ... DROP COLUMN`` and what every
+    positional read of this table is written against. The two append-migrations
+    run in DDL order — ``recall_map`` then ``task_pattern`` — so a database
+    that has neither, one that has only the first, and a fresh one all converge.
+    """
+
+    fresh = tmp_path / "fresh.sqlite3"
+    with MemoryStore(fresh) as store:
+        expected = _recall_event_columns(store)
+    assert expected[-2:] == ["recall_map", "task_pattern"]
+
+    migrated = tmp_path / "migrated.sqlite3"
+    with MemoryStore(migrated) as store:
+        store.record_recall_event(query="seed", scope="project:lm")
+
+    connection = sqlite3.connect(migrated)
+    try:
+        # A database predating the column predates the index that names it,
+        # and SQLite refuses to drop a column any index still mentions.
+        connection.execute("DROP INDEX idx_recall_events_scope_pattern_created")
+        connection.execute("ALTER TABLE recall_events DROP COLUMN task_pattern")
+        connection.execute("ALTER TABLE recall_events DROP COLUMN recall_map")
+        connection.commit()
+    finally:
+        connection.close()
+
+    # Reopening reconciles both, in order, and reopening again changes nothing.
+    for _ in range(2):
+        with MemoryStore(migrated) as store:
+            assert _recall_event_columns(store) == expected
+            index_names = {
+                str(row["name"])
+                for row in store.connection.execute(
+                    "PRAGMA index_list('recall_events')"
+                )
+            }
+            assert "idx_recall_events_scope_pattern_created" in index_names
+
+
+def test_task_pattern_backfills_from_the_ambient_json_of_legacy_rows(
+    tmp_path: Path,
+) -> None:
+    """The column starts as complete as the history it describes.
+
+    Backfilled rather than left NULL because the value was never lost — every
+    recall event stores its whole ambient context — and a curtail rule that
+    began counting only at deploy time would be blind to exactly the accrued
+    silence it exists to notice.
+    """
+
+    db = tmp_path / "legacy.sqlite3"
+    with MemoryStore(db) as store:
+        store.record_recall_event(
+            query="carried a pattern",
+            scope="project:lm",
+            ambient_context={"task": "t", "task_pattern": "lm/recall-map"},
+        )
+        store.record_recall_event(
+            query="carried none",
+            scope="project:lm",
+            ambient_context={"task": "t"},
+        )
+
+    connection = sqlite3.connect(db)
+    try:
+        # The shape of a database written before the column existed: the JSON
+        # still has the value, the column does not exist yet.
+        connection.execute("DROP INDEX idx_recall_events_scope_pattern_created")
+        connection.execute("ALTER TABLE recall_events DROP COLUMN task_pattern")
+        # ...plus one row no json_* function may be pointed at. A single
+        # malformed legacy document must not make the database unopenable.
+        connection.execute(
+            """
+            INSERT INTO recall_events (
+                id, query, scope, requested_scope, resolved_scopes,
+                ambient_context, created_at
+            ) VALUES ('LEGACYBROKEN', 'q', 'project:lm', 'project:lm',
+                      '["project:lm"]', 'not json at all{"task_pattern"', '2026-01-01T00:00:00Z')
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    with MemoryStore(db) as store:
+        lifted = {
+            str(row["query"]): row["task_pattern"]
+            for row in store.connection.execute(
+                "SELECT query, task_pattern FROM recall_events"
+            )
+        }
+        assert lifted["carried a pattern"] == "lm/recall-map"
+        assert lifted["carried none"] is None
+        assert lifted["q"] is None
+
+    # Idempotent, and terminal: a second open finds nothing left to do.
+    with MemoryStore(db) as store:
+        before = store.connection.total_changes
+        store._backfill_recall_events_task_pattern()
+        assert store.connection.total_changes == before
+
+
+def test_task_pattern_backfill_ignores_non_string_ambient_values(
+    tmp_path: Path,
+) -> None:
+    """Only what the write path itself would have stored gets lifted.
+
+    ``_optional_str`` on the write path yields a string or nothing, so a caller
+    that put an object under the key never had a column; the backfill must not
+    invent one for it by stringifying JSON.
+    """
+
+    db = tmp_path / "odd.sqlite3"
+    with MemoryStore(db) as store:
+        store.record_recall_event(query="seed", scope="project:lm")
+
+    connection = sqlite3.connect(db)
+    try:
+        connection.execute("DROP INDEX idx_recall_events_scope_pattern_created")
+        connection.execute("ALTER TABLE recall_events DROP COLUMN task_pattern")
+        connection.execute(
+            """
+            UPDATE recall_events
+            SET ambient_context = '{"task_pattern":{"nested":"object"}}'
+            WHERE query = 'seed'
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    with MemoryStore(db) as store:
+        assert (
+            store.connection.execute(
+                "SELECT task_pattern FROM recall_events WHERE query = 'seed'"
+            ).fetchone()["task_pattern"]
+            is None
+        )

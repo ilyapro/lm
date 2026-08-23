@@ -29,6 +29,7 @@ specification future AE work implements.
 | Server-instructions section | shipped (`a0d8cab`) | §3.2, `instructions_map.py` |
 | Curtail rule (delivered ≠ used) | shipped (`e16693c`) | §6, `recall_map.py` |
 | Effect-gate pre-registration | sealed (`6417f57`) | §7, `artifacts/recall-map/` |
+| Pool gates (usefulness floor, unfollowed-window demotion) | shipped, **both valves off — no default in code or config** | §11, `recall_map._pool` |
 | AE task-context contract | **design, this document** | §9 |
 
 Everything above is described from the code as merged on `a0d8cab`. The one
@@ -376,6 +377,12 @@ merely coarser (§9.5).
 The scope half is the tool's explicit `scope` argument when given, else the
 dominant scope of the pool itself (`_dominant_scope`, `:1235`).
 
+This one key now keys three things, and that is the point: the structure cache,
+the `_CurtailMemo` gate, and — through `recall_events.task_pattern` — the
+delivery-history read behind the curtail rule (§6, §9.3). While the last of them
+was keyed on `task` alone, a client whose `task` changed every turn had a map
+that was stable and a history that was empty.
+
 ### 5.2 What is cached, and what is not
 
 The cache stores the cluster **structure** — stage, signature, label, ask-hint,
@@ -429,13 +436,33 @@ The rule is evaluated inside the builder — the server already attaches builder
 output verbatim and omits the key on `None`, so no `server.py` change is needed.
 
 - **Consumption primitive** (cheap, live, deterministic, no LLM): a delivered map
-  item counts as consumed when a *later* recall or lookup — same transport
-  session, or same `scope`+`task` — matched it: the later `recall_events.query`
-  tokens overlap the item's `label`/`ask_hint` above a fixed threshold (reusing
-  the tokenizer of the grounding/embeddings rails), or a later event's delivered
-  results or a `memory_lookup` hit the item's `medoid.node_id`. Deliveries are
-  read through `recent_recall_map_history()` — indexed reads, bounded limit, no
-  new writes.
+  item counts as consumed when a *later* recall or lookup matched it — three
+  probes, none of them redundant:
+  1. the later `recall_events.query` tokens overlap the item's `label`/`ask_hint`
+     above a fixed threshold (reusing the tokenizer of the grounding/embeddings
+     rails);
+  2. the item's `medoid.node_id` was accessed after the delivery
+     (`nodes.last_accessed`, which retrieval stamps on every result it delivers);
+  3. a `memory_lookup` id-fetched the item's `medoid.node_id` **inside the
+     delivery's frozen outcome window** — read off `recall_delivery_history
+     .lookup_consumed` rather than recomputed, so the curtail rule and the M/C/K
+     triple cannot end up with two definitions of one delivery's window.
+
+  Probe 3 is the only *exogenous* one. Probes 1 and 2 both reduce to "a later
+  recall returned this node again", which is the ranker's own echo: the
+  schema-trigger boost mixes hub schemas into nearly every recall, so a hub
+  satisfies them forever with no reader anywhere. They stay regardless — in
+  curtail every ambiguity resolves against collapsing, so a weak probe is
+  evidence, not noise. `lookup_consumed IS NULL` (a window that closed before
+  this database recorded any lookup) is *not* evidence: reading unknown as
+  followed would switch the rule off for the entire pre-feature corpus.
+
+  Deliveries are read through `recent_recall_map_history()` — indexed reads,
+  bounded limit, no new writes — **keyed on `task_pattern` with a `task`
+  fallback**, i.e. on the same label `cache_key` uses. See §9.3: before the
+  `task_pattern` column this read could only ask for `task`, and against a
+  per-turn `task` the window was empty every turn and the streak never
+  accumulated at all.
 - **Curtail rule**: for a given cache key, if the last **`CURTAIL_STREAK` = 3**
   deliveries each produced zero consumed items, the builder returns a collapsed
   form — `{"clusters": [], "pool": N, "covered": 0, "curtailed": true,
@@ -443,13 +470,20 @@ output verbatim and omits the key on `None`, so no `server.py` change is needed.
   in the instructions channel — instead of running the label cascade at all.
   Any consumption resets the streak. The query-overlap threshold is
   `CURTAIL_QUERY_OVERLAP` = 0.5 under the grounding tokenizer
-  (`grounding.token_set`); the medoid probe reads `nodes.last_accessed`, which
-  retrieval stamps on every result it delivers; history reads are bounded by
+  (`grounding.token_set`); the medoid-access probe reads `nodes.last_accessed`,
+  which retrieval stamps on every result it delivers; the lookup probe reads
+  `recall_delivery_history.lookup_consumed = 1`, whose window is the frozen
+  `RECALL_DELIVERY_HISTORY_HORIZON_HOURS` = 24; history reads are bounded by
   `CURTAIL_HISTORY_LIMIT` = 24.
 - **Default-on, no env flag.** The protocol channels' machinery ban
   (`test_protocol_channels_advertise_no_non_default_machinery`) forbids
   default-off machinery. A curtail rule that has to be switched on is not a
-  curtail rule.
+  curtail rule. This is a claim about the *curtail decision*, and it is pinned
+  as one: `test_the_rule_needs_no_flag` enumerates every env name the module
+  reads, checks each is a §11 pool gate, and checks none of them appears
+  anywhere in the curtail path. The pool gates are off by default for the
+  opposite reason — their thresholds are the operator's, not this codebase's —
+  and they are advertised in no protocol channel.
 
 The marker is the point. A map that quietly stops appearing is indistinguishable
 from a bug; a map that says *"three deliveries, nothing followed"* is a
@@ -457,8 +491,16 @@ measurement.
 
 One implementation fact worth knowing: `recent_recall_map_history(scope=…)` is
 not the cheap read its name suggests — the query plan walks the whole scope
-partition (~8.5 ms at 21k events, growing with the partition). The probe is
-therefore gated by `_CurtailMemo` (`recall_map.py:469`), which counts this
+partition (~8.5 ms at 21k events, growing with the partition).
+`idx_recall_events_scope_pattern_created` narrows the pattern-keyed form of that
+question to a MULTI-INDEX OR over two bounded `(scope, task_pattern)` ranges —
+the pattern itself and the NULL-pattern legacy rows — instead of the whole
+partition; the task-keyed form is unchanged and the gate stays either way. The
+probe is therefore still
+gated by `_CurtailMemo` (`recall_map.py:469`) — keyed by `cache_key` on the same
+`(scope, task_pattern or task)` label as the structure cache, or a per-turn
+client would seed a fresh memo every turn and pay on every delivery the read the
+gate exists to avoid — which counts this
 builder's *own* offers per key and pays for a history read only once that count
 could cross the threshold. The gate can delay a collapse or buy a needless
 read; it can never collapse a map by itself — every collapse is decided by an
@@ -587,7 +629,7 @@ Every field below travels in `memory_recall.ambient_context` (and in
 | Field | Where it lands | Consumed by |
 | --- | --- | --- |
 | `task` | `recall_events.task` **column** (`storage.py:1376`) | Map cache key (fallback); `recent_recall_map_history(task=…)`; feedback closure |
-| `task_pattern` | `recall_events.ambient_context` **JSON only** — no column | Map cache key (**preferred**, `recall_map.py:1657`); `memory_lookup(task_pattern=…)`; consolidation grouping (`consolidation.py:662-669`) |
+| `task_pattern` | `recall_events.task_pattern` **column** — and the ambient JSON, unchanged | Map cache key (**preferred**, `recall_map.py:1657`); `recent_recall_map_history(task_pattern=…)` and the curtail rule; `memory_lookup(task_pattern=…)`; consolidation grouping (`consolidation.py:662-669`) |
 | `session_id` | `recall_events.session_id` column (`:1377`) — **and scope resolution** | Pending-recall matching; `_ambient_scope` (see §9.4) |
 | `agent` | `recall_events.agent` column (`:1375`) | Attribution, closure precedence |
 | `scope` | `recall_events.scope` / `requested_scope` | Everything |
@@ -675,13 +717,43 @@ send:
    See §9.4.
 5. **`transport_session_id` — never set it.** §9.1.
 
-Both `task` and `task_pattern` are required, not either/or, because they are read
-by different consumers: the builder keys the cache on the pattern, while
+Both `task` and `task_pattern` are still required, not either/or, but the reason
+has changed and the change is worth stating plainly, because the old reason was
+a documented debt and this section is where it was recorded.
+
+**Debt paid: `task_pattern` is a column.** It used to live in
+`recall_events.ambient_context` JSON only, which meant
 `recent_recall_map_history` — the read API behind the instructions channel, the
-curtail rule and the effect gate — can only filter on `scope`, `task` and
-`transport_session_id`, since `task_pattern` never becomes a column
-(`storage.py:1374-1378`). A client that sends only `task_pattern` gets a stable
-map and an unfilterable delivery history.
+curtail rule and the effect gate — could filter on `scope`, `task` and
+`transport_session_id` and on nothing else. The map keyed its cache on the
+pattern; the delivery history could only be grouped by the task. For a stable
+`task` that was merely coarse. For the client this contract is written for it
+was fatal: an AE chat sends `task=chat:<id>/turn-<N>`, unique every turn by
+§9.3(2), so **every turn read an empty delivery history, every turn was the
+first delivery, and `CURTAIL_STREAK` could never be reached** — the map could
+not be curtailed in exactly the channel §9.5 says curtailment matters most for.
+
+`recall_events` now carries a `task_pattern` column, populated on write from the
+same ambient context `task` is lifted from, backfilled from the ambient JSON of
+every row that ever carried one, indexed by
+`idx_recall_events_scope_pattern_created`, and read by
+`recent_recall_map_history(task_pattern=…)`. A row that carries no pattern —
+every row written before the column, and every row from a client that sends
+none — falls back to its `task`, which is the only identity it has. The
+fallback is deliberately not a wildcard: a pattern-less row is matched only when
+its `task` matches too (`recall_map._delivery_history`).
+
+So the two fields are read by different consumers still, and both remain
+required:
+
+- **`task_pattern`** now keys *both* the cache and the delivery history, which
+  is what makes a streak accumulate across turns.
+- **`task`** remains a real column driving feedback closure and
+  `recent_recall_map_history(task=…)`, remains the cache fallback for a caller
+  with no pattern, and is what a pattern-less legacy row is recognized by.
+
+A client that sends only `task_pattern` now gets a stable map *and* a filterable
+delivery history. A client that sends only `task` is unchanged in every respect.
 
 ### 9.4 The `session_id` trap
 
@@ -718,7 +790,10 @@ always wins over the ambient derivation (`scope.py:54-61`).
 - **A curtail rule that means something.** §6 counts consumption per cache key. A
   key that changes every node makes every delivery the first delivery, and the
   streak never reaches K — the map can never be curtailed, which is the failure
-  mode the rule exists to prevent.
+  mode the rule exists to prevent. Since the `task_pattern` column landed the
+  server holds up its half: send the pattern and the streak accumulates across
+  turns and across child sessions. Send only a per-turn `task` and it still
+  cannot, because there is then nothing that says the turns are one channel.
 - **An effect gate that can stratify.** Arm assignment and the anchor-circularity
   stratum both need to group events by the work they belong to.
 - **Better offline consolidation, free.** `task_pattern` is consolidation's
@@ -752,11 +827,17 @@ SELECT
   COUNT(*)                                                        AS events,
   SUM(task IS NOT NULL AND task <> '')                            AS with_task,
   SUM(task LIKE '/%')                                             AS absolute_path_task,   -- must be 0
-  SUM(json_extract(ambient_context, '$.task_pattern') IS NOT NULL) AS with_task_pattern,
+  SUM(task_pattern IS NOT NULL AND task_pattern <> '')            AS with_task_pattern,
   SUM(scope LIKE 'session:%')                                     AS session_scoped        -- must be 0
 FROM recall_events
 WHERE created_at >= :since AND agent LIKE 'ae:%';
 ```
+
+`task_pattern` is read from its own column now, not out of the ambient JSON. The
+two agree by construction on anything this build wrote, and the backfill made
+them agree on everything older that carried a string value; a row where they
+differ is a row whose ambient context held something other than a string under
+that key.
 
 Conformant AE traffic has `with_task_pattern = events`, `absolute_path_task = 0`
 and `session_scoped = 0`. Open the database read-only (`mode=ro`) — the live file
@@ -782,11 +863,164 @@ avoids the `session_id` trap, and fails both remaining clauses — no
 | Transport identity stamping | `src/living_memory/server.py:392-433` |
 | Instructions section (composer, boot, refresh) | `src/living_memory/instructions_map.py`; `src/living_memory/server.py:435`, `:569`, `:595` |
 | Curtail rule | `src/living_memory/recall_map.py:202-222`, `:469` |
+| Curtail key alignment (`task_pattern` column, read, fallback) | `src/living_memory/storage.py` `_migrate_recall_events_task_pattern_column`, `_backfill_recall_events_task_pattern`, `recent_recall_map_history`; `recall_map._delivery_history` |
+| Curtail lookup probe (exogenous follow signal) | `recall_map._medoid_lookups`, `_was_followed`; ledger column `recall_delivery_history.lookup_consumed` |
+| Pool gates behind env valves (§11) | `recall_map.pool_usefulness_floor_from_env`, `pool_demotion_windows_from_env`, `_below_usefulness`, `_unfollowed_run`, `_demoted`, `RecallMapBuilder._pool`; codes `POOL_GATE_REASON_CODES` |
 | Effect gate (sealed) | `scripts/recall_map_effect.py`; `artifacts/recall-map/prereg.json`, `baseline.json` |
 | Delivery persistence + history | `src/living_memory/storage.py:1416`, `:1436`, DDL `:3484-3517`, migration `:3803` |
-| Ambient → column lift | `src/living_memory/storage.py:1374-1378` |
+| Ambient → column lift (`agent`, `task`, `task_pattern`, `session_id`) | `src/living_memory/storage.py:1374-1378` |
 | FTS document frequencies | `src/living_memory/storage.py:1970`, `:2015`; vocab DDL `:3443` |
 | Scope resolution | `src/living_memory/scope.py:194-277` |
 | Tests | `tests/test_recall_map.py`, `tests/test_recall_map_delivery.py`, `tests/test_recall_map_pool.py`, `tests/test_recall_map_curtail.py`, `tests/test_fts_vocab.py`, `tests/test_instructions_map.py`, `tests/test_instructions_refresh.py`, `tests/test_instructions_imperative.py` |
 | Latency artifact | `artifacts/recall-map/latency-before-after.json` |
 | Bench script | `scripts/recall_map_latency_bench.py` |
+
+## 11. Pool gates behind env valves (both off in code and in config)
+
+`relevance_score` (§2.1, `recall_map.py`) reads exactly two things: whether the
+node is a schema, and the matured M/C/K triple of its delivery history. That is
+the frozen `directional-zsum-r1` policy and it is not being touched here —
+`RELEVANCE_FEATURE_MEANS`, `RELEVANCE_FEATURE_SCALES` and `RELEVANCE_THRESHOLD`
+stay byte-for-byte what the sealed evaluator fitted.
+
+Two things it therefore cannot see:
+
+1. **The usefulness verdict.** A node with `usefulness_score = 0.078` is not
+   distinguishable from one at `0.9`; it stays a medoid indefinitely.
+2. **Whether anybody ever followed the row.** The K tail (`trailing_nonconsumed`)
+   was designed to demote unfollowed rows, but its notion of "followed" is
+   re-delivery — a later recall returning the node again. The schema-trigger
+   boost (1.8) mixes hub schemas into nearly every recall, so a hub carries
+   `consumed == matured`, `K = 0` forever. One live example carried 4 616
+   re-deliveries and never sank.
+
+Both signals now enter, and they enter **only** as admission rules applied
+around the frozen selector inside `RecallMapBuilder._pool`. Neither is on by
+default, in code or in config. That is deliberate and follows the
+`LM_DRAIN_NEAR_DUP_SUPERSEDES` precedent (`retrieval.py`): the numbers come from
+the field census of known-window outcomes, not from an argument in a review, so
+the operator arms them from measured values.
+
+### 11.1 The valves
+
+| Gate | Valve (`1`/`true`/`yes`/`on`) | Value |
+| --- | --- | --- |
+| (a) usefulness floor | `LM_MAP_POOL_USEFULNESS_GATE` | `LM_MAP_POOL_MIN_USEFULNESS` |
+| (b) unfollowed-window demotion | `LM_MAP_POOL_DEMOTION_GATE` | `LM_MAP_POOL_DEMOTE_AFTER` |
+
+Two variables per gate, mirroring the drain's `SUPERSEDES` + `COSINE` pair, with
+one difference that matters: **the value has no shipped default.** The drain
+ships a measured cosine and the flag decides whether to use it; here the number
+*is* the operator's decision, so a valve turned on without one is inert. There
+is no way to enable either gate without saying what number enables it, and
+nothing in this repository or its config sets any of the four.
+
+With both valves unset the builder's behaviour is byte-identical to the build
+that predates them — not "equivalent", byte-identical, including the persisted
+selection journal. That is pinned by
+`tests/test_recall_map_pool.py::test_both_valves_unset_is_byte_identical_to_the_pre_gate_build`
+against `PRE_GATE_GOLDEN`, a payload captured by running the fixture scenario
+against `recall_map.py` at commit `e579fb4` — the parent of the commit that
+added the gates. The golden is a literal in the test file, with the recapture
+command beside it, because a golden the suite can regenerate is a golden that
+re-blesses whatever the code does today.
+
+### 11.2 Gate (a): the usefulness floor
+
+A candidate whose `usefulness_score` is **strictly below** the floor is excluded
+from the pool before its history is read, so a rejected row costs no ledger row
+either. It leaves its own trace in the selection journal under reason code
+**`uf`**.
+
+`nodes.usefulness_score` is `NOT NULL DEFAULT 0.0`, so a never-scored row is a
+genuine zero and is judged like one — the census the floor comes from counted
+those zeroes. The "unknown" case the code guards is a *result object* from
+another layer with no such attribute; that is read as no verdict, never as a
+bad one.
+
+### 11.3 Gate (b): demotion after N known unfollowed windows
+
+A row is demoted — excluded from the pool, reason code **`nf`** — when it has
+been delivered into **N consecutive known windows that nobody followed**, where
+N is `LM_MAP_POOL_DEMOTE_AFTER`.
+
+- **Known windows only.** The run is `MaturedRecallHistory.lookup_trailing_absent`
+  (§6, `recall_delivery_history.lookup_consumed`): newest-first windows with no
+  id-fetch, stopping at the first followed one, with `NULL` windows **skipped**
+  rather than counted. `NULL` means "this window closed before the database
+  recorded lookups at all", which is not evidence that nobody followed it. A
+  corpus that has never recorded a lookup demotes nothing.
+- **Exogenous follows only.** Two probes hold a row: the id-fetch (from the
+  ledger) and the ask-echo — a later query under this key covering
+  `CURTAIL_QUERY_OVERLAP` of the cluster's label or ask-hint, the same probe
+  `_was_followed` uses, harvested from the curtail read the build already paid
+  for. The third curtail probe, the medoid's `last_accessed`, is deliberately
+  **not** consulted: any recall that returns the node bumps it, so a gate that
+  accepted it could never sink a hub, which is the entire job.
+- **Re-delivery softens, never vetoes.** The row's re-delivery share
+  (`consumed / matured`) shortens the effective run by
+  `DEMOTION_REDELIVERY_WEIGHT` = 0.5 of itself. A row nothing ever re-delivered
+  sinks after N windows; a row re-delivered on every single window needs 2N;
+  everything else lands in between. The weight is strictly inside `(0, 1)`
+  because `0` is no softening and `1` is the veto that makes hubs immortal —
+  and *which* value inside the interval is not a threshold to tune, since the
+  comparison is against the operator's N, which absorbs any fixed scaling.
+
+Ordering inside `_pool` is load-bearing: the demotion runs **after** the frozen
+`RELEVANCE_THRESHOLD` has spoken, so `nf` counts exactly the rows the gate newly
+removed and `lr` keeps reporting exactly what it always reported.
+
+### 11.4 Cost, and what does not become a per-row query
+
+Neither gate adds a query, and neither turns a batched read into a per-row one:
+
+- the usefulness score is already on the `Node` the residual carries;
+- the window aggregates come from the same bounded, batched
+  `matured_recall_history` call `_pool` already makes (batches of
+  `MAX_RECALL_HISTORY_CANDIDATES` = 200);
+- the ask-echo set is a by-product of `_read_curtailment`, computed from rows
+  and tokens already in hand. Arming gate (b) moves that read *before* the
+  pool instead of after it — same read, same `_CurtailMemo` gate, carried
+  forward so the build never asks twice.
+
+The ask-echo evidence is therefore exactly as stale as the memo curtail already
+trusts, and scoped to this cache key. Both limitations point the same way — less
+ask evidence means more demotion — and the mitigation is that the operator's N
+is measured on the same evidence the gate reads.
+
+Measured with `scripts/recall_map_latency_bench.py` over
+`/tmp/anchor-eval/snap-anchored.sqlite3` (20 replayed real queries, 7 timed
+iterations per arm, median residual 512), against the pre-registered
+`BUDGET_P95_OVERHEAD_RATIO` = 0.20:
+
+| Run | Pooled warm p95 overhead ratio | Within budget | Warm paired Δ median |
+| --- | --- | --- | --- |
+| both valves unset | **0.1771** | yes | 74.6 ms |
+| both valves armed (`0.25`, `N=3`) | **0.1915** | yes | 63.5 ms |
+
+Read the second row for what it is. That snapshot predates the lookup recorder,
+so every window in it is `NULL` and gate (b) demoted nothing — the run bounds
+the *cost of arming* the gates (the reordered curtail read, the per-candidate
+arithmetic), not their effect. The two paired deltas straddle each other because
+the gates remove rows the cascade would otherwise have had to label; the honest
+reading is that arming them is inside the noise of this bench, not that it is
+free.
+
+### 11.5 The selection journal
+
+`SELECTION_REASON_CODES` — the seven-wide positional `x` vector in the additive
+`sel` payload — is unchanged. `POOL_GATE_REASON_CODES = ("uf", "nf")` appends
+after it, and `_SelectionLedger.freeze` trims trailing zeros back to the frozen
+width, so:
+
+- with both valves unset, `x` is exactly seven entries, as before;
+- a longer `x` is itself the statement that a gate fired;
+- indices 0–6 keep meaning what they meant to every existing reader.
+
+Both gate codes are **sampleable**: like `lr` and `pc` they report a policy
+decision that is otherwise invisible, and unlike any other code their threshold
+is something an operator typed. A journal that says "the floor dropped 14"
+without ever naming one of them gives that operator no way to tell a floor that
+is working from a floor set one decimal place too high. The gist is
+identity-free and capped at `SELECTION_SAMPLE_GIST_CHARS` = 24, as everywhere
+else.

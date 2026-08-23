@@ -14,8 +14,12 @@ tests pin every side of that measurement:
 * **it says what happened** — the collapsed payload carries ``curtailed`` and
   the streak, spends a fraction of the map's budget, and renders as nothing at
   all in the instructions channel;
-* **it stays local** — the streak belongs to one ``(scope, task)`` key and no
-  neighbouring key inherits it;
+* **it stays local** — the streak belongs to one ``(scope, task_pattern or
+  task)`` key and no neighbouring key inherits it;
+* **it is keyed like the map** — a client whose ``task`` changes every turn but
+  whose ``task_pattern`` does not accumulates one streak, not N histories of
+  one delivery each, which is the whole reason this rule could never fire in an
+  AE chat;
 * **it comes back** — the window that holds the evidence also expires it, so a
   dark key retries rather than dying;
 * **it is default-on and read-only** — no flag turns it on, and the probe adds
@@ -29,7 +33,9 @@ foreign key both keep the map alive.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -47,10 +53,29 @@ from living_memory.recall_map import (
 )
 from living_memory.grounding import token_set
 from living_memory.retrieval import RecallResult
-from living_memory.storage import MaturedRecallHistory, MemoryStore
+from living_memory.storage import (
+    RECALL_DELIVERY_HISTORY_HORIZON_HOURS,
+    MaturedRecallHistory,
+    MemoryStore,
+)
 
 SCOPE = "project:curtail"
 TASK = "recall-map-curtail"
+
+#: The stable half of the AE section-9 contract: one slug per tree-goal, sent
+#: unchanged on every call of every child and every retry.
+PATTERN = "lm/recall-map"
+
+
+def turn(number: int) -> str:
+    """The unstable half: what an AE chat puts in ``task`` on turn ``number``.
+
+    Unique per turn by contract (``docs/recall-map.md`` section 9), which is
+    exactly why keying the delivery history on it produced an empty window on
+    every single turn.
+    """
+
+    return f"chat:5f3a91/turn-{number}"
 
 #: Deliveries whose query says nothing about any cluster on offer. The whole
 #: file depends on this being true, so it is one constant rather than a phrase
@@ -129,12 +154,20 @@ def deliver(
     query: str = IDLE_QUERY,
     scope: str = SCOPE,
     task: str | None = TASK,
+    task_pattern: str | None = None,
 ) -> str:
-    """Record one recall event that carried ``payload`` as its map."""
+    """Record one recall event that carried ``payload`` as its map.
+
+    ``task_pattern`` defaults to absent, which is both the shape of every row
+    in a database written before the column existed and the shape a client
+    that sends no pattern still writes today.
+    """
 
     ambient: dict[str, Any] = {}
     if task is not None:
         ambient["task"] = task
+    if task_pattern is not None:
+        ambient["task_pattern"] = task_pattern
     event = store.record_recall_event(
         query=query,
         scope=scope,
@@ -167,19 +200,35 @@ def marker(streak: int) -> dict[str, Any]:
     }
 
 
-def unread_deliveries(store: MemoryStore, count: int) -> list[Node]:
+def unread_deliveries(
+    store: MemoryStore,
+    count: int,
+    *,
+    per_turn_task: bool = False,
+    task: str | None = TASK,
+    task_pattern: str | None = None,
+) -> list[Node]:
     """``count`` deliveries under one key, each offering an untouched medoid.
 
     Distinct medoids per delivery on purpose: a shared medoid would make one
     access reset every delivery at once, which is exactly the confound the
     per-delivery walk has to survive.
+
+    ``per_turn_task`` replaces the fixed ``task`` with a fresh
+    ``chat:<id>/turn-<N>`` per delivery — the AE shape, where the only thing
+    holding the deliveries together is ``task_pattern``.
     """
 
     medoids: list[Node] = []
     for index in range(count):
         medoid = make_node(store, f"deployment rollback recipe {index}")
         medoids.append(medoid)
-        deliver(store, offered(cluster(f"deploy rollback {index}", medoid.id)))
+        deliver(
+            store,
+            offered(cluster(f"deploy rollback {index}", medoid.id)),
+            task=turn(index) if per_turn_task else task,
+            task_pattern=task_pattern,
+        )
     return medoids
 
 
@@ -344,6 +393,101 @@ def test_an_untouched_medoid_is_not_evidence(store: MemoryStore) -> None:
     assert built.curtailed is True
 
 
+def test_a_medoid_lookup_inside_the_window_resets_the_streak(
+    store: MemoryStore,
+) -> None:
+    """The one probe the ranker cannot satisfy on the agent's behalf.
+
+    ``record_access`` — the probe above — is written by *any* recall that
+    returns the node, so a hub the trigger boost mixes into every recall reads
+    as "used" forever without a reader anywhere. An id-fetch of one exact ULID
+    is different in kind: nothing produces it but a reader who was handed that
+    id, which is what the map does.
+
+    So this test deliberately proves the *new* probe and not the old one: the
+    node's ``last_accessed`` is asserted untouched on both sides of the lookup,
+    because ``memory_lookup`` is a pure read by construction. If the streak
+    still resets, only the ledger can have reset it.
+    """
+
+    medoids = unread_deliveries(store, CURTAIL_STREAK, task_pattern=PATTERN)
+    # The middle delivery's example again: the walk must stop where the
+    # evidence is, not at whichever delivery it looks at first.
+    before = store.get_node(medoids[1].id)
+
+    store.record_lookup_event(
+        [medoids[1].id],
+        occurred_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    after = store.get_node(medoids[1].id)
+    assert after.last_accessed == before.last_accessed
+    assert after.access_count == before.access_count
+
+    builder = RecallMapBuilder(store)
+    built = builder.build(
+        residual(store), scope=SCOPE, task=turn(99), task_pattern=PATTERN
+    )
+
+    assert built is not None
+    assert built.curtailed is False
+    assert built.clusters
+    assert builder.last_curtailment.offers == 1
+
+
+def test_a_lookup_after_the_window_closes_is_not_evidence(store: MemoryStore) -> None:
+    """Control for the lookup probe, and the reason it borrows a window.
+
+    The bound is not this module's to invent: ``recall_delivery_history``
+    already correlates a lookup with the deliveries whose frozen
+    ``(delivered_at, outcome_end]`` range contains it, and the curtail rule
+    reads that verdict rather than recomputing one. Two consumers of "was this
+    delivery followed" with two definitions of the delivery's window would
+    disagree about the same delivery, which is worse than either answer.
+    """
+
+    medoids = unread_deliveries(store, CURTAIL_STREAK, task_pattern=PATTERN)
+
+    store.record_lookup_event(
+        [medoids[1].id],
+        occurred_at=datetime.now(UTC)
+        + timedelta(hours=RECALL_DELIVERY_HISTORY_HORIZON_HOURS + 1),
+    )
+
+    built = RecallMapBuilder(store).build(
+        residual(store), scope=SCOPE, task=turn(99), task_pattern=PATTERN
+    )
+
+    assert built is not None, "a lookup outside every window must not stop the collapse"
+    assert built.curtailed is True
+
+
+def test_an_unobservable_window_is_not_a_follow(store: MemoryStore) -> None:
+    """NULL is "we could not see", and it must not read as "somebody did".
+
+    Every window that closed before this database recorded its first lookup is
+    NULL in the ledger — honestly so. Counting NULL as evidence would hand a
+    free pass to every historical delivery and switch the rule off for exactly
+    the corpus it exists to describe, so the tri-state's unknown arm is
+    silence: those deliveries keep being judged by the two probes that always
+    judged them.
+    """
+
+    unread_deliveries(store, CURTAIL_STREAK, task_pattern=PATTERN)
+    ledger = store.connection.execute(
+        "SELECT lookup_consumed FROM recall_delivery_history"
+    ).fetchall()
+    assert ledger, "the deliveries reached the ledger"
+    assert all(row["lookup_consumed"] is None for row in ledger)
+
+    built = RecallMapBuilder(store).build(
+        residual(store), scope=SCOPE, task=turn(99), task_pattern=PATTERN
+    )
+
+    assert built is not None
+    assert built.curtailed is True
+
+
 def test_the_query_probe_uses_the_shared_tokenizer(store: MemoryStore) -> None:
     """Overlap is measured on the grounding rail's tokens, not on raw words.
 
@@ -413,6 +557,168 @@ def test_a_taskless_key_collapses_on_its_own_streak(store: MemoryStore) -> None:
     assert built is not None
     assert built.curtailed is True
     assert built.streak == CURTAIL_STREAK
+
+
+# ----------------------------------------------------------------------
+# The streak is keyed the way the map is keyed
+# ----------------------------------------------------------------------
+
+
+def test_a_per_turn_task_chat_accumulates_its_streak_under_one_pattern(
+    store: MemoryStore,
+) -> None:
+    """The scenario this rule was silently useless for, now pinned.
+
+    An AE chat sends ``task=chat:<id>/turn-<N>`` — a fresh string every turn,
+    by contract — alongside a ``task_pattern`` that never changes. The map has
+    always keyed its cache on the pattern; the delivery history could only be
+    filtered by the task, so every turn read an empty window, every turn was
+    the first delivery, and ``CURTAIL_STREAK`` could never be reached no matter
+    how long nobody read the map.
+    """
+
+    unread_deliveries(
+        store, CURTAIL_STREAK, per_turn_task=True, task_pattern=PATTERN
+    )
+
+    builder = RecallMapBuilder(store)
+    built = builder.build(
+        residual(store),
+        scope=SCOPE,
+        task=turn(CURTAIL_STREAK),  # a task none of those deliveries used
+        task_pattern=PATTERN,
+    )
+
+    assert built is not None
+    assert built.curtailed is True
+    assert built.streak == CURTAIL_STREAK
+    assert builder.last_curtailment.offers == CURTAIL_STREAK
+
+
+def test_without_the_pattern_the_same_history_is_invisible(
+    store: MemoryStore,
+) -> None:
+    """The control that makes the test above mean something.
+
+    Identical rows, identical builder, one difference: the build carries no
+    ``task_pattern``, so the read falls back to a per-turn ``task`` that
+    matches nothing. This is the old behaviour reproduced exactly — and it is
+    also the correct behaviour for a key that really has no pattern, since a
+    key made of one turn's task genuinely has no history.
+    """
+
+    unread_deliveries(
+        store, CURTAIL_STREAK, per_turn_task=True, task_pattern=PATTERN
+    )
+
+    builder = RecallMapBuilder(store)
+    built = builder.build(residual(store), scope=SCOPE, task=turn(CURTAIL_STREAK))
+
+    assert built is not None
+    assert built.curtailed is False
+    assert built.clusters
+    assert builder.last_curtailment.streak == 0
+
+
+def test_a_delivery_carrying_no_pattern_falls_back_to_its_task(
+    store: MemoryStore,
+) -> None:
+    """Every row written before the column existed is this shape.
+
+    A pattern-keyed build cannot ask those rows for a pattern they do not
+    have, so it asks them for the only identity they carry. Without the
+    fallback, deploying the column would reset every accrued streak in the
+    database to zero.
+    """
+
+    unread_deliveries(store, CURTAIL_STREAK)  # no task_pattern anywhere
+    assert all(
+        row["task_pattern"] is None
+        for row in store.connection.execute(
+            "SELECT task_pattern FROM recall_events"
+        ).fetchall()
+    )
+
+    builder = RecallMapBuilder(store)
+    built = builder.build(
+        residual(store), scope=SCOPE, task=TASK, task_pattern=PATTERN
+    )
+
+    assert built is not None
+    assert built.curtailed is True
+    assert built.streak == CURTAIL_STREAK
+
+
+def test_the_fallback_still_needs_the_task_to_match(store: MemoryStore) -> None:
+    """...and it is a fallback, not a wildcard.
+
+    A pattern-less row says nothing about which pattern it belonged to, so the
+    only honest thing to check is its task. A different task under the same
+    pattern must not inherit it — that would be attributing one key's silence
+    to another, the one direction this module never resolves ambiguity in.
+    """
+
+    unread_deliveries(store, CURTAIL_STREAK)  # task=TASK, no pattern
+
+    built = RecallMapBuilder(store).build(
+        residual(store), scope=SCOPE, task="some other node", task_pattern=PATTERN
+    )
+
+    assert built is not None
+    assert built.curtailed is False
+    assert built.clusters
+
+
+def test_a_dark_pattern_does_not_silence_its_neighbour(store: MemoryStore) -> None:
+    """Isolation again, at the level the key now actually uses.
+
+    Two tree-goals in one scope: the first has been offered three maps nobody
+    read, the second is on its first delivery. Sharing a scope must not make
+    them share a verdict.
+    """
+
+    unread_deliveries(
+        store, CURTAIL_STREAK, per_turn_task=True, task_pattern=PATTERN
+    )
+
+    builder = RecallMapBuilder(store)
+    dark = builder.build(
+        residual(store), scope=SCOPE, task=turn(9), task_pattern=PATTERN
+    )
+    neighbour = builder.build(
+        residual(store), scope=SCOPE, task=turn(9), task_pattern="lm/decay-sweep"
+    )
+
+    assert dark is not None and dark.curtailed is True
+    assert neighbour is not None and neighbour.curtailed is False
+    assert neighbour.clusters
+
+
+def test_the_memo_is_keyed_on_the_pattern_too(store: MemoryStore) -> None:
+    """The gate must count for the key the read will ask about.
+
+    ``_CurtailMemo`` exists to skip the window read while a collapse is
+    arithmetically impossible. Keyed on the task while the map is keyed on the
+    pattern, a per-turn client would seed a fresh memo every turn and pay the
+    read it was built to avoid on every single delivery — the gate inverted
+    into a tax.
+    """
+
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+
+    assert builder.build(pool, scope=SCOPE, task=turn(0), task_pattern=PATTERN)
+    assert builder.last_curtail_read is True, "the first build has nothing cached"
+
+    for index in range(1, CURTAIL_STREAK):
+        assert builder.build(pool, scope=SCOPE, task=turn(index), task_pattern=PATTERN)
+        assert builder.last_curtail_read is False, "same key, different turn"
+
+    # And the offer that could complete a streak still pays for a look.
+    assert builder.build(
+        pool, scope=SCOPE, task=turn(CURTAIL_STREAK), task_pattern=PATTERN
+    )
+    assert builder.last_curtail_read is True
 
 
 # ----------------------------------------------------------------------
@@ -579,21 +885,56 @@ def test_the_curtail_probe_writes_nothing(store: MemoryStore) -> None:
 
 
 def test_the_rule_needs_no_flag() -> None:
-    """Default-on, and provably so: no env read in this module can switch it.
+    """Default-on, and provably so: no env read reaches the curtail decision.
 
     The protocol channels ban machinery an agent cannot rely on being there,
     and a retreat that has to be enabled is exactly that. The check is on the
-    module, because an env read is invisible from the outside until the day it
+    source, because an env read is invisible from the outside until the day it
     fires.
+
+    This originally asserted that the whole module never touched ``os.environ``
+    — a coarse proxy that held while the module had no valves at all. It does
+    now: the pool gates are operator-owned by contract, because their
+    thresholds come off a field measurement rather than out of this codebase.
+    So the check is narrowed to what it always meant, and made stricter in the
+    part that matters. Every env name the module reads is enumerated, each one
+    is a pool gate, and none of them appears anywhere in the curtail path —
+    which is a claim about the code that decides the collapse rather than about
+    the file that happens to contain it.
     """
+
+    import inspect
 
     import living_memory.recall_map as module
 
     source = Path(module.__file__).read_text(encoding="utf-8")
-    assert "getenv" not in source
-    assert "os.environ" not in source
-    assert "LM_" not in source
-    assert not hasattr(module, "os"), "the module has no business reading the env"
+    read_names = set(re.findall(r'"(LM_[A-Z0-9_]+)"', source))
+    assert read_names == {
+        module.POOL_USEFULNESS_GATE_ENV,
+        module.POOL_USEFULNESS_FLOOR_ENV,
+        module.POOL_DEMOTION_GATE_ENV,
+        module.POOL_DEMOTION_WINDOWS_ENV,
+    }, "an env name appeared that is not one of the two pool-gate valves"
+
+    builder = module.RecallMapBuilder
+    curtail_path = "\n".join(
+        inspect.getsource(member)
+        for member in (
+            builder._curtailment,
+            builder._read_curtailment,
+            builder._delivery_history,
+            builder._medoid_access,
+            builder._medoid_lookups,
+            builder._was_followed,
+            builder._note_delivery,
+            module._delivered_items,
+            module._echoes,
+        )
+    )
+    for forbidden in ("getenv", "os.environ", "LM_"):
+        assert forbidden not in curtail_path, (
+            f"{forbidden!r} reached the curtail decision path"
+        )
 
 
 # ----------------------------------------------------------------------

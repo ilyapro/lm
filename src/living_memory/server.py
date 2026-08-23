@@ -1284,6 +1284,21 @@ def _register_tools(
                         for entry in results
                         if entry["scope"] != normalized_scope
                     ]
+                # The id-fetch path, and only it: naming an exact ULID is an
+                # act somebody had to be handed the id for, which is what
+                # makes it the one honest "I followed the card" signal the
+                # server can see. The context-filter path below is a query,
+                # not a follow, and records nothing.
+                #
+                # This stays a read of the *nodes*: the event lands in its own
+                # table and no access counter, recall event, or pending
+                # feedback moves. Ids are recorded as requested, missing ones
+                # included, because the request is the signal.
+                identity = _with_transport_identity(None) or {}
+                store.record_lookup_event(
+                    requested_ids,
+                    transport_session_id=identity.get(_TRANSPORT_SESSION_KEY),
+                )
                 return response
 
             if not filters:

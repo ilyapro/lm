@@ -46,6 +46,7 @@ RECALL_HISTORY_EVENT_TABLE = "recall_history_events"
 RECALL_HISTORY_RESULT_TABLE = "recall_history_result_nodes"
 RECALL_DELIVERY_HISTORY_TABLE = "recall_delivery_history"
 RECALL_DELIVERY_HISTORY_STATE_TABLE = "recall_delivery_history_state"
+RECALL_LOOKUP_EVENT_TABLE = "recall_lookup_events"
 
 # Frozen by artifacts/recall-map/prereg.json and
 # artifacts/recall-map/relevance/policy.json.  Keep these literals local to
@@ -56,7 +57,13 @@ RECALL_DELIVERY_HISTORY_HEAD_CUT = 3
 RECALL_DELIVERY_HISTORY_ITEMS_PER_EVENT = 6
 MAX_RECALL_HISTORY_CANDIDATES = 200
 MAX_RECALL_HISTORY_DELIVERIES_PER_NODE = 1024
-_RECALL_DELIVERY_HISTORY_FORMAT = 1
+#: Bumped to 2 when ``lookup_consumed`` joined the ledger: an existing file's
+#: rows carry no lookup outcome at all, and silently reading a missing column as
+#: "absent" is the one answer the tri-state exists to forbid. The bump makes
+#: every pre-existing file re-derive through
+#: :meth:`MemoryStore._backfill_recall_delivery_history`, which marks every
+#: window that closed before the first recorded lookup NULL.
+_RECALL_DELIVERY_HISTORY_FORMAT = 2
 #: numpy dtype string for a stored chunk BLOB. Part of the read contract that
 #: the vector channel consumes: ``np.frombuffer(blob, dtype=CHUNK_EMBEDDING_DTYPE)``.
 CHUNK_EMBEDDING_DTYPE = "<f4"
@@ -248,6 +255,14 @@ _RECALL_ATTESTATION_SCHEMA_SQL = """
 # event exists, so a later transport near-miss can invalidate an earlier
 # fallback hit.  Storing only one eager ``consumed`` bit would make that case
 # irrecoverable.
+#
+# ``recall_lookup_events`` and the ``lookup_consumed`` column are the fourth
+# table's exogenous counterpart.  The three columns above all resolve to "a
+# later *recall* returned this node again", which is the ranker's own echo: a
+# schema that the trigger boost mixes into nearly every recall satisfies them
+# forever without anybody reading it.  An id-fetch of a specific ULID through
+# ``memory_lookup`` is the one act only a reader performs, so it is recorded
+# separately and correlated separately.
 _RECALL_DELIVERY_HISTORY_SCHEMA_SQL = f"""
     CREATE TABLE IF NOT EXISTS {RECALL_HISTORY_EVENT_TABLE} (
         recall_event_id TEXT PRIMARY KEY REFERENCES recall_events(id),
@@ -279,7 +294,26 @@ _RECALL_DELIVERY_HISTORY_SCHEMA_SQL = f"""
             CHECK (transport_consumed IN (0, 1)),
         fallback_consumed INTEGER NOT NULL DEFAULT 0
             CHECK (fallback_consumed IN (0, 1)),
+        -- Tri-state on purpose: 1 followed, 0 observed-and-not-followed,
+        -- NULL unobservable.  NULL is not a third flavour of "no": it is the
+        -- honest answer for a window that closed before this server recorded
+        -- lookups at all, and a reader that cannot tell the two apart would
+        -- read a cold start as the whole corpus being ignored.
+        lookup_consumed INTEGER
+            CHECK (lookup_consumed IS NULL OR lookup_consumed IN (0, 1)),
         PRIMARY KEY (delivery_event_id, node_id)
+    ) WITHOUT ROWID;
+
+    -- One row per (id-fetch call, requested node id).  Missing ids are kept:
+    -- the event records what was *asked for*, and asking for a node that is
+    -- gone is still a follow of the card that offered it.  No foreign key to
+    -- nodes for exactly that reason.
+    CREATE TABLE IF NOT EXISTS {RECALL_LOOKUP_EVENT_TABLE} (
+        lookup_event_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        transport_session_id TEXT,
+        PRIMARY KEY (lookup_event_id, node_id)
     ) WITHOUT ROWID;
 
     CREATE TABLE IF NOT EXISTS {RECALL_DELIVERY_HISTORY_STATE_TABLE} (
@@ -329,6 +363,18 @@ _RECALL_DELIVERY_HISTORY_SCHEMA_SQL = f"""
     CREATE INDEX IF NOT EXISTS idx_recall_history_events_scope_task_time
         ON {RECALL_HISTORY_EVENT_TABLE}(scope, task, occurred_at)
         WHERE task IS NOT NULL;
+
+    -- Both directions of the lookup correlation are range probes on this
+    -- index: a new delivery asks "was this node fetched in (delivered_at,
+    -- outcome_end]" and a new lookup asks the ledger the mirror question.
+    CREATE INDEX IF NOT EXISTS idx_recall_lookup_events_node_time
+        ON {RECALL_LOOKUP_EVENT_TABLE}(node_id, occurred_at);
+
+    -- Serves the MIN(occurred_at) observability epoch alone.  The composite
+    -- index above cannot: its leading column is node_id, so the earliest
+    -- lookup overall is not at either of its ends.
+    CREATE INDEX IF NOT EXISTS idx_recall_lookup_events_time
+        ON {RECALL_LOOKUP_EVENT_TABLE}(occurred_at);
 """
 
 #: Scratch tokenizer behind :meth:`MemoryStore.term_document_frequencies`. It
@@ -380,6 +426,25 @@ _CONTEXT_LOOKUP_FIELDS = frozenset(
         "task",
     }
 )
+
+#: ``ambient_context`` as JSON a ``json_*`` function may safely be pointed at.
+#: The column is declared TEXT with no constraint, so a legacy row can hold
+#: anything; ``json_type``/``json_extract`` raise on a malformed document, and
+#: an exception inside ``_initialize_schema`` is a database that cannot be
+#: opened at all. An empty object locates no path, which is the same answer as
+#: "the key is not there".
+_AMBIENT_JSON_OR_EMPTY = (
+    "CASE WHEN json_valid(ambient_context) THEN ambient_context ELSE '{}' END"
+)
+
+#: Rows :meth:`MemoryStore._backfill_recall_events_task_pattern` still owes a
+#: column to. Written once and used for both the probe and the update so the
+#: pass is provably terminal: whatever the probe finds, the update fills.
+_TASK_PATTERN_BACKFILL_PREDICATE = f"""
+    task_pattern IS NULL
+    AND ambient_context LIKE '%"task_pattern"%'
+    AND json_type({_AMBIENT_JSON_OR_EMPTY}, '$.task_pattern') = 'text'
+"""
 
 
 def _content_fingerprint(content: str) -> str:
@@ -523,6 +588,14 @@ class MaturedRecallHistory:
     absence is ``available=True`` with three zeroes; truncation, a malformed
     legacy ledger, and SQLite read failure carry ``None`` counts so a selector
     cannot accidentally turn an unknown history into the cold-start feature.
+
+    The ``lookup_*`` counts are additive and describe a *different* signal on
+    the same windows: not "was it delivered again" but "did somebody fetch it
+    by id".  They are carried beside M/C/K rather than folded into them
+    because the frozen evaluator reads the triple and must keep reading
+    exactly what it read before.  ``lookup_known`` is the denominator a
+    caller needs and cannot reconstruct: ``matured`` counts every window,
+    ``lookup_known`` only the ones whose lookup outcome was observable.
     """
 
     available: bool
@@ -530,16 +603,34 @@ class MaturedRecallHistory:
     consumed: int | None
     trailing_nonconsumed: int | None
     unavailable_reason: str | None = None
+    #: Matured windows with a correlated id-fetch (``lookup_consumed = 1``).
+    lookup_consumed: int | None = None
+    #: Matured windows whose lookup outcome is recorded at all (0 or 1).
+    lookup_known: int | None = None
+    #: Newest-first run of *known* windows without a lookup, stopping at the
+    #: first followed one.  Unobservable windows are skipped rather than
+    #: breaking the run: a gap in recording is not evidence either way.
+    lookup_trailing_absent: int | None = None
 
     @classmethod
     def known(
-        cls, matured: int, consumed: int, trailing_nonconsumed: int
+        cls,
+        matured: int,
+        consumed: int,
+        trailing_nonconsumed: int,
+        *,
+        lookup_consumed: int = 0,
+        lookup_known: int = 0,
+        lookup_trailing_absent: int = 0,
     ) -> "MaturedRecallHistory":
         return cls(
             available=True,
             matured=int(matured),
             consumed=int(consumed),
             trailing_nonconsumed=int(trailing_nonconsumed),
+            lookup_consumed=int(lookup_consumed),
+            lookup_known=int(lookup_known),
+            lookup_trailing_absent=int(lookup_trailing_absent),
         )
 
     @classmethod
@@ -1544,6 +1635,10 @@ class MemoryStore:
         ambient = dict(ambient_context or {})
         agent = _optional_str(ambient.get("agent"))
         task = _optional_str(ambient.get("task"))
+        # Lifted out of the ambient JSON exactly as `task` is, and for the same
+        # consumer: it is the label the recall map keys on, so the delivery
+        # history has to be filterable by it.
+        task_pattern = _optional_str(ambient.get("task_pattern"))
         session_id = _optional_str(ambient.get("session_id") or ambient.get("session"))
         transport_session_id = _optional_str(ambient.get("transport_session_id"))
         encoded_recall_map = _encode_recall_map(recall_map)
@@ -1558,9 +1653,10 @@ class MemoryStore:
                     id, query, scope, requested_scope, resolved_scopes, ambient_context,
                     depth, max_results, results, agent, task, session_id,
                     transport_session_id, fingerprint, gated, feedback_applied,
-                    feedback_trace_id, feedback_applied_at, created_at, recall_map
+                    feedback_trace_id, feedback_applied_at, created_at, recall_map,
+                    task_pattern
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?, ?, ?)
                 """,
                 (
                     event_id,
@@ -1579,6 +1675,7 @@ class MemoryStore:
                     fingerprint,
                     now,
                     encoded_recall_map,
+                    task_pattern,
                 ),
             )
             self._record_recall_history_event(
@@ -1675,7 +1772,8 @@ class MemoryStore:
             for node_id in ids:
                 rows = self._conn.execute(
                     f"""
-                    SELECT transport_matched, transport_consumed, fallback_consumed
+                    SELECT transport_matched, transport_consumed,
+                           fallback_consumed, lookup_consumed
                     FROM {RECALL_DELIVERY_HISTORY_TABLE}
                     WHERE node_id = ?
                       AND delivered_at < ?
@@ -1713,16 +1811,138 @@ class MemoryStore:
                     if consumed:
                         break
                     trailing += 1
+                # Read as a tri-state, in the same newest-first order.  A NULL
+                # window contributes to neither count and does not end the
+                # trailing run.
+                lookups = [
+                    None if row["lookup_consumed"] is None
+                    else bool(row["lookup_consumed"])
+                    for row in rows
+                ]
+                lookup_trailing = 0
+                for followed in lookups:
+                    if followed is None:
+                        continue
+                    if followed:
+                        break
+                    lookup_trailing += 1
                 histories[node_id] = MaturedRecallHistory.known(
                     matured=len(outcomes),
                     consumed=sum(outcomes),
                     trailing_nonconsumed=trailing,
+                    lookup_consumed=sum(1 for followed in lookups if followed),
+                    lookup_known=sum(
+                        1 for followed in lookups if followed is not None
+                    ),
+                    lookup_trailing_absent=lookup_trailing,
                 )
             return histories
         except sqlite3.Error:
             return unavailable("history_read_failed")
         except (TypeError, ValueError):
             return unavailable("malformed_history_data")
+
+    def record_lookup_event(
+        self,
+        node_ids: Iterable[str],
+        *,
+        transport_session_id: str | None = None,
+        occurred_at: str | datetime | None = None,
+    ) -> str | None:
+        """Persist one ``memory_lookup`` id-fetch and correlate it forward.
+
+        This is the only exogenous follow signal the server can observe: the
+        three consumed bits on ``recall_delivery_history`` all mean "a later
+        recall returned this node again", which the ranker produces on its own
+        for any node it likes.  Fetching a specific ULID is something only a
+        reader who was handed that ULID does.
+
+        The write is about the *request*: every id the caller asked for is
+        recorded, including ids that resolved to nothing, and nothing else is.
+        Returns the new lookup event id, or ``None`` when no usable id was
+        asked for.
+
+        Deliberately not a node write.  ``access_count``, ``last_accessed``,
+        ``recall_events`` and pending feedback are all untouched — a signal
+        that fed the counters it is meant to audit would be the same echo it
+        replaces.
+        """
+
+        requested: list[str] = []
+        for candidate in node_ids:
+            text = _optional_str(candidate)
+            # Blank-after-strip is dropped as garbage; anything else is stored
+            # exactly as asked for, so the event stays a record of the request.
+            if text is None or not text.strip() or text in requested:
+                continue
+            requested.append(text)
+        if not requested:
+            return None
+        instant = _normalize_recall_history_instant(
+            _utc_now() if occurred_at is None else occurred_at
+        )
+        if instant is None:
+            raise ValueError(f"unparsable lookup instant: {occurred_at!r}")
+        transport = _optional_str(transport_session_id)
+        event_id = new_ulid()
+        with self._conn:
+            self._conn.executemany(
+                f"""
+                INSERT INTO {RECALL_LOOKUP_EVENT_TABLE} (
+                    lookup_event_id, node_id, occurred_at, transport_session_id
+                ) VALUES (?, ?, ?, ?)
+                """,
+                ((event_id, node_id, instant, transport) for node_id in requested),
+            )
+            self._apply_recall_lookup_consumer(
+                occurred_at=instant, node_ids=requested
+            )
+        return event_id
+
+    def _apply_recall_lookup_consumer(
+        self, *, occurred_at: str, node_ids: Sequence[str]
+    ) -> None:
+        """Mark every open delivery window this lookup lands inside as followed.
+
+        The mirror of :meth:`_apply_recall_history_consumer`, walking back over
+        the same ``(delivered_at, outcome_end]`` half-open ranges, with one
+        deliberate difference: no transport or scope/task predicate narrows the
+        match.  The correlation is global because the two ends of it sit on
+        different MCP connections by construction — the dashboard probe that
+        offers a card and the agent that fetches it are separate transports —
+        so a transport-scoped join would match nothing and report a permanent
+        absence.  What makes the looser join honest is the rarity of the act:
+        an id-fetch names one exact ULID, which a caller only has because
+        something handed it over.
+
+        A window still recorded as unobservable is promoted rather than
+        skipped: evidence of a fetch outranks not knowing.
+        """
+
+        self._conn.executemany(
+            f"""
+            UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
+            SET lookup_consumed = 1
+            WHERE node_id = ?
+              AND delivered_at < ? AND outcome_end >= ?
+            """,
+            ((node_id, occurred_at, occurred_at) for node_id in node_ids),
+        )
+
+    def _first_recorded_lookup_at(self) -> str | None:
+        """The instant this database first observed a lookup, or None.
+
+        The observability epoch for the tri-state.  A delivery window that
+        closed before it could not have produced a lookup event no matter what
+        the reader did, so its outcome is unknown rather than absent.  Derived
+        from the data instead of stored as a marker so a rebuild reaches the
+        same verdict as the online path from the same rows.
+        """
+
+        row = self._conn.execute(
+            f"SELECT MIN(occurred_at) AS first_at FROM {RECALL_LOOKUP_EVENT_TABLE}"
+        ).fetchone()
+        return None if row is None else _optional_str(row["first_at"])
 
     def _record_recall_history_event(
         self,
@@ -1918,11 +2138,38 @@ class MemoryStore:
                     (event["scope"], task, delivered_at, outcome_end, *node_ids),
                 )
             }
+        # ``None`` means this window is outside what the lookup recorder ever
+        # saw, and stays NULL.  On a rebuild that is every window older than
+        # the first recorded lookup; on a fresh install with no lookups yet it
+        # is all of them, which is the point — day one must not read as a
+        # corpus nobody follows.  Windows still open when the first lookup
+        # lands are promoted by _apply_recall_lookup_consumer instead.
+        #
+        # One asymmetry is deliberate and worth naming: a window opened before
+        # any lookup existed and never followed stays NULL online, while a
+        # later rebuild resolves it to 0 once the epoch predates its
+        # outcome_end.  Both readings are safe (the rebuild is the better
+        # informed of the two) and both err away from inventing an absence.
+        lookup_consumed: set[str] | None = None
+        first_lookup_at = self._first_recorded_lookup_at()
+        if first_lookup_at is not None and outcome_end >= first_lookup_at:
+            lookup_consumed = {
+                str(row["node_id"])
+                for row in self._conn.execute(
+                    f"""
+                    SELECT DISTINCT node_id
+                    FROM {RECALL_LOOKUP_EVENT_TABLE}
+                    WHERE node_id IN ({marks})
+                      AND occurred_at > ? AND occurred_at <= ?
+                    """,
+                    (*node_ids, delivered_at, outcome_end),
+                )
+            }
         self._conn.executemany(
             f"""
             UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
             SET transport_matched = ?, transport_consumed = ?,
-                fallback_consumed = ?
+                fallback_consumed = ?, lookup_consumed = ?
             WHERE delivery_event_id = ? AND node_id = ?
             """,
             (
@@ -1930,6 +2177,8 @@ class MemoryStore:
                     int(transport_matched),
                     int(node_id in transport_consumed),
                     int(node_id in fallback_consumed),
+                    None if lookup_consumed is None
+                    else int(node_id in lookup_consumed),
                     event_id,
                     node_id,
                 )
@@ -2008,6 +2257,7 @@ class MemoryStore:
         task: str | None = None,
         transport_session_id: str | None = None,
         limit: int = 20,
+        task_pattern: str | None = None,
     ) -> list[dict[str, Any]]:
         """Recent deliveries that carried a recall map, newest first.
 
@@ -2028,6 +2278,25 @@ class MemoryStore:
         and ``task`` is a residual filter over whatever the indexed columns
         already narrowed.
 
+        ``task_pattern`` is the map's own cache label and therefore the only
+        filter that groups a client's deliveries the way the map groups them.
+        Passing it changes what ``task`` means, deliberately: the read becomes
+        *"this pattern, or — for a row that carries no pattern at all — this
+        task"*, which is one predicate rather than two filters because a row
+        predating the column has nothing but its ``task`` to be recognized by,
+        while a row carrying the pattern belongs to the key whatever its
+        per-turn ``task`` happens to say. That disjunction is what
+        ``idx_recall_events_scope_pattern_created`` exists for: SQLite resolves
+        it as a MULTI-INDEX OR over two ``(scope, task_pattern)`` ranges of that
+        index — one on a value, one on NULL — instead of walking the scope's
+        whole event partition. The union is still sorted, but it is a sort of
+        two bounded ranges rather than of everything the scope ever recalled.
+
+        Matching is on the stored strings, not on the map's folded key, so a
+        client that spells its pattern two ways gets two histories. That is the
+        safe direction for the one consumer that acts on this read: seeing less
+        history can only shorten a curtail streak.
+
         Each row is ``id``, ``created_at``, ``scope``, ``task``, ``query``,
         ``transport_session_id`` and ``recall_map`` decoded back into the
         payload that was delivered.
@@ -2043,7 +2312,10 @@ class MemoryStore:
         if scope is not None:
             clauses.append("scope = ?")
             params.append(scope)
-        if task is not None:
+        if task_pattern is not None:
+            clauses.append("(task_pattern = ? OR (task_pattern IS NULL AND task IS ?))")
+            params.extend([task_pattern, task])
+        elif task is not None:
             clauses.append("task = ?")
             params.append(task)
         params.append(int(limit))
@@ -3930,6 +4202,7 @@ class MemoryStore:
             self._migrate_pre_v6_schema()
             self._migrate_pre_v7_schema()
             self._migrate_recall_map_column()
+            self._migrate_recall_events_task_pattern_column()
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -4055,13 +4328,26 @@ class MemoryStore:
                 -- ids, ask hints), or NULL when no map was built: what the
                 -- agent was actually shown, recorded at delivery time so a
                 -- later pass can ask whether the next recall followed one of
-                -- its clusters. It is last in DDL order because
-                -- `_migrate_recall_map_column` appends it with ALTER TABLE,
-                -- and a migrated file and a fresh one must end up with the
-                -- same column order. Its comment lives out here rather than
-                -- beside the column: SQLite reconstructs this DDL text on
-                -- ALTER TABLE ... DROP COLUMN, and a comment attached to a
-                -- dropped column leaves the stored statement unparseable.
+                -- its clusters.
+                --
+                -- `task_pattern` is the ambient recurring-work label, lifted
+                -- out of `ambient_context` into a column of its own for the
+                -- same reason `task` is: it is the label the recall map keys
+                -- its cache on (`recall_map.cache_key`, where a task_pattern
+                -- wins over a task), and a key nothing can filter on is a key
+                -- whose delivery history is always empty. That was the
+                -- documented debt behind a curtail rule that could never fire
+                -- for a per-turn `task` — see docs/recall-map.md section 9.
+                --
+                -- Both are last in DDL order, in this order, because
+                -- `_migrate_recall_map_column` and
+                -- `_migrate_recall_events_task_pattern_column` append them
+                -- with ALTER TABLE in that sequence, and a migrated file and a
+                -- fresh one must end up with the same column order. Their
+                -- comments live out here rather than beside the columns:
+                -- SQLite reconstructs this DDL text on ALTER TABLE ... DROP
+                -- COLUMN, and a comment attached to a dropped column leaves
+                -- the stored statement unparseable.
                 CREATE TABLE IF NOT EXISTS recall_events (
                     id TEXT PRIMARY KEY,
                     query TEXT NOT NULL,
@@ -4082,7 +4368,8 @@ class MemoryStore:
                     feedback_trace_id TEXT REFERENCES nodes(id),
                     feedback_applied_at TEXT,
                     created_at TEXT NOT NULL,
-                    recall_map TEXT
+                    recall_map TEXT,
+                    task_pattern TEXT
                 );
 
                 -- Per-fingerprint recall-signal accounting (schema v5):
@@ -4200,6 +4487,23 @@ class MemoryStore:
                 -- _migrate_pre_v5_schema, so the column exists on legacy DBs.
                 CREATE INDEX IF NOT EXISTS idx_recall_events_fingerprint_created
                     ON recall_events(fingerprint, created_at DESC);
+
+                -- The curtail rule's delivery window, keyed the way the map
+                -- itself is keyed: equality on (scope, task_pattern), so
+                -- recent_recall_map_history sorts two bounded ranges of this
+                -- index instead of the scope's whole event partition. Runs
+                -- after the task_pattern column migration, so the column
+                -- exists on legacy DBs.
+                --
+                -- Deliberately NOT partial on `recall_map IS NOT NULL`, though
+                -- every consumer of this read carries that predicate: a
+                -- partial index naming a column makes `ALTER TABLE ... DROP
+                -- COLUMN` on it fail outright, and the recall_map column's own
+                -- DDL comment above is written the way it is precisely to keep
+                -- that operation available. `recall_map IS NOT NULL` stays a
+                -- residual filter over the range this index already narrowed.
+                CREATE INDEX IF NOT EXISTS idx_recall_events_scope_pattern_created
+                    ON recall_events(scope, task_pattern, created_at DESC);
                 """
             )
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
@@ -4216,10 +4520,16 @@ class MemoryStore:
             # idempotent reconstruction below is what populates it for a live
             # database whose recall_events predate this release.
             self._conn.executescript(_RECALL_DELIVERY_HISTORY_SCHEMA_SQL)
+            # Must precede the reconstruction: the script above only creates
+            # tables that are absent, so a database that already carries the
+            # ledger reaches the rebuild without the tri-state column the
+            # rebuild writes.
+            self._migrate_recall_delivery_history_lookup_column()
             self._backfill_recall_delivery_history()
             self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
             self._backfill_recall_fingerprint_signal()
+            self._backfill_recall_events_task_pattern()
             self._conn.execute(
                 """
                 INSERT INTO metadata (key, value)
@@ -4405,6 +4715,103 @@ class MemoryStore:
         if "recall_map" not in columns:
             self._conn.execute("ALTER TABLE recall_events ADD COLUMN recall_map TEXT")
 
+    def _migrate_recall_events_task_pattern_column(self) -> None:
+        """Add ``recall_events.task_pattern`` to databases created without it.
+
+        Additive and idempotent, in the shape of
+        :meth:`_migrate_recall_map_column`, and called immediately after it so
+        that a migrated file and a fresh one agree on column order: both end
+        ``… created_at, recall_map, task_pattern``.
+
+        The column exists because ``task_pattern`` is the label the recall map
+        keys its cache on and, until now, the one key component that was never
+        a column — so ``recent_recall_map_history`` could only filter by
+        ``task``, and a client sending a per-turn ``task`` (an AE chat's
+        ``chat:<id>/turn-<N>``) had an empty delivery history under every key
+        it ever used. Existing rows arrive NULL and are filled by
+        :meth:`_backfill_recall_events_task_pattern` from the ambient JSON that
+        already carried the value; rows that never carried one stay NULL, which
+        is what makes the ``task`` fallback in
+        :meth:`recent_recall_map_history` mean something.
+        """
+
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='recall_events'"
+        ).fetchone()
+        if row is None:
+            return
+        columns = {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(recall_events)").fetchall()
+        }
+        if "task_pattern" not in columns:
+            self._conn.execute("ALTER TABLE recall_events ADD COLUMN task_pattern TEXT")
+
+    def _backfill_recall_events_task_pattern(self) -> None:
+        """Lift ``ambient_context.task_pattern`` into the column for old rows.
+
+        The value was never lost — every recall event stores its whole ambient
+        context as JSON — so the column starts out as complete as the history
+        it describes, rather than beginning at this release and leaving the
+        curtail rule blind to everything before it.
+
+        Guarded by a probe carrying the *same* predicate as the update, so the
+        pass is genuinely terminal: after it runs, nothing matches and a reopen
+        stops at the ``LIKE`` on a single column instead of parsing JSON for
+        every event in the table. Only string values are lifted, which is the
+        shape the write path's ``_optional_str`` produces; a caller that put an
+        object or a number under that key keeps it in the JSON and gets no
+        column. The ``json_valid`` CASE is not decoration — ``ambient_context``
+        is declared TEXT with no JSON constraint, and ``json_type`` raises on a
+        malformed document rather than returning NULL, which would make one bad
+        legacy row fatal to opening the database.
+        """
+
+        pending = self._conn.execute(
+            f"SELECT 1 FROM recall_events WHERE {_TASK_PATTERN_BACKFILL_PREDICATE} LIMIT 1"
+        ).fetchone()
+        if pending is None:
+            return
+        self._conn.execute(
+            f"""
+            UPDATE recall_events
+            SET task_pattern = json_extract({_AMBIENT_JSON_OR_EMPTY}, '$.task_pattern')
+            WHERE {_TASK_PATTERN_BACKFILL_PREDICATE}
+            """
+        )
+
+    def _migrate_recall_delivery_history_lookup_column(self) -> None:
+        """Add ``lookup_consumed`` to a ledger table that predates it.
+
+        Additive and idempotent, in the shape ``_migrate_recall_map_column``
+        uses.  The column arrives NULL on every existing row, which is the
+        correct reading and not merely a convenient one — those windows closed
+        before any lookup could be recorded.  The format bump then re-derives
+        them through the same rule rather than leaving the value to a default.
+        """
+
+        table = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (RECALL_DELIVERY_HISTORY_TABLE,),
+        ).fetchone()
+        if table is None:  # pragma: no cover - the schema script just ran
+            return
+        columns = {
+            row["name"]
+            for row in self._conn.execute(
+                f"PRAGMA table_info({RECALL_DELIVERY_HISTORY_TABLE})"
+            ).fetchall()
+        }
+        if "lookup_consumed" in columns:
+            return
+        self._conn.execute(
+            f"""
+            ALTER TABLE {RECALL_DELIVERY_HISTORY_TABLE}
+            ADD COLUMN lookup_consumed INTEGER
+                CHECK (lookup_consumed IS NULL OR lookup_consumed IN (0, 1))
+            """
+        )
+
     def _backfill_recall_delivery_history(self) -> None:
         """Idempotently reconstruct the frozen normalized history ledger.
 
@@ -4413,6 +4820,11 @@ class MemoryStore:
         cheap on every later open.  If the process dies before the marker is
         written, SQLite rolls the surrounding initialization transaction back;
         the next open starts the reconstruction again.
+
+        ``recall_lookup_events`` is deliberately absent from the tables wiped
+        below.  It is a primary record, not a projection of ``recall_events``,
+        so a rebuild reads it and never rewrites it; wiping it would erase the
+        observability epoch and turn every re-derived window unknown.
         """
 
         state = self._conn.execute(
