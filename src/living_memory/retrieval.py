@@ -203,11 +203,13 @@ costs one indexed ``COUNT``.
 
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
-from math import log2
+from math import log2, sqrt
 from typing import Any
 
 from living_memory.edge_derivation import CONTENT_REFERENCE_KIND, DERIVED_FROM_KIND
@@ -220,6 +222,7 @@ from living_memory.models import (
     Node,
     RetrievalWeights,
 )
+from living_memory.near_dup import build_duplicate_map, cosine, mean_pooled_vectors
 from living_memory.query_anchors import (
     ANCHOR_MATCH_COSINE_THRESHOLD,
     ANCHOR_MATCH_LIMIT,
@@ -292,6 +295,45 @@ SCHEMA_TRIGGER_BOOST = 1.8
 VECTOR_MATCH_THRESHOLD = 0.08
 GRAPH_SEED_LIMIT = 50
 MAX_NEIGHBORS_PER_NODE = 200
+
+#: Turns on the drain's near-duplicate collapse. Unset -- the default -- and
+#: the drain writes chunks and nothing else, exactly as it did before this
+#: existed. The gate is a whole env var rather than a threshold of 0 because
+#: this is the one place in a *read* path that mutates the corpus: turning it
+#: on has to be a sentence an operator said, and turning it off has to need no
+#: revert. See :meth:`MemoryRecallService._supersede_drained_near_dups`.
+DRAIN_NEAR_DUP_ENV = "LM_DRAIN_NEAR_DUP_SUPERSEDES"
+_DRAIN_NEAR_DUP_ON_FLAGS = frozenset({"1", "true", "yes", "on"})
+#: Threshold for that collapse, its own var so the gate and the calibration
+#: move independently.
+DRAIN_NEAR_DUP_COSINE_ENV = "LM_DRAIN_NEAR_DUP_COSINE"
+#: Deliberately far above the 0.95 the delivery path collapses at, because the
+#: two do different things: delivery hides a repeat from one answer and
+#: ``memory_lookup`` still returns it, while this writes an edge that demotes a
+#: node in every future recall. Measured over the live corpus (12,882 active
+#: traces, mean-pooled 384-d, same-scope nearest neighbour, 2026-08-23): 519
+#: nodes have a neighbour above 0.95, 264 above 0.98, 195 above 0.99. The
+#: length guard below is what says which band is "the same fact twice" -- it
+#: vetoes 21 of the 0.95 population as materially longer than their nearest
+#: neighbour, 4 at 0.98 and 1 at 0.99. A band where nearly nobody has extra
+#: text is the verbatim band; the 0.85-0.95 one, where different facts live, is
+#: not reachable from here at any supported setting anybody should use.
+DEFAULT_DRAIN_NEAR_DUP_COSINE = 0.99
+#: The delivery path's guard, at the delivery path's ratio: a candidate more
+#: than 20% longer than its bearer carries a detail the bearer does not, and a
+#: detail must not be demoted. Both consumers get it from
+#: ``near_dup.build_duplicate_map``, so there is one implementation of it.
+DRAIN_NEAR_DUP_MIN_LENGTH_RATIO = 0.2
+#: ``connections.metadata['kind']`` on an edge this pass writes, so the rows are
+#: findable (and revertible) as a group, next to storage's ``duplicate_content``
+#: for the byte-exact twins the write path catches.
+DRAIN_NEAR_DUP_KIND = "drain_near_duplicate"
+#: How far below the threshold the shortlist reaches. The shortlist runs on
+#: float32 vectors pooled from the cached chunk matrix and only ever *nominates*
+#: a bearer; ``near_dup`` re-reads both nodes' chunks and decides. The slack is
+#: there so float32 rounding (~1e-7 on a 384-d unit dot) cannot make the
+#: nomination, rather than the decision, be what rejects a borderline pair.
+_DRAIN_NEAR_DUP_SHORTLIST_SLACK = 1e-4
 
 
 @dataclass(frozen=True, slots=True)
@@ -872,6 +914,14 @@ class MemoryRecallService:
         # even for a node that gains no chunk row (list_unchunked_nodes already
         # excludes whitespace-only content, so it should never fire; it exists
         # so no single node can make recall loop).
+        # Nodes this call gave vectors to, per scope, and only when the collapse
+        # is switched on -- with the flag unset nothing reads this and nothing
+        # writes it, which is what keeps the drain byte-for-byte what it was.
+        # Both feeders count: a node is "freshly vectorized" wherever it entered,
+        # and while ``nodes.embedding`` still exists it is the *unembedded*
+        # feeder that reaches a new trace first.
+        collapse_near_dups = drain_near_dup_supersedes_enabled()
+        freshly_chunked: dict[str, dict[str, Node]] = {}
         for scope in plan.scopes:
             drained = 0
             while True:
@@ -880,6 +930,10 @@ class MemoryRecallService:
                     break
                 for node in unembedded:
                     self._ensure_embedding(node)
+                if collapse_near_dups:
+                    freshly_chunked.setdefault(scope, {}).update(
+                        (node.id, node) for node in unembedded
+                    )
                 drained += len(unembedded)
             attempted: set[str] = set()
             while True:
@@ -893,6 +947,10 @@ class MemoryRecallService:
                 for node in unchunked:
                     attempted.add(node.id)
                     self._rechunk_node(node)
+                if collapse_near_dups:
+                    freshly_chunked.setdefault(scope, {}).update(
+                        (node.id, node) for node in unchunked
+                    )
             if drained or attempted:
                 # The revision probe cannot be trusted across this drain's own
                 # writes. Tier two is (COUNT(*), MAX(id)), and its safety
@@ -911,6 +969,30 @@ class MemoryRecallService:
         q_arr = _as_query_array(query_embedding)
         # After the drain, never before it: the drain writes chunks.
         revision = self._chunk_corpus_revision()
+
+        # The near-duplicate collapse, off unless an operator turned it on. It
+        # runs here rather than inside the drain loop above for one reason: the
+        # matrix. Comparing a node against its scope needs every node's pooled
+        # vector, the scoring loop below is about to build exactly that matrix
+        # under exactly this ``revision``, and building it a second time inside
+        # the loop would cost a second full scan of the chunk table (146 ms on
+        # the live corpus) to answer the same question. So the pass asks for the
+        # index by the same key the scorer will, and the scorer gets a cache hit.
+        #
+        # This is downstream of the ``self._chunk_index.pop(scope, None)`` above
+        # and stays correct there: the pass writes ``connections`` rows and
+        # nothing else. No chunk row is inserted, deleted or edited, no node is
+        # decayed, so the matrix the pop just rebuilt still describes the chunk
+        # corpus exactly. What the write does move is ``total_changes``, which
+        # only costs the *next* recall the cheap tier-one probe before
+        # ``_chunk_table_revision`` confirms the corpus is unchanged.
+        for collapse_scope, drained_nodes in freshly_chunked.items():
+            self._supersede_drained_near_dups(
+                collapse_scope,
+                list(drained_nodes.values()),
+                self._scope_chunk_index(collapse_scope, revision),
+            )
+
         scoped_scores: list[tuple[float, str]] = []
         for scope in plan.scopes:
             index = self._scope_chunk_index(scope, revision)
@@ -1043,6 +1125,206 @@ class MemoryRecallService:
             node_count=sum(len(block.node_ids) for block in blocks),
             row_count=sum(block.row_count for block in blocks),
         )
+
+    # ------------------------------------------------------------------
+    # Drain-time near-duplicate collapse (off unless LM_DRAIN_NEAR_DUP_SUPERSEDES)
+    # ------------------------------------------------------------------
+
+    def _supersede_drained_near_dups(
+        self,
+        scope: str,
+        nodes: Sequence[Node],
+        index: _ScopeChunkIndex,
+    ) -> list[tuple[str, str]]:
+        """Record a just-vectorized verbatim repeat as superseded by its original.
+
+        Why here. A repeat has to be caught the moment it can be *seen*, and
+        that moment is this one: ``memory_remember`` is deliberately kept free
+        of an embedding model, so a trace exists for a while with no vector at
+        all, and the drain above is where it first gets one. Byte-exact twins
+        are already handled a layer down (``storage._insert_node`` writes a
+        ``duplicate_content`` supersedes edge on a fingerprint match); what
+        survives that and fills an agent's recall slots is the repeat that
+        changed a word. Measured on the live corpus: 4 byte-identical active
+        traces, against 195 with a same-scope neighbour above 0.99.
+
+        Direction. The edge is ``original supersedes repeat`` -- the arriving
+        copy is what gets demoted, never the node that was already there. The
+        established node carries the access history, the graph edges and the
+        anchor learning, and this pass is a heuristic running inside a read
+        path; the cheapest thing it can be wrong about is a node that is one
+        recall old. (``_insert_connection`` re-points anchor edges from the
+        superseded node onto the surviving one, which under this direction
+        moves edges *to* the established node -- nothing to lose either way,
+        since a node this new has none.)
+
+        Never a delete, and never a decay: the repeat keeps its row, its chunks
+        and its text, stays reachable through ``memory_lookup``, and simply
+        loses to its original in ranking the way any superseded node does.
+
+        What it refuses to collapse, and why each veto is a veto rather than a
+        search for some other bearer -- each of these fires exactly when the
+        best match is *missing* something the candidate has, and a second-best
+        match is no evidence that it holds that same thing:
+
+        * a candidate with no usable pooled vector (no chunks, chunk widths
+          that disagree, chunks that cancel). ``near_dup`` returns nothing for
+          it and nothing is what it gets compared against;
+        * a candidate named in ``source_traces`` of a live concept or schema.
+          That band -- a digest sits 0.82-0.95 from its own sources, and 48% of
+          live traces are named by some live concept -- is provenance, not
+          duplication, and consolidation owns those traces' lifecycle;
+        * a candidate that is itself a correction (has an outgoing supersedes
+          edge). ``memory_teach`` writes corrections that restate what they
+          correct almost verbatim, which is precisely this pass's signature;
+          demoting one would invert the system's own self-correction;
+        * a candidate already superseded by anything, and a bearer already
+          superseded by anything. The first is already collapsed (including by
+          the byte-exact path, in the other direction -- which is also what
+          keeps this from ever closing a 2-cycle); the second is stale, and
+          nothing should be demoted *under* a stale node;
+        * a bearer that is gone, decayed, of another level or another scope;
+        * a candidate materially longer than its bearer, and any pair at or
+          below the cosine threshold. Both of those are
+          ``near_dup.build_duplicate_map``'s call, not this method's -- the
+          same function the delivery path collapses through, so "the same fact
+          twice" means one thing in both places.
+
+        Cost, all of it behind the gate and none of it paid by a recall that
+        drained nothing: mean-pooling a whole scope off the cached matrix is
+        13 ms and 4.5 MiB on the live corpus's largest scope (3,099 active
+        nodes, 11,163 chunks), plus a few ms per arrival for its shortlist
+        scan. The matrix itself is the one the scorer is about to use, so this
+        adds no read of ``node_chunk_embeddings``.
+
+        Returns the ``(bearer_id, superseded_id)`` pairs it wrote, newest work
+        last; the caller ignores them, tests do not.
+        """
+
+        threshold = drain_near_dup_cosine_from_env()
+        if threshold <= 0.0:
+            # Same rollback as ``build_duplicate_map``'s: a zero threshold is
+            # off, without unsetting the gate and without a revert.
+            return []
+        # Greatest id first: deterministic whatever order the drain handed them
+        # over in, and it offers the latest arrival up for demotion first, so
+        # among fresh twins with no older original between them the smallest id
+        # -- creation order, down to the millisecond a ULID resolves -- is the
+        # one left standing.
+        candidates = sorted(
+            (node for node in nodes if node.level == "trace" and not node.decayed),
+            key=lambda node: node.id,
+            reverse=True,
+        )
+        if not candidates:
+            return []
+        vectors = mean_pooled_vectors(self.store, [node.id for node in candidates])
+        if not vectors:
+            return []
+        shortlist = _pooled_scope_vectors(index)
+        if not shortlist:
+            return []
+
+        corrections_by_superseded, superseding = self._supersedes_sets()
+        protected = self._live_concept_source_traces()
+        # This drain's own arrivals. They are in the matrix -- the index is
+        # built after the drain wrote their chunks -- and they are searched
+        # last, so a repeat prefers the node that was already in the corpus.
+        arrivals = tuple(node.id for node in candidates)
+        # Repeats collapsed by this very pass: bearer resolution walks it, so a
+        # third twin lands on the original rather than on the copy that already
+        # lost, and no node this pass superseded can bear for another.
+        bearer_of: dict[str, str] = {}
+        written: list[tuple[str, str]] = []
+        for node in candidates:
+            vector = vectors.get(node.id)
+            if vector is None:
+                continue
+            if (
+                node.id in protected
+                or node.id in superseding
+                or node.id in corrections_by_superseded
+            ):
+                continue
+            nominee = _best_pooled_match(
+                shortlist,
+                node.id,
+                vector,
+                threshold - _DRAIN_NEAR_DUP_SHORTLIST_SLACK,
+                deferred=arrivals,
+            )
+            if nominee is None:
+                continue
+            bearer_id = _resolve_pass_bearer(bearer_of, nominee)
+            if bearer_id == node.id or bearer_id in corrections_by_superseded:
+                continue
+            bearer = self.store.get_node(bearer_id)
+            if (
+                bearer is None
+                or bearer.decayed
+                or bearer.level != node.level
+                or bearer.scope != scope
+            ):
+                continue
+            bearer_vector = mean_pooled_vectors(self.store, [bearer_id]).get(bearer_id)
+            if bearer_vector is None:
+                continue
+            # The decision, on both nodes' own chunks, by the shared function:
+            # the bearer ranks first because it is the one that keeps its text.
+            collapsed = build_duplicate_map(
+                [(bearer_id, len(bearer.content)), (node.id, len(node.content))],
+                {bearer_id: bearer_vector, node.id: vector},
+                cosine_threshold=threshold,
+                min_length_ratio=DRAIN_NEAR_DUP_MIN_LENGTH_RATIO,
+            )
+            if collapsed.get(node.id) != bearer_id:
+                continue
+            self.store.create_connection(
+                bearer_id,
+                node.id,
+                "supersedes",
+                weight=1.0,
+                metadata={
+                    "kind": DRAIN_NEAR_DUP_KIND,
+                    "cosine": round(cosine(vector, bearer_vector), 6),
+                    "threshold": threshold,
+                    "scope": scope,
+                },
+            )
+            bearer_of[node.id] = bearer_id
+            written.append((bearer_id, node.id))
+        return written
+
+    def _live_concept_source_traces(self) -> set[str]:
+        """Every node id a live concept or schema names in its provenance.
+
+        Whole-corpus and not per scope on purpose: a global concept is built
+        over project concepts and ends up naming *their* project traces
+        (``consolidation._source_trace_ids``), so a scoped query would leave
+        exactly those traces unprotected.
+
+        Traces are excluded as sources of protection, not as its subject. A
+        trace's own ``source_traces`` is what the feedback loop records about
+        which nodes a session recalled -- an ordinary read, not a claim that
+        this text stands on those nodes -- and honouring it would protect most
+        of the corpus from everything.
+        """
+
+        rows = self.store.connection.execute(
+            """
+            SELECT source_traces FROM nodes
+            WHERE decayed = 0 AND level <> 'trace' AND source_traces NOT IN ('', '[]')
+            """
+        ).fetchall()
+        protected: set[str] = set()
+        for row in rows:
+            try:
+                parsed = json.loads(row["source_traces"])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(parsed, list):
+                protected.update(str(item) for item in parsed if item)
+        return protected
 
     # ------------------------------------------------------------------
     # Query anchors: the graph channel's entry from query space
@@ -2108,3 +2390,218 @@ def _pooled_chunk_similarities(
         penalty = LENGTH_BIAS_LOG2_COEFFICIENT * block.log2_chunk_counts[index]
         pooled_rows.append((max(0.0, best - penalty), node_id))
     return pooled_rows
+
+
+# ----------------------------------------------------------------------
+# Drain-time near-duplicate collapse: env gate and the mean-pooled shortlist
+# ----------------------------------------------------------------------
+
+
+def drain_near_dup_supersedes_enabled() -> bool:
+    """Whether the drain may collapse a fresh verbatim repeat. Default: no.
+
+    ``LM_DRAIN_NEAR_DUP_SUPERSEDES`` set to ``1``/``true``/``yes``/``on``.
+    Anything else -- unset, empty, ``0``, a typo -- leaves the drain doing what
+    it has always done, because the failure mode of a misread flag here is a
+    corpus mutation nobody asked for.
+    """
+
+    return os.environ.get(DRAIN_NEAR_DUP_ENV, "").strip().lower() in _DRAIN_NEAR_DUP_ON_FLAGS
+
+
+def drain_near_dup_cosine_from_env() -> float:
+    """Read ``LM_DRAIN_NEAR_DUP_COSINE`` (0 disables, invalid -> default).
+
+    An unparseable value falls back to the shipped default rather than to zero:
+    the operator who set the gate asked for the behaviour, and silently doing
+    nothing would look exactly like it working.
+    """
+
+    raw = os.environ.get(DRAIN_NEAR_DUP_COSINE_ENV, "").strip()
+    if not raw:
+        return DEFAULT_DRAIN_NEAR_DUP_COSINE
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_DRAIN_NEAR_DUP_COSINE
+    if value <= 0.0:
+        return 0.0
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class _PooledBlock:
+    """One width's nodes as mean-pooled unit vectors, for node-vs-node search.
+
+    The mean-pool counterpart of :func:`_pooled_chunk_similarities`'s max-pool,
+    and the difference is the whole point: max-pool answers "does any window of
+    this node match the *query*", which is what recall asks; the question here
+    is "are these two *nodes* the same fact", and there one shared boilerplate
+    window would max-pool two unrelated notes to ~1.0. See ``near_dup``'s module
+    docstring, whose arithmetic this reproduces on the cached matrix instead of
+    on 12k round trips to ``node_chunk_embeddings``.
+    """
+
+    node_ids: tuple[str, ...]
+    #: ``(len(node_ids), width)`` float32 matrix with numpy, a tuple of
+    #: per-node float tuples without. Rows are unit-length, or zero for a node
+    #: whose chunks cancelled -- a zero row scores 0 against everything, which
+    #: is ``near_dup``'s "absent, never zero" reached by a different road.
+    rows: Any
+    positions: Mapping[str, int]
+
+
+def _pooled_scope_vectors(index: _ScopeChunkIndex) -> dict[int, _PooledBlock]:
+    """Mean-pool every node of a cached scope index, grouped by vector width.
+
+    Widths stay apart because they are different spaces (``_ChunkBlock``), and
+    a node whose chunks span two of them is pooled inside each -- partially,
+    and therefore wrongly. That is harmless here and deliberately not special
+    cased: this structure only *nominates* a bearer, and the nomination is then
+    re-derived from the node's own chunk rows by ``near_dup``, which refuses a
+    mixed-width node outright. The worst a partial pool can do is nominate a
+    node that then fails the check, and a failed check collapses nothing.
+    """
+
+    pooled: dict[int, _PooledBlock] = {}
+    for block in index.blocks:
+        if not block.node_ids:
+            continue
+        rows = _mean_pool_block(block)
+        pooled[block.dimension] = _PooledBlock(
+            node_ids=block.node_ids,
+            rows=rows,
+            positions={node_id: row for row, node_id in enumerate(block.node_ids)},
+        )
+    return pooled
+
+
+def _mean_pool_block(block: _ChunkBlock) -> Any:
+    """One unit vector per node of ``block``, averaging its chunk directions.
+
+    ``near_dup._mean_pool`` normalizes each chunk, averages, and re-normalizes;
+    so does this, with the first step already paid -- ``_BlockAccumulator``
+    stores rows unit-length -- and the second folded into the third, since
+    dividing a sum by its count cannot change the direction the final
+    normalization returns.
+    """
+
+    if _np is not None and isinstance(block.rows, _np.ndarray):
+        sums = _np.add.reduceat(block.rows, block.starts, axis=0)
+        norms = _np.sqrt(_np.einsum("ij,ij->i", sums, sums))
+        # A node whose chunks cancel has no direction; 1.0 leaves its row zero
+        # instead of minting NaNs that would poison every later comparison.
+        norms[norms == 0.0] = 1.0
+        return sums / norms[:, None]
+
+    bounds = tuple(block.starts) + (block.row_count,)
+    rows: list[tuple[float, ...]] = []
+    for index, _node_id in enumerate(block.node_ids):
+        rows.append(_mean_pool_rows(block.rows[bounds[index] : bounds[index + 1]]))
+    return tuple(rows)
+
+
+def _mean_pool_rows(rows: Sequence[Sequence[float]]) -> tuple[float, ...]:
+    """``near_dup._mean_pool`` for the numpy-free path, zeros instead of None.
+
+    Rows reach here unnormalized on this path (``_BlockAccumulator.freeze``
+    only normalizes the numpy branch, whose consumer needs unit rows), so each
+    one is divided by its own norm before it is added: a chunk contributes a
+    direction, never a magnitude.
+    """
+
+    width = len(rows[0]) if rows else 0
+    total = [0.0] * width
+    for row in rows:
+        norm = sqrt(sum(float(value) * float(value) for value in row))
+        if norm <= 0.0:
+            continue
+        for position, value in enumerate(row):
+            total[position] += float(value) / norm
+    norm = sqrt(sum(value * value for value in total))
+    if norm <= 0.0:
+        return tuple(total)
+    return tuple(value / norm for value in total)
+
+
+def _best_pooled_match(
+    pooled: Mapping[int, _PooledBlock],
+    node_id: str,
+    vector: Sequence[float],
+    floor: float,
+    *,
+    deferred: Sequence[str] = (),
+) -> str | None:
+    """The most similar other node of ``vector``'s own width, above ``floor``.
+
+    ``deferred`` -- this drain's own arrivals -- are searched only when the
+    rest of the scope offers no match at all. A bearer is meant to be the node
+    that was already there, holding the access history, the graph edges and the
+    anchor learning; another node from the same drain holds none of that, and
+    may itself be about to be collapsed. Consulting them at all is what keeps
+    two copies written back to back from both surviving.
+
+    Ties go to the smallest id, which is the earliest ULID: the index keeps its
+    ``ORDER BY node_id`` scan order, so the first row holding the maximum is
+    already the earliest node. Only the block of the candidate's own width is
+    scanned -- another width is another space, where ``near_dup.cosine`` would
+    answer 0.0 anyway.
+    """
+
+    block = pooled.get(len(vector))
+    if block is None:
+        return None
+    own_row = block.positions.get(node_id)
+
+    if _np is not None and isinstance(block.rows, _np.ndarray):
+        similarities = block.rows @ _np.asarray(vector, dtype=block.rows.dtype)
+        if own_row is not None:
+            # Every node is its own perfect match; that is not a duplicate.
+            similarities[own_row] = -1.0
+        deferred_rows = [
+            row for row in map(block.positions.get, deferred) if row is not None
+        ]
+        if deferred_rows:
+            settled = similarities.copy()
+            settled[deferred_rows] = -1.0
+        else:
+            settled = similarities
+        for scores in (settled, similarities):
+            best_row = int(_np.argmax(scores))
+            if float(scores[best_row]) > floor:
+                return block.node_ids[best_row]
+        return None
+
+    deferred_ids = frozenset(deferred)
+    best_id: str | None = None
+    best_deferred_id: str | None = None
+    best_similarity = floor
+    best_deferred_similarity = floor
+    for row, candidate_id in enumerate(block.node_ids):
+        if row == own_row:
+            continue
+        similarity = cosine(vector, block.rows[row])
+        if candidate_id in deferred_ids:
+            if similarity > best_deferred_similarity:
+                best_deferred_similarity = similarity
+                best_deferred_id = candidate_id
+        elif similarity > best_similarity:
+            best_similarity = similarity
+            best_id = candidate_id
+    return best_id if best_id is not None else best_deferred_id
+
+
+def _resolve_pass_bearer(bearer_of: Mapping[str, str], node_id: str) -> str:
+    """Follow a nominee to what still carries its text after this pass's writes.
+
+    Recorded values are already roots, so this walks at most one step; the loop
+    is what makes that true whatever later edits do to the recording side, and
+    the visited set is what stops a cycle from hanging the drain.
+    """
+
+    bearer = node_id
+    visited: set[str] = set()
+    while bearer in bearer_of and bearer not in visited:
+        visited.add(bearer)
+        bearer = bearer_of[bearer]
+    return bearer

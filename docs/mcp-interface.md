@@ -252,6 +252,18 @@ class:
 * `twin_duplicate` — the content is byte-identical to a higher-ranked result
   in the same response (typically a legacy concept and its verbatim source
   trace): exactly one twin bears the content, the rest are stubs.
+* `near_duplicate` — the content repeats the *meaning* of a higher-ranked
+  result in the same response (cosine over mean-pooled chunk vectors above
+  `LM_RECALL_NEAR_DUP_COSINE`, default 0.95): the higher-ranked result bears
+  the content, this one is a stub whose `content_ref.duplicate_of` names the
+  bearer. Byte equality finds almost none of these — on the live corpus 4
+  active nodes were byte-identical to another while 550 had a neighbour above
+  0.95 — so this is the class that keeps five recall slots holding five facts
+  rather than one fact five ways. Two guards bound it: a candidate more than
+  `LM_RECALL_NEAR_DUP_LENGTH_RATIO` (default 0.2 = 20%) longer than its bearer
+  is never collapsed (that is "the same fact plus a new detail"), and a node
+  with no chunk vectors is never collapsed at all. `LM_RECALL_NEAR_DUP_COSINE=0`
+  restores byte-only dedup without a revert.
 
 Content budgets come from the snippet ladder, indexed by content-bearer
 position — stubs don't consume ladder slots. The default ladder
@@ -437,8 +449,9 @@ response.
 
 * `LM_RECALL_REPEAT_GATING` enables history-based fingerprint gating.
 * `LM_RECALL_REPEAT_DROP_TRAILING_STUBS` permits a gated response's trailing
-  run of `session_duplicate`/`twin_duplicate` stubs to be removed; setting it
-  alone neither enables gating nor changes an ungated response.
+  run of `session_duplicate`/`twin_duplicate`/`near_duplicate` stubs to be
+  removed; setting it alone neither enables gating nor changes an ungated
+  response.
 
 `FingerprintGatePolicy` defaults both fields to `False`, so a clean
 environment resolves both off and the repeat path never runs. For either

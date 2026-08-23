@@ -5,6 +5,7 @@ import pytest
 from living_memory.config import MemoryConfig
 from living_memory.consolidation import (
     DIGEST_MAX_CHARS,
+    MERGE_FLOOR_ENV,
     _cross_scope_promotion,
     _synthesize_digest,
     memory_consolidate,
@@ -120,7 +121,16 @@ def test_consolidation_merges_identical_content_concept_when_cluster_key_drifts(
         assert [node.id for node in active] == [concept.id]
 
 
-def test_consolidation_waits_for_one_hundred_similar_traces(tmp_path: Path) -> None:
+def test_fixed_floor_valve_waits_for_one_hundred_similar_traces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pre-adaptive wait for 100, now reachable through the valve.
+
+    The shipped promotion floor is adaptive (tests/test_consolidation_adaptive_floor.py);
+    `MERGE_FLOOR_ENV=fixed` is the rollback that restores this exact behaviour.
+    """
+
+    monkeypatch.setenv(MERGE_FLOOR_ENV, "fixed")
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         for index in range(99):
             store.append_trace(

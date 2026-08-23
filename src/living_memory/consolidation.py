@@ -1,4 +1,26 @@
-"""Learning and maintenance loop for Living Memory."""
+"""Learning and maintenance loop for Living Memory.
+
+Cluster promotion floor
+-----------------------
+A cluster of similar traces is promoted into a concept once it holds at
+least ``min_cluster_size`` members. That floor is **adaptive by default**:
+``adaptive_merge_floor`` scales it with the number of active traces the pass
+actually loaded, so a young corpus grows concepts over mid-sized clusters
+instead of waiting for the hundreds a mature one accumulates.
+
+``LM_CONSOLIDATE_MERGE_FLOOR`` is the rollback valve, read on every pass —
+by the auto-consolidation path in ``server.py`` and by a manual
+``memory_consolidate`` call alike:
+
+* unset, empty or ``adaptive`` — the ladder above (shipped default);
+* ``fixed`` — the pre-adaptive behaviour, floor ``DEFAULT_MIN_CLUSTER_SIZE``
+  (100) on both paths;
+* a positive integer — that literal floor, for pinning one by hand.
+
+Anything else falls back to ``adaptive`` rather than failing a maintenance
+pass. An explicit ``min_cluster_size=`` argument always wins over the valve
+and stays validated as positive.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from math import log1p
 from typing import Any, Collection, Iterable, Mapping, Sequence
+import os
 import re
 
 from living_memory.decay import DecayResult, apply_decay, memory_forget
@@ -18,6 +41,14 @@ from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
 DEFAULT_MIN_CLUSTER_SIZE = 100
+MERGE_FLOOR_ENV = "LM_CONSOLIDATE_MERGE_FLOOR"
+# (active traces below, floor to apply). Falls through to
+# DEFAULT_MIN_CLUSTER_SIZE once the corpus is mature.
+ADAPTIVE_MERGE_FLOOR_LADDER: tuple[tuple[int, int], ...] = (
+    (25, 3),
+    (100, 5),
+    (1000, 25),
+)
 DEFAULT_RECENT_LIMIT = 10_000
 JACCARD_SIMILARITY_THRESHOLD = 0.58
 EMBEDDING_SIMILARITY_THRESHOLD = 0.65
@@ -386,6 +417,46 @@ def _is_superseded(store: MemoryStore, node_id: str) -> bool:
     )
 
 
+def adaptive_merge_floor(trace_count: int) -> int:
+    """Cluster size required to promote a concept in a corpus this size.
+
+    The single owner of the floor ladder: both the auto-consolidation path in
+    ``server.py`` and a manual ``memory_consolidate`` call reach it through
+    ``resolve_min_cluster_size``.
+    """
+
+    for ceiling, floor in ADAPTIVE_MERGE_FLOOR_LADDER:
+        if trace_count < ceiling:
+            return floor
+    return DEFAULT_MIN_CLUSTER_SIZE
+
+
+def resolve_min_cluster_size(min_cluster_size: int | None, *, trace_count: int) -> int:
+    """Pick the promotion floor for one pass, honouring the rollback valve.
+
+    An explicit caller value wins outright. Otherwise ``MERGE_FLOOR_ENV``
+    decides, as documented in the module docstring: adaptive by default,
+    ``fixed`` for the pre-adaptive floor of ``DEFAULT_MIN_CLUSTER_SIZE``, a
+    positive integer to pin one. An unparseable value must not break a
+    maintenance pass, so it reads as the default.
+    """
+
+    if min_cluster_size is not None:
+        return min_cluster_size
+
+    raw = os.environ.get(MERGE_FLOOR_ENV, "").strip().lower()
+    if raw == "fixed":
+        return DEFAULT_MIN_CLUSTER_SIZE
+    if raw and raw != "adaptive":
+        try:
+            pinned = int(raw)
+        except ValueError:
+            pinned = 0
+        if pinned >= 1:
+            return pinned
+    return adaptive_merge_floor(trace_count)
+
+
 class ConsolidationService:
     """Service facade for consolidation and correction ingestion."""
 
@@ -393,12 +464,14 @@ class ConsolidationService:
         self,
         store: MemoryStore,
         *,
-        min_cluster_size: int = DEFAULT_MIN_CLUSTER_SIZE,
+        min_cluster_size: int | None = None,
         recent_limit: int = DEFAULT_RECENT_LIMIT,
     ) -> None:
-        if min_cluster_size < 1:
+        if min_cluster_size is not None and min_cluster_size < 1:
             raise ValueError("min_cluster_size must be positive")
         self.store = store
+        # None keeps the service on the adaptive default; a number pins the
+        # floor for every pass this service runs.
         self.min_cluster_size = min_cluster_size
         self.recent_limit = recent_limit
 
@@ -444,22 +517,29 @@ def memory_consolidate(
     *,
     scope: str | None = None,
     force: bool = False,
-    min_cluster_size: int = DEFAULT_MIN_CLUSTER_SIZE,
+    min_cluster_size: int | None = None,
     recent_limit: int = DEFAULT_RECENT_LIMIT,
 ) -> ConsolidationResult:
-    """Cluster similar active traces, promote stable clusters, and run decay."""
+    """Cluster similar active traces, promote stable clusters, and run decay.
 
-    if min_cluster_size < 1:
+    Leaving ``min_cluster_size`` unset means the adaptive promotion floor of
+    the module docstring, sized from the active traces this pass loaded — the
+    scope's own trace count when ``scope`` is given, the whole corpus when it
+    is not.
+    """
+
+    if min_cluster_size is not None and min_cluster_size < 1:
         raise ValueError("min_cluster_size must be positive")
 
     _refresh_promoted_global_concepts(store)
-    trace_limit = max(recent_limit, min_cluster_size) if force else recent_limit
+    trace_limit = max(recent_limit, min_cluster_size or 0) if force else recent_limit
     traces = store.list_nodes(
         level="trace",
         scope=scope,
         include_decayed=False,
         limit=trace_limit,
     )
+    merge_floor = resolve_min_cluster_size(min_cluster_size, trace_count=len(traces))
     phase = store.detect_phase()
     embedder = (
         LocalEmbeddingModel(model_name=store.config.embedding_model)
@@ -488,7 +568,7 @@ def memory_consolidate(
             result.schemas_updated.append(schema)
 
     for cluster in clusters:
-        if len(cluster.traces) < min_cluster_size:
+        if len(cluster.traces) < merge_floor:
             continue
         assessment = _assess_cluster_eras(store, cluster.traces)
         if not assessment.live:

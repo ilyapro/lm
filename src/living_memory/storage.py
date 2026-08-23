@@ -600,12 +600,14 @@ class FingerprintGatePolicy:
 
     When explicitly enabled, ``drop_trailing_stubs`` controls how compact a
     gated delivery gets: the trailing run of stub entries
-    (``session_duplicate``/``twin_duplicate``) is dropped from a gated response
-    entirely, because every node in it was already delivered under this exact
-    fingerprint's recent history and even stub entries cost ~1.1k chars each
-    on the wire (dev-split measurement: fully-stubbed gated deliveries otherwise
-    keep ~65% of their ungated size). Content-bearing entries and anything
-    ranked above them survive.
+    (``session_duplicate``/``twin_duplicate``/``near_duplicate``) is dropped
+    from a gated response entirely, because no node in it is telling the agent
+    anything new — it was already delivered under this exact fingerprint's
+    recent history, or its content ships under a bearer in this very response
+    — and even stub entries cost ~1.1k chars each on the wire (dev-split
+    measurement: fully-stubbed gated deliveries otherwise keep ~65% of their
+    ungated size). Content-bearing entries and anything ranked above them
+    survive.
     """
 
     enabled: bool = False

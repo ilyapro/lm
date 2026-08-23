@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 from functools import wraps
@@ -26,10 +27,13 @@ from living_memory.consolidation import (
 )
 from living_memory.decay import apply_decay
 from living_memory.delivery import (
+    DELIVERY_NEAR_DUPLICATE,
     DELIVERY_SESSION_DUPLICATE,
     DELIVERY_TWIN_DUPLICATE,
     context_value_max_chars_from_env,
     full_node_diet_enabled_from_env,
+    near_dup_cosine_from_env,
+    near_dup_length_ratio_from_env,
     provenance_value_max_chars_from_env,
     session_dedup_enabled_from_env,
     shape_recall_results,
@@ -40,6 +44,7 @@ from living_memory.delivery import (
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
 from living_memory.instructions_map import map_section as _compose_map_section
+from living_memory.near_dup import build_duplicate_map, mean_pooled_vectors
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.resources import (
@@ -67,6 +72,20 @@ from living_memory.temporal import parse_timestamp
 _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
 _RESTART_PENDING = False
+
+#: Delivery classes a gated response may drop from its trailing run.
+#:
+#: Every class here is one whose text the agent can already reach without the
+#: entry: a session duplicate and a fingerprint repeat were delivered under
+#: this same session or this same request moments ago, a twin's bytes ship
+#: under a bearer in this very response, and a near-duplicate's meaning does
+#: too. ``full`` and ``snippet`` are absent by construction — they are the
+#: only classes that carry content nothing else in reach holds.
+_DROPPABLE_TRAILING_STUBS = (
+    DELIVERY_SESSION_DUPLICATE,
+    DELIVERY_TWIN_DUPLICATE,
+    DELIVERY_NEAR_DUPLICATE,
+)
 
 # Server-wide KV key holding the persisted (rotated) bearer token. A value here
 # takes precedence over the LM_AUTH_TOKEN env seed at startup, so a rotation via
@@ -1020,10 +1039,13 @@ def _register_tools(
 
         Each result carries a ``delivery`` class: ``full``, ``snippet`` (long
         content truncated inline), ``session_duplicate`` (already delivered on
-        this transport session), or ``twin_duplicate`` (byte-identical to a
-        higher-ranked result). Both classes are on by default: twin collapse
-        unconditionally, the session class whenever a transport session id is
-        stamped. The top-ranked content-bearer ships complete content;
+        this transport session), ``twin_duplicate`` (byte-identical to a
+        higher-ranked result), or ``near_duplicate`` (a paraphrase of a
+        higher-ranked result of this same answer). Every class is on by
+        default: twin and near-dup collapse unconditionally, the session class
+        whenever a transport session id is stamped. The near-dup threshold is
+        ``LM_RECALL_NEAR_DUP_COSINE`` (0 restores byte-only dedup).
+        The top-ranked content-bearer ships complete content;
         lower-ranked bearers get descending snippet budgets.
         Non-full results add a ``content_ref`` whose ``node_id`` fed to
         ``memory_lookup`` returns the complete stored node. Every delivery is
@@ -1102,21 +1124,21 @@ def _register_tools(
                 provenance_value_max_chars=provenance_value_max_chars_from_env(),
                 stats_compaction=stats_compaction_enabled_from_env(),
                 sparse_entries=sparse_entries_enabled_from_env(),
+                # Built here, from this answer's own node vectors, because
+                # shaping is pure: the database read and the env threshold
+                # live on this side of the call.
+                duplicate_of=_near_duplicate_map(store, results),
             )
             if gated and gate_policy.drop_trailing_stubs:
                 # The trailing all-stub run of a gated delivery carries no
-                # content — every node in it was already delivered under this
-                # exact fingerprint's recent history — yet stub entries still
-                # cost ~1.1k chars each, so the gate drops the run (the
+                # content the agent is not already holding, yet stub entries
+                # still cost ~1.1k chars each, so the gate drops the run (the
                 # reduced-result-count form of compaction). The independent
                 # LM_RECALL_REPEAT_DROP_TRAILING_STUBS=1 opt-in enables this;
                 # otherwise the stub list remains. Content-bearers and stubs
                 # ranked above them survive, and the recorded recall_event
                 # keeps every result id.
-                while shaped and shaped[-1]["delivery"] in (
-                    DELIVERY_SESSION_DUPLICATE,
-                    DELIVERY_TWIN_DUPLICATE,
-                ):
+                while shaped and shaped[-1]["delivery"] in _DROPPABLE_TRAILING_STUBS:
                     shaped.pop()
             response: dict[str, Any] = {
                 "query": query,
@@ -1419,18 +1441,6 @@ def _adaptive_trigger_step(trace_count: int) -> int | None:
     return DEFAULT_MIN_CLUSTER_SIZE
 
 
-def _adaptive_merge_floor(trace_count: int) -> int:
-    """Cluster size required to promote into a concept under adaptive policy."""
-
-    if trace_count < 25:
-        return 3
-    if trace_count < 100:
-        return 5
-    if trace_count < 1000:
-        return 25
-    return DEFAULT_MIN_CLUSTER_SIZE
-
-
 def _auto_consolidate_policy() -> str:
     return os.environ.get("LM_AUTO_CONSOLIDATE_POLICY", "fixed").strip().lower()
 
@@ -1444,6 +1454,43 @@ def _recall_map_enabled() -> bool:
     """
 
     return os.environ.get("LM_RECALL_MAP", "").strip() != "0"
+
+
+def _near_duplicate_map(
+    store: MemoryStore, results: Sequence[Any]
+) -> dict[str, str] | None:
+    """Build this answer's near-duplicate map, or None when there is none.
+
+    The impure half of the near-dup collapse, deliberately kept here rather
+    than in ``delivery``: it reads the env threshold and it reads the database.
+    ``shape_recall_results`` then receives a finished ``{duplicate: bearer}``
+    map and stays the pure function it is documented to be.
+
+    Only the handful of node ids this answer actually returns are pooled, so
+    the read is ``max_results`` chunk lookups (5 by default) and not a matrix
+    over the scope. A node with no chunk rows — never drained, or written
+    since the last drain — is simply absent from ``vectors`` and therefore
+    never collapsed.
+
+    ``LM_RECALL_NEAR_DUP_COSINE=0`` returns before the first query: the
+    rollback valve costs one env read, not one wasted database pass.
+    """
+
+    if not results:
+        return None
+    cosine_threshold = near_dup_cosine_from_env()
+    if cosine_threshold <= 0.0:
+        return None
+    vectors = mean_pooled_vectors(store, [result.node.id for result in results])
+    if not vectors:
+        return None
+    duplicate_of = build_duplicate_map(
+        [(result.node.id, len(result.node.content or "")) for result in results],
+        vectors,
+        cosine_threshold=cosine_threshold,
+        min_length_ratio=near_dup_length_ratio_from_env(),
+    )
+    return duplicate_of or None
 
 
 def _ambient_text(ambient_context: dict[str, Any] | None, key: str) -> str | None:
@@ -1555,12 +1602,12 @@ def _auto_consolidate_if_due(
         step = _adaptive_trigger_step(trace_count)
         if step is None or trace_count % step != 0:
             return None
+        # The merge floor itself is no longer decided here: consolidation.py
+        # owns the ladder and the LM_CONSOLIDATE_MERGE_FLOOR valve, and sizes
+        # it from this same scope's active traces. This branch only picks the
+        # trigger cadence.
         return _compact_consolidation_summary(
-            consolidation_service.memory_consolidate(
-                scope=scope,
-                force=False,
-                min_cluster_size=_adaptive_merge_floor(trace_count),
-            )
+            consolidation_service.memory_consolidate(scope=scope, force=False)
         )
 
     if trace_count < DEFAULT_MIN_CLUSTER_SIZE or trace_count % DEFAULT_MIN_CLUSTER_SIZE != 0:
