@@ -68,6 +68,44 @@ Usage::
 Re-run the exact same measurement later with
 ``--selection artifacts/near-dup/dup-slot-measurement.json``: the frozen event
 ids are read back out of the committed artifact.
+
+Measuring the identifier veto
+-----------------------------
+``--identifier-veto {on,off}`` sets ``LM_NEAR_DUP_IDENTIFIER_VETO`` for BOTH
+arms of a run, so the veto is a property of the run and not a third arm. Two
+runs over ONE snapshot, ONE warmed base and ONE frozen selection -- differing in
+that flag and nothing else -- are what measures what the veto costs and buys::
+
+    python3 scripts/recall_dup_slot_measure.py --workdir /tmp/lm-dupslot-veto \\
+        --selection artifacts/near-dup/dup-slot-measurement.json \\
+        --identifier-veto off --reuse-snapshot \\
+        --json artifacts/near-dup/dup-slot-measurement-veto-off.json
+    python3 scripts/recall_dup_slot_measure.py --workdir /tmp/lm-dupslot-veto \\
+        --selection artifacts/near-dup/dup-slot-measurement.json \\
+        --identifier-veto on --reuse-snapshot --reuse-base \\
+        --json artifacts/near-dup/dup-slot-measurement-veto-on.json
+
+``--reuse-snapshot`` and ``--reuse-base`` are what make "one snapshot" literal:
+the second run reads the same snapshot file and the same warmed base copy, both
+pinned by sha256 in the artifacts, so the two runs' collapsed-pair sets can be
+differenced. Each artifact lists every pair it collapsed
+(``spot_check.collapsed_pairs``) and every pair that hides an identifier under
+the veto's own definition (``spot_check.veto_identifier_loss``), which is the
+one the veto is defined against -- the harness's own ``identifiers_lost`` metric
+requires a digit in the token and so is blind to the ``layer-fauna`` class.
+
+Which presence rule the veto uses
+---------------------------------
+The veto compared a candidate's identifier against its bearer by SUBSTRING
+containment until the drain simulation showed what containment lets through, and
+now compares extracted token against extracted token. Both rules score every
+collapsed pair here (``spot_check.presence_rule_comparison``), and the honest
+place to read that comparison is the veto-OFF arm: its collapse set does not
+depend on the rule at all, because ``build_duplicate_map`` never enters the veto
+branch when the valve is off. So one arm scored both ways measures exactly what
+tightening the rule cost, on one snapshot, without re-running the old library --
+see :func:`identifiers_absent_by_substring`, which shares this module's imported
+extraction and differs from the shipped rule in the presence test alone.
 """
 
 from __future__ import annotations
@@ -115,7 +153,14 @@ from living_memory.delivery import (  # noqa: E402
     sparse_entries_enabled_from_env,
     stats_compaction_enabled_from_env,
 )
-from living_memory.near_dup import cosine, mean_pooled_vectors  # noqa: E402
+from living_memory.near_dup import (  # noqa: E402
+    IDENTIFIER_VETO_ENV,
+    cosine,
+    extract_identifiers,
+    identifier_veto_enabled,
+    identifiers_absent_from,
+    mean_pooled_vectors,
+)
 from living_memory.retrieval import MemoryRecallService  # noqa: E402
 from living_memory.server import _near_duplicate_map  # noqa: E402
 from living_memory.storage import MemoryStore  # noqa: E402
@@ -130,6 +175,14 @@ DEFAULT_DISTINCT_SAMPLE = 500
 
 ARM_BEFORE = "before_rollback"
 ARM_AFTER = "after_shipped_default"
+
+# The identifier veto is a property of the whole RUN, not of an arm: it is set
+# identically for both arms, so one run measures the collapse under one veto
+# setting and two runs of this script differ in exactly that one env var. The
+# rollback arm is unaffected either way -- its map is empty -- so the veto's
+# whole effect lands in the AFTER arm, which is what the two runs compare.
+VETO_ON = "on"
+VETO_OFF = "off"
 
 STRATUM_EVENTS = "events"
 STRATUM_DISTINCT = "distinct_queries"
@@ -375,6 +428,17 @@ def warm_drain(base: Path, scopes: Sequence[str | None]) -> dict[str, Any]:
             log_access=False,
             log_event=False,
         )
+    # Settle the file before anyone hashes or copies it. The drain wrote in WAL
+    # mode, and until the last connection closes some of those pages live in
+    # base.sqlite3-wal rather than in base.sqlite3 -- so a sha256 taken here
+    # would fingerprint a half-written file and a LATER run reusing the same
+    # base (--reuse-base) would compute a different digest for the same corpus.
+    store.close()
+    settle = sqlite3.connect(base)
+    try:
+        settle.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        settle.close()
     after = chunk_state(base)
     return {
         "scopes_warmed": len(ordered),
@@ -539,19 +603,31 @@ class ArmResult:
     answers: dict[str, Answer]
     seconds: float
     empty_answers: int
+    #: What ``near_dup.identifier_veto_enabled()`` answered INSIDE this arm's
+    #: environment. Read from the shipped function rather than derived from the
+    #: env dict: the claim under test is what the collapse actually ran with,
+    #: and an override that failed to reach the map would otherwise be invisible.
+    identifier_veto_observed: bool = True
 
 
-def _arm_env(arm: str) -> dict[str, str]:
+def _arm_env(arm: str, identifier_veto: str = VETO_ON) -> dict[str, str]:
     """The env difference that IS the experiment.
 
     BEFORE pins the rollback value explicitly. AFTER sets nothing at all, so
     the shipped default is what runs -- a hand-written "0.95" would prove only
     that 0.95 works, not that the shipped default is 0.95.
+
+    ``identifier_veto`` is set the same way for BOTH arms, for the same reason:
+    ``off`` pins the documented rollback value ``0``, and ``on`` sets nothing,
+    so what runs is whatever ``near_dup.identifier_veto_enabled`` ships as its
+    default. A run that hand-wrote ``1`` would prove the veto works, not that it
+    is on by default.
     """
 
-    if arm == ARM_BEFORE:
-        return {NEAR_DUP_COSINE_ENV: "0"}
-    return {}
+    env = {NEAR_DUP_COSINE_ENV: "0"} if arm == ARM_BEFORE else {}
+    if identifier_veto == VETO_OFF:
+        env[IDENTIFIER_VETO_ENV] = "0"
+    return env
 
 
 def run_arm(
@@ -560,9 +636,11 @@ def run_arm(
     plan: Sequence[tuple[str, ReplayQuery]],
     *,
     progress_every: int,
+    identifier_veto: str = VETO_ON,
 ) -> ArmResult:
-    env = _arm_env(arm)
+    env = _arm_env(arm, identifier_veto)
     with _environment(env):
+        veto_observed = identifier_veto_enabled()
         store = MemoryStore(database)
         service = MemoryRecallService(store)
         answers: dict[str, Answer] = {}
@@ -581,7 +659,12 @@ def run_arm(
                 )
         elapsed = time.perf_counter() - started
     return ArmResult(
-        name=arm, env=dict(env), answers=answers, seconds=elapsed, empty_answers=empty
+        name=arm,
+        env=dict(env),
+        answers=answers,
+        seconds=elapsed,
+        empty_answers=empty,
+        identifier_veto_observed=veto_observed,
     )
 
 
@@ -823,6 +906,34 @@ def identifiers_lost(collapsed: str, bearer: str) -> list[str]:
         if any(character.isdigit() for character in token) and token not in bearer
     ]
     return absent
+
+
+def identifiers_absent_by_substring(text: str, bearer_text: str) -> tuple[str, ...]:
+    """The veto's HISTORICAL presence rule, kept alive only as a measuring stick.
+
+    ``near_dup.identifiers_absent_from`` decided presence with ``token not in
+    bearer_text`` -- substring containment -- until the drain simulation showed
+    what that lets through, and it now compares extracted token against
+    extracted token. Both rules share the extraction, which is imported here
+    rather than copied: the ONLY difference between this function and the
+    shipped one is the presence test, so differencing them over one arm's
+    collapse set isolates the rule change and nothing else.
+
+    This is not a revival. Nothing in ``src/`` calls it and no consumer can
+    reach it; it exists so a re-measurement can answer "how much of the veto's
+    price is new" from one snapshot, without re-running the old library.
+
+    The direction is a one-way implication worth stating, because it is what
+    makes the comparison legible: an extracted token is always a substring of
+    the text it was extracted from, so a token the bearer *names* is always
+    also *contained* in the bearer. Therefore the substring rule's absent set is
+    a SUBSET of the token rule's, always -- the token rule is strictly stricter,
+    and the difference is exactly what containment was missing.
+    """
+
+    return tuple(
+        token for token in extract_identifiers(text) if token not in bearer_text
+    )
 
 
 def _shingles(tokens: Sequence[str]) -> set[tuple[str, ...]]:
@@ -1103,6 +1214,34 @@ def spot_check(
         lost = identifiers_lost(collapsed_text, bearer_text)
         record["identifiers_lost"] = len(lost)
         record["identifiers_lost_examples"] = lost[:6]
+        # The VETO's own definition, imported from the module that enforces it
+        # rather than re-implemented here. It is strictly broader than the
+        # harness metric above -- no digit is required -- so `layer-fauna`
+        # counts, which is the class the veto exists for and the one the
+        # harness metric is blind to. Non-empty is exactly the condition
+        # `build_duplicate_map` refuses to collapse on, measured against the
+        # bearer the stub actually names, so with the veto on this must be 0
+        # for every collapsed pair; anything else is a hole in the veto.
+        veto_lost = identifiers_absent_from(collapsed_text, bearer_text)
+        record["veto_identifiers_lost"] = len(veto_lost)
+        record["veto_identifiers_lost_examples"] = list(veto_lost[:6])
+        # The same pair under the veto's HISTORICAL presence rule, so the price
+        # of tightening containment into token equality is readable off one
+        # arm's collapse set instead of requiring a second snapshot. Only the
+        # veto-OFF arm's set is meaningful for that comparison -- with the veto
+        # on, the shipped rule has already removed everything it can see -- but
+        # it is computed for both arms because an arm that reports it only when
+        # it is interesting is an arm nobody can check.
+        substring_lost = identifiers_absent_by_substring(collapsed_text, bearer_text)
+        record["substring_identifiers_lost"] = len(substring_lost)
+        record["substring_identifiers_lost_examples"] = list(substring_lost[:6])
+        # What the older rule could not see on THIS pair: tokens the bearer
+        # merely contains inside a longer name of its own. This is the class the
+        # goal names -- a bearer spelling `src/living_memory/near_dup.py` used to
+        # cover a candidate spelling the bare `near_dup.py`.
+        record["identifiers_seen_only_by_token_rule"] = [
+            token for token in veto_lost if token not in set(substring_lost)
+        ][:6]
         record["same_source_traces_family"] = _provenance_related(truth_db, pair_key)
     ordered = sorted(pairs.values(), key=lambda item: item["token_jaccard"])
     jaccards = [record["token_jaccard"] for record in ordered]
@@ -1112,6 +1251,25 @@ def spot_check(
         record
         for record in ordered
         if record["identifiers_lost"] >= _IDENTIFIER_LOSS_FLAG
+    ]
+    veto_losing = [record for record in ordered if record["veto_identifiers_lost"]]
+    substring_losing = [
+        record for record in ordered if record["substring_identifiers_lost"]
+    ]
+    # Pairs the shipped token rule vetoes that the historical containment rule
+    # would have passed. Its complement -- pairs the OLD rule caught and the new
+    # one does not -- is empty by construction (see
+    # ``identifiers_absent_by_substring``), and is reported anyway, because an
+    # invariant nobody measures is an assumption.
+    newly_seen = [
+        record
+        for record in ordered
+        if record["veto_identifiers_lost"] and not record["substring_identifiers_lost"]
+    ]
+    only_substring = [
+        record
+        for record in ordered
+        if record["substring_identifiers_lost"] and not record["veto_identifiers_lost"]
     ]
     by_level: dict[str, dict[str, Any]] = {}
     for record in ordered:
@@ -1171,6 +1329,127 @@ def spot_check(
             "slots_at_or_over_threshold": sum(record["answers"] for record in losing),
             "slots_total": sum(record["answers"] for record in ordered),
         },
+        "veto_identifier_loss": {
+            "definition": (
+                "The identifier veto's OWN definition, imported from "
+                "living_memory.near_dup.identifiers_absent_from: any identifier "
+                "token (ULID, path, slug, dotted symbol, digest, versioned name) "
+                "present in the collapsed node and absent from the bearer its "
+                "stub names. No digit is required, so 'layer-fauna' counts here "
+                "and cannot count under the harness metric above -- which is why "
+                "'identifier loss goes to zero' is only falsifiable against this "
+                "definition."
+            ),
+            "flag_threshold": 1,
+            "pairs_losing_none": sum(
+                1 for record in ordered if record["veto_identifiers_lost"] == 0
+            ),
+            "pairs_losing_any": len(veto_losing),
+            "slots_losing_any": sum(record["answers"] for record in veto_losing),
+            "slots_total": sum(record["answers"] for record in ordered),
+            # Every residual pair, in full: with the veto on this list must be
+            # empty, and if it is not, the residue is the finding and a reader
+            # needs the pairs themselves to explain it.
+            "pairs_losing_any_detail": veto_losing,
+        },
+        "presence_rule_comparison": {
+            "definition": (
+                "The same collapse set scored under BOTH presence rules the "
+                "veto has had. 'token' is the shipped "
+                "living_memory.near_dup.identifiers_absent_from: a candidate "
+                "identifier counts as present only when the bearer names it as "
+                "a token of its own. 'substring' is the historical rule it "
+                "replaced (token not in bearer_text), re-implemented in this "
+                "harness over the SAME extraction so the only difference is the "
+                "presence test. Read this on the veto-OFF arm: that arm's "
+                "collapse set is the same whichever rule is in force, because "
+                "build_duplicate_map never enters the veto branch, so scoring "
+                "one arm both ways isolates the rule change without a second "
+                "snapshot."
+            ),
+            "token_rule": {
+                "pairs_losing_any": len(veto_losing),
+                "slots_losing_any": sum(record["answers"] for record in veto_losing),
+            },
+            "substring_rule": {
+                "pairs_losing_any": len(substring_losing),
+                "slots_losing_any": sum(
+                    record["answers"] for record in substring_losing
+                ),
+            },
+            "newly_seen_by_token_rule": {
+                "why": (
+                    "Pairs that hide an identifier under the shipped rule and "
+                    "hid none under containment -- what the substring rule was "
+                    "missing, and therefore the part of the veto's price that "
+                    "is new. The typical shape: the bearer contains the "
+                    "candidate's token inside a longer name of its own."
+                ),
+                "pairs": len(newly_seen),
+                "slots": sum(record["answers"] for record in newly_seen),
+                "detail": [
+                    {
+                        "collapsed": record["collapsed"],
+                        "bearer": record["bearer"],
+                        "slots": record["answers"],
+                        "cosine": record["cosine"],
+                        "levels": (
+                            f"{record['collapsed_level']}/{record['bearer_level']}"
+                        ),
+                        "token_jaccard": record["token_jaccard"],
+                        "identifiers_seen_only_by_token_rule": record[
+                            "identifiers_seen_only_by_token_rule"
+                        ],
+                    }
+                    for record in newly_seen
+                ],
+            },
+            "seen_only_by_substring_rule": {
+                "why": (
+                    "Must be 0: an extracted token is always a substring of the "
+                    "text it came from, so a token the bearer names is also a "
+                    "token the bearer contains, and the substring rule's absent "
+                    "set is a subset of the token rule's. A non-zero here means "
+                    "the two extractions have drifted apart and the comparison "
+                    "below is not a comparison of presence rules."
+                ),
+                "pairs": len(only_substring),
+                "slots": sum(record["answers"] for record in only_substring),
+            },
+            "token_rule_is_strictly_stricter": not only_substring,
+        },
+        # Every collapsed pair, not a sample: two runs of this script differ in
+        # one env var, and the set difference between their collapsed pairs IS
+        # the price of the veto. That difference is only computable from the
+        # committed artifacts if both list every pair they collapsed.
+        "collapsed_pairs": [
+            {
+                "collapsed": record["collapsed"],
+                "bearer": record["bearer"],
+                "slots": record["answers"],
+                "cosine": record["cosine"],
+                "collapsed_level": record["collapsed_level"],
+                "bearer_level": record["bearer_level"],
+                "scope": record["scope"],
+                "collapsed_chars": record["collapsed_chars"],
+                "bearer_chars": record["bearer_chars"],
+                "token_jaccard": record["token_jaccard"],
+                "collapsed_in_bearer_containment": record[
+                    "collapsed_in_bearer_containment"
+                ],
+                "identifiers_lost": record["identifiers_lost"],
+                "veto_identifiers_lost": record["veto_identifiers_lost"],
+                "veto_identifiers_lost_examples": record[
+                    "veto_identifiers_lost_examples"
+                ],
+                "substring_identifiers_lost": record["substring_identifiers_lost"],
+                "identifiers_seen_only_by_token_rule": record[
+                    "identifiers_seen_only_by_token_rule"
+                ],
+                "same_source_traces_family": record["same_source_traces_family"],
+            }
+            for record in ordered
+        ],
         # Every concerning pair is listed, not a sample of them: the verdict on
         # whether a collapse joined two different facts is a human's to give,
         # and a human cannot give it over a truncated list.
@@ -1362,25 +1641,66 @@ def measure(args: argparse.Namespace) -> dict[str, Any]:
         flush=True,
     )
 
-    base = clone_snapshot(snapshot, workdir / "base.sqlite3", live)
-    print("warming the chunk drain on the shared base copy", flush=True)
-    drain = warm_drain(base, [item.requested_scope for _, item in plan])
-    print(
-        f"drain: {drain['chunk_rows_written']} chunk rows written for "
-        f"{drain['nodes_gaining_vectors']} nodes across "
-        f"{drain['scopes_warmed']} scopes",
-        flush=True,
-    )
-    base_state = chunk_state(base)
+    base_path = workdir / "base.sqlite3"
+    if args.reuse_base and base_path.exists():
+        # Two runs that differ in one env var must not differ in their corpus,
+        # and re-cloning plus re-draining would re-embed the drained nodes a
+        # second time. Reusing the warmed base makes the corpus the SAME BYTES
+        # for both runs -- asserted across the artifacts by the sha256 below,
+        # not by trusting the embedder to be deterministic.
+        _refuse_live_path(base_path, live)
+        base = base_path
+        base_state = chunk_state(base)
+        drain = {
+            "reused": True,
+            "why": (
+                "--reuse-base: the shared base copy was cloned and warmed by an "
+                "earlier run of this script in this workdir and is reused "
+                "byte-for-byte, pinned by base_sha256 below. This run wrote no "
+                "chunk rows because there was nothing left to drain."
+            ),
+            "scopes_warmed": 0,
+            "before": base_state,
+            "after": base_state,
+            "chunk_rows_written": 0,
+            "nodes_gaining_vectors": 0,
+        }
+        print(f"reusing the warmed base copy {base}", flush=True)
+    else:
+        base = clone_snapshot(snapshot, base_path, live)
+        print("warming the chunk drain on the shared base copy", flush=True)
+        drain = warm_drain(base, [item.requested_scope for _, item in plan])
+        drain["reused"] = False
+        print(
+            f"drain: {drain['chunk_rows_written']} chunk rows written for "
+            f"{drain['nodes_gaining_vectors']} nodes across "
+            f"{drain['scopes_warmed']} scopes",
+            flush=True,
+        )
+        base_state = chunk_state(base)
+    base_sha256 = _file_sha256(base)
 
     arms: dict[str, ArmResult] = {}
     arm_states: dict[str, dict[str, int]] = {}
     for arm in (ARM_BEFORE, ARM_AFTER):
         database = clone_snapshot(base, workdir / f"{arm}.sqlite3", live)
-        print(f"arm {arm}: env {_arm_env(arm) or '(shipped defaults)'}", flush=True)
+        arm_env = _arm_env(arm, args.identifier_veto)
+        print(f"arm {arm}: env {arm_env or '(shipped defaults)'}", flush=True)
         arms[arm] = run_arm(
-            arm, database, plan, progress_every=args.progress_every
+            arm,
+            database,
+            plan,
+            progress_every=args.progress_every,
+            identifier_veto=args.identifier_veto,
         )
+        observed = arms[arm].identifier_veto_observed
+        if observed != (args.identifier_veto == VETO_ON):
+            raise MeasurementError(
+                f"arm {arm} ran with the identifier veto "
+                f"{'ON' if observed else 'OFF'} while --identifier-veto "
+                f"{args.identifier_veto} was requested: the valve did not reach "
+                "the map, and this run measures something else"
+            )
         arm_states[arm] = chunk_state(database)
         print(f"arm {arm}: {arms[arm].seconds:.0f}s", flush=True)
 
@@ -1425,6 +1745,10 @@ def measure(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "warm_drain": drain,
             "base": base_state,
+            # The bytes both arms were cloned from. Two runs that report the
+            # same value read the identical corpus, which is what lets their
+            # collapsed-pair sets be differenced.
+            "base_sha256": base_sha256,
             "after_each_arm": arm_states,
             "constant_through_both_arms": all(
                 state == base_state for state in arm_states.values()
@@ -1455,6 +1779,34 @@ def measure(args: argparse.Namespace) -> dict[str, Any]:
                 "logging and the session-duplicate class: the corpus is frozen "
                 "so every query in both arms sees the same state, and the "
                 "question is about repeats within one answer."
+            ),
+        },
+        "identifier_veto": {
+            "valve": IDENTIFIER_VETO_ENV,
+            "requested": args.identifier_veto,
+            "applied_to": "both arms, identically -- it is a property of the run",
+            "env": (
+                {IDENTIFIER_VETO_ENV: "0"}
+                if args.identifier_veto == VETO_OFF
+                else {"(none)": "unset, so near_dup's shipped default applies"}
+            ),
+            "observed_in_arms": {
+                arm: arms[arm].identifier_veto_observed
+                for arm in (ARM_BEFORE, ARM_AFTER)
+            },
+            "why_it_is_a_run_and_not_an_arm": (
+                "The rollback arm's map is empty at cosine 0, so the veto cannot "
+                "change it; the veto's entire effect lands in the AFTER arm. "
+                "Running it as a third arm inside one run would have compared "
+                "two collapse policies against one rollback baseline, which is "
+                "the same comparison this makes -- but the artifact would then "
+                "hide which policy the numbers in 'strata' describe."
+            ),
+            "effect_on_rollback_arm": (
+                "none: at LM_RECALL_NEAR_DUP_COSINE=0 build_duplicate_map "
+                "returns before the veto branch, so the before_rollback arm is "
+                "identical in both runs and is the shared baseline they are read "
+                "against."
             ),
         },
         "selection": {
@@ -1541,6 +1893,7 @@ def measure(args: argparse.Namespace) -> dict[str, Any]:
             "database": str(workdir / f"{arm}.sqlite3"),
             "seconds": round(arms[arm].seconds, 1),
             "empty_answers": arms[arm].empty_answers,
+            "identifier_veto_observed": arms[arm].identifier_veto_observed,
         }
         for arm in (ARM_BEFORE, ARM_AFTER)
     }
@@ -1645,6 +1998,19 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "check below before quoting the headline."
     )
     add("")
+    veto_loss = spot.get("veto_identifier_loss")
+    if veto_loss:
+        add(
+            f"Under the identifier veto's OWN, broader definition (no digit "
+            f"required, so `layer-fauna` counts): "
+            f"{veto_loss['pairs_losing_any']} of "
+            f"{spot['distinct_collapsed_pairs']} collapsed pairs hide an "
+            f"identifier their bearer lacks, over "
+            f"{veto_loss['slots_losing_any']} of {veto_loss['slots_total']} "
+            "collapsed slots. That is the number the veto drives to zero, and "
+            "the one the harness metric above cannot see."
+        )
+        add("")
     add("## What was measured, and what was never touched")
     add("")
     add(
@@ -1665,6 +2031,15 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "snapshot, in the same order, with the same code."
     )
     stability = report["corpus_stability"]
+    if stability["warm_drain"].get("reused"):
+        add(
+            f"- Corpus: the warmed base copy of a previous run in this workdir, "
+            f"reused byte-for-byte (sha256 "
+            f"`{str(stability.get('base_sha256'))[:16]}…`), so this run and that "
+            "one read the identical corpus and their collapsed-pair sets can be "
+            "differenced. This run drained nothing: there was nothing left to "
+            "drain."
+        )
     add(
         f"- Recall writes on the read path: its lazy chunk drain backfilled "
         f"{stability['warm_drain']['chunk_rows_written']} chunk rows for "
@@ -1681,6 +2056,17 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     add(f"- `{ARM_BEFORE}`: {report['definitions']['arms'][ARM_BEFORE]}")
     add(f"- `{ARM_AFTER}`: {report['definitions']['arms'][ARM_AFTER]}")
     add("")
+    veto_valve = report.get("identifier_veto")
+    if veto_valve:
+        add(
+            f"Both arms ran with the identifier veto "
+            f"**{veto_valve['requested'].upper()}** (`{veto_valve['valve']}`: "
+            f"{json.dumps(veto_valve['env'], ensure_ascii=False)}), verified "
+            f"inside each arm's own environment: "
+            f"{json.dumps(veto_valve['observed_in_arms'])}. "
+            f"{veto_valve['effect_on_rollback_arm']}"
+        )
+        add("")
     identity = report["ranking_identity"]
     add(
         f"The flag is the only difference, and that is checked rather than "
@@ -1920,6 +2306,11 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     add("    --live ~/.local/share/living-memory/global.sqlite3 \\")
     add("    --workdir /tmp/lm-dupslot \\")
     add("    --selection artifacts/near-dup/dup-slot-measurement.json \\")
+    if veto_valve:
+        add(
+            f"    --identifier-veto {veto_valve['requested']} "
+            "--reuse-snapshot --reuse-base \\"
+        )
     add("    --json artifacts/near-dup/dup-slot-measurement.json \\")
     add("    --md artifacts/near-dup/dup-slot-measurement.md")
     add("```")
@@ -1965,6 +2356,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--reuse-snapshot", action="store_true")
+    parser.add_argument(
+        "--reuse-base",
+        action="store_true",
+        help=(
+            "reuse the warmed base copy already in the workdir instead of "
+            "re-cloning and re-draining it, so two runs read the identical "
+            "corpus bytes (reported as corpus_stability.base_sha256)"
+        ),
+    )
+    parser.add_argument(
+        "--identifier-veto",
+        choices=(VETO_ON, VETO_OFF),
+        default=VETO_ON,
+        help=(
+            f"{IDENTIFIER_VETO_ENV} for BOTH arms of this run: 'on' leaves it "
+            "unset so near_dup's shipped default applies, 'off' pins the "
+            "documented rollback value 0. Two runs over one snapshot and one "
+            "selection, differing only here, are what measures the veto"
+        ),
+    )
     parser.add_argument("--progress-every", type=int, default=200)
     parser.add_argument("--produced-at", help="fixed timestamp, for a reproducible artifact")
     parser.add_argument("--allow-hash-embeddings", action="store_true")

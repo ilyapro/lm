@@ -222,7 +222,13 @@ from living_memory.models import (
     Node,
     RetrievalWeights,
 )
-from living_memory.near_dup import build_duplicate_map, cosine, mean_pooled_vectors
+from living_memory.near_dup import (
+    DuplicateCandidate,
+    build_duplicate_map,
+    cosine,
+    identifier_veto_enabled,
+    mean_pooled_vectors,
+)
 from living_memory.query_anchors import (
     ANCHOR_MATCH_COSINE_THRESHOLD,
     ANCHOR_MATCH_LIMIT,
@@ -1184,11 +1190,17 @@ class MemoryRecallService:
           keeps this from ever closing a 2-cycle); the second is stale, and
           nothing should be demoted *under* a stale node;
         * a bearer that is gone, decayed, of another level or another scope;
-        * a candidate materially longer than its bearer, and any pair at or
-          below the cosine threshold. Both of those are
+        * a candidate materially longer than its bearer, a candidate carrying
+          an identifier -- a ULID, a path, a node or branch name, a slug, a
+          digest -- that its bearer's text does not carry, and any pair at or
+          below the cosine threshold. All three are
           ``near_dup.build_duplicate_map``'s call, not this method's -- the
           same function the delivery path collapses through, so "the same fact
-          twice" means one thing in both places.
+          twice" means one thing in both places. The identifier veto is the
+          one that guards this pass's residual risk: a template-dominated
+          trace/trace pair that differs only in an id can clear 0.99, and this
+          is where it stops. ``LM_NEAR_DUP_IDENTIFIER_VETO=0`` turns it off in
+          both consumers at once.
 
         Cost, all of it behind the gate and none of it paid by a recall that
         drained nothing: mean-pooling a whole scope off the cached matrix is
@@ -1269,13 +1281,19 @@ class MemoryRecallService:
             bearer_vector = mean_pooled_vectors(self.store, [bearer_id]).get(bearer_id)
             if bearer_vector is None:
                 continue
-            # The decision, on both nodes' own chunks, by the shared function:
-            # the bearer ranks first because it is the one that keeps its text.
+            # The decision, on both nodes' own chunks and both nodes' own text,
+            # by the shared function: the bearer ranks first because it is the
+            # one that keeps its text, and the arrival's identifiers are the
+            # ones that would stop being readable if it were demoted.
             collapsed = build_duplicate_map(
-                [(bearer_id, len(bearer.content)), (node.id, len(node.content))],
+                [
+                    DuplicateCandidate(bearer_id, len(bearer.content), bearer.content),
+                    DuplicateCandidate(node.id, len(node.content), node.content),
+                ],
                 {bearer_id: bearer_vector, node.id: vector},
                 cosine_threshold=threshold,
                 min_length_ratio=DRAIN_NEAR_DUP_MIN_LENGTH_RATIO,
+                identifier_veto=identifier_veto_enabled(),
             )
             if collapsed.get(node.id) != bearer_id:
                 continue

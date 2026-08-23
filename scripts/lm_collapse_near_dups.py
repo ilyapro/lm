@@ -33,6 +33,15 @@ Bands, and why the default refuses to go below 0.95:
     0.85-0.95 DIFFERENT facts, and also the band where a concept sits next to
               its own source traces (that similarity is provenance, never
               duplication) -- refused unless --allow-mid-band is passed
+
+The identifier veto is a copy, and the copy is the point.  A pair that differs
+in an identifier -- a ULID, a path, a node name, a slug -- is two different
+facts at ANY cosine, so it is refused rather than re-ranked (skip reason
+``identifier_veto``).  The same rule lives in ``living_memory.near_dup``, and
+this file duplicates it instead of importing it because importing it would cost
+exactly the portability stated above.  The duplication is not taken on trust:
+``tests/test_collapse_near_dups.py`` imports both implementations -- the test
+may, this script may not -- and fails on any divergence in either direction.
 """
 
 from __future__ import annotations
@@ -41,6 +50,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -462,6 +472,35 @@ def load_provenance_sources(connection, columns, levels):
     return protected
 
 
+#: Ids per ``IN (...)`` query when contents are fetched. Well under sqlite's
+#: variable limit on every version this script may meet.
+CONTENT_BATCH = 400
+
+
+def load_contents(connection, node_ids):
+    """Full text of the named nodes -- the identifier veto's only input.
+
+    Fetched for the nodes that reached the threshold and no others.  The rest
+    of this script works from ``LENGTH(content)`` and a 160-character preview
+    on purpose, and a corpus is orders of magnitude larger than the handful of
+    pairs a 0.95 threshold admits.  With the veto off this is never called at
+    all, which is what makes the valve a true rollback: no text is even read.
+    """
+
+    contents = {}
+    ids = sorted(node_ids)
+    for start in range(0, len(ids), CONTENT_BATCH):
+        batch = ids[start : start + CONTENT_BATCH]
+        placeholders = ", ".join("?" for _ in batch)
+        rows = connection.execute(
+            "SELECT id, content FROM nodes WHERE id IN (%s)" % placeholders, batch
+        ).fetchall()
+        for row in rows:
+            content = row["content"]
+            contents[str(row["id"])] = "" if content is None else str(content)
+    return contents
+
+
 def load_supersedes(connection, has_connections):
     """(already superseded targets, superseding sources, existing pairs)."""
 
@@ -705,6 +744,250 @@ def _scan_group_numpy(result, ids, vectors, members, threshold, numpy):
 
 
 # --------------------------------------------------------------------------
+# the identifier veto -- a deliberate copy of living_memory.near_dup
+# --------------------------------------------------------------------------
+#
+# Everything down to ``IdentifierVeto`` is duplicated from
+# ``living_memory.near_dup``, not imported from it.  Importing would buy one
+# definition and cost the portability contract at the top of this file: this
+# script runs under the interpreter of whichever server owns the database it is
+# pointed at, and that server's checkout is a different version of the package,
+# or is not a checkout at all.  The duplication is instead PROVEN harmless:
+# ``tests/test_collapse_near_dups.py`` imports both implementations (a test may;
+# this script may not) and asserts verdict-for-verdict agreement over a table
+# covering every identifier class and its negatives, so a drift in either
+# direction fails the suite rather than quietly changing what is collapsed here.
+#
+# Why the rule is a veto and not a threshold: «узел layer-fauna СДЕЛАН» and
+# «узел layer-actors СДЕЛАН» score 0.9547 on the alt corpus -- above the 0.95
+# this script collapses at -- and they are different facts.  The template
+# dominates the vector and the one token that carries the fact is a rounding
+# error in it, so no cut separates that pair from an honest repeat.  The rule is
+# deliberately trigger-happy for the same reason: a false veto costs one
+# uncollapsed near-duplicate, a false pass hides a fact.
+
+#: The one valve, spelled exactly as in ``living_memory.near_dup``, so a single
+#: env line means the same thing to the map, the drain and this script.
+IDENTIFIER_VETO_ENV = "LM_NEAR_DUP_IDENTIFIER_VETO"
+
+#: Everything else -- unset, ``1``, ``on``, or a typo -- leaves the veto on. An
+#: unreadable value must not silently disable a guard whose whole purpose is to
+#: fire when the evidence is unclear.
+_VETO_OFF_FLAGS = frozenset({"0", "false", "no", "off"})
+
+#: A maximal run of identifier-shaped characters. ``\w`` is Unicode, so
+#: Cyrillic slugs are tokens too; ``/`` and ``~`` may also *start* one, which is
+#: what keeps ``/home/sfx`` and ``~/.local/share`` whole.
+_IDENTIFIER_TOKEN_RE = re.compile(r"[\w~/][\w./:~-]*", re.UNICODE)
+#: Trailing punctuation ends a sentence, not a name: ``near_dup.py.`` and
+#: ``project:`` lose their tail. Leading ``/`` and ``~`` are kept -- they are
+#: the path -- while a leading ``.``/``:``/``-`` is trimmed like the tail.
+_TOKEN_TRAILING_TRIM = "./:-~"
+_TOKEN_LEADING_TRIM = ".:-"
+#: One character is never a name; two can be (``v2``, ``id``-shaped slugs).
+_MIN_IDENTIFIER_CHARS = 2
+#: The length below which a token needs actual structure rather than merely a
+#: digit or a case transition. Four is where a bare number stops reading as
+#: prose: ``2026`` is a year, ``3`` in "measured at 3 units" is arithmetic.
+_MIN_WEAK_IDENTIFIER_CHARS = 4
+#: Any one of these makes a token an identifier outright.
+_SLUG_SEPARATORS = ("-", "_", "/", ":")
+#: 26 characters of Crockford base32 (no I, L, O or U): a ULID.
+_ULID_RE = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
+#: Seven hex characters is a short git id; digests are longer. The digit
+#: requirement lives at the call site, so hex-shaped words never match.
+_HEX_DIGEST_RE = re.compile(r"[0-9a-fA-F]{7,}")
+
+#: Stands in for a text the veto was asked about and could not read. It is a
+#: lost identifier as far as the decision goes, which is what makes an
+#: unenforceable check refuse instead of pass.
+TEXT_UNAVAILABLE = "<text not loaded>"
+
+
+def identifier_veto_enabled():
+    """Read ``LM_NEAR_DUP_IDENTIFIER_VETO``; on unless explicitly turned off.
+
+    Only ``0``/``false``/``no``/``off`` (any case, surrounding blank ignored)
+    turn it off; unset and unrecognized both leave it ON, because the guard
+    exists for the cases where the evidence is unclear and a mistyped valve is
+    one of them.
+    """
+
+    return os.environ.get(IDENTIFIER_VETO_ENV, "").strip().lower() not in _VETO_OFF_FLAGS
+
+
+def extract_identifiers(text):
+    """Identifier-shaped tokens in ``text``, de-duplicated, in first-seen order.
+
+    A token is the maximal run of identifier-shaped characters (word characters
+    plus ``. / : - ~``), trimmed of the punctuation that ends a sentence rather
+    than a name. It counts as an identifier when any of these holds:
+
+    * it contains ``-``, ``_``, ``/`` or ``:`` -- hyphen and underscore slugs
+      (``layer-fauna``, ``build_duplicate_map``), paths
+      (``src/living_memory/near_dup.py``, ``~/.local/share``), scoped names
+      (``project:lm``) and URLs. Hyphen slugs are why the rule cannot be
+      narrower: ``layer-fauna`` is two lowercase words joined by a hyphen, so
+      Russian ``что-то`` and English ``well-known`` are read as identifiers
+      too. That is the trade -- a false veto costs one uncollapsed pair;
+    * it is dotted with at least one part of two characters or more --
+      ``living_memory.near_dup``, ``near_dup.py``, ``0.9547``. The
+      two-character part is what keeps ``e.g``, ``i.e`` and ``т.е`` out;
+    * it is a 26-character Crockford id (a ULID);
+    * it is seven or more hex characters including a digit -- commit ids and
+      digests. The digit is what keeps hex-shaped English words out;
+    * it is four characters or more and carries a digit -- years, ticket ids,
+      versions, PIDs;
+    * it is four characters or more with a lowercase-to-uppercase transition.
+
+    Deliberately NOT an identifier: a bare word however long, an all-caps word
+    (``СДЕЛАН``, ``IMPORTANT`` -- emphasis is not a name), and a number of
+    three characters or fewer.
+    """
+
+    seen = {}
+    for match in _IDENTIFIER_TOKEN_RE.finditer(text):
+        token = match.group().rstrip(_TOKEN_TRAILING_TRIM).lstrip(_TOKEN_LEADING_TRIM)
+        if token and _is_identifier(token):
+            seen.setdefault(token, None)
+    return tuple(seen)
+
+
+def identifiers_absent_from(text, bearer_text):
+    """``text``'s identifiers that are not *tokens* of ``bearer_text``.
+
+    Token equality, not substring containment, and case-sensitive. Both sides
+    go through :func:`extract_identifiers` and the comparison is string
+    equality between extracted tokens: the bearer has to name the token as a
+    token of its own, not merely contain it inside a longer one.
+
+    Containment was the rule until it was measured. Node names in a goal tree
+    are built by suffixing, so ``…/checkpoint-selected-profile-v2`` is literally
+    a substring of ``…/checkpoint-selected-profile-v2-repaired``; with the
+    longer-named node bearing, the candidate's whole path "occurred in" the
+    bearer's text, the diff came back empty, and two distinct tree nodes with
+    two distinct recorded failures collapsed as one fact at cosine 0.99350
+    (project:x, ``01KTRR6WHFXFW16M691Q1N98E1`` ->
+    ``01KTRJCB5FQ7ZT2WKD02TQ20B3``). The same shape put
+    ``…/stock-contract-preservation-audit`` under ``…-audit-reintegrate`` at
+    0.99064. The token rule also closes a numeric class: ``0.99`` is a
+    substring of ``0.99350`` but not a token of it.
+
+    What it costs is the case containment was written for -- a bearer spelling
+    ``src/living_memory/near_dup.py`` no longer covers a candidate spelling the
+    bare ``near_dup.py`` -- and that is the trade this veto has made
+    throughout: a false veto costs one uncollapsed pair, a false pass hides a
+    fact. Not softened into ``/``-aligned containment either; ``a/x.py`` and
+    ``b/x.py`` break that the same way.
+
+    Case-sensitive because these are paths, env vars and ids, where case is
+    meaning, and because the ambiguous direction is the one that vetoes.
+    """
+
+    bearer_identifiers = frozenset(extract_identifiers(bearer_text))
+    return tuple(
+        token
+        for token in extract_identifiers(text)
+        if token not in bearer_identifiers
+    )
+
+
+def _is_identifier(token):
+    """One trimmed token against the classes documented on ``extract_identifiers``."""
+
+    if len(token) < _MIN_IDENTIFIER_CHARS:
+        return False
+    if any(separator in token for separator in _SLUG_SEPARATORS):
+        return True
+    if "." in token and _is_dotted_path(token):
+        return True
+    if _ULID_RE.fullmatch(token):
+        return True
+    has_digit = any(character.isdigit() for character in token)
+    if has_digit and _HEX_DIGEST_RE.fullmatch(token):
+        return True
+    if len(token) < _MIN_WEAK_IDENTIFIER_CHARS:
+        return False
+    return has_digit or _has_case_transition(token)
+
+
+def _is_dotted_path(token):
+    """A dotted token with two or more parts, one of them two characters or more.
+
+    ``0.95`` and ``near_dup.py`` qualify; ``e.g``, ``i.e``, ``т.е`` and ``1.5``
+    do not. Abbreviations are dots between single characters; names are not.
+    """
+
+    parts = [part for part in token.split(".") if part]
+    return len(parts) >= 2 and any(len(part) >= 2 for part in parts)
+
+
+def _has_case_transition(token):
+    """Whether a lowercase character is immediately followed by an uppercase one."""
+
+    return any(
+        left.islower() and right.isupper() for left, right in zip(token, token[1:])
+    )
+
+
+class IdentifierVeto(object):
+    """What a collapse would hide, pair by pair.
+
+    Holds the full text of the nodes that reached the threshold, and only
+    those. Switched off it answers "nothing" without reading anything, so the
+    valve is a rollback rather than a second code path.
+    """
+
+    def __init__(self, contents, enabled=True):
+        self.enabled = bool(enabled)
+        self.contents = contents
+
+    def lost(self, candidate_id, bearer_id):
+        """Identifiers the candidate names that the bearer's text does not.
+
+        Empty is the only answer that lets a collapse through. A side whose
+        text could not be read yields the unreadable marker rather than an
+        empty tuple: a veto that cannot see the text cannot be enforced, and an
+        unenforceable guard has to fail closed.
+
+        One-directional on purpose. The bearer's own extra identifiers still
+        reach the agent -- the bearer keeps its whole text -- and it is the
+        candidate's that would disappear behind a supersedes edge.
+
+        The comparison goes through :func:`identifiers_absent_from` rather than
+        being spelled out here, and re-extracts BOTH texts for every pair it is
+        asked about instead of caching either. Both are deliberate: the
+        mirrored function is then the one the decision actually runs on, so the
+        agreement test pins the decision and not merely a lookalike beside it.
+        (``near_dup.build_duplicate_map`` does cache the bearer's token set --
+        its inner scan walks every pair of arrivals, not just the pairs a
+        threshold already admitted. Same rule, different shape of loop.) Here
+        a threshold admits a few thousand pairs on a corpus of tens of
+        thousands of nodes, so two extractions per pair are noise next to the
+        scan that produced them.
+        """
+
+        if not self.enabled:
+            return ()
+        candidate_text = self.contents.get(candidate_id)
+        bearer_text = self.contents.get(bearer_id)
+        if candidate_text is None or bearer_text is None:
+            return (TEXT_UNAVAILABLE,)
+        return identifiers_absent_from(candidate_text, bearer_text)
+
+
+def _veto_detail(lost):
+    """The skip line's parenthetical: what this pair would have hidden."""
+
+    if lost == (TEXT_UNAVAILABLE,):
+        return "one side's text could not be read; refusing to collapse unchecked"
+    shown = ", ".join(lost[:4])
+    if len(lost) > 4:
+        shown += ", and %d more" % (len(lost) - 4)
+    return "candidate names %s; the bearer's text does not" % shown
+
+
+# --------------------------------------------------------------------------
 # decisions
 # --------------------------------------------------------------------------
 
@@ -734,6 +1017,12 @@ SKIP_REASONS = (
         "longer_than_bearer",
         "the candidate is materially longer than its bearer: same fact plus a new "
         "detail, and the detail has to reach the agent",
+    ),
+    (
+        "identifier_veto",
+        "the candidate names an identifier -- a ULID, a path, a node name, a slug "
+        "-- that the bearer's text does not: whatever the cosine says, those are "
+        "two different facts",
     ),
     ("candidate_already_collapsed", "the candidate was already collapsed in this run"),
     ("cycle", "collapsing this pair would point a node at something it already bears"),
@@ -776,8 +1065,25 @@ def _better_bearer(left, right):
     return left.id < right.id
 
 
-def decide(pairs, nodes, protected, superseded, superseding, existing_pairs, margin):
-    """Turn ranked pairs into collapses plus a reason for every refusal."""
+def decide(
+    pairs,
+    nodes,
+    protected,
+    superseded,
+    superseding,
+    existing_pairs,
+    margin,
+    veto=None,
+):
+    """Turn ranked pairs into collapses plus a reason for every refusal.
+
+    ``veto`` is an :class:`IdentifierVeto`; omitted (or switched off) it lets
+    every pair through untouched, which is the ``LM_NEAR_DUP_IDENTIFIER_VETO=0``
+    path and the pre-veto behaviour of this function.
+    """
+
+    if veto is None:
+        veto = IdentifierVeto({}, enabled=False)
 
     collapses = []
     skips = []
@@ -876,14 +1182,22 @@ def decide(pairs, nodes, protected, superseded, superseding, existing_pairs, mar
                 )
             )
             continue
+        # Last, and in the same position the map checks it: the length guard
+        # fires on a missing detail, this one on a missing name.
+        lost = veto.lost(candidate.id, bearer.id)
+        if lost:
+            skips.append(
+                Skip(cosine, "identifier_veto", bearer, candidate, _veto_detail(lost))
+            )
+            continue
 
         bearer_of[candidate.id] = bearer.id
         collapses.append(Collapse(cosine, bearer, candidate, rechained_from))
 
-    return _flatten(collapses, skips, margin), skips
+    return _flatten(collapses, skips, margin, veto), skips
 
 
-def _flatten(collapses, skips, margin):
+def _flatten(collapses, skips, margin, veto):
     """Re-point every collapse at the node that actually survives.
 
     The main pass can record LOW -> MID on a high-cosine pair and then, on a
@@ -894,6 +1208,10 @@ def _flatten(collapses, skips, margin):
     edge is re-pointed at the root of its chain and the guard is re-checked
     there, and a collapse whose surviving root is too short is dropped rather
     than quietly chained.
+
+    The identifier veto is re-checked at the root for exactly the same reason:
+    what the agent is left holding is the root's text, so that is the text the
+    candidate's identifiers have to be in.
     """
 
     alive = list(collapses)
@@ -907,17 +1225,26 @@ def _flatten(collapses, skips, margin):
             while root.id in links and root.id not in seen:
                 seen.add(root.id)
                 root = links[root.id]
+            rechained = root.id != item.bearer.id
+            root_lost = veto.lost(item.candidate.id, root.id) if rechained else ()
             if root.id == item.candidate.id:
                 dropped.append((item, "cycle", "chain returns to the candidate"))
-            elif root.id != item.bearer.id and item.candidate.chars > root.chars * (
-                1.0 + margin
-            ):
+            elif rechained and item.candidate.chars > root.chars * (1.0 + margin):
                 dropped.append(
                     (
                         item,
                         "longer_than_bearer",
                         "%d chars vs %d at the surviving node (chained through %s)"
                         % (item.candidate.chars, root.chars, _short(item.bearer.id)),
+                    )
+                )
+            elif root_lost:
+                dropped.append(
+                    (
+                        item,
+                        "identifier_veto",
+                        "%s at the surviving node (chained through %s)"
+                        % (_veto_detail(root_lost), _short(item.bearer.id)),
                     )
                 )
             else:
@@ -1021,7 +1348,7 @@ def print_distribution(scan_result, load, args):
     emit()
 
 
-def print_band_note(args):
+def print_band_note(args, identifier_veto):
     emit("## threshold")
     emit("threshold applied       : %.4f" % args.threshold)
     emit(
@@ -1036,6 +1363,16 @@ def print_band_note(args):
         "provenance guard        : never supersede a node listed in source_traces "
         "of a live %s node" % "/".join(args.provenance_levels)
     )
+    if identifier_veto:
+        emit(
+            "identifier veto         : ON (%s); a candidate naming an identifier "
+            "its bearer's text does not is never collapsed" % IDENTIFIER_VETO_ENV
+        )
+    else:
+        emit(
+            "identifier veto         : OFF (%s is set off); identifier-losing "
+            "pairs collapse like any other" % IDENTIFIER_VETO_ENV
+        )
     emit()
 
 
@@ -1286,8 +1623,18 @@ def validate(args):
         )
 
 
-def build_command_line(args, database):
-    parts = [
+def build_command_line(args, database, identifier_veto=True):
+    """The apply command for exactly this pass, env valve included.
+
+    The valve rides in front of the command rather than being left implicit:
+    a pass run with the veto off collapses pairs a default pass refuses, so an
+    operator retyping the command without it would apply a different pass.
+    """
+
+    parts = []
+    if not identifier_veto:
+        parts.append("%s=0" % IDENTIFIER_VETO_ENV)
+    parts += [
         "python3",
         "scripts/%s" % PROGRAM,
         database,
@@ -1356,7 +1703,18 @@ def run(argv):
         print_distribution(scan_result, load, args)
         emit("scan took %.1f s (%s)" % (elapsed, "numpy" if numpy_module else "pure Python"))
         emit()
-        print_band_note(args)
+
+        veto_on = identifier_veto_enabled()
+        pair_members = set()
+        if veto_on:
+            for _, id_a, id_b in scan_result.pairs:
+                pair_members.add(id_a)
+                pair_members.add(id_b)
+        veto = IdentifierVeto(
+            load_contents(connection, pair_members) if veto_on else {},
+            enabled=veto_on,
+        )
+        print_band_note(args, veto_on)
 
         collapses, skips = decide(
             scan_result.pairs,
@@ -1366,6 +1724,7 @@ def run(argv):
             superseding,
             existing_pairs,
             args.length_margin,
+            veto,
         )
         emit(
             "provenance-protected nodes: %d of %d active (source_traces of live %s)"
@@ -1380,7 +1739,7 @@ def run(argv):
         print_decisions(collapses, skips, scan_result, args)
 
         if args.json_path:
-            write_json(args, report, load, scan_result, collapses, skips)
+            write_json(args, report, load, scan_result, collapses, skips, veto_on)
 
         if args.apply:
             emit(OPERATIONAL_NOTE)
@@ -1397,7 +1756,10 @@ def run(argv):
             emit("## dry run")
             emit("Nothing was written; the database was opened read-only.")
             emit("To apply exactly this pass:")
-            emit("    %s --apply" % build_command_line(args, os.path.abspath(args.database)))
+            emit(
+                "    %s --apply"
+                % build_command_line(args, os.path.abspath(args.database), veto_on)
+            )
             emit()
             emit(OPERATIONAL_NOTE)
     finally:
@@ -1405,7 +1767,7 @@ def run(argv):
     return EXIT_OK
 
 
-def write_json(args, report, load, scan_result, collapses, skips):
+def write_json(args, report, load, scan_result, collapses, skips, identifier_veto=True):
     values = sorted(scan_result.max_cosine.values())
     by_reason = {}
     for item in skips:
@@ -1415,6 +1777,7 @@ def write_json(args, report, load, scan_result, collapses, skips):
         "threshold": args.threshold,
         "scope_mode": args.scope_mode,
         "length_margin": args.length_margin,
+        "identifier_veto": bool(identifier_veto),
         "provenance_levels": list(args.provenance_levels),
         "active_nodes": report.active_nodes,
         "nodes_with_chunks": report.nodes_with_chunks,

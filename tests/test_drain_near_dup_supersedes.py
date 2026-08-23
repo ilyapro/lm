@@ -27,6 +27,7 @@ import pytest
 
 from living_memory import retrieval
 from living_memory.models import Node
+from living_memory.near_dup import IDENTIFIER_VETO_ENV
 from living_memory.retrieval import (
     DRAIN_NEAR_DUP_COSINE_ENV,
     DRAIN_NEAR_DUP_ENV,
@@ -83,10 +84,27 @@ def collapse_on(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No test inherits the gate from the environment it runs in."""
+    """No test inherits the gate from the environment it runs in.
+
+    The identifier veto is deleted rather than set, so every scenario below
+    runs against its shipped default -- on -- unless it says otherwise.
+    """
 
     monkeypatch.delenv(DRAIN_NEAR_DUP_ENV, raising=False)
     monkeypatch.delenv(DRAIN_NEAR_DUP_COSINE_ENV, raising=False)
+    monkeypatch.delenv(IDENTIFIER_VETO_ENV, raising=False)
+
+
+@pytest.fixture
+def identifier_veto_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turn the identifier veto off for a test about some other variable.
+
+    The ``alpha96`` fixture pair differs in a digit-bearing token, so the veto
+    refuses it on its own merits. A test whose subject is the cosine threshold
+    has to remove that second cause or it is no longer measuring one variable.
+    """
+
+    monkeypatch.setenv(IDENTIFIER_VETO_ENV, "0")
 
 
 def established(store: MemoryStore, content: str, *, level: str = "trace") -> str:
@@ -277,7 +295,7 @@ def test_collapse_records_the_cosine_that_caused_it(
 
 
 def test_a_pair_below_the_threshold_survives_as_two_nodes(
-    store: MemoryStore, collapse_on: None
+    store: MemoryStore, collapse_on: None, identifier_veto_off: None
 ) -> None:
     """0.96 is not a repeat, and this path must never reach into that band.
 
@@ -286,6 +304,10 @@ def test_a_pair_below_the_threshold_survives_as_two_nodes(
     writes an edge that outlives the answer, so only this path needs the high
     threshold -- and needs it tested, because the two consumers share the
     comparison function and would otherwise share its threshold by accident.
+
+    The veto is off here and in the test below so that the threshold is the one
+    thing that moves between them; that it *also* refuses this pair is the
+    subject of the identifier-veto section, not of this one.
     """
 
     established(store, "alpha drift measured at three units")
@@ -298,7 +320,7 @@ def test_a_pair_below_the_threshold_survives_as_two_nodes(
 
 
 def test_a_lowered_threshold_reaches_the_pair_the_default_leaves_alone(
-    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, identifier_veto_off: None
 ) -> None:
     """The threshold is the knob, and it is the *only* thing separating the two
     outcomes above -- same fixture, same gate, one variable."""
@@ -307,6 +329,70 @@ def test_a_lowered_threshold_reaches_the_pair_the_default_leaves_alone(
     monkeypatch.setenv(DRAIN_NEAR_DUP_COSINE_ENV, "0.95")
     original = established(store, "alpha drift measured at three units")
     repeat = unvectorized(store, "alpha96 drift measured at 3 units")
+
+    recall(store)
+
+    assert drain_edges(store) == [(original, repeat)]
+
+
+# ----------------------------------------------------------------------
+# The identifier veto
+# ----------------------------------------------------------------------
+
+
+def test_a_template_pair_differing_in_an_identifier_is_never_superseded(
+    store: MemoryStore, collapse_on: None
+) -> None:
+    """This pass's residual risk, closed: identical vectors, different facts.
+
+    Both nodes embed to ALPHA, so their cosine is 1.0 -- above any threshold an
+    operator could set, including the shipped 0.99. The template is the whole
+    vector and the node name is a rounding error in it, which is exactly the
+    class measured on the alt corpus at 0.9547. An edge here would outlive the
+    answer that caused it, so it is the one this pass must never write.
+    """
+
+    established(store, "alpha drift recorded for узел layer-fauna СДЕЛАН")
+    repeat = unvectorized(store, "alpha drift recorded for узел layer-actors СДЕЛАН")
+
+    recall(store)
+
+    assert drain_edges(store) == []
+    assert supersedes_edges(store) == []
+    assert store.get_node(repeat) is not None
+
+
+def test_the_valve_off_restores_the_collapse_the_veto_refused(
+    store: MemoryStore, collapse_on: None, identifier_veto_off: None
+) -> None:
+    """Same fixture, same gate, valve at 0: the drain honours the same env var.
+
+    Without this the previous test proves only that *something* refused the
+    pair. The pair collapsing the moment ``LM_NEAR_DUP_IDENTIFIER_VETO=0`` is
+    what identifies the cause -- and shows this consumer reads the same valve
+    as the delivery path rather than one of its own.
+    """
+
+    original = established(store, "alpha drift recorded for узел layer-fauna СДЕЛАН")
+    repeat = unvectorized(store, "alpha drift recorded for узел layer-actors СДЕЛАН")
+
+    recall(store)
+
+    assert drain_edges(store) == [(original, repeat)]
+
+
+def test_an_identifier_the_original_also_names_does_not_block_the_drain(
+    store: MemoryStore, collapse_on: None
+) -> None:
+    """The veto is not a blanket refusal of identifier-bearing traces.
+
+    Both nodes name ``layer-fauna``; the repeat says nothing the original does
+    not, which is the case this pass exists for. Its negative control is the
+    test two above -- same shape, one token changed.
+    """
+
+    original = established(store, "alpha drift recorded for узел layer-fauna СДЕЛАН")
+    repeat = unvectorized(store, "alpha drift for узел layer-fauna, СДЕЛАН")
 
     recall(store)
 

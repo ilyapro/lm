@@ -69,6 +69,7 @@ provenance and merges distinct facts, so a threshold below 0.95 is refused unles
 | `provenance_source_trace` | the node that would be superseded is listed in `source_traces` of a live concept or schema. That band is provenance, never duplication. |
 | `level_mismatch` | the two nodes are different levels. A trace is never superseded by a concept written over it. |
 | `longer_than_bearer` | the candidate exceeds the bearer by more than `--length-margin` (default 10%). "Same fact plus a new detail" — the detail has to reach the agent. |
+| `identifier_veto` | the candidate names an identifier — a ULID, a path, a node or branch name, a slug, a dotted symbol, a digest — that the bearer's text does not. Two texts differing in an identifier are different facts at *any* cosine. |
 | `candidate_is_correction` | the candidate is the source of an existing `supersedes` edge; collapsing it would bury the correction. |
 | `candidate_already_superseded` | it already has an incoming `supersedes` edge. |
 | `bearer_already_superseded` | the node that would bear is itself superseded; nothing is hung off a node the system already demotes. |
@@ -82,10 +83,32 @@ that ranking: a protected node stays a visible skip line rather than being
 silently routed around.
 
 Clusters are flattened, not chained: if `LOW → MID` and later `MID → TOP`, both
-edges are written against `TOP`, and the length guard is re-checked against `TOP`
-before that re-pointing is allowed. A chain dropped by that re-check can leave an
+edges are written against `TOP`, and the length guard **and the identifier veto**
+are re-checked against `TOP` before that re-pointing is allowed — what the agent
+is left holding is the root's text. A chain dropped by that re-check can leave an
 earlier `candidate_already_collapsed` skip line standing for the same node — that
 under-collapses, never over-collapses.
+
+### The identifier veto, and its valve
+
+`LM_NEAR_DUP_IDENTIFIER_VETO` is the valve: on unless set to `0`/`false`/`no`/`off`,
+and off restores the previous behaviour exactly (no node text is even read). It is
+the same env var, with the same default, that `living_memory.near_dup` reads for the
+delivery layer and the drain, so one line means one thing everywhere. A dry run
+prints its state, counts what it blocked under `identifier_veto`, and — when the
+valve is off — carries it into the printed `--apply` command, because a pass run
+without the veto is not the pass the default command would apply.
+
+The rule is duplicated in the script rather than imported, which is the price of the
+portability above. `tests/test_collapse_near_dups.py` holds it to account: it imports
+both implementations — a test may, the script may not — and asserts verdict-for-verdict
+agreement over a table covering every identifier class and its negatives, so drift in
+either direction fails the suite.
+
+It is deliberately trigger-happy: a false veto costs one uncollapsed near-duplicate,
+a false pass hides a fact. On the pre-hygiene backup at 0.95 it blocks **84 of 127**
+would-be collapses (127 → 43, 189 pairs skipped), mostly pairs naming different
+goal-node paths and different tree branches.
 
 ## Running it
 

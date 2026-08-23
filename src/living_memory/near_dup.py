@@ -39,6 +39,49 @@ node absent from the map is never collapsed and never becomes a bearer by
 similarity. The alternative -- a zero vector -- is worse than useless: zero
 vectors are exactly equal to each other, so every unvectorized node would
 collapse into every other one.
+
+The identifier veto
+-------------------
+Two texts that differ in an identifier are different facts at *any* cosine, and
+no threshold separates them from the honest repeats. Measured: on the alt
+corpus «узел layer-fauna СДЕЛАН» and «узел layer-actors СДЕЛАН» score 0.9547,
+and locally 33 collapsed slots joined different facts spread across 0.93-0.98 --
+inside and above the band the shipped 0.95 admits. The template dominates the
+vector; the one token that carries the fact is a rounding error in it. So the
+map *vetoes* such a pair rather than re-ranking it: a candidate carrying an
+identifier its resolved bearer's text does not carry is never collapsed.
+
+"Does not carry" means the token is absent from the bearer's own extracted
+tokens -- exact string equality, never substring containment. That distinction
+is not academic, it was measured. Goal-tree node names in this corpus are built
+by *suffixing*, so ``…/checkpoint-selected-profile-v2`` is literally a substring
+of ``…/checkpoint-selected-profile-v2-repaired``. Under containment the shorter
+node's whole path "occurs in" the longer node's text, the identifier diff comes
+back empty, and two distinct tree nodes -- each with its own recorded OUTCOME
+fail -- collapse as one fact. The drain simulation on the pre-hygiene backup
+caught exactly that at cosine 0.99350 (``01KTRR6WHFXFW16M691Q1N98E1`` ->
+``01KTRJCB5FQ7ZT2WKD02TQ20B3``, project:x) and again at 0.99064, where
+``…/stock-contract-preservation-audit`` went under ``…-audit-reintegrate``. The
+token rule closes a numeric class with them: ``0.99`` is a substring of
+``0.99350`` but not a token of it.
+
+It is not softened into "containment aligned on ``/``" -- allowing a path *tail*
+to count -- because that is the same bug one level down: ``a/x.py`` and
+``b/x.py`` defeat it. The price of the strict rule is the case containment was
+written for: a bearer spelling ``src/living_memory/near_dup.py`` no longer
+covers a candidate spelling the bare ``near_dup.py``, and that pair now vetoes.
+
+The veto is one-directional on purpose. The *bearer's* own extra identifiers
+still reach the agent -- it keeps its full text -- and it is the candidate's
+that would disappear behind a stub. And it is deliberately trigger-happy: a
+false veto costs one uncollapsed stub, a false pass costs a hidden fact, so
+anything ambiguous is an identifier (see :func:`extract_identifiers`).
+
+``LM_NEAR_DUP_IDENTIFIER_VETO`` is the valve, read by
+:func:`identifier_veto_enabled` and honoured identically by both consumers.
+Default on: doubt resolves against collapsing. ``0``/``off``/``false``/``no``
+restores the previous map byte-for-byte -- the veto branch is not entered at
+all, so no text is even read.
 """
 
 from __future__ import annotations
@@ -46,6 +89,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 import math
+import os
+import re
 from typing import Any, Protocol
 
 try:
@@ -55,12 +100,53 @@ except ImportError:  # pragma: no cover - numpy is a normal runtime dep
 
 
 __all__ = [
+    "IDENTIFIER_VETO_ENV",
     "ChunkVectorSource",
     "DuplicateCandidate",
     "build_duplicate_map",
     "cosine",
+    "extract_identifiers",
+    "identifier_veto_enabled",
+    "identifiers_absent_from",
     "mean_pooled_vectors",
 ]
+
+#: The one valve for the identifier veto, honoured identically by every
+#: consumer -- delivery collapse and drain supersedes -- because they all read
+#: it through :func:`identifier_veto_enabled`. Default on.
+IDENTIFIER_VETO_ENV = "LM_NEAR_DUP_IDENTIFIER_VETO"
+
+#: Everything else -- unset, ``1``, ``on``, or a typo -- leaves the veto on.
+#: An unreadable value must not silently disable a guard whose whole purpose is
+#: to fire when the evidence is unclear.
+_VETO_OFF_FLAGS = frozenset({"0", "false", "no", "off"})
+
+#: A maximal run of identifier-shaped characters. ``\w`` is Unicode, so
+#: Cyrillic slugs are tokens too; ``/`` and ``~`` may also *start* one, which is
+#: what keeps ``/home/sfx`` and ``~/.local/share`` whole. Quotes, brackets,
+#: commas and whitespace are absent from the class and so are the boundaries.
+_IDENTIFIER_TOKEN_RE = re.compile(r"[\w~/][\w./:~-]*", re.UNICODE)
+#: Trailing punctuation ends a sentence, not a name: ``near_dup.py.`` and
+#: ``project:`` lose their tail. Leading ``/`` and ``~`` are kept -- they are
+#: the path -- while a leading ``.``/``:``/``-`` is trimmed like the tail.
+_TOKEN_TRAILING_TRIM = "./:-~"
+_TOKEN_LEADING_TRIM = ".:-"
+#: One character is never a name; two can be (``v2``, ``id``-shaped slugs).
+_MIN_IDENTIFIER_CHARS = 2
+#: The length below which a token needs actual structure -- a separator, a dot,
+#: a ULID or digest shape -- rather than merely a digit or a case transition.
+#: Four is where a bare number stops reading as prose: ``2026`` is a year,
+#: ``3`` in "measured at 3 units" is arithmetic.
+_MIN_WEAK_IDENTIFIER_CHARS = 4
+#: Any one of these makes a token an identifier outright. ``-`` is the class
+#: the goal turns on (``layer-fauna``); ``_`` never occurs in prose; ``/`` is a
+#: path; ``:`` is a scope or a URL.
+_SLUG_SEPARATORS = ("-", "_", "/", ":")
+#: 26 characters of Crockford base32 (no I, L, O or U): a ULID.
+_ULID_RE = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
+#: Seven hex characters is a short git id; digests are longer. The digit
+#: requirement lives at the call site, so hex-shaped words never match.
+_HEX_DIGEST_RE = re.compile(r"[0-9a-fA-F]{7,}")
 
 
 class ChunkVectorSource(Protocol):
@@ -80,13 +166,21 @@ class DuplicateCandidate:
     """One node offered to :func:`build_duplicate_map`, in rank order.
 
     ``content_length`` is the length of the text the agent would otherwise
-    receive -- ``len(node.content)`` -- and it is the only thing besides the
-    vector the map needs: the length guard is the difference between "the same
-    fact said twice" and "the same fact plus a new detail".
+    receive -- ``len(node.content)`` -- and it is what the length guard reads:
+    the difference between "the same fact said twice" and "the same fact plus a
+    new detail".
+
+    ``content`` is that text itself, and the identifier veto is the only thing
+    that reads it. It is optional so the pre-veto ``(node_id, length)`` form
+    still constructs, but optional is not free: with the veto on, a candidate
+    whose text the caller did not supply is NOT collapsed. A veto that cannot
+    see the text cannot be enforced, and an unenforceable guard must fail
+    closed rather than quietly pass everything.
     """
 
     node_id: str
     content_length: int
+    content: str | None = None
 
 
 def mean_pooled_vectors(
@@ -138,11 +232,12 @@ def mean_pooled_vectors(
 
 
 def build_duplicate_map(
-    items: Iterable[DuplicateCandidate | tuple[str, int]],
+    items: Iterable[DuplicateCandidate | tuple[str, int] | tuple[str, int, str | None]],
     vectors: Mapping[str, Sequence[float]],
     *,
     cosine_threshold: float,
     min_length_ratio: float,
+    identifier_veto: bool = True,
 ) -> dict[str, str]:
     """Map duplicate node id -> bearer node id over ``items`` in rank order.
 
@@ -184,6 +279,29 @@ def build_duplicate_map(
     never a bearer by similarity. It can still be the bearer of nodes that
     matched it byte-exactly elsewhere -- that is a different mechanism -- but
     it takes no part in this one, because there is nothing to compare it with.
+
+    The identifier veto (``identifier_veto``, on by default; the callers pass
+    :func:`identifier_veto_enabled`). A candidate carrying an identifier token
+    -- a ULID, a path, a node or branch name, a slug, a dotted symbol, a digest
+    -- that is not a token of its RESOLVED ROOT bearer's text is not collapsed.
+    Token equality, not substring containment: the suffixed node names in this
+    corpus made containment collapse distinct tree nodes, which
+    :func:`identifiers_absent_from` documents with the measured pairs.
+    Those two texts are different facts however close their vectors are; see
+    the module docstring for the measurement that made this a veto rather than
+    a threshold. Like the length guard it vetoes outright rather than hunting
+    for a bearer that happens to quote the token, and for the same reason: it
+    fires precisely when the top match is *missing* something the candidate
+    has, and a lower-ranked node is no evidence that it holds that thing. And
+    like the length guard it is one-directional -- identifiers the bearer has
+    and the candidate lacks ship to the agent anyway, inside the bearer's own
+    text.
+
+    ``identifier_veto=False`` reproduces the pre-veto map byte-for-byte: the
+    branch is not entered, so ``content`` is never read and it makes no
+    difference whether the caller supplied any. That is the valve's rollback
+    path, and it is why this stays a pure function of its arguments -- the env
+    var is read by the callers, once, not in here.
     """
 
     if cosine_threshold <= 0.0:
@@ -193,6 +311,14 @@ def build_duplicate_map(
 
     duplicate_of: dict[str, str] = {}
     length_by_id: dict[str, int] = {}
+    # Every node's identifier tokens, extracted once, when the node is offered
+    # as a candidate -- the same tokens it later answers with as a BEARER, so
+    # no text is tokenized twice and the inner scan does no regex work at all.
+    # The drain offers ~12,900 arrivals and the scan is O(n^2) over pairs;
+    # tokenizing the bearer per pair would put a regex inside that square.
+    # A node with no text is absent from this map, which the veto reads as
+    # "unenforceable" and refuses.
+    identifiers_by_id: dict[str, frozenset[str]] = {}
     vector_by_id: dict[str, Sequence[float]] = {}
     # Earlier vector-bearing nodes, in rank order: the scan below walks this
     # best-first and stops at the first match, which is what makes the bearer
@@ -212,6 +338,16 @@ def build_duplicate_map(
             continue
         length_by_id[node_id] = candidate.content_length
         vector_by_id[node_id] = vector
+        # Extracted once per candidate rather than once per pair: the tokens
+        # are a property of the candidate's own text, and only the "does the
+        # bearer say it too" half varies down the scan. ``None`` means the
+        # caller supplied no text, which the veto treats as unenforceable.
+        candidate_identifiers: tuple[str, ...] | None = None
+        if identifier_veto and candidate.content is not None:
+            candidate_identifiers = extract_identifiers(candidate.content)
+            # The set every later candidate compares against when this node is
+            # their bearer. Same tokens, same extraction, one pass.
+            identifiers_by_id[node_id] = frozenset(candidate_identifiers)
         for earlier_id, earlier_vector in ranked:
             if cosine(vector, earlier_vector) <= threshold:
                 continue
@@ -234,6 +370,12 @@ def build_duplicate_map(
             if _is_materially_longer(
                 candidate.content_length, length_by_id[bearer_id], length_ratio
             ):
+                break
+            if identifier_veto and _identifiers_would_be_lost(
+                candidate_identifiers, identifiers_by_id.get(bearer_id)
+            ):
+                # The candidate names something the text that would ship does
+                # not. Whatever the cosine says, those are two facts.
                 break
             duplicate_of[node_id] = bearer_id
             break
@@ -280,6 +422,174 @@ def cosine(left: Sequence[float], right: Sequence[float]) -> float:
     return dot / math.sqrt(square)
 
 
+def identifier_veto_enabled() -> bool:
+    """Read ``LM_NEAR_DUP_IDENTIFIER_VETO``; on unless explicitly turned off.
+
+    One reader for one env var, imported by both consumers, so "the veto is on"
+    cannot mean two different things in the delivery path and the drain. Only
+    ``0``/``false``/``no``/``off`` (any case, surrounding blank ignored) turn it
+    off; unset and unrecognized both leave it ON, because the guard exists for
+    the cases where the evidence is unclear and a mistyped valve is one of them.
+    """
+
+    return os.environ.get(IDENTIFIER_VETO_ENV, "").strip().lower() not in _VETO_OFF_FLAGS
+
+
+def extract_identifiers(text: str) -> tuple[str, ...]:
+    """Identifier-shaped tokens in ``text``, de-duplicated, in first-seen order.
+
+    Deliberately broader than the measurement harness's identifier regex, which
+    requires a DIGIT in the token (``scripts/recall_dup_slot_measure.py``) and
+    therefore cannot see ``layer-fauna`` -- the exact class that caused the
+    false collapses this veto exists for. Digits are optional here.
+
+    A token is the maximal run of identifier-shaped characters (word characters
+    plus ``. / : - ~``), trimmed of the punctuation that ends a sentence rather
+    than a name. It counts as an identifier when any of these holds:
+
+    * it contains ``-``, ``_``, ``/`` or ``:`` -- hyphen and underscore slugs
+      (``layer-fauna``, ``near-dup-identifier-veto``, ``build_duplicate_map``),
+      file and repo paths (``src/living_memory/near_dup.py``, ``~/.local/share``),
+      scoped names (``project:lm``) and URLs. Hyphen slugs are the reason the
+      rule cannot be narrower: ``layer-fauna`` and ``layer-actors`` are two
+      lowercase words joined by a hyphen and nothing but the hyphen rule
+      distinguishes them from prose, so Russian ``что-то`` and English
+      ``well-known`` are read as identifiers too. That is the trade the goal
+      asks for: a false veto costs one uncollapsed stub, a false pass costs a
+      hidden fact;
+    * it is dotted with at least one part of two characters or more -- module
+      and symbol paths (``living_memory.near_dup``), filenames (``near_dup.py``),
+      measured numbers (``0.9547``). The two-character part is what keeps
+      ``e.g``, ``i.e`` and ``т.е`` out;
+    * it is a 26-character Crockford id (a ULID);
+    * it is seven or more hex characters including a digit -- commit ids and
+      digests (``19877a4383b2e2d2``). The digit is what keeps hex-shaped English
+      words out;
+    * it is four characters or more and carries a digit -- years, ticket ids,
+      versions, PIDs. Shorter is left alone: ``3`` in "measured at 3 units" is
+      prose arithmetic, not a name;
+    * it is four characters or more with a lowercase-to-uppercase transition --
+      ``MemoryStore``, ``recallMap``.
+
+    What is deliberately NOT an identifier: a bare word, however long
+    (``understanding``), an all-caps word (``СДЕЛАН``, ``IMPORTANT`` -- emphasis
+    is not a name), and a number of three characters or fewer.
+    """
+
+    seen: dict[str, None] = {}
+    for match in _IDENTIFIER_TOKEN_RE.finditer(text):
+        token = match.group().rstrip(_TOKEN_TRAILING_TRIM).lstrip(_TOKEN_LEADING_TRIM)
+        if token and _is_identifier(token):
+            seen.setdefault(token, None)
+    return tuple(seen)
+
+
+def identifiers_absent_from(text: str, bearer_text: str) -> tuple[str, ...]:
+    """``text``'s identifiers that are not *tokens* of ``bearer_text``.
+
+    Token equality, not substring containment, and case-sensitive. Both sides
+    go through :func:`extract_identifiers` and the comparison is string
+    equality between extracted tokens: a token counts as present only when the
+    bearer names it as a token of its own, never because it happens to sit
+    inside a longer one.
+
+    The rule was containment until the drain simulation on the pre-hygiene
+    backup showed what containment lets through. Node names here are built by
+    suffixing, so ``…/checkpoint-selected-profile-v2`` is a substring of
+    ``…/checkpoint-selected-profile-v2-repaired``; with the longer-named node
+    bearing, the candidate's own path "occurred in" the bearer's text, the diff
+    came back empty, and two distinct tree nodes carrying two distinct recorded
+    failures collapsed into one at cosine 0.99350 (project:x,
+    ``01KTRR6WHFXFW16M691Q1N98E1`` -> ``01KTRJCB5FQ7ZT2WKD02TQ20B3``). The same
+    shape put ``…/stock-contract-preservation-audit`` under
+    ``…-audit-reintegrate`` at 0.99064, and a numeric variant nobody had looked
+    for came with it: ``0.99`` is a substring of ``0.99350`` but not a token.
+
+    The price is exactly the case containment was written for: a bearer
+    spelling ``src/living_memory/near_dup.py`` no longer covers a candidate
+    spelling the bare ``near_dup.py``, so that pair vetoes now. Paid on
+    purpose -- a false veto costs one uncollapsed stub, a false pass costs a
+    hidden fact -- and deliberately not softened into "containment aligned on
+    ``/``", which ``a/x.py`` against ``b/x.py`` defeats the same way.
+
+    Case-sensitive because these are paths, env vars and ids, where case is
+    meaning, and because the ambiguous direction is the one that vetoes.
+
+    Non-empty return means "do not collapse". Order and de-duplication follow
+    :func:`extract_identifiers`, so the result is also readable as a report of
+    what a collapse would cost.
+    """
+
+    bearer_identifiers = frozenset(extract_identifiers(bearer_text))
+    return tuple(
+        token
+        for token in extract_identifiers(text)
+        if token not in bearer_identifiers
+    )
+
+
+def _identifiers_would_be_lost(
+    candidate_identifiers: tuple[str, ...] | None,
+    bearer_identifiers: frozenset[str] | None,
+) -> bool:
+    """Whether collapsing would hide an identifier the bearer's tokens lack.
+
+    Takes the bearer's *extracted token set*, not its raw text, so the decision
+    is the same string equality :func:`identifiers_absent_from` reports and the
+    bearer's text is tokenized once per node rather than once per pair.
+
+    ``None`` on either side is a veto, not a pass: the first means the caller
+    supplied no candidate text, the second no bearer text, and in both cases
+    the check the valve promises cannot be performed. Silently collapsing
+    instead would make the veto unenforceable exactly where a caller forgot to
+    wire it -- the one failure mode a guard like this must not have.
+    """
+
+    if candidate_identifiers is None or bearer_identifiers is None:
+        return True
+    return any(token not in bearer_identifiers for token in candidate_identifiers)
+
+
+def _is_identifier(token: str) -> bool:
+    """One trimmed token against the classes documented on ``extract_identifiers``."""
+
+    if len(token) < _MIN_IDENTIFIER_CHARS:
+        return False
+    if any(separator in token for separator in _SLUG_SEPARATORS):
+        return True
+    if "." in token and _is_dotted_path(token):
+        return True
+    if _ULID_RE.fullmatch(token):
+        return True
+    has_digit = any(character.isdigit() for character in token)
+    if has_digit and _HEX_DIGEST_RE.fullmatch(token):
+        return True
+    if len(token) < _MIN_WEAK_IDENTIFIER_CHARS:
+        return False
+    return has_digit or _has_case_transition(token)
+
+
+def _is_dotted_path(token: str) -> bool:
+    """A dotted token with two or more parts, one of them two characters or more.
+
+    ``0.95`` and ``near_dup.py`` qualify; ``e.g``, ``i.e``, ``т.е`` and ``1.5``
+    do not. The parts rule is the whole guard here: abbreviations are dots
+    between single characters, names are not.
+    """
+
+    parts = [part for part in token.split(".") if part]
+    return len(parts) >= 2 and any(len(part) >= 2 for part in parts)
+
+
+def _has_case_transition(token: str) -> bool:
+    """Whether a lowercase character is immediately followed by an uppercase one."""
+
+    return any(
+        left.islower() and right.isupper()
+        for left, right in zip(token, token[1:], strict=False)
+    )
+
+
 def _mean_pool(vectors: Sequence[Sequence[float]]) -> list[float] | None:
     """Average the chunks' directions and re-normalize; None if they cancel.
 
@@ -324,18 +634,27 @@ def _unit(vector: Sequence[float]) -> list[float] | None:
     return [float(value) / norm for value in vector]
 
 
-def _as_candidate(item: DuplicateCandidate | tuple[str, int]) -> DuplicateCandidate:
-    """Accept a :class:`DuplicateCandidate` or a plain ``(node_id, length)`` pair.
+def _as_candidate(
+    item: DuplicateCandidate | tuple[str, int] | tuple[str, int, str | None],
+) -> DuplicateCandidate:
+    """Accept a :class:`DuplicateCandidate` or a plain ``(node_id, length)`` tuple.
 
-    The pair form is there so a caller holding recall results or nodes can
+    The tuple form is there so a caller holding recall results or nodes can
     write ``(result.node.id, len(result.node.content))`` inline instead of
-    importing a dataclass to say the same two things.
+    importing a dataclass to say the same two things; a third element supplies
+    the text the identifier veto reads. Without it the candidate has no text,
+    and with the veto on that means it is not collapsed.
     """
 
     if isinstance(item, DuplicateCandidate):
         return item
-    node_id, content_length = item
-    return DuplicateCandidate(node_id=str(node_id), content_length=int(content_length))
+    node_id, content_length, *rest = item
+    content = rest[0] if rest and rest[0] is not None else None
+    return DuplicateCandidate(
+        node_id=str(node_id),
+        content_length=int(content_length),
+        content=None if content is None else str(content),
+    )
 
 
 def _resolve_bearer(duplicate_of: Mapping[str, str], node_id: str) -> str:

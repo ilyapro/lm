@@ -4,6 +4,13 @@ Every fixture here is a hand-built sqlite database, never a ``MemoryStore``:
 the script's contract is the schema, so the tests have to speak the schema too.
 Nothing in this file makes the script importable through ``living_memory``, and
 one test runs it in an isolated subprocess to prove it never needs to be.
+
+This file does import ``living_memory.near_dup``, and that asymmetry is the
+point. The script duplicates the identifier veto instead of importing it,
+because importing it would cost the portability the script exists for; the
+duplication is then held to account from here, where both implementations are
+in scope at once (see "the mirror" at the bottom). A test may import the
+package. The script may not.
 """
 
 from __future__ import annotations
@@ -19,6 +26,8 @@ from array import array
 from pathlib import Path
 
 import pytest
+
+from living_memory import near_dup as reference
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "lm_collapse_near_dups.py"
 
@@ -179,6 +188,30 @@ def collapses_in(stdout):
             parts = line.split()
             pairs.append((parts[parts.index("supersede") + 1], parts[parts.index("keep") + 1]))
     return pairs
+
+
+def skip_details(stdout):
+    """{superseded id: [(reason, detail), ...]} from the per-reason sections.
+
+    A list, not one entry: one node can be skipped by several pairs, and a
+    dict keyed by node would silently keep whichever reason printed last.
+    """
+
+    details = {}
+    reason = None
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("### "):
+            reason = stripped[4:].rsplit(" (", 1)[0]
+            continue
+        if reason and stripped.startswith("SKIP "):
+            parts = stripped.split()
+            candidate = parts[parts.index("would-supersede") + 1]
+            detail = ""
+            if "(" in stripped:
+                detail = stripped.split("(", 1)[1].rsplit(")", 1)[0]
+            details.setdefault(candidate, []).append((reason, detail))
+    return details
 
 
 def skip_reasons(stdout):
@@ -709,6 +742,7 @@ def test_json_summary_records_the_distribution_and_the_decisions(fixture, tmp_pa
     payload = json.loads(target.read_text())
 
     assert payload["threshold"] == collapse.SAFE_THRESHOLD
+    assert payload["identifier_veto"] is True
     assert payload["applied"] is False
     assert payload["nodes_compared"] == 3
     assert payload["percentiles"]["p50"] > 0.0
@@ -724,3 +758,628 @@ def test_json_summary_records_the_distribution_and_the_decisions(fixture, tmp_pa
             "supersede": "B",
         }
     ]
+
+
+# --------------------------------------------------------------------------
+# the identifier veto
+# --------------------------------------------------------------------------
+
+
+def test_skips_a_candidate_naming_an_identifier_the_bearer_lacks(fixture):
+    """The motivating pair, at the cosine that actually collapsed it.
+
+    «узел layer-fauna СДЕЛАН» and «узел layer-actors СДЕЛАН» scored 0.9547 on
+    the alt corpus -- above this script's default threshold -- and they are two
+    different facts. The template dominates the vector, so no threshold
+    separates the pair from an honest repeat and the refusal has to be a veto.
+    """
+
+    fixture.add_node(
+        "KEEP",
+        [_unit([1.0, 0.0, 0.0, 0.0])],
+        content="узел layer-actors СДЕЛАН и записан",
+        access_count=9,
+    )
+    fixture.add_node(
+        "DROP",
+        [_unit([0.999, 0.02, 0.0, 0.0])],
+        content="узел layer-fauna СДЕЛАН и записан",
+    )
+
+    _, stdout, _ = run_script(fixture.path)
+    assert collapses_in(stdout) == []
+    assert skip_reasons(stdout) == {"identifier_veto": 1}
+    assert skip_details(stdout)["DROP"] == [
+        ("identifier_veto", "candidate names layer-fauna; the bearer's text does not")
+    ]
+    assert "two different facts" in stdout
+
+
+def test_the_bearers_own_extra_identifier_does_not_block_the_collapse(fixture):
+    """One-directional, like the length guard, and for the same reason.
+
+    The bearer keeps its whole text, so an identifier only IT names still
+    reaches the agent. It is the candidate's that would vanish behind the edge.
+    """
+
+    fixture.add_node(
+        "KEEP",
+        [_unit([1.0, 0.0, 0.0, 0.0])],
+        content="the survey report near-dup-identifier-veto was filed",
+        access_count=9,
+    )
+    fixture.add_node(
+        "DROP",
+        [_unit([0.999, 0.02, 0.0, 0.0])],
+        content="the survey report was filed and noted",
+    )
+
+    _, stdout, _ = run_script(fixture.path)
+    assert collapses_in(stdout) == [("DROP", "KEEP")]
+
+
+def test_prose_only_near_duplicates_still_collapse(fixture):
+    """The veto's negative control: without it the guard could be "never".
+
+    A rule that vetoes everything passes every veto test and destroys the
+    script, so one pair of identifier-free paraphrases has to keep collapsing.
+    """
+
+    fixture.add_node(
+        "KEEP",
+        [_unit([1.0, 0.0, 0.0, 0.0])],
+        content="the ballast survey runs at slack water",
+        access_count=9,
+    )
+    fixture.add_node(
+        "DROP",
+        [_unit([0.999, 0.02, 0.0, 0.0])],
+        content="at slack water the ballast survey runs",
+    )
+
+    _, stdout, _ = run_script(fixture.path)
+    assert collapses_in(stdout) == [("DROP", "KEEP")]
+    assert skip_reasons(stdout) == {}
+
+
+def test_the_env_valve_off_restores_the_previous_behaviour(fixture, monkeypatch):
+    """``LM_NEAR_DUP_IDENTIFIER_VETO=0`` is the rollback, not a second mode."""
+
+    fixture.add_node(
+        "KEEP",
+        [_unit([1.0, 0.0, 0.0, 0.0])],
+        content="узел layer-actors СДЕЛАН и записан",
+        access_count=9,
+    )
+    fixture.add_node(
+        "DROP",
+        [_unit([0.999, 0.02, 0.0, 0.0])],
+        content="узел layer-fauna СДЕЛАН и записан",
+    )
+
+    monkeypatch.setenv(collapse.IDENTIFIER_VETO_ENV, "0")
+    _, stdout, _ = run_script(fixture.path)
+
+    assert collapses_in(stdout) == [("DROP", "KEEP")]
+    assert "identifier veto         : OFF" in stdout
+    # The apply command carries the valve, because a pass run without the veto
+    # is not the pass the default command would apply.
+    apply_line = [line for line in stdout.splitlines() if "--apply" in line][0]
+    assert apply_line.strip().startswith("LM_NEAR_DUP_IDENTIFIER_VETO=0 python3")
+
+
+def test_the_chain_leak_is_closed_at_its_first_link(fixture):
+    """The substring defect in miniature, and why token equality composes.
+
+    ``MID``'s text spells a 28-character run, ``…ABCDEF``. That run is not an
+    identifier of anything: two characters too long for a ULID, no digit, no
+    case transition. ``LOW``'s 26-character ULID sits inside it.
+
+    Under substring containment ``LOW -> MID`` PASSED -- the token "occurred
+    in" the bearer's text -- and ``MID -> TOP`` passed too, MID naming no
+    identifier of its own. The chain then carried LOW's ULID to a root whose
+    text does not contain it, and only ``_flatten``'s re-check at the root
+    caught it. That is the same non-transitivity the suffixed goal-tree node
+    names showed at cosine 0.99350: "token inside the bearer's TEXT" does not
+    compose, because the next link is decided between EXTRACTED tokens and this
+    one was not.
+
+    Token equality composes -- token sets, and set membership is transitive --
+    so the leak is refused where it starts. LOW names a ULID that is not one of
+    MID's tokens, and the first link never forms. ``_flatten`` still re-checks
+    the veto at the root, now as insurance rather than as the thing that
+    catches this: the length guard beside it is genuinely not transitive.
+    """
+
+    ulid = "ABCDEFGHJKMNPQRSTVWXYZABCD"  # 26 Crockford characters, no digit
+    fixture.add_node(
+        "TOP",
+        [_unit([1.0, 0.0, 0.0, 0.0])],
+        content="the identifier was set down and then noted in the record",
+        access_count=50,
+    )
+    fixture.add_node(
+        "MID",
+        [_unit([0.999, 0.02, 0.0, 0.0])],
+        content="the identifier %sEF was noted in the record" % ulid,
+        access_count=10,
+    )
+    fixture.add_node(
+        "LOW",
+        [_unit([0.998, 0.03, 0.0, 0.0])],
+        content="the identifier %s was noted in the record" % ulid,
+        access_count=1,
+    )
+    # The premise, stated rather than assumed: MID's longer run is not a name,
+    # so MID contributes no token at all -- and the ULID is not among its
+    # tokens even though it is inside its text.
+    assert collapse.extract_identifiers("%sEF" % ulid) == ()
+    assert ulid in "the identifier %sEF was noted in the record" % ulid
+
+    # The length margin is out of the way on purpose: this test is about which
+    # tokens the identifiers are compared against, not about how long they are.
+    _, stdout, _ = run_script(fixture.path, "--length-margin", "1.0")
+
+    assert collapses_in(stdout) == [("MID", "TOP")]
+    # LOW is refused against both of them, directly, rather than collapsing
+    # into MID and being unwound at the root afterwards.
+    assert skip_reasons(stdout) == {"identifier_veto": 2}
+    assert set(dict(skip_details(stdout)["LOW"]).items()) == {
+        ("identifier_veto", "candidate names %s; the bearer's text does not" % ulid)
+    }
+
+
+def test_a_pair_whose_text_cannot_be_read_is_not_collapsed(fixture, monkeypatch):
+    """An unenforceable veto refuses; it does not quietly pass everything."""
+
+    fixture.add_node("KEEP", [_unit([1.0, 0.0, 0.0, 0.0])], content="fact", access_count=9)
+    fixture.add_node("DROP", [_unit([0.999, 0.02, 0.0, 0.0])], content="fact")
+
+    monkeypatch.setattr(collapse, "load_contents", lambda connection, ids: {})
+    _, stdout, _ = run_script(fixture.path)
+
+    assert collapses_in(stdout) == []
+    assert skip_reasons(stdout) == {"identifier_veto": 1}
+    assert "could not be read" in stdout
+
+
+# --------------------------------------------------------------------------
+# the mirror: this script's veto against living_memory.near_dup's
+# --------------------------------------------------------------------------
+#
+# The script may not import the package, so the two implementations of the
+# identifier veto are two copies of the same rule. That duplication is only
+# safe while it is proven, and this is where it is proven: one table of pairs,
+# both implementations asked, a hand-written verdict for each. A drift in
+# either direction fails here -- the script gaining a class the map lacks is
+# as much a bug as the reverse, because the drain, the delivery layer and this
+# script are supposed to refuse the same corpus.
+
+#: (label, bearer text, candidate text, collapses?). Every identifier class the
+#: veto is required to cover, each with a negative, plus the pairs that must
+#: still collapse: prose paraphrases, shared identifiers, and identifiers only
+#: the bearer names. The suffix/prefix and numeric-prefix classes are the ones
+#: substring containment could not see -- one token sitting inside a longer one
+#: is not the same token, and both copies have to agree about that too.
+MIRROR_PAIRS = (
+    (
+        "ulid",
+        "the recall returned the same node twice",
+        "the recall returned 01M0QJV1BBRXNHF7D5NS23FD35 twice",
+        False,
+    ),
+    (
+        "crockford ulid carrying no digit at all",
+        "the id was written into the trace",
+        "the id ABCDEFGHJKMNPQRSTVWXYZABCD was written into the trace",
+        False,
+    ),
+    (
+        "repo path",
+        "the veto lives in the shared leaf module",
+        "the veto lives in src/living_memory/near_dup.py",
+        False,
+    ),
+    (
+        "home path",
+        "the backup was taken before the hygiene pass",
+        "the backup ~/.local/share/living-memory/global.sqlite3 was taken",
+        False,
+    ),
+    (
+        "absolute path",
+        "the checkout was made this morning",
+        "the checkout /home/sfx/p/lm was made this morning",
+        False,
+    ),
+    (
+        "goal-node name",
+        "the branch was merged this morning",
+        "the branch near-dup-identifier-veto was merged this morning",
+        False,
+    ),
+    (
+        "tree node slug -- the motivating pair",
+        "узел layer-actors СДЕЛАН и записан",
+        "узел layer-fauna СДЕЛАН и записан",
+        False,
+    ),
+    (
+        "underscore symbol",
+        "the map is built by one function",
+        "the map is built by build_duplicate_map",
+        False,
+    ),
+    (
+        "dotted module path",
+        "the leaf module is imported by both",
+        "living_memory.near_dup is imported by both",
+        False,
+    ),
+    (
+        "hex digest",
+        "the frozen selection was measured again",
+        "the frozen selection digest 19877a4383b2e2d2 was measured",
+        False,
+    ),
+    (
+        "short commit id",
+        "the fix landed at that commit exactly",
+        "the fix landed at commit ce93bae exactly",
+        False,
+    ),
+    (
+        "ticket id",
+        "the ticket was closed on friday",
+        "ticket LM-123 was closed on friday",
+        False,
+    ),
+    (
+        "scoped name",
+        "written into the project scope here",
+        "written with scope project:lm here",
+        False,
+    ),
+    (
+        "year",
+        "the note was written by an agent",
+        "the note was written in 2026 by an agent",
+        False,
+    ),
+    (
+        "measured cosine",
+        "the pair scores high on the alt corpus",
+        "the pair scores cos 0.9547 on the alt corpus",
+        False,
+    ),
+    (
+        "version",
+        "the host received the shipped build",
+        "the host received v1.2 of the build",
+        False,
+    ),
+    (
+        "camel case symbol",
+        "the store satisfies the protocol",
+        "MemoryStore satisfies the protocol",
+        False,
+    ),
+    (
+        "url",
+        "the page was fetched from there",
+        "https://example.test/x was fetched from there",
+        False,
+    ),
+    (
+        "env var, where case is meaning",
+        "set lm_near_dup_identifier_veto to zero",
+        "set LM_NEAR_DUP_IDENTIFIER_VETO to zero",
+        False,
+    ),
+    (
+        "a fuller path against a bare filename",
+        "edit near_dup.py today",
+        "edit src/living_memory/near_dup.py today",
+        False,
+    ),
+    (
+        # Was the one collapse in this table that substring containment bought:
+        # the bearer's fuller path "contained" the candidate's bare filename.
+        # Token equality refuses it, and the three classes below are why -- no
+        # rule can pass this and still block a node name inside its own
+        # suffixed twin.
+        "a bare filename against a fuller path",
+        "edit src/living_memory/near_dup.py today",
+        "edit near_dup.py today",
+        False,
+    ),
+    (
+        # The pair the drain simulation caught escaping at cosine 0.99350:
+        # goal-tree names are built by suffixing, so the shorter node name is
+        # literally a substring of the longer one and containment saw nothing
+        # missing. Two distinct nodes, two distinct recorded failures, one fact.
+        "a node name the bearer's suffixed name contains",
+        "OUTCOME fail: x/checkpoint-selected-profile-v2-repaired - measured",
+        "OUTCOME fail: x/checkpoint-selected-profile-v2 - measured",
+        False,
+    ),
+    (
+        "the same suffixed pair the other way round, which already vetoed",
+        "OUTCOME fail: x/checkpoint-selected-profile-v2 - measured",
+        "OUTCOME fail: x/checkpoint-selected-profile-v2-repaired - measured",
+        False,
+    ),
+    (
+        # The second escaper, at 0.99064. No mirror direction existed in any
+        # arm of the simulation, so the veto never saw this pair from the side
+        # that would have blocked it -- it was simply inert.
+        "a node name the bearer extends with -reintegrate",
+        "OUTCOME pass: p/stock-contract-preservation-audit-reintegrate - r",
+        "OUTCOME pass: p/stock-contract-preservation-audit - r",
+        False,
+    ),
+    (
+        # Numbers suffix too: 0.99 sits inside 0.99350, so containment read the
+        # coarser measurement as already carried by the finer one. Same bug,
+        # one level down in the grammar.
+        "a measurement that is a numeric prefix of the bearer's",
+        "the band was measured at 0.99350 exactly",
+        "the band was measured at 0.99 exactly",
+        False,
+    ),
+    (
+        "only the bearer carries the identifier",
+        "the survey report near-dup-identifier-veto was filed",
+        "the survey report was filed and noted",
+        True,
+    ),
+    (
+        "both name the same identifiers",
+        "layer-fauna was checked on 2026-08-23",
+        "on 2026-08-23 layer-fauna was checked",
+        True,
+    ),
+    (
+        "english prose only",
+        "the ballast survey runs at slack water",
+        "at slack water the ballast survey runs",
+        True,
+    ),
+    (
+        "russian prose only",
+        "узел проверен и записан в память",
+        "узел записан и проверен в память",
+        True,
+    ),
+    (
+        "emphasis in caps is not a name",
+        "this is IMPORTANT for the recall path",
+        "this is СДЕЛАН for the recall path",
+        True,
+    ),
+    (
+        "abbreviations are not names",
+        "the fact holds here e.g. in this case",
+        "the fact holds here i.e. in this case",
+        True,
+    ),
+    (
+        "small numbers are arithmetic",
+        "alpha drift measured at 3 units in all",
+        "alpha drift measured at 12 units in all",
+        True,
+    ),
+    (
+        "a short decimal is not a version",
+        "a ratio of 1.5 between the two runs",
+        "between the two runs a ratio of 1.5",
+        True,
+    ),
+    (
+        "long bare words are not names",
+        "understanding notwithstanding the drift",
+        "notwithstanding the drift understanding",
+        True,
+    ),
+)
+
+MIRROR_TEXTS = tuple(
+    dict.fromkeys(
+        text for _, bearer, candidate, _ in MIRROR_PAIRS for text in (bearer, candidate)
+    )
+)
+
+#: Length is taken out of the mirror on purpose: both implementations are asked
+#: with a margin no pair in the table can reach, so the only guard that can
+#: decide a verdict is the identifier veto. A divergence therefore cannot hide
+#: behind "one of them refused for length".
+MIRROR_LENGTH_MARGIN = 4.0
+
+
+@pytest.mark.parametrize("text", MIRROR_TEXTS)
+def test_mirror_extracts_the_same_identifiers(text):
+    assert collapse.extract_identifiers(text) == reference.extract_identifiers(text)
+
+
+@pytest.mark.parametrize(
+    ("label", "bearer", "candidate"),
+    [(label, bearer, candidate) for label, bearer, candidate, _ in MIRROR_PAIRS],
+)
+def test_mirror_agrees_on_what_a_collapse_would_hide(label, bearer, candidate):
+    """Both directions: the veto's asymmetry has to be the same asymmetry."""
+
+    assert collapse.identifiers_absent_from(
+        candidate, bearer
+    ) == reference.identifiers_absent_from(candidate, bearer), label
+    assert collapse.identifiers_absent_from(
+        bearer, candidate
+    ) == reference.identifiers_absent_from(bearer, candidate), label
+
+
+#: Tokens the two grammars have to agree about, including the ones that sit on
+#: a boundary: trailing punctuation, a lone separator, mixed scripts, a token
+#: one character short of a ULID.
+FUZZ_VOCABULARY = (
+    "the fact узел СДЕЛАН layer-fauna layer-actors near_dup.py project:lm "
+    "src/living_memory/near_dup.py ~/.local/share/x /home/sfx/p/lm 19877a4383b2e2d2 "
+    "01M0QJV1BBRXNHF7D5NS23FD35 ABCDEFGHJKMNPQRSTVWXYZABCD ce93bae LM-123 2026-08-23 "
+    "v1.2 0.9547 MemoryStore https://example.test/x e.g. i.e. т.е. 3 12 1.5 2026 "
+    "understanding IMPORTANT что-то well-known build_duplicate_map living_memory.near_dup "
+    "tail. -lead :colon mixedCaseWord ALLCAPS 0x1f ver.2.0 a-b _x_ / ~ .. :: -- 0.0.0.0 "
+    "192.168.1.1 f00d deadbeef Ünicode-Ślug (quoted) «угловые» 🙂"
+).split()
+
+
+def test_mirror_agrees_on_generated_text():
+    """The table names the classes; this covers the space between them.
+
+    A hand-written table only proves agreement on the cases someone thought of,
+    and the two grammars are two copies of a dozen interacting rules. Seeded,
+    so a failure here is reproducible rather than a Heisenbug.
+    """
+
+    import random
+
+    rng = random.Random(20260823)
+    for _ in range(2000):
+        text = " ".join(rng.choice(FUZZ_VOCABULARY) for _ in range(rng.randint(1, 14)))
+        other = " ".join(rng.choice(FUZZ_VOCABULARY) for _ in range(rng.randint(1, 14)))
+        assert collapse.extract_identifiers(text) == reference.extract_identifiers(
+            text
+        ), text
+        assert collapse.identifiers_absent_from(
+            text, other
+        ) == reference.identifiers_absent_from(text, other), (text, other)
+
+
+def test_mirror_reads_the_same_valve_name():
+    assert collapse.IDENTIFIER_VETO_ENV == reference.IDENTIFIER_VETO_ENV
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, True),
+        ("", True),
+        ("1", True),
+        ("on", True),
+        ("true", True),
+        ("yes", True),
+        ("maybe", True),  # unrecognized must not silently disable the guard
+        ("0", False),
+        ("off", False),
+        ("false", False),
+        ("no", False),
+        ("OFF", False),
+        ("  0  ", False),
+    ],
+)
+def test_mirror_reads_the_valve_the_same_way(monkeypatch, value, expected):
+    """One env line, one meaning, in the map and in this script alike."""
+
+    if value is None:
+        monkeypatch.delenv(collapse.IDENTIFIER_VETO_ENV, raising=False)
+    else:
+        monkeypatch.setenv(collapse.IDENTIFIER_VETO_ENV, value)
+
+    assert collapse.identifier_veto_enabled() is expected
+    assert reference.identifier_veto_enabled() is expected
+
+
+def _map_collapses(bearer_text, candidate_text):
+    """``build_duplicate_map``'s verdict for one pair, at cosine 1.0.
+
+    Rank order is the map's bearer rule, so the bearer is offered first -- the
+    same node the script's usage ranking picks in the fixture below.
+    """
+
+    vector = [1.0, 0.0, 0.0, 0.0]
+    duplicates = reference.build_duplicate_map(
+        [
+            reference.DuplicateCandidate("KEEP", len(bearer_text), bearer_text),
+            reference.DuplicateCandidate("DROP", len(candidate_text), candidate_text),
+        ],
+        {"KEEP": vector, "DROP": vector},
+        cosine_threshold=collapse.SAFE_THRESHOLD,
+        min_length_ratio=MIRROR_LENGTH_MARGIN,
+        identifier_veto=True,
+    )
+    assert duplicates in ({}, {"DROP": "KEEP"})
+    return bool(duplicates)
+
+
+def test_mirror_verdicts_agree_pair_for_pair(tmp_path):
+    """The whole table, once through the script and once through the map.
+
+    One database, one pair per scope, one run: the script pairs nodes within a
+    scope, so each pair is decided in isolation while still exercising the real
+    report path -- preflight, scan, ``decide`` and the printed skip reason.
+    """
+
+    made = Fixture(tmp_path / "mirror.sqlite3")
+    vector = _unit([1.0, 0.0, 0.0, 0.0])
+    for index, (_, bearer, candidate, _) in enumerate(MIRROR_PAIRS):
+        made.add_node(
+            "P%02d-KEEP" % index,
+            [vector],
+            content=bearer,
+            scope="pair-%02d" % index,
+            access_count=9,
+        )
+        made.add_node(
+            "P%02d-DROP" % index,
+            [vector],
+            content=candidate,
+            scope="pair-%02d" % index,
+        )
+
+    try:
+        code, stdout, stderr = run_script(
+            made.path,
+            "--length-margin",
+            "%.2f" % MIRROR_LENGTH_MARGIN,
+            "--report-limit",
+            "0",
+        )
+        assert code == collapse.EXIT_OK, stderr
+        collapsed = set(collapses_in(stdout))
+        skipped = skip_details(stdout)
+    finally:
+        made.close()
+
+    divergences = []
+    for index, (label, bearer, candidate, expected) in enumerate(MIRROR_PAIRS):
+        keep, drop = "P%02d-KEEP" % index, "P%02d-DROP" % index
+        script_verdict = (drop, keep) in collapsed
+        map_verdict = _map_collapses(bearer, candidate)
+        if script_verdict != map_verdict:
+            divergences.append(
+                "%s: script %s, near_dup %s"
+                % (
+                    label,
+                    "collapsed" if script_verdict else "vetoed",
+                    "collapsed" if map_verdict else "vetoed",
+                )
+            )
+            continue
+        if script_verdict != expected:
+            divergences.append(
+                "%s: both %s, expected %s"
+                % (
+                    label,
+                    "collapsed" if script_verdict else "vetoed",
+                    "collapse" if expected else "veto",
+                )
+            )
+            continue
+        if not expected:
+            # Agreement is only worth something if both refused for THIS
+            # reason: two implementations refusing a pair for unrelated causes
+            # would look identical from the outside.
+            assert "identifier_veto" in [
+                reason for reason, _ in skipped.get(drop, [])
+            ], label
+
+    assert divergences == []
+    # Half the table has to survive the veto, or "refuse everything" would pass.
+    assert sum(1 for _, _, _, expected in MIRROR_PAIRS if expected) >= 8

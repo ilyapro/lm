@@ -44,7 +44,12 @@ from living_memory.delivery import (
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
 from living_memory.instructions_map import map_section as _compose_map_section
-from living_memory.near_dup import build_duplicate_map, mean_pooled_vectors
+from living_memory.near_dup import (
+    DuplicateCandidate,
+    build_duplicate_map,
+    identifier_veto_enabled,
+    mean_pooled_vectors,
+)
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.resources import (
@@ -1474,6 +1479,11 @@ def _near_duplicate_map(
 
     ``LM_RECALL_NEAR_DUP_COSINE=0`` returns before the first query: the
     rollback valve costs one env read, not one wasted database pass.
+
+    Each candidate carries its text, because the identifier veto reads it: a
+    result naming an id, path or node name its bearer does not name is a
+    different fact and must not become a stub. ``LM_NEAR_DUP_IDENTIFIER_VETO``
+    is that valve, read here and in the drain through the same function.
     """
 
     if not results:
@@ -1485,10 +1495,18 @@ def _near_duplicate_map(
     if not vectors:
         return None
     duplicate_of = build_duplicate_map(
-        [(result.node.id, len(result.node.content or "")) for result in results],
+        [
+            DuplicateCandidate(
+                node_id=result.node.id,
+                content_length=len(result.node.content or ""),
+                content=result.node.content or "",
+            )
+            for result in results
+        ],
         vectors,
         cosine_threshold=cosine_threshold,
         min_length_ratio=near_dup_length_ratio_from_env(),
+        identifier_veto=identifier_veto_enabled(),
     )
     return duplicate_of or None
 

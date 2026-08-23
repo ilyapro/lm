@@ -47,6 +47,7 @@ from living_memory.delivery import (
     shape_recall_results,
 )
 from living_memory.models import Node
+from living_memory.near_dup import IDENTIFIER_VETO_ENV
 from living_memory.retrieval import RecallResult
 from living_memory.server import (
     _DROPPABLE_TRAILING_STUBS,
@@ -74,6 +75,7 @@ _KNOBS = (
     "LM_DELIVERY_SPARSE",
     "LM_RECALL_NEAR_DUP_COSINE",
     "LM_RECALL_NEAR_DUP_LENGTH_RATIO",
+    "LM_NEAR_DUP_IDENTIFIER_VETO",
     "LM_RECALL_REPEAT_GATING",
     "LM_RECALL_REPEAT_DROP_TRAILING_STUBS",
     "LM_AUTO_CONSOLIDATE_POLICY",
@@ -498,6 +500,46 @@ def test_empty_answer_needs_no_map(store: MemoryStore) -> None:
     assert _near_duplicate_map(store, []) is None
 
 
+def test_call_site_refuses_a_repeat_that_names_what_its_bearer_does_not(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The call site passes the text, so the identifier veto can be enforced.
+
+    The pair sits at cosine 0.9994 — far above the shipped 0.95 — and differs
+    only in the tree node it names, which is the measured false-collapse class.
+    Before this the second slot arrived as a stub pointing at a bearer whose
+    text names a different node.
+    """
+
+    bearer = seed(store, "узел layer-fauna СДЕЛАН, отчёт записан", unit(0))
+    repeat = seed(store, "узел layer-actors СДЕЛАН, отчёт записан", unit(2))
+
+    assert _near_duplicate_map(store, results_for([bearer, repeat])) is None
+
+    # And the valve is the only thing holding it: at 0 the pair collapses again.
+    monkeypatch.setenv(IDENTIFIER_VETO_ENV, "0")
+    assert _near_duplicate_map(store, results_for([bearer, repeat])) == {
+        repeat.id: bearer.id
+    }
+
+
+def test_call_site_still_collapses_a_repeat_that_names_nothing_new(
+    store: MemoryStore,
+) -> None:
+    """The veto's negative control at the call site: honest repeats still stub.
+
+    Both texts name ``layer-fauna``; only the wording moves. Without this the
+    test above would also pass if the veto refused every pair on sight.
+    """
+
+    bearer = seed(store, "узел layer-fauna СДЕЛАН, отчёт записан", unit(0))
+    repeat = seed(store, "отчёт записан, узел layer-fauna СДЕЛАН", unit(2))
+
+    assert _near_duplicate_map(store, results_for([bearer, repeat])) == {
+        repeat.id: bearer.id
+    }
+
+
 # --------------------------------------------------------------------------
 # end to end, through memory_recall
 # --------------------------------------------------------------------------
@@ -609,6 +651,78 @@ def test_valve_at_zero_restores_the_byte_only_answer(
     assert response["count"] == 3
     assert DELIVERY_NEAR_DUPLICATE not in deliveries(response["results"])
     assert all(entry["delivery"] == DELIVERY_FULL for entry in response["results"])
+
+
+def _seed_identifier_answer(mcp: Any, store: MemoryStore) -> tuple[str, str]:
+    """Two results that repeat one template and name two different tree nodes.
+
+    Built like ``_seed_answer`` — the first recall drains the scope, then the
+    vectors are replaced at the encoder's own width — so the pair sits at a
+    cosine this test chose: 4 degrees, 0.9976, well above the shipped 0.95 and
+    above anything an operator would raise it to.
+
+    The node name lives on the second line on purpose. A stub's preview is the
+    first line only, so that is the shape in which a collapse actually hides an
+    identifier — and the shape the field traces have, where the summary opens
+    the note and the specifics follow it.
+    """
+
+    contents = [
+        f"{QUERY_STEM}: отчёт записан, дерево обновлено\nузел layer-fauna СДЕЛАН",
+        f"{QUERY_STEM}: отчёт записан, дерево обновлено\nузел layer-actors СДЕЛАН",
+    ]
+    lengths = [len(content) for content in contents]
+    assert max(lengths) <= min(lengths) * (1 + DEFAULT_NEAR_DUP_LENGTH_RATIO)
+    ids = [
+        store.create_node(
+            level="trace",
+            content=content,
+            context={"scope": SCOPE, "agent": "tester"},
+        ).id
+        for content in contents
+    ]
+    _recall(mcp, max_results=5)
+    width = len(store.list_node_chunks(ids[0])[0].embedding)
+
+    def wide(degrees: float) -> list[float]:
+        vector = [0.0] * width
+        vector[0] = math.cos(math.radians(degrees))
+        vector[1] = math.sin(math.radians(degrees))
+        return vector
+
+    put_chunks(store, ids[0], [wide(0)])
+    put_chunks(store, ids[1], [wide(4)])
+    return ids[0], ids[1]
+
+
+def test_two_tree_nodes_both_reach_the_agent_and_the_valve_gives_that_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The postcondition over the real handler, and its rollback in one test.
+
+    With the veto on both facts ship in full: the agent reads ``layer-fauna``
+    AND ``layer-actors``. With ``LM_NEAR_DUP_IDENTIFIER_VETO=0`` the same corpus
+    and the same query produce the pre-change answer, where one of the two is a
+    stub and the node it names never reaches the agent's eyes.
+    """
+
+    mcp, store = _server(tmp_path)
+    first, second = _seed_identifier_answer(mcp, store)
+
+    response = _recall(mcp, max_results=5)
+    by_id = {entry["node"]["id"]: entry for entry in response["results"]}
+
+    assert set(by_id) == {first, second}
+    assert deliveries(response["results"]) == [DELIVERY_FULL, DELIVERY_FULL]
+    delivered = " ".join(entry["node"]["content"] for entry in response["results"])
+    assert "layer-fauna" in delivered and "layer-actors" in delivered
+
+    monkeypatch.setenv(IDENTIFIER_VETO_ENV, "0")
+    rolled_back = _recall(mcp, max_results=5)
+
+    assert DELIVERY_NEAR_DUPLICATE in deliveries(rolled_back["results"])
+    hidden = " ".join(entry["node"]["content"] for entry in rolled_back["results"])
+    assert ("layer-fauna" in hidden) != ("layer-actors" in hidden)
 
 
 # --------------------------------------------------------------------------

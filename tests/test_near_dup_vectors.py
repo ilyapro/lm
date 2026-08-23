@@ -2,10 +2,12 @@
 
 ``near_dup`` is the leaf both near-dup consumers stand on -- recall delivery
 and the recall-path drain -- so what is pinned here is the arithmetic and the
-policy, not any caller's behaviour. Two things get more attention than their
-line count suggests, because both are places where a wrong answer looks like a
-right one: a node that has no usable vector must be ABSENT rather than zero,
-and a candidate longer than its bearer must survive rather than collapse.
+policy, not any caller's behaviour. Three things get more attention than their
+line count suggests, because each is a place where a wrong answer looks like a
+right one: a node that has no usable vector must be ABSENT rather than zero, a
+candidate longer than its bearer must survive rather than collapse, and a
+candidate naming an identifier its bearer does not name must survive at any
+cosine at all.
 
 Vectors are written explicitly in every test, so an assertion is readable
 without running an encoder.
@@ -16,16 +18,20 @@ from __future__ import annotations
 import ast
 import math
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 import pytest
 
 from living_memory import near_dup
 from living_memory.chunking import TextChunk
 from living_memory.near_dup import (
+    IDENTIFIER_VETO_ENV,
     DuplicateCandidate,
     build_duplicate_map,
     cosine,
+    extract_identifiers,
+    identifier_veto_enabled,
+    identifiers_absent_from,
     mean_pooled_vectors,
 )
 from living_memory.storage import MemoryStore
@@ -211,8 +217,34 @@ def test_unknown_and_repeated_ids(store: MemoryStore) -> None:
 
 
 # --------------------------------------------------------------------------
-# build_duplicate_map
+# build_duplicate_map, with the identifier veto off
 # --------------------------------------------------------------------------
+#
+# Everything in this section is the map as it was before the veto existed --
+# rank order, chain resolution, the length guard, the absent-vector rule -- and
+# every case reaches it through ``collapse``, which passes
+# ``identifier_veto=False``. That makes the section do double duty: it pins the
+# arithmetic, and it *is* the rollback contract, because
+# ``LM_NEAR_DUP_IDENTIFIER_VETO=0`` promises exactly this map back. The veto's
+# own behaviour is the section after it, where candidates carry text.
+
+
+def collapse(
+    items: Sequence[Any],
+    vectors: Mapping[str, Sequence[float]],
+    *,
+    cosine_threshold: float,
+    min_length_ratio: float,
+) -> dict[str, str]:
+    """``build_duplicate_map`` with the identifier veto explicitly off."""
+
+    return build_duplicate_map(
+        items,
+        vectors,
+        cosine_threshold=cosine_threshold,
+        min_length_ratio=min_length_ratio,
+        identifier_veto=False,
+    )
 
 
 def test_threshold_zero_returns_an_empty_map() -> None:
@@ -221,8 +253,8 @@ def test_threshold_zero_returns_an_empty_map() -> None:
     items = [DuplicateCandidate("a", 100), DuplicateCandidate("b", 100)]
     vectors = {"a": unit(0.0), "b": unit(0.0)}
 
-    assert build_duplicate_map(items, vectors, cosine_threshold=0.0, min_length_ratio=0.2) == {}
-    assert build_duplicate_map(items, vectors, cosine_threshold=-1.0, min_length_ratio=0.2) == {}
+    assert collapse(items, vectors, cosine_threshold=0.0, min_length_ratio=0.2) == {}
+    assert collapse(items, vectors, cosine_threshold=-1.0, min_length_ratio=0.2) == {}
 
 
 def test_lower_ranked_paraphrase_collapses_into_the_higher_ranked_one() -> None:
@@ -231,7 +263,7 @@ def test_lower_ranked_paraphrase_collapses_into_the_higher_ranked_one() -> None:
     items = [DuplicateCandidate("top", 100), DuplicateCandidate("repeat", 104)]
     vectors = {"top": unit(0.0), "repeat": unit(10.0)}
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -246,7 +278,7 @@ def test_a_distinct_fact_below_the_threshold_is_left_alone() -> None:
     vectors = {"first": unit(0.0), "other": unit(30.0)}
 
     assert (
-        build_duplicate_map(items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2)
+        collapse(items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2)
         == {}
     )
 
@@ -268,7 +300,7 @@ def test_length_guard_keeps_a_materially_longer_candidate() -> None:
     # bar against `detailed`, so it can only collapse if `detailed` still bears.
     vectors = {"short": unit(0.0), "detailed": unit(20.0), "twin": unit(40.0)}
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -286,7 +318,7 @@ def test_length_guard_is_one_directional() -> None:
     items = [DuplicateCandidate("long", 400), DuplicateCandidate("terse", 40)]
     vectors = {"long": unit(0.0), "terse": unit(1.0)}
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -302,7 +334,7 @@ def test_length_guard_boundary_is_the_ratio_it_is_given() -> None:
     """
 
     def collapse_with(candidate_length: int, ratio: float) -> dict[str, str]:
-        return build_duplicate_map(
+        return collapse(
             [DuplicateCandidate("bearer", 100), DuplicateCandidate("candidate", candidate_length)],
             {"bearer": unit(0.0), "candidate": unit(0.0)},
             cosine_threshold=THRESHOLD,
@@ -333,7 +365,7 @@ def test_bearer_chains_to_the_original_never_to_another_duplicate() -> None:
     ]
     vectors = {"a": unit(0.0), "b": unit(10.0), "c": unit(20.0)}
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -358,7 +390,7 @@ def test_a_chained_bearer_below_the_bar_is_refused_not_recorded() -> None:
     ]
     vectors = {"a": unit(0.0), "b": unit(20.0), "c": unit(40.0)}
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -387,7 +419,7 @@ def test_a_refused_chain_still_collapses_against_a_root_it_does_match() -> None:
         "d": unit(30.0),
     }
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -405,7 +437,7 @@ def test_every_recorded_pair_clears_the_threshold_against_its_named_bearer() -> 
     items = [DuplicateCandidate(f"n{index}", 100) for index in range(12)]
     vectors = {f"n{index}": unit(index * 8.0) for index in range(12)}
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -437,7 +469,7 @@ def test_the_bearer_is_the_highest_ranked_match_not_the_closest() -> None:
         "candidate": unit(25.0),
     }
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -460,7 +492,7 @@ def test_length_guard_is_applied_against_the_resolved_bearer() -> None:
     ]
     vectors = {"a": unit(0.0), "b": unit(20.0), "c": unit(40.0)}
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -482,7 +514,7 @@ def test_a_node_without_a_vector_is_never_collapsed_and_never_a_bearer() -> None
     ]
     vectors = {"first-with-vector": unit(0.0), "repeat": unit(0.0)}
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
@@ -502,8 +534,8 @@ def test_map_is_pure_and_accepts_plain_pairs() -> None:
     items_before = list(items)
     vectors_before = {key: list(value) for key, value in vectors.items()}
 
-    first = build_duplicate_map(items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2)
-    second = build_duplicate_map(items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2)
+    first = collapse(items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2)
+    second = collapse(items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2)
 
     assert first == second == {"repeat": "top"}
     assert items == items_before
@@ -515,11 +547,584 @@ def test_a_repeated_id_in_one_ranking_never_becomes_its_own_bearer() -> None:
 
     items = [DuplicateCandidate("a", 100), DuplicateCandidate("a", 100)]
 
-    collapsed = build_duplicate_map(
+    collapsed = collapse(
         items, {"a": unit(0.0)}, cosine_threshold=THRESHOLD, min_length_ratio=0.2
     )
 
     assert collapsed == {}
+
+
+# --------------------------------------------------------------------------
+# the identifier extractor
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "text", "expected"),
+    [
+        ("ulid", "recalled 01M0QJV1BBRXNHF7D5NS23FD35 twice", "01M0QJV1BBRXNHF7D5NS23FD35"),
+        # 26 Crockford characters and not one digit: the ULID rule is what
+        # catches this, and nothing else in the grammar would.
+        ("crockford without digits", "id ABCDEFGHJKMNPQRSTVWXYZABCD here", "ABCDEFGHJKMNPQRSTVWXYZABCD"),
+        ("repo path", "see src/living_memory/near_dup.py for it", "src/living_memory/near_dup.py"),
+        ("home path", "backup at ~/.local/share/living-memory/global.sqlite3 now", "~/.local/share/living-memory/global.sqlite3"),
+        ("absolute path", "wrote /home/sfx/p/lm today", "/home/sfx/p/lm"),
+        ("goal-node name", "branch near-dup-identifier-veto merged", "near-dup-identifier-veto"),
+        ("worktree slug", "узел layer-fauna СДЕЛАН", "layer-fauna"),
+        ("underscore slug", "call build_duplicate_map now", "build_duplicate_map"),
+        ("dotted module path", "living_memory.near_dup is the leaf", "living_memory.near_dup"),
+        ("dotted symbol path", "near_dup.build_duplicate_map vetoes", "near_dup.build_duplicate_map"),
+        ("bare filename", "edit near_dup.py first", "near_dup.py"),
+        ("hex digest", "digest 19877a4383b2e2d2 frozen", "19877a4383b2e2d2"),
+        ("short commit id", "at commit ce93bae exactly", "ce93bae"),
+        ("ticket id", "ticket LM-123 was closed", "LM-123"),
+        ("scoped name", "written with scope project:lm here", "project:lm"),
+        ("date", "measured 2026-08-23 on alt", "2026-08-23"),
+        ("version", "shipped v1.2 to the host", "v1.2"),
+        ("measured number", "the pair scores cos 0.9547 on alt", "0.9547"),
+        ("year", "written in 2026 by an agent", "2026"),
+        ("camel case symbol", "MemoryStore satisfies it", "MemoryStore"),
+        ("url", "fetched https://example.test/x from there", "https://example.test/x"),
+    ],
+)
+def test_identifier_classes_are_extracted(label: str, text: str, expected: str) -> None:
+    """Every class the veto is required to cover, one case each.
+
+    Digit-optional is the point of the list: the measurement harness's regex
+    requires a digit in the token and therefore cannot see ``layer-fauna``,
+    which is exactly the class that caused the false collapses.
+    """
+
+    assert extract_identifiers(text) == (expected,), label
+
+
+def test_the_motivating_class_carries_no_digit_at_all() -> None:
+    """The digit-requiring metric's blind spot, stated as an assertion.
+
+    ``layer-fauna`` / ``layer-actors`` scored 0.9547 on the alt corpus and were
+    collapsed. Nothing in either token is a digit, so a digit-gated identifier
+    rule reports zero identifiers lost and the pair looks like an honest
+    repeat. This is why the veto's grammar is broader than the harness's.
+    """
+
+    for token in ("layer-fauna", "layer-actors"):
+        assert not any(character.isdigit() for character in token)
+        assert extract_identifiers(f"узел {token} СДЕЛАН") == (token,)
+
+
+@pytest.mark.parametrize(
+    ("label", "text"),
+    [
+        ("english prose", "the ballast survey runs at slack water"),
+        ("russian prose", "узел проверен и записан в память"),
+        ("long single word", "understanding notwithstanding"),
+        ("emphasis in caps", "this is IMPORTANT and СДЕЛАН"),
+        ("english abbreviation", "e.g. this one, i.e. that one"),
+        ("russian abbreviation", "т.е. вот так"),
+        ("small numbers", "alpha drift measured at 3 units, 12 in all"),
+        ("short decimal", "a ratio of 1.5 between them"),
+        ("sentence boundary", "the fact ends here. Another begins"),
+    ],
+)
+def test_prose_yields_no_identifiers(label: str, text: str) -> None:
+    """The other half of the grammar: what must NOT veto a collapse.
+
+    Without this the veto degenerates into "never collapse anything", which
+    would pass every veto test in this file and destroy the feature.
+    """
+
+    assert extract_identifiers(text) == (), label
+
+
+def test_extraction_is_ordered_and_deduplicated() -> None:
+    text = "near_dup.py and layer-fauna, then near_dup.py again"
+
+    assert extract_identifiers(text) == ("near_dup.py", "layer-fauna")
+
+
+def test_a_bearer_naming_the_fuller_path_no_longer_covers_the_bare_filename() -> None:
+    """Token equality, and this is the assertion it cost. Inverted deliberately.
+
+    A bearer spelling ``src/living_memory/near_dup.py`` does contain the string
+    ``near_dup.py``, and this test used to read that as "the bearer carries
+    that name, so nothing is hidden". The drain simulation showed why that
+    reading is not safe: this corpus builds node names by SUFFIXING, so of two
+    distinct nodes the shorter name is always a substring of the longer one.
+    Under containment ``…/checkpoint-selected-profile-v2`` counted as present
+    in ``…/checkpoint-selected-profile-v2-repaired``, and two tree nodes with
+    two distinct recorded failures collapsed into one at cosine 0.99350
+    (``01KTRR6WHFXFW16M691Q1N98E1`` -> ``01KTRJCB5FQ7ZT2WKD02TQ20B3``,
+    project:x). No rule can pass this pair and block that one -- they are the
+    same shape -- and the goal's accounting says which way to resolve it: a
+    false veto costs one uncollapsed stub, a false pass costs a hidden fact.
+
+    So the pair vetoes in both directions now. The price is real and is being
+    paid on purpose: a candidate that honestly said less than its bearer no
+    longer collapses into it.
+    """
+
+    assert identifiers_absent_from(
+        "edit near_dup.py", "edit src/living_memory/near_dup.py"
+    ) == ("near_dup.py",)
+    assert identifiers_absent_from(
+        "edit src/living_memory/near_dup.py", "edit near_dup.py"
+    ) == ("src/living_memory/near_dup.py",)
+
+
+def test_the_two_pairs_that_escaped_the_veto_at_099_are_blocked() -> None:
+    """The measured survivors, verbatim from `artifacts/near-dup/drain-simulation.md`.
+
+    Both are goal-tree nodes whose names differ only by a suffix, both were
+    read as ``different_facts``, and both passed the containment veto because
+    the candidate's path sat inside the bearer's. Under token equality the
+    candidate's own path is the token that is missing.
+    """
+
+    checkpoint_bearer = (
+        "OUTCOME fail: universal-frontier-advance-x/checkpoint-abi-v2-streaming/"
+        "checkpoint-selected-profile-v2-repaired — Measure the repaired "
+        "production-selected ABI v2 checkpoint/resume path and write tracked "
+        "selected evidence."
+    )
+    checkpoint_candidate = checkpoint_bearer.replace(
+        "checkpoint-selected-profile-v2-repaired", "checkpoint-selected-profile-v2"
+    )
+    assert identifiers_absent_from(checkpoint_candidate, checkpoint_bearer) == (
+        "universal-frontier-advance-x/checkpoint-abi-v2-streaming/"
+        "checkpoint-selected-profile-v2",
+    )
+
+    audit_bearer = (
+        "OUTCOME pass: the-ceil/nw6-train-scoreblind-arms/"
+        "nw6-stock-frontier-arm-reduced/stock-frontier-reduced-training-run/"
+        "stock-factorized-bptt-throughput-repair/stock-factorized-source-repair-v2/"
+        "stock-contract-preservation-audit-reintegrate — Reintegrate the tracked "
+        "audit proving the source repair did not alter the frozen NW-6 stock "
+        "comparison contract."
+    )
+    audit_candidate = audit_bearer.replace(
+        "stock-contract-preservation-audit-reintegrate",
+        "stock-contract-preservation-audit",
+    )
+    assert identifiers_absent_from(audit_candidate, audit_bearer) == (
+        "the-ceil/nw6-train-scoreblind-arms/nw6-stock-frontier-arm-reduced/"
+        "stock-frontier-reduced-training-run/"
+        "stock-factorized-bptt-throughput-repair/"
+        "stock-factorized-source-repair-v2/stock-contract-preservation-audit",
+    )
+
+
+def test_the_honest_repeats_in_the_same_band_still_collapse() -> None:
+    """The other half of the >=0.99 band: the token rule must not cost these.
+
+    Both were read as ``verbatim_repeat`` in the same simulation. The first
+    carries no identifier at all, so there is nothing for either rule to
+    compare; the second's only identifier is a date the bearer spells as its
+    own token, which is what containment and equality agree about.
+    """
+
+    reworded_bearer = (
+        "Rejected alternative: Perform sibling implementation tasks\n"
+        "Rejected because: This node is explicitly scoped to critique only and "
+        "not perform sibling tasks."
+    )
+    reworded_candidate = reworded_bearer.replace(
+        "not perform sibling tasks.", "must not execute sibling tasks."
+    )
+    assert extract_identifiers(reworded_candidate) == ()
+    assert identifiers_absent_from(reworded_candidate, reworded_bearer) == ()
+
+    probe_bearer = (
+        "Latency benchmark probe at 2026-05-24 — synthetic timing trace; safe to decay."
+    )
+    probe_candidate = probe_bearer.replace("probe at", "probe #2 at")
+    assert extract_identifiers(probe_candidate) == ("2026-05-24",)
+    assert identifiers_absent_from(probe_candidate, probe_bearer) == ()
+
+
+def test_a_number_inside_a_finer_measurement_is_not_that_measurement() -> None:
+    """The class nobody had noticed: ``0.99`` is inside ``0.99350``, not a token of it.
+
+    Containment could not tell "the band is 0.99" from "the band is 0.99350",
+    which is the same collapse as the node names one level down in the grammar.
+    """
+
+    assert identifiers_absent_from("band 0.99 here", "band 0.99350 here") == ("0.99",)
+    assert identifiers_absent_from("band 0.99350 here", "band 0.99 here") == ("0.99350",)
+
+
+def test_identifier_comparison_is_case_sensitive() -> None:
+    """Case is meaning in paths, env vars and ids; the ambiguous way is to veto."""
+
+    assert identifiers_absent_from("set LM_NEAR_DUP_IDENTIFIER_VETO", "set lm_near_dup_identifier_veto") == (
+        "LM_NEAR_DUP_IDENTIFIER_VETO",
+    )
+
+
+# --------------------------------------------------------------------------
+# the identifier veto in the map
+# --------------------------------------------------------------------------
+
+
+def at_cosine(value: float) -> list[float]:
+    """A unit vector whose cosine against ``unit(0.0)`` is exactly ``value``."""
+
+    return unit(math.degrees(math.acos(value)))
+
+
+def vetoed(
+    bearer: str,
+    candidate: str,
+    *,
+    cosine_value: float = 0.99,
+    identifier_veto: bool = True,
+) -> dict[str, str]:
+    """Two texts, bearer ranked first, at a chosen cosine: the map they produce."""
+
+    return build_duplicate_map(
+        [
+            DuplicateCandidate("bearer", len(bearer), bearer),
+            DuplicateCandidate("candidate", len(candidate), candidate),
+        ],
+        {"bearer": unit(0.0), "candidate": at_cosine(cosine_value)},
+        cosine_threshold=THRESHOLD,
+        min_length_ratio=0.2,
+        identifier_veto=identifier_veto,
+    )
+
+
+def test_the_measured_false_collapse_is_refused_and_the_valve_restores_it() -> None:
+    """The pair the goal is built on, at the cosine it was measured at.
+
+    0.9547 is above the shipped 0.95 threshold, so before the veto this pair
+    collapsed and one of two different tree nodes reached the agent as a stub.
+    """
+
+    bearer = "узел layer-fauna СДЕЛАН"
+    candidate = "узел layer-actors СДЕЛАН"
+    assert cosine(unit(0.0), at_cosine(0.9547)) == pytest.approx(0.9547, abs=1e-12)
+
+    assert vetoed(bearer, candidate, cosine_value=0.9547) == {}
+    assert vetoed(bearer, candidate, cosine_value=0.9547, identifier_veto=False) == {
+        "candidate": "bearer"
+    }
+
+
+def test_no_cosine_is_high_enough_to_beat_the_veto() -> None:
+    """A veto, not a re-ranking: identical vectors do not buy the collapse.
+
+    Two texts differing in an identifier are different facts at any cosine, so
+    the guard cannot be a threshold that a close enough pair slips past.
+    """
+
+    for value in (0.95, 0.99, 0.999, 1.0):
+        assert vetoed("scan of layer-fauna", "scan of layer-actors", cosine_value=value) == {}
+
+
+def test_an_honest_repeat_still_collapses_with_the_veto_on() -> None:
+    """The veto is not an off switch: prose that repeats prose still collapses.
+
+    Its own negative control -- ``test_prose_yields_no_identifiers`` proves the
+    grammar is silent on this text, and this proves the map acts on that.
+    """
+
+    assert vetoed(
+        "the ballast survey runs at slack water",
+        "at slack water is when the survey runs",
+    ) == {"candidate": "bearer"}
+
+
+def test_the_veto_is_one_directional() -> None:
+    """The bearer's own extra identifiers do not block the collapse.
+
+    They are not lost by collapsing: the bearer keeps its full text, and that
+    text is what the agent reads. Only the candidate's would vanish behind a
+    stub, so only the candidate's are counted.
+    """
+
+    assert vetoed(
+        "the survey ran, see src/living_memory/near_dup.py and ULID 01M0QJV1BBRXNHF7D5NS23FD35",
+        "the survey ran at slack water",
+    ) == {"candidate": "bearer"}
+
+
+def test_an_identifier_the_bearer_also_names_does_not_veto() -> None:
+    """Shared identifiers are shared facts; only the candidate's extras veto."""
+
+    shared = "the drain collapsed layer-fauna at 0.9547"
+    assert vetoed(shared, "layer-fauna collapsed at 0.9547 in the drain") == {
+        "candidate": "bearer"
+    }
+
+
+def test_a_candidate_without_text_is_never_collapsed_while_the_veto_is_on() -> None:
+    """An unenforceable veto fails closed, in both tuple and dataclass form.
+
+    A caller that did not wire the text through must lose collapses, not the
+    guard -- a silently unenforceable veto is the one failure mode that would
+    let this ship while doing nothing.
+    """
+
+    vectors = {"bearer": unit(0.0), "candidate": unit(1.0)}
+    for items in (
+        [("bearer", 100), ("candidate", 100)],
+        [DuplicateCandidate("bearer", 100), DuplicateCandidate("candidate", 100)],
+        [("bearer", 100, "plain bearer text"), ("candidate", 100)],
+    ):
+        assert (
+            build_duplicate_map(
+                items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
+            )
+            == {}
+        ), items
+    # ... and the three-element tuple form is how a caller supplies it.
+    assert build_duplicate_map(
+        [("bearer", 100, "plain bearer text"), ("candidate", 100, "text of the bearer, plain")],
+        vectors,
+        cosine_threshold=THRESHOLD,
+        min_length_ratio=0.2,
+    ) == {"candidate": "bearer"}
+
+
+def test_a_bearer_without_text_blocks_the_collapse_too() -> None:
+    """No bearer text means no way to ask whether it names the identifier."""
+
+    assert (
+        build_duplicate_map(
+            [
+                DuplicateCandidate("bearer", 100),
+                DuplicateCandidate("candidate", 100, "a plain repeat"),
+            ],
+            {"bearer": unit(0.0), "candidate": unit(1.0)},
+            cosine_threshold=THRESHOLD,
+            min_length_ratio=0.2,
+        )
+        == {}
+    )
+
+
+def test_the_veto_is_measured_against_the_bearer_that_actually_ships() -> None:
+    """``c`` matched the stub ``b``, but ``a``'s text is what the agent reads.
+
+    ``c`` quotes an identifier neither ``b`` nor ``a`` names, and it is refused
+    even though it cleared the bar against both. Note what this does NOT claim:
+    a case where the stub names the identifier and the root does not is
+    *unreachable*, and deliberately so. ``b`` only became a stub by passing this
+    same veto, so every identifier token of ``b``'s text is already a token of
+    ``a``'s; set membership is transitive, and the guarantee therefore composes
+    down a chain instead of leaking at the second link. The invariant that
+    follows is the checkable form of that.
+    """
+
+    items = [
+        DuplicateCandidate("a", 100, "the survey report was filed"),
+        DuplicateCandidate("b", 100, "filed, the survey report was"),
+        DuplicateCandidate("c", 100, "filed the survey report layer-fauna"),
+    ]
+    vectors = {"a": unit(0.0), "b": unit(5.0), "c": unit(10.0)}
+
+    collapsed = build_duplicate_map(
+        items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
+    )
+
+    assert collapsed == {"b": "a"}
+    assert "c" not in collapsed
+
+
+def test_no_collapsed_node_hides_an_identifier_from_its_recorded_bearer() -> None:
+    """The map's veto-on invariant, over a fan of overlapping matches.
+
+    Twelve nodes eight degrees apart, half of them carrying identifiers that
+    the nodes above them do not: whatever the function chooses to record, the
+    text the agent ends up reading must name everything the stub named. This is
+    the property the whole node exists to establish, checked over the map
+    rather than over one hand-built pair.
+    """
+
+    texts = {
+        "n0": "the survey report was filed",
+        "n1": "filed, the survey report was",
+        "n2": "the survey report was filed.",
+        "n3": "the survey report layer-fauna was filed",
+        "n4": "the survey report was filed on 2026-08-23",
+        "n5": "the survey report was filed, see near_dup.py",
+        "n6": "the survey report was filed by MemoryStore",
+        "n7": "the survey report was refiled",
+        "n8": "the survey report 01M0QJV1BBRXNHF7D5NS23FD35 was filed",
+        "n9": "the survey report has been filed",
+        "n10": "filed the survey report layer-actors",
+        "n11": "the survey report was duly filed",
+    }
+    items = [DuplicateCandidate(key, len(text), text) for key, text in texts.items()]
+    vectors = {f"n{index}": unit(index * 8.0) for index in range(12)}
+
+    collapsed = build_duplicate_map(
+        items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
+    )
+
+    assert collapsed, "the fan must produce collapses, or this proves nothing"
+    for duplicate_id, bearer_id in collapsed.items():
+        assert identifiers_absent_from(texts[duplicate_id], texts[bearer_id]) == (), (
+            f"{duplicate_id} collapsed into {bearer_id} and took an identifier with it"
+        )
+    # The nodes that carry an identifier are exactly the ones left standing --
+    # and note n7 and n9, which carry none: they still collapse INTO bearers
+    # that do, because the bearer's text ships whole. The veto is one-directional.
+    assert collapsed == {"n1": "n0", "n2": "n0", "n7": "n4", "n9": "n6", "n11": "n8"}
+    # What the veto is buying, on the same fan: without it three of the six
+    # identifier-bearing nodes disappear into a bearer naming a different one.
+    assert build_duplicate_map(
+        items,
+        vectors,
+        cosine_threshold=THRESHOLD,
+        min_length_ratio=0.2,
+        identifier_veto=False,
+    ) == {"n1": "n0", "n2": "n0", "n4": "n3", "n5": "n3", "n6": "n3", "n9": "n7", "n11": "n8"}
+
+
+def test_an_identifier_only_the_root_names_still_collapses() -> None:
+    """The mirror of the test above: the root names it, so nothing is hidden.
+
+    Same shape, same ranks -- only which node quotes the identifier moves --
+    and the answer flips. That is what makes the previous test about the
+    resolved root rather than about identifiers in general.
+    """
+
+    items = [
+        DuplicateCandidate("a", 100, "the survey report near-dup-identifier-veto was filed"),
+        DuplicateCandidate("b", 100, "the survey report was filed"),
+        DuplicateCandidate("c", 100, "filed the survey report near-dup-identifier-veto"),
+    ]
+    vectors = {"a": unit(0.0), "b": unit(5.0), "c": unit(10.0)}
+
+    assert build_duplicate_map(
+        items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
+    ) == {"b": "a", "c": "a"}
+
+
+def test_the_veto_off_map_ignores_the_text_entirely() -> None:
+    """The rollback contract: with the valve off, content changes nothing.
+
+    Same items twice -- once carrying identifier-heavy text, once stripped to
+    the pre-veto ``(node_id, length)`` pairs -- must produce the same map. The
+    last assertion is what keeps this honest: the corpus really does trip the
+    veto, so the equality above is not the equality of two empty maps.
+    """
+
+    texts = {
+        "a": "drain simulation on 2026-08-23 collapsed layer-fauna at 0.9547",
+        "b": "drain simulation on 2026-08-23 collapsed layer-actors at 0.9547",
+        "c": "drain simulation collapsed a node, see src/living_memory/near_dup.py",
+        "d": "drain simulation collapsed a node",
+    }
+    items = [DuplicateCandidate(key, len(text), text) for key, text in texts.items()]
+    pairs: list[Any] = [(key, len(text)) for key, text in texts.items()]
+    vectors = {"a": unit(0.0), "b": unit(4.0), "c": unit(8.0), "d": unit(12.0)}
+
+    with_text = build_duplicate_map(
+        items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2, identifier_veto=False
+    )
+    without_text = build_duplicate_map(
+        pairs, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2, identifier_veto=False
+    )
+
+    assert with_text == without_text == {"b": "a", "c": "a", "d": "a"}
+    assert build_duplicate_map(
+        items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
+    ) == {"d": "a"}
+
+
+def test_the_veto_preserves_the_maps_other_invariants() -> None:
+    """Rank-order bearers, roots-only values, and the threshold, all veto-on.
+
+    Identifier-free text throughout, so what is under test is that turning the
+    veto on did not disturb the rest of the map: the bearer is still the
+    highest-ranked match rather than the closest, values are still roots, and
+    every recorded pair still clears the bar against the bearer it names.
+    """
+
+    words = ("survey", "ballast", "quillon", "vantrex", "slack", "water")
+    items = [
+        DuplicateCandidate(f"n{index}", 100, f"the {words[index % len(words)]} was recorded")
+        for index in range(12)
+    ]
+    vectors = {f"n{index}": unit(index * 8.0) for index in range(12)}
+
+    collapsed = build_duplicate_map(
+        items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
+    )
+
+    assert collapsed, "the fan must produce collapses, or this proves nothing"
+    assert not set(collapsed.values()) & set(collapsed)  # bearers are roots
+    for duplicate_id, bearer_id in collapsed.items():
+        assert cosine(vectors[duplicate_id], vectors[bearer_id]) > THRESHOLD
+    # Rank, not proximity: n1 and n2 both match n0 and each other.
+    assert collapsed["n1"] == "n0" and collapsed["n2"] == "n0"
+
+
+def test_a_disabled_threshold_still_wins_over_the_veto() -> None:
+    """``cosine_threshold <= 0`` is the outer rollback and returns before it."""
+
+    items = [
+        DuplicateCandidate("a", 100, "layer-fauna"),
+        DuplicateCandidate("b", 100, "layer-actors"),
+    ]
+
+    assert (
+        build_duplicate_map(
+            items, {"a": unit(0.0), "b": unit(0.0)}, cosine_threshold=0.0, min_length_ratio=0.2
+        )
+        == {}
+    )
+
+
+def test_the_length_guard_and_the_veto_are_both_measured_against_the_root() -> None:
+    """A candidate can be refused by either guard; neither shadows the other."""
+
+    items = [
+        DuplicateCandidate("a", 100, "the survey report was filed"),
+        DuplicateCandidate("long", 400, "the survey report was filed" + " and detailed" * 20),
+        DuplicateCandidate("named", 100, "the survey report layer-fauna was filed"),
+    ]
+    vectors = {"a": unit(0.0), "long": unit(5.0), "named": unit(5.0)}
+
+    assert (
+        build_duplicate_map(
+            items, vectors, cosine_threshold=THRESHOLD, min_length_ratio=0.2
+        )
+        == {}
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, True),
+        ("", True),
+        ("1", True),
+        ("on", True),
+        ("true", True),
+        ("yes", True),
+        ("maybe", True),  # unrecognized must not silently disable the guard
+        ("0", False),
+        ("off", False),
+        ("false", False),
+        ("no", False),
+        ("OFF", False),
+        ("  0  ", False),
+    ],
+)
+def test_valve_parsing(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, expected: bool
+) -> None:
+    """One reader, so "the veto is on" cannot mean two things in two consumers."""
+
+    if value is None:
+        monkeypatch.delenv(IDENTIFIER_VETO_ENV, raising=False)
+    else:
+        monkeypatch.setenv(IDENTIFIER_VETO_ENV, value)
+
+    assert identifier_veto_enabled() is expected
 
 
 # --------------------------------------------------------------------------
@@ -585,7 +1190,7 @@ def test_pooling_and_collapse_agree_without_numpy(
 
     def pool_and_collapse() -> tuple[dict[str, list[float]], dict[str, str]]:
         pooled = mean_pooled_vectors(store, [item.node_id for item in items])
-        return pooled, build_duplicate_map(
+        return pooled, collapse(
             items, pooled, cosine_threshold=THRESHOLD, min_length_ratio=0.2
         )
 
