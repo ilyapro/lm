@@ -34,9 +34,9 @@ The single logical source is the redacted snapshot `$SNAPSHOT/local.sqlite3`. Th
 | Frozen preregistration | `9eb6a170459bb68138a972b4ba76b76abb044cbb00024cdb04e38e038a85b1b0` | sealed protocol input |
 | Frozen baseline | `d1322b5d46664f81f8c19f3d0ee80f11942a33c001932987ee5cc1023c801905` | supplies the frozen organic baseline rate |
 | Frozen plan binding | `d17b2e65a20df83968886d307f7f9792491d02cb0ebb406ddeb45b1392e7ad25` | protocol plan digest |
-| Dataset manifest, canonical JSON | `af9bb44b41fefa2a0582212c0e909afbf41c7784a5014c05f47343ffcb291e5c` | digest bound by the feature analysis |
-| Dataset manifest, stored bytes | `54ee3bcc9d77b99b7b2c057db3e45b747c92a18d14ccec69eb2903dfe7cbf308` | includes the terminal newline |
-| Feature analysis, stored bytes | `d17711a3bd9afe24aaf3f1fff5e07b53437988d4cf19ac4abfb527a904621f8b` | machine-readable source for this report |
+| Dataset manifest, canonical JSON | `34c38922a9b6245113a6ca07e20333eb8846a69d87b66f72ede5f52ac3f2afe2` | digest bound by the feature analysis |
+| Dataset manifest, stored bytes | `67ecb4efabbc74c824c3542252b715b5304e4e1294daeffb5ea3a21836f1bee3` | includes the terminal newline |
+| Feature analysis, stored bytes | `bd1fdbb072bc6b0512826e96e68ba30455f226815f954bab710bd7e1a29134c9` | machine-readable source for this report |
 | Primary feature schema | `56322050f56778e07588cc5aacc069703020f673ab8f023fa9ad66cc7d809525` | ordered eight-feature model surface |
 
 ## Decision-time boundary and leakage matrix

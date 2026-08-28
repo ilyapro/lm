@@ -914,7 +914,9 @@ def test_the_rule_needs_no_flag() -> None:
         module.POOL_USEFULNESS_FLOOR_ENV,
         module.POOL_DEMOTION_GATE_ENV,
         module.POOL_DEMOTION_WINDOWS_ENV,
-    }, "an env name appeared that is not one of the two pool-gate valves"
+        module.POOL_COLD_QUOTA_GATE_ENV,
+        module.POOL_COLD_SLOTS_ENV,
+    }, "an env name appeared that is not a registered pool valve"
 
     builder = module.RecallMapBuilder
     curtail_path = "\n".join(

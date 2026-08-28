@@ -1,0 +1,795 @@
+{
+  "amends": {
+    "amends_sections": [
+      "4.1",
+      "4.2",
+      "4.3",
+      "5.1",
+      "5.3"
+    ],
+    "document": "artifacts/recall-map/follow-signal/procedure.md",
+    "section": "7"
+  },
+  "artifact": "recall-map pool gate decision",
+  "decided_at": "2026-08-24T14:05:00Z",
+  "decision": {
+    "demotion_valve": {
+      "charged": false,
+      "env_left_unset": [
+        "LM_MAP_POOL_DEMOTION_GATE",
+        "LM_MAP_POOL_DEMOTE_AFTER"
+      ]
+    },
+    "failing_conditions_in_order": [
+      {
+        "condition": "4.3 falsifier (pre-registered, NOT amended, still evaluable)",
+        "numbers": {
+          "admitted_off": 5069,
+          "admitted_on": 4161,
+          "covered_delta": -313,
+          "covered_off": 1056,
+          "covered_on": 743,
+          "covered_relative": -0.2964,
+          "maps_with_clusters_off": 195,
+          "maps_with_clusters_on": 180
+        },
+        "order": 1,
+        "statement": "excluding the band must not measurably reduce map coverage",
+        "tested_at": 0.02,
+        "verdict": "FAILS. Coverage falls by 313 clusters (-29.64%) and 15 maps. This is the decisive condition and it is pre-registered: the decline does not rest on the amendment."
+      },
+      {
+        "condition": "4.3 condition 2, candidate denominator (declared in 7.4 S2)",
+        "numbers": {
+          "0.02": {
+            "of": 339707,
+            "removed": 194582,
+            "share": 0.5728
+          },
+          "0.045": {
+            "of": 339707,
+            "removed": 236580,
+            "share": 0.6964
+          },
+          "0.11333333333333333": {
+            "of": 339707,
+            "removed": 271708,
+            "share": 0.7998
+          },
+          "0.52": {
+            "of": 339707,
+            "removed": 305648,
+            "share": 0.8997
+          }
+        },
+        "order": 2,
+        "statement": "a threshold may remove at most 20% of the pool",
+        "verdict": "FAILS at every non-inert boundary. The cheapest available floor removes 57.28% of the candidate population against a 20% budget."
+      },
+      {
+        "condition": "4.3 condition 2, admitted denominator (the narrower reading, most likely 4.3's own)",
+        "numbers": {
+          "0.02": {
+            "of": 5069,
+            "passes": true,
+            "removed": 908,
+            "share": 0.1791
+          },
+          "0.045": {
+            "of": 5069,
+            "passes": false,
+            "removed": 1129,
+            "share": 0.2227
+          },
+          "0.11333333333333333": {
+            "of": 5069,
+            "passes": false,
+            "removed": 1410,
+            "share": 0.2782
+          },
+          "0.52": {
+            "of": 5069,
+            "passes": false,
+            "removed": 2080,
+            "share": 0.4103
+          }
+        },
+        "order": 3,
+        "verdict": "PASSES at t=0.02 only, and this is stated rather than buried: under the narrow reading alone the budget would have licensed t=0.02. It is killed by the falsifier above, and independently by S3 below."
+      },
+      {
+        "condition": "7.4 S3, cold-start non-regression (substitute for 4.3 condition 1)",
+        "numbers": {
+          "0.02": {
+            "cold_share_removed": 0.7711,
+            "cold_share_retained": 0.0664
+          },
+          "0.045": {
+            "cold_share_removed": 0.6548,
+            "cold_share_retained": 0.0463
+          },
+          "0.11333333333333333": {
+            "cold_share_removed": 0.5846,
+            "cold_share_retained": 0.0126
+          },
+          "0.52": {
+            "cold_share_removed": 0.5214,
+            "cold_share_retained": 0.0096
+          }
+        },
+        "order": 4,
+        "statement": "cold_share_of_removed <= cold_share_of_retained",
+        "verdict": "FAILS at every boundary, by an order of magnitude. At t=0.02 the floor removes a population that is 77.1% cold and keeps one that is 6.6% cold. The valve is a cold-node filter, which is the defect the root goal exists to remove, expressed in a second feature."
+      },
+      {
+        "condition": "4.3 condition 1 (pre-registered)",
+        "numbers": {
+          "known_windows_per_decile": 0,
+          "known_windows_total": 0,
+          "required": 35
+        },
+        "order": 5,
+        "statement": ">=35 known windows per decile",
+        "verdict": "UNEVALUABLE, and decidably false for every t on n=0: Wilson is [0,1] everywhere, so the comparison is 1.0 < 0.0 in every cell."
+      },
+      {
+        "condition": "4.2 stop condition (pre-registered)",
+        "numbers": {
+          "required": 30,
+          "rows_with_observed_exogenous_follow": 0
+        },
+        "order": 6,
+        "statement": ">=30 rows with an observed exogenous follow",
+        "verdict": "UNEVALUABLE. No substitute offered; the demotion valve stays off unconditionally."
+      }
+    ],
+    "host_state_verified_2026_08_24": {
+      "alt": {
+        "env_file": "/home/user/.config/living-memory/env",
+        "host": "31.207.47.90",
+        "other_valves": [
+          "LM_DRAIN_NEAR_DUP_SUPERSEDES=1",
+          "LM_RECALL_NEAR_DUP_COSINE=0.97"
+        ],
+        "pool_gate_vars_present": []
+      },
+      "local": {
+        "env_file": "~/.config/living-memory/env",
+        "other_valves": [
+          "LM_DRAIN_NEAR_DUP_SUPERSEDES=1",
+          "LM_RECALL_NEAR_DUP_COSINE=0.97"
+        ],
+        "pool_gate_vars_present": []
+      },
+      "symmetric": true
+    },
+    "hosts_restarted": [],
+    "restart_instants": [],
+    "usefulness_valve": {
+      "charged": false,
+      "env_left_unset": [
+        "LM_MAP_POOL_USEFULNESS_GATE",
+        "LM_MAP_POOL_MIN_USEFULNESS"
+      ]
+    },
+    "verdict": "DECLINE",
+    "what_this_does_not_claim": [
+      "It does not claim usefulness_score is useless as a signal. It claims no threshold on it is licensed by today's evidence, and that the two conditions that could still be evaluated both reject the only candidate.",
+      "It does not claim the map is fine. The replay reproduces the defect: 5069 of 339707 candidates admitted (1.49%), 303 of 498 maps empty. Removing further candidates cannot raise coverage, and the falsifier shows it lowers it."
+    ],
+    "what_would_license_a_revisit": [
+      "4.3 as written: >=35 matured known windows per decile over map-pool rows. At the map-medoid share of the ledger (1.0%) and the current recall rate this is months away, not days.",
+      "A recalibrated selector (sibling goal selector-cold-start-recalibration) changes P itself: if cold candidates become admissible on their own features, the admitted population is no longer 90%+ history-rich and the cold shares above must be re-measured before any floor is reconsidered.",
+      "Both are re-measurements, not re-checks, per 5's 'What must be re-measured' list."
+    ],
+    "why_no_restart": "Declining changes no environment, so there is nothing to restart. Both hosts were read to confirm the decline is a state and not an assumption."
+  },
+  "deployment_preconditions_verified": {
+    "change_class": "env-only, no code deploy, exactly as LM_RECALL_NEAR_DUP_COSINE was done",
+    "frozen_surfaces": {
+      "RELEVANCE_POLICY_DIGEST": "unchanged",
+      "RELEVANCE_THRESHOLD": 3.8708378402511
+    },
+    "gate_code_shipped_both_hosts": true,
+    "proof": "width-7 sel vector on every persisted payload carrying one: sel width census over live recall_events = {7: 1321}, measured 2026-08-24T12:52Z. _SelectionLedger.freeze trims trailing zeros back to the frozen width, so width 7 means both valves unset and a longer vector would itself be the statement that a gate fired."
+  },
+  "measurement": {
+    "as_of": "2026-08-24T13:00:00Z",
+    "candidate_boundaries": {
+      "inert": [
+        0.0
+      ],
+      "non_inert": [
+        0.02,
+        0.045,
+        0.11333333333333333,
+        0.52
+      ],
+      "why_five_boundaries_are_zero": "54.65% of P (185643/339707) is exactly 0.0, so deciles 1 through 5 all land on 0.0 and _below_usefulness's strict comparison makes a floor there remove nothing."
+    },
+    "distribution_P": {
+      "decile_boundaries": [
+        {
+          "decile": 1,
+          "value": 0.0
+        },
+        {
+          "decile": 2,
+          "value": 0.0
+        },
+        {
+          "decile": 3,
+          "value": 0.0
+        },
+        {
+          "decile": 4,
+          "value": 0.0
+        },
+        {
+          "decile": 5,
+          "value": 0.0
+        },
+        {
+          "decile": 6,
+          "value": 0.020000000000000004
+        },
+        {
+          "decile": 7,
+          "value": 0.045000000000000005
+        },
+        {
+          "decile": 8,
+          "value": 0.11333333333333334
+        },
+        {
+          "decile": 9,
+          "value": 0.5200000000000001
+        }
+      ],
+      "decile_table": [
+        {
+          "admitted": 0,
+          "cold": 60,
+          "cold_share": 0.6,
+          "decile": 1,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 100,
+          "range": [
+            -0.25,
+            0.0
+          ],
+          "share_of_P": 0.000294,
+          "wilson_95": [
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "admitted": 0,
+          "cold": 0,
+          "cold_share": null,
+          "decile": 2,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 0,
+          "range": [
+            0.0,
+            0.0
+          ],
+          "share_of_P": 0.0,
+          "wilson_95": null
+        },
+        {
+          "admitted": 0,
+          "cold": 0,
+          "cold_share": null,
+          "decile": 3,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 0,
+          "range": [
+            0.0,
+            0.0
+          ],
+          "share_of_P": 0.0,
+          "wilson_95": null
+        },
+        {
+          "admitted": 0,
+          "cold": 0,
+          "cold_share": null,
+          "decile": 4,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 0,
+          "range": [
+            0.0,
+            0.0
+          ],
+          "share_of_P": 0.0,
+          "wilson_95": null
+        },
+        {
+          "admitted": 0,
+          "cold": 0,
+          "cold_share": null,
+          "decile": 5,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 0,
+          "range": [
+            0.0,
+            0.0
+          ],
+          "share_of_P": 0.0,
+          "wilson_95": null
+        },
+        {
+          "admitted": 908,
+          "cold": 149988,
+          "cold_share": 0.771218,
+          "decile": 6,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 194482,
+          "range": [
+            0.0,
+            0.020000000000000004
+          ],
+          "share_of_P": 0.572499,
+          "wilson_95": [
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "admitted": 221,
+          "cold": 4869,
+          "cold_share": 0.115934,
+          "decile": 7,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 41998,
+          "range": [
+            0.020000000000000004,
+            0.045000000000000005
+          ],
+          "share_of_P": 0.12363,
+          "wilson_95": [
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "admitted": 281,
+          "cold": 3919,
+          "cold_share": 0.111563,
+          "decile": 8,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 35128,
+          "range": [
+            0.045000000000000005,
+            0.11333333333333334
+          ],
+          "share_of_P": 0.103407,
+          "wilson_95": [
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "admitted": 670,
+          "cold": 528,
+          "cold_share": 0.015557,
+          "decile": 9,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 33940,
+          "range": [
+            0.11333333333333334,
+            0.5200000000000001
+          ],
+          "share_of_P": 0.09991,
+          "wilson_95": [
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "admitted": 2989,
+          "cold": 327,
+          "cold_share": 0.009601,
+          "decile": 10,
+          "exogenous_follow_rate": null,
+          "known_windows": 0,
+          "n": 34059,
+          "range": [
+            0.5200000000000001,
+            4.0
+          ],
+          "share_of_P": 0.10026,
+          "wilson_95": [
+            0.0,
+            1.0
+          ]
+        }
+      ],
+      "exactly_zero": 185643,
+      "exactly_zero_share": 0.54648,
+      "known_windows_total": 0,
+      "max": 4.0,
+      "mean": 0.127753,
+      "min": -0.25,
+      "note": "known_windows is 0 in every decile, which is 4.3 condition 1's stop condition (>=35 per decile) failing at its floor. The rate and Wilson columns are carried as nulls and [0,1] rather than omitted, so the table shows its own emptiness.",
+      "population": 339707
+    },
+    "falsifier_run": {
+      "band": "one-sided: covered_on >= covered_off and maps_with_clusters_on >= maps_with_clusters_off",
+      "covered_holds": false,
+      "delta": {
+        "admitted": -908,
+        "covered": -313,
+        "covered_relative": -0.2964,
+        "maps_with_clusters": -15
+      },
+      "maps_hold": false,
+      "off": {
+        "admitted": 5069,
+        "covered": 1056,
+        "maps_with_clusters": 195
+      },
+      "on": {
+        "admitted": 4161,
+        "covered": 743,
+        "maps_with_clusters": 180
+      },
+      "passes": false,
+      "same_query_set": true,
+      "same_snapshot": true,
+      "threshold_tested": 0.02,
+      "why_this_threshold": "t=0.02 is the only boundary that survives ANY reading of 4.3 condition 2, so it is the only one on which the falsifier could still matter."
+    },
+    "fidelity_check": {
+      "claim": "the replayed population is the population the gate would actually see",
+      "corroboration": {
+        "live_admitted_share": 0.015086,
+        "live_empty_map_share": 0.4631,
+        "live_source": "sum(sel.e)/sum(sel.n) over 1321 persisted recall_events.recall_map payloads carrying a sel vector, 2026-08-24T12:52Z",
+        "note": "the replayed empty-map share is HIGHER than live because the replay draws uniformly from 21476 distinct query texts while live traffic is concentrated on repeat queries with warm cache keys; the admitted share, which the floor acts on, matches live to within 0.001",
+        "replayed_admitted_share": 0.014922,
+        "replayed_empty_map_share": 0.608434
+      },
+      "failures": 0,
+      "queries_checked": 498,
+      "test": "for every replayed query, len(mirrored candidates) == SelectionAccounting.inspected - (iv+du+fc+ss+sj); any disagreement aborts the run"
+    },
+    "replay": {
+      "admitted": 5069,
+      "admitted_share": 0.014922,
+      "candidates_P": 339707,
+      "covered_clusters": 1056,
+      "distinct_queries_available": 21476,
+      "empty_map_share": 0.608434,
+      "empty_maps": 303,
+      "maps_built": 498,
+      "maps_with_clusters": 195,
+      "max_results": 5,
+      "queries_replayed": 500,
+      "queries_with_residual": 498,
+      "residual_rows": 352044,
+      "seed": 20260824
+    },
+    "reproducibility": {
+      "claim": "the replay is deterministic given (snapshot, as-of, seed, queries)",
+      "identical": true,
+      "off_arm_run_1": {
+        "admitted": 5069,
+        "candidates": 339707,
+        "covered": 1056,
+        "maps_with_clusters": 195
+      },
+      "off_arm_run_2": {
+        "admitted": 5069,
+        "candidates": 339707,
+        "covered": 1056,
+        "maps_with_clusters": 195
+      },
+      "test": "the census run and the falsifier run are two independent invocations that each replay the ungated arm over the same 500-query sample"
+    },
+    "rule_application": {
+      "admitted_denominator": 5069,
+      "budget_share": 0.2,
+      "candidates_denominator": 339707,
+      "licensed_threshold": null,
+      "per_boundary": [
+        {
+          "S1_not_inert": true,
+          "S2_budget": false,
+          "S2_removed_admitted": 2080,
+          "S2_removed_candidates": 305648,
+          "S2_removed_share_admitted": 0.410337,
+          "S2_removed_share_candidates": 0.89974,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.521397,
+          "S3_cold_share_retained": 0.009601,
+          "decile": 9,
+          "passes": false,
+          "threshold": 0.5200000000000001
+        },
+        {
+          "S1_not_inert": true,
+          "S2_budget": false,
+          "S2_removed_admitted": 1410,
+          "S2_removed_candidates": 271708,
+          "S2_removed_share_admitted": 0.278161,
+          "S2_removed_share_candidates": 0.79983,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.584583,
+          "S3_cold_share_retained": 0.012574,
+          "decile": 8,
+          "passes": false,
+          "threshold": 0.11333333333333334
+        },
+        {
+          "S1_not_inert": true,
+          "S2_budget": false,
+          "S2_removed_admitted": 1129,
+          "S2_removed_candidates": 236580,
+          "S2_removed_share_admitted": 0.222726,
+          "S2_removed_share_candidates": 0.696424,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.654819,
+          "S3_cold_share_retained": 0.046292,
+          "decile": 7,
+          "passes": false,
+          "threshold": 0.045000000000000005
+        },
+        {
+          "S1_not_inert": true,
+          "S2_budget": false,
+          "S2_removed_admitted": 908,
+          "S2_removed_candidates": 194582,
+          "S2_removed_share_admitted": 0.179128,
+          "S2_removed_share_candidates": 0.572794,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.77113,
+          "S3_cold_share_retained": 0.066446,
+          "decile": 6,
+          "passes": false,
+          "threshold": 0.020000000000000004
+        },
+        {
+          "S1_not_inert": false,
+          "S2_budget": true,
+          "S2_removed_admitted": 0,
+          "S2_removed_candidates": 100,
+          "S2_removed_share_admitted": 0.0,
+          "S2_removed_share_candidates": 0.000294,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.6,
+          "S3_cold_share_retained": 0.470046,
+          "decile": 1,
+          "passes": false,
+          "threshold": 0.0
+        },
+        {
+          "S1_not_inert": false,
+          "S2_budget": true,
+          "S2_removed_admitted": 0,
+          "S2_removed_candidates": 100,
+          "S2_removed_share_admitted": 0.0,
+          "S2_removed_share_candidates": 0.000294,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.6,
+          "S3_cold_share_retained": 0.470046,
+          "decile": 2,
+          "passes": false,
+          "threshold": 0.0
+        },
+        {
+          "S1_not_inert": false,
+          "S2_budget": true,
+          "S2_removed_admitted": 0,
+          "S2_removed_candidates": 100,
+          "S2_removed_share_admitted": 0.0,
+          "S2_removed_share_candidates": 0.000294,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.6,
+          "S3_cold_share_retained": 0.470046,
+          "decile": 3,
+          "passes": false,
+          "threshold": 0.0
+        },
+        {
+          "S1_not_inert": false,
+          "S2_budget": true,
+          "S2_removed_admitted": 0,
+          "S2_removed_candidates": 100,
+          "S2_removed_share_admitted": 0.0,
+          "S2_removed_share_candidates": 0.000294,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.6,
+          "S3_cold_share_retained": 0.470046,
+          "decile": 4,
+          "passes": false,
+          "threshold": 0.0
+        },
+        {
+          "S1_not_inert": false,
+          "S2_budget": true,
+          "S2_removed_admitted": 0,
+          "S2_removed_candidates": 100,
+          "S2_removed_share_admitted": 0.0,
+          "S2_removed_share_candidates": 0.000294,
+          "S3_cold_non_regression": false,
+          "S3_cold_share_removed": 0.6,
+          "S3_cold_share_retained": 0.470046,
+          "decile": 5,
+          "passes": false,
+          "threshold": 0.0
+        }
+      ]
+    },
+    "sealed_plan_check": {
+      "baseline_as_of": "2026-08-19T11:00:00Z",
+      "baseline_organic_rate": 0.4662,
+      "command": "PYTHONPATH=src python3 scripts/recall_map_effect.py --verify-prereg --as-of 2026-08-19T11:00:00Z --db <snapshot>",
+      "establishes": "checklist 5.5 - the sealed plan and its baseline are unmoved",
+      "plan_sha256": "d17b2e65a20df83968886d307f7f9792491d02cb0ebb406ddeb45b1392e7ad25",
+      "result": "verify-prereg OK"
+    },
+    "snapshot": {
+      "bytes": 662380544,
+      "recall_events_created_at": {
+        "max": "2026-08-24T12:58:01Z",
+        "min": "2026-05-14T20:05:23Z"
+      },
+      "row_counts": {
+        "active_nodes": 13447,
+        "connections": 152881,
+        "nodes": 17474,
+        "recall_events": 57781
+      },
+      "sha256": "c70875d930077f61de74862e2ea44692e2f390f5f9c4cd393b6b7b9ddf9303aa",
+      "source": "/home/sfx/.local/share/living-memory/global.sqlite3"
+    },
+    "tool": "scripts/recall_map_pool_usefulness_census.py"
+  },
+  "node": "recall-map-pool-quality/pool-gate-threshold-and-charge",
+  "reading_order_claim": {
+    "fulfilled": "Commit c069034 carried this object with measurement=null and decision=null. This revision fills them and changes nothing above them.",
+    "statement": "This object was committed with measurement=null and decision=null, BEFORE the pool-candidate usefulness distribution or any follow rate was read. The amendment it points at was committed in the same commit. A later commit fills measurement and decision and changes nothing above them.",
+    "verify": "git log --follow -p artifacts/recall-map/pool-quality/gate-decision.json -- shows this revision preceding any revision carrying a decile table"
+  },
+  "rule": {
+    "bucket_granularity": {
+      "chosen": "deciles",
+      "coarsening_applied": false,
+      "coarsening_considered": [
+        "quintiles",
+        "terciles"
+      ],
+      "why": "4.3's stop condition permits coarsening and requires the choice be declared before rates are read. Zero known windows divided by three buckets is still zero, so coarsening buys no power and would only make the table look less empty than it is."
+    },
+    "candidate_population": {
+      "definition": "Rows reaching the usefulness floor inside RecallMapBuilder._pool: survivors of the identity (iv), duplicate (du) and ballast (fc/ss/sj) checks, read at recall_map.py:1949, before any delivery history is fetched.",
+      "excluded_proxies": [
+        {
+          "name": "corpus-wide distribution",
+          "why": "70.8% of 17472 nodes are exactly 0.0 and p90 is 0.116; a floor read off it deletes nearly the whole corpus"
+        },
+        {
+          "name": "recall-returned-node distribution",
+          "why": "p20 = 0.0777 with 19.81% below it; these are the nodes recall delivered, the opposite selection from the residual the map is built out of"
+        }
+      ],
+      "name": "P",
+      "obtained_by": "replay of real recall_events queries against a frozen snapshot of the live store through MemoryRecallService, taking last_residual and running _pool's own classification pass over it"
+    },
+    "decision_rule": "Take candidate boundaries in descending order. The threshold is the highest t satisfying S1, S2 and S3 together and passing the falsifier. If no t satisfies all of them, there is no threshold, the valve stays off, and the exact failing condition is recorded with its numbers. Declining is the pre-registered default.",
+    "declared_before_any_rate_was_read": true,
+    "demotion_valve": {
+      "decision": "stays off unconditionally today",
+      "env_left_unset": [
+        "LM_MAP_POOL_DEMOTION_GATE",
+        "LM_MAP_POOL_DEMOTE_AFTER"
+      ],
+      "failing_condition": "4.3/4.2 stop condition: rows with an observed exogenous follow = 0, pre-registered floor = 30"
+    },
+    "expiry": "Any charge made under S1-S3 is provisional and must be revisited under 4.3 as written once >=35 matured known windows exist per decile over map-pool rows.",
+    "falsifier": {
+      "additionally_run": "scripts/recall_map_effect.py --verify-prereg, for what it does establish: the sealed plan and its baseline are unmoved (checklist 5.5)",
+      "declared_executable_form": "the census script replays the same query set against the same frozen snapshot twice, valve off and valve on at t, and reports RecallMap.covered summed over the replay together with the count of non-empty maps",
+      "preregistered_band": {
+        "covered_on_ge_covered_off": true,
+        "maps_with_clusters_on_ge_off": true,
+        "sided": "one-sided"
+      },
+      "preregistered_form": "run scripts/recall_map_effect.py with the valve on and off; covered-cluster count must stay inside its pre-registered band",
+      "why_one_sided": "the falsifier's own sentence is one-sided - a usefulness gate that improves follow rates by delivering fewer maps has proved nothing - and the metric this valve exists to move is already at 46.3% of recalls with no clusters at all (1305/2818 persisted payloads, 2026-08-24). There is no headroom below.",
+      "why_that_form_cannot_run": "recall_map_effect.py reads persisted recall_events.recall_map payloads out of history (map_items, recall_map_effect.py:719-758) and never constructs a map. An env valve that has never run leaves both arms byte-identical, so running it on and off produces the same file twice and falsifies nothing."
+    },
+    "substitute_for_condition_1": {
+      "S1_not_inert": "t is a decile boundary of P with t > 0.0 and {score < t} non-empty on P. _below_usefulness compares strictly (recall_map.py:1338-1343), so a boundary of exactly 0.0 removes nothing.",
+      "S2_budget": {
+        "both_must_pass": true,
+        "denominators_declared": [
+          "admitted",
+          "candidates"
+        ],
+        "inherited_from": "4.3 condition 2, unchanged",
+        "threshold": 0.2,
+        "why_both": "4.3 does not say which denominator 'the pool' means and the two readings differ by two orders of magnitude."
+      },
+      "S3_cold_start_non_regression": {
+        "cold_definition": "no matured delivery history at all",
+        "test": "cold_share_of_removed <= cold_share_of_retained, over P",
+        "why": "usefulness_score is a delivery-history feature, not an independent verdict: nodes.usefulness_score is NOT NULL DEFAULT 0.0 (storage.py:110) and moves only through feedback.apply_retrieval_feedback, which adds 0.1*signal to a node a recall returned and a caller fed back on (feedback.py:282-283). A floor above zero is mechanically a floor on 'has this been delivered and rewarded before' - the same rich-get-richer selection the root goal was opened to break."
+      },
+      "honest_statement": "S1-S3 are weaker than pre-registered condition 1 and do NOT prove the excluded band is less useful. A valve charged on them is charged on a distributional argument and a harm check, not on evidence of benefit."
+    }
+  },
+  "schema_version": 1,
+  "stage": "decided",
+  "unevaluable_preregistered_conditions": [
+    {
+      "estimand": "LR = P(lookup_followed | re-delivered) / P(lookup_followed | not re-delivered) over map-medoid windows",
+      "observed": {
+        "matured_known_map_medoid_windows": 0,
+        "matured_known_windows": 0
+      },
+      "rule": "4.1",
+      "stop_condition": ">=97 known map-medoid windows, or >=35 if both arms' point estimates are under 0.2",
+      "verdict": "unevaluable",
+      "why": "recall_delivery_history.lookup_consumed began being written by commit 178c2e3 deployed 2026-08-24 morning; a window matures 24h after it opens, so the earliest known window's outcome_end is 2026-08-24T12:55:07Z, in the future at the time of measurement."
+    },
+    {
+      "estimand": "q95 of the longest run of known-and-unfollowed windows preceding a row's first exogenous follow; N = max(3, ceil(q95)+1)",
+      "observed": {
+        "rows_with_observed_exogenous_follow": 0
+      },
+      "rule": "4.2",
+      "stop_condition": ">=30 rows with an observed exogenous follow and >=1 preceding known window",
+      "substitute": "none offered",
+      "verdict": "unevaluable",
+      "why": "q95 is a property of rows that were followed, not of the corpus; with zero matured known windows no row has been followed, and no non-outcome form of the estimand exists. Inventing one would be inventing the data."
+    },
+    {
+      "estimand": "per-decile exogenous-follow rate over map-pool rows, compared against the corpus-wide rate",
+      "observed": {
+        "known_windows_per_decile": 0,
+        "known_windows_total": 0
+      },
+      "rule": "4.3 condition 1",
+      "stop_condition": ">=35 known windows PER DECILE",
+      "substitute": "S1+S2+S3, see rule.substitute_for_condition_1",
+      "verdict": "unevaluable, and decidably false for every t",
+      "why": "On n=0 the 95% Wilson interval is [0,1] for every decile and for the corpus, so condition 1's comparison 'decile upper bound < corpus lower bound' evaluates to 1.0 < 0.0 in every cell. Applying 4.3 as written already returns 'no threshold, valve stays off'."
+    }
+  ],
+  "written_at": "2026-08-24T13:05:00Z",
+  "zero_power_evidence": {
+    "access": "sqlite3 file:...?mode=ro, PRAGMA query_only=1, MemoryStore never instantiated",
+    "checklist_5_3_observed_days_to_last_activity": {
+      "observed_days": 0,
+      "passes": false,
+      "required_days": 14
+    },
+    "database": "~/.local/share/living-memory/global.sqlite3",
+    "earliest_known_window_outcome_end": "2026-08-24T12:55:07.000000Z",
+    "latest_known_window_outcome_end": "2026-08-25T12:52:18.000000Z",
+    "map_medoid_share_of_matured_ledger_windows": {
+      "denominator": 185357,
+      "numerator": 1812,
+      "share": 0.0098,
+      "source": "artifacts/recall-map/follow-signal/census.json"
+    },
+    "matured_known_windows": 0,
+    "measured_at": "2026-08-24T12:52:26Z",
+    "recall_delivery_history_rows": 187887,
+    "recall_lookup_events_rows": 14,
+    "rows_with_lookup_consumed_not_null": 723
+  }
+}

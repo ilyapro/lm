@@ -1,0 +1,117 @@
+{
+  "verdict": "aborted-unevaluated: window closed by operator order 2026-08-28T21:55:16Z via the registered emergency path (cold-quota-prereg.json falsifier.no_peeking — never a pass, never a negative); no registered metric was read from T0 to close; documented deviation: arming RETAINED on both hosts by the same order",
+  "window": {
+    "t0": "2026-08-24T21:18:23Z",
+    "prereg": {
+      "path": "artifacts/recall-map/pool-quality/cold-quota-prereg.json",
+      "plan_sha256": "f6d5593a53b88288abb8b3924df3d27fdc2b8e7a57610e874211a9e84becf9a8",
+      "sealed_at": "2026-08-24T19:57:56Z"
+    },
+    "accrual_original": {
+      "start_exclusive": "2026-08-24T21:18:23Z",
+      "end_inclusive": "2026-08-27T21:18:23Z",
+      "hours": 72
+    },
+    "first_read_attempt": {
+      "at": "2026-08-28T21:21:34Z",
+      "past_ledger_read_floor": "2026-08-28T21:18:23Z",
+      "maps_in_accrual": 277,
+      "volume_floor": 500,
+      "extension_fired": true,
+      "m_metrics_read": false,
+      "note": "only the always-permitted validity/volume counters were read; the registered extension fired mechanically (window.volume_floor)"
+    },
+    "extension": {
+      "fired_at": "2026-08-28T21:21:34Z",
+      "extended_end_inclusive": "2026-08-30T21:18:23Z",
+      "extended_ledger_read_floor": "2026-08-31T21:18:23Z",
+      "recorded_in": "wire-runbook.md commit 041674e (with the pinned trailing_72h-vs-full-accrual interpretation)",
+      "confirmed": false,
+      "cancelled_by": "operator order 2026-08-28T21:55:16Z: extension not confirmed, window closed"
+    },
+    "closed": {
+      "at": "2026-08-28T21:55:16Z",
+      "by": "operator order, recorded as the Operator Response in operator request window-hold-cold-quota-extension-20260828T213000Z",
+      "registered_path": "falsifier.no_peeking: an emergency operator disarm (outage, privacy incident, operator order) is always allowed and yields verdict 'aborted-unevaluated' — never a pass, never a negative",
+      "no_peeking_integrity": "no M1/M2/M3/N1/N2/N3 value and no warm-precision rate was computed over window data at any instant from T0 to close, by this node or on its behalf"
+    },
+    "validity_counters_read": {
+      "armed_share": 1.0,
+      "sel_payloads": 277,
+      "payloads_with_c": 277,
+      "c_less_payloads": 0,
+      "floor": 0.98,
+      "note": "validity/volume counters only — these are window-integrity facts, not outcome metrics"
+    },
+    "host_restarts_during_window": {
+      "local": {
+        "event": "machine reboot 2026-08-27 ~13:44-13:51Z (journalctl: service starts 13:44:47Z / 13:48:25Z / 13:51:05Z across three systemd user-manager generations; pid 273 since 13:51:05Z)",
+        "continuity_evidence": "env md5 c5954e983ab7372facb645e2af368bcc unchanged, HEAD b029e6b unchanged, live-pid environ armed, and 277/277 accrual sel payloads carry the c key — the effective configuration never varied",
+        "recorded_before_any_metric_read": true
+      },
+      "alt": "no restarts: pid 1665501 with ActiveEnterTimestamp 2026-08-24 23:18:23 CEST (= T0) through close"
+    }
+  },
+  "baseline": {
+    "path": "artifacts/recall-map/pool-quality/baseline.json",
+    "window": "trailing_72h",
+    "as_of_pin": "2026-08-24T12:43:56Z",
+    "share_without_clusters": 0.531517,
+    "uncurtailed_share_without_clusters": 0.293881,
+    "curtailed_share_of_maps": 0.336538,
+    "repeat_share": 0.551881,
+    "top1_share": 0.270239,
+    "maps": 1872,
+    "non_empty_maps": 877,
+    "note": "the pinned comparator of the registered design; the comparison was never performed because the window closed unevaluated"
+  },
+  "metrics": {
+    "registered_metrics_read": false,
+    "reason": "the window was closed aborted-unevaluated by operator order before the ledger-read instant of the extended window; prereg no_peeking held from T0 to close, so M1/M2/M3, N1/N2/N3 and the label-repeat digests were never computed over window data",
+    "operator_basis_note": "the operator's decision to close and to retain arming cites an unregistered directed read over the ALT store, executed outside this goal's contour under its own mini-prereg (~/p/ae/artifacts/injection-throttle/alt-census-prereg.md, sha256 a979d473..., artifacts alt-census-{baseline,t48,after}.json beside it); per the same order those numbers do not constitute a PASS of this experiment and are deliberately not recorded here as window metrics"
+  },
+  "warm_precision_observable": {
+    "status": "not read",
+    "reason": "the registered ledger-read instant was never reached: the window closed aborted-unevaluated before it; publishing the rates would itself have been a window read the emergency path forbids",
+    "estimand_as_registered": "P(lookup-followed | matured warm-medoid window with known non-NULL outcome), accrual arm vs the [T0-72h, T0) comparison series, split by the cluster cold marker"
+  },
+  "deploy": {
+    "t0": "2026-08-24T21:18:23Z",
+    "hosts": {
+      "local": {
+        "repo": "/home/sfx/p/lm",
+        "sha": "b029e6bb132817b1498638e8a8eb1af195ecc159",
+        "arming_restart_utc": "2026-08-24T21:16:58Z",
+        "env_file": "~/.config/living-memory/env",
+        "env_md5": "c5954e983ab7372facb645e2af368bcc",
+        "env_verified_in_live_pid": "pid 2545062 at arming; pid 273 after the 2026-08-27 reboot — both read from /proc/<pid>/environ after port 8765 was up",
+        "restarts_after_arming": "machine reboot 2026-08-27 ~13:44-13:51Z, service auto-restarted armed (see window.host_restarts_during_window)"
+      },
+      "alt": {
+        "host": "31.207.47.90",
+        "repo": "/home/user/p/lm",
+        "sha": "b029e6bb132817b1498638e8a8eb1af195ecc159",
+        "arming_restart_utc": "2026-08-24T21:18:23Z",
+        "env_file": "/home/user/.config/living-memory/env",
+        "env_md5": "2179970672a21c41d9928720def19d77",
+        "env_verified_in_live_pid": "pid 1665501, /proc/<pid>/environ after port 8765 up; same pid from T0 through close",
+        "restarts_after_arming": "none"
+      }
+    },
+    "valves": {
+      "LM_MAP_POOL_COLD_QUOTA_GATE": "1",
+      "LM_MAP_POOL_COLD_SLOTS": "2",
+      "forbidden_valves_absent": "LM_MAP_POOL_USEFULNESS_GATE / LM_MAP_POOL_MIN_USEFULNESS / LM_MAP_POOL_DEMOTION_GATE / LM_MAP_POOL_DEMOTE_AFTER unset on both hosts throughout; LM_RECALL_NEAR_DUP_COSINE=0.97 and LM_DRAIN_NEAR_DUP_SUPERSEDES=1 unchanged"
+    },
+    "symmetric": true,
+    "armed_at_close": true,
+    "deviation": {
+      "what": "the aborted-unevaluated outcome's prescribed cleanup (disarm both hosts) was NOT executed: arming is retained on both hosts",
+      "authority": "operator order 2026-08-28T21:55:16Z (Operator Response in window-hold-cold-quota-extension-20260828T213000Z): 'армирование СОХРАНЯЕТСЯ на обоих хостах... Никаких disarm-действий, env-правок и рестартов не выполнять'",
+      "basis_pointer": "~/p/ae/artifacts/injection-throttle/alt-census-prereg.md (sha256 a979d473...) and alt-census-{baseline,t48,after}.json — an operator-side directed read outside this goal",
+      "executed_actions": "none: no env edits, no restarts, no disarm on either host"
+    },
+    "runbook_commits": "111bcea (wire record: T0, deploy state, arm/verify/read/disarm/rollback), 041674e (extension + reboot-continuity record)",
+    "lm_deploy_record": "Living Memory trace 01M0TVBGNZ4ZQPBY0AZYYS0XY8 (scope project:lm, task_pattern lm-deploy-record); extension trace 01M1545DZ75NKCQ2SFPHJAB3MC"
+  }
+}

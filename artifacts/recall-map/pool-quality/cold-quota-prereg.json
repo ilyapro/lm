@@ -1,0 +1,358 @@
+{
+  "amendment_policy": [
+    "before T0: amendments only as committed revisions that recompute plan_sha256; git history shows the order, as gate-decision.json's reading_order_claim did",
+    "at and after T0: no amendment may touch quota_slots, placement, cold_eligibility, cold_ranking, valves, sel_extension, window, map_metric_acceptance, noise_guards, falsifier or warm_precision_observable; a defect discovered mid-window is recorded in after.json and, if it bears on the verdict, invalidates the window rather than patching the plan",
+    "an unevaluable registered condition is recorded as unevaluable with its numbers; it is never quietly substituted (gate-decision unevaluable_preregistered_conditions practice, carried)"
+  ],
+  "amendments": [],
+  "artifact": "recall-map cold-quota exploration lane pre-registration",
+  "cold_eligibility": {
+    "all_conditions_required": [
+      {
+        "id": "E1_reached_the_frozen_scorer",
+        "rule": "The candidate survived the identity, duplicate and ballast checks of _pool (reason codes iv, du, fc, ss, sj; recall_map.py:1930-1948) and, if the usefulness valve were armed, the uf gate. Rows those checks removed are not cold-lane material."
+      },
+      {
+        "id": "E2_excluded_only_by_lr",
+        "rule": "The candidate was excluded by the frozen threshold alone: relevance_score < RELEVANCE_THRESHOLD = 3.8708378402511 (recall_map.py:268, :1963-1964). Pool-admitted rows belong to the warm lane; pc-capped rows passed the threshold and are warm surplus, not cold."
+      },
+      {
+        "id": "E3_never_delivered",
+        "rule": "Zero recall_delivery_history rows exist for the node at decision time — matured, pending or unobservable alike. 'Cold' here is strictly stronger than the gate-decision census's 'no matured history': it means the store has never ledgered a delivery of this node at all, neither as an organic-tail rank-3..8 item nor as a delivered map medoid.",
+        "why_pending_windows_count_as_delivered": "matured_recall_history cannot express 'never delivered': a node delivered an hour ago has matured == known == 0 and is indistinguishable from a virgin node on the matured aggregate. A lane that tested matured == 0 would re-deliver the same top-ranked cold node on every map for the 24h its first window takes to mature — the repeat loop rebuilt inside the cure. The lane must therefore test row existence, not maturity; the mechanism (an existence flag on the batched history read, or an equivalent bounded read) is cold-quota-lane-build's to build, and its tests must prove a node with only a pending window is NOT cold-eligible."
+      },
+      {
+        "id": "E4_history_read_available",
+        "rule": "The delivery-history read for the candidate succeeded and affirmatively reports zero rows. An unavailable, failed, truncated or absent read makes the candidate ineligible: absence of evidence of coldness is not coldness, and this lane only ever adds delivery, so the unknown case resolves to not-delivering (the mirror of _below_usefulness's fail-open, inverted because the failure modes invert)."
+      },
+      {
+        "id": "E5_features_readable",
+        "rule": "All four cold_ranking members are readable as finite floats off the candidate's residual result record. A candidate with an unreadable member is ineligible (v3 'unreadable_when', carried): ranking it would mean inventing a number."
+      }
+    ],
+    "coldness_is_not_a_scorer_input": "Coldness selects the lane's population; it is not a feature, weight or threshold input of either lane's scorer (v3 cold_candidate_definition.not_a_scorer_input, carried).",
+    "level_is_not_a_condition": "trace and schema are equally eligible. The defect is history-based exclusion, not level; the level term stays inside the frozen scorer where it belongs."
+  },
+  "cold_ranking": {
+    "candidates_ranked_only_against_each_other": true,
+    "composite": "f = u_rs + u_tg + (1 - u_bm) + (1 - u_vs), where u_m = _calibrate(table_m, raw_m) in [0, 1] is the published monotone rank table's reading for member m, evaluated by the merged calibration surface (_calibration_table/_calibrate, commit a3e25d3, reachable via the attempt ref and merged by sibling coldstart-salvage-merge). Candidates are taken in descending f. Ordering needs no rank_normal wrapper: the wrapper is monotone and this lane sums no second arm.",
+    "graph_score_excluded_permanently": "graph_score is excluded and may not be re-tested (v3 feature_family.graph_score_exclusion_is_permanent). Its association flips sign on the cold subpopulation (feasibility probe: -0.011 on cold rows against +0.017 whole-tail; v1 registered admission test confirmed the flip at -0.026056 transformed). usefulness_score and access_count stay banned as mutable post-outcome stats.",
+    "members_and_signs": [
+      {
+        "name": "result_score",
+        "sign": 1.0
+      },
+      {
+        "name": "trigger_score",
+        "sign": 1.0
+      },
+      {
+        "name": "bm25_score",
+        "sign": -1.0
+      },
+      {
+        "name": "vector_score",
+        "sign": -1.0
+      }
+    ],
+    "members_source": "The four core members of the registered candidate-time family recorded-delivery-scores-v3 (741eb58:artifacts/recall-map/relevance/coldstart-prereg-v3.json#feature_family), at their registered signs, read off the candidate's residual result record — the same per-item fields recall_events.results persists ({node_id, rank, level, scope, score, bm25_score, vector_score, graph_score, trigger_score, ...}).",
+    "tables": {
+      "degenerate_member_rule": "A member whose fitting distribution cannot yield a readable table under the registered form (fewer than two non-atom knots after atom extraction) is dropped from the composite for ALL candidates and the drop is recorded in cold-quota-params.json. Fabricating a table or a neutral value is forbidden. If result_score itself cannot be fitted, the lane is not wireable and cold-quota-lane-build must escalate rather than substitute.",
+      "fitted_on": "The cold-eligible subpopulation (this file's cold_eligibility, E1-E5) of the replayed live candidate population P: 500 recall_events queries, seed 20260824, replayed against the frozen snapshot sha256 c70875d930077f61de74862e2ea44692e2f390f5f9c4cd393b6b7b9ddf9303aa (662380544 bytes, as-of 2026-08-24T13:00:00Z) through MemoryRecallService — the population and machinery gate-decision.json froze and cross-checked (498/498 mirror agreement against _pool's own SelectionAccounting).",
+      "form": "Per member: every fitting value with multiplicity >= 0.5% of fitting rows is an exact (value, u) atom; the non-atom part is a quantile grid of at most 512 knots; at most 1024 breakpoints total (RELEVANCE_CALIBRATION_MAX_BREAKPOINTS); consecutive knots step u by at most 2**-9 = 0.001953125 (RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR) unless an atom sits between them. Equality first, then linear interpolation, clamped outside the outermost breakpoints. This is the registered form the merged evaluator refuses to read any deviation from.",
+      "published_in": "artifacts/recall-map/pool-quality/cold-quota-params.json (owned by cold-quota-lane-build): per-member table digests (sha256 over canonical_json of the (value, u) breakpoint list), fitting-population count, and the code constant carrying the tables. RELEVANCE_POLICY_CALIBRATION stays empty and RELEVANCE_POLICY_ID / RELEVANCE_POLICY_DIGEST / RELEVANCE_THRESHOLD do not move: the cold tables are a separate constant and never touch the frozen warm policy (policy.json continues to record wireable == false for the v3 revision, per sibling coldstart-salvage-merge's postcondition)."
+    },
+    "tie_break": "Equal f: higher raw result_score first, then lower residual ordinal (the candidate's position in the residual, unique within one build). The order is total and deterministic.",
+    "unsupervised_by_construction": "The tables are per-member CDF estimates over the fitting population; no outcome, label, follow signal or holdout row enters the fit. That is what 'exploration, not learning' means operationally, and why no train/eval/holdout split or generalization threshold applies: there is no fitted association to generalize."
+  },
+  "evidence": {
+    "all_pre_window": true,
+    "citations": [
+      "artifacts/recall-map/pool-quality/baseline.json @ da62381 (as_of 2026-08-24T12:43:56Z): trailing_72h maps 1872, share_without_clusters 0.531517, uncurtailed 0.293881, curtailed share 0.336538, non_empty 877, top1_share 0.270239, repeat_share 0.551881, admitted fraction 0.015139; trailing_24h 0.662257 / 0.462963 / 0.610966 / 0.960836; label salt r1; sel width by_width {7: 1262}",
+      "artifacts/recall-map/pool-quality/gate-decision.json @ 82003ed: frozen snapshot sha256 c70875d930077f61de74862e2ea44692e2f390f5f9c4cd393b6b7b9ddf9303aa (662380544 bytes, as-of 2026-08-24T13:00:00Z), P = 339707, 54.648% exactly zero usefulness, off arm admitted 5069 / covered 1056 / maps_with_clusters 195 / maps_built 498 / seed 20260824, S3 cold shares (0.7711 removed vs 0.0664 retained at t=0.02), both pool valves declined, hosts symmetric",
+      "refs/ae/attempt-artifacts/recall-map-pool-quality/selector-cold-start-recalibration/20260824T183044-7dd6e2d2afd78df12aed (head 379b7e6): 741eb58 coldstart-prereg-v3.json (family recorded-delivery-scores-v3 members and signs; graph_score exclusion permanent; calibration registered form: atoms >= 0.5%, 512-knot grid, max 1024 breakpoints, max u step 2**-9; plan_sha256 convention be85f81c...), a3e25d3 dormant calibration evaluator (_calibration_table, _calibrate)",
+      "feasibility probe (recorded in the predecessor's committed artifacts and LM consolidation 01M0T0RHHNPEQJ38EVEJ5NP91T): cold rows 3610/19746 = 18.3% of the rank-3..8 tail, consumption 18.5% cold vs 17.9% whole-tail, cold consumed-minus-nonconsumed diffs score +0.102 / trigger +0.031 / bm25 -0.083 / vector -0.031 / graph -0.011 (whole-tail +0.017)",
+      "src/living_memory/recall_map.py @ 82003ed: MAX_CLUSTERS=6 (:193), MAX_POOL_NODES=200 (:243), RELEVANCE_THRESHOLD=3.8708378402511 (:268), SELECTION_REASON_CODES (:273-281), POOL_GATE_REASON_CODES (:291-297), _POOL_GATE_ON_FLAGS (:340), EMBEDDING_CLUSTER_COSINE=0.55 (:377), SelectionAccounting canonical trim (:669-681), valve parsing (:1266-1317), _pool classification (:1926-1984), cluster cap (:3126)",
+      "src/living_memory/storage.py @ 82003ed: horizon/head-cut/items-per-event 24/3/6 (:55-57), delivered_ids = organic tail + map medoids (:2032-2034), _organic_tail_node_ids (:5260-5265), _recall_map_medoid_ids clusters[:6] (:5268-5288)",
+      "artifacts/recall-map/relevance/policy.json: minimum_train_selection_fraction 0.2; latency-before.json queries_with_a_map 14, latency-after.json 8",
+      "operator mandate: Living Memory trace 01M0TKS16AH7M3F2W941G8RSN7, 2026-08-24T19:25Z"
+    ]
+  },
+  "falsifier": {
+    "decision_rule": "At the ledger-read instant (>= T0+96h, or >= T0+168h after the one permitted extension), with a valid window (window.validity, window.invalidating_events): PASS iff M1 AND M2 AND M3 all hold AND N1 does not fire AND N3 does not fire AND (N2 is unevaluable OR does not fire). Anything else is FAIL. There is no third grade and no re-read: the rule is evaluable by construction because M1-M3, N1 and N3 are always computable from the census and the payloads, and N2 carries its own registered unevaluable branch.",
+    "declining_default": "As with the pool-gate decision, the asymmetric default protects the channel: when in doubt the lane closes. The experiment is designed so its negative is as publishable as its positive.",
+    "no_peeking": "Mid-window reads of any registered metric must not alter the plan, the window, the bars or the arming. An emergency operator disarm (outage, privacy incident, operator order) is always allowed and yields verdict 'aborted-unevaluated' — never a pass, never a negative.",
+    "on_fail": {
+      "action": "Disarm: unset LM_MAP_POOL_COLD_QUOTA_GATE and LM_MAP_POOL_COLD_SLOTS on BOTH hosts, restart both living-memory servers symmetrically, verify post-restart payloads carry no c key.",
+      "recorded_negative_result": "after.json records verdict 'negative' with the exact failing conditions and their numbers, and the goal's registered answer becomes: 'cold admission needs a different signal source' — not another estimator, not a re-run, not a moved bar.",
+      "satisfies_downstream_contract": "A falsifier-fired disarm with the recorded negative result satisfies cold-quota-live-wire-and-window-read's postcondition by that contract's own text: a clean negative is a completed experiment."
+    },
+    "on_pass": "The lane stays armed; after.json records verdict 'pass' with every registered number beside its bar; the graduation loop keeps running and any later change is a new registration."
+  },
+  "mandate": {
+    "source": "Operator decision recorded 2026-08-24T19:25Z in the answered root escalation for goal recall-map-pool-quality (Living Memory trace 01M0TKS16AH7M3F2W941G8RSN7, scope project:lm, topic coldstart-dual-lane-operator-mandate).",
+    "terms_this_file_implements": [
+      "warm lane keeps the frozen scorer bit-for-bit; non-degradation by construction",
+      "cold lane is an exploration QUOTA of 1-2 slots per map; cold candidates ranked only against each other on candidate-time features; the merged calibration surface is legitimate material",
+      "epistemic status is exploration, not learning; the old no_cold_branch ban does not transfer",
+      "the binding bar is MAP-LEVEL, live, against the committed census baseline; warm precision at matched volume stays a monitored aggregate only",
+      "noise defense is the quota bound plus the existing unread-collapse plus the honest follow signal, replacing the strict warm gate",
+      "hard precondition: cold slots must land where recall_delivery_history ledgers outcomes, or the ledger must first be extended",
+      "contracts unchanged: additive sel wire contract, prereg discipline before outcomes are read, env/code effective only with symmetric LM server restart on both hosts",
+      "pre-registered falsifier: fixed accrual window; if map metrics do not beat baseline or noise grows, the quota experiment closes as a recorded negative result"
+    ]
+  },
+  "map_metric_acceptance": {
+    "live_acceptance": {
+      "M1_uncurtailed_empty_share": {
+        "accept_if_at_most": 0.194,
+        "baseline": 0.293881,
+        "margin": "-0.10 from baseline (rounded to three places)",
+        "metric": "cluster_presence.uncurtailed.share_without_clusters, trailing_72h, denominator: uncurtailed maps",
+        "why_this_denominator": "The uncurtailed population is the one the lane can own: curtailment is a defense the lane must respect, so curtailed maps are its ceiling, not its failure. Curtailment itself is watched by N1, so a lane that passes M1 by driving keys into curtailment is caught on the other side."
+      },
+      "M2_repeat_concentration": {
+        "honesty_note": "The lane adds material; it cannot subtract the two stale schema label-sets the root goal names (baseline top-1 digest 49349cc2ed8232a0, 237 of 1485). These bars can therefore be passed by dilution — a map that still carries the stale set plus fresh cold labels is a different delivered set. That is the honest map-level reading: the reader receives different content. Removing the stale nodes themselves is the declined usefulness valve's future, licensed only by matured follow evidence (gate-decision.json#decision.what_would_license_a_revisit), not this lane's claim.",
+        "metric": "label_set_repeats over non_empty_maps, trailing_72h, committed salt r1",
+        "repeat_share": {
+          "accept_if_at_most": 0.5,
+          "baseline": 0.551881
+        },
+        "top1_share": {
+          "accept_if_at_most": 0.2,
+          "baseline": 0.270239
+        }
+      },
+      "M3_headline_empty_share": {
+        "accept_if_strictly_below": 0.531517,
+        "baseline": 0.531517,
+        "metric": "cluster_presence.share_without_clusters, trailing_72h, denominator: all maps",
+        "why_no_margin": "The all-maps share mixes in curtailment, which was already worsening pre-window (trailing_24h 0.662257 against trailing_72h 0.531517). Demanding a margin here would grade the lane on channel rot it does not control; demanding 'strictly below baseline' keeps the operator's headline bar — maps-without-clusters share down — falsifiable as stated. If external rot alone sinks M3, the experiment honestly closes negative and the recorded answer stands."
+      },
+      "all_one_sided_and_registered_before_any_outcome": true,
+      "queries_with_a_map_note": "The relevance bench's queries_with_a_map (14/24 before freeze, 8/24 after: latency-before.json / latency-after.json) cannot measure this lane: the bench exercises the frozen selector, and the executable valve-arm form is the census replay (O2) plus the live M-metrics. O2's maps_with_clusters delta is this plan's registered form of 'queries_with_a_map up'."
+    },
+    "offline_precondition_before_wiring": {
+      "O1_valves_off_reproduction": {
+        "records": "valves_off_byte_identical: true",
+        "rule": "Valves-off arm reproduces the gate-decision off arm exactly: admitted 5069, candidates 339707, covered 1056, maps_with_clusters 195, maps_built 498 — and I1 byte-identity holds on the replayed payloads."
+      },
+      "O2_armed_map_coverage_delta": {
+        "expected_headroom": "303 of 498 replayed maps are empty over a mean residual of ~707 rows/query with 54.648% of P cold-scored-zero; the floor of +50 is deliberately far below the expected fill so that passing it is evidence of life, not of luck.",
+        "rule": "Armed arm (GATE=1, SLOTS=2), same snapshot, same queries, same seed: maps_with_clusters_on - maps_with_clusters_off >= +50 AND covered_on >= covered_off. One-sided, mirroring the pool-gate falsifier band: an exploration lane that improves nothing measurable offline is not worth a live window, and warm coverage may not fall because the warm pipeline is untouched by construction."
+      },
+      "O3_cold_admitted_fraction_band": {
+        "band": [
+          0.15,
+          1.0
+        ],
+        "definition": "utilization = total delivered cold clusters / (SLOTS * maps_built) on the armed arm, SLOTS = 2, maps_built = 498",
+        "hard_invariants": [
+          "zero maps with more than 2 cold clusters",
+          "zero cold clusters at index >= 6",
+          "zero cold clusters on curtailed keys",
+          "zero cold deliveries of a node with an existing delivery-history row"
+        ],
+        "why_a_band": "The floor proves the lane actually admits under real eligibility and guards; the ceiling is the quota itself, restated as a checked number rather than trusted as a property. This is the 'cold-admitted fraction inside the registered band' the lane-build contract names."
+      },
+      "harness": "The census replay machinery over the frozen gate-decision snapshot (sha256 c70875d9..., 500 queries, seed 20260824), the executable falsifier form recall_map_effect.py cannot provide (it reads persisted payloads and never builds a map; gate-decision.json#rule.falsifier.why_that_form_cannot_run). Committed as artifacts/recall-map/pool-quality/cold-lane-offline-replay.json by cold-quota-lane-build."
+    }
+  },
+  "node": "recall-map-pool-quality/cold-quota-prereg",
+  "noise_guards": {
+    "live_ceilings_and_floors": [
+      {
+        "fires_if_above": 0.46,
+        "grounding": "0.46 is the worst pre-window regime already on record: trailing_24h curtailed share 0.462963 against trailing_72h 0.336538. Sustained curtailment above the worst pre-window level while the lane runs means readers are collapsing maps faster than before — the operational signature of delivered noise.",
+        "id": "N1_curtailment_ceiling",
+        "metric": "cluster_presence.curtailed.share_of_maps, trailing_72h of the after census"
+      },
+      {
+        "fires_if": "cold rate < 0.5 * warm rate, evaluated only when matured cold windows with a known lookup outcome number >= 50",
+        "grounding": "The feasibility probe's go signal was cold consumption 18.5% against 17.9% whole-tail — cold content is not less useful when delivered. Half the warm rate is the registered floor under which 'exploration' has become 'delivering things nobody follows'.",
+        "id": "N2_cold_follow_floor",
+        "metric": "P(lookup-followed | matured cold-medoid window in accrual window) against the same rate over matured warm-medoid windows in the same window, arms split by the cluster cold marker",
+        "unevaluable_below_50": "recorded as unevaluable in after.json, and an unevaluable N2 neither passes nor fires — the verdict then rests on the always-evaluable conditions, exactly as gate-decision handled its unevaluable pre-registered conditions: named, numbered, never patched mid-window"
+      },
+      {
+        "fires_if_above": 0.7,
+        "grounding": "the exploration lane may fill empty channel but must not become the channel; 0.70 leaves the bound meaningful even if the warm channel stays as thin as the trailing_24h regime suggests",
+        "id": "N3_channel_share_ceiling",
+        "metric": "delivered cold clusters / all delivered clusters, over the accrual window"
+      }
+    ],
+    "structural": [
+      {
+        "id": "G1_quota_bound",
+        "rule": "at most LM_MAP_POOL_COLD_SLOTS (registered: 2) cold clusters per map, appended into free capacity only, total clusters never above MAX_CLUSTERS = 6"
+      },
+      {
+        "id": "G2_curtailment_honored",
+        "rule": "the unread-collapse defense binds cold content exactly as warm: a curtailed key delivers no clusters of either lane"
+      },
+      {
+        "id": "G3_one_shot_exploration",
+        "rule": "cold_eligibility.E3 makes each node's cold-lane budget one delivery per store: the ledger row written at delivery removes it from the lane forever, so the lane cannot become a new repeat loop, and consecutive maps for one key rotate through different cold nodes by construction"
+      },
+      {
+        "id": "G4_inter_slot_near_dup",
+        "rule": "When 2 slots fill in one map, the second candidate is skipped if its embedding cosine against the first delivered cold node is >= EMBEDDING_CLUSTER_COSINE = 0.55 (recall_map.py:377) — two candidates the clusterer would call one cluster are one finding, not two; the next-ranked candidate is considered instead. The guard abstains (delivers) when either embedding is unavailable: absence of a verdict is not a duplicate verdict."
+      },
+      {
+        "id": "G5_honest_follow_signal_unchanged",
+        "rule": "Cold medoids enter recall_delivery_history on the untouched existing path (storage.py:2032-2034) with the tri-state lookup outcome of commit 178c2e3; the lane adds no write and bends no maturation rule. Схлопывание остаётся; цель — чтобы схлопывать было нечего."
+      }
+    ]
+  },
+  "placement": {
+    "curtailment_is_honored": "On a key whose map is curtailed by the unread-collapse machinery, the cold lane does not run and adds nothing: a curtailed map carries no clusters, cold included. The lane must never become a bypass of the goal's kept defense.",
+    "label_gate_is_honored": "A cold singleton cluster passes the same deliverable-label gate as any warm cluster. A cold cluster the gate refuses is not delivered; the next-ranked eligible candidate is considered in its place.",
+    "ledger_precondition_discharged": {
+      "graduation_mechanism": "A delivered cold slot opens a real delivery window; the window matures in 24h with the honest tri-state lookup outcome (commit 178c2e3). Matured history moves the node's frozen relevance features off train-mean imputation, which is the only door into the warm lane. The quota is the ladder: доставка растит историю — но теперь по расписанию кванты, а не петли.",
+      "how_it_is_satisfied_without_extending_the_ledger": "The ledger writer records two delivered populations per event: the organic result tail at ranks 3..8 (_organic_tail_node_ids, storage.py:5260-5265, RECALL_DELIVERY_HISTORY_HEAD_CUT=3, RECALL_DELIVERY_HISTORY_ITEMS_PER_EVENT=6, storage.py:56-57) AND the unique medoid node ids of the first six delivered map clusters (_recall_map_medoid_ids, storage.py:5268-5288, joined at storage.py:2032-2034). Appended cold clusters always sit at indices < 6 because total delivered clusters never exceed MAX_CLUSTERS = 6 under the non-displacement rule, so every delivered cold slot is inside clusters[:6] and is ledgered on the existing path with no schema or writer change.",
+      "operator_precondition": "recall_delivery_history ledgers outcomes only for 0-based ranks 3..8; cold slots must land inside that window or the ledger must first be extended"
+    },
+    "where": "Map-assembly level, after the frozen warm pipeline has produced and capped its deliverable clusters (kept = deliverable[:max_clusters], recall_map.py:3126 @ 82003ed) and outside _pool: cold slots are appended to the delivered cluster list as singleton clusters whose medoid is the cold node itself, at indices >= the warm cluster count. The pool pass, the frozen scorer, clustering and cluster ordering are untouched.",
+    "why_not_pool_level": "A cold node admitted into the 200-node pool (MAX_POOL_NODES, recall_map.py:243) competes in clustering and can be absorbed into a warm cluster without becoming a medoid. Only medoids of delivered clusters are ledgered, so pool-level admission can deliver a cold node zero ledger rows and the loop returns under a new name. Singleton-cluster placement makes the cold node its own medoid by construction."
+  },
+  "plan_sha256": "f6d5593a53b88288abb8b3924df3d27fdc2b8e7a57610e874211a9e84becf9a8",
+  "plan_sha256_over": [
+    "amendment_policy",
+    "artifact",
+    "cold_eligibility",
+    "cold_ranking",
+    "evidence",
+    "falsifier",
+    "mandate",
+    "map_metric_acceptance",
+    "node",
+    "noise_guards",
+    "placement",
+    "plan_sha256_over",
+    "plan_version",
+    "quota_slots",
+    "registered_before_any_live_outcome",
+    "sel_extension",
+    "self_hash",
+    "valves",
+    "warm_precision_observable",
+    "window"
+  ],
+  "plan_version": "cold-quota-r1",
+  "quota_slots": {
+    "exploration_throughput_bound": "At most 2 new ledgered cold nodes per delivered map; with baseline trailing_72h volume (1872 maps, 1242 uncurtailed) the lane opens at most ~2500 cold delivery windows per 72h, each maturing 24h later (RECALL_DELIVERY_HISTORY_HORIZON_HOURS = 24, storage.py:55).",
+    "never_displaces_warm": "Cold slots consume only free cluster capacity. A map whose warm pipeline already delivers 6 clusters gets 0 cold slots. The warm cluster list — membership, order, labels, medoids — is byte-identical to what the frozen pipeline produced; this is the constructive form of the operator's 'warm lane keeps the frozen scorer bit-for-bit'.",
+    "per_map_effective_slots": "min(LM_MAP_POOL_COLD_SLOTS, MAX_CLUSTERS - delivered_warm_clusters, cold candidates surviving cold_eligibility, cold_ranking and noise_guards). MAX_CLUSTERS = 6 (src/living_memory/recall_map.py:193 @ 82003ed).",
+    "registered_arming_value": 2,
+    "valve_domain": [
+      1,
+      2
+    ],
+    "why_two_and_not_one_or_three": [
+      "the operator mandate bounds the quota at 1-2 slots; 3 is outside the mandate",
+      "worst case 2/6 = one third of a full map, and only when the map is full; the typical case is filling empty channel: baseline trailing_72h has 365 of 1242 uncurtailed maps (29.39%) delivering zero clusters over a non-empty pool",
+      "supply is not the constraint: 54.648% of the replayed live candidate population P (185643 of 339707) sits at usefulness_score exactly 0.0 and the gate-decision decile table counts 149988 cold candidates in decile 6 alone",
+      "2 slots make the inter-slot near-dup guard (noise_guards.G4) meaningful and double per-window exploration throughput at bounded worst-case cost"
+    ]
+  },
+  "registered_before_any_live_outcome": {
+    "evidence_freshness_rule": "Every citation in this file is dated at or before sealed_at. Any later revision that cites an observation dated after its own sealing is invalid on its face.",
+    "no_holdout_read": "No holdout is read, opened or referenced as evidence anywhere in this file. The v3 holdout was never opened and stays sealed (operator decision 2026-08-24T19:25Z); this plan wires nothing from v3's fit and cites v3 only for its registered forms: the four-member candidate-time family with its signs, the permanent graph_score exclusion, the published monotone-table calibration form, and the plan_sha256 convention.",
+    "statement": "At sealing the lane does not exist: sibling cold-quota-lane-build is pending, no host carries LM_MAP_POOL_COLD_QUOTA_GATE or LM_MAP_POOL_COLD_SLOTS, and every persisted sel payload is at the frozen width 7 (baseline.json selection_vector_width: by_width {\"7\": 1262}, payloads_with_a_pool_gate_charged 0). T0 — the accrual window's opening instant — is defined below as a restart instant that has not happened. Every number in this file therefore predates every outcome it will be judged against, by construction and not by promise."
+  },
+  "sealed_at": "2026-08-24T19:57:56Z",
+  "sel_extension": {
+    "census_compatibility": "scripts/recall_map_quality_census.py reads sel keys n/e/x/v and ignores unknown keys (_read_sel), and reads cluster labels regardless of extra keys, so armed payloads parse under the committed census unmodified: sel_objects_malformed stays a real malformation counter and the M-metrics need no census change. Cold-specific counters (c totals, marker splits) are new tooling owned by cold-quota-live-wire-and-window-read.",
+    "cluster_marker": {
+      "key": "cold",
+      "rule": "Each delivered cold cluster carries the additive key cold: 1 in the persisted payload; warm clusters carry no such key. The marker is what lets the after tooling split medoid delivery windows into warm and cold arms (noise_guards.N2, warm_precision_observable) — recall_delivery_history rows do not carry lane provenance and must not be extended to.",
+      "value": 1
+    },
+    "invariance_proofs_required_of_lane_build": [
+      {
+        "claim": "With both cold valves unset, the entire persisted recall_map payload — clusters, counts, sel — is byte-identical to the pre-lane code on identical input.",
+        "id": "I1_valves_off_byte_identity"
+      },
+      {
+        "claim": "With the valves armed, sel's n, e, x, o, q and the warm cluster list are byte-identical to the valves-off run on identical input; the only additions are the c key and the appended marked cold clusters.",
+        "id": "I2_armed_warm_untouched"
+      }
+    ],
+    "new_additive_key": {
+      "g": "cold-eligible candidates examined this build (E1-E5 survivors, before ranking and guards)",
+      "k": "cold clusters actually delivered, 0 <= k <= min(LM_MAP_POOL_COLD_SLOTS, 6 - warm clusters)",
+      "key": "c",
+      "presence_rule": "Present if and only if the cold valve pair is armed — present even at [0, 0], because an armed-and-idle lane and an unarmed lane are different facts and the wire must not spell them the same way. On a curtailed key the lane does not run and an armed server emits c = [0, 0]. With the valves off the key is absent and the payload is byte-identical to today's: absence of the lane stays encoded exactly one way, which extends the canonical-trim invariant rather than bending it.",
+      "value": "[g, k]: two non-negative integers",
+      "width_7_caveat": "baseline.json's statement 'width 7 == neither pool valve charged' remains true of uf/nf only. An armed cold lane still emits width-7 x; its wire proof is the presence of c. The after census must count payloads carrying c; a payload with c under valves-off provenance or vice versa is an arming-symmetry defect (window.validity)."
+    },
+    "x_vector_unchanged": "No new positional reason code. SELECTION_REASON_CODES (iv, du, fc, ss, sj, lr, pc; recall_map.py:273-281) and POOL_GATE_REASON_CODES (uf, nf; :291-297) keep their positions 0..8; canonical trimming to the frozen width 7 (SelectionAccounting.__post_init__, :669-681) is untouched. The cold lane cannot use x because x counts exclusions and the accounting equation n = e + sum(x) is enforced: a cold-admitted candidate is not a pool admission (e unchanged) and remains counted lr in the pool pass; delivering it happens outside the pool, so double-booking it into a new x position would break the equation."
+  },
+  "self_hash": {
+    "construction": "plan_sha256 = sha256(canonical_json({k: doc[k] for k in doc['plan_sha256_over']}).encode('utf-8')) where canonical_json = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) — the rendering of src/living_memory/postsession/judge.py canonical_json, the same construction coldstart-prereg-v3.json sealed under (741eb58 seal_note). plan_sha256, sealed_at and amendments are stamped after sealing and are excluded from the hash by not being listed in plan_sha256_over.",
+    "verify": "python3 -c \"import json,hashlib; d=json.load(open('artifacts/recall-map/pool-quality/cold-quota-prereg.json')); h=hashlib.sha256(json.dumps({k:d[k] for k in d['plan_sha256_over']},ensure_ascii=False,sort_keys=True,indent=2).encode()).hexdigest(); assert h==d['plan_sha256'], (h, d['plan_sha256']); print('plan_sha256 OK', h)\""
+  },
+  "valves": {
+    "gate": {
+      "name": "LM_MAP_POOL_COLD_QUOTA_GATE",
+      "on_flags": [
+        "1",
+        "true",
+        "yes",
+        "on"
+      ],
+      "spelling": "Exactly the drain-valve parse the two existing pool valves use (_POOL_GATE_ON_FLAGS, recall_map.py:340): anything else — unset, empty, 0, a typo — is off."
+    },
+    "interaction_constraints": [
+      "LM_MAP_POOL_USEFULNESS_GATE and LM_MAP_POOL_MIN_USEFULNESS stay unset for the whole window: a positive usefulness floor removes a population that is 77.11% cold at the cheapest boundary (gate-decision S3 numbers) and would starve the lane it is being measured beside; both were declined on 2026-08-24 and arming either during the window is a window-invalidating event (window.invalidating_events)",
+      "LM_MAP_POOL_DEMOTION_GATE / LM_MAP_POOL_DEMOTE_AFTER likewise stay unset (declined by their own stop condition)"
+    ],
+    "number": {
+      "accepted_domain": [
+        1,
+        2
+      ],
+      "name": "LM_MAP_POOL_COLD_SLOTS",
+      "rejection_rule": "Non-integer, empty, 0, negative, or > 2 leaves the lane inert. The registered design is a 1-2 slot exploration quota; a larger number is not this design and reads as the misconfiguration it is, exactly as pool_demotion_windows_from_env rejects 0."
+    },
+    "paired_inertness": "The lane runs only when the gate is on AND the number parses inside the domain. A valve on with no number is inert — 'on, but at what?' has no safe answer (recall_map.py:1272-1296 pattern, carried).",
+    "registered_arming": {
+      "LM_MAP_POOL_COLD_QUOTA_GATE": "1",
+      "LM_MAP_POOL_COLD_SLOTS": "2",
+      "effective_only_on_restart": "Env and code take effect only with a living-memory server restart, applied symmetrically on both hosts, as was done for LM_RECALL_NEAR_DUP_COSINE. Both hosts verified symmetric and free of every pool valve at gate-decision time (gate-decision.json#decision.host_state_verified_2026_08_24).",
+      "hosts": [
+        "local (~/.config/living-memory/env)",
+        "alt 31.207.47.90 (/home/user/.config/living-memory/env)"
+      ]
+    }
+  },
+  "warm_precision_observable": {
+    "comparison_series": "The same estimand over windows opened in [T0 - 72h, T0) — the last pre-arming stretch, by which point the tri-state lookup ledger (deployed 2026-08-24 morning, commit 178c2e3) has matured data; at gate-decision time it had exactly zero matured known windows, which is why no pre-registered warm rate can be written into this file and the comparison series is defined by procedure instead of by number.",
+    "estimand": "P(lookup-followed | matured warm-medoid window), where warm-medoid windows are delivery windows of medoids of clusters NOT carrying the cold marker, opened inside the accrual window and matured by the ledger-read instant, with a known (non-NULL) lookup outcome.",
+    "matched_volume_by_construction": "Warm delivery volume is unchanged by the lane (placement.never_displaces_warm; I2), so the matched-volume clause of the mandate is discharged structurally rather than by reweighting.",
+    "published_in": "after.json: both rates, both window counts, and the share of windows with an unobservable (NULL) lookup outcome — carried as numbers even when small, so the table shows its own emptiness, as the gate-decision decile table did.",
+    "status": "monitored aggregate only — explicitly NOT a gate",
+    "why_not_a_gate": "The operator rejected strict warm non-degradation under one threshold as a binding gate: offline warm precision was computed on consumption labels generated by the frozen policy itself — an off-policy trap defending the ordering the goal calls garbage. The observable stays published so drift is visible, and stays non-binding so it cannot re-become that trap."
+  },
+  "window": {
+    "T0": "The later of the two hosts' restart instants after both env files carry the registered arming values. Recorded in wire-runbook.md and after.json by cold-quota-live-wire-and-window-read before any window data is read.",
+    "accrual": "[T0, T0 + 72h] over recall_events.recall_map payloads (occurred_at ordering, the census's own cutoff rule)",
+    "baseline_comparator": "artifacts/recall-map/pool-quality/baseline.json windows.trailing_72h (as_of pin 2026-08-24T12:43:56Z), like window against like window — never the all window, whose mix of older, better days makes any after figure read as an improvement (baseline note 3: share_without_clusters 0.461762 all vs 0.662257 trailing_24h).",
+    "census_read": "scripts/recall_map_quality_census.py at --as-of T0+72h with the committed label salt recall-map-pool-quality/live-map-quality-census/r1; the after run's trailing_72h window IS the accrual window. The salt is a contract: a different salt un-groups the label-set digests and the repeat metrics stop meaning anything across the two artifacts.",
+    "invalidating_events": [
+      "any change to LM_MAP_POOL_USEFULNESS_GATE, LM_MAP_POOL_MIN_USEFULNESS, LM_MAP_POOL_DEMOTION_GATE, LM_MAP_POOL_DEMOTE_AFTER, LM_RECALL_NEAR_DUP_COSINE or LM_DRAIN_NEAR_DUP_SUPERSEDES on either host during the window",
+      "any code deploy touching recall_map.py, storage.py delivery-history paths, or the census script during the window",
+      "asymmetric valve state or an unrecorded restart on either host"
+    ],
+    "ledger_read": "Not before T0 + 96h: a delivery window opened at T0+72h matures at T0+96h (RECALL_DELIVERY_HISTORY_HORIZON_HOURS = 24). N2 and warm_precision_observable read only windows opened inside the accrual window and matured by the read instant.",
+    "on_invalidation": "An invalidated window is recorded in after.json with the event that broke it and is never graded; the experiment re-opens from a fresh T0. Invalidation is not a pass and not a fail.",
+    "store": "~/.local/share/living-memory/global.sqlite3, read-only — the same store, access mode and single-store scope as baseline.json. The alt host's store is not a metric source; alt's role is arming symmetry.",
+    "validity": {
+      "armed_share": "At least 98% of sel-carrying payloads inside the accrual window must carry the c key. Below that, arming was asymmetric or a restart was missed; the window is invalid and must be re-opened from a fresh T0 after the defect is fixed — its data may not be read as an outcome."
+    },
+    "volume_floor": {
+      "rule": "At least 500 maps in the accrual window (baseline trailing_72h carried 1872). Under the floor, the window extends exactly once to [T0, T0+144h] (census at T0+144h, ledger read not before T0+168h). Still under the floor after the extension: the experiment closes as unevaluable, the falsifier's disarm branch runs, and after.json records verdict 'negative-unevaluable: accrual volume never reached the registered floor'.",
+      "why": "share metrics on two-digit denominators are noise; one bounded extension beats an unbounded wait"
+    }
+  }
+}

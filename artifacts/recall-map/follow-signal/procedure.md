@@ -356,3 +356,299 @@ name, and change nothing in `src/`. The env-valve names belong to the
 naming them cannot be mistaken for enabling them. With both valves unset the
 map output stays byte-identical to the pre-change build, which is that node's
 postcondition, not this one's.
+
+---
+
+## 7. Amendment, 2026-08-24: what §4 could not be evaluated on, and what replaced it
+
+Written by the `pool-gate-threshold-and-charge` node **before any pool-candidate
+distribution or follow rate was read.** The commit that adds this section adds
+no measurement; `artifacts/recall-map/pool-quality/gate-decision.json` and
+`scripts/recall_map_pool_usefulness_census.py` land after it, and the git order
+is the record. §6's scope note no longer holds for this section alone: this one
+names the env valves, because deciding them is the amending node's whole job.
+
+### 7.1 The signal deployed, and that is the only checklist item that moved
+
+§5.1 has flipped. Commit `178c2e3` shipped to both hosts on 2026-08-24 and
+`recall_delivery_history` is at `format_version = 2` with the tri-state
+`lookup_consumed` column; `recall_lookup_events` exists. Measured on
+`~/.local/share/living-memory/global.sqlite3`, opened `mode=ro`, at
+**2026-08-24T12:52:26Z**:
+
+| quantity | value |
+|---|---|
+| `recall_delivery_history` rows | 187 887 |
+| rows with `lookup_consumed IS NOT NULL` (*known*) | **723** |
+| known rows that are **matured** (`outcome_end <= now`) | **0** |
+| earliest known window's `outcome_end` | **2026-08-24T12:55:07Z** — 2 min 41 s in the *future* |
+| `recall_lookup_events` rows | 14 |
+| map-medoid share of matured ledger windows (`census.json`) | 1 812 / 185 357 = **1.0 %** |
+
+The middle two rows are the whole difference between §4 and this amendment. The
+column began being written the morning of the measurement, and a window matures
+24 hours after it opens, so the *first* window that can ever carry an id-fetch
+verdict closes minutes after this reading. Zero matured known windows is not a
+thin sample that a careful estimator can still squeeze; it is an empty one, and
+every rate §4 names divides by it.
+
+§5.3 fails for the same reason and independently:
+`observed_days_to_last_activity` for the lookup signal is under one day against
+a required 14. Even if maturity had been reached, the accrual window would be a
+single morning of one project's work.
+
+### 7.2 The three estimators, and which of them died
+
+| rule | stop condition | today | evaluable? |
+|---|---|---|---|
+| §4.1 `LR` (lookup vs re-delivery weight) | ≥ 97 known map-medoid windows, or ≥ 35 if both arms under 0.2 | **0** matured known windows, of which map-medoid **0** | **no** |
+| §4.2 demotion `N` | ≥ 30 rows with an observed exogenous follow *and* ≥ 1 preceding known window | **0** such rows — an exogenous follow requires a matured known window | **no** |
+| §4.3 condition 1 (decile follow rates) | ≥ 35 known windows **per decile** | **0** per decile; 0 across all ten | **no** |
+| §4.3 condition 2 (≤ 20 % of pool removed) | none — it is a budget, not a rate | measurable from the candidate population alone | **yes, and binding** |
+| §4.3 falsifier (coverage must not fall) | none | measurable by paired replay, see §7.6 | **yes, and binding** |
+
+§4.3 condition 1 does not merely lack power; it is *decidably false for every
+`t`*. The condition asks that each decile below `t` have a follow rate whose
+95 % Wilson upper bound sits below the corpus rate's 95 % lower bound. On
+`n = 0` the Wilson interval is the whole unit interval, so the comparison is
+`1.0 < 0.0` in every cell of the table, for every candidate boundary. Applying
+§4.3 as written therefore already returns *no threshold, valve stays off* —
+which is a permitted outcome, and is the outcome this amendment must be able to
+beat honestly or accept.
+
+§4.1's coarsening escape hatch does not apply anywhere. §4.3's stop condition
+permits collapsing deciles to quintiles or terciles and requires the choice be
+declared before rates are read. **Declared: no coarsening.** Zero known windows
+divided by three buckets is still zero, so coarsening buys no power and would
+only make the table look less empty than it is. The decile table is computed and
+published at ten buckets.
+
+### 7.3 The demotion valve is not licensed under any substitute, and stays off
+
+§4.2's estimand is a percentile of an outcome distribution — the longest run of
+known-and-unfollowed windows preceding a row's *first exogenous follow*. There
+is no non-outcome form of that quantity: `q95` is not a property of the corpus,
+it is a property of rows that were followed, and today no row has been followed
+because no window has matured. `N = max(3, ceil(q95) + 1)` cannot be evaluated,
+approximated, or bounded from the candidate distribution.
+
+`LM_MAP_POOL_DEMOTION_GATE` and `LM_MAP_POOL_DEMOTE_AFTER` therefore stay unset
+on both hosts regardless of what §7.4 decides about the usefulness floor. No
+substitute is offered for §4.2 because inventing one would be inventing the
+data. This is recorded as a numeric decline: **0 rows with an observed exogenous
+follow, against a pre-registered floor of 30.**
+
+### 7.4 The substitute for §4.3 condition 1, declared before the numbers
+
+Condition 1's job is to establish that the excluded band is **measurably
+worse**, not merely lower. No outcome evidence exists, so the substitute cannot
+make that claim and does not try to. It replaces one outcome condition with
+three non-outcome ones, all of which must hold at a candidate boundary `t` for
+the valve to be charged.
+
+Write `P` for the replayed pool-candidate population of §7.5.
+
+- **S1 — the threshold is not inert.** `t` is a decile boundary of `P` with
+  `t > 0.0`, and the band `{score < t}` is non-empty on `P`. The code compares
+  strictly (`_below_usefulness`, `recall_map.py:1338-1343`), so a boundary of
+  exactly `0.0` removes nothing; charging an inert valve would put a number in
+  the environment of two production hosts while changing no behaviour, and
+  would make the seven-wide `sel` contract report a gate that never fires.
+
+- **S2 — the budget, inherited unchanged from §4.3 condition 2.** Excluding
+  everything below `t` removes ≤ 20 % of the pool. §4.3 does not say which
+  denominator "the pool" means, and the two available readings differ by two
+  orders of magnitude, so both are declared here and **both must pass**:
+  - *admitted* — the members `_pool` returns after the cap, i.e. what reaches
+    clustering and what `RecallMap.pool` counts. This is the reading the code's
+    own vocabulary supports and the one "emptying the pool" describes.
+  - *candidates* — the rows that reach the floor at all: post-`iv`, post-`du`,
+    post-ballast, pre-history. This is the population the deciles are taken
+    over, so a budget stated against it is the one that binds the table.
+
+- **S3 — cold-start non-regression, the substitute proper.** Among the
+  candidates `t` removes, the share that are **cold** — no matured delivery
+  history at all — must not exceed the cold share of the candidates `t`
+  retains.
+
+  S3 exists because `usefulness_score` is not an independent verdict on a node.
+  It is a delivery-history feature. `nodes.usefulness_score` is
+  `NOT NULL DEFAULT 0.0` (`storage.py:110`) and moves only through
+  `feedback.apply_retrieval_feedback`, which adds `0.1 · signal` to a node
+  *that a recall returned and a caller fed back on* (`feedback.py:282-283`).
+  A node nobody has retrieved is therefore at exactly the schema default, and
+  70.8 % of the corpus (12 375 / 17 472 nodes) sits there. A floor above zero
+  is, mechanically, a floor on "has this been delivered and rewarded before" —
+  the same rich-get-richer selection that features 1–4 of `relevance_score`
+  already impose and that the root goal was opened to break. S3 is the cheapest
+  test that distinguishes a floor which removes junk from a floor which removes
+  the cold, and it is the only part of condition 1's intent that survives
+  without outcomes: it cannot show the excluded band is worse, but it can show
+  the excluded band is not simply *younger*.
+
+**Decision rule.** Take the candidate boundaries in descending order. The
+threshold is the highest `t` satisfying S1, S2 and S3 together and passing the
+§7.6 falsifier. If no `t` satisfies all of them, **there is no threshold, the
+valve stays off, and the exact failing condition is recorded with its numbers**
+in `gate-decision.json`. Declining is the pre-registered default and needs no
+further justification than a failing cell.
+
+This substitution is a documented deviation in §5.6's sense. Stated plainly:
+**S1–S3 are weaker than condition 1 and do not prove the excluded band is less
+useful.** A valve charged on them is charged on a distributional argument and a
+harm check, not on evidence of benefit, and it must be revisited under §4.3 as
+written once ≥ 35 matured known windows per decile exist. Any charge made here
+carries that expiry in `gate-decision.json`.
+
+### 7.5 The candidate population is replayed, not proxied
+
+The distribution `P` is produced by `scripts/recall_map_pool_usefulness_census.py`,
+which replays real `recall_events` queries against a **frozen snapshot** of the
+live store through the same `MemoryRecallService` the server uses, takes
+`last_residual`, and runs `RecallMapBuilder._pool`'s own classification pass over
+it. The rows bucketed are the rows the floor would actually be asked about: the
+survivors of the identity, duplicate and ballast checks, read at the point
+`recall_map.py:1949` reaches the floor, before any history is fetched.
+
+Two cheaper populations are excluded by name, because both are wrong and both
+are wrong in a direction that would license a threshold this data does not
+support:
+
+- **the corpus-wide distribution** — 70.8 % of 17 472 nodes are exactly 0.0 and
+  `p90` is 0.116. A floor read off it deletes nearly the whole corpus.
+- **the recall-returned distribution** — `p20 = 0.0777`, 19.81 % below it. These
+  are the nodes recall *delivered*, which is the opposite selection from the
+  residual the map is built out of.
+
+### 7.6 The falsifier, in the form that can actually run
+
+§4.3 names `scripts/recall_map_effect.py` and requires the covered-cluster count
+to stay inside a pre-registered band. That script cannot execute this falsifier
+as written, and saying so is part of keeping the pre-registration honest: it
+reads persisted `recall_events.recall_map` payloads out of history
+(`map_items`, `recall_map_effect.py:719-758`) and never constructs a map. An env
+valve that has never run leaves both of its arms byte-identical, so running it
+"with the valve on and off" produces the same file twice and falsifies nothing.
+
+**Declared executable form**, same intent, same quantity: the census script
+replays the *same* query set against the *same* frozen snapshot twice, once with
+`LM_MAP_POOL_USEFULNESS_GATE` unset and once with it charged at `t`, and reports
+`covered` — `RecallMap.covered`, the cluster-coverage count the payload
+carries — summed over the replay, together with the count of non-empty maps.
+
+**Pre-registered band, one-sided:** `covered_on >= covered_off` and
+`maps_with_clusters_on >= maps_with_clusters_off`. The band is one-sided because
+the falsifier's own sentence is one-sided — "a usefulness gate that improves
+follow rates by delivering fewer maps has proved nothing" — and because the
+metric this valve exists to move is already at 46.3 % of recalls with no
+clusters at all (1 305 / 2 818 persisted payloads, measured 2026-08-24). There
+is no headroom below.
+
+`scripts/recall_map_effect.py --verify-prereg` is still run, for what it does
+establish: that the sealed plan and its baseline are unmoved, i.e. §5.5.
+
+### 7.7 Result: both valves decline, and the decisive condition is a pre-registered one
+
+Measured after §7.1–§7.6 were committed (`c069034`). Replay: 500 distinct
+`recall_events` queries against a frozen snapshot of the live store
+(`snapshot_sha256 c70875d9…`, 17 474 nodes, 57 781 recall events), `as-of`
+2026-08-24T13:00:00Z, production recall cut `max_results = 5`.
+
+**The replay is the real population, and it proves it.** Every one of the 498
+queries with a residual asserted the mirrored classification pass against
+`_pool`'s own `SelectionAccounting`; 498 checks, 0 failures. The replayed
+admitted share is **5 069 / 339 707 = 1.49 %** against the live
+`sum(sel.e)/sum(sel.n) = 1.5086 %` — the two agree to within a thousandth,
+which is the corroboration that matters, because the admitted share is the
+quantity the floor acts on.
+
+**P is half zero.** Of 339 707 candidates, **185 643 (54.65 %) score exactly
+0.0**, so decile boundaries 1 through 5 all land on 0.0 and a floor there is
+inert. The only non-inert boundaries are `0.02`, `0.045`, `0.1133`, `0.52`.
+
+| decile | range | n | cold | admitted | known windows |
+|---|---|---|---|---|---|
+| 1 | [-0.25, 0) | 100 | 60 | 0 | **0** |
+| 2–5 | [0, 0] | 0 | 0 | 0 | **0** |
+| 6 | [0, 0.02) | 194 482 | 149 988 | 908 | **0** |
+| 7 | [0.02, 0.045) | 41 998 | 4 869 | 221 | **0** |
+| 8 | [0.045, 0.1133) | 35 128 | 3 919 | 281 | **0** |
+| 9 | [0.1133, 0.52) | 33 940 | 528 | 670 | **0** |
+| 10 | [0.52, 4.0] | 34 059 | 327 | 2 989 | **0** |
+
+The `known windows` column is the point. It is zero in every bucket, against
+§4.3's stop condition of 35 *per decile*, and it is carried in the table rather
+than omitted so the table shows its own emptiness.
+
+**The budget, both denominators.** Removing everything below `t`:
+
+| `t` | of 339 707 candidates | of 5 069 admitted | cold share removed | cold share retained |
+|---|---|---|---|---|
+| 0.02 | 194 582 = **57.28 %** | 908 = **17.91 %** | **77.11 %** | 6.64 % |
+| 0.045 | 236 580 = **69.64 %** | 1 129 = **22.27 %** | 65.48 % | 4.63 % |
+| 0.1133 | 271 708 = **79.98 %** | 1 410 = **27.82 %** | 58.46 % | 1.26 % |
+| 0.52 | 305 648 = **89.97 %** | 2 080 = **41.03 %** | 52.14 % | 0.96 % |
+
+Stated rather than buried: under the *narrow* reading of "the pool" — admitted
+members only, which is probably what §4.3's own estimator meant — `t = 0.02`
+**passes** condition 2 at 17.91 %. It is the single survivor of any denominator
+reading, and it is therefore the only threshold on which anything else could
+still matter.
+
+**The pre-registered falsifier kills it.** Same snapshot, same 500 queries,
+valve off and then charged at `t = 0.02`:
+
+| | off | on | Δ |
+|---|---|---|---|
+| covered clusters | 1 056 | **743** | **−313 (−29.64 %)** |
+| maps with clusters | 195 | **180** | −15 |
+| admitted pool rows | 5 069 | 4 161 | −908 |
+
+The band declared in §7.6 is `covered_on >= covered_off`. It does not hold, and
+it does not hold by nearly a third. **The decline therefore rests on a
+pre-registered condition that this amendment never touched**, not on the
+substitute — which is the outcome an honest amendment should hope for, because
+it means the weakened rule was never load-bearing.
+
+**S3 rejects it independently, and says why the valve is the wrong shape.** At
+`t = 0.02` the floor removes a population that is **77.11 % cold** and keeps one
+that is **6.64 % cold**. `usefulness_score` is a delivery-history feature
+(`feedback.py:282-283`, default `0.0` at `storage.py:110`), so a floor on it is
+a floor on "has this been delivered and rewarded before". Charging it would add
+a *sixth* history term to a selector whose cold-start defect is that four of its
+five terms are already history. The gate is not mis-tuned; at this stage of the
+corpus it is pointed the wrong way.
+
+**Verdict.**
+
+| valve | env | decision | failing condition |
+|---|---|---|---|
+| usefulness admission | `LM_MAP_POOL_USEFULNESS_GATE`, `LM_MAP_POOL_MIN_USEFULNESS` | **unset, not charged** | §4.3 falsifier: covered 1 056 → 743 at the only budget-surviving `t` |
+| unfollowed-window demotion | `LM_MAP_POOL_DEMOTION_GATE`, `LM_MAP_POOL_DEMOTE_AFTER` | **unset, not charged** | §4.2 stop condition: 0 rows with an observed exogenous follow, floor 30 |
+
+No environment changed, so **no host was restarted and there are no restart
+instants to record.** Both hosts were read on 2026-08-24 to make the decline a
+verified state rather than an assumption: neither `~/.config/living-memory/env`
+(local) nor `/home/user/.config/living-memory/env` (alt) contains any of the
+four variables, and the two files carry the same valve set otherwise
+(`LM_DRAIN_NEAR_DUP_SUPERSEDES=1`, `LM_RECALL_NEAR_DUP_COSINE=0.97`). The
+hosts are symmetric, and stay symmetric.
+
+`scripts/recall_map_effect.py --verify-prereg --as-of 2026-08-19T11:00:00Z`
+returns **OK** on all nine checks, `plan_sha256 d17b2e65…` reproducing against
+the sealed plan: §5.5's frozen surfaces are unmoved, so none of the above is
+void.
+
+**What this does not say.** It does not say `usefulness_score` is a worthless
+signal — only that no threshold on it is licensed today, and that both
+conditions still capable of rejecting one do reject it. It does not say the map
+is healthy; the replay reproduces the defect exactly (1.49 % of candidates
+admitted, 303 of 498 maps empty). It says the fix is not on this lever. Removing
+candidates from a pool that is already admitting 1.5 % cannot raise coverage,
+and measured here, it lowers it by 29.6 %.
+
+Re-open under §4.3 as written when ≥ 35 matured known windows exist per decile
+over map-pool rows — months away at the 1.0 % map-medoid share of the ledger —
+or, sooner and more usefully, after `selector-cold-start-recalibration` changes
+`P` itself, at which point every cold share above is a re-measurement and not a
+re-check.

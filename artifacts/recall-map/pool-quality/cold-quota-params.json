@@ -1,0 +1,87 @@
+{
+  "artifact": "cold-quota lane ranking tables",
+  "composite": "f = u_rs + u_tg + (1 - u_bm) + (1 - u_vs); ties by higher raw result_score then lower residual ordinal",
+  "constant": "living_memory.recall_map.COLD_RANKING_CALIBRATION",
+  "degenerate_members_dropped": [],
+  "elapsed_seconds": 0.2,
+  "fitted_on": {
+    "as_of": "2026-08-24T13:00:00Z",
+    "counts": {
+      "captured_lr_rows": 334652,
+      "cold_eligible": 158671,
+      "e5_readable": 334652,
+      "existence_probed": 160767,
+      "existence_read_unavailable_queries": 0,
+      "matured_prefilter_removed": 173885
+    },
+    "population": "cold-eligible subpopulation (cold-quota-prereg.json cold_eligibility E1-E5) of the replayed live candidate population P",
+    "pythonhashseed": "0",
+    "queries": 500,
+    "seed": 20260824,
+    "snapshot_manifest": {
+      "captured_at": "2026-08-24T13:00:00Z",
+      "harness_version": 2,
+      "recall_events_created_at": {
+        "max": "2026-08-24T12:58:01Z",
+        "min": "2026-05-14T20:05:23Z"
+      },
+      "row_counts": {
+        "active_nodes": 13447,
+        "connections": 152881,
+        "nodes": 17474,
+        "recall_events": 57781
+      },
+      "snapshot_bytes": 662380544,
+      "snapshot_path": "/tmp/pool-census/snap.sqlite3",
+      "snapshot_sha256": "c70875d930077f61de74862e2ea44692e2f390f5f9c4cd393b6b7b9ddf9303aa",
+      "source_bytes": 662212608,
+      "source_path": "/home/sfx/.local/share/living-memory/global.sqlite3"
+    }
+  },
+  "frozen_policy_untouched": {
+    "RELEVANCE_POLICY_CALIBRATION": "stays empty",
+    "RELEVANCE_POLICY_DIGEST": "3acad3d92db2538bf3096ab99d2c4d337ea3c8aebddc226646527b4d277660ea",
+    "RELEVANCE_POLICY_ID": "directional-zsum-r1",
+    "RELEVANCE_THRESHOLD": 3.8708378402511
+  },
+  "members": {
+    "bm25_score": {
+      "atoms": 1,
+      "breakpoints": 41,
+      "fitted_values": 158671,
+      "knots": 40,
+      "sha256_canonical_breakpoints": "a7499a8d9e28dade9987d1093480abd4489a2e5bbb7d9416f3dca637efdf3b62"
+    },
+    "result_score": {
+      "atoms": 2,
+      "breakpoints": 393,
+      "fitted_values": 158671,
+      "knots": 391,
+      "sha256_canonical_breakpoints": "d76c82cbac6bdcb92d952d35cc1d5ab2fd2129ecc4635420181c7c2c3036fb8f"
+    },
+    "trigger_score": {
+      "atoms": 1,
+      "breakpoints": 3,
+      "fitted_values": 158671,
+      "knots": 2,
+      "sha256_canonical_breakpoints": "68befa87b1488e6d31d36e7b718ffe21563f26771a09b719a4a83d9f172776ca"
+    },
+    "vector_score": {
+      "atoms": 1,
+      "breakpoints": 64,
+      "fitted_values": 158671,
+      "knots": 63,
+      "sha256_canonical_breakpoints": "8bb14e0ecc05ac22efff5cc67880d7077162a760bc80db72daa30d5886c17248"
+    }
+  },
+  "node": "recall-map-pool-quality/cold-quota-lane-build",
+  "registered_form": {
+    "atom_minimum_share": 0.005,
+    "grid": "mass quantile (greedy u-cover), not v3's position grid: a position grid under-samples dense-mass regions and fails the evaluator's step bound",
+    "grid_knots_max": 512,
+    "max_breakpoints": 1024,
+    "max_u_step_between_knots": 0.001953125,
+    "u_convention": "u = (below + equal/2)/n in [0, 1], midrank on ties",
+    "validated_by": "living_memory.recall_map._calibration_table"
+  }
+}

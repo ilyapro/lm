@@ -1,0 +1,2421 @@
+{
+  "amendment_policy": [
+    "Amendments may touch only non-outcome-affecting fields: artifact naming, prose clarification, added",
+    "diagnostics, added denominators, and corrections of citation.",
+    "No direction, sign, family member, arm, calibration, scale choice, missing-value rule, cohort, split",
+    "fraction, cold minimum, generalization threshold, admitted-fraction band, derived fit floor, binomial",
+    "alpha, anti-fiat guard or decision-procedure step may be changed by any amendment.",
+    "This plan adds four items to that list, each of which is a new degree of freedom it introduced and must",
+    "therefore bind itself on: estimation_cap, both effective-component floors, the direction registration",
+    "ladder, and which arm carries the verdict. None may be changed by amendment, and none may be changed",
+    "after a number computed under it has been read.",
+    "Anything in those lists can change only by a new pre-registration under a new plan_sha256, sealed before",
+    "the next number is read -- the same clause v1 and v2 carried and under which this file was authored.",
+    "v2's bound is carried forward and extended by one. A FOURTH pre-registration MAY NOT move the",
+    "admitted-fraction bands, the generalization threshold of 1.5, the split minimum of 400, the holdout",
+    "minimum of 40 or the derived fit floor of 0.10 downward, and MAY NOT raise estimation_cap or lower either",
+    "effective-component floor in order to recover rows after a failure. Those numbers have now survived three",
+    "plans and two recorded negative results. A plan that needs them looser is not a better plan; it is the",
+    "p-hacking these files exist to prevent, arriving by instalments.",
+    "Every amendment is appended to $.amendments naming the phase it preceded. $.amendments is outside",
+    "plan_sha256_over by construction, which is exactly why the binding policy lives here, inside the hash."
+  ],
+  "amendments": [],
+  "anti_fiat_guards": {
+    "all_four_are_computed_on_the_capped_estimation_set": [
+      "Every quantity these four guards test -- holdout_cold_lift, holdout_cold_auc, both ablation margins, the",
+      "warm precisions and K, the overall and cold admitted fractions on all three splits -- is computed on the",
+      "component-capped estimation row set at estimation_cap, per component_aware_estimation. The uncapped and",
+      "component-equalized readings of each are published beside them and carry no verdict.",
+      "This is the clause that answers the HALT's demand in full: the component discipline is applied to every",
+      "statistic that carries a verdict, not only to the direction check.",
+      "Guard (b)'s ablation shares the capped set with the registered shape, exactly as it already shares the",
+      "denominator and the sealed tables, so the two shapes differ in one term and in nothing else.",
+      "Guard (c)'s K is a count of capped warm rows the FROZEN scorer admits. Its K < 20 fallback is unchanged and",
+      "is now more likely to fire, because the capped warm cohort is smaller; that is a tightening, and the fallback",
+      "condition it falls back to -- revised_warm_lift >= 1.0 -- is unchanged."
+    ],
+    "guard_a_generalization": {
+      "binding": true,
+      "computed_in": "the single holdout pass",
+      "computed_on": "the component-capped holdout estimation set, inside the single pass",
+      "condition": "holdout_cold_lift >= 1.5",
+      "id": "holdout_cold_lift",
+      "value_source": "v1, carried exactly; see verdict_rule.generalization_threshold_not_moved"
+    },
+    "guard_b_family_ablation": {
+      "ablation_threshold_rule": "t_ablation is the HIGHEST threshold at which the ablation admits at least as many cold coldstart_train rows as the registered shape admits. Deterministic, always exists, label-free, and volume-matched on train. Where the achievable counts are coarse, the tie is broken toward the higher threshold -- fewer admitted rows, which raises the ablation's precision and therefore makes it HARDER for the registered shape to beat. The conservative direction is chosen on purpose.",
+      "binding": true,
+      "conditions": [
+        "holdout_cold_lift(registered) > holdout_cold_lift(ablation), STRICTLY. A tie is a FAIL.",
+        "holdout_cold_auc(registered) > holdout_cold_auc(ablation), STRICTLY, where cold AUC is the probability that a randomly chosen consumed cold holdout candidate scores above a randomly chosen non-consumed one, ties counted as one half."
+      ],
+      "id": "family_ablation",
+      "mandatory_reporting": [
+        "family_ablation_lift_margin = holdout_cold_lift(registered) - holdout_cold_lift(ablation)",
+        "family_ablation_auc_margin, likewise",
+        "the ablation's own admitted counts and fractions on train, eval and holdout",
+        "if the ablation ALONE clears 1.5, that must be recorded as an explicit finding -- the guard still binds on the strict comparison, but a reader is entitled to know that the shape change carries a passing lift without the family"
+      ],
+      "sealed_with_the_parameters": "t_ablation is fitted on coldstart_train and written into the sealed parameter digest before the holdout is opened, exactly like the registered threshold",
+      "what_the_ablation_is": "the SAME registered shape with the family arm replaced by its neutral value: S_ablation = N + 0.0. Same calibration tables, same rows, same fail-closed rules -- family_unscoreable rows remain inadmissible in BOTH shapes, so the two share a denominator and differ only in whether F contributes its real rank-normal value or 0.0.",
+      "why_auc_as_well_as_lift": [
+        "Lift is measured at a threshold, so an ablation that lands at a very different admitted",
+        "volume can post a flattering or a punishing lift for reasons that have nothing to do with",
+        "the family. AUC is threshold-free and volume-free and cannot be distorted that way.",
+        "Requiring BOTH strictly is strictly harder than requiring lift alone. It is added, not",
+        "substituted, so guard (a)'s and this guard's stated form are both honoured."
+      ],
+      "why_this_ablation_is_not_a_strawman": [
+        "On the cold subpopulation S_ablation is nearly constant: every cold row with a readable",
+        "ledger shares one history atom, so the ablation's only remaining discrimination among cold",
+        "rows is the level arm. The ablation therefore measures exactly the right thing -- whether",
+        "the family beats simply preferring schema nodes -- and 'prefer schema' is a real and",
+        "tempting degenerate policy, not an invented one.",
+        "It is also the precise control for the accusation this plan invites: the ablation IS the",
+        "imputation-and-recalibration fix with no family in it. If recalibration alone carried the",
+        "result, the ablation would match the registered shape and this guard would fail."
+      ]
+    },
+    "guard_c_warm_non_degradation": {
+      "also_reported_not_binding": [
+        "revised warm precision at the revised threshold",
+        "warm admitted counts under both",
+        "warm lift under both"
+      ],
+      "binding": true,
+      "binding_condition": "revised_warm_precision_at_matched_volume >= frozen_warm_precision, both computed on the same coldstart_eval warm rows in the same pass",
+      "cohort": "coldstart_eval, restricted to WARM rows (matured >= 1)",
+      "computed_before_the_holdout_is_opened": true,
+      "definitions": {
+        "frozen_warm_precision": "score every warm coldstart_eval row with the frozen scorer exactly as it stands today -- src/living_memory/recall_map.py relevance_score, RELEVANCE_FEATURE_MEANS, RELEVANCE_FEATURE_SCALES and RELEVANCE_THRESHOLD = 3.8708378402511 -- and take the consumed share among those it admits. Let K be the number it admits.",
+        "revised_warm_precision_at_matched_volume": "rank the same warm rows by the revised score, take the top K, and compute the consumed share among them"
+      },
+      "id": "warm_non_degradation",
+      "if_K_is_too_small": {
+        "not_a_waiver": "the fallback is registered here, in advance, with a trigger that is itself measured before the holdout is opened. It is stated so that an undefined statistic cannot later be read as a pass.",
+        "rule": "the matched-volume comparison is recorded as INDETERMINATE and the binding condition becomes revised_warm_lift on coldstart_eval >= 1.0, i.e. the revised ordering must not be anti-correlated with consumption among warm rows",
+        "trigger": "K < 20"
+      },
+      "what_this_guard_protects": "the root goal requires that the map does not start returning noise. A revision that admits cold nodes by degrading the ordering of warm ones has moved the problem, not solved it.",
+      "why_volume_matched": "precision falls with admitted volume, so comparing the two policies at their own thresholds would measure the thresholds rather than the scorers. Matching on K compares the two ORDERINGS of the same rows, which is the question guard (c) is asking."
+    },
+    "guard_d_admitted_fraction_bands": {
+      "binding": true,
+      "computed_on": "the component-capped estimation set of each split",
+      "condition": "overall admitted fraction in [0.10, 0.30] AND cold admitted fraction in [0.05, 0.25], on coldstart_train, coldstart_eval and coldstart_holdout, each independently",
+      "id": "admitted_fraction_bands",
+      "pre_holdout_gate": "the bands are checked on train and eval at step 6. If either fails there, the holdout is NEVER OPENED and the outcome is a recorded negative result. This is the step v1 failed, and failing it here again costs no holdout.",
+      "values_identical_to_v1": true
+    },
+    "why_these_and_not_the_shape_ban": [
+      "v1 relied on scorer_shape.no_cold_branch to stop a bias correction passing as learning: no",
+      "test of matured == 0, therefore no fiat. That ban is retained in full, but it is not what does",
+      "the work here.",
+      "This plan deliberately makes a cold row's arithmetic position better. The honest question a",
+      "reviewer will ask is: did the selector LEARN which cold nodes are worth delivering, or did it",
+      "merely stop penalising all of them equally? A shape ban cannot answer that. Only a control",
+      "can. These four guards are that control, and all four are computed in the single holdout pass",
+      "or before it."
+    ]
+  },
+  "artifact": "recall-map-coldstart-selector-prereg",
+  "binds": [
+    "artifacts/recall-map/relevance/policy.json#coldstart_revision (revision authored by coldstart-fit-v3)",
+    "artifacts/recall-map/relevance/dataset-manifest.json#coldstart (already sealed by coldstart-population-independence; read-only to this plan)",
+    "scripts/recall_map_coldstart_fit.py",
+    "src/living_memory/recall_map.py (the wire, authored by coldstart-wire-v3)"
+  ],
+  "cold_candidate_definition": {
+    "computable_from": "persisted state at the pinned as-of, using the frozen history_definition at policy.json#selected_policy.history_definition",
+    "counted_on_the_capped_set_where_a_verdict_depends_on_it": "coldness remains a reporting, split-audit and acceptance partition and never a scorer input. Where a count of cold rows carries a verdict -- the 400-per-split minimum, the cold_subpopulation_clause minima, the 40-admitted-on-holdout minimum -- it is counted on the component-capped estimation set, per component_aware_estimation.",
+    "covers_both_arms_of_the_defect": [
+      "history unavailable: the four terms are identically zero and the score collapses to the level term",
+      "history available and empty, M=C=K=0: the four terms total -3.6134, which is worse still, and v1 measured that this is the arm the live reader actually takes"
+    ],
+    "definition": "a candidate whose strictly-matured prior delivery count at the map-build instant is zero",
+    "not_a_scorer_input": "coldness is a REPORTING, SPLIT-AUDIT and ACCEPTANCE partition only. It must not appear as a feature, a branch, a tie-break or an eligibility test. See scorer_shape.no_cold_branch.",
+    "predicate": "matured == 0",
+    "unchanged_from_v1": true,
+    "unchanged_from_v1_and_v2": true,
+    "where_coldness_legitimately_appears": [
+      "in the admitted-fraction bands, which are statements ABOUT the cold subpopulation",
+      "in the threshold-selection rule, which is a constraint on the FIT and not an input to the score",
+      "in every per-split report",
+      "The shipped scorer contains no coldness test and the shipped constant is a single number. A",
+      "band that talks about cold rows is not the same object as a scorer that branches on them, and",
+      "v1 drew that line in the same place."
+    ]
+  },
+  "component_aware_estimation": {
+    "effective_component_floor": {
+      "binding": true,
+      "cold_subpopulation": 16,
+      "definition": "effective_components = 1 / sum_c s_c^2 over the components present in the row set being measured, where s_c is that component's share of the rows in that set. This is the inverse Simpson index and it is the same quantity dataset-manifest.json publishes under that name; it reproduces train 2.78 from largest_component_share 0.598185 and the rest of the tail.",
+      "measured_on": "the capped estimation row set of the cohort, at estimation_cap",
+      "the_cold_floor_is_not_pre_checkable": [
+        "The manifest publishes effective_components per split per cap over ALL items. It does not publish them",
+        "over the cold subpopulation, and this node may not compute them, because that would require reading",
+        "rows of coldstart_eval and coldstart_holdout.",
+        "So the cold floor of 16 is registered BLIND on all three splits. If a split misses it, this plan halts",
+        "on a condition it could not check in advance. That is stated here, before the fact, so that a halt on",
+        "this clause is read as a pre-registered outcome and not as a surprise -- and so that nobody may later",
+        "argue the floor down because it turned out to bind.",
+        "What is known in advance and does make it plausible: dataset-manifest.json#coldstart.enlargement",
+        ".component_equalized.per_split publishes components_carrying_cold_candidates of 173 on train, 119 on",
+        "eval and 101 on the holdout, so the raw carrier counts are an order of magnitude above the floor. That",
+        "is not the same quantity as the effective count and is not offered as a check."
+      ],
+      "where_each_is_checked": {
+        "cold_eval": "decision step 5, when coldstart_eval is legitimately read.",
+        "cold_holdout": "INSIDE the single holdout pass at decision step 7, as one of the quantities computed from that one materialization, and verdict-bearing at step 8. It is NOT a pre-check, because a pre-check would be a second read of the holdout.",
+        "cold_train": "decision step 3, when coldstart_train is legitimately read.",
+        "secondary_anchor": "reported, not binding. The anchor is a corroborating transfer cohort, not a split carrying a generalization claim, and dataset-manifest.json#secondary_anchor publishes no per-split concentration for it. Its capped effective components, whole and cold, must be published beside its direction readings.",
+        "whole_split_eval": "decision step 2, from the published cap table. No row is read.",
+        "whole_split_holdout": "decision step 2, from the published cap table. No row is read. The published value at cap 50 is 113.51.",
+        "whole_split_train": "decision step 2, from the published cap table. No row is read."
+      },
+      "whole_split": 100,
+      "why_these_two_numbers": [
+        "Both are transports of a bar that is ALREADY registered, not new inventions. The manifest registers",
+        "one_cluster_bar at split.one_cluster_bar.limit = 0.25: no single component may hold more than a quarter",
+        "of a split. The identity that connects the two is elementary -- if the largest share is s then",
+        "sum_c s_c^2 >= s^2, so effective_components <= 1/s^2, and therefore effective_components >= E implies",
+        "s <= 1/sqrt(E).",
+        "E >= 16 is therefore EXACTLY the 0.25 bar restated on an effective-count scale, and it is what the cold",
+        "subpopulation floor is set to: the cold cohort must satisfy on its own the bar the whole split already",
+        "had to satisfy.",
+        "E >= 100 implies s <= 0.10, a strict TIGHTENING of the same bar, and it is what the whole-split floor is",
+        "set to. It is set higher than 16 there because the whole split is what the binomial guard, the admitted",
+        "fraction bands and the lift are computed on, and 16 units cannot carry a p-value at alpha 0.05: the",
+        "finest tail probability 16 exchangeable units can resolve is coarser than the threshold the guard tests",
+        "against. 100 leaves a factor of five.",
+        "Adding a minimum is a tightening and is permitted by v2's amendment_policy. It is also the condition v2",
+        "lacked: v2's step 2 verified the 400-cold minimum, pairwise disjointness and the blindness invariant,",
+        "all three of which PASSED, and had no clause at all about how many independent units a split contained.",
+        "Under this floor, v2 would have halted at step 2 with train at 2.78 and eval at 4.18 -- before a single",
+        "direction was read, and therefore before any sign could be seen and re-argued."
+      ]
+    },
+    "estimation_cap": {
+      "selection_rule": "the LARGEST cap in the published grid {25, 50, 100, 200, 400} at which every one of the three splits meets effective_component_floor.whole_split on its capped estimation set, using the effective_components already published per split per cap at dataset-manifest.json#coldstart.enlargement.cap_feasibility.table.",
+      "the_selection_is_reproducible_from_the_published_table": {
+        "effective_components_per_split_per_cap": {
+          "100": {
+            "eval": 104.32,
+            "holdout": 76.0,
+            "train": 134.32
+          },
+          "200": {
+            "eval": 80.15,
+            "holdout": 44.2,
+            "train": 114.49
+          },
+          "25": {
+            "eval": 148.4,
+            "holdout": 140.8,
+            "train": 212.55
+          },
+          "400": {
+            "eval": 42.89,
+            "holdout": 34.91,
+            "train": 81.49
+          },
+          "50": {
+            "eval": 126.62,
+            "holdout": 113.51,
+            "train": 169.48
+          }
+        },
+        "evaluation": {
+          "100": "train 134.32, eval 104.32, holdout 76.00 -- holdout below 100, INFEASIBLE",
+          "200": "train 114.49, eval 80.15, holdout 44.20 -- eval and holdout below 100, INFEASIBLE",
+          "25": "train 212.55, eval 148.40, holdout 140.80 -- all >= 100, feasible",
+          "400": "train 81.49, eval 42.89, holdout 34.91 -- eval and holdout below 100, INFEASIBLE",
+          "50": "train 169.48, eval 126.62, holdout 113.51 -- all >= 100, feasible"
+        },
+        "floor": 100,
+        "largest_feasible": 50,
+        "note": "the rule selects 50 without reference to any direction, sign, label or outcome. Substituting any other floor in {77..113} that is met at cap 50 and missed at cap 100 returns the same cap.",
+        "uniquely_determined": true
+      },
+      "value": 50,
+      "what_it_costs": {
+        "capped_cold_candidates": {
+          "eval": 558,
+          "holdout": 489,
+          "train": 1035
+        },
+        "capped_items": {
+          "eval": 2667,
+          "holdout": 2682,
+          "train": 4517
+        },
+        "every_split_still_clears_the_400_cold_minimum": true,
+        "retained_item_share": {
+          "eval": 0.504636,
+          "holdout": 0.651762,
+          "train": 0.365927
+        },
+        "the_price_is_named_not_hidden": "cap 50 keeps 36.6 per cent of train, 50.5 per cent of eval and 65.2 per cent of the holdout. Those rows are not evidence lost; they are evidence that was already being counted many times over. But the headroom it costs on the holdout is real and is stated at limitations.the_cap_costs_holdout_headroom."
+      },
+      "why_largest_subject_to_the_floor": [
+        "The floor is where independence is bought. Below it a verdict statistic is a statement about too few",
+        "units; at or above it the marginal component bought by a smaller cap buys nothing the verdict needs.",
+        "Past the floor a smaller cap only drops rows, and dropped rows are lost power on the two quantities",
+        "this plan is thinnest on -- the 40-admitted-cold-row minimum on the holdout and the exact binomial.",
+        "Stating the rule as floor-first-then-maximise-rows also fixes the order of the two considerations in",
+        "advance, so the cap cannot be re-argued later from whichever consideration is then convenient."
+      ]
+    },
+    "mandatory_three_arm_reporting": {
+      "no_verdict_may_rest_on_the_reported_arms": "the uncapped and component-equalized arms are published and are never a gate, in either direction. They may not rescue a failing capped verdict and they may not overturn a passing one.",
+      "rule": "every statistic in what_carries_a_verdict_and_is_therefore_capped must be published in three arms: CAPPED at estimation_cap (verdict-bearing), UNCAPPED (reported), and COMPONENT_EQUALIZED (reported).",
+      "why": [
+        "A capped verdict that the uncapped and component-equalized readings both contradict is a fact a reader",
+        "is entitled to have without re-running anything. Publishing all three costs one pass and removes the",
+        "possibility of a later plan discovering a disagreement and presenting it as new evidence.",
+        "It is also the audit trail for this plan's own claim: v2's numbers ARE the uncapped arm, so the",
+        "uncapped column of every table this fit produces is directly comparable to the recorded HALT."
+      ]
+    },
+    "principle": "no statistic that carries a verdict is computed on a raw split. Every one of them is computed on the component-capped estimation row set defined below, drawn once per cohort and then held fixed for every statistic computed on that cohort.",
+    "the_estimation_rule": {
+      "applies_to_cohorts": [
+        "coldstart_train",
+        "coldstart_eval",
+        "coldstart_holdout",
+        "secondary_anchor"
+      ],
+      "caps_nest": "the order does not depend on the cap, so the survivors at 25 are a subset of the survivors at 50 and so on up the grid. This matters here: it means the cap grid is a nested family and the arm table below is a sequence of nested subsamples, not six unrelated draws.",
+      "drawn_once_per_cohort": "the capped set is computed once for a cohort, from the cohort's full row list, and every statistic on that cohort -- overall, cold, warm, admitted, ablation, per era, per level -- is a subset of it. Re-drawing the cap per statistic, or capping the cold subpopulation separately from the whole tail, is FORBIDDEN: it would reintroduce as a per-statistic degree of freedom exactly what the cap exists to remove.",
+      "namespace": "coldstart-component-cap-v1",
+      "published_by": "dataset-manifest.json#coldstart.enlargement.cap_feasibility.rule, sealed by coldstart-population-independence before this plan was written. This plan adopts that rule verbatim and adds no selection logic of its own.",
+      "rule": "inside the split a component was already assigned to, use at most estimation_cap of that component's rows for estimation. Rows beyond the cap are dropped from the estimation set, not moved to another split.",
+      "which_rows_survive": "sha256 order over [namespace, component_id, source, event_id, rank], ascending, first estimation_cap rows per component. Label-free by construction: the draw cannot see the consumption bit, the cold flag, or any family member value."
+    },
+    "what_carries_a_verdict_and_is_therefore_capped": [
+      "every direction reading: consumed-minus-nonconsumed mean difference on rank_uniform_centered values, whole tail and cold, on every cohort",
+      "overall admitted fraction, on every split, for guard (d)",
+      "cold admitted fraction, on every split, for guard (d) and for the threshold-selection rule",
+      "feasible_threshold_count, on coldstart_train and coldstart_eval",
+      "the registered threshold and t_ablation, which are selected FROM capped admitted fractions",
+      "holdout_cold_lift and holdout_cold_auc, for guards (a) and (b), under both the registered shape and the ablation",
+      "admitted cold holdout count, against the minimum of 40",
+      "the exact one-sided binomial p and the cold base rate it is computed against",
+      "frozen_warm_precision, revised_warm_precision_at_matched_volume and K, for guard (c)",
+      "effective_components, whole split and cold, against the floors",
+      "cold_base_rate wherever it appears as a denominator of a verdict-carrying ratio"
+    ],
+    "what_the_cap_does_not_touch": [
+      "THE CALIBRATION TABLES. Every rank calibration -- rank_uniform_centered per member, the family composite's",
+      "rank_normal, the level and history tables -- is fitted on ALL of coldstart_train, uncapped, exactly as v2",
+      "registered and exactly as policy.json#coldstart_revision.decision_procedure[2].tables records having done.",
+      "Three reasons: the table is a label-free monotone re-expression and dropping rows from it only coarsens it;",
+      "the published table IS the scorer's definition and must be one table, not a cap-dependent family of them;",
+      "and dataset-manifest.json#coldstart.train_direction_accounting.u_axis.held_fixed_across_arms fixed the u",
+      "axis across every arm for exactly this reason, so the arms this plan reads are comparable to each other.",
+      "THE SCORE. score = N + F is unchanged and is computed identically for capped and uncapped rows. The cap is",
+      "an estimator, not a scorer input, and it is not visible to src/living_memory/recall_map.py at all.",
+      "THE SPLIT ASSIGNMENT. components_never_divided and pairwise_component_intersections hold unchanged.",
+      "THE LIVE SELECTOR. Production traffic is not capped and cannot be; the cap exists to estimate a population",
+      "quantity from a clustered sample, and live scoring estimates nothing.",
+      "THE 400-COLD-PER-SPLIT MINIMUM'S MEANING. It is checked on the capped set here, and the published table",
+      "shows every split clears it at every cap, so nothing about that minimum turns on this choice."
+    ],
+    "why_a_cap_and_not_component_equalized_weights": {
+      "component_equalized_is_not_discarded": "it remains a MANDATORY published arm on every verdict-carrying statistic, beside the capped one and beside the uncapped one. It is a diagnostic here, not the estimator, and a verdict-carrying statistic whose capped and component-equalized readings disagree in sign must be reported as such.",
+      "reasons_the_cap_is_registered_instead": [
+        "(1) THE BINOMIAL. verdict_rule.companion_conditions.binomial_guard is an EXACT one-sided binomial on",
+        "    integer counts. Under fractional component-equalizing weights there are no integer counts and no",
+        "    exact test -- one would have to invent an effective-n and round, which is a new fitted quantity",
+        "    smuggled into a guard. Under a cap the counts are counts of real rows and the exact test is exact.",
+        "    The goal this plan answers names precisely this: a binomial p over rows that are effectively three",
+        "    clusters is not a p-value. A binomial p over a fractional pseudo-count is not one either.",
+        "(2) THE INTEGER MINIMA. 400 cold candidates per split, 40 consumed cold rows for a direction check,",
+        "    40 admitted cold rows on the holdout, K >= 20 for guard (c): four registered minima that are",
+        "    counts of rows. Under weights each of them would have to be re-read as a weighted count, which is",
+        "    a change to a protected number by reinterpretation. Under a cap they mean exactly what they said.",
+        "(3) WHERE THE WEIGHT GOES. Equalizing components multiplies the weight of a one-row component by C and",
+        "    divides the 7384-row component by 7384. It buys independence by moving almost all the mass onto the",
+        "    least-observed units. That is a variance trade the published numbers show: train's cold effective",
+        "    sample size falls to 494.35 of 2506 cold rows,",
+        "    eval's to 258.06 of 927, the holdout's to",
+        "    272.8 of 710. A cap at 50 leaves the retained",
+        "    rows unweighted, so the estimator has no weight-induced variance at all.",
+        "(4) DISJOINTNESS IS UNTOUCHED EITHER WAY, and the manifest says so at",
+        "    enlargement.concentration_cost.an_intra_split_cap_does_not_weaken_disjointness: the guarantee comes",
+        "    from assigning WHOLE components to splits, and capping usage inside the split a component was",
+        "    already assigned to puts no cache key and no session id into a second split."
+      ],
+      "the_alternative_is_real": "dataset-manifest.json#coldstart.enlargement.component_equalized publishes a no-rows-dropped alternative: w_i = 1/(C * n_c), every component carrying equal total weight, Kish effective sample sizes of 2649.53 on train, 1727.46 on eval and 1629.48 on the holdout."
+    },
+    "why_this_block_exists": [
+      "policy.json#coldstart_revision halted because two registered signs inverted on coldstart_train.",
+      "dataset-manifest.json#coldstart.enlargement.concentration_cost publishes why: under the sealed",
+      "identity rule the pre-August material collapses into a few very large components, and train's",
+      "effective components fell from 12.05 to 2.78 while eval's fell from 115.96 to 4.18. Train's largest",
+      "single component holds 7384 of 12344 items, 59.8 per cent of the split.",
+      "A consumed-minus-nonconsumed mean difference over 12344 rows that are effectively 2.78 independent",
+      "units is not a statistic about a population; it is a statistic about one cache key. The same is true",
+      "of an admitted fraction, of a lift, of an AUC, and above all of a binomial p-value. v2 applied its",
+      "component discipline to the SPLIT ASSIGNMENT and not to the ESTIMATOR, and that gap is the defect",
+      "this block closes."
+    ]
+  },
+  "decision_procedure": [
+    "1. Verify this file's plan_sha256 over plan_sha256_over, by the construction at seal_note. Any mismatch: HALT before reading anything. Record the verified hash in the revised policy.",
+    "2. Verify the splits WITHOUT READING A ROW, from dataset-manifest.json#coldstart alone: each split's capped cold-candidate count at estimation_cap is >= minimum_cold_candidates_per_split (400); the three component lists are pairwise disjoint; the published assignment satisfies split_protocol.assignment_rule.blindness_invariant_binding and reproduces its membership digests; and each split's capped effective_components at estimation_cap is >= effective_component_floor.whole_split (100). Any failure: HALT. Do not proceed on a smaller split, a different cap or a lower floor.",
+    "3. Read coldstart_train ONLY. Fit every rank calibration table on ALL of coldstart_train, uncapped. Draw the capped estimation set once, by the published cap rule at estimation_cap, and hold it fixed. Compute and PUBLISH each core member's direction reading -- whole tail and cold -- in all three arms and per era. Verify each published reading reproduces the value registered at direction_constraint.registered_directions[*].measurement within direction_constraint.train_check_is_non_evidentiary.tolerance; a mismatch is a HALT. Verify the cold effective-component floor (16) on train. THE TRAIN DIRECTION CHECK IS NOT A GATE: a registered sign that does not match its own train reading is published, not failed, and the six such readings already known are listed at direction_constraint.expected_train_readings.",
+    "4. Select the registered threshold and t_ablation by their registered label-free rules, using CAPPED coldstart_train admitted fractions. Publish feasible_threshold_count on coldstart_train in all three arms. If the capped count is 0: HALT and record a NEGATIVE RESULT; the holdout is not opened. Otherwise write the sealed parameter digest to disk before anything else is read.",
+    "5. Read coldstart_eval and secondary_anchor. On the capped estimation set of each, verify every core member's REGISTERED SIGN on the whole tail and on the cold subpopulation, evaluated separately. A member failing either, on either cohort, is a FAIL. A cohort below the cold_subpopulation_clause minima is INDETERMINATE for that member, which BLOCKS and never passes. Verify the cold effective-component floor (16) on eval. Publish the per-era decomposition and run era_exchangeability.simpson_guard, reporting it as vacuous where fewer than two eras are measurable. Any FAIL: HALT and record a NEGATIVE RESULT; the holdout is not opened.",
+    "6. Check guard (d) on the capped coldstart_train and capped coldstart_eval, and guard (c) on capped coldstart_eval. Publish feasible_threshold_count on coldstart_eval in all three arms. Any failure: HALT and record a NEGATIVE RESULT; the holdout is not opened.",
+    "7. Read coldstart_holdout EXACTLY ONCE, in the single pass specified at single_holdout_pass. Draw its capped estimation set inside that pass, before any statistic, and hold it fixed. Compute every quantity the pass lists, in all three arms and per era, including the holdout's capped effective_components whole and cold.",
+    "8. PASS requires ALL of, every quantity on the capped estimation set: guard (a) holdout_cold_lift >= 1.5; guard (b) both strict comparisons against the ablation, lift and AUC; guard (c) already cleared at step 6; guard (d) on every split including the holdout; admitted cold holdout count >= 40 and > 0; exact one-sided binomial p <= 0.05; holdout capped effective_components >= 100 whole split and >= 16 cold; every core member's registered sign already held at step 5; and the withheld-holdout reproduction returning a byte-identical parameter digest.",
+    "9. Any other outcome is a recorded FAIL or NEGATIVE RESULT. Neither may be repaired by widening the family, re-signing a member, adding a branch, re-drawing a split, moving a band or a minimum, CHANGING estimation_cap, CHANGING either effective-component floor, switching the verdict onto a reported arm, or re-reading the holdout. A fourth pre-registration that needs any of the five protected numbers lower is not a better plan and must record that finding instead."
+  ],
+  "defect_being_repaired": {
+    "arithmetic_reproduced_at_registration": {
+      "admission_needs_log1p_matured": 6.9,
+      "available_but_empty_history_M_C_K_zero": {
+        "four_history_terms": -3.6134,
+        "score_schema": -1.9452,
+        "score_trace_or_concept": -4.2129
+      },
+      "history_unavailable": {
+        "four_history_terms": 0.0,
+        "score_schema": 1.6682,
+        "score_trace_or_concept": -0.5995
+      },
+      "threshold": 3.8708378402511
+    },
+    "carried_from_v2": "unchanged. The defect this family repairs is the same arithmetic-scale defect v2 diagnosed; nothing about it moved when the population was enlarged.",
+    "mechanism": [
+      "src/living_memory/recall_map.py:1190-1258. relevance_score sums five z-terms. Feature 0 is",
+      "level_is_schema; features 1..4 are matured-history terms. When history is unavailable",
+      "_history_features returns RELEVANCE_FEATURE_MEANS[1..4] verbatim, so those four terms are",
+      "identically zero and the score collapses to the level term alone.",
+      "Those means are a FOREIGN COHORT's raw means: they were computed on the warm ledger",
+      "organic-tail fit cohort, every member of which had history. Substituting them into a",
+      "cold-inclusive population is not a neutral act, and that is the whole defect."
+    ],
+    "what_the_defect_actually_is": {
+      "diagnosis": "arithmetic SCALE, not signal, and not imputation",
+      "the_two_scales_that_do_not_meet": {
+        "family_arm_realized_spread_on_cold_train_rows": {
+          "max": 10.1565,
+          "median": -0.4501,
+          "median_to_p95_range": 0.9108,
+          "p95": 0.4607,
+          "p99": 9.46,
+          "source": "policy.json#coldstart_revision.history_arm_sensitivity.family_dynamic_range_on_train.cold_family_z"
+        },
+        "history_arm_realized_spread_on_train": {
+          "cold_row_available_but_empty": -3.6135,
+          "cold_row_unavailable": 0.0,
+          "cold_to_warm_median_gap": 5.6238,
+          "source": "policy.json#coldstart_revision.history_arm_sensitivity.family_dynamic_range_on_train.warm_history_z",
+          "warm_max": 7.3902,
+          "warm_median": 2.0103,
+          "warm_p95": 5.1953
+        },
+        "the_ratio": {
+          "history_handicap_over_family_bulk_range": 6.1745,
+          "reading": [
+            "A cold row must make up 5.6238 of history z using a family arm whose entire",
+            "median-to-p95 range is 0.9108. The handicap is 6.17 TIMES the family's ordinary",
+            "dynamic range. No threshold can arbitrate between two quantities that differ by",
+            "that factor: the ordering of the pooled population is the ordering by history",
+            "alone, up to a rounding error contributed by the family."
+          ]
+        },
+        "why_the_family_scale_is_so_narrow": [
+          "The family arm is a sum of winsorize-then-standardize z-terms. Standardizing divides by",
+          "a standard deviation, and for heavy-tailed retrieval scores that standard deviation is",
+          "set by the tail, not by the bulk. p1/p99 winsorization per member does not fix it,",
+          "because the composite's heaviness comes from rows extreme on several members at once",
+          "and because 1% of rows still pass through at full magnitude.",
+          "The published cold family_z distribution is the signature of exactly this: p95 = +0.4607",
+          "but p99 = +9.46. Ninety-five percent of the cold population is compressed into a band",
+          "under one z wide while the top percentile is twenty times wider.",
+          "So the family's RANK information was intact -- that is why its lift was 1.83 -- while its",
+          "ARITHMETIC magnitude was a rounding error against the history arm. v1 measured real",
+          "discrimination and then had no shape that could spend it."
+        ]
+      },
+      "v1_own_words": [
+        "policy.json#coldstart_revision.history_arm_sensitivity.reading:",
+        "'The family is not too weak at the top: its best cold row reaches +10.16, well past the",
+        "+4.4703 the prereg registered as the target. It is too weak in the MIDDLE: the median cold",
+        "row sits at -0.45 and the 95th percentile at +0.46, so only 41 of 1233 cold rows (3.3%)",
+        "reach the schema target and 37 (3.0%) reach the trace target.'"
+      ],
+      "why_a_single_additive_sum_welds_the_two_fractions": [
+        "Because the history arm dominates the sum by a factor of about six, a descending threshold",
+        "sweep orders the pooled population essentially by history. Cold rows are a solid block at",
+        "the bottom of that order. A threshold therefore admits nearly every warm row before it",
+        "admits any material number of cold rows, and the cold and overall admitted fractions move",
+        "as one quantity rather than two.",
+        "That is not a metaphor; it is the measured frontier. policy.json#coldstart_revision.",
+        "findings.no_single_threshold_satisfies_both_bands records feasible_threshold_count 0, with",
+        "overall 0.754237 at the cold floor and cold 0.030008 at the overall ceiling."
+      ]
+    },
+    "what_v1_proved_the_defect_is_NOT": {
+      "not_a_missing_imputation_either": [
+        "policy.json#coldstart_revision.history_arm_sensitivity ran the counterfactual in which a",
+        "cold row's history block contributes 0 instead of -3.6135 -- that is, the mean-substitution",
+        "fix applied on its own, with the member set, the signed weights, the fitted transforms and",
+        "the threshold construction all identical.",
+        "The result was UNCHANGED: still feasible_threshold_count 0; cold admission moved by ONE row",
+        "(37 -> 38 of 1233); reaching the cold floor 0.05 still demanded 0.556674 of the split",
+        "overall against a ceiling of 0.30; the threshold at the ceiling still left cold admission at",
+        "0.034063 against a floor of 0.05.",
+        "This is the single most important fact in this file. An honest v2 may not be built on the",
+        "claim that fixing the placeholder repairs cold start, because that claim has been measured",
+        "and refuted."
+      ],
+      "not_a_missing_signal": [
+        "All four core family members held their registered signs on coldstart_train and on the",
+        "component-disjoint coldstart_eval, whole-tail AND on the cold subpopulation separately.",
+        "policy.json#coldstart_revision.findings.the_family_does_discriminate_among_cold_candidates",
+        "records cold_lift 1.9185 on train (binomial p 1.70761e-05) and cold_lift 1.8312 on eval",
+        "(binomial p 0.0325543, cold_selected_precision 0.666667), both above the pre-registered",
+        "generalization threshold of 1.5.",
+        "So the candidate-time family carries real cold-start discrimination. It is not the problem,",
+        "it is not weakened by this plan, and no member is added or removed to make the numbers work."
+      ]
+    },
+    "which_arm_the_live_reader_actually_takes": {
+      "consequence_for_this_plan": [
+        "The cold population this revision must admit is predominantly on the AVAILABLE-but-empty",
+        "arm, not on the unavailable arm. A repair that only fixes the unavailable arm therefore",
+        "touches almost no cold row. v1 measured exactly that and recorded it: see",
+        "feasibility_argument.what_the_neutral_rule_does_not_do."
+      ],
+      "finding": "on a complete ledger storage.matured_recall_history returns known(matured=0) rather than unavailable, so a cold row's four legacy history terms sit at -3.6135, not at 0.0",
+      "measured_by_v1": "policy.json#coldstart_revision.findings.no_single_threshold_satisfies_both_bands.reading"
+    }
+  },
+  "direction_constraint": {
+    "binding_falsifiable_test": {
+      "cohorts": [
+        "coldstart_eval",
+        "secondary_anchor"
+      ],
+      "estimator": "the component-capped estimator at estimation_cap 50, per component_aware_estimation",
+      "failure_is_a_FAIL": "any core member failing its registered sign on either cohort on either reading, or reported INDETERMINATE for want of cold rows, is a FAIL. The holdout is not opened.",
+      "readings": [
+        "whole tail",
+        "cold subpopulation, evaluated separately"
+      ],
+      "unread_at_registration": {
+        "coldstart_eval_admission": "NOT unread. See known_prior_reads.",
+        "coldstart_eval_directions": "NEVER MEASURED, by anyone, under v1 or v2. dataset-manifest.json#coldstart.train_direction_accounting.why_only_train states that measuring the family on eval would spend this test before it existed, and it was not done.",
+        "secondary_anchor_directions_for_this_family": "not measured on this population. The only anchor numbers in existence for these members are the v1-era registration evidence at coldstart-prereg-v2.json#feature_family.members[*].registration_evidence.secondary_anchor, computed on a different cohort and a different scale, and they are reproduced in this file only as provenance."
+      },
+      "when": "decision step 5, after the parameter digest is sealed and before the holdout is opened"
+    },
+    "carried_from": "coldstart-prereg-v2.json#direction_constraint, with clause (b) and clause (c) retained in substance and their BINDING COHORT changed, for the reason stated at train_check_is_non_evidentiary",
+    "cold_subpopulation_clause": {
+      "counted_on": "the component-capped estimation row set, at estimation_cap. Counting them on the uncapped split would let rows the estimator does not use satisfy a minimum about the estimator.",
+      "if_a_cohort_is_too_small": "the check is reported as INDETERMINATE for that cohort, never as passed. An indeterminate cold check on any member BLOCKS the revision. This is carried from v2 without weakening.",
+      "known_headroom_at_the_registered_cap": {
+        "coldstart_eval_capped_cold_candidates": 558,
+        "coldstart_holdout_capped_cold_candidates": 489,
+        "coldstart_train_capped_cold_candidates": 1035,
+        "reading": "all three are far above the 200-row minimum. The 40-CONSUMED-cold-row minimum is not checkable in advance on eval or the holdout without reading them, and is not checked here."
+      },
+      "minimum_cold_rows_for_a_direction_check": 200,
+      "minimum_consumed_cold_rows_for_a_direction_check": 40,
+      "unchanged_from_v1_and_v2": true
+    },
+    "expected_train_readings": {
+      "known_non_matches_at_the_registered_estimation_cap": {
+        "count": 0,
+        "reading": "at estimation_cap 50 every one of the four registered signs matches its own train reading on BOTH the whole tail and the cold subpopulation. The capped arm at 50 is internally consistent with what this file registers."
+      },
+      "known_non_matches_in_the_reported_arms": {
+        "bm25_score_whole_tail_era_enlargement_pre_2026_08": 0.004313,
+        "bm25_score_whole_tail_unweighted": 0.004903,
+        "reading": "these six readings contradict the sign registered for their member. Five of the six sit in arms this plan does not use for a verdict; the sixth, result_score cold under component_equalized, sits in a component-aware arm and is exactly why result_score is registered at rung 2 rather than rung 1. All six must be reproduced and published by the fit, and none of them is a gate.",
+        "result_score_cold_under_cap_25": -0.007383,
+        "result_score_cold_under_component_equalized": -0.037101,
+        "result_score_cold_unweighted": -0.051024,
+        "vector_score_whole_tail_era_enlargement_pre_2026_08": 0.008223
+      },
+      "purpose": "registered here, before the fit runs, so that neither of the two known non-matches below can later be presented as a surprise, as a failure, or as a reason to re-argue a sign."
+    },
+    "registered_directions": {
+      "bm25_score": {
+        "cold_sign_unanimous_across_component_aware_arms": "negative",
+        "measured_on": "coldstart_train, dataset-manifest.json#coldstart.train_direction_accounting",
+        "measurement": {
+          "cap_100": {
+            "cold": -0.076764,
+            "cold_consumed": 470,
+            "cold_effective_sample_size": 1152.0,
+            "cold_rows": 1152,
+            "effective_sample_size": 4986.0,
+            "rows": 4986,
+            "whole_tail": -0.016996
+          },
+          "cap_200": {
+            "cold": -0.070165,
+            "cold_consumed": 504,
+            "cold_effective_sample_size": 1198.0,
+            "cold_rows": 1198,
+            "effective_sample_size": 5160.0,
+            "rows": 5160,
+            "whole_tail": -0.016794
+          },
+          "cap_25": {
+            "cold": -0.072749,
+            "cold_consumed": 320,
+            "cold_effective_sample_size": 864.0,
+            "cold_rows": 864,
+            "effective_sample_size": 3761.0,
+            "rows": 3761,
+            "whole_tail": -0.017924
+          },
+          "cap_400": {
+            "cold": -0.068724,
+            "cold_consumed": 523,
+            "cold_effective_sample_size": 1227.0,
+            "cold_rows": 1227,
+            "effective_sample_size": 5360.0,
+            "rows": 5360,
+            "whole_tail": -0.015346
+          },
+          "cap_50": {
+            "cold": -0.075771,
+            "cold_consumed": 402,
+            "cold_effective_sample_size": 1035.0,
+            "cold_rows": 1035,
+            "effective_sample_size": 4517.0,
+            "rows": 4517,
+            "whole_tail": -0.012712
+          },
+          "component_equalized": {
+            "cold": -0.019443,
+            "cold_consumed": 1360,
+            "cold_effective_sample_size": 568.3,
+            "cold_rows": 2506,
+            "effective_sample_size": 2649.53,
+            "rows": 12344,
+            "whole_tail": -0.028178
+          },
+          "era_enlargement_pre_2026_08": {
+            "cold": -0.028642,
+            "cold_consumed": 974,
+            "cold_effective_sample_size": 1588.0,
+            "cold_rows": 1588,
+            "effective_sample_size": 8826.0,
+            "rows": 8826,
+            "whole_tail": 0.004313
+          },
+          "era_preexisting_2026_08": {
+            "cold": -0.071024,
+            "cold_consumed": 386,
+            "cold_effective_sample_size": 918.0,
+            "cold_rows": 918,
+            "effective_sample_size": 3518.0,
+            "rows": 3518,
+            "whole_tail": -0.022356
+          },
+          "unweighted": {
+            "cold": -0.011408,
+            "cold_consumed": 1360,
+            "cold_effective_sample_size": 2506.0,
+            "cold_rows": 2506,
+            "effective_sample_size": 12344.0,
+            "rows": 12344,
+            "whole_tail": 0.004903
+          }
+        },
+        "name": "bm25_score",
+        "registered_direction": "negative",
+        "registration_rung": 1,
+        "signed_weight": -1.0,
+        "source_field": "bm25_score",
+        "status": "core",
+        "v2_registered_direction": "negative",
+        "whole_tail_sign_unanimous_across_component_aware_arms": "negative"
+      },
+      "result_score": {
+        "cold_sign_unanimous_across_component_aware_arms": null,
+        "measured_on": "coldstart_train, dataset-manifest.json#coldstart.train_direction_accounting",
+        "measurement": {
+          "cap_100": {
+            "cold": 0.010187,
+            "cold_consumed": 470,
+            "cold_effective_sample_size": 1152.0,
+            "cold_rows": 1152,
+            "effective_sample_size": 4986.0,
+            "rows": 4986,
+            "whole_tail": 0.03261
+          },
+          "cap_200": {
+            "cold": 0.01339,
+            "cold_consumed": 504,
+            "cold_effective_sample_size": 1198.0,
+            "cold_rows": 1198,
+            "effective_sample_size": 5160.0,
+            "rows": 5160,
+            "whole_tail": 0.030927
+          },
+          "cap_25": {
+            "cold": -0.007383,
+            "cold_consumed": 320,
+            "cold_effective_sample_size": 864.0,
+            "cold_rows": 864,
+            "effective_sample_size": 3761.0,
+            "rows": 3761,
+            "whole_tail": 0.048144
+          },
+          "cap_400": {
+            "cold": 0.003702,
+            "cold_consumed": 523,
+            "cold_effective_sample_size": 1227.0,
+            "cold_rows": 1227,
+            "effective_sample_size": 5360.0,
+            "rows": 5360,
+            "whole_tail": 0.027699
+          },
+          "cap_50": {
+            "cold": 0.006125,
+            "cold_consumed": 402,
+            "cold_effective_sample_size": 1035.0,
+            "cold_rows": 1035,
+            "effective_sample_size": 4517.0,
+            "rows": 4517,
+            "whole_tail": 0.042548
+          },
+          "component_equalized": {
+            "cold": -0.037101,
+            "cold_consumed": 1360,
+            "cold_effective_sample_size": 568.3,
+            "cold_rows": 2506,
+            "effective_sample_size": 2649.53,
+            "rows": 12344,
+            "whole_tail": 0.055918
+          },
+          "era_enlargement_pre_2026_08": {
+            "cold": 0.008425,
+            "cold_consumed": 974,
+            "cold_effective_sample_size": 1588.0,
+            "cold_rows": 1588,
+            "effective_sample_size": 8826.0,
+            "rows": 8826,
+            "whole_tail": 0.058894
+          },
+          "era_preexisting_2026_08": {
+            "cold": 0.013799,
+            "cold_consumed": 386,
+            "cold_effective_sample_size": 918.0,
+            "cold_rows": 918,
+            "effective_sample_size": 3518.0,
+            "rows": 3518,
+            "whole_tail": 0.019879
+          },
+          "unweighted": {
+            "cold": -0.051024,
+            "cold_consumed": 1360,
+            "cold_effective_sample_size": 2506.0,
+            "cold_rows": 2506,
+            "effective_sample_size": 12344.0,
+            "rows": 12344,
+            "whole_tail": 0.02682
+          }
+        },
+        "name": "result_score",
+        "registered_direction": "positive",
+        "registration_rung": 2,
+        "signed_weight": 1.0,
+        "source_field": "score",
+        "status": "core",
+        "v2_registered_direction": "positive",
+        "whole_tail_sign_unanimous_across_component_aware_arms": "positive"
+      },
+      "trigger_score": {
+        "cold_sign_unanimous_across_component_aware_arms": "positive",
+        "measured_on": "coldstart_train, dataset-manifest.json#coldstart.train_direction_accounting",
+        "measurement": {
+          "cap_100": {
+            "cold": 0.004869,
+            "cold_consumed": 470,
+            "cold_effective_sample_size": 1152.0,
+            "cold_rows": 1152,
+            "effective_sample_size": 4986.0,
+            "rows": 4986,
+            "whole_tail": 0.044194
+          },
+          "cap_200": {
+            "cold": 0.004227,
+            "cold_consumed": 504,
+            "cold_effective_sample_size": 1198.0,
+            "cold_rows": 1198,
+            "effective_sample_size": 5160.0,
+            "rows": 5160,
+            "whole_tail": 0.042155
+          },
+          "cap_25": {
+            "cold": 0.008498,
+            "cold_consumed": 320,
+            "cold_effective_sample_size": 864.0,
+            "cold_rows": 864,
+            "effective_sample_size": 3761.0,
+            "rows": 3761,
+            "whole_tail": 0.06356
+          },
+          "cap_400": {
+            "cold": 0.003937,
+            "cold_consumed": 523,
+            "cold_effective_sample_size": 1227.0,
+            "cold_rows": 1227,
+            "effective_sample_size": 5360.0,
+            "rows": 5360,
+            "whole_tail": 0.040346
+          },
+          "cap_50": {
+            "cold": 0.006267,
+            "cold_consumed": 402,
+            "cold_effective_sample_size": 1035.0,
+            "cold_rows": 1035,
+            "effective_sample_size": 4517.0,
+            "rows": 4517,
+            "whole_tail": 0.054013
+          },
+          "component_equalized": {
+            "cold": 0.013709,
+            "cold_consumed": 1360,
+            "cold_effective_sample_size": 568.3,
+            "cold_rows": 2506,
+            "effective_sample_size": 2649.53,
+            "rows": 12344,
+            "whole_tail": 0.059551
+          },
+          "era_enlargement_pre_2026_08": {
+            "cold": 0.010165,
+            "cold_consumed": 974,
+            "cold_effective_sample_size": 1588.0,
+            "cold_rows": 1588,
+            "effective_sample_size": 8826.0,
+            "rows": 8826,
+            "whole_tail": 0.00873
+          },
+          "era_preexisting_2026_08": {
+            "cold": 0.003252,
+            "cold_consumed": 386,
+            "cold_effective_sample_size": 918.0,
+            "cold_rows": 918,
+            "effective_sample_size": 3518.0,
+            "rows": 3518,
+            "whole_tail": 0.056568
+          },
+          "unweighted": {
+            "cold": 0.010233,
+            "cold_consumed": 1360,
+            "cold_effective_sample_size": 2506.0,
+            "cold_rows": 2506,
+            "effective_sample_size": 12344.0,
+            "rows": 12344,
+            "whole_tail": 0.0191
+          }
+        },
+        "name": "trigger_score",
+        "registered_direction": "positive",
+        "registration_rung": 1,
+        "signed_weight": 1.0,
+        "source_field": "trigger_score",
+        "status": "core",
+        "v2_registered_direction": "positive",
+        "whole_tail_sign_unanimous_across_component_aware_arms": "positive"
+      },
+      "vector_score": {
+        "cold_sign_unanimous_across_component_aware_arms": "negative",
+        "measured_on": "coldstart_train, dataset-manifest.json#coldstart.train_direction_accounting",
+        "measurement": {
+          "cap_100": {
+            "cold": -0.107386,
+            "cold_consumed": 470,
+            "cold_effective_sample_size": 1152.0,
+            "cold_rows": 1152,
+            "effective_sample_size": 4986.0,
+            "rows": 4986,
+            "whole_tail": -0.055185
+          },
+          "cap_200": {
+            "cold": -0.105803,
+            "cold_consumed": 504,
+            "cold_effective_sample_size": 1198.0,
+            "cold_rows": 1198,
+            "effective_sample_size": 5160.0,
+            "rows": 5160,
+            "whole_tail": -0.057486
+          },
+          "cap_25": {
+            "cold": -0.113273,
+            "cold_consumed": 320,
+            "cold_effective_sample_size": 864.0,
+            "cold_rows": 864,
+            "effective_sample_size": 3761.0,
+            "rows": 3761,
+            "whole_tail": -0.053633
+          },
+          "cap_400": {
+            "cold": -0.107631,
+            "cold_consumed": 523,
+            "cold_effective_sample_size": 1227.0,
+            "cold_rows": 1227,
+            "effective_sample_size": 5360.0,
+            "rows": 5360,
+            "whole_tail": -0.056211
+          },
+          "cap_50": {
+            "cold": -0.104734,
+            "cold_consumed": 402,
+            "cold_effective_sample_size": 1035.0,
+            "cold_rows": 1035,
+            "effective_sample_size": 4517.0,
+            "rows": 4517,
+            "whole_tail": -0.048609
+          },
+          "component_equalized": {
+            "cold": -0.119531,
+            "cold_consumed": 1360,
+            "cold_effective_sample_size": 568.3,
+            "cold_rows": 2506,
+            "effective_sample_size": 2649.53,
+            "rows": 12344,
+            "whole_tail": -0.059596
+          },
+          "era_enlargement_pre_2026_08": {
+            "cold": -0.057157,
+            "cold_consumed": 974,
+            "cold_effective_sample_size": 1588.0,
+            "cold_rows": 1588,
+            "effective_sample_size": 8826.0,
+            "rows": 8826,
+            "whole_tail": 0.008223
+          },
+          "era_preexisting_2026_08": {
+            "cold": -0.102274,
+            "cold_consumed": 386,
+            "cold_effective_sample_size": 918.0,
+            "cold_rows": 918,
+            "effective_sample_size": 3518.0,
+            "rows": 3518,
+            "whole_tail": -0.078777
+          },
+          "unweighted": {
+            "cold": -0.096195,
+            "cold_consumed": 1360,
+            "cold_effective_sample_size": 2506.0,
+            "cold_rows": 2506,
+            "effective_sample_size": 12344.0,
+            "rows": 12344,
+            "whole_tail": -0.029671
+          }
+        },
+        "name": "vector_score",
+        "registered_direction": "negative",
+        "registration_rung": 1,
+        "signed_weight": -1.0,
+        "source_field": "vector_score",
+        "status": "core",
+        "v2_registered_direction": "negative",
+        "whole_tail_sign_unanimous_across_component_aware_arms": "negative"
+      }
+    },
+    "registration_outcome_summary": {
+      "bm25_score": {
+        "registered_direction": "negative",
+        "rung": 1
+      },
+      "result_score": {
+        "registered_direction": "positive",
+        "rung": 2
+      },
+      "trigger_score": {
+        "registered_direction": "positive",
+        "rung": 1
+      },
+      "vector_score": {
+        "registered_direction": "negative",
+        "rung": 1
+      }
+    },
+    "registration_rule": {
+      "arm_set_source": "dataset-manifest.json#coldstart.train_direction_accounting -- by_cap for the five caps and component_equalized for the weighted arm. The set is exactly the one the manifest itself labels direction_stability.component_aware_arms; this plan neither adds nor removes an arm.",
+      "component_aware_arm_set": [
+        "cap_25",
+        "cap_50",
+        "cap_100",
+        "cap_200",
+        "cap_400",
+        "component_equalized"
+      ],
+      "ladder": [
+        "RUNG 1. If all six component-aware arms agree in sign on BOTH readings -- whole tail and cold -- and",
+        "        no arm reads exactly zero, register that sign.",
+        "RUNG 2. Otherwise, if the six arms are unanimous on exactly one of the two readings, register the sign",
+        "        of the reading on which they are unanimous. This is the tie-break rule, and it is stated here",
+        "        before any eval or holdout number exists, so that the member it applies to is decided by the",
+        "        rule and not by which reading turns out to be convenient.",
+        "RUNG 3. Otherwise -- neither reading unanimous, or both unanimous and disagreeing with each other --",
+        "        the member has NO direction registrable from measurement. Because feature_family is closed and",
+        "        no member may be dropped, the plan then TERMINATES with the explicit finding that the",
+        "        candidate-time family does not carry a direction-stable cold-start signal over this store's",
+        "        full history. That is the second admissible output named at",
+        "        policy.json#coldstart_revision.findings.what_this_node_may_not_do_about_it.what_is_needed, and",
+        "        it is reachable mechanically rather than by argument."
+      ],
+      "principle": "the registered sign is read off the WHOLE published component-aware arm set, not off one arm, so that no choice of cap can set a sign. The rule is a ladder and is executed in order.",
+      "what_this_rule_forbids": [
+        "Choosing a cap and reading its sign. The estimation cap is selected by an independent floor rule and",
+        "is not an input to direction registration at all -- change estimation_cap to any other grid point and",
+        "every registered sign in this file is unchanged.",
+        "Reading the unweighted arm. It is v2's arm, it is the arm the HALT was measured on, and it is a",
+        "statistic over 2.78 effective units. It is published beside the others and it registers nothing.",
+        "Reading the era arms. by_era is not a weighting; it is a cut. It informs era_exchangeability and",
+        "registers nothing."
+      ],
+      "why_unanimity_and_not_a_majority": [
+        "A majority over the five caps would let the cap grid's own shape vote: the caps nest, so the five cap",
+        "arms are not five independent readings but a monotone sequence of nested subsamples, and a 3-of-5",
+        "majority is decided by where in that sequence the sign happens to turn. Unanimity asks a question the",
+        "nesting cannot answer for it -- is the sign there at EVERY level of aggregation -- and it is the",
+        "harder bar, which is the direction of travel a second re-registration owes.",
+        "It is also the bar that makes rung 3 meaningful. A rule that always returns a sign cannot produce the",
+        "negative finding the HALT asked to be reachable."
+      ],
+      "why_whole_tail_is_the_rung_2_reading_in_practice": [
+        "The ladder does not privilege either reading a priori: rung 2 registers whichever reading is the",
+        "unanimous one. On the published table the reading that happens to be unanimous where the other is not",
+        "is the whole tail, for the one member that reaches rung 2. That is an outcome of the measurement, and",
+        "the rule as stated would have registered a cold-only unanimity just as readily.",
+        "Had BOTH readings been unanimous and disagreed, rung 3 would have fired rather than a preference being",
+        "exercised. That is deliberate: a member that ranks consumed rows one way on the tail and the opposite",
+        "way among cold rows is not a member with a direction, and no tie-break should manufacture one."
+      ]
+    },
+    "statistic": {
+      "quantity": "consumed-minus-nonconsumed mean difference on rank_uniform_centered values, unchanged from v2",
+      "u_axis": "the rank_uniform_centered table is fitted on ALL of coldstart_train, uncapped, and held fixed across every arm, exactly as dataset-manifest.json#coldstart.train_direction_accounting.u_axis did. Only which rows the estimator counts varies across arms; the value axis does not move.",
+      "what_changed_from_v2": "nothing in the statistic. What changed is the ROW SET it is computed on: the component-capped estimation set at estimation_cap, per component_aware_estimation. v2 computed it on the raw split, which on this population is 2.78 effective units.",
+      "why_this_statistic": [
+        "The mean difference of rank-uniform values between two groups is an affine increasing function of",
+        "the Mann-Whitney U statistic, so the check is exactly 'does this member rank consumed rows above",
+        "non-consumed rows' and is invariant to every monotone re-expression of the member. It cannot be",
+        "moved by a handful of extreme rows. v2 chose it knowing that makes it harder to pass, not easier,",
+        "and this plan does not weaken it."
+      ]
+    },
+    "text": [
+      "(a) Every legacy feature -- level_schema and the four matured-history terms -- retains the",
+      "original constraint unchanged: positive consumed-minus-nonconsumed association in organic",
+      "train, organic eval and observed-map eval.",
+      "(b) Every member of the recorded-delivery-scores family must show its REGISTERED SIGN,",
+      "positive or negative as registered per member, in coldstart_eval and in secondary_anchor.",
+      "secondary_anchor replaces observed-map eval for this family because the observed-map arm",
+      "records no delivery scores on any of its 686 items. coldstart_train is NOT a binding cohort",
+      "under this plan and appears in clause (d) instead.",
+      "(c) Every member of the family must ALSO show its registered sign in the COLD SUBPOPULATION",
+      "of each of those two cohorts, evaluated separately.",
+      "(d) On coldstart_train the same readings are COMPUTED AND PUBLISHED, in all three arms, and",
+      "are checked for REPRODUCTION against the values registered in this file. A reproduction",
+      "mismatch is a HALT, because it means the population or the extractor moved under the plan.",
+      "A registered sign not matching its own train reading is NOT a failure and is NOT a pass; it",
+      "is a published fact, and the two places where it is already known to occur are named in",
+      "advance at expected_train_readings."
+    ],
+    "tie_break_rule": {
+      "statement": "ladder rung 2: a member whose train sign differs between whole tail and cold across the component-aware arm set is registered at the sign of whichever of the two readings is UNANIMOUS across all six arms; if both are unanimous and disagree, rung 3 fires and the plan terminates with the negative finding.",
+      "the_member_it_applies_to_today": {
+        "cold": "NOT unanimous: positive at caps 50, 100, 200 and 400, negative at cap 25 (-0.007383) and under component_equalized (-0.037101)",
+        "consequence_stated_plainly": "this is the member most likely to kill the plan at step 5. Its cold direction on coldstart_eval is a real test with a real chance of failing, and that is the point of moving the test there.",
+        "member": "result_score",
+        "registered": "positive, by rung 2",
+        "whole_tail": "unanimous positive across all six component-aware arms, and in fact across all nine published arms including the unweighted one and both eras"
+      },
+      "the_member_the_goal_named": {
+        "member": "bm25_score",
+        "this_is_reported_not_used": "bm25's whole-tail sign flip under the uncapped estimator is one of the two failures that produced the HALT. That it vanishes under every component-aware arm is the single cleanest piece of evidence that the HALT was an estimator artifact -- and it is evidence, not a licence: bm25 still has to hold its sign on coldstart_eval and secondary_anchor, whole tail and cold, on rows this plan has not seen.",
+        "what_the_component_aware_arms_say": "the split disappears. All six component-aware arms read bm25 negative on BOTH readings, so bm25 is registered at rung 1 and the tie-break never fires for it.",
+        "why_it_was_named": "under the UNWEIGHTED arm -- v2's arm, the one the HALT was measured on -- bm25 reads cold -0.011408 and whole tail +0.004903, so its two readings differ in sign. That is the case the tie-break rule was demanded for."
+      }
+    },
+    "train_check_is_non_evidentiary": {
+      "statement": "THE DIRECTIONS REGISTERED IN THIS FILE WERE TAKEN FROM coldstart_train. A check of those directions on coldstart_train is therefore a tautology, not a test, and this plan does not run it as a gate.",
+      "tolerance": 1e-06,
+      "what_step_3_does_instead": [
+        "It computes the same readings on coldstart_train in all three arms and PUBLISHES them.",
+        "It compares the capped, uncapped and component-equalized readings against the values registered at",
+        "registered_directions[*].measurement, which were copied from the sealed manifest. A mismatch beyond",
+        "floating-point tolerance is a HALT -- not because a sign moved, but because it would mean the",
+        "population, the extractor or the u-axis moved between the sealing of the manifest and the run, and",
+        "every number in this plan would then be describing a different dataset.",
+        "That check IS falsifiable and IS worth running. It is a reproduction check on the pipeline, not a",
+        "test of the family, and this file does not let it be reported as the latter."
+      ],
+      "why_this_matters_more_than_it_sounds": [
+        "v2's step 3 was a genuine test, because v2's directions came from a different population -- the",
+        "organic train and eval cohorts at feature-analysis.json#associations -- and were carried into a new",
+        "one. It failed, honestly.",
+        "This plan cannot repeat that test, because the enlarged population is now the only population there",
+        "is and the directions had to be measured on part of it. Pretending otherwise -- registering",
+        "train-derived signs and then reporting that they passed on train -- would be the exact species of",
+        "self-confirmation these files exist to prevent. So the train check is demoted in writing, and the",
+        "whole evidentiary weight of the direction constraint is moved onto cohorts this plan has not read."
+      ]
+    }
+  },
+  "era_exchangeability": {
+    "simpson_guard": {
+      "binding": true,
+      "if_fewer_than_two_eras_are_measurable": "the guard is VACUOUS for that cohort and is reported as vacuous. It is not reported as passed.",
+      "measurable": "an era is measurable for a reading if its capped rows meet the cold_subpopulation_clause minima for the cold reading, or at least 200 capped rows for the whole-tail reading. An era below that is INDETERMINATE for the guard and cannot contradict anything.",
+      "registered_expectation_that_it_will_be_vacuous_on_eval": [
+        "coldstart_eval's pre-August era is one component of 1002 items,",
+        "so at estimation_cap 50 it contributes at most 50 capped rows -- far below the 200-row bar. The",
+        "guard is therefore EXPECTED to be vacuous on coldstart_eval, and that expectation is registered here so",
+        "that a vacuous result cannot later be reported as a passed one.",
+        "It is registered as binding anyway, for two reasons. It costs nothing to state and it may bind on",
+        "secondary_anchor, whose 502 components and 1055 transport sessions over 4061 items are barely touched",
+        "by a cap of 50. And a guard that is stated only when it is expected to fire is a guard chosen after the",
+        "fact."
+      ],
+      "rule": "on coldstart_eval, if a core member's POOLED capped direction reading matches its registered sign while EVERY measurable era contradicts it on the same reading, that member FAILS. Pooled agreement that no stratum supports is not evidence of a direction."
+    },
+    "the_era_finding_and_the_independence_finding_are_the_same_finding": {
+      "an_arithmetic_coincidence_the_fit_must_settle": [
+        "coldstart_eval's largest component overall holds 2573 items. Its pre-August slice is one component of",
+        "1002 items and its August-era largest component holds 1571 items. 1002 + 1571 = 2573.",
+        "That arithmetic is consistent with a SINGLE component straddling the era boundary, in which case",
+        "eval's entire era difference is a within-component difference and the era cut on eval is not a cut at",
+        "all. This plan does not assert it -- component identities are opaque digests and this node did not",
+        "resolve them. The fit MUST publish whether eval's pre-August component and its largest August-era",
+        "component are the same component, as a named field. It is a one-line check and it settles the reading."
+      ],
+      "claim": "on this population the era gap is not a property of eras. It is a property of two individual components, and the component-aware estimator is therefore the answer to both findings at once.",
+      "evidence": [
+        "coldstart_eval's ENTIRE pre-August slice is ONE component: components 1, effective_components 1.0,",
+        "largest_component_share 1.0, 1002 items. Its consumption rate",
+        "of 0.148703 is one cluster's rate, not an era's rate.",
+        "coldstart_train's pre-August slice is nominally 107 components but",
+        "effective_components 1.43, with one component holding",
+        "7384 of its",
+        "8826 items -- largest_component_share",
+        "0.836619. Its rate of",
+        "0.632563 is also, to within a rounding error, one cluster's rate.",
+        "So the comparison 0.632563 against 0.148703, read as an era effect, is a comparison of two individual",
+        "cache keys. It is a difference between two units, and a difference between two units is exactly what",
+        "an estimator with 2.78 and 4.18 effective units cannot distinguish from a population effect.",
+        "The August-era slices, by contrast, are not degenerate: train 75.09 effective components, holdout",
+        "104.35, eval 7.24 -- and eval's 7.24 is itself an artifact of the forced observed-map components,",
+        "since splits.eval.concentration publishes effective_components_excluding_forced of 100.48."
+      ]
+    },
+    "the_finding": {
+      "per_split": {
+        "eval": {
+          "enlargement_pre_2026_08": {
+            "cold_base_rate": 0.225806,
+            "cold_candidates": 155,
+            "concentration": {
+              "components": 1,
+              "effective_components": 1.0,
+              "largest_component_items": 1002,
+              "largest_component_share": 1.0
+            },
+            "items": 1002,
+            "rate": 0.148703
+          },
+          "preexisting_2026_08": {
+            "cold_base_rate": 0.318653,
+            "cold_candidates": 772,
+            "concentration": {
+              "components": 199,
+              "effective_components": 7.24,
+              "largest_component_items": 1571,
+              "largest_component_share": 0.366799
+            },
+            "items": 4283,
+            "rate": 0.373803
+          }
+        },
+        "holdout": {
+          "enlargement_pre_2026_08": {
+            "cold_base_rate": 0.595687,
+            "cold_candidates": 371,
+            "concentration": {
+              "components": 45,
+              "effective_components": 13.35,
+              "largest_component_items": 334,
+              "largest_component_share": 0.134895
+            },
+            "items": 2476,
+            "rate": 0.668417
+          },
+          "preexisting_2026_08": {
+            "cold_base_rate": 0.351032,
+            "cold_candidates": 339,
+            "concentration": {
+              "components": 143,
+              "effective_components": 104.35,
+              "largest_component_items": 30,
+              "largest_component_share": 0.018304
+            },
+            "items": 1639,
+            "rate": 0.473459
+          }
+        },
+        "train": {
+          "enlargement_pre_2026_08": {
+            "cold_base_rate": 0.61335,
+            "cold_candidates": 1588,
+            "concentration": {
+              "components": 107,
+              "effective_components": 1.43,
+              "largest_component_items": 7384,
+              "largest_component_share": 0.836619
+            },
+            "items": 8826,
+            "rate": 0.632563
+          },
+          "preexisting_2026_08": {
+            "cold_base_rate": 0.420479,
+            "cold_candidates": 918,
+            "concentration": {
+              "components": 174,
+              "effective_components": 75.09,
+              "largest_component_items": 140,
+              "largest_component_share": 0.039795
+            },
+            "items": 3518,
+            "rate": 0.444571
+          }
+        }
+      },
+      "source": "dataset-manifest.json#coldstart.splits.*.stratified.by_era",
+      "statement": "the splits are not exchangeable across eras. The pre-August slice consumes at rate 0.632563 inside coldstart_train and 0.148703 inside coldstart_eval.",
+      "uncapped_pre_august_item_share": {
+        "eval": 0.189593,
+        "holdout": 0.601701,
+        "train": 0.715003
+      }
+    },
+    "what_it_does_threaten_and_where_that_is_caught": {
+      "already_caught_by_a_carried_guard": "anti_fiat_guards.guard_d_admitted_fraction_bands checks the overall and cold admitted fractions on coldstart_train AND coldstart_eval at decision step 6, and if either is outside its band THE HOLDOUT IS NEVER OPENED. That gate is v2's, carried unchanged, and it is exactly a test of whether the train-fitted threshold survives transport to a differently composed cohort.",
+      "the_exposure": "the THRESHOLD is a train-fitted scalar applied to cohorts with a different feature mix. A threshold selected to admit ten per cent of train's cold rows may admit a materially different fraction of eval's or the holdout's. That is a real exposure and it is the one the era finding actually creates.",
+      "what_this_plan_adds_to_it": "the bands are now judged on the CAPPED estimation set, so the eval gate is no longer a fraction dominated by two components; and the per-era decomposition of every admitted fraction is mandatory, so a pooled in-band number cannot hide one era at 0.02 and another at 0.45."
+    },
+    "what_the_cap_does_to_it": {
+      "consequence": "the regime whose rate differed between train and eval is bounded to under two per cent of either capped estimation set. The cap does not model the era difference away; it stops one cluster from being the estimate.",
+      "eval": "coldstart_eval's pre-August slice is one component, so at estimation_cap 50 it contributes AT MOST 50 rows to eval's capped estimation set of 2667 -- at most 0.018748 of it, against an uncapped share of 0.189593. This is an exact bound, not an estimate: one component cannot exceed the cap.",
+      "the_fit_must_publish_the_capped_era_composition": "per-era item counts, cold counts, consumed counts and rates on the CAPPED estimation set of every split, beside the uncapped ones. The exact capped shares are not computable from the published manifest and are not guessed at here.",
+      "train": "coldstart_train's largest component contributes AT MOST 50 rows to its capped estimation set of 4517 -- at most 0.011069 of it, against an uncapped share of 0.598185. Also an exact bound."
+    },
+    "what_the_non_exchangeability_does_not_threaten": [
+      "THE CALIBRATION TABLES. Each is a MONOTONE step function fitted on coldstart_train and applied to eval,",
+      "holdout and live rows by LOOKUP against value. A monotone lookup cannot re-rank two rows: if raw a > raw b",
+      "then u(a) >= u(b) on every cohort, whatever the cohort's era mix. What a foreign era mix changes is which",
+      "part of the table gets used and therefore how uniform the eval score distribution is -- not the ordering.",
+      "Since the family arm, the direction statistic and the AUC are all rank quantities computed WITHIN a",
+      "cohort, none of them is exposed to the mix at all.",
+      "THE DIRECTION TEST. It compares consumed against non-consumed rows inside one cohort, on that cohort's own",
+      "rows. It never compares a train quantity to an eval quantity.",
+      "THE GENERALIZATION THRESHOLD. holdout_cold_lift is a ratio of the consumed rate among admitted cold",
+      "holdout rows to the cold base rate OF THE SAME HOLDOUT SPLIT. It is self-normalising within the split, so",
+      "a holdout whose era mix differs from train's changes the numerator and the denominator together. This is",
+      "the reason 1.5 survives the finding without moving and without needing to."
+    ],
+    "what_this_plan_deliberately_does_not_do_about_eras": [
+      "It does NOT stratify or reweight by era. Adding an era-balancing weight on top of the component cap would",
+      "be a second estimator choice made after seeing that the eras differ, and on this population it would be",
+      "reweighting toward a stratum that is one component -- buying nothing and paying variance.",
+      "It does NOT register a per-era admitted-fraction band. There is no feasibility argument for one, and a band",
+      "invented without a feasibility argument is exactly the error v2's derived_fit_floor section documents in v1.",
+      "It does NOT re-draw the split to balance eras. Step 9 forbids re-drawing a split and this plan does not",
+      "make an exception for itself.",
+      "What it does instead is bound the offending clusters with the cap, publish the era decomposition of every",
+      "verdict-carrying statistic so no pooled number can hide a regime, and name the one pathology -- pooled",
+      "agreement with universal stratum disagreement -- that would make a pooled reading actively misleading."
+    ]
+  },
+  "feasibility_argument": {
+    "carried_from_v2": [
+      "Carried unchanged because the shape it argues about is unchanged. It reads no dataset: its inputs are the",
+      "transform's own properties, one v1-published cold share and one frozen constant, swept over a grid.",
+      "It has since acquired an empirical companion that v2 did not have when it was written:",
+      "policy.json#coldstart_revision.decision_procedure[2].diagnostic measured feasible_threshold_count 1143 on",
+      "coldstart_train and 582 on coldstart_eval under this exact shape, against v1's 0. The argument's central",
+      "prediction -- that bounding N unwelds the overall and cold admitted fractions -- was therefore already",
+      "confirmed on the enlarged population before this plan was written, on an UNCAPPED estimator.",
+      "Under the capped estimator those counts will differ and are re-published at decision steps 4 and 6. The",
+      "argument is not re-derived here and no number in it was recomputed by this node."
+    ],
+    "claim": "the cold admitted-fraction band [0.05, 0.25] and the overall admitted-fraction band [0.10, 0.30] are JOINTLY satisfiable by a single threshold under this scorer shape, and the argument for that is structural -- it follows from the transform, not from any number the enlarged population will produce",
+    "step_1_the_exact_tie_block_identity": {
+      "consequences": {
+        "absolute_worst_case_deficit_bottom_of_N_vs_top_of_N": 1.0,
+        "history_arm_cold_to_warm_mean_gap": 0.5,
+        "independent_of": "the cold share q, the schema share, the population size, and every number the sibling coldstart-population-widen will publish",
+        "level_arm_gap_between_the_two_level_blocks": 0.5,
+        "same_gap_after_averaging_into_N": 0.25,
+        "worst_case_node_intrinsic_deficit_cold_vs_warm_mean": 0.5
+      },
+      "proof": [
+        "The block occupies fitting positions 1..qn and its midrank fraction is (0 + qn/2)/n = q/2.",
+        "Midranks preserve the sum of ranks, so the remaining (1-q)n rows have mean rank fraction",
+        "(qn + (1-q)n/2)/n = (1+q)/2 whatever their internal tie structure.",
+        "Centering subtracts 0.5 from both. The difference is (1+q)/2 - q/2 = 1/2, independent of q."
+      ],
+      "statement": "on a midrank rank_uniform_centered scale, if the lowest-valued rows form a tie block of mass q, that block's value is exactly q/2 - 0.5 and the mean value of every row above it is exactly q/2. The gap between them is exactly 1/2, for EVERY q.",
+      "why_it_applies_here": [
+        "Every cold row with a readable ledger has M = C = K = 0, hence an identical four-term",
+        "composite of -3.6135, hence a single tie block at the very bottom of the history arm.",
+        "Cold rows whose ledger is unreadable form a second block, at the composite value 0.0,",
+        "which sits ABOVE the -3.6135 block, so the bound below is conservative for them."
+      ]
+    },
+    "step_2_what_a_cold_row_now_has_to_do": {
+      "compare_v1": {
+        "enlargement_of_the_admissible_cold_pool": {
+          "adverse_level_vs_v1_trace": 10.2818,
+          "level_neutral_vs_v1_schema": 12.0682,
+          "reading": [
+            "The family is not touched. Not one member is added, not one sign is changed, not one",
+            "cold row's family RANK moves. What moves is the bar: from '+2.2026 on a scale whose",
+            "p95 is +0.4607' to '+0.25 to +0.50 on a scale whose p69 is +0.50'. The share of cold",
+            "rows that can clear it grows by an order of magnitude purely because the two",
+            "quantities are finally measured in the same units."
+          ]
+        },
+        "v1_measured_share_of_cold_rows_reaching_them": {
+          "schema": 0.033252,
+          "source": "policy.json#coldstart_revision.history_arm_sensitivity.family_dynamic_range_on_train, 41 and 37 of 1233 cold train rows",
+          "trace_or_concept": 0.030008
+        },
+        "v1_registered_targets": {
+          "schema_row_needed_family_z": 2.2026,
+          "trace_or_concept_row_needed_family_z": 4.4703
+        }
+      },
+      "statement": "because F is rank-normal on the fitting split by construction, the family percentile a cold row must reach to tie a mean-placed warm row is a fixed, computable number",
+      "table": {
+        "absolute_worst_case_deficit_1_00": {
+          "family_z_needed": 1.0,
+          "pooled_family_percentile_needed": 0.841345,
+          "share_of_the_family_distribution_that_qualifies": 0.158655
+        },
+        "adverse_level_cold_row_deficit_0_50": {
+          "family_z_needed": 0.5,
+          "pooled_family_percentile_needed": 0.691462,
+          "share_of_the_family_distribution_that_qualifies": 0.308538
+        },
+        "level_neutral_cold_row_deficit_0_25": {
+          "family_z_needed": 0.25,
+          "pooled_family_percentile_needed": 0.598706,
+          "share_of_the_family_distribution_that_qualifies": 0.401294
+        }
+      }
+    },
+    "step_3_the_frontier_under_a_null_model": {
+      "grid": {
+        "cells": 60,
+        "cold_share_q": [
+          0.1,
+          0.15,
+          0.217691,
+          0.3,
+          0.4
+        ],
+        "family_separation_delta": [
+          0.0,
+          0.25,
+          0.5
+        ],
+        "level_association": [
+          "neutral (cold and warm rows level-distributed alike)",
+          "worst (every cold row non-schema)"
+        ],
+        "p_s_anchor_note": "0.26434558 is RELEVANCE_FEATURE_MEANS[0], the foreign warm cohort's schema share; 0.10 is included because the cold-inclusive population's schema share is unknown at registration and the model must not depend on it",
+        "q_anchor_note": "0.217691 is v1's measured coldstart_train cold_candidate_share, quoted from policy.json#coldstart_revision.dataset.train_set, which is already-published v1 data and not a number from the enlarged population",
+        "schema_share_p_s": [
+          0.1,
+          0.26434558
+        ]
+      },
+      "model": [
+        "F is exactly N(0,1) on the pooled fitting split -- this is enforced by the transform and is",
+        "not an assumption about the data. Split it into cold and warm at a mean separation delta,",
+        "with q*mu_cold + (1-q)*mu_warm = 0.",
+        "H is rank-uniform: the cold block sits at q/2 - 0.5, the warm rows are uniform on",
+        "(q - 0.5, 0.5]. L is the two-point rank-uniform image of a binary at schema share p_s.",
+        "N = (L + H)/2, score = N + F, and the cold and overall admitted fractions are read off as",
+        "functions of a single threshold t.",
+        "The model assumes NO relationship between any arm and the consumption label. That is the",
+        "correct model for this question: an admitted-FRACTION band is about volume, not about",
+        "discrimination, so assuming zero signal is the conservative choice."
+      ],
+      "reproducibility": "the model is fully specified above and is 30 lines of arithmetic. It reads no dataset. Anyone may recompute every number in this section from the formulas and the grid alone.",
+      "result": {
+        "criterion": "a cell is FEASIBLE if some single threshold t puts the overall admitted fraction in [0.10, 0.30] and the cold admitted fraction in [0.05, 0.25] at the same time",
+        "feasible_cells_at_the_derived_fit_floor_0_10": "59 of 60",
+        "feasible_cells_at_the_registered_cold_floor_0_05": "60 of 60",
+        "headline_cell_at_v1_measured_cold_share": {
+          "cold_admitted_fraction_at_the_overall_ceiling_0_30": 0.1762,
+          "cold_admitted_fraction_at_the_window_midpoint": 0.1344,
+          "delta": 0.25,
+          "joint_threshold_window_width": 0.3518,
+          "level_association": "neutral",
+          "overall_admitted_fraction_at_the_window_midpoint": 0.2432,
+          "p_s": 0.26434558,
+          "q": 0.217691
+        },
+        "minimum_joint_threshold_window_width_over_the_grid": 0.3478,
+        "no_separation_cell": {
+          "cold_admitted_fraction_at_the_overall_ceiling": 0.2345,
+          "delta": 0.0,
+          "q": 0.217691
+        },
+        "severe_separation_cell": {
+          "cold_admitted_fraction_at_the_overall_ceiling": 0.1245,
+          "delta": 0.5,
+          "q": 0.217691
+        },
+        "the_single_infeasible_cell": {
+          "delta": 0.5,
+          "level_association": "worst",
+          "p_s": 0.26434558,
+          "q": 0.1,
+          "reading": "a thin cold population AND a half-sigma family deficit for cold rows AND every cold row non-schema, all at once. Named here rather than hidden; see limitations.the_corner_where_this_plan_fails."
+        }
+      },
+      "the_comparison_that_matters": {
+        "headroom_over_the_registered_cold_floor": 3.524,
+        "ratio_vs_registered_arm": 5.871,
+        "ratio_vs_sensitivity_arm": 5.172,
+        "reading": [
+          "v1 was short of its cold floor by a factor of 1.47 at the ceiling and had zero feasible",
+          "thresholds. This shape is modelled to clear the same floor by a factor of 3.5, and the",
+          "worst cell in a 60-cell sweep still clears it. That is the difference between a plan",
+          "with a margin and a plan that was never going to work."
+        ],
+        "v1_measured_cold_admitted_fraction_at_the_overall_ceiling": {
+          "mean_substitution_sensitivity_arm": 0.034063,
+          "registered_arm": 0.030008
+        },
+        "v2_modelled_cold_admitted_fraction_at_the_overall_ceiling": 0.176189
+      },
+      "why_the_model_is_legitimate_here_and_was_not_for_v1": [
+        "A normal model would have been worthless applied to v1's shape, because v1's family",
+        "composite was not remotely normal -- p95 +0.4607 against p99 +9.46. Any Gaussian",
+        "approximation would have declared v1 feasible and been wrong.",
+        "Under this shape the normality is created by the transform rather than assumed of the data.",
+        "That is the difference between a model of the population and a model of the arithmetic, and",
+        "only the second kind can be trusted before the population is read."
+      ]
+    },
+    "step_4_the_two_fractions_are_no_longer_welded": [
+      "Under v1 the cold rows were a solid block at the bottom of a score ordering that the history",
+      "arm dominated six to one, so the threshold could not move one fraction without dragging the",
+      "other: at cold 0.0503 overall was 0.754237, at overall 0.30 cold was 0.030008.",
+      "Under this shape the entire node-intrinsic block spans one unit while the family arm alone",
+      "spans six, so the score ordering is family-dominated and the cold and warm score distributions",
+      "OVERLAP rather than stacking. A threshold sweeping through the overlap trades the two",
+      "fractions continuously instead of moving them together, which is exactly what a non-empty",
+      "joint window means. The measured width of that window on the grid is 0.3478 score units at",
+      "its narrowest and 0.5608 at the no-separation cell."
+    ],
+    "what_the_neutral_rule_does_not_do": [
+      "The missing-value rule registered below -- an unreadable arm contributes its calibrated",
+      "scale's neutral value instead of RELEVANCE_FEATURE_MEANS[1..4] -- is NOT what makes the bands",
+      "satisfiable, and this file does not claim that it is.",
+      "v1 already measured that repair in isolation, at policy.json#coldstart_revision.",
+      "history_arm_sensitivity, and it moved cold admission by one row out of 1233 and left",
+      "feasible_threshold_count at 0. The reason is recorded there too: on a complete ledger the",
+      "live reader returns known(matured = 0), not unavailable, so the unreadable branch is taken by",
+      "almost no cold row.",
+      "The rule is registered because it is CORRECT -- a foreign cohort's raw means are not a neutral",
+      "value on this population, and the live path must not fabricate evidence for a row whose ledger",
+      "genuinely cannot be read -- and because leaving a known-wrong constant in a scorer being",
+      "rewritten would be indefensible. The count of rows on which it fires must be REPORTED on every",
+      "split, and this plan pre-registers the expectation that the count will be small.",
+      "The repair is carried by the rank calibration alone. Saying so here, before the fit, is what",
+      "stops a later reader from crediting the wrong mechanism for whatever the holdout returns."
+    ],
+    "why_this_section_exists": [
+      "v1's fatal flaw was registering a shape that was arithmetically incapable of meeting its own",
+      "bands, and only discovering it at step 6 after the dataset, the extractor and the fit had all",
+      "been built. Nothing in v1 was wrong except that nobody computed whether the bands were",
+      "reachable before sealing.",
+      "This section is that computation, performed and published BEFORE sealing. If it is wrong, it",
+      "is wrong on the page and can be refuted by anyone who reads it, rather than by spending a",
+      "holdout."
+    ]
+  },
+  "feature_family": {
+    "closed": "the member set is closed by this file. No member may be added, removed or re-signed by the fit.",
+    "directions_are_train_derived": "unlike v2, whose signs came from feature-analysis.json#associations on the organic cohorts, every sign in this family was measured on coldstart_train and is registered from that measurement. direction_constraint.train_check_is_non_evidentiary states what that costs and what is done about it.",
+    "excluded_members": {
+      "access_count": "banned at policy.json#selected_policy.bans as a mutable post-outcome stat; not readmitted",
+      "graph_score": {
+        "status": "excluded, permanently, no re-test permitted",
+        "v1_result": {
+          "measured_cold_association_raw": -0.002927,
+          "measured_cold_association_transformed": -0.026056,
+          "outcome": "excluded per the registered default",
+          "predicted_by_probe": -0.011
+        },
+        "v1_status": "conditional, excluded_by_default, with a registered admission test on coldstart_train cold rows",
+        "why_v2_closes_it": [
+          "v1 registered the exclusion in advance, ran the registered test, and the test confirmed",
+          "the flip on the real consumption label. That question is answered. Re-opening it under",
+          "a new plan would be running the same test until it gives a different answer, which is",
+          "the p-hacking this file exists to prevent -- in the direction that ADDS a feature.",
+          "Closing it also removes a degree of freedom from the fit, which is the correct",
+          "direction of travel for a second registration."
+        ]
+      },
+      "methods": "a thresholded discretization of the component scores already in the family; redundant by construction",
+      "node_age": "association direction reverses between cohorts; rejected in the frozen policy and left rejected",
+      "path_length": "absent from feature-analysis.json#associations, so no direction has ever been measured and none can honestly be pre-registered",
+      "residual_rank_or_scope_rank": "a function of the ranker's own ordering and of where the extractor cut the tail; it would encode the stratum boundary rather than the candidate",
+      "scope": "not measured in feature-analysis.json#associations; no registrable direction",
+      "usefulness_score": "banned at policy.json#selected_policy.bans as a mutable post-outcome stat; not readmitted"
+    },
+    "graph_score_exclusion_is_permanent": "carried from v2 without change and not re-opened. v1 registered the exclusion in advance, ran the registered admission test, and the test confirmed the flip on the real consumption label. Re-testing it under a third plan would be running the same test until it answers differently, in the direction that ADDS a feature.",
+    "id": "recorded-delivery-scores-v3",
+    "members": [
+      {
+        "cold_sign_unanimous_across_component_aware_arms": null,
+        "measured_on": "coldstart_train, dataset-manifest.json#coldstart.train_direction_accounting",
+        "measurement_published_at": "direction_constraint.registered_directions.result_score.measurement -- the full nine-arm table copied from dataset-manifest.json#coldstart.train_direction_accounting, not repeated here",
+        "name": "result_score",
+        "registered_direction": "positive",
+        "registration_rung": 2,
+        "signed_weight": 1.0,
+        "source_field": "score",
+        "status": "core",
+        "v2_registered_direction": "positive",
+        "whole_tail_sign_unanimous_across_component_aware_arms": "positive"
+      },
+      {
+        "cold_sign_unanimous_across_component_aware_arms": "positive",
+        "measured_on": "coldstart_train, dataset-manifest.json#coldstart.train_direction_accounting",
+        "measurement_published_at": "direction_constraint.registered_directions.trigger_score.measurement -- the full nine-arm table copied from dataset-manifest.json#coldstart.train_direction_accounting, not repeated here",
+        "name": "trigger_score",
+        "registered_direction": "positive",
+        "registration_rung": 1,
+        "signed_weight": 1.0,
+        "source_field": "trigger_score",
+        "status": "core",
+        "v2_registered_direction": "positive",
+        "whole_tail_sign_unanimous_across_component_aware_arms": "positive"
+      },
+      {
+        "cold_sign_unanimous_across_component_aware_arms": "negative",
+        "measured_on": "coldstart_train, dataset-manifest.json#coldstart.train_direction_accounting",
+        "measurement_published_at": "direction_constraint.registered_directions.bm25_score.measurement -- the full nine-arm table copied from dataset-manifest.json#coldstart.train_direction_accounting, not repeated here",
+        "name": "bm25_score",
+        "registered_direction": "negative",
+        "registration_rung": 1,
+        "signed_weight": -1.0,
+        "source_field": "bm25_score",
+        "status": "core",
+        "v2_registered_direction": "negative",
+        "whole_tail_sign_unanimous_across_component_aware_arms": "negative"
+      },
+      {
+        "cold_sign_unanimous_across_component_aware_arms": "negative",
+        "measured_on": "coldstart_train, dataset-manifest.json#coldstart.train_direction_accounting",
+        "measurement_published_at": "direction_constraint.registered_directions.vector_score.measurement -- the full nine-arm table copied from dataset-manifest.json#coldstart.train_direction_accounting, not repeated here",
+        "name": "vector_score",
+        "registered_direction": "negative",
+        "registration_rung": 1,
+        "signed_weight": -1.0,
+        "source_field": "vector_score",
+        "status": "core",
+        "v2_registered_direction": "negative",
+        "whole_tail_sign_unanimous_across_component_aware_arms": "negative"
+      }
+    ],
+    "source": "the RecallResult of the residual entry being scored, threaded to relevance_score by the merged sibling coldstart-candidate-plumbing",
+    "supersedes_family_id": "recorded-delivery-scores-v2",
+    "transform": {
+      "arm": "F = rank_normal(f), fitted on ALL of coldstart_train, clipped to [-3, +3]",
+      "composite": "f = sum of sign_m * rank_uniform_centered(raw_m) over the four core members",
+      "no_log_transform": "unnecessary and inert, for the same reason",
+      "no_winsorization": "dropped in v2 and stays dropped; rank statistics are invariant to any monotone re-expression",
+      "per_member": "rank_uniform_centered, fitted on ALL of coldstart_train, per scorer_shape.calibration"
+    },
+    "why_this_family_is_still_the_right_shape": [
+      "It is candidate-time and query-specific: it describes what THIS retrieval found about this node for this",
+      "query, which is exactly the evidence a never-delivered node owns and the history block cannot see.",
+      "It is not a restatement of the node. Two different queries give the same node different values, so it",
+      "cannot degenerate into a per-node lookup the way any node-intrinsic statistic can.",
+      "It is computed upstream by the ranker before the map exists, so it is strictly pre-decision and cannot",
+      "absorb the delivery outcome.",
+      "And the enlargement did not refute it. Under every component-aware arm on the enlarged train split, three",
+      "of the four members hold their sign on both readings and the fourth holds it on the whole tail in all six.",
+      "What the enlargement refuted was the estimator, and dataset-manifest.json#coldstart.enlargement.concentration_cost.what_it_cost_the_fit says so in the manifest's own words."
+    ]
+  },
+  "honesty_bound": [
+    "This plan was authored by a node that owns only artifacts/recall-map/relevance/coldstart-prereg-v3.json and",
+    "artifacts/recall-map/relevance/coldstart-design-v3.md. It fitted nothing, wrote no extractor, ran no query,",
+    "and read no item row of coldstart_train, coldstart_eval, coldstart_holdout or secondary_anchor. It read no",
+    "file inside the fail-closed subtree policy.json#holdout_boundary reserves; that directory's literal path is",
+    "deliberately not spelled here, because scripts/recall_map_relevance_eval.py:64 HOLDOUT_MARKERS rejects it as",
+    "a raw substring before resolving any path.",
+    "Every measured value quoted in this file -- every direction reading, cap-grid cell, effective-component",
+    "count, era rate, admitted fraction and lift -- was COPIED programmatically out of two artifacts committed",
+    "before this node started: artifacts/recall-map/relevance/dataset-manifest.json and",
+    "artifacts/recall-map/relevance/policy.json. Not one of them was computed here. The tables at",
+    "direction_constraint.registered_directions[*].measurement were assembled by reading",
+    "dataset-manifest.json#coldstart.train_direction_accounting field by field, so they are byte-faithful to it",
+    "and a reviewer can diff them against the manifest rather than trust the transcription.",
+    "The directions this file registers were MEASURED BY A DIFFERENT NODE and published before this node read",
+    "them. What this node contributed is an estimator choice and a mechanical rule over the published arm set.",
+    "That is the whole of the discretion exercised here, and both the choice and the rule are stated in a form",
+    "that can be re-executed against the manifest without re-running anything.",
+    "This author HAS read v2's recorded negative result in full, including the eval admission diagnostic its",
+    "halted run published. That is disclosed at known_prior_reads with the exact quantities, and",
+    "limitations.eval_is_not_virgin states what it costs. The holdout has never been read by anyone --",
+    "holdout_evaluations is 0 under v1 and under v2 -- so no cold-start holdout number has ever existed.",
+    "This author also read the ARITHMETIC that produced the HALT before choosing a shape, which is precisely what",
+    "the goal above this node required: the plan is authored against measurement, not against guesswork. The",
+    "corresponding hazard is named rather than denied -- a plan written after seeing which signs failed could",
+    "choose an estimator that unfails them. The two defences against that are on the page: the estimation cap is",
+    "selected by a floor rule that never touches a sign and returns the same cap under any floor in a wide band,",
+    "and the registration ladder reads ALL SIX component-aware arms unanimously rather than any one of them, so",
+    "no choice of cap can set a sign.",
+    "No query text, node content, label, task name, host, cache key or session identity appears in this artifact."
+  ],
+  "known_prior_reads": {
+    "coldstart_eval": {
+      "reads": 1,
+      "what_this_costs_this_plan_and_where_it_is_stated": [
+        "This plan's scorer is arithmetically identical to v2's -- same four signs, same composite, same",
+        "calibration construction -- so the eval numbers above were computed under, effectively, this plan's",
+        "shape. Two of this plan's gates are therefore partially foreknown:",
+        "guard (d) on coldstart_eval, whose admitted fractions at that threshold were 0.195459 overall and",
+        "0.12945 cold, both inside the registered bands; and the eval cold lift, published as 1.512.",
+        "The registered threshold under THIS plan is selected from CAPPED train fractions and will not in",
+        "general equal 0.87186366, so the foreknowledge is approximate rather than exact. It is foreknowledge",
+        "all the same, and limitations.eval_is_not_virgin states what weight the eval gates can carry because",
+        "of it.",
+        "The eval DIRECTION test -- the test this plan moves onto eval and rests its evidentiary weight on --",
+        "is unaffected: no direction reading on eval exists."
+      ],
+      "what_was_NOT_published": [
+        "No direction reading of any family member on coldstart_eval. The run halted at step 3, on train, and",
+        "step 5 -- the eval direction check -- was never reached. dataset-manifest.json#coldstart",
+        ".train_direction_accounting.why_only_train confirms the sibling did not measure them either.",
+        "No parameter was sealed, no threshold was selected, and no verdict rests on any of it: the diagnostic",
+        "carries status diagnostic_only_no_parameter_was_sealed_and_no_verdict_rests_on_it."
+      ],
+      "what_was_published": {
+        "eval_admission_at_the_threshold_the_rule_would_have_returned": {
+          "admitted": 1033,
+          "admitted_fraction": 0.195459,
+          "binomial_p": 0.000246842,
+          "cold_admitted": 120,
+          "cold_admitted_consumed": 55,
+          "cold_admitted_fraction": 0.12945,
+          "cold_auc": 0.63297,
+          "cold_lift": 1.512,
+          "cold_selected_precision": 0.458333,
+          "threshold": 0.87186366,
+          "warm_selected_precision": 0.428258
+        },
+        "feasible_threshold_count_on_eval": 582
+      },
+      "when": "v2's halted run, at its step 3, published under policy.json#coldstart_revision.decision_procedure[2].diagnostic",
+      "why_it_was_read": "coldstart-prereg-v2.json#verdict_rule.threshold_rule.published requires feasible_threshold_count on coldstart_train AND coldstart_eval whatever the verdict, so the halted run published the eval frontier before stopping."
+    },
+    "coldstart_holdout": {
+      "reads": 0,
+      "statement": "VIRGIN. policy.json#coldstart_revision.findings.the_shape_was_never_tested.holdout_still_virgin records that no cold-start holdout number has ever existed, under v1 or v2, and holdout_evaluations is 0. The partition is available in full to this plan, exactly once."
+    },
+    "secondary_anchor": {
+      "reads": 0,
+      "statement": "no reading of any family member on secondary_anchor exists on this population. The anchor figures at coldstart-prereg-v2.json#feature_family.members[*].registration_evidence.secondary_anchor are v1-era associations on a different cohort and a different scale, and are reproduced in this file as provenance only."
+    },
+    "what_this_node_read": "aggregate published fields of dataset-manifest.json and policy.json, listed exhaustively at reads_at_registration. No item row of any split, no database, no query text, no node content, no cache key and no session identity.",
+    "why_this_block_exists": "this plan moves the binding direction test onto coldstart_eval. A reader is entitled to know exactly what has already been read from that split and under what shape, before weighing what the test is worth."
+  },
+  "limitations": {
+    "carried_from_v2_unchanged": {
+      "calibration_tables_are_a_new_wireable_surface": [
+        "The frozen policy ships ten floats. This one ships up to 1024 breakpoints per calibrated",
+        "quantity. That is a larger artifact and a larger implementation surface for the wire sibling,",
+        "and a transcription error in a table is harder to spot than one in a constant.",
+        "The mitigation is the published max_interpolation_error_on_u and the requirement that the",
+        "published table IS the definition, so fit, eval, holdout and the live scorer can be checked",
+        "against one another for bit-identical output on the same input."
+      ],
+      "cold_probe_is_approximate": "carried from v1 unchanged: the 2026-08-01..08-22 cold probe used a proxy consumption label and no component split; it informed graph_score's exclusion, which the real label on coldstart_train then confirmed",
+      "delta_is_the_one_quantity_the_model_cannot_bound": [
+        "delta -- the mean separation between cold and warm rows on the rank-normal family arm -- is a",
+        "property of the data, not of the transform, and no number in hand measures it. v1 published",
+        "the cold family_z distribution but never the pooled one, so the cold-versus-warm shift cannot",
+        "be recovered from published numbers.",
+        "The grid therefore sweeps delta to 0.50, half a standard deviation, which is a large",
+        "separation for a query-specific retrieval signal. If the true delta is larger than that, this",
+        "plan fails and the finding will be that cold candidates genuinely carry weaker candidate-time",
+        "evidence -- which would be a real result about the population, not another shape defect.",
+        "Forcing admission in that case would be fiat, and this plan declines to build a mechanism",
+        "that could."
+      ],
+      "no_interaction_or_collinearity_analysis": [
+        "The four family members are correlated by construction -- all are functions of the same",
+        "retrieval -- and this plan sums them at unit signed weight without modelling the correlation.",
+        "That is deliberate: fitting an interaction or a whitening matrix would be fitting coefficients,",
+        "which is banned. The cost is that the composite may be dominated by whichever members",
+        "co-move, and the rank_normal step on the composite bounds the consequence without removing it."
+      ],
+      "secondary_anchor_is_not_session_independent": "carried from v1 unchanged: the secondary anchor cohort shares sessions with other arms, so its direction check is corroboration and not an independent replication",
+      "the_corner_where_this_plan_fails": [
+        "The feasibility model clears the registered cold floor 0.05 in 60 of 60 grid cells, but",
+        "clears the DERIVED FIT FLOOR of 0.10 in only 59 of 60. The exception is q = 0.10 with",
+        "delta = 0.50 and schema share 0.26434558 under an adverse level association: a thin cold",
+        "population AND a half-sigma family deficit for cold rows AND every cold row non-schema, all",
+        "at once.",
+        "In that corner the threshold rule finds no qualifying threshold and the plan HALTS at step 4",
+        "with feasible_threshold_count 0 -- a second negative result, at the cost of no holdout read.",
+        "That corner is named here rather than discovered at step 6, which is the difference this",
+        "whole file is for."
+      ],
+      "the_holdout_is_historical_not_prospective": [
+        "coldstart_holdout is a partition of already-persisted state, not a population created after a",
+        "sealed deployment instant. It is disjoint by component and never refit on, and that is the",
+        "strongest available form of held-out evidence for this subtree, but it is not a prospective",
+        "field trial. policy.json#holdout_boundary reserves that population, and it is forbidden input",
+        "and output for every node in this subtree."
+      ],
+      "the_model_assumes_arm_independence": [
+        "The frontier model treats N and F as independent. They are not necessarily: a node delivered",
+        "many times may also rank higher for the queries that reach it. Positive correlation narrows",
+        "the joint threshold window; negative correlation widens it.",
+        "The mitigation is that the window's modelled width is 0.3478 score units at its narrowest",
+        "over the whole grid, not a knife edge, and that step 4 measures feasible_threshold_count",
+        "empirically before the holdout is touched. The model's job is to justify sealing this shape,",
+        "not to replace the measurement."
+      ]
+    },
+    "effective_components_is_a_proxy_not_a_count_of_independent_units": [
+      "Inverse Simpson over component shares measures concentration, not independence. Capping a component at 50",
+      "rows leaves those 50 rows correlated with each other; the cap bounds how much one cluster can move the",
+      "estimate, it does not make the retained rows exchangeable.",
+      "So 'effective components >= 100' should be read as 'no cluster holds more than a tenth of the estimate',",
+      "which is what the identity effective_components <= 1/largest_share^2 actually gives. It is not a claim",
+      "that the split contains 100 independent draws, and the binomial p computed on it is still an",
+      "approximation -- a far better one than a p over 2.78 units, and still an approximation."
+    ],
+    "eval_is_not_virgin": [
+      "known_prior_reads records that v2's halted run published eval's frontier and eval's admission at a",
+      "threshold under, effectively, this plan's shape: admitted fraction 0.195459, cold admitted fraction",
+      "0.12945, cold lift 1.512, cold AUC 0.63297, binomial p 0.000246842, feasible_threshold_count 582.",
+      "So guard (d) on eval and the eval band gate at step 6 are partially foreknown and carry less evidential",
+      "weight than their placement suggests. They are kept because they still bind under a threshold selected",
+      "from capped fractions, which will not in general equal 0.87186366 -- but a reader should discount them.",
+      "The eval DIRECTION test is not discounted: no direction reading on eval has ever been computed.",
+      "The holdout is the only cohort with no prior read of any kind, which is why the whole verdict rests there."
+    ],
+    "result_score_is_the_member_most_likely_to_kill_this_plan": [
+      "It reached rung 2, not rung 1. Its cold direction is negative under cap 25 (-0.007383) and under",
+      "component_equalized (-0.037101) and positive under caps 50, 100, 200 and 400. It is registered positive",
+      "from a whole-tail unanimity that holds in all nine published arms.",
+      "If its cold sign on coldstart_eval comes out negative, this plan records a FAIL at step 5 and the holdout",
+      "is never opened. That is the pre-registered way this plan dies, it is written down before the number",
+      "exists, and no rung and no arm in this file may be re-read to avoid it."
+    ],
+    "the_cap_costs_holdout_headroom": [
+      "At estimation_cap 50 the holdout carries 489 capped cold",
+      "candidates, so clearing the 40-admitted-cold-row minimum needs a cold admitted fraction of",
+      "0.0818 against a train selection target of 0.10 --",
+      "about 18 per cent of slack. Uncapped the same slack was about 44 per cent.",
+      "This is the price of the floor: a floor of 100 effective components forbids cap 100, which would have left",
+      "552 capped cold candidates. The trade was made floor-first and is stated here rather than discovered later.",
+      "If the plan fails ONLY on the 40-row minimum, that is a power failure and not a refutation of the family,",
+      "and it must be recorded as such. It is still a FAIL and the minimum still does not move."
+    ],
+    "the_cold_effective_component_floor_is_registered_blind": [
+      "16 is checkable on no split from the published manifest, because effective components over the cold",
+      "subpopulation are not published per cap. If a split misses it the plan halts on a condition this node",
+      "could not verify. Registered anyway, and named here, so a halt on it reads as pre-registered."
+    ],
+    "the_signs_are_v2s_signs": [
+      "The registration ladder returned positive, positive, negative, negative -- member for member, the same",
+      "four signs v2 registered. So v3's composite is arithmetically identical to v2's, and this plan is NOT",
+      "testing a new family. A reader who expected a re-registration to produce different signs should read that",
+      "as the finding it is: on the component-aware arms, the directions v2 registered are the directions the",
+      "enlarged population supports, and what failed was the estimator.",
+      "The honest cost of this: if the estimator diagnosis is wrong, v3 will fail on eval in much the same way",
+      "v2 failed on train, and the two failures will not be independent evidence."
+    ],
+    "the_simpson_guard_is_expected_vacuous_on_eval": [
+      "coldstart_eval's pre-August era is one component of 1002 items and contributes at most 50 capped rows, far",
+      "below the 200-row measurability bar. The guard is registered as binding and expected to be vacuous there,",
+      "and vacuous must be reported as vacuous and never as passed."
+    ]
+  },
+  "missing_value_rule": {
+    "answering_v1_own_objection": {
+      "the_objection_is_correct_and_does_not_apply": [
+        "v1 was right that on an additive z-scale, neutral IS mean substitution -- there is no third",
+        "option. Its mistake was concluding that mean substitution is therefore always the same act.",
+        "It is not. What matters is WHOSE mean, measured on WHICH population.",
+        "The banned substitution imputes RELEVANCE_FEATURE_MEANS[1..4], a foreign warm cohort's raw",
+        "means, onto a cold-inclusive population. Its effect there is not neutral: it places the row",
+        "at raw composite 0.0, roughly 2.0 z below the realized warm median of +2.0103 on the",
+        "population actually being scored.",
+        "The registered substitution imputes the arm's OWN median on the fitting split, by",
+        "construction, because rank_uniform_centered is centered at that median. Neutral means neutral",
+        "on the population the scorer will actually meet.",
+        "So both are 'imputation', and the difference between them is the entire parent goal: replacing",
+        "the train-mean placeholder is not the same as removing imputation, and no additive scorer can",
+        "remove it. This plan makes the imputed value honest instead of pretending it is absent."
+      ],
+      "v1_text": "coldstart-prereg.json#missing_value_rule.prohibited_reason: 'omitting a z-term from an additive standardized sum is ARITHMETICALLY IDENTICAL to substituting that member's mean, because the omitted term's contribution is (mean - mean)/scale = 0. A scorer cannot both be additive and treat an unreadable member as neutral without imputing the mean.'"
+    },
+    "carried_from_v2": "unchanged in every clause.",
+    "no_missingness_indicator": true,
+    "no_missingness_indicator_reason": [
+      "A missingness indicator for either arm could not fit on anything real. For the family, live",
+      "missingness is structurally impossible, so the indicator would train entirely on which",
+      "historical extractor wrote the row -- source identity, already banned -- and would be perfectly",
+      "correlated with the observed-map arm, making it a cohort label.",
+      "For history, an indicator would be a readability flag whose firing set this plan expects to be",
+      "small and which would, if it were large, be a proxy for storage completeness rather than for",
+      "anything about the node."
+    ],
+    "observed_map_arm_verdict": {
+      "expected_admitted_items_under_the_revision": 0,
+      "frozen_transfer_result_not_inherited": "the frozen policy's observed-map transfer PASS (37 items, 9 consumed, 0.243243 against the 0.233 floor) is NOT inherited by this revision and must not be claimed for it. The revision's transfer evidence is the three-way cold split and nothing else.",
+      "reason": "0 of 686 items record any delivery score; every observed-map row is family_unscoreable and therefore inadmissible under the fail-closed rule",
+      "registered_here_before_any_fit": "so that it can later be presented neither as a surprise nor as a failure. v1 registered the same expectation and it was confirmed.",
+      "remains_a_transfer_cohort_for_this_family": false,
+      "retained_roles": [
+        "the direction cohort for the legacy level and history features",
+        "an admitted-fraction ceiling cohort",
+        "a reported cohort: its admitted count under the revision must appear in the fit artifact"
+      ]
+    },
+    "principle": "one rule, keyed on whether an arm is READABLE in the record being scored, applied per arm, with the same formula running for every row",
+    "prohibited": "substituting RELEVANCE_FEATURE_MEANS, or any other foreign cohort's raw statistic, for any arm under any cause",
+    "the_rule": {
+      "family_arm": "if any admitted family member cannot be read as a finite float, the row is family_unscoreable and is INADMISSIBLE. Fail closed. This is v1's rule, carried unchanged.",
+      "node_intrinsic_arms": "if L or H cannot be read, that arm contributes its calibrated scale's NEUTRAL value 0.0, and N = (L + H)/2 is formed as usual. The divisor stays 2; an unreadable arm pulls N toward the middle, which is what 'no information from this arm' has to mean."
+    },
+    "why_the_two_arms_are_treated_differently": [
+      "History unreadability is a REAL, LIVE, structural property of the population this capability",
+      "exists to admit. A node the ledger cannot speak about must be scored as a node the ledger",
+      "cannot speak about -- neutrally -- and not as a node the ledger condemns.",
+      "Family unreadability is not live-possible at all. src/living_memory/retrieval.py:345-357",
+      "declares score as a required float and the four components as float = 0.0, so every residual",
+      "entry carries all of them at map-build time. Family unreadability arises only from a",
+      "historical extractor that did not persist them -- all 686 observed-map eval items, 338 of the",
+      "4061 secondary-anchor items.",
+      "Imputing a neutral there would let EXTRACTOR IDENTITY supply evidence, which is source",
+      "identity and is banned at policy.json#selected_policy.bans.forbidden_predictors_or_ties. A row",
+      "with no candidate-time evidence has, by definition, no candidate-time evidence to be admitted",
+      "on.",
+      "So the asymmetry is not a convenience. It is the difference between an arm that is silent",
+      "about a real row and an arm that was never written down."
+    ],
+    "why_this_is_not_a_cohort_branch": {
+      "falsifiable_consequence": "the fit must report history_arm_unreadable and family_unscoreable counts on every split. If history_arm_unreadable were large, the two paths would be worth separating and this argument would need re-examination; this plan pre-registers the expectation that it is small.",
+      "the_ban_it_must_not_violate": "coldstart-prereg.json#scorer_shape.no_cold_branch -- no test of matured == 0, no per-cohort, per-coldness, per-scope or per-level branch, no separate threshold, no bonus. Carried in full at scorer_shape.no_cold_branch_reason.",
+      "the_distinction": [
+        "A cohort branch asks WHICH POPULATION a row belongs to and then scores it differently. A",
+        "missing-value rule asks whether a FIELD OF THIS RECORD can be read, and runs the same",
+        "formula either way.",
+        "The code already contains exactly such a rule, today, at src/living_memory/recall_map.py:1190:",
+        "_history_features tests history is None, history.available is not True, non-int counts, and",
+        "the count invariants, and returns a substitute when any of them fails. That rule is not a",
+        "cohort branch and has never been called one. It is merely MIS-CALIBRATED: the substitute it",
+        "returns is a foreign cohort's raw means, which costs a history-absent row about 2.0 z",
+        "against the realized warm median of +2.0103. This plan replaces the substituted VALUE and",
+        "keeps the trigger condition character-for-character."
+      ],
+      "the_test_that_proves_it_is_not_a_cold_start_bonus": [
+        "The rule fires on READABILITY, never on emptiness. A row with a readable ledger reporting",
+        "M = C = K = 0 -- which is what a cold row on a complete ledger IS, per v1's measurement --",
+        "does NOT receive the neutral. It receives the real midrank of the -3.6135 block, at the",
+        "bottom of the history arm. Nothing about it is forgiven.",
+        "So the rule strictly separates 'no information' from 'information saying zero', and it",
+        "cannot be a disguised cold-start bonus, because the cold population overwhelmingly takes",
+        "the NOT-forgiven path. That is also why this plan does not rest on it: see",
+        "feasibility_argument.what_the_neutral_rule_does_not_do."
+      ]
+    }
+  },
+  "plan_sha256": "be85f81c0b581741f498632952f012de56a8aedaa475fcdb73006da542a6213b",
+  "plan_sha256_over": [
+    "amendment_policy",
+    "anti_fiat_guards",
+    "artifact",
+    "binds",
+    "cold_candidate_definition",
+    "component_aware_estimation",
+    "decision_procedure",
+    "defect_being_repaired",
+    "direction_constraint",
+    "era_exchangeability",
+    "feasibility_argument",
+    "feature_family",
+    "honesty_bound",
+    "known_prior_reads",
+    "limitations",
+    "missing_value_rule",
+    "plan_sha256_over",
+    "plan_version",
+    "prose_companion",
+    "reads_at_registration",
+    "registered_by",
+    "schema_version",
+    "scorer_shape",
+    "seal_note",
+    "single_holdout_pass",
+    "split_protocol",
+    "supersedes",
+    "verdict_rule"
+  ],
+  "plan_version": "v3",
+  "prose_companion": "artifacts/recall-map/relevance/coldstart-design-v3.md",
+  "reads_at_registration": {
+    "artifacts/recall-map/relevance/coldstart-prereg-v2.json": "the whole superseded plan: scorer_shape, feature_family, missing_value_rule, split_protocol, verdict_rule, anti_fiat_guards, direction_constraint, decision_procedure, amendment_policy",
+    "artifacts/recall-map/relevance/dataset-manifest.json": "coldstart.train_direction_accounting (train only), coldstart.enlargement.cap_feasibility, coldstart.enlargement.component_equalized, coldstart.enlargement.concentration_cost, coldstart.enlargement.eras, coldstart.splits.*.concentration, coldstart.splits.*.stratified.by_era, coldstart.split, coldstart.protocol, secondary_anchor totals. All of these are AGGREGATE published fields. No item row of any split was read.",
+    "artifacts/recall-map/relevance/policy.json": "coldstart_revision in full -- the recorded v2 HALT, its failed step, its step-3 report and its eval diagnostic -- plus selected_policy and holdout_boundary"
+  },
+  "registered_at": "2026-08-25T00:00:00Z",
+  "registered_by": "goal node recall-map-pool-quality/selector-cold-start-recalibration/coldstart-prereg-v3, which owns only artifacts/recall-map/relevance/coldstart-prereg-v3.json and artifacts/recall-map/relevance/coldstart-design-v3.md. It fitted nothing, wrote no extractor, ran no query against any database, and read no row of coldstart_eval or coldstart_holdout. Every population number in this file was COPIED from artifacts committed before this node started -- dataset-manifest.json#coldstart and policy.json#coldstart_revision -- and each is cited to its source field. The directions this file registers were measured by the sibling coldstart-population-independence and published in the manifest BEFORE this node read them; this node selected an estimator and applied a stated rule to numbers it did not compute.",
+  "schema_version": 3,
+  "scorer_shape": {
+    "arms": {
+      "F": {
+        "definition": "F = rank_normal(f), where f = sum over admitted family members of sign_m * rank_uniform_centered(raw_m)",
+        "members": "the four core members of feature_family, at their registered signs and unit magnitude. graph_score is excluded and may not be re-tested.",
+        "name": "candidate_time_family_arm",
+        "range": "[-3, +3] by the registered clip; standard-normal shaped on coldstart_train by construction",
+        "unreadable_when": "any admitted member of the family cannot be read as a finite float from the record being scored"
+      },
+      "N": {
+        "H": {
+          "calibration": "rank_uniform_centered, fitted on coldstart_train over rows where the block is READABLE",
+          "name": "history_arm",
+          "raw": "h = the frozen four-term history z-sum, i.e. sum over features 1..4 of (value - RELEVANCE_FEATURE_MEANS[i]) / RELEVANCE_FEATURE_SCALES[i], with the feature values produced by the unchanged arithmetic of _history_features at src/living_memory/recall_map.py:1221-1226 including its round(..., 8)",
+          "unreadable_when": "exactly the conditions src/living_memory/recall_map.py:1199-1217 already tests: history is None, history.available is not True, the three counts are not ints, or they violate 0 <= consumed <= matured and 0 <= streak <= matured - consumed",
+          "why_the_raw_composite_keeps_the_frozen_arithmetic": [
+            "rank_uniform_centered is strictly monotone, so within the readable-history",
+            "subpopulation the revision's history ordering is bit-for-bit the frozen policy's",
+            "ordering. Not one pair of rows is re-ranked by history. Only the arm's arithmetic",
+            "SCALE relative to the other arm changes, which is the whole point.",
+            "This also means the revision cannot be accused of discarding history discrimination",
+            "in order to make cold start work: the history signal is preserved exactly and is",
+            "merely prevented from acting as a gate."
+          ]
+        },
+        "L": {
+          "calibration": "rank_uniform_centered, fitted on coldstart_train",
+          "name": "level_arm",
+          "raw": "level_is_schema, the frozen feature 0: 1.0 for level == 'schema', 0.0 for 'trace' or 'concept'",
+          "unreadable_when": "level not in {trace, concept, schema}, the same condition src/living_memory/recall_map.py:1229-1236 already tests"
+        },
+        "definition": "N = (L + H) / 2",
+        "name": "node_intrinsic_block",
+        "range": "[-0.5, +0.5] by construction",
+        "why_averaged_and_not_summed": [
+          "The frozen policy SUMS four history terms, and the sum is precisely how a warm row",
+          "accumulates its +5.6823 to +5.7821 advantage: each term contributes its own z and the",
+          "total grows with the number of terms. A bound that grows with the feature count is not",
+          "a bound.",
+          "Averaging fixes the total node-intrinsic influence at one half-unit no matter how many",
+          "node-intrinsic features exist. Adding a fifth history term, or a sixth, cannot widen",
+          "the handicap a cold row carries. That property is what makes the feasibility argument",
+          "below survive future feature work rather than holding only for today's feature set."
+        ]
+      }
+    },
+    "calibration": {
+      "fitted_on_the_uncapped_train_split": "every calibration table is fitted on ALL of coldstart_train. The estimation cap is an estimator and is not an input to any table. See component_aware_estimation.what_the_cap_does_not_touch.",
+      "no_winsorization": [
+        "v1's winsorize step is DROPPED, and dropping it weakens nothing. Rank statistics are",
+        "invariant to every monotone transform, so clipping a member at its 1st and 99th percentile",
+        "cannot change any rank_uniform_centered value it feeds. Retaining it would be inert",
+        "ceremony and two more fitted constants per member."
+      ],
+      "out_of_sample_and_live_application": {
+        "atoms": "every fitting value whose multiplicity is at least 0.5% of the fitting rows is published as an EXACT (value, u) pair and is matched by equality before any interpolation. The available-but-empty history composite is such an atom by construction, so the tie-block identity the feasibility argument rests on holds exactly and not approximately.",
+        "grid": "the non-atom part is published as a 512-knot quantile grid; between consecutive knots u is linearly interpolated, and outside the outermost knots u is clamped to the outermost published value",
+        "max_breakpoints": 1024,
+        "max_interpolation_error_on_u": 0.001953125,
+        "published_form": "a monotone step function per calibrated quantity, published in the revised policy",
+        "reproducibility": "the published step function IS the definition. Fit, eval, holdout and the live scorer must all evaluate the same table, so a threshold tie reproduces bit-for-bit.",
+        "rule": "eval, holdout and live rows are calibrated by LOOKUP against the sealed coldstart_train step function. No split other than train ever contributes a rank."
+      },
+      "rank_normal": {
+        "fitted_on": "coldstart_train only",
+        "formula": "F(v) = clip(Phi_inverse(clip(u(v) + 0.5, 1/(2n), 1 - 1/(2n))), -3.0, +3.0), with u from the same construction as above",
+        "guaranteed_percentiles_on_the_fitting_split": {
+          "p50": 0.0,
+          "p69_15": 0.5,
+          "p84_13": 1.0,
+          "p90": 1.2816,
+          "p95": 1.6449,
+          "p99": 2.3263
+        },
+        "neutral_value": 0.0,
+        "why_guaranteed": "these are properties of the transform, not of the data. Whatever shape the family composite has -- including the p95 0.4607 / p99 9.46 spike v1 measured -- its rank-normal image has exactly these percentiles on the fitting split."
+      },
+      "rank_uniform_centered": {
+        "fitted_on": "coldstart_train only",
+        "formula": "u(v) = (A(v) + M(v)/2) / n - 0.5, where n is the number of fitting rows on which the arm is readable, A(v) = #{fitting values strictly below v} and M(v) = #{fitting values exactly equal to v}",
+        "neutral_is_the_median": "u is centered at the fitting sample's median by construction, so 0.0 means 'this arm places the row where half the population sits' -- which is what 'no information' has to mean on a calibrated scale",
+        "neutral_value": 0.0,
+        "ties": "MIDRANK. Every fitting row sharing a value receives the same u, equal to the midpoint of the block that value occupies."
+      }
+    },
+    "carried_from_v2": [
+      "score = N + F is carried BIT FOR BIT: the same two arms, the same rank_uniform_centered and rank_normal",
+      "constructions, the same [-3, +3] clip, the same averaging of the node-intrinsic block into [-0.5, +0.5], the",
+      "same atom-and-grid publication rule, the same no_cold_branch ban, the same one_threshold_only rule and the",
+      "same what_may_not_be_fitted list.",
+      "This plan changes NOTHING about the scorer. It changes the estimator that judges it, where the direction test",
+      "binds, and what minima a split must meet before it may be judged at all. That separation is deliberate: v2's",
+      "shape was never tested, so there is nothing yet to revise about it."
+    ],
+    "form": "score = N + F, a single additive sum of exactly two rank-calibrated arms, compared against exactly one threshold",
+    "invariants_the_revision_must_not_disturb": [
+      "SELECTION_REASON_CODES order is frozen and positional; POOL_GATE_REASON_CODES is append only",
+      "_SelectionLedger.freeze keeps trimming trailing zeros, so an unarmed server still emits exactly seven counts in sel.x",
+      "the accounting equation sel.n == sel.e + sum(sel.x) still holds",
+      "RELEVANCE_POLICY_ID and RELEVANCE_POLICY_DIGEST are bumped together",
+      "no new reason code is added, reordered or spent: an unscoreable row is below the threshold and 'lr' already states the truth"
+    ],
+    "no_cold_branch": true,
+    "no_cold_branch_reason": [
+      "v1's ban is carried in full and is not weakened. There is no test of matured == 0 anywhere in",
+      "the scorer: no per-cohort, per-coldness, per-scope or per-level branch, no separate threshold,",
+      "no bonus, no tie-break, no eligibility test.",
+      "A row with matured == 0 and a readable ledger takes the SAME path as every other row: its",
+      "history composite is -3.6135, that value is looked up in the same published step function, and",
+      "it receives the midrank of the block it shares. Nothing forgives it. What changes is only that",
+      "the arm it sits at the bottom of is now bounded.",
+      "If a single threshold still cannot satisfy the cold band and the overall ceiling at once, that",
+      "is a second PRE-REGISTERED NEGATIVE RESULT to be recorded as such -- not a problem to be",
+      "solved by adding a branch, and not a reason for a v3 that finally relaxes a number."
+    ],
+    "one_threshold_only": true,
+    "what_may_be_fitted_on_labels": [
+      "NOTHING. Every calibration is a rank transform of the fitting split, which reads no consumption label. The threshold is selected by the label-free rule in verdict_rule.threshold_rule, which reads only admitted fractions.",
+      "This is strictly stronger than v1, which permitted the single scalar threshold to be fitted on labels."
+    ],
+    "what_may_not_be_fitted": [
+      "per-feature weights or coefficient magnitudes",
+      "member signs",
+      "family membership: the member set is closed by this file and graph_score is permanently excluded",
+      "the arm scale choice (bounded vs unbounded) or the averaging of the node-intrinsic block",
+      "any per-cohort, per-scope, per-level or per-coldness branch"
+    ],
+    "why_two_different_scales": {
+      "reason": [
+        "A cold node cannot acquire delivery history at candidate time, and it cannot change its",
+        "level. Whatever those two arms say about it, it cannot answer. An arm a row cannot answer",
+        "must be able to REORDER rows but must not be able to put a row out of reach: that is the",
+        "arithmetic form of 'history informs, history does not gate', and breaking the",
+        "delivery -> history -> selection -> delivery loop is the root goal's stated purpose.",
+        "The candidate-time family is the opposite kind of evidence. It is what THIS retrieval",
+        "found about this node for THIS query -- evidence the row owns and can differ on. It is",
+        "therefore allowed to reach as far as the evidence warrants, and gets a normal-tailed",
+        "scale whose 99th percentile is +2.3263 and whose registered clip is +3.",
+        "This asymmetry is a pre-registered SCALE choice, fixed before any number from the",
+        "population was read, and derived from the stated principle above. It is not a coefficient",
+        "and it is not fitted. It is stated plainly here rather than buried, because a reviewer is",
+        "entitled to read it as a weight in disguise and judge the justification on its merits."
+      ],
+      "rule": "node-intrinsic evidence is calibrated to a BOUNDED scale; candidate-time evidence is calibrated to an UNBOUNDED one"
+    }
+  },
+  "seal_note": [
+    "plan_sha256 is sha256 over canonical_json({k: prereg[k] for k in plan_sha256_over}) encoded utf-8, the same",
+    "construction v1, v2 and artifacts/recall-map/prereg.json use, and the same rendering",
+    "src/living_memory/postsession/judge.py:286 canonical_json produces: sort_keys=True, indent=2,",
+    "ensure_ascii=False.",
+    "plan_sha256, registered_at and amendments are stamped after sealing and are therefore outside",
+    "plan_sha256_over; the hashed set is exactly what plan_sha256_over names, and plan_sha256_over names itself,",
+    "so the choice of what is sealed is itself sealed.",
+    "coldstart-fit-v3 must verify this hash before reading any split, and must record it in the revised policy so",
+    "the fitted result is bound to the plan that preceded it.",
+    "This file was sealed before any number from coldstart_eval or coldstart_holdout was read under it. The one",
+    "prior read of coldstart_eval that exists is v2's, it predates this file, and it is disclosed in full at",
+    "known_prior_reads rather than left for a reader to find."
+  ],
+  "single_holdout_pass": {
+    "computed_in_that_one_pass": [
+      "the registered shape's score for every holdout row, from the sealed calibration tables",
+      "the ablation shape's score for every holdout row, from the same sealed tables",
+      "admitted sets under the registered threshold and under t_ablation",
+      "overall and cold admitted fractions, under both",
+      "cold admitted counts and cold consumed-among-admitted counts, under both",
+      "holdout_cold_lift and holdout_cold_auc, under both",
+      "the exact binomial p-value for the registered shape",
+      "cold_admitted_by_level, history_arm_unreadable, family_unscoreable",
+      "warm counts and precisions, for the record only -- guard (c) binds on eval, not here",
+      "the component-capped estimation set of the holdout, drawn once inside the pass by the published cap rule",
+      "the holdout's capped effective_components, whole split and cold subpopulation, against the two floors",
+      "every listed quantity in all three arms -- capped, uncapped and component-equalized -- since all three come from the same one materialization and computing them costs no second read",
+      "the per-era decomposition of every listed quantity, capped and uncapped"
+    ],
+    "forbidden": [
+      "A SECOND READ FOR ANY REASON. An ablation that needs a second read is a second evaluation and",
+      "is forbidden. So is a second read to recompute a statistic that was forgotten, to try another",
+      "threshold, to check a hypothesis suggested by the first pass, or to produce a diagnostic not",
+      "listed above.",
+      "If the fit discovers after the pass that it needed a quantity it did not compute, that",
+      "quantity is UNAVAILABLE and the verdict is decided without it."
+    ],
+    "holdout_evaluations_must_equal": 1,
+    "rule": "coldstart_holdout is materialized EXACTLY ONCE, in a single pass, and every quantity below is computed from that one materialization",
+    "the_cap_is_not_a_second_read": [
+      "The capped estimation set is a subset of rows already materialized in the one pass, selected by a sha256",
+      "order over identity fields. Drawing it costs no additional read of the partition and introduces no second",
+      "evaluation. It is drawn ONCE, before any statistic is computed, and held fixed for all of them.",
+      "Computing the uncapped and component-equalized arms in the same pass is likewise one materialization. The",
+      "forbidden list is unchanged: a second read for any reason, including to recompute a forgotten statistic,",
+      "remains forbidden, and a quantity not computed in the pass is UNAVAILABLE."
+    ],
+    "why_the_ablation_must_share_the_pass": [
+      "The ablation exists to stop a bias correction passing as learning. If it were run as a second",
+      "evaluation, the holdout would have been read twice and the guard designed to protect the",
+      "verdict would itself have destroyed it.",
+      "Both shapes read from the same sealed tables and differ by one term, so scoring both in one",
+      "pass is one extra addition per row. There is no engineering reason to split it and one",
+      "decisive integrity reason not to."
+    ]
+  },
+  "split_protocol": {
+    "assignment_rule": {
+      "blindness_invariant_binding": [
+        "The assignment must be computable from the seed, the opaque component digest, and the",
+        "component ITEM COUNT alone.",
+        "No consumption label, no feature value, no score, and NO COLDNESS STATISTIC may enter it.",
+        "Balancing on item count is explicitly permitted: a count is fixed before any outcome is read",
+        "and cannot leak the label.",
+        "The manifest must publish the assignment function's name and its inputs, and a re-executable",
+        "check that recomputes the assignment from those inputs alone and reproduces the published",
+        "membership digests. If the manifest's assignment reads any cold statistic, the fit HALTS."
+      ],
+      "function": "v1_role_carry_over_then_size_aware_largest_first_balanced",
+      "membership_digests": {
+        "eval": "6c77fe7f3e0d465bdb54fe6f5a79976c0235364eded8dfcfc9f72e788bf10974",
+        "holdout": "fefd23b06c1c5715b32267a273f73dcf47f2fd79f5df48015f6d69d6c7b4be16",
+        "train": "5e5a748238012d785266cd3e5005b7549ad35cbe4a66a5148437576ab5c78d9e"
+      },
+      "reproduced_by": "python3 scripts/recall_map_coldstart_dataset.py verify-assignment --manifest artifacts/recall-map/relevance/dataset-manifest.json, which opens the manifest and no other data source",
+      "residual_risk_stated": [
+        "Component size correlates with coldness, so balancing on size moves per-split cold counts",
+        "indirectly -- that is visible in v1's own numbers, where the two rules differ by 334 cold",
+        "rows on the holdout. This is a real leakage surface and it is disclosed rather than denied.",
+        "Mitigation, binding on the fit: coldstart-fit-v2 must itself recompute the v1 seed-uniform",
+        "draw over the published component list and publish its per-split cold counts alongside the",
+        "shipped assignment's, so the size of the difference is auditable by anyone. The fit has the",
+        "component list already and needs no extra read to do this."
+      ],
+      "v3_rule": "the assignment is what dataset-manifest.json#coldstart.split ALREADY publishes, sealed by the merged sibling coldstart-population-independence before this plan was written. This plan does not draw, re-draw or alter a split. Step 2 verifies it; it does not create it."
+    },
+    "component_membership": "event-level, not item-level: an event carrying no scorable item can still be the cache or session bridge between two events and must still join the component",
+    "effective_component_floor": {
+      "cold_subpopulation": 16,
+      "defined_at": "component_aware_estimation.effective_component_floor",
+      "new_minimum_added_by_this_plan": true,
+      "whole_split": 100,
+      "why_adding_a_minimum_is_permitted": "coldstart-prereg-v2.json#amendment_policy forbids MOVING a registered number and forbids moving four named numbers DOWNWARD under a third plan. It does not forbid adding a new bar, and a new bar can only make a PASS harder to reach. This one is the bar v2 lacked."
+    },
+    "forced_assignment": {
+      "reason": "carries over the existing protection at assign_component_splits and keeps the holdout free of an arm that is family_unscoreable by construction and could only dilute it",
+      "rule": "any component containing an observed-map delivery event is forced to coldstart_eval"
+    },
+    "identity_rule": "connected_components(source-qualified cache key, transport session, session), unchanged from the existing work at scripts/recall_map_relevance_eval.py:702",
+    "known_residual_contamination": {
+      "stated_rather_than_omitted": "recorded here so that the revision's generalization claim is read as 'directions and shape pre-registered, magnitudes and thresholds held out' rather than as a claim of a fully blind holdout, which it is not",
+      "what": "feature-analysis.json#associations already publishes this family's aggregate directions over organic_train, organic_eval and secondary_anchor, and policy.json#coldstart_revision now publishes v1's cold lifts on the v1 train and eval splits. The holdout is therefore not virgin with respect to the family's DIRECTION, and this plan's author has read v1's negative result in full.",
+      "why_it_is_inert": [
+        "Those are cohort-level statistics, never item rows (dataset-manifest.json#privacy.item_level_rows = false), so they fix no row's membership.",
+        "The directions they inform are pre-registered HERE, before any fit on the enlarged population. Committing to a direction in advance is what a pre-registration is for.",
+        "v1's holdout was NEVER READ -- policy.json#coldstart_revision records holdout_evaluations 0 and holdout_cold_admitted null -- so no cold-start holdout number has ever existed for anyone to have seen, including the author of this file.",
+        "The population itself is being enlarged by a sibling, so the v2 splits are not the v1 splits.",
+        "The holdout IS virgin with respect to every quantity this verdict depends on: the calibration tables, both thresholds, the admitted fractions, the lift, the ablation lift and the AUC."
+      ]
+    },
+    "minimum_cold_candidates_per_split": 400,
+    "minimum_not_moved": [
+      "400 is v1's number and v2's number and it is carried here at 400. It is NOT moved, and",
+      "coldstart-prereg-v2.json#amendment_policy clauses 8-12 forbid moving it downward under any third plan.",
+      "It is now checked on the component-capped estimation set, which is strictly harder than checking it on the",
+      "raw split. dataset-manifest.json#coldstart.enlargement.cap_feasibility publishes that every cap in the grid,",
+      "including the registered cap of 50, clears it on all three splits: train",
+      "1035, eval 558, holdout",
+      "489. So the tightening costs nothing here and the number stands."
+    ],
+    "naming_constraint": {
+      "audit_field": "the coldstart block must carry field_subtree_accessed: false and post_deployment_holdout_accessed: false, mirroring policy.json#holdout_boundary.freeze_read_audit",
+      "distinct_population": "the reserved tokens name the post-deployment field population at policy.json#holdout_boundary, whose status is semantic_boundary_frozen_population_not_created. That is a different thing entirely -- candidate-only events created strictly after a sealed deployment instant -- and this subtree may neither create nor read it. coldstart_holdout is a historical partition of already-persisted state and does not touch it.",
+      "rule": "the holdout partition is named coldstart_holdout and lives in artifacts/recall-map/relevance/dataset-manifest.json#coldstart",
+      "why": "scripts/recall_map_relevance_eval.py:64 HOLDOUT_MARKERS rejects three literal substrings BEFORE resolving any path, matching against both the raw text and the resolved lowercased path. A partition or directory carrying one of those tokens would be refused by every command in the evaluator."
+    },
+    "pairwise_component_disjoint": true,
+    "partitions": [
+      "coldstart_train",
+      "coldstart_eval",
+      "coldstart_holdout"
+    ],
+    "per_split_reporting": [
+      "items",
+      "consumed",
+      "rate",
+      "cold_candidates",
+      "cold_candidate_share",
+      "cold_consumed",
+      "cold_base_rate",
+      "history_arm_unreadable",
+      "family_unscoreable",
+      "cold_admitted_by_level",
+      "opaque component digest list",
+      "membership digest",
+      "effective_components, capped and uncapped, whole split",
+      "effective_components, capped, cold subpopulation",
+      "capped items, capped cold_candidates and items_retained_share at estimation_cap",
+      "per-era items, consumed, rate, cold_candidates and cold_base_rate, capped and uncapped",
+      "largest_component_share on the capped estimation set"
+    ],
+    "refit_checkability": {
+      "primary_check": {
+        "executable": true,
+        "name": "withheld_holdout_reproduction",
+        "procedure": "re-run the fit with the coldstart_holdout partition physically absent from the input. The fitted parameter digest -- every calibration table, both thresholds and the member set -- must be BYTE-IDENTICAL to the digest produced by the full run.",
+        "why_this_is_the_strong_form": "it converts an unfalsifiable claim about what a script did not read into a deterministic equality anyone can re-run. If any holdout row influenced any parameter, the digests differ."
+      },
+      "principle": "'not refit on' is reproduced, not asserted",
+      "supporting_checks": [
+        "the membership_digest of coldstart_holdout cited by the revised policy must equal the one in dataset-manifest.json#coldstart; a re-drawn holdout changes the digest and fails",
+        "the commit that introduced the holdout digest must be an ancestor of the commit carrying the revised policy, checkable with git merge-base --is-ancestor",
+        "pairwise intersection of the three published component lists must be empty",
+        "the revised policy must record no_eval_refit: true and no_holdout_refit: true alongside the reproduction result, not instead of it"
+      ]
+    },
+    "seal": {
+      "fail_closed": "the fit must refuse to open the holdout partition until the parameter digest exists on disk, and must record holdout_first_read_after_parameters_sealed: true",
+      "ordering": [
+        "1. coldstart-population-independence has already written the three splits and their digests into dataset-manifest.json#coldstart and committed. This plan reads that block and changes nothing in it.",
+        "2. coldstart-fit-v3 verifies this plan's plan_sha256, then verifies the split structure and the whole-split effective-component floor from the published manifest, reading no row.",
+        "3. Then coldstart_train ONLY: every calibration table, the capped estimation set, the published train direction readings and their reproduction check, both thresholds, and the parameter digest to disk.",
+        "4. Only then coldstart_eval and secondary_anchor, for the binding direction test, warm non-degradation and the empirical band gate.",
+        "5. Only then coldstart_holdout, exactly once, in a single pass, for the verdict."
+      ],
+      "single_evaluation": "holdout_evaluations must equal 1 in the revised policy",
+      "what_is_published": "for each split, an opaque membership_digest = sha256 over the canonical JSON of the sorted list of per-item opaque keys, plus a component_digest over the sorted component list. Item rows themselves are never published, preserving dataset-manifest.json#privacy.item_level_rows = false"
+    }
+  },
+  "supersedes": {
+    "artifact": "artifacts/recall-map/relevance/coldstart-prereg-v2.json",
+    "licensed_by": [
+      "v2's own step 9 forbids the node that saw those numbers from repairing them in place, and its",
+      "amendment_policy sends any change of a direction, a member or a decision-procedure step to a NEW",
+      "pre-registration under a new plan_sha256, sealed before the next number is read. This file is that",
+      "pre-registration. policy.json#coldstart_revision.findings.what_this_node_may_not_do_about_it names",
+      "exactly two admissible outputs: a re-registered family whose directions are measured on the enlarged",
+      "population BEFORE they are registered, or an explicit finding that no direction-stable signal exists.",
+      "This plan takes the first, and registers the second as its rung-3 outcome so that the finding is",
+      "reachable mechanically rather than by argument."
+    ],
+    "plan_sha256": "0af8124b743ee2031d93bd71b35b99df65fe9d7b05068fe7baa836a1f5f24de6",
+    "the_five_protected_numbers_are_not_moved_downward": {
+      "cold_admitted_band_floor": 0.05,
+      "generalization_threshold": 1.5,
+      "minimum_cold_admitted_on_holdout": 40,
+      "minimum_cold_candidates_per_split": 400,
+      "overall_admitted_band_floor": 0.1,
+      "source": "coldstart-prereg-v2.json#amendment_policy clauses 8-12",
+      "statement": "None of these five appears anywhere in this file at a lower value, and the only change to any of them is that two are now evaluated on a strictly smaller row set, which can only make them harder to clear."
+    },
+    "v2_failed_step": {
+      "name": "calibrate_and_check_registered_signs_on_train",
+      "recorded_at": "policy.json#coldstart_revision.halted_at and .failed_steps",
+      "step": 3,
+      "v2_outcome": "negative_result_not_wireable",
+      "what_failed": {
+        "bm25_score": {
+          "clause": "direction_constraint.text (b), the whole tail of coldstart_train",
+          "measured_rank_uniform": 0.004903,
+          "registered_direction": "negative"
+        },
+        "result_score": {
+          "clause": "direction_constraint.text (c), the cold subpopulation of coldstart_train",
+          "measured_rank_uniform": -0.051024,
+          "registered_direction": "positive"
+        }
+      },
+      "why": "a registered sign failed"
+    },
+    "what_is_carried_forward_unchanged_and_why": {
+      "admitted_fraction_bands": "overall [0.10, 0.30] and cold [0.05, 0.25], IDENTICAL to v1 and v2. Not moved, in either direction.",
+      "anti_fiat_guards": "all four -- (a) generalization, (b) family ablation in the same holdout pass, (c) warm non-degradation, (d) admitted-fraction bands -- carried in full.",
+      "binomial_alpha": "0.05, IDENTICAL to v1 and v2, with v1's calibration table unchanged.",
+      "closed_family": "the same four members. No member added, none removed. graph_score stays permanently excluded and may not be re-tested.",
+      "cold_candidate_definition": "matured == 0, a reporting/split-audit/acceptance partition only, never a scorer input.",
+      "cold_subpopulation_clause": "200 cold rows and 40 consumed cold rows, with INDETERMINATE blocking rather than passing.",
+      "derived_fit_floor": "0.10, IDENTICAL to v2, with its derivation 40/400 unchanged.",
+      "generalization_threshold": "holdout_cold_lift >= 1.5, IDENTICAL to v1 and v2. Not moved.",
+      "minimum_cold_admitted_on_holdout": "40, IDENTICAL to v1 and v2. Not moved. It is now counted on the component-capped row set, which is strictly harder, never easier.",
+      "minimum_cold_candidates_per_split": "400, IDENTICAL to v1 and v2. Not moved. The published cap table clears it on every split at every cap in the grid.",
+      "no_cold_branch_and_one_threshold_only": "both carried in full and not weakened.",
+      "scorer_shape": "score = N + F is carried BIT FOR BIT from v2: the same two arms, the same rank calibrations, the same clip, the same averaging of the node-intrinsic block, the same missing-value rule.",
+      "single_holdout_pass": "holdout_evaluations must equal 1, IDENTICAL to v1 and v2."
+    },
+    "what_this_plan_changes": [
+      "1. It makes ESTIMATION component-aware. Every statistic that carries a verdict is computed on a",
+      "   component-capped row set at the registered estimation cap, not on the raw split. That is the",
+      "   whole of the repair: v2's HALT was an estimator artifact, published as such at",
+      "   dataset-manifest.json#coldstart.enlargement.concentration_cost.what_it_cost_the_fit.",
+      "2. It RE-REGISTERS the four directions from that component-aware statistic, measured on",
+      "   coldstart_train and published in this file, by a stated mechanical rule over the whole published",
+      "   arm set rather than by reading one arm.",
+      "3. It moves the BINDING direction test off coldstart_train, which can no longer test anything because",
+      "   the directions came from it, and onto coldstart_eval and secondary_anchor, both unread for this",
+      "   statistic. Step 3 publishes and reproduces the train reading; it does not gate on it.",
+      "4. It adds an effective-component FLOOR per split as a new minimum -- the condition v2 lacked and",
+      "   the condition that would have stopped v2 at step 2 rather than at step 3.",
+      "5. It states an era-exchangeability accounting and a Simpson guard, and shows that the era finding",
+      "   and the independence finding are the same finding on this population.",
+      "6. It discloses that coldstart_eval is no longer virgin, names the exact quantities v2's halted run",
+      "   published on it, and states which of this plan's gates are therefore partially foreknown."
+    ],
+    "what_this_plan_does_not_change": [
+      "The registered signs are, member for member, the SAME four signs v2 registered. That is an outcome",
+      "of the registration rule, not an input to it: the rule was applied to the published arm table and",
+      "returned positive, positive, negative, negative. A reader is entitled to notice that this makes v3's",
+      "composite arithmetically identical to v2's, and the limitations section says so plainly. What v3",
+      "claims is not a new family. It claims that the estimator under which v2's family failed was not",
+      "measuring the population, and that under an estimator that is, the same four signs are what the",
+      "measurement supports."
+    ]
+  },
+  "verdict_rule": {
+    "admitted_fraction_bands": {
+      "applies_to": "coldstart_train, coldstart_eval and coldstart_holdout, each independently",
+      "cold": [
+        0.05,
+        0.25
+      ],
+      "denominator": "candidates eligible after the unchanged ballast filter",
+      "identical_to_v1": true,
+      "overall": [
+        0.1,
+        0.3
+      ],
+      "reference_points_at_registration": {
+        "frozen_policy_admitted_fraction_observed_map_eval": 0.0567,
+        "frozen_policy_admitted_fraction_organic_eval": 0.1564,
+        "frozen_policy_admitted_fraction_organic_train": 0.2046,
+        "live_admitted_fraction": "0.0151 to 0.0189"
+      },
+      "why_a_ceiling_is_required": [
+        "The live selector admits 1.51-1.89% of candidates against a policy calibrated for 20%. A",
+        "revision that 'fixes' that by admitting everything is not a fix -- it is the map turning",
+        "into noise, which the root goal names as the one thing the repair must not do.",
+        "The cold ceiling is the tighter of the two because that is where the flooding risk sits:",
+        "the live residual is predominantly cold, so an unbounded cold admission rate would dominate",
+        "the pool by itself."
+      ],
+      "why_not_relaxed": [
+        "These are the exact bands v1's shape could not satisfy jointly. Relaxing either one would",
+        "convert a shape failure into a bookkeeping victory and would make this file worthless.",
+        "The claim of this plan is falsifiable precisely because the bands did not move: v1 got",
+        "overall 0.754237 at the cold floor and cold 0.030008 at the overall ceiling, and v2 must",
+        "get both inside the band at one threshold or record a second negative result."
+      ]
+    },
+    "companion_conditions": {
+      "binomial_guard": {
+        "alpha": 0.05,
+        "calibration_checked_at_v1_registration": [
+          "Once about 100 cold rows are admitted, lift >= 1.50 is the binding condition at every plausible base rate.",
+          "Below that the binomial binds and demands a proportionally larger effect: at the floor of 40 admitted rows it requires lift 2.50 at a 0.05 base rate, 2.00 at 0.10, 1.83 at 0.15 and 1.62 at 0.20.",
+          "alpha = 0.01 was considered and REJECTED as over-constraining: at a 0.05 base rate it would demand 427 admitted cold holdout rows before lift 1.50 could clear it, which the cold admitted-fraction ceiling could forbid outright."
+        ],
+        "computed_on": "the component-capped holdout estimation set: n = capped admitted cold holdout candidates, p = capped cold holdout base rate, X = capped consumed among them. Integer counts of real rows, so the exact one-sided test is exact. This is the clause that answers \"a binomial p over 12344 rows that are effectively three clusters is not a p-value\": under the floor the holdout carries at least 100 effective components and no component holds more than a tenth of it.",
+        "must_hold": true,
+        "role": "small-sample guard, so the lift cannot be met by luck on a handful of admitted rows",
+        "test": "one-sided exact binomial: P(X >= observed consumed | n = admitted cold holdout candidates, p = cold holdout base rate) <= alpha",
+        "unchanged_from_v1": true
+      },
+      "minimum_cold_admitted_on_holdout": 40,
+      "minimum_cold_admitted_on_holdout_counted_on": "the component-capped holdout estimation set. The number 40 is unchanged; the row set is component-aware, which can only make it harder to clear. The uncapped count is published beside it and is not a substitute.",
+      "minimum_cold_admitted_on_holdout_reason": "the parent contract requires holdout cold admission strictly greater than zero; a bar of one row is decided by luck, so the registered floor is 40 and the strictly-positive requirement is subsumed by it. Unchanged from v1."
+    },
+    "derived_fit_floor": {
+      "checked_against_the_feasibility_model": "the model clears the derived fit floor in 59 of 60 grid cells; the one exception is named at feasibility_argument.step_3_the_frontier_under_a_null_model.result.the_single_infeasible_cell and at limitations.the_corner_where_this_plan_fails",
+      "derivation": "40 / 400 = 0.10, from minimum_cold_admitted_on_holdout = 40 and split_protocol.minimum_cold_candidates_per_split = 400",
+      "headroom_under_the_cap": {
+        "cold_admitted_fraction_needed_for_40_rows": 0.0818,
+        "holdout_capped_cold_candidates": 489,
+        "slack": "the holdout cold admitted fraction may fall to 0.0818 -- about 18 per cent below the train selection target -- and still clear the 40-row minimum. Under v2's uncapped holdout of 710 cold candidates the same slack was about 44 per cent. The cap costs headroom on the single tightest bar in the plan and that is named at limitations.the_cap_costs_holdout_headroom.",
+        "train_selection_target": 0.1
+      },
+      "value": 0.1,
+      "what_it_is": "the cold admitted fraction the THRESHOLD-SELECTION RULE targets on train, so that a holdout sitting exactly at the registered split minimum can still deliver the 40 admitted cold rows the binomial guard needs",
+      "what_it_is_not": "it is NOT a change to the cold verdict band, which stays [0.05, 0.25]. A split that admits 0.06 of its cold rows passes the band. The fit merely aims higher so that the two registered floors are mutually reachable.",
+      "why_v1_needed_this_and_did_not_have_it": [
+        "v1 registered a cold floor of 0.05, a split minimum of 400 and a holdout minimum of 40",
+        "admitted cold rows, and never checked them against each other. 0.05 * 400 = 20, which is",
+        "half of 40. The three numbers were not jointly satisfiable at the registered split minimum",
+        "and nothing in v1 said so.",
+        "This is a small thing next to the shape failure, but it is the same species of error:",
+        "registering constraints without computing whether they can hold at once."
+      ]
+    },
+    "every_quantity_here_is_computed_on_the_capped_estimation_set": "the bands, the derived fit floor, the threshold rule, the lift, the binomial and the 40-row minimum are all evaluated on the component-capped estimation row set at estimation_cap, per component_aware_estimation. Their VALUES are unchanged; the row set they are evaluated on is component-aware. Uncapped and component-equalized readings of each are published beside them and carry no verdict.",
+    "generalization_threshold": 1.5,
+    "generalization_threshold_comparison": ">=",
+    "generalization_threshold_not_moved": "1.5 is v1's number, carried EXACTLY. v1's anchor stands: the frozen policy's own transfer lift on its disjoint organic eval arm is 1.6138, and 1.50 sits just under it. v1's eval measurement of 1.8312 on cold rows is NOT a reason to raise it and NOT a reason to lower it; a threshold that moves after a related number is seen is not a threshold.",
+    "generalization_threshold_quantity": "holdout_cold_lift = (consumed among admitted cold holdout candidates / admitted cold holdout candidates) divided by (consumed cold holdout candidates / cold holdout candidates)",
+    "holdout_cold_admission_must_exceed_zero": true,
+    "negative_result_is_a_legitimate_outcome": [
+      "If no single threshold satisfies the bands, or a registered sign fails on the cold",
+      "subpopulation, or the family fails to beat its own ablation, the correct output is a recorded",
+      "negative result naming which condition failed and by how much.",
+      "v1 produced exactly such a result and it is the reason this plan could be written at all: it",
+      "located the defect in the shape rather than in the signal. A second negative result under a",
+      "shape with a published feasibility argument would be worth as much again, because it would",
+      "refute the argument on the page and say something new about the population.",
+      "What is NOT legitimate is a third pre-registration that finally moves a band, a minimum or the",
+      "generalization threshold. Those numbers have now survived two plans and are load-bearing.",
+      "This plan adds a third shape of legitimate negative result to the two v1 and v2 produced: direction_constraint",
+      ".registration_rule rung 3, the explicit finding that no direction-stable signal exists for a member. It did",
+      "not fire at registration -- all four members registered at rung 1 or rung 2 -- but it is written into the",
+      "rule so that the finding is reachable mechanically by any successor that re-measures on a different",
+      "population, rather than requiring a node to argue for it."
+    ],
+    "threshold_rule": {
+      "cold_floor_in_the_selection_rule_is_the_derived_fit_floor": "0.10, unchanged from v2, derived 40/400. The cold VERDICT band stays [0.05, 0.25]; the selection rule merely aims higher so the two registered floors are mutually reachable.",
+      "if_no_such_threshold_exists": "HALT. feasible_threshold_count is 0 and the outcome is a recorded NEGATIVE RESULT. The holdout is not opened. No band is widened, no member added, no branch introduced, no split re-drawn.",
+      "published": "feasible_threshold_count on coldstart_train and on coldstart_eval must both be published in all three arms, whatever the verdict, so the frontier is auditable the way v1's and v2's were.",
+      "reads_no_label": true,
+      "rule": "sweep candidate thresholds over the distinct scores of ALL coldstart_train rows in DESCENDING order and take the FIRST (highest) threshold at which the CAPPED overall admitted fraction on coldstart_train lies in [0.10, 0.30] AND the CAPPED cold admitted fraction on coldstart_train lies in [0.10, 0.25]. Ties in score are resolved by admitting all rows at or above the threshold.",
+      "why_highest": "the highest qualifying threshold is the smallest admission consistent with the registered floors, which is the conservative end of the band and the one that least risks turning the map into noise",
+      "why_the_sweep_set_is_uncapped_while_the_test_is_capped": [
+        "The sweep set is the set of candidate VALUES the threshold may take. Restricting it to capped rows would",
+        "make the threshold's own admissible values depend on the cap draw, for no gain: a threshold between two",
+        "adjacent uncapped scores admits exactly the same capped rows as the nearer capped score.",
+        "The qualifying TEST is capped, because that test is a verdict-carrying admitted fraction."
+      ],
+      "why_this_is_label_free": "both quantities are admitted FRACTIONS -- ratios of counts of rows above a score -- and neither reads a consumption outcome. Coldness is a property of the ledger, not of the label. Combined with rank calibrations that also read no label, NOTHING in this scorer is fitted on labels, which is strictly stronger than v1."
+    }
+  }
+}

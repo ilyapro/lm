@@ -1,0 +1,534 @@
+{
+  "artifact": "recall-map-pool-quality-baseline",
+  "as_of": "2026-08-24T12:43:56Z",
+  "cross_check": {
+    "as_of": "2026-08-24T12:43:56Z",
+    "cited_opened_at": "2026-08-24T12:42:00Z",
+    "cited_reproduces_at": "2026-08-24T12:43:56Z",
+    "compared": {
+      "admitted": {
+        "agrees": true,
+        "cited": 19725,
+        "measured": 19725
+      },
+      "admitted_fraction": {
+        "agrees": true,
+        "cited": 0.0151,
+        "measured": 0.015139
+      },
+      "inspected": {
+        "agrees": true,
+        "cited": 1302945,
+        "measured": 1302945
+      },
+      "maps": {
+        "agrees": true,
+        "cited": 2759,
+        "measured": 2759
+      },
+      "maps_without_clusters": {
+        "agrees": true,
+        "cited": 1274,
+        "measured": 1274
+      },
+      "most_common_label_set_count": {
+        "agrees": true,
+        "cited": 237,
+        "measured": 237
+      },
+      "non_empty_maps": {
+        "agrees": true,
+        "cited": 1485,
+        "measured": 1485
+      },
+      "sel_payloads": {
+        "agrees": true,
+        "cited": 1262,
+        "measured": 1262
+      },
+      "sel_payloads_at_frozen_width": {
+        "agrees": true,
+        "cited": 1262,
+        "measured": 1262
+      },
+      "share_without_clusters": {
+        "agrees": true,
+        "cited": 0.462,
+        "measured": 0.461762
+      }
+    },
+    "drifted": [],
+    "pin_note": "the parent names the instant it opened the store; three more map-bearing events landed while its run was in flight, so its counts are the store as of the later instant. This run is pinned there.",
+    "reproduced": true,
+    "status": "informational, never gating: no threshold in this tool reads it",
+    "why": "the parent node and this tool read one column independently; equal counts mean they read it the same way"
+  },
+  "cutoff": {
+    "as_of": "2026-08-24T12:43:56Z",
+    "as_of_is_mandatory": "the live store grows continuously; an unpinned run is not reproducible and must not be published",
+    "payloads_after_as_of": 89
+  },
+  "db": "~/.local/share/living-memory/global.sqlite3",
+  "generated_at": "2026-08-24T12:59:45Z",
+  "label_salt": "recall-map-pool-quality/live-map-quality-census/r1",
+  "label_salt_note": "recorded on purpose: an 'after' run must hash the same label set to the same digest for the repeat concentrations to be comparable",
+  "load": {
+    "excluded_no_cluster_list": 0,
+    "excluded_not_a_json_object": 0,
+    "excluded_unparseable_json": 0,
+    "rows_with_a_non_null_recall_map": 2759,
+    "sel_accounting_equation_violations": 0,
+    "sel_objects_malformed": 0,
+    "why": "a payload this tool cannot read is a count, never a silent drop; the map population is rows minus the three excluded_* lines"
+  },
+  "notes": [
+    "Three denominators, never mixed: maps (2759), sel-carrying payloads (1262) and non-empty maps (1485). A payload without a sel block inspected an unknown number of candidates, not zero.",
+    "The persisted payload carries no cache key, so this census cannot split the no-cluster share by chat key versus node key; it reports the pooled share and the curtailed/uncurtailed split instead.",
+    "The no-cluster share is not flat in time: 0.461762 over the whole window against 0.662257 over the trailing 24h. Compare like windows, not one against the other.",
+    "Every one of the 1262 sel-carrying payloads is at the frozen width 7: on the wire, neither pool valve was charged on any server that wrote into this store.",
+    "Exclusions are not spread across the reason codes: lr accounts for 1156456 of 1283220."
+  ],
+  "privacy": "aggregates only; every value passes usage_metric.check_privacy. No cluster label, ask_hint, query or node id reaches this artifact.",
+  "read_only": "living_memory.replay.open_readonly (file:...?mode=ro); MemoryStore never instantiated",
+  "sel_epoch": {
+    "first_payload_carrying_sel": "2026-08-23T10:35:27Z",
+    "payloads_at_or_after_without_sel": 0,
+    "payloads_before_that_instant": 1497,
+    "why": "sel was added after the column: this is the mechanical reason the map denominator and the sel denominator are different populations"
+  },
+  "source": "recall_events.recall_map, and no other input",
+  "windows": {
+    "all": {
+      "cluster_presence": {
+        "curtailed": {
+          "maps": 693,
+          "share_of_maps": 0.251178,
+          "why": "a curtailed map carries no clusters by construction; it is a different defect from a map whose pool yielded nothing",
+          "without_clusters": 693
+        },
+        "denominator": "maps",
+        "denominator_note": "persisted recall_map payloads in the window; NOT the sel population",
+        "empty_pool_note": "a map over an empty residual pool had nothing to describe; the rest had members and still delivered none",
+        "empty_with_empty_pool": 25,
+        "empty_with_non_empty_pool": 1249,
+        "maps": 2759,
+        "maps_without_clusters": 1274,
+        "share_without_clusters": 0.461762,
+        "uncurtailed": {
+          "maps": 2066,
+          "share_without_clusters": 0.28122,
+          "without_clusters": 581
+        }
+      },
+      "label_set_repeats": {
+        "concentration_hhi": 0.029248,
+        "denominator": "non_empty_maps",
+        "denominator_note": "maps carrying at least one cluster; NOT the map count and NOT the sel population",
+        "digest": {
+          "construction": "sha256(salt + 0x00 + canonical_json)[:16]",
+          "over": "tuple(sorted(cluster labels)), duplicates preserved",
+          "why_digest": "cluster labels are forbidden output under check_privacy; the digest is a grouping key, published with its salt so a later run hashes the same label set to the same value"
+        },
+        "distinct_label_sets": 965,
+        "maps_in_a_repeated_label_set": 609,
+        "most_common": [
+          {
+            "count": 237,
+            "digest": "49349cc2ed8232a0",
+            "share": 0.159596
+          },
+          {
+            "count": 52,
+            "digest": "b25a6d5251552d86",
+            "share": 0.035017
+          },
+          {
+            "count": 46,
+            "digest": "f8fae0709882c3c0",
+            "share": 0.030976
+          },
+          {
+            "count": 39,
+            "digest": "fdea8b5148a5a37b",
+            "share": 0.026263
+          },
+          {
+            "count": 22,
+            "digest": "286bb79eebb67dcf",
+            "share": 0.014815
+          }
+        ],
+        "non_empty_maps": 1485,
+        "repeat_share": 0.410101,
+        "singleton_label_sets": 876,
+        "top1_share": 0.159596,
+        "top5_share": 0.266667
+      },
+      "populations": {
+        "maps": 2759,
+        "non_empty_maps": 1485,
+        "overlap_sel_and_empty_map": 826,
+        "overlap_sel_and_non_empty_map": 436,
+        "sel_payloads": 1262,
+        "why": "three different denominators over one column: sel arrived after the column, so a map without sel is unmeasured, not zero. No ratio in this artifact mixes two of these populations."
+      },
+      "selection_vector_width": {
+        "by_width": {
+          "7": 1262
+        },
+        "denominator": "sel_payloads",
+        "denominator_note": "sel-carrying payloads; NOT the map count",
+        "frozen_width": 7,
+        "ledger_width": 9,
+        "payloads_at_frozen_width": 1262,
+        "payloads_with_a_pool_gate_charged": 0,
+        "reason_codes": [
+          "iv",
+          "du",
+          "fc",
+          "ss",
+          "sj",
+          "lr",
+          "pc",
+          "uf",
+          "nf"
+        ],
+        "sel_payloads": 1262,
+        "share_at_frozen_width": 1.0,
+        "why": "the vector is canonically trimmed to the frozen width when no gate fired, so width == frozen_width is the payload's own statement that neither env valve was charged on the server that wrote it"
+      },
+      "selector_admission": {
+        "accounting_holds": true,
+        "admitted": 19725,
+        "admitted_fraction": 0.015139,
+        "denominator": "inspected",
+        "denominator_note": "sum(sel.n) over sel-carrying payloads only; NOT the map count and NOT the number of payloads",
+        "excluded": 1283220,
+        "excluded_by_reason_code": {
+          "du": 0,
+          "fc": 92590,
+          "iv": 0,
+          "lr": 1156456,
+          "nf": 0,
+          "pc": 0,
+          "sj": 0,
+          "ss": 34174,
+          "uf": 0
+        },
+        "inspected": 1302945,
+        "payloads_carrying_reason_code": {
+          "du": 1262,
+          "fc": 1262,
+          "iv": 1262,
+          "lr": 1262,
+          "nf": 0,
+          "pc": 1262,
+          "sj": 1262,
+          "ss": 1262,
+          "uf": 0
+        },
+        "payloads_without_sel": 1497,
+        "reason_code_note": "a code at zero excluded WITH zero payloads carrying it was never on the wire; a code at zero WITH payloads carrying it measured zero",
+        "sel_payloads": 1262,
+        "sel_versions": {
+          "r1": 1262
+        }
+      },
+      "window": {
+        "end_inclusive": "2026-08-24T12:43:56Z",
+        "first_payload": "2026-08-19T21:56:17Z",
+        "label": "all",
+        "last_payload": "2026-08-24T12:43:56Z",
+        "start_exclusive": null
+      }
+    },
+    "trailing_24h": {
+      "cluster_presence": {
+        "curtailed": {
+          "maps": 525,
+          "share_of_maps": 0.462963,
+          "why": "a curtailed map carries no clusters by construction; it is a different defect from a map whose pool yielded nothing",
+          "without_clusters": 525
+        },
+        "denominator": "maps",
+        "denominator_note": "persisted recall_map payloads in the window; NOT the sel population",
+        "empty_pool_note": "a map over an empty residual pool had nothing to describe; the rest had members and still delivered none",
+        "empty_with_empty_pool": 21,
+        "empty_with_non_empty_pool": 730,
+        "maps": 1134,
+        "maps_without_clusters": 751,
+        "share_without_clusters": 0.662257,
+        "uncurtailed": {
+          "maps": 609,
+          "share_without_clusters": 0.3711,
+          "without_clusters": 226
+        }
+      },
+      "label_set_repeats": {
+        "concentration_hhi": 0.395319,
+        "denominator": "non_empty_maps",
+        "denominator_note": "maps carrying at least one cluster; NOT the map count and NOT the sel population",
+        "digest": {
+          "construction": "sha256(salt + 0x00 + canonical_json)[:16]",
+          "over": "tuple(sorted(cluster labels)), duplicates preserved",
+          "why_digest": "cluster labels are forbidden output under check_privacy; the digest is a grouping key, published with its salt so a later run hashes the same label set to the same value"
+        },
+        "distinct_label_sets": 28,
+        "maps_in_a_repeated_label_set": 368,
+        "most_common": [
+          {
+            "count": 234,
+            "digest": "49349cc2ed8232a0",
+            "share": 0.610966
+          },
+          {
+            "count": 39,
+            "digest": "fdea8b5148a5a37b",
+            "share": 0.101828
+          },
+          {
+            "count": 26,
+            "digest": "b25a6d5251552d86",
+            "share": 0.067885
+          },
+          {
+            "count": 22,
+            "digest": "286bb79eebb67dcf",
+            "share": 0.057441
+          },
+          {
+            "count": 21,
+            "digest": "f8fae0709882c3c0",
+            "share": 0.05483
+          }
+        ],
+        "non_empty_maps": 383,
+        "repeat_share": 0.960836,
+        "singleton_label_sets": 15,
+        "top1_share": 0.610966,
+        "top5_share": 0.89295
+      },
+      "populations": {
+        "maps": 1134,
+        "non_empty_maps": 383,
+        "overlap_sel_and_empty_map": 751,
+        "overlap_sel_and_non_empty_map": 383,
+        "sel_payloads": 1134,
+        "why": "three different denominators over one column: sel arrived after the column, so a map without sel is unmeasured, not zero. No ratio in this artifact mixes two of these populations."
+      },
+      "selection_vector_width": {
+        "by_width": {
+          "7": 1134
+        },
+        "denominator": "sel_payloads",
+        "denominator_note": "sel-carrying payloads; NOT the map count",
+        "frozen_width": 7,
+        "ledger_width": 9,
+        "payloads_at_frozen_width": 1134,
+        "payloads_with_a_pool_gate_charged": 0,
+        "reason_codes": [
+          "iv",
+          "du",
+          "fc",
+          "ss",
+          "sj",
+          "lr",
+          "pc",
+          "uf",
+          "nf"
+        ],
+        "sel_payloads": 1134,
+        "share_at_frozen_width": 1.0,
+        "why": "the vector is canonically trimmed to the frozen width when no gate fired, so width == frozen_width is the payload's own statement that neither env valve was charged on the server that wrote it"
+      },
+      "selector_admission": {
+        "accounting_holds": true,
+        "admitted": 18611,
+        "admitted_fraction": 0.01571,
+        "denominator": "inspected",
+        "denominator_note": "sum(sel.n) over sel-carrying payloads only; NOT the map count and NOT the number of payloads",
+        "excluded": 1166011,
+        "excluded_by_reason_code": {
+          "du": 0,
+          "fc": 83840,
+          "iv": 0,
+          "lr": 1050135,
+          "nf": 0,
+          "pc": 0,
+          "sj": 0,
+          "ss": 32036,
+          "uf": 0
+        },
+        "inspected": 1184622,
+        "payloads_carrying_reason_code": {
+          "du": 1134,
+          "fc": 1134,
+          "iv": 1134,
+          "lr": 1134,
+          "nf": 0,
+          "pc": 1134,
+          "sj": 1134,
+          "ss": 1134,
+          "uf": 0
+        },
+        "payloads_without_sel": 0,
+        "reason_code_note": "a code at zero excluded WITH zero payloads carrying it was never on the wire; a code at zero WITH payloads carrying it measured zero",
+        "sel_payloads": 1134,
+        "sel_versions": {
+          "r1": 1134
+        }
+      },
+      "window": {
+        "end_inclusive": "2026-08-24T12:43:56Z",
+        "first_payload": "2026-08-23T12:55:07Z",
+        "label": "trailing_24h",
+        "last_payload": "2026-08-24T12:43:56Z",
+        "start_exclusive": "2026-08-23T12:43:56Z"
+      }
+    },
+    "trailing_72h": {
+      "cluster_presence": {
+        "curtailed": {
+          "maps": 630,
+          "share_of_maps": 0.336538,
+          "why": "a curtailed map carries no clusters by construction; it is a different defect from a map whose pool yielded nothing",
+          "without_clusters": 630
+        },
+        "denominator": "maps",
+        "denominator_note": "persisted recall_map payloads in the window; NOT the sel population",
+        "empty_pool_note": "a map over an empty residual pool had nothing to describe; the rest had members and still delivered none",
+        "empty_with_empty_pool": 25,
+        "empty_with_non_empty_pool": 970,
+        "maps": 1872,
+        "maps_without_clusters": 995,
+        "share_without_clusters": 0.531517,
+        "uncurtailed": {
+          "maps": 1242,
+          "share_without_clusters": 0.293881,
+          "without_clusters": 365
+        }
+      },
+      "label_set_repeats": {
+        "concentration_hhi": 0.082794,
+        "denominator": "non_empty_maps",
+        "denominator_note": "maps carrying at least one cluster; NOT the map count and NOT the sel population",
+        "digest": {
+          "construction": "sha256(salt + 0x00 + canonical_json)[:16]",
+          "over": "tuple(sorted(cluster labels)), duplicates preserved",
+          "why_digest": "cluster labels are forbidden output under check_privacy; the digest is a grouping key, published with its salt so a later run hashes the same label set to the same value"
+        },
+        "distinct_label_sets": 430,
+        "maps_in_a_repeated_label_set": 484,
+        "most_common": [
+          {
+            "count": 237,
+            "digest": "49349cc2ed8232a0",
+            "share": 0.270239
+          },
+          {
+            "count": 52,
+            "digest": "b25a6d5251552d86",
+            "share": 0.059293
+          },
+          {
+            "count": 46,
+            "digest": "f8fae0709882c3c0",
+            "share": 0.052452
+          },
+          {
+            "count": 39,
+            "digest": "fdea8b5148a5a37b",
+            "share": 0.04447
+          },
+          {
+            "count": 22,
+            "digest": "286bb79eebb67dcf",
+            "share": 0.025086
+          }
+        ],
+        "non_empty_maps": 877,
+        "repeat_share": 0.551881,
+        "singleton_label_sets": 393,
+        "top1_share": 0.270239,
+        "top5_share": 0.451539
+      },
+      "populations": {
+        "maps": 1872,
+        "non_empty_maps": 877,
+        "overlap_sel_and_empty_map": 826,
+        "overlap_sel_and_non_empty_map": 436,
+        "sel_payloads": 1262,
+        "why": "three different denominators over one column: sel arrived after the column, so a map without sel is unmeasured, not zero. No ratio in this artifact mixes two of these populations."
+      },
+      "selection_vector_width": {
+        "by_width": {
+          "7": 1262
+        },
+        "denominator": "sel_payloads",
+        "denominator_note": "sel-carrying payloads; NOT the map count",
+        "frozen_width": 7,
+        "ledger_width": 9,
+        "payloads_at_frozen_width": 1262,
+        "payloads_with_a_pool_gate_charged": 0,
+        "reason_codes": [
+          "iv",
+          "du",
+          "fc",
+          "ss",
+          "sj",
+          "lr",
+          "pc",
+          "uf",
+          "nf"
+        ],
+        "sel_payloads": 1262,
+        "share_at_frozen_width": 1.0,
+        "why": "the vector is canonically trimmed to the frozen width when no gate fired, so width == frozen_width is the payload's own statement that neither env valve was charged on the server that wrote it"
+      },
+      "selector_admission": {
+        "accounting_holds": true,
+        "admitted": 19725,
+        "admitted_fraction": 0.015139,
+        "denominator": "inspected",
+        "denominator_note": "sum(sel.n) over sel-carrying payloads only; NOT the map count and NOT the number of payloads",
+        "excluded": 1283220,
+        "excluded_by_reason_code": {
+          "du": 0,
+          "fc": 92590,
+          "iv": 0,
+          "lr": 1156456,
+          "nf": 0,
+          "pc": 0,
+          "sj": 0,
+          "ss": 34174,
+          "uf": 0
+        },
+        "inspected": 1302945,
+        "payloads_carrying_reason_code": {
+          "du": 1262,
+          "fc": 1262,
+          "iv": 1262,
+          "lr": 1262,
+          "nf": 0,
+          "pc": 1262,
+          "sj": 1262,
+          "ss": 1262,
+          "uf": 0
+        },
+        "payloads_without_sel": 610,
+        "reason_code_note": "a code at zero excluded WITH zero payloads carrying it was never on the wire; a code at zero WITH payloads carrying it measured zero",
+        "sel_payloads": 1262,
+        "sel_versions": {
+          "r1": 1262
+        }
+      },
+      "window": {
+        "end_inclusive": "2026-08-24T12:43:56Z",
+        "first_payload": "2026-08-21T14:35:19Z",
+        "label": "trailing_72h",
+        "last_payload": "2026-08-24T12:43:56Z",
+        "start_exclusive": "2026-08-21T12:43:56Z"
+      }
+    }
+  }
+}

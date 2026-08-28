@@ -1,0 +1,143 @@
+{
+  "O1_valves_off_reproduction": {
+    "candidates_raw_count": {
+      "gate_decision_census": 339707,
+      "gate_decision_own_falsify_off_arm": 339704,
+      "replayed": 339721,
+      "why_not_exact": "raw candidate counts are set-order sensitive across processes (PYTHONHASHSEED); the gate-decision node's own committed artifacts disagree with themselves on this count while every selection-level aggregate reproduces exactly. Recorded, not substituted, per the amendment policy's unevaluable-condition practice."
+    },
+    "exact_matches": {
+      "admitted": {
+        "gate_decision": 5069,
+        "replayed": 5069
+      },
+      "covered": {
+        "gate_decision": 1056,
+        "replayed": 1056
+      },
+      "maps_built": {
+        "gate_decision": 498,
+        "replayed": 498
+      },
+      "maps_with_clusters": {
+        "gate_decision": 195,
+        "replayed": 195
+      }
+    },
+    "passes": true
+  },
+  "O2_armed_map_coverage_delta": {
+    "covered_holds": true,
+    "covered_off": 1056,
+    "covered_on": 2028,
+    "delta": 292,
+    "floor": 50,
+    "maps_with_clusters_off": 195,
+    "maps_with_clusters_on": 487,
+    "passes": true
+  },
+  "O3_cold_admitted_fraction_band": {
+    "band": [
+      0.15,
+      1.0
+    ],
+    "cold_clusters_delivered": 972,
+    "cold_examined_total": 151208,
+    "denominator": 996,
+    "hard_invariants_violations": {
+      "cold_clusters_at_index_ge_6": 0,
+      "cold_clusters_on_curtailed_keys": 0,
+      "cold_deliveries_of_ledgered_nodes": 0,
+      "maps_with_more_than_slots_cold_clusters": 0
+    },
+    "maps_with_cold": 487,
+    "passes": true,
+    "utilization": 0.975904
+  },
+  "all_preconditions_pass": true,
+  "arm_totals": {
+    "armed": {
+      "admitted": 5069,
+      "candidates": 339721,
+      "cold_clusters_delivered": 972,
+      "cold_examined": 151208,
+      "covered": 2028,
+      "curtailed_maps": 9,
+      "empty_maps": 11,
+      "maps_built": 498,
+      "maps_with_clusters": 487,
+      "maps_with_cold": 487,
+      "queries": 500,
+      "queries_with_residual": 498,
+      "residual_rows": 352058
+    },
+    "base_off": {
+      "admitted": 5069,
+      "candidates": 339721,
+      "cold_clusters_delivered": 0,
+      "cold_examined": 0,
+      "covered": 1056,
+      "curtailed_maps": 9,
+      "empty_maps": 303,
+      "maps_built": 498,
+      "maps_with_clusters": 195,
+      "maps_with_cold": 0,
+      "queries": 500,
+      "queries_with_residual": 498,
+      "residual_rows": 352058
+    },
+    "off": {
+      "admitted": 5069,
+      "candidates": 339721,
+      "cold_clusters_delivered": 0,
+      "cold_examined": 0,
+      "covered": 1056,
+      "curtailed_maps": 9,
+      "empty_maps": 303,
+      "maps_built": 498,
+      "maps_with_clusters": 195,
+      "maps_with_cold": 0,
+      "queries": 500,
+      "queries_with_residual": 498,
+      "residual_rows": 352058
+    }
+  },
+  "armed": true,
+  "artifact": "cold-quota lane offline replay (O1/O2/O3 preconditions)",
+  "harness": {
+    "as_of": "2026-08-24T13:00:00Z",
+    "base_off_pythonpath_note": "the pre-lane arm is this same script executed with PYTHONPATH pointing at the pre-lane revision's src tree",
+    "max_results": 5,
+    "pythonhashseed": "0",
+    "seed": 20260824,
+    "snapshot_manifest": {
+      "captured_at": "2026-08-24T13:00:00Z",
+      "harness_version": 2,
+      "recall_events_created_at": {
+        "max": "2026-08-24T12:58:01Z",
+        "min": "2026-05-14T20:05:23Z"
+      },
+      "row_counts": {
+        "active_nodes": 13447,
+        "connections": 152881,
+        "nodes": 17474,
+        "recall_events": 57781
+      },
+      "snapshot_bytes": 662380544,
+      "snapshot_path": "/tmp/pool-census/snap.sqlite3",
+      "snapshot_sha256": "c70875d930077f61de74862e2ea44692e2f390f5f9c4cd393b6b7b9ddf9303aa",
+      "source_bytes": 662212608,
+      "source_path": "/home/sfx/.local/share/living-memory/global.sqlite3"
+    },
+    "tool": "scripts/recall_map_cold_lane_replay.py"
+  },
+  "i1_mismatched_queries": [],
+  "i2_armed_warm_untouched": {
+    "failures": [],
+    "holds": true
+  },
+  "node": "recall-map-pool-quality/cold-quota-lane-build",
+  "prereg": "artifacts/recall-map/pool-quality/cold-quota-prereg.json",
+  "slots": 2,
+  "valves_off_byte_identical": true
+}

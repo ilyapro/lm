@@ -9,8 +9,10 @@ access logging, and the recorded recall event.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import importlib.util
+import inspect
 import json
 import random
 import sys
@@ -31,12 +33,16 @@ from living_memory.recall_map import (
     POOL_USEFULNESS_GATE_ENV,
     RELEVANCE_FEATURE_MEANS,
     RELEVANCE_FEATURE_SCALES,
+    RELEVANCE_POLICY_DIGEST,
+    RELEVANCE_POLICY_ID,
     RELEVANCE_THRESHOLD,
     SELECTION_LEDGER_REASON_CODES,
     SELECTION_REASON_CODES,
     SELECTION_SAMPLE_GIST_CHARS,
     RecallMapBuilder,
     _ballast_reason,
+    _CANDIDATE_SCORE_FIELDS,
+    _candidate_scores,
     _directional_zsum,
     _relevance_features,
     relevance_score,
@@ -425,6 +431,160 @@ def test_no_history_is_zero_but_unavailable_history_uses_train_means() -> None:
     assert _directional_zsum(boundary) >= RELEVANCE_THRESHOLD
 
 
+class _HostileResult:
+    """A residual entry whose last score field refuses to be read."""
+
+    node = None
+    score = 1.0
+    bm25_score = 0.0
+    vector_score = 0.0
+    graph_score = 0.0
+
+    @property
+    def trigger_score(self) -> float:
+        raise ValueError("candidate evidence is unreadable")
+
+
+def test_threaded_candidate_evidence_cannot_move_a_frozen_policy_score() -> None:
+    """The third argument is carried and spent by nothing.
+
+    ``directional-zsum-r1`` is five features wide — one level term and four
+    matured-history terms — and none of them reads a ``RecallResult``. So the
+    plumbing must be arithmetically inert, and inert here means the identical
+    float rather than an equal-looking one: the comparison is on ``float.hex``,
+    which separates ``0.0`` from ``-0.0`` and admits no tolerance.
+    """
+
+    rng = random.Random(0xC01D57A2)
+    stub = SimpleNamespace(level="trace")
+    evidence: list[object] = [
+        None,
+        RecallResult(node=stub, score=0.0),
+        RecallResult(node=stub, score=-0.0, bm25_score=-0.0),
+        RecallResult(node=stub, score=1.0, bm25_score=0.4, vector_score=0.3),
+        RecallResult(
+            node=stub,
+            score=1e308,
+            bm25_score=-1e308,
+            vector_score=1.0,
+            graph_score=0.5,
+            trigger_score=0.25,
+        ),
+        # Unreadable shapes score exactly like readable ones under the frozen
+        # policy: the fail-closed rule is registered, not yet in force.
+        RecallResult(node=stub, score=float("nan")),
+        RecallResult(node=stub, score=float("inf"), bm25_score=float("-inf")),
+        SimpleNamespace(score=3.0),
+        SimpleNamespace(),
+        _HostileResult(),
+        "not a result at all",
+        object(),
+    ]
+
+    for _index in range(64):
+        node = SimpleNamespace(
+            level=rng.choice(("trace", "concept", "schema", "no-such-level"))
+        )
+        matured = rng.randrange(0, 40)
+        consumed = rng.randrange(0, matured + 1)
+        streak = rng.randrange(0, matured - consumed + 1)
+        for history in (
+            None,
+            MaturedRecallHistory.known(matured, consumed, streak),
+            MaturedRecallHistory.unavailable("history_read_failed"),
+        ):
+            frozen_features = _relevance_features(node, history)
+            frozen = relevance_score(node, history)
+            assert len(frozen_features) == len(RELEVANCE_FEATURE_MEANS) == 5
+            for result in evidence:
+                assert _relevance_features(node, history, result) == frozen_features
+                assert relevance_score(node, history, result).hex() == frozen.hex()
+
+
+def test_candidate_scores_reads_the_declared_fields_and_fails_closed() -> None:
+    """The read helper the cold-start revision will spend, and its closure."""
+
+    stub = SimpleNamespace(level="trace")
+
+    # The field list is retrieval's declaration order, not this module's
+    # opinion of it: ``RecallResult`` declares the composite and its four
+    # components consecutively, and a reordering there must break this test
+    # rather than silently permute a feature vector.
+    declared = [field.name for field in dataclasses.fields(RecallResult)]
+    assert declared[1:6] == list(_CANDIDATE_SCORE_FIELDS)
+    assert _CANDIDATE_SCORE_FIELDS == (
+        "score",
+        "bm25_score",
+        "vector_score",
+        "graph_score",
+        "trigger_score",
+    )
+
+    full = RecallResult(
+        node=stub,
+        score=1.5,
+        bm25_score=0.25,
+        vector_score=-0.5,
+        graph_score=0.0,
+        trigger_score=2.0,
+    )
+    assert _candidate_scores(full) == (1.5, 0.25, -0.5, 0.0, 2.0)
+
+    # A result built the way retrieval builds one for a node nobody has ever
+    # delivered — a composite plus components left at their declared defaults
+    # — is readable. That is why ``cause_a_live_unreadable`` is a guard rather
+    # than an expected path, and why an integral score is not a missing one.
+    assert _candidate_scores(RecallResult(node=stub, score=0.75)) == (
+        0.75,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    )
+    assert _candidate_scores(RecallResult(node=stub, score=0)) == (0.0,) * 5
+
+    def _namespace(**overrides: object) -> SimpleNamespace:
+        fields: dict[str, object] = dict.fromkeys(_CANDIDATE_SCORE_FIELDS, 0.0)
+        fields.update(overrides)
+        return SimpleNamespace(**fields)
+
+    assert _candidate_scores(_namespace(score=2.0)) == (2.0, 0.0, 0.0, 0.0, 0.0)
+
+    partial = _namespace()
+    del partial.trigger_score
+    for unreadable in (
+        None,
+        "0.5",
+        object(),
+        partial,
+        SimpleNamespace(score=1.0),
+        _HostileResult(),
+        _namespace(score=True),
+        _namespace(graph_score=False),
+        _namespace(vector_score="0.0"),
+        _namespace(bm25_score=None),
+        RecallResult(node=stub, score=float("nan")),
+        RecallResult(node=stub, score=float("inf")),
+        RecallResult(node=stub, score=1.0, graph_score=float("-inf")),
+    ):
+        assert _candidate_scores(unreadable) is None
+
+
+def test_policy_constants_bind_the_artifact_they_claim_to() -> None:
+    """Id and digest name one object, so they can only move together."""
+
+    document = json.loads(
+        (ROOT / "artifacts/recall-map/relevance/policy.json").read_text()
+    )
+    selected = document["selected_policy"]
+    canonical = json.dumps(
+        selected, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode()
+
+    assert selected["id"] == RELEVANCE_POLICY_ID
+    assert hashlib.sha256(canonical).hexdigest() == RELEVANCE_POLICY_DIGEST
+
+
 def _node(
     store: MemoryStore,
     node_id: str,
@@ -549,6 +709,79 @@ def test_complete_residual_is_accounted_before_cap_and_history_is_batched(
             for node in [file_chunk, stagnation, journal, low, *high_tail]
             for sample in compact["q"]
         )
+
+
+def test_pool_hands_the_scorer_every_candidate_result_and_moves_no_score(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The residual entry reaches the scorer, and the verdicts do not move.
+
+    A node with no delivery history owns nothing but the scores its
+    ``RecallResult`` carries for this query, and the classification pass is the
+    last place they exist.  This pins that they arrive — the object itself, for
+    the right node, in ordinal order — while the frozen policy still refuses
+    the cold row on the level term alone.
+    """
+
+    with MemoryStore(tmp_path / "threaded.sqlite3") as store:
+        hot = _node(store, "THREAD-HOT", "THREAD-HOT durable survivor")
+        cold = _node(store, "THREAD-COLD", "never delivered trace")
+        ballast = _node(
+            store, "THREAD-FC", f"[file-chunk] {_machine_header(7)}\nbody"
+        )
+
+        raw: list[object] = [
+            SimpleNamespace(node=None),
+            RecallResult(node=ballast, score=0.99, bm25_score=0.5),
+            RecallResult(node=hot, score=0.98, bm25_score=0.4, vector_score=0.3),
+            RecallResult(node=hot, score=0.97),
+            RecallResult(node=cold, score=0.96, trigger_score=0.9),
+        ]
+
+        def history(candidate_ids, decision_at):
+            return {
+                node_id: (
+                    MaturedRecallHistory.known(0, 0, 0)
+                    if node_id == cold.id
+                    else MaturedRecallHistory.known(100, 50, 50)
+                )
+                for node_id in candidate_ids
+            }
+
+        monkeypatch.setattr(store, "matured_recall_history", history)
+
+        frozen_scorer = recall_map_module.relevance_score
+        scored: list[tuple[str, object]] = []
+
+        def spy(node, node_history, result=None):
+            scored.append((node.id, result))
+            threaded = frozen_scorer(node, node_history, result)
+            assert threaded.hex() == frozen_scorer(node, node_history).hex()
+            return threaded
+
+        monkeypatch.setattr(recall_map_module, "relevance_score", spy)
+        pool, selection = RecallMapBuilder(store)._pool(
+            raw,  # type: ignore[arg-type]
+            decision_at="2026-08-23T12:00:00Z",
+        )
+
+        # Exactly the structurally eligible rows were scored, each carrying its
+        # own residual entry — the object, not a copy of some of its fields.
+        assert [node_id for node_id, _result in scored] == [hot.id, cold.id]
+        assert scored[0][1] is raw[2]
+        assert scored[1][1] is raw[4]
+        assert _candidate_scores(scored[0][1]) == (0.98, 0.4, 0.3, 0.0, 0.0)
+        assert _candidate_scores(scored[1][1]) == (0.96, 0.0, 0.0, 0.0, 0.9)
+
+        # And the frozen policy spends none of it: the cold row still fails on
+        # the level term, and every count is where it was.
+        assert [member.node.id for member in pool] == [hot.id]
+        assert selection.excluded == (1, 1, 1, 0, 0, 1, 0)
+        assert len(selection.excluded) == len(SELECTION_REASON_CODES) == 7
+        assert selection.inspected == selection.admitted + sum(selection.excluded)
+        compact = selection.to_dict()
+        assert len(compact["x"]) == 7
+        assert compact["n"] == compact["e"] + sum(compact["x"])
 
 
 def test_nonempty_all_low_residual_returns_accounted_empty_selection(
@@ -1042,6 +1275,8 @@ def _valves_unset(monkeypatch: pytest.MonkeyPatch) -> None:
         POOL_USEFULNESS_FLOOR_ENV,
         POOL_DEMOTION_GATE_ENV,
         POOL_DEMOTION_WINDOWS_ENV,
+        recall_map_module.POOL_COLD_QUOTA_GATE_ENV,
+        recall_map_module.POOL_COLD_SLOTS_ENV,
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -1068,7 +1303,11 @@ def test_both_valves_unset_is_byte_identical_to_the_pre_gate_build() -> None:
 
 def test_the_frozen_wire_prefix_is_untouched_and_the_gate_codes_append() -> None:
     assert SELECTION_REASON_CODES == ("iv", "du", "fc", "ss", "sj", "lr", "pc")
-    assert POOL_GATE_REASON_CODES == ("uf", "nf")
+    # A *prefix*, not an equality: append-only means a third gate code is a
+    # legal change and must not redden the guard that states the rule. What
+    # may never move is where ``uf`` and ``nf`` already sit -- see
+    # `test_sel_contract_pool_gate_reason_codes_are_append_only`.
+    assert POOL_GATE_REASON_CODES[:2] == ("uf", "nf")
     assert SELECTION_LEDGER_REASON_CODES == (
         *SELECTION_REASON_CODES,
         *POOL_GATE_REASON_CODES,
@@ -1591,3 +1830,777 @@ def test_the_exclusion_vector_has_exactly_one_encoding_per_outcome() -> None:
         accounting(inspected=1, admitted=1, excluded=(0,) * 6)
     with pytest.raises(ValueError, match="wrong width"):
         accounting(inspected=2, admitted=1, excluded=(0,) * 9 + (1,))
+
+
+# ----------------------------------------------------------------------
+# The frozen `sel` wire contract, guarded against the cold-start revision
+# ----------------------------------------------------------------------
+#
+# Everything above pins today's *behaviour*: which rows the gates take, which
+# floats the scorer returns, which bytes an unarmed build emits. These pin the
+# *contract* those behaviours are allowed to move inside. They are deliberately
+# arithmetic-free and store-free, so a cold-start revision that rewrites every
+# score in this module still has to walk past them, and so a failure here reads
+# as "the wire contract moved" rather than as one more red assertion in a file
+# full of them.
+#
+# The contract has three clauses and they are not the same clause:
+#   * `SELECTION_REASON_CODES` is positional and frozen -- no reorder, no
+#     insertion anywhere but the end;
+#   * `POOL_GATE_REASON_CODES` is append-only -- its prefix is load-bearing,
+#     its length is not;
+#   * `_SelectionLedger.freeze` trims, so "no gate armed" has exactly one
+#     spelling and it is seven counts wide.
+
+#: Where each frozen code sits, written out rather than derived.
+#:
+#: Deriving these from :data:`SELECTION_REASON_CODES` would make the guard
+#: agree with any reordering by construction. Every historical ``sel.x`` in
+#: ``recall_events`` was written against *this* mapping, so it is the mapping
+#: and not the tuple that is the durable fact: move ``lr`` off index 5 and
+#: every stored vector silently starts meaning something else.
+FROZEN_SEL_CODE_INDEX = {
+    "iv": 0,  # no usable identity
+    "du": 1,  # duplicate identity
+    "fc": 2,  # file-chunk ballast
+    "ss": 3,  # stagnation ballast
+    "sj": 4,  # session-journal ballast
+    "lr": 5,  # below the frozen relevance threshold
+    "pc": 6,  # over the pool cap
+}
+
+
+def test_sel_contract_selection_reason_codes_never_move_from_their_positions() -> None:
+    """A reorder or a mid-tuple insertion re-means every historical `sel.q`.
+
+    Both persistence and the evaluator read ``x`` positionally, so this tuple
+    is an index assignment that happens to be spelled as a sequence. Comparing
+    the whole code-to-index mapping (rather than just the tuple) is what makes
+    the failure name the code that moved and the index it moved to.
+    """
+
+    assert SELECTION_REASON_CODES == ("iv", "du", "fc", "ss", "sj", "lr", "pc")
+    assert {
+        code: index for index, code in enumerate(SELECTION_REASON_CODES)
+    } == FROZEN_SEL_CODE_INDEX
+    # Seven is the width the wire promises, and duplicates would make one code
+    # unreachable by `.index()` while leaving the tuple the right length.
+    assert len(SELECTION_REASON_CODES) == len(set(SELECTION_REASON_CODES)) == 7
+
+
+def test_sel_contract_pool_gate_reason_codes_are_append_only() -> None:
+    """New gate codes may extend the vector; they may never displace one.
+
+    The frozen seven keep their indices because the gate codes start at index
+    seven, and the gate codes keep theirs because a new one goes on the end.
+    This asserts the *prefix* on purpose: a third gate is a legal change and
+    must not be reported here as a contract breach.
+    """
+
+    assert POOL_GATE_REASON_CODES[: len(("uf", "nf"))] == ("uf", "nf")
+    assert POOL_GATE_REASON_CODES.index("uf") == 0
+    assert POOL_GATE_REASON_CODES.index("nf") == 1
+
+    frozen_width = len(SELECTION_REASON_CODES)
+    assert SELECTION_LEDGER_REASON_CODES[:frozen_width] == SELECTION_REASON_CODES
+    assert SELECTION_LEDGER_REASON_CODES[frozen_width:] == POOL_GATE_REASON_CODES
+    # `uf` is at absolute index 7 and `nf` at 8 for the same reason the frozen
+    # seven are where they are: something stored reads them by number.
+    assert SELECTION_LEDGER_REASON_CODES.index("uf") == frozen_width
+    assert SELECTION_LEDGER_REASON_CODES.index("nf") == frozen_width + 1
+    # A gate code that collided with a frozen one would make the combined
+    # vector ambiguous without changing either tuple's length.
+    assert not set(POOL_GATE_REASON_CODES) & set(SELECTION_REASON_CODES)
+    assert len(set(SELECTION_LEDGER_REASON_CODES)) == len(
+        SELECTION_LEDGER_REASON_CODES
+    )
+
+
+def test_sel_contract_an_unarmed_ledger_freezes_to_exactly_seven_counts() -> None:
+    """No frozen-code traffic, however heavy, may widen the vector.
+
+    ``_SelectionLedger.freeze`` builds the vector over every code this module
+    knows and then trims the tail. On a server with neither valve charged the
+    gate slots are always zero, so the trim must always reach the frozen width
+    -- which is what makes "seven counts" the single, checkable signature of an
+    unarmed build.
+    """
+
+    ledger = recall_map_module._SelectionLedger
+
+    # The empty residual: still seven, still all zero.
+    assert ledger(inspected=0).freeze(0).excluded == (0,) * 7
+
+    # An admitted-only residual, which is the common live shape.
+    assert ledger(inspected=3).freeze(3).excluded == (0,) * 7
+
+    # Every frozen code fired at once.
+    loaded = ledger(inspected=7)
+    for ordinal, code in enumerate(SELECTION_REASON_CODES):
+        loaded.exclude(code, ordinal=ordinal)
+    assert loaded.freeze(0).excluded == (1,) * 7
+
+    # And each one alone -- including `pc`, the last frozen slot, whose count
+    # is the one a naive trim would be tempted to treat as the tail.
+    for index, code in enumerate(SELECTION_REASON_CODES):
+        solo = ledger(inspected=2)
+        solo.exclude(code, ordinal=0)
+        solo.exclude(code, ordinal=1)
+        frozen = solo.freeze(0).excluded
+        assert len(frozen) == 7, code
+        assert frozen[index] == 2, code
+        assert sum(frozen) == 2, code
+
+
+def test_sel_contract_only_an_armed_gate_widens_the_frozen_seven() -> None:
+    """The other half of the trim: a wider vector *states* that a gate fired.
+
+    A reader that finds eight or nine counts has learned something true about
+    the server that emitted them, and that inference is only sound while
+    arming a gate is the sole way to get there. The ``nf``-alone case is the
+    load-bearing one: trimming stops at the last non-zero, so ``uf``'s slot
+    survives as an explicit zero rather than being squeezed out and shifting
+    ``nf`` down onto index 7.
+    """
+
+    ledger = recall_map_module._SelectionLedger
+
+    only_uf = ledger(inspected=1)
+    only_uf.exclude("uf", ordinal=0)
+    assert only_uf.freeze(0).excluded == (0, 0, 0, 0, 0, 0, 0, 1)
+
+    only_nf = ledger(inspected=1)
+    only_nf.exclude("nf", ordinal=0)
+    assert only_nf.freeze(0).excluded == (0, 0, 0, 0, 0, 0, 0, 0, 1)
+
+    both = ledger(inspected=5)
+    both.exclude("fc", ordinal=0)
+    both.exclude("uf", ordinal=1)
+    both.exclude("uf", ordinal=2)
+    both.exclude("nf", ordinal=3)
+    frozen = both.freeze(1).excluded
+    assert frozen == (0, 0, 1, 0, 0, 0, 0, 2, 1)
+    # The frozen prefix is untouched by the extension -- a reader that knows
+    # only the seven keeps reading them at the same indices.
+    assert frozen[: len(SELECTION_REASON_CODES)] == (0, 0, 1, 0, 0, 0, 0)
+    assert frozen[len(SELECTION_REASON_CODES) :] == (2, 1)
+
+    # Whatever the width, the accounting equation still closes over it.
+    for accounting in (
+        only_uf.freeze(0),
+        only_nf.freeze(0),
+        both.freeze(1),
+    ):
+        assert accounting.inspected == accounting.admitted + sum(accounting.excluded)
+
+
+def test_coldstart_contract_relevance_score_accepts_the_candidate_result() -> None:
+    """The plumbing seam a cold-start scorer needs, pinned as a signature.
+
+    ``_pool`` is the last place a candidate's own query-time evidence exists,
+    and it hands that evidence over as a third positional argument. Narrowing
+    it -- to keyword-only, to required, or away entirely -- would not fail any
+    arithmetic test in this file, because the frozen policy spends none of it;
+    it would fail the next revision, silently and much later.
+    """
+
+    parameters = list(inspect.signature(relevance_score).parameters.values())
+
+    assert [parameter.name for parameter in parameters] == [
+        "node",
+        "history",
+        "result",
+    ]
+    assert all(
+        parameter.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        for parameter in parameters
+    )
+    # Optional, so every historical two-argument call site stays legal, and the
+    # frozen policy stays callable without a residual entry at all.
+    assert parameters[0].default is inspect.Parameter.empty
+    assert parameters[1].default is inspect.Parameter.empty
+    assert parameters[2].default is None
+
+    # Supplying it and omitting it are the same call under the frozen policy,
+    # bit for bit -- `float.hex` rather than `==`, which would call `0.0` and
+    # `-0.0` equal.
+    node = SimpleNamespace(level="schema")
+    history = MaturedRecallHistory.known(0, 0, 0)
+    result = RecallResult(node=node, score=0.96, trigger_score=0.9)
+    assert RELEVANCE_POLICY_ID == "directional-zsum-r1"
+    assert relevance_score(node, history, result).hex() == relevance_score(
+        node, history
+    ).hex()
+    assert relevance_score(node, history, result=result).hex() == relevance_score(
+        node, history
+    ).hex()
+
+
+# -- the cold exploration lane (cold-quota-prereg.json, plan cold-quota-r1) --
+
+
+COLD_GATE_ENV = recall_map_module.POOL_COLD_QUOTA_GATE_ENV
+COLD_SLOTS_ENV = recall_map_module.POOL_COLD_SLOTS_ENV
+COLD_INSTANT = "2026-08-24T13:00:00Z"
+
+#: A minimal table in the registered form: two knots whose u-step stays inside
+#: RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR, so `_calibration_table`
+#: accepts it without atoms. The tiny u-range costs the tests nothing — the
+#: composite only ever orders candidates, and interpolation over [0, 0.001]
+#: preserves the order of raw values inside [0, 1].
+_TINY_TABLE = {"knots": [[0.0, 0.0], [1.0, 0.001]]}
+_TEST_COLD_TABLES = {
+    "result_score": _TINY_TABLE,
+    "trigger_score": _TINY_TABLE,
+    "bm25_score": _TINY_TABLE,
+    "vector_score": _TINY_TABLE,
+}
+
+
+def _arm_cold(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    slots: str = "2",
+    tables: dict | None = _TEST_COLD_TABLES,
+) -> None:
+    monkeypatch.setenv(COLD_GATE_ENV, "1")
+    monkeypatch.setenv(COLD_SLOTS_ENV, slots)
+    if tables is not None:
+        monkeypatch.setattr(recall_map_module, "COLD_RANKING_CALIBRATION", tables)
+
+
+def _cold_history(warm_ids: set[str]):
+    """Warm ids ride a consumed history over the threshold; the rest are
+    genuine zero-history rows — available, M=C=K=0 — exactly what a virgin
+    node reads as on the matured aggregate."""
+
+    def read(node_ids, _decision_at):
+        return {
+            node_id: (
+                MaturedRecallHistory.known(
+                    100, 100, 0, lookup_consumed=8, lookup_known=8
+                )
+                if node_id in warm_ids
+                else MaturedRecallHistory.known(0, 0, 0)
+            )
+            for node_id in node_ids
+        }
+
+    return read
+
+
+def _cold_scenario(store: MemoryStore, *, warm: int = 1, cold: int = 3):
+    """``warm`` admitted members plus ``cold`` low-relevance rows with
+    distinct, deliverable-label content. Returns (results, warm_ids)."""
+
+    # The label gate measures information content against the corpus; a
+    # corpus of three documents makes every label read as generic. Same
+    # filler the pre-gate golden fixture seeds, for the same reason.
+    for index in range(GATE_CORPUS_DOCUMENTS):
+        store.create_node(
+            level="trace",
+            content=f"quarterly ledger reconciliation entry {index}",
+            context={"scope": POOL_SCOPE},
+        )
+    nodes: list[Node] = []
+    for index in range(warm):
+        nodes.append(
+            _node(
+                store,
+                f"WARMROW{index}",
+                f"migration rollback drill step {index} restored the column",
+                context={"procedure_id": "migration_rollback_drill"},
+            )
+        )
+    contents = [
+        "vector index rebuild playbook for the chunk store",
+        "postsession extraction quota ledger accounting rule",
+        "anchor seeding calibration sweep procedure notes",
+        "drain valve cosine threshold measurement recipe",
+    ]
+    for index in range(cold):
+        nodes.append(
+            _node(store, f"COLDROW{index}", contents[index % len(contents)])
+        )
+    warm_ids = {node.id for node in nodes if node.id.startswith("WARMROW")}
+    store.matured_recall_history = _cold_history(warm_ids)  # type: ignore[method-assign]
+    results = [
+        RecallResult(
+            node=node,
+            score=1.0 - index * 0.1,
+            bm25_score=0.1,
+            vector_score=0.2,
+            trigger_score=0.0,
+        )
+        for index, node in enumerate(nodes)
+    ]
+    return results, warm_ids
+
+
+def _build_cold(store: MemoryStore, results, **kwargs):
+    builder = RecallMapBuilder(store)
+    built = builder.build(
+        results,
+        scope=POOL_SCOPE,
+        task="cold-lane",
+        decision_at=COLD_INSTANT,
+        **kwargs,
+    )
+    assert built is not None
+    return builder, built
+
+
+def _cold_clusters(payload: dict) -> list[tuple[int, dict]]:
+    return [
+        (index, cluster)
+        for index, cluster in enumerate(payload.get("clusters") or [])
+        if cluster.get("cold") == 1
+    ]
+
+
+@pytest.mark.parametrize(
+    ("gate", "slots", "expected"),
+    [
+        (None, None, None),
+        ("1", "2", 2),
+        ("1", "1", 1),
+        ("true", "2", 2),
+        ("on", " 2 ", 2),
+        ("1", "0", None),
+        ("1", "3", None),
+        ("1", "-1", None),
+        ("1", "2.5", None),
+        ("1", "x", None),
+        ("1", "", None),
+        ("1", None, None),
+        ("0", "2", None),
+        (None, "2", None),
+    ],
+)
+def test_cold_valve_pair_parses_the_registered_domain(
+    monkeypatch: pytest.MonkeyPatch, gate, slots, expected
+) -> None:
+    """The paired-inertness rule: gate on AND an integer in 1..2, else inert."""
+
+    if gate is not None:
+        monkeypatch.setenv(COLD_GATE_ENV, gate)
+    if slots is not None:
+        monkeypatch.setenv(COLD_SLOTS_ENV, slots)
+    assert recall_map_module.pool_cold_slots_from_env() == expected
+
+
+def test_i1_valves_off_and_every_broken_pair_spelling_are_byte_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Absence of the lane is encoded exactly one way.
+
+    The pre-lane golden above (`test_both_valves_unset_is_byte_identical_to_
+    the_pre_gate_build`) proves the unset build against the pre-gate bytes;
+    this proves every inert *misconfiguration* — gate with no number, number
+    with no gate, out-of-domain numbers — collapses onto those same bytes,
+    with no ``c`` key and no ``cold`` marker anywhere.
+    """
+
+    with MemoryStore(tmp_path / "cold-i1.sqlite3") as store:
+        results, _warm = _cold_scenario(store)
+        _builder, reference = _build_cold(store, results)
+        reference_bytes = json.dumps(reference.to_dict(), sort_keys=True)
+        assert reference.cold is None
+        assert "c" not in reference.to_dict()["sel"]
+        for gate, slots in (
+            ("1", None),
+            (None, "2"),
+            ("1", "0"),
+            ("1", "3"),
+            ("1", "x"),
+            ("0", "2"),
+        ):
+            monkeypatch.delenv(COLD_GATE_ENV, raising=False)
+            monkeypatch.delenv(COLD_SLOTS_ENV, raising=False)
+            if gate is not None:
+                monkeypatch.setenv(COLD_GATE_ENV, gate)
+            if slots is not None:
+                monkeypatch.setenv(COLD_SLOTS_ENV, slots)
+            _builder, built = _build_cold(store, results)
+            assert json.dumps(built.to_dict(), sort_keys=True) == reference_bytes
+
+
+def test_i2_armed_leaves_warm_bytes_untouched_and_adds_only_c_and_cold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second registered invariance proof, on identical input.
+
+    sel's n, e, x, o and q are byte-identical to the valves-off run; the warm
+    cluster list is byte-identical; the only additions are the ``c`` key and
+    the appended marked cold clusters.
+    """
+
+    with MemoryStore(tmp_path / "cold-i2.sqlite3") as store:
+        results, _warm = _cold_scenario(store)
+        _builder, off = _build_cold(store, results)
+        off_payload = off.to_dict()
+
+        _arm_cold(monkeypatch)
+        _builder, on = _build_cold(store, results)
+        on_payload = on.to_dict()
+
+        on_sel = dict(on_payload["sel"])
+        c = on_sel.pop("c")
+        assert json.dumps(on_sel, sort_keys=True) == json.dumps(
+            off_payload["sel"], sort_keys=True
+        )
+        warm_prefix = on_payload["clusters"][: len(off_payload["clusters"])]
+        assert json.dumps(warm_prefix, sort_keys=True) == json.dumps(
+            off_payload["clusters"], sort_keys=True
+        )
+        appended = on_payload["clusters"][len(off_payload["clusters"]) :]
+        assert appended and all(entry.get("cold") == 1 for entry in appended)
+        assert c == [3, 2]
+        assert len(appended) == 2
+        assert on_payload["covered"] == off_payload["covered"] + 2
+        assert on.cold == (3, 2)
+
+
+def test_e3_a_pending_window_disqualifies_where_the_matured_aggregate_cannot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The registered why: matured_recall_history cannot express "never
+    delivered" — a node delivered an hour ago has matured == 0 and reads
+    exactly like a virgin node — so the lane tests row existence, and a node
+    with only a pending window is NOT cold-eligible."""
+
+    with MemoryStore(tmp_path / "cold-e3.sqlite3") as store:
+        results, _warm = _cold_scenario(store, cold=2)
+        pending = "COLDROW0"
+        connection = store.connection
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute(
+            "INSERT INTO recall_delivery_history "
+            "(delivery_event_id, node_id, delivered_at, outcome_end, scope, task) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("EVTPENDING1", pending, "2026-08-24T12:30:00Z", "2026-08-25T12:30:00Z", "global", None),
+        )
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = ON")
+
+        # The matured aggregate is blind to the pending window at this
+        # decision instant: outcome_end lies past it, so M = 0, same as never.
+        aggregate = store.matured_recall_history.__wrapped__ if hasattr(
+            store.matured_recall_history, "__wrapped__"
+        ) else None
+        del aggregate  # the monkeypatched read below stands in for it
+
+        _arm_cold(monkeypatch)
+        _builder, built = _build_cold(store, results)
+        payload = built.to_dict()
+        delivered_ids = {
+            cluster["medoid"]["node_id"] for _i, cluster in _cold_clusters(payload)
+        }
+        assert pending not in delivered_ids
+        assert delivered_ids == {"COLDROW1"}
+        # g counts E1-E5 survivors: the pending-window row failed E3.
+        assert payload["sel"]["c"] == [1, 1]
+
+
+def test_e3_matured_aggregate_alone_cannot_see_a_pending_window(
+    tmp_path: Path,
+) -> None:
+    """Companion fact, on the real reader: a pending-window node and a virgin
+    node return the same matured aggregate, which is exactly why E3 must test
+    existence rather than maturity."""
+
+    with MemoryStore(tmp_path / "cold-e3b.sqlite3") as store:
+        _node(store, "PENDONE1", "a node with one pending window")
+        _node(store, "VIRGIN01", "a node the ledger never saw")
+        connection = store.connection
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute(
+            "INSERT INTO recall_delivery_history "
+            "(delivery_event_id, node_id, delivered_at, outcome_end, scope, task) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("EVTPENDING2", "PENDONE1", "2026-08-24T12:30:00Z", "2026-08-25T12:30:00Z", "global", None),
+        )
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = ON")
+        histories = store.matured_recall_history(
+            ["PENDONE1", "VIRGIN01"], COLD_INSTANT
+        )
+        assert histories["PENDONE1"].matured == 0 == histories["VIRGIN01"].matured
+        builder = RecallMapBuilder(store)
+        assert builder._cold_undelivered(["PENDONE1", "VIRGIN01"]) == frozenset(
+            {"VIRGIN01"}
+        )
+
+
+def test_e4_an_unavailable_ledger_makes_every_candidate_ineligible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Absence of evidence of coldness is not coldness: the lane only ever
+    adds delivery, so an incomplete ledger resolves to not-delivering."""
+
+    with MemoryStore(tmp_path / "cold-e4.sqlite3") as store:
+        results, _warm = _cold_scenario(store)
+        store.connection.execute(
+            "UPDATE recall_delivery_history_state "
+            "SET complete = 0, unavailable_reason = 'test-outage' "
+            "WHERE singleton = 1"
+        )
+        store.connection.commit()
+        _arm_cold(monkeypatch)
+        _builder, built = _build_cold(store, results)
+        payload = built.to_dict()
+        assert _cold_clusters(payload) == []
+        assert payload["sel"]["c"] == [0, 0]
+
+
+def test_g1_cold_slots_consume_only_free_capacity_and_never_displace_warm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with MemoryStore(tmp_path / "cold-g1.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=2)
+        _arm_cold(monkeypatch)
+        # Warm fills the whole map: zero cold slots, lane armed and idle.
+        builder = RecallMapBuilder(store, max_clusters=1)
+        full = builder.build(
+            results, scope=POOL_SCOPE, task="cold-lane", decision_at=COLD_INSTANT
+        )
+        assert full is not None
+        payload = full.to_dict()
+        assert _cold_clusters(payload) == []
+        assert len(payload["clusters"]) == 1
+        assert payload["sel"]["c"][1] == 0
+
+        # One free slot: exactly one cold cluster even with slots=2 armed.
+        builder = RecallMapBuilder(store, max_clusters=2)
+        partial = builder.build(
+            results, scope=POOL_SCOPE, task="cold-lane", decision_at=COLD_INSTANT
+        )
+        assert partial is not None
+        payload = partial.to_dict()
+        cold = _cold_clusters(payload)
+        assert len(cold) == 1
+        assert len(payload["clusters"]) == 2
+        # Appended past the warm list, never interleaved.
+        assert cold[0][0] == 1
+
+
+def test_g4_near_duplicate_second_slot_skips_to_the_next_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with MemoryStore(tmp_path / "cold-g4.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=0, cold=3)
+        vectors = {
+            "COLDROW0": [1.0, 0.0],
+            "COLDROW1": [1.0, 0.0],  # cosine 1.0 against the first: one finding
+            "COLDROW2": [0.0, 1.0],
+        }
+        monkeypatch.setattr(
+            RecallMapBuilder,
+            "_node_vector",
+            lambda self, node: vectors.get(node.id),
+        )
+        _arm_cold(monkeypatch)
+        _builder, built = _build_cold(store, results)
+        delivered = [
+            cluster["medoid"]["node_id"]
+            for _i, cluster in _cold_clusters(built.to_dict())
+        ]
+        assert delivered == ["COLDROW0", "COLDROW2"]
+
+
+def test_g4_abstains_when_an_embedding_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Absence of a verdict is not a duplicate verdict."""
+
+    with MemoryStore(tmp_path / "cold-g4b.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=0, cold=2)
+        monkeypatch.setattr(
+            RecallMapBuilder, "_node_vector", lambda self, node: None
+        )
+        _arm_cold(monkeypatch)
+        _builder, built = _build_cold(store, results)
+        assert len(_cold_clusters(built.to_dict())) == 2
+
+
+def test_cold_label_gate_refusal_considers_the_next_ranked_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cold cluster the gate refuses is not delivered; the next eligible
+    candidate takes the slot instead."""
+
+    with MemoryStore(tmp_path / "cold-label.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=0, cold=3)
+        # An empty-pool build reaches `_deliverable` only through the cold
+        # lane, so refusing the first label offered refuses exactly the
+        # top-ranked cold candidate — whatever the cascade named it.
+        offered: list[str] = []
+
+        def gate(self, label):
+            offered.append(label)
+            return len(offered) > 1
+
+        monkeypatch.setattr(RecallMapBuilder, "_deliverable", gate)
+        _arm_cold(monkeypatch, slots="1")
+        _builder, built = _build_cold(store, results)
+        delivered = [
+            cluster["medoid"]["node_id"]
+            for _i, cluster in _cold_clusters(built.to_dict())
+        ]
+        assert delivered == ["COLDROW1"]
+
+
+def test_curtailed_key_delivers_no_cold_and_states_it_as_c_zero_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The unread-collapse defense binds cold content exactly as warm."""
+
+    with MemoryStore(tmp_path / "cold-curtail.sqlite3") as store:
+        results, _warm = _cold_scenario(store)
+        monkeypatch.setattr(
+            RecallMapBuilder,
+            "_curtailment",
+            lambda self, scope, task, task_pattern=None, want_ask_follows=False: (
+                recall_map_module._Curtailment(streak=6, offers=6)
+            ),
+        )
+        _arm_cold(monkeypatch)
+        _builder, built = _build_cold(store, results)
+        payload = built.to_dict()
+        assert payload["curtailed"] is True
+        assert payload["clusters"] == []
+        assert payload["sel"]["c"] == [0, 0]
+
+
+def test_empty_pool_map_gains_cold_clusters_with_the_sel_core_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The main O2 mechanism: a residual the frozen threshold empties entirely
+    still carries cold-eligible rows, and the armed lane fills the empty
+    channel without touching the selection accounting."""
+
+    with MemoryStore(tmp_path / "cold-empty.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=0, cold=3)
+        _builder, off = _build_cold(store, results)
+        off_payload = off.to_dict()
+        assert off_payload["clusters"] == [] and off_payload["pool"] == 0
+
+        _arm_cold(monkeypatch)
+        _builder, on = _build_cold(store, results)
+        on_payload = on.to_dict()
+        cold = _cold_clusters(on_payload)
+        assert len(cold) == 2
+        assert on_payload["pool"] == 0
+        assert on_payload["covered"] == 2
+        on_sel = dict(on_payload["sel"])
+        assert on_sel.pop("c") == [3, 2]
+        assert json.dumps(on_sel, sort_keys=True) == json.dumps(
+            off_payload["sel"], sort_keys=True
+        )
+
+
+def test_empty_pool_cold_lane_honors_a_collapsing_curtail_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with MemoryStore(tmp_path / "cold-empty-curtail.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=0, cold=2)
+        monkeypatch.setattr(
+            RecallMapBuilder,
+            "_curtailment",
+            lambda self, scope, task, task_pattern=None, want_ask_follows=False: (
+                recall_map_module._Curtailment(streak=6, offers=6)
+            ),
+        )
+        _arm_cold(monkeypatch)
+        _builder, built = _build_cold(store, results)
+        payload = built.to_dict()
+        assert payload["clusters"] == []
+        assert payload["sel"]["c"] == [0, 0]
+        # The wire stays the valves-off empty map plus the armed marker: the
+        # collapse machinery never issued this build a curtailed verdict on
+        # the wire, and the lane must not invent one.
+        assert "curtailed" not in payload
+
+
+def test_cold_ranking_orders_by_the_registered_composite_then_tiebreaks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """f = u_rs + u_tg + (1 - u_bm) + (1 - u_vs), descending; ties resolve by
+    higher raw result_score, then lower residual ordinal."""
+
+    with MemoryStore(tmp_path / "cold-rank.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=0, cold=3)
+        node_by_id = {result.node.id: result.node for result in results}
+        crafted = [
+            # COLDROW0: strong bm25/vector (penalized), weak otherwise.
+            RecallResult(
+                node=node_by_id["COLDROW0"],
+                score=0.1,
+                bm25_score=1.0,
+                vector_score=1.0,
+                trigger_score=0.0,
+            ),
+            # COLDROW1: the registered winner — high score, zero penalties.
+            RecallResult(
+                node=node_by_id["COLDROW1"],
+                score=0.9,
+                bm25_score=0.0,
+                vector_score=0.0,
+                trigger_score=0.5,
+            ),
+            # COLDROW2: identical members to COLDROW0 -> equal f; higher raw
+            # result_score must win the tie despite the later ordinal.
+            RecallResult(
+                node=node_by_id["COLDROW2"],
+                score=0.2,
+                bm25_score=1.0,
+                vector_score=1.0,
+                trigger_score=0.0,
+            ),
+        ]
+        _arm_cold(monkeypatch)
+        _builder, built = _build_cold(store, crafted)
+        delivered = [
+            cluster["medoid"]["node_id"]
+            for _i, cluster in _cold_clusters(built.to_dict())
+        ]
+        assert delivered == ["COLDROW1", "COLDROW2"]
+
+
+def test_cold_lane_is_inert_without_readable_tables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No table, no ranking, no delivery — never a fabricated number."""
+
+    with MemoryStore(tmp_path / "cold-notables.sqlite3") as store:
+        results, _warm = _cold_scenario(store)
+        _arm_cold(monkeypatch, tables=None)
+        monkeypatch.setattr(recall_map_module, "COLD_RANKING_CALIBRATION", {})
+        _builder, built = _build_cold(store, results)
+        payload = built.to_dict()
+        assert _cold_clusters(payload) == []
+        assert payload["sel"]["c"] == [0, 0]
+
+
+def test_shipped_cold_tables_parse_and_bind_the_params_artifact() -> None:
+    """The committed constant is readable under the merged evaluator and its
+    digests are exactly what cold-quota-params.json published."""
+
+    tables = recall_map_module._cold_ranking_tables()
+    assert tables is not None
+    assert "result_score" in tables
+    artifact_path = (
+        Path(__file__).resolve().parents[1]
+        / "artifacts/recall-map/pool-quality/cold-quota-params.json"
+    )
+    params = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert set(params["members"]) == set(tables)
+    for name, table in tables.items():
+        merged = [
+            [value, u] for value, u in zip(table.values, table.us, strict=True)
+        ]
+        digest = hashlib.sha256(
+            json.dumps(merged, ensure_ascii=False, sort_keys=True, indent=2).encode()
+        ).hexdigest()
+        assert digest == params["members"][name]["sha256_canonical_breakpoints"]
+        assert params["members"][name]["fitted_values"] > 0

@@ -1,0 +1,117 @@
+{
+  "artifact": "artifacts/recall-map/relevance/coldstart-closure.json",
+  "schema_version": 1,
+  "as_of": "2026-08-25",
+  "node": "recall-map-pool-quality/coldstart-salvage-merge",
+  "purpose": "Closure record for the selector-cold-start-recalibration subtree: its branch ended in a pre-registered negative result and was closed, but its committed material (dormant evaluation surface, wire-contract guards, dataset extractor, preregistrations, tests) is the substrate the cold-quota lane builds on. This merge preserves that material in the parent branch while keeping the negative verdict in force.",
+  "merge": {
+    "mode": "fast-forward",
+    "merged_branch": "recall-map-pool-quality--selector-cold-start-recalibration--coldstart-fit-v3",
+    "merged_head": "c1f5fa2ac572464e5df20d6ffbf7083cffa245cc",
+    "base_before_merge": "82003ed82c291b5f1a021eac6f42e3b875ac1e78",
+    "merge_base_check": "82003ed was already an ancestor of c1f5fa2, so the merge is the branch content itself with no conflict resolution and no content authored by this node",
+    "commits_brought_in": 10,
+    "commit_list": [
+      {"sha": "2e9eb35730dbfb89390f2982710ebc9016e4e768", "subject": "Pre-register the cold-start selector design and its acceptance numbers before any fit has seen the data"},
+      {"sha": "1a964c616b42e6f40f124342b66b6bc8da025f56", "subject": "Build the cold-start candidate dataset: read-only extractor scripts/recall_map_coldstart_dataset.py"},
+      {"sha": "7bd5355da17bae2fdc5c066e6785b028a5967465", "subject": "Fit the revised relevance policy on the cold-start train split, verify on eval, evaluate once on the sealed holdout"},
+      {"sha": "b674fd4a954d4ebaa3e93b3acda97d70b58b30e4", "subject": "Thread the RecallResult through _pool to the scorer, changing no score"},
+      {"sha": "c544907e3706d7f5c0027b09350af53d9c412105", "subject": "Re-register the cold-start selector under a new sealed plan whose scorer shape can actually fit"},
+      {"sha": "0531e381a979e6dc01210edcf9b5a5cfaabb6b5f", "subject": "Turn the frozen sel wire contract from a promise into merged executable guards"},
+      {"sha": "8e18158a6f1d45d11658c54e7a7ab73e661db935", "subject": "Land the enlarged cold-start population and publish the independence accounting"},
+      {"sha": "a3e25d3eeb882d3605be7722b15de4914d91cd77", "subject": "Build the dormant rank-calibration evaluation surface in recall_map.py"},
+      {"sha": "741eb5876a923d652062be96f3d65aafe794c659", "subject": "Seal the plan that answers the recorded step-3 HALT, before any number is read under it"},
+      {"sha": "c1f5fa2ac572464e5df20d6ffbf7083cffa245cc", "subject": "Run the sealed v3 procedure and record the pre-registered negative result: guard (c) fails"}
+    ]
+  },
+  "negative_result_preserved": {
+    "recorded_in": "artifacts/recall-map/relevance/policy.json#coldstart_revision",
+    "status": "negative_result_not_wireable",
+    "verdict": "negative_result",
+    "wireable": false,
+    "holdout_evaluations": 0,
+    "sealed_partition_never_opened": true,
+    "halted_at": {
+      "step": 6,
+      "name": "guard_d_bands_on_train_and_eval_and_guard_c_on_eval",
+      "why": "a gate failed"
+    },
+    "failed_guard": "guard_c_warm_non_degradation",
+    "guard_c_numbers": {
+      "cohort": "coldstart_eval, warm rows only",
+      "binding_condition": "revised_warm_precision_at_matched_volume >= frozen_warm_precision",
+      "frozen_warm_precision": 0.641221,
+      "revised_warm_precision_at_matched_volume": 0.60687,
+      "revised_warm_admitted": 389,
+      "K_admitted_by_the_frozen_scorer": 524,
+      "warm_effective_components": 111.94
+    },
+    "sealed_plan": {
+      "path": "artifacts/recall-map/relevance/coldstart-prereg-v3.json",
+      "plan_sha256": "be85f81c0b581741f498632952f012de56a8aedaa475fcdb73006da542a6213b",
+      "seal_verified_before_any_split_was_read": true
+    },
+    "fitted_threshold_never_armed": 0.99040983,
+    "meaning": "The revised scorer would have cost warm-cohort precision at matched admission volume (0.607 vs 0.641), so re-scoring the whole pool with it is refuted. The refutation is the reason the successor lane is a bounded cold QUOTA beside the frozen scorer, not a replacement of it."
+  },
+  "predecessor_attempt_artifacts": {
+    "inspected_read_only": true,
+    "content_applied_from_attempts": "none",
+    "refs": [
+      {
+        "ref": "refs/ae/attempt-artifacts/recall-map-pool-quality/selector-cold-start-recalibration/20260824T183044-7dd6e2d2afd78df12aed",
+        "commit": "379b7e6d3dc3db7061c2f75fb3093470b71b3c68",
+        "decision": "declined",
+        "reason": "Stale parent-node worktree snapshot: it carries pre-v3 versions of policy.json (11631 lines smaller), scripts/recall_map_coldstart_fit.py and the coldstart tests — strictly superseded by the committed branch head c1f5fa2 it sits on top of."
+      },
+      {
+        "ref": "refs/ae/attempt-artifacts/recall-map-pool-quality/selector-cold-start-recalibration/coldstart-fit-v3/20260824T183044-fac0f349ef6355190bd7",
+        "commit": "f8d43795460bd9ae070da145f67aaca7d39afd05",
+        "decision": "declined",
+        "reason": "Tree is byte-identical to the merged branch head c1f5fa2 (git diff c1f5fa2..f8d4379 is empty); nothing exists there that the branch does not already carry."
+      }
+    ]
+  },
+  "dormant_material_now_in_parent": [
+    {
+      "path": "src/living_memory/recall_map.py",
+      "carries": "Dormant rank-calibration evaluation surface, executable frozen-sel wire-contract guards (positional codes never reordered, canonical trailing-zero trim), and RecallResult threaded through _pool to the scorer with no score change. All inert without env valves."
+    },
+    {
+      "path": "scripts/recall_map_coldstart_dataset.py",
+      "carries": "Read-only extractor that rebuilds the recall-residual candidate population (train/eval/holdout splits) from live recall_events."
+    },
+    {
+      "path": "scripts/recall_map_coldstart_fit.py",
+      "carries": "The v1/v2/v3 fit and sealed-decision-procedure runner, including the mechanical plan-sha verification and HALT semantics."
+    },
+    {
+      "path": "artifacts/recall-map/relevance/coldstart-prereg.json, coldstart-prereg-v2.json, coldstart-prereg-v3.json, coldstart-design.md, coldstart-design-v2.md, coldstart-design-v3.md",
+      "carries": "The three sealed preregistrations and their design rationales; v3 is the plan whose mechanical run produced the negative result."
+    },
+    {
+      "path": "tests/test_recall_map_coldstart_dataset.py, tests/test_recall_map_coldstart_fit.py",
+      "carries": "Suites pinning the extractor and the fit/decision procedure."
+    },
+    {
+      "path": "artifacts/recall-map/relevance/policy.json",
+      "carries": "coldstart_revision block recording the sealed run, its guards, and the not-wireable verdict; selected_policy deliberately NOT bumped."
+    }
+  ],
+  "verification": {
+    "acceptance_suites": {
+      "command": "python -m pytest tests/test_recall_map.py tests/test_recall_map_pool.py -q",
+      "result": "153 passed, exit 0"
+    },
+    "coldstart_suites": {
+      "command": "python -m pytest tests/test_recall_map_coldstart_dataset.py tests/test_recall_map_coldstart_fit.py -q",
+      "result": "188 passed, exit 0"
+    },
+    "policy_json_post_merge": {
+      "coldstart_revision.wireable": false,
+      "coldstart_revision.holdout_evaluations": 0,
+      "coldstart_revision.status": "negative_result_not_wireable"
+    }
+  },
+  "downstream": "cold-quota-lane-build depends on this merge: it arms a bounded cold-quota admission lane behind inert valves on top of the dormant surface and wire-contract guards preserved here, under cold-quota-prereg.json, instead of re-fitting the pool scorer that guard (c) refuted."
+}

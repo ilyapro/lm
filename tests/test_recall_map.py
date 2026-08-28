@@ -29,8 +29,12 @@ here rather than trusted: ``normalize_key`` against
 from __future__ import annotations
 
 import json
+import random
 import sqlite3
+from bisect import bisect_left, bisect_right
+from math import nextafter
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -50,15 +54,28 @@ from living_memory.recall_map import (
     MEDOID_EXAMPLE_CHARS,
     MIN_CLUSTERS,
     MIN_MEDOID_EXAMPLE_CHARS,
+    POOL_DEMOTION_GATE_ENV,
+    POOL_DEMOTION_WINDOWS_ENV,
+    POOL_GATE_REASON_CODES,
+    POOL_USEFULNESS_FLOOR_ENV,
+    POOL_USEFULNESS_GATE_ENV,
+    RELEVANCE_CALIBRATION_MAX_BREAKPOINTS,
+    RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR,
+    RELEVANCE_POLICY_CALIBRATION,
+    RELEVANCE_POLICY_ID,
+    SELECTION_REASON_CODES,
     STAGE_ANCHOR,
     STAGE_EMBEDDING,
     STAGE_PATH,
     STAGE_STRUCTURAL,
     RecallMapBuilder,
+    _calibrate,
+    _calibration_table,
     _echoes,
     _payload_size,
     cache_key,
     normalize_key,
+    relevance_score,
 )
 from living_memory.retrieval import RecallResult
 from living_memory.storage import MaturedRecallHistory, MemoryStore, recall_fingerprint
@@ -673,7 +690,9 @@ def test_cluster_mean_uses_fsum_in_original_residual_order(
     calls: list[list[float]] = []
     real_fsum = __import__("math").fsum
     monkeypatch.setattr(
-        recall_map, "relevance_score", lambda node, _history: scores[node.id]
+        recall_map,
+        "relevance_score",
+        lambda node, _history, _result=None: scores[node.id],
     )
 
     def observed_fsum(values) -> float:
@@ -1952,3 +1971,802 @@ def test_module_imports_nothing_that_calls_a_model_or_the_network() -> None:
         assert not any(name in line for name in forbidden), line
     # The one local import that could pull a model in is not taken.
     assert "LocalEmbeddingModel" not in source
+
+
+# ----------------------------------------------------------------------
+# The frozen `sel` wire contract, guarded on the wire itself
+# ----------------------------------------------------------------------
+#
+# `tests/test_recall_map_pool.py` guards the same contract one layer down, on
+# the tuples and on `_SelectionLedger.freeze`. These guard what a *reader*
+# actually receives: the `sel` block of `to_dict()`, which is what the server
+# persists into `recall_events.recall_map` and what the field measurement read
+# to conclude that no live server has either pool valve charged.
+#
+# A build is the only place the two halves meet -- a ledger that trims
+# correctly still says nothing if the payload is assembled from somewhere else
+# -- so these are end-to-end on purpose, and they cost one small store each.
+
+
+@pytest.fixture(autouse=True)
+def _valves_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test in this file starts with no pool valve armed.
+
+    Both live hosts now export the cold-quota pair into every login shell, so
+    an inherited valve would make the seven-count guard below assert its own
+    opposite.
+    """
+
+    for name in (
+        POOL_USEFULNESS_GATE_ENV,
+        POOL_USEFULNESS_FLOOR_ENV,
+        POOL_DEMOTION_GATE_ENV,
+        POOL_DEMOTION_WINDOWS_ENV,
+        recall_map.POOL_COLD_QUOTA_GATE_ENV,
+        recall_map.POOL_COLD_SLOTS_ENV,
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+def _rated_node(
+    store: MemoryStore, content: str, key: str, usefulness: float
+) -> Node:
+    """A pool member carrying an explicit usefulness verdict.
+
+    ``make_node`` folds its extras into ``context``; the usefulness gate reads
+    ``stats``, so these rows are built directly.
+    """
+
+    return store.create_node(
+        level="trace",
+        content=content,
+        context={"scope": SCOPE, "procedure_id": key},
+        stats={"usefulness_score": usefulness},
+    )
+
+
+def _two_cluster_pool(store: MemoryStore) -> list[Node]:
+    """Two structural clusters, enough to clear :data:`MIN_CLUSTERS`."""
+
+    return [
+        _rated_node(store, "alpha ritual step one", "alpha-ritual", 0.9),
+        _rated_node(store, "alpha ritual step two", "alpha-ritual", 0.9),
+        _rated_node(store, "beta ritual step one", "beta-ritual", 0.9),
+        _rated_node(store, "beta ritual step two", "beta-ritual", 0.9),
+    ]
+
+
+def test_sel_contract_an_unarmed_build_puts_exactly_seven_counts_on_the_wire(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seven counts is the signature of a server with no gate armed.
+
+    The field diagnosis rests on it: ``sel.x`` of width seven in the recorded
+    events is *how* we know neither valve is charged in production. That
+    inference holds only while an unarmed build cannot emit any other width,
+    so the width is the assertion and the counts are incidental to it.
+    """
+
+    built = RecallMapBuilder(store).build(
+        pool(_two_cluster_pool(store)),
+        scope=SCOPE,
+        task="sel-width-unarmed",
+        decision_at=DECISION_AT,
+    )
+
+    assert built is not None
+    sel = built.to_dict()["sel"]
+    assert len(sel["x"]) == len(SELECTION_REASON_CODES) == 7
+    assert sel["x"] == [0, 0, 0, 0, 0, 0, 0]
+    assert sel["n"] == sel["e"] + sum(sel["x"]) == 4
+    # The version tag travels with the vector; a width change without one
+    # would be the unannounced break this guard exists to catch.
+    assert sel["v"] == "r1"
+
+
+def test_sel_contract_wire_counts_sit_at_their_frozen_positions(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`sel.x` is read by index, so the index is the contract.
+
+    The expected vector below is written out with its offsets hardcoded,
+    exactly as a reader of a stored event hardcodes them, and then the offsets
+    are checked against the tuple. Move ``fc`` or ``lr`` and the two halves
+    disagree -- which is the failure, and it is not an arithmetic one.
+    """
+
+    header = json.dumps(
+        {
+            "path": "src/generated.py",
+            "kind": "source",
+            "language": "python",
+            "sha256": "b" * 64,
+            "chunk": "1/1",
+            "lines": "1-20",
+        }
+    )
+    ballast = make_node(store, "[file-chunk] " + header)
+    cold = make_node(store, "a node no window has ever matured for")
+    kept = _two_cluster_pool(store)
+
+    def histories(candidate_ids, _decision_at):
+        return {
+            node_id: (
+                MaturedRecallHistory.known(0, 0, 0)
+                if node_id == cold.id
+                else MaturedRecallHistory.known(100, 50, 50)
+            )
+            for node_id in candidate_ids
+        }
+
+    monkeypatch.setattr(store, "matured_recall_history", histories)
+    built = RecallMapBuilder(store).build(
+        pool([ballast, cold, *kept]),
+        scope=SCOPE,
+        task="sel-positions",
+        decision_at=DECISION_AT,
+    )
+
+    assert built is not None
+    counts = built.to_dict()["sel"]["x"]
+    assert counts == [0, 0, 1, 0, 0, 1, 0]
+    #        index:   0  1  2  3  4  5  6
+    assert SELECTION_REASON_CODES[2] == "fc"  # the file-chunk ballast row
+    assert SELECTION_REASON_CODES[5] == "lr"  # the row the frozen score refused
+    assert sum(counts) == 2
+
+
+def test_sel_contract_only_an_armed_gate_widens_the_wire_vector(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same store, same residual, same history -- only a valve moves.
+
+    Width seven means "unarmed" only if arming is what produces width eight,
+    and the frozen prefix has to survive the extension unchanged: that is the
+    whole content of calling the ``sel`` contract additive.
+    """
+
+    hub = _rated_node(
+        store, "alpha ritual the map keeps re-offering", "alpha-ritual", 0.078
+    )
+    candidates = pool([hub, *_two_cluster_pool(store)])
+
+    unarmed = RecallMapBuilder(store).build(
+        candidates, scope=SCOPE, task="sel-arming", decision_at=DECISION_AT
+    )
+    assert unarmed is not None
+    unarmed_sel = unarmed.to_dict()["sel"]
+    assert len(unarmed_sel["x"]) == 7
+    assert unarmed_sel["x"] == [0, 0, 0, 0, 0, 0, 0]
+    assert unarmed_sel["e"] == 5
+
+    monkeypatch.setenv(POOL_USEFULNESS_GATE_ENV, "on")
+    monkeypatch.setenv(POOL_USEFULNESS_FLOOR_ENV, "0.25")
+    armed = RecallMapBuilder(store).build(
+        candidates, scope=SCOPE, task="sel-arming", decision_at=DECISION_AT
+    )
+    assert armed is not None
+    armed_sel = armed.to_dict()["sel"]
+
+    assert len(armed_sel["x"]) == 8
+    assert armed_sel["x"] == [0, 0, 0, 0, 0, 0, 0, 1]
+    assert armed_sel["x"][:7] == unarmed_sel["x"]
+    assert POOL_GATE_REASON_CODES[0] == "uf"
+    assert armed_sel["e"] == 4
+    assert armed_sel["n"] == unarmed_sel["n"] == 5
+    # The vector got wider and nothing else about how it is read changed.
+    assert armed_sel["v"] == unarmed_sel["v"] == "r1"
+    assert armed_sel["n"] == armed_sel["e"] + sum(armed_sel["x"])
+
+
+def test_coldstart_contract_build_hands_the_scorer_each_candidates_own_result(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cold node owns its query-time scores and nothing else.
+
+    A build is the whole path from residual to map, and this pins that the
+    ``RecallResult`` survives all of it: the scorer is called with the entry
+    the candidate actually arrived in -- that object, for that node -- and
+    under the frozen policy the third argument changes no float it returns.
+    Both halves matter. The plumbing is what a cold-start revision will spend,
+    and the identity is why spending it is still ahead rather than behind us.
+    """
+
+    nodes = _two_cluster_pool(store)
+    candidates = pool(nodes)
+    by_node = {result.node.id: result for result in candidates}
+    frozen_scorer = relevance_score
+    seen: list[tuple[str, object]] = []
+
+    def spy(node, history, result=None):
+        seen.append((node.id, result))
+        # Identical, not merely equal: `float.hex` separates 0.0 from -0.0.
+        threaded = frozen_scorer(node, history, result)
+        assert threaded.hex() == frozen_scorer(node, history).hex()
+        return threaded
+
+    monkeypatch.setattr(recall_map, "relevance_score", spy)
+    built = RecallMapBuilder(store).build(
+        candidates, scope=SCOPE, task="coldstart-plumbing", decision_at=DECISION_AT
+    )
+
+    assert built is not None
+    assert [node_id for node_id, _result in seen] == [node.id for node in nodes]
+    for node_id, result in seen:
+        assert result is by_node[node_id]
+    assert built.pool_size == len(nodes)
+
+
+# ----------------------------------------------------------------------
+# The dormant rank-calibration surface
+# ----------------------------------------------------------------------
+#
+# These hold the evaluator to `coldstart-prereg-v2.json#scorer_shape`
+# `.calibration.out_of_sample_and_live_application`, not to itself. The
+# fixture builds a real fitting split, computes `u` from the registered
+# midrank formula, publishes a table off that, and then asks the evaluator to
+# reproduce the same `u` by lookup. A wrong bracket, a nearest-knot shortcut
+# or a dropped midrank each fails against the definition rather than against a
+# transcription of the implementation.
+#
+# Nothing in `recall_map` calls any of this yet, and the last two tests are
+# what say so out loud.
+
+_CALIBRATION_QUANTITY = "candidate_time_family_arm"
+
+#: Values carrying enough of the fitting split to be published exactly. The
+#: registered form calls a value an atom at 0.5% multiplicity; these are 20%
+#: and 13.3% of 4500 rows, which is also why no grid can resolve the jump
+#: across them and why the form publishes their ``u`` instead of interpolating.
+_CALIBRATION_ATOMS: tuple[float, ...] = (700.0, 1900.0)
+
+#: The continuum sits on half-integers, so a fitting row either *is* an atom
+#: or is nowhere near one -- there is no float here that is almost 700.0.
+_CALIBRATION_CONTINUUM: tuple[float, ...] = tuple(index + 0.5 for index in range(3000))
+
+
+def _calibration_sample() -> list[float]:
+    """``coldstart_train`` stood in for: a continuum and two mass points."""
+
+    return sorted([*_CALIBRATION_CONTINUUM, *([700.0] * 900), *([1900.0] * 600)])
+
+
+def _registered_u(ordered: list[float], value: float) -> float:
+    """``u(v) = (A(v) + M(v)/2) / n - 0.5``, midrank ties.
+
+    Transcribed from ``scorer_shape.calibration.rank_uniform_centered`` and
+    computed against the fitting sample, never read off the table -- it is the
+    yardstick the table and the evaluator are both measured with.
+    """
+
+    below = bisect_left(ordered, value)
+    equal = bisect_right(ordered, value) - below
+    return (below + equal / 2) / len(ordered) - 0.5
+
+
+def _calibration_payload(stride: int = 6) -> dict[str, list[list[float]]]:
+    """A published table: the atoms exactly, plus a strided quantile grid.
+
+    ``stride`` is the grid's coarseness in fitting rows. At six the grid steps
+    ``u`` by ``6/4500``, inside the registered ``2**-9``; at nine it steps by
+    ``9/4500``, outside it. That is how the resolution rejection below is
+    falsified rather than merely asserted.
+
+    The grid is struck blind to the atoms -- it is a quantile grid over "the
+    non-atom part" and nothing more, so no knot lands adjacent to an atom by
+    arrangement. That matters: bracket an atom symmetrically and its midrank
+    lands exactly on the interpolant between its neighbours, which would hide
+    the difference between merging atoms into the breakpoints and holding them
+    apart as bare equality overrides. Struck blind, the two disagree, and the
+    monotonicity test can tell them apart.
+    """
+
+    ordered = _calibration_sample()
+    knot_values = sorted(
+        {_CALIBRATION_CONTINUUM[index] for index in range(0, 3000, stride)}
+        | {_CALIBRATION_CONTINUUM[-1]}
+    )
+    return {
+        "atoms": [[atom, _registered_u(ordered, atom)] for atom in _CALIBRATION_ATOMS],
+        "knots": [[value, _registered_u(ordered, value)] for value in knot_values],
+    }
+
+
+def _calibration_policy(payload: object | None = None) -> dict[str, object]:
+    """The table, wrapped the way a policy's calibration block carries it."""
+
+    return {
+        _CALIBRATION_QUANTITY: _calibration_payload() if payload is None else payload
+    }
+
+
+def _read_calibration() -> object:
+    """The table a well-formed policy publishes, read through the reader."""
+
+    return _calibration_table(_calibration_policy(), _CALIBRATION_QUANTITY)
+
+
+def test_calibration_recovers_every_published_breakpoint_exactly() -> None:
+    """Equality first, before any arithmetic can land an ulp away.
+
+    The sealed plan's feasibility argument rests on the available-but-empty
+    history composite being a tie block that reproduces *exactly*, so "close
+    enough" is the one answer this may not give. Held to ``float.hex`` rather
+    than ``==`` for that reason.
+
+    Knots get the same treatment as atoms: a probe that ties with a published
+    breakpoint is a tie with the fitting sample, and midrank says its answer is
+    that block's published ``u``, not an interpolation approaching it.
+    """
+
+    table = _read_calibration()
+    ordered = _calibration_sample()
+
+    assert [value for value, _u in table.atoms] == list(_CALIBRATION_ATOMS)
+    for value, u in table.atoms:
+        assert u == _registered_u(ordered, value)
+        assert _calibrate(table, value).hex() == u.hex()
+    for value, u in table.knots:
+        assert u == _registered_u(ordered, value)
+        assert _calibrate(table, value).hex() == u.hex()
+
+    # Atoms and knots are one merged breakpoint array, inside the registered
+    # ceiling, and the atoms really are jumps a grid could not have carried.
+    assert len(table.values) == len(table.atoms) + len(table.knots)
+    assert len(table.values) <= RELEVANCE_CALIBRATION_MAX_BREAKPOINTS
+    for atom in _CALIBRATION_ATOMS:
+        above = _registered_u(ordered, atom + 0.5)
+        below = _registered_u(ordered, atom - 0.5)
+        assert above - below > RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR
+
+
+def test_calibration_is_monotone_over_a_shuffled_probe_grid() -> None:
+    """Order in, order out -- and evaluation order changes nothing.
+
+    Probes are evaluated shuffled and compared sorted, so a lookup that
+    remembered anything between calls, or that leaned on being asked in
+    ascending order, cannot pass. The grid deliberately crowds the atoms from
+    both sides, an ulp away and a quarter-unit away, because that neighbourhood
+    is where an atom held apart as a pure equality override -- rather than
+    merged into the breakpoints -- would invert the ordering.
+    """
+
+    table = _read_calibration()
+    rng = random.Random(20260824)
+    probes = [
+        -1e6,
+        -500.0,
+        -0.25,
+        0.0,
+        3500.0,
+        1e6,
+        *_CALIBRATION_ATOMS,
+        *(
+            atom + delta
+            for atom in _CALIBRATION_ATOMS
+            for delta in (-0.25, -1e-9, 1e-9, 0.25)
+        ),
+        *(value for value, _u in table.knots),
+        *(rng.uniform(-50.0, 3050.0) for _ in range(2000)),
+    ]
+    rng.shuffle(probes)
+
+    readings = {probe: _calibrate(table, probe) for probe in probes}
+    ascending = sorted(readings)
+    for lower, higher in zip(ascending, ascending[1:]):
+        assert readings[lower] <= readings[higher], (lower, higher)
+
+    # Monotone and not merely constant: a lookup that answered one number
+    # everywhere would satisfy every inequality above.
+    assert readings[ascending[0]] < readings[ascending[-1]]
+    assert readings[ascending[0]] == table.us[0]
+    assert readings[ascending[-1]] == table.us[-1]
+
+
+def test_calibration_interpolation_stays_inside_the_registered_bound() -> None:
+    """``max_interpolation_error_on_u`` is 2**-9, where the form claims it.
+
+    It claims it *between consecutive knots*: the grid is published over "the
+    non-atom part". A knot pair straddling an atom is exempt by construction --
+    the atom's block is at least 0.5% of the fitting rows, a jump in ``u``
+    wider than 2**-9 that no grid of any density could resolve, which is the
+    whole reason the form publishes that value exactly instead.
+
+    So the exemption is derived from the table rather than declared, held to
+    the one knot pair each atom is entitled to, and the bound is enforced on
+    every other probe. An exemption that quietly grew to cover the grid would
+    show up as a collapsed ``checked`` count, not as a silently passing
+    assertion.
+    """
+
+    table = _read_calibration()
+    ordered = _calibration_sample()
+    exempt = tuple(
+        (low, high)
+        for (low, _low_u), (high, _high_u) in zip(table.knots, table.knots[1:])
+        if any(low < atom < high for atom in _CALIBRATION_ATOMS)
+    )
+    assert len(exempt) == len(_CALIBRATION_ATOMS)
+    # One stride-wide window per atom, out of a probe range 2999 wide.
+    assert sum(high - low for low, high in exempt) == 12.0
+
+    rng = random.Random(915)
+    probes = [rng.uniform(0.5, 2999.5) for _ in range(4000)]
+    checked = 0
+    worst = 0.0
+    for probe in probes:
+        if any(low < probe < high for low, high in exempt):
+            continue
+        error = abs(_calibrate(table, probe) - _registered_u(ordered, probe))
+        worst = max(worst, error)
+        checked += 1
+    assert checked > 3900
+    assert worst <= RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR
+    # The grid is genuinely interpolating, not sitting on the answer: a probe
+    # off a breakpoint has a real error, just a bounded one.
+    assert worst > 0.0
+
+    # And the interpolation is *linear*, which the bound alone cannot pin.
+    # The reader has already forced every non-exempt knot pair to be narrower
+    # in u than the bound, so every answer inside such a bracket satisfies it
+    # -- nearest-knot included, and nearest-knot is not what the form says.
+    low_value, low_u = table.knots[100]
+    high_value, high_u = table.knots[101]
+    assert not any(low_value < atom < high_value for atom in _CALIBRATION_ATOMS)
+    for fraction in (0.125, 0.25, 0.5, 0.75, 0.875):
+        probe = low_value + fraction * (high_value - low_value)
+        straight = low_u + fraction * (high_u - low_u)
+        assert _calibrate(table, probe) == pytest.approx(straight, abs=1e-15)
+
+
+def test_calibration_clamps_outside_the_outermost_knots() -> None:
+    """Past the evidence, the answer is the extreme rank, not an extrapolation.
+
+    The fitting sample never went there. Continuing the last segment's slope
+    would invent ranks below -0.5 and above +0.5 -- positions no row can hold
+    -- so the registered form clamps, and clamps to the published value rather
+    than to a recomputed one.
+    """
+
+    table = _read_calibration()
+    lowest_value, lowest_u = table.knots[0]
+    highest_value, highest_u = table.knots[-1]
+    assert table.values[0] == lowest_value
+    assert table.values[-1] == highest_value
+
+    for probe in (lowest_value - 1e-9, 0.0, -1.0, -1e6, -1e300):
+        assert _calibrate(table, probe).hex() == lowest_u.hex()
+    for probe in (highest_value + 1e-9, 3000.0, 1e6, 1e300):
+        assert _calibrate(table, probe).hex() == highest_u.hex()
+
+
+#: A table built for floating-point awkwardness rather than for realism: its
+#: two outer ``u`` values straddle zero, and a knot pair straddling zero is
+#: exactly what sits either side of a median atom on a centred rank scale.
+#: The knots are far apart in ``u`` and allowed to be, because the atom
+#: between them is what carries the jump.
+_AWKWARD_CALIBRATION: dict[str, list[list[float]]] = {
+    "atoms": [[2.0, -0.17]],
+    "knots": [[0.0, -0.5], [4.0, -0.02]],
+}
+
+
+def test_calibration_answers_a_published_value_before_it_does_arithmetic() -> None:
+    """Equality first is not decoration: interpolation does not round-trip.
+
+    ``low + (high - low)`` gives ``high`` back for most pairs and stops doing
+    so once the two straddle zero. On this table the atom's own value, reached
+    by arithmetic instead of by equality, comes back an ulp low --
+    ``-0.17000000000000004`` where the policy published ``-0.17``. That is the
+    difference between a tie block that reproduces and one that merely nearly
+    reproduces, and the sealed plan's feasibility argument needs the first.
+    """
+
+    table = _calibration_table(
+        {_CALIBRATION_QUANTITY: _AWKWARD_CALIBRATION}, _CALIBRATION_QUANTITY
+    )
+    ((atom_value, atom_u),) = table.atoms
+    (low_value, low_u), (high_value, high_u) = table.knots
+
+    # The arithmetic the lookup must not have reached, shown missing its mark.
+    assert low_u + (atom_u - low_u) != atom_u
+    for value, u in ((low_value, low_u), (atom_value, atom_u), (high_value, high_u)):
+        assert _calibrate(table, value).hex() == u.hex()
+
+    # Still monotone across the awkward pair, and still clamped outside it.
+    walk = (-1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 9.0)
+    readings = [_calibrate(table, probe) for probe in walk]
+    assert readings == sorted(readings)
+    assert readings[0].hex() == low_u.hex()
+    assert readings[-1].hex() == high_u.hex()
+
+
+#: A table whose values span far enough that ``(probe - low) / (high - low)``
+#: rounds to exactly ``1.0`` for a probe strictly below the top breakpoint.
+#: The reader accepts it: it constrains a span to be *representable*, not to
+#: be narrow.
+_WIDE_SPAN_CALIBRATION: dict[str, list[list[float]]] = {
+    "atoms": [[-9e299, -0.3]],
+    "knots": [[-1e300, -0.5], [1e299, 0.1]],
+}
+
+
+def test_calibration_stays_monotone_where_the_arithmetic_overshoots() -> None:
+    """Clamping the interpolation into its own bracket is not idle.
+
+    On this table the fraction rounds to exactly ``1.0`` a step below the top
+    breakpoint, and ``-0.3 + 0.4`` lands on ``0.10000000000000003`` rather
+    than ``0.1``. Unclamped, the segment would end *above* the breakpoint the
+    next one starts at: a table the reader certified as monotone evaluating
+    non-monotonically for purely floating-point reasons.
+
+    Exotic values, ordinary consequence. The reader does not bound how far
+    apart two published values may sit, so "monotone" has to mean monotone on
+    every table it accepts, not only on the well-scaled ones.
+    """
+
+    table = _calibration_table(
+        {_CALIBRATION_QUANTITY: _WIDE_SPAN_CALIBRATION}, _CALIBRATION_QUANTITY
+    )
+    top_value, top_u = table.knots[-1]
+    low_value, low_u = table.values[1], table.us[1]
+    below = nextafter(top_value, low_value)
+    assert below < top_value
+
+    # The arithmetic really does overshoot the top of the bracket here.
+    assert (below - low_value) / (top_value - low_value) == 1.0
+    assert low_u + (top_u - low_u) > top_u
+
+    assert _calibrate(table, below) <= _calibrate(table, top_value)
+    assert _calibrate(table, below).hex() == top_u.hex()
+    assert _calibrate(table, top_value).hex() == top_u.hex()
+
+
+def _calibration_rejections() -> list[tuple[str, object, str]]:
+    """Every shape the reader must refuse, each a mutation of one it accepts.
+
+    Built by mutation on purpose. A check that quietly stopped checking is
+    caught here; a check so strict that it also refuses the honest table is
+    caught by every other test in this section still reading one.
+    """
+
+    good = _calibration_payload()
+    knots: list[list[float]] = [list(pair) for pair in good["knots"]]
+    atoms: list[list[float]] = [list(pair) for pair in good["atoms"]]
+
+    def mutated(**changes: object) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "atoms": [list(pair) for pair in atoms],
+            "knots": [list(pair) for pair in knots],
+        }
+        payload.update(changes)
+        return payload
+
+    def with_knots(edit) -> dict[str, object]:
+        copy = [list(pair) for pair in knots]
+        edit(copy)
+        return mutated(knots=copy)
+
+    def swap_values(rows: list[list[float]]) -> None:
+        rows[10], rows[11] = rows[11], rows[10]
+
+    def duplicate_value(rows: list[list[float]]) -> None:
+        rows[11][0] = rows[10][0]
+
+    def step_down(rows: list[list[float]]) -> None:
+        rows[10][1], rows[11][1] = rows[11][1], rows[10][1]
+
+    return [
+        (
+            "no_calibration_block",
+            {},
+            "publishes no calibration tables",
+        ),
+        (
+            "calibration_block_is_not_a_mapping",
+            [[_CALIBRATION_QUANTITY, good]],
+            "publishes no calibration tables",
+        ),
+        (
+            "no_table_for_this_quantity",
+            {"some_other_arm": good},
+            "no calibration table for",
+        ),
+        (
+            "table_is_not_a_mapping",
+            _calibration_policy(payload=knots),
+            "is not a mapping",
+        ),
+        (
+            "no_knots_at_all",
+            _calibration_policy(payload={"atoms": atoms}),
+            "is not a sequence of value/u pairs",
+        ),
+        (
+            "a_knot_is_not_a_pair",
+            _calibration_policy(
+                payload=with_knots(lambda rows: rows.__setitem__(5, [0.5]))
+            ),
+            "is not a value/u pair",
+        ),
+        (
+            "a_single_knot_interpolates_nothing",
+            _calibration_policy(payload=mutated(atoms=[], knots=knots[:1])),
+            "fewer than two knots",
+        ),
+        (
+            "a_knot_value_is_not_a_real_number",
+            _calibration_policy(
+                payload=with_knots(lambda rows: rows[5].__setitem__(0, "0.5"))
+            ),
+            "is not a real number",
+        ),
+        (
+            "a_knot_u_is_a_bool",
+            _calibration_policy(
+                payload=with_knots(lambda rows: rows[5].__setitem__(1, True))
+            ),
+            "is not a real number",
+        ),
+        (
+            "a_knot_u_is_not_finite",
+            _calibration_policy(
+                payload=with_knots(lambda rows: rows[5].__setitem__(1, float("nan")))
+            ),
+            "is not finite",
+        ),
+        (
+            "a_knot_value_is_not_finite",
+            _calibration_policy(
+                payload=with_knots(lambda rows: rows[5].__setitem__(0, float("inf")))
+            ),
+            "is not finite",
+        ),
+        (
+            "knots_are_unsorted",
+            _calibration_policy(payload=with_knots(swap_values)),
+            "are not sorted by strictly increasing value",
+        ),
+        (
+            "two_knots_share_a_value",
+            _calibration_policy(payload=with_knots(duplicate_value)),
+            "are not sorted by strictly increasing value",
+        ),
+        (
+            "atoms_are_unsorted",
+            _calibration_policy(payload=mutated(atoms=list(reversed(atoms)))),
+            "are not sorted by strictly increasing value",
+        ),
+        (
+            "an_atom_sits_on_a_knot",
+            _calibration_policy(payload=mutated(atoms=[list(knots[3]), *atoms])),
+            "both an atom and a knot",
+        ),
+        (
+            "u_steps_down",
+            _calibration_policy(payload=with_knots(step_down)),
+            "is not monotone",
+        ),
+        (
+            "more_breakpoints_than_the_registered_ceiling",
+            _calibration_policy(payload=_calibration_payload(stride=2)),
+            "breakpoints, over the registered",
+        ),
+        (
+            "the_grid_is_too_coarse_for_the_published_bound",
+            _calibration_policy(payload=_calibration_payload(stride=9)),
+            "steps u by",
+        ),
+        (
+            "the_value_span_is_not_representable",
+            _calibration_policy(
+                payload={"atoms": [], "knots": [[-1.5e308, -0.5], [1.5e308, -0.4999]]}
+            ),
+            "is not representable",
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("calibration", "message"),
+    [
+        pytest.param(calibration, message, id=name)
+        for name, calibration, message in _calibration_rejections()
+    ],
+)
+def test_calibration_reader_refuses_a_table_it_cannot_trust(
+    calibration: object, message: str
+) -> None:
+    """Fail closed, because there is no honest neutral answer to fall back on.
+
+    ``rank_uniform_centered`` is centred on the fitting median, so its neutral
+    value is ``0.0`` -- a number that *means* "this row sits where half the
+    population sits". Returning it for a table this could not read would not be
+    a degraded answer, it would be a fabricated measurement, and the arm it
+    feeds would go on being summed as though it had been calibrated.
+    """
+
+    with pytest.raises(ValueError, match=message):
+        _calibration_table(calibration, _CALIBRATION_QUANTITY)
+
+
+@pytest.mark.parametrize(
+    "probe",
+    [float("nan"), float("inf"), float("-inf"), "0.5", None, True, object()],
+    ids=["nan", "inf", "minus_inf", "str", "none", "bool", "object"],
+)
+def test_calibration_lookup_refuses_a_probe_it_cannot_read(probe: object) -> None:
+    """A row whose own value cannot be read has no rank, not a middling one."""
+
+    table = _read_calibration()
+    with pytest.raises(ValueError):
+        _calibrate(table, probe)
+
+
+def test_the_frozen_policy_publishes_no_calibration_table() -> None:
+    """Dormant means the surface exists and has nothing to read.
+
+    ``directional-zsum-r1`` z-scores five features and calibrates none of them,
+    so the reader's answer for it is a refusal. That refusal is the interlock:
+    a half-wired revision that spent a calibrated arm without publishing its
+    table would raise here rather than quietly score every row at the median.
+    """
+
+    assert RELEVANCE_POLICY_ID == "directional-zsum-r1"
+    assert dict(RELEVANCE_POLICY_CALIBRATION) == {}
+    for quantity in ("history_arm", "level_arm", _CALIBRATION_QUANTITY):
+        with pytest.raises(ValueError, match="publishes no calibration tables"):
+            _calibration_table(RELEVANCE_POLICY_CALIBRATION, quantity)
+
+
+def test_only_the_cold_lane_reads_the_calibration_surface() -> None:
+    """The registered consumer, and no other -- the frozen scorer stays blind.
+
+    The surface landed empty-handed and unread; the cold exploration lane
+    (cold-quota-prereg.json, plan cold-quota-r1) is its first and only
+    licensed reader. A source scan rather than a behavioural one,
+    deliberately: the claim is about every call site in the module at once,
+    and a test that scored a handful of nodes would pass just as happily if
+    the surface were wired into a branch those nodes happen to miss. The
+    frozen warm arithmetic is pinned bit-for-bit by the test below this one.
+    """
+
+    import ast
+
+    source = (
+        Path(__file__).resolve().parents[1] / "src" / "living_memory" / "recall_map.py"
+    ).read_text(encoding="utf-8")
+    module = ast.parse(source)
+    callers: set[str] = set()
+    for definition in ast.walk(module):
+        if not isinstance(definition, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for node in ast.walk(definition):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in {"_calibrate", "_calibration_table"}
+            ):
+                callers.add(definition.name)
+    assert callers == {"_cold_ranking_tables", "_cold_composite"}
+
+
+def test_the_cold_start_scores_this_commit_had_to_leave_alone() -> None:
+    """The two floats the whole cold-start defect is stated in, pinned.
+
+    A node with no delivery history scores on its level term alone: schema
+    ``+1.6682``, trace and concept ``-0.5995``, against a threshold of
+    ``3.8708``. Those are the numbers a revision exists to move, and the number
+    this commit must not. Pinned by ``float.hex`` so an arithmetic change too
+    small to print is still a failure.
+    """
+
+    assert (
+        relevance_score(SimpleNamespace(level="schema"), None).hex()
+        == "0x1.ab0fdab1508aap+0"
+    )
+    for level in ("trace", "concept"):
+        assert (
+            relevance_score(SimpleNamespace(level=level), None).hex()
+            == "-0x1.32ea699041f5bp-1"
+        )

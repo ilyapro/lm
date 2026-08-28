@@ -1,0 +1,721 @@
+{
+  "amendment_policy": [
+    "Amendments may touch only non-outcome-affecting fields: artifact naming, prose clarification, added",
+    "diagnostics, added denominators, and corrections of citation.",
+    "No direction, sign, family member, missing-value rule, cohort, seed, split fraction, cold minimum,",
+    "generalization threshold, admitted-fraction bound, binomial alpha or decision-procedure step may be",
+    "changed by any amendment.",
+    "Anything in that list can change only by a new pre-registration under a new plan_sha256, sealed",
+    "before the next number is read.",
+    "Every amendment is appended to $.amendments naming the phase it preceded. $.amendments is outside",
+    "plan_sha256_over by construction, which is exactly why the binding policy lives here, inside the hash."
+  ],
+  "amendments": [
+    "v1 (at sealing, before the sibling coldstart-dataset node had produced any split and before any fit had been run against any cold-start feature). Bootstrap entry only: no direction, threshold, bound or cohort has been changed."
+  ],
+  "artifact": "recall-map-coldstart-selector-prereg",
+  "binds": [
+    "artifacts/recall-map/relevance/policy.json#selected_policy (revision authored by coldstart-fit)",
+    "artifacts/recall-map/relevance/dataset-manifest.json#coldstart (authored by coldstart-dataset)",
+    "scripts/recall_map_coldstart_fit.py"
+  ],
+  "cold_candidate_definition": {
+    "computable_from": "persisted state at the pinned as-of, using the frozen history_definition at policy.json#selected_policy.history_definition",
+    "covers_both_arms_of_the_defect": [
+      "history unavailable: _history_features returns the train means, the four terms are identically",
+      "zero, and the score collapses to the level term (+1.6682 schema, -0.5994 trace/concept)",
+      "history available and empty, M=C=K=0: the four terms are -1.1084, -1.0913, -0.8947 and -0.519,",
+      "totalling -3.6134, so the row scores -1.9452 schema and -4.2129 trace/concept -- worse still"
+    ],
+    "definition": "a candidate whose strictly-matured prior delivery count at the map-build instant is zero",
+    "not_a_scorer_input": "coldness is a REPORTING and SPLIT-AUDIT partition only. It must not appear as a feature, a branch, a tie-break, or an eligibility test. See scorer_shape.no_cold_branch.",
+    "predicate": "matured == 0",
+    "why_both": "both are rows with no delivery history, both are arithmetically incapable of admission today, and both are what the live residual is predominantly made of. Splitting them would create a cohort defined by a storage detail rather than by the node's situation."
+  },
+  "defect_being_repaired": {
+    "arithmetic_reproduced_at_registration": {
+      "admission_needs_log1p_matured": 6.9,
+      "available_but_empty_history_M_C_K_zero": {
+        "history_z_terms": [
+          -1.1084,
+          -1.0913,
+          -0.8947,
+          -0.519
+        ],
+        "schema_total": -1.9452,
+        "trace_or_concept_total": -4.2129
+      },
+      "history_unavailable": {
+        "schema_total": 1.6682,
+        "trace_or_concept_total": -0.5994
+      },
+      "threshold": 3.8708378402511
+    },
+    "mechanism": [
+      "src/living_memory/recall_map.py:1190 _history_features returns RELEVANCE_FEATURE_MEANS[1..4] verbatim",
+      "whenever history is unavailable, so four of the five z-terms are identically zero and",
+      "relevance_score collapses to the level term alone."
+    ],
+    "why_no_better_history_signal_can_repair_it": "artifacts/recall-map/follow-signal/census.json#frozen_scorer_probe proves the K term is monotonically increasing: with M=20 and C=0 the score rises from 0.427201 to 2.151198 as the unfollowed tail lengthens from 0 to 20. No better signal fed into the existing five features can demote or repair anything. A new feature family is the only shape that works."
+  },
+  "direction_constraint_amendment": {
+    "amended_text": "Direction constraints are per feature family and are checked on the transformed values the scorer consumes. (a) Every legacy feature -- level_schema and the four matured-history terms -- retains the original constraint unchanged: positive consumed-minus-nonconsumed association in organic train, organic eval and observed-map eval. (b) Every member of the recorded-delivery-scores family must show its own REGISTERED SIGN, positive or negative as registered per member, in organic train, organic eval and secondary_anchor, which replaces observed-map eval because the observed-map arm records no delivery scores on any of its 686 items and therefore cannot measure this family at all. (c) Additionally, and unlike the original constraint, every member of the recorded-delivery-scores family must show its registered sign in the COLD SUBPOPULATION of each of those three cohorts, evaluated separately.",
+    "amends": "artifacts/recall-map/relevance/policy.json#selected_policy.fit.train_direction_constraint",
+    "cold_subpopulation_clause": {
+      "if_a_cohort_is_too_small": "the check is reported as INDETERMINATE for that cohort, never as passed. An indeterminate cold check on a core member blocks the revision.",
+      "minimum_cold_rows_for_a_direction_check": 200,
+      "minimum_consumed_cold_rows_for_a_direction_check": 40,
+      "requirement": "each member's registered sign must hold on the cold subpopulation of coldstart_train, coldstart_eval and secondary_anchor, measured separately from the whole-tail association",
+      "why_this_is_the_real_teeth": [
+        "The whole-population sign is a statement about the cohort the frozen policy already admits.",
+        "It is not evidence about the cohort this revision would newly admit, and the two can differ:",
+        "the cold probe found graph_score at -0.011 on cold rows against +0.017 whole-tail.",
+        "Without this clause the amendment would be strictly weaker than the constraint it replaces --",
+        "trading a cohort that cannot measure the family for a cohort that can, and asking nothing new.",
+        "With it, the amendment is strictly stronger on the axis that matters."
+      ]
+    },
+    "current_text": "each selected feature has positive consumed-minus-nonconsumed association in organic train, organic eval, and observed-map eval",
+    "not_silently_failed": [
+      "observed_map_eval is not dropped from the policy. It keeps full original force on the legacy",
+      "five, which are the features it can actually measure.",
+      "The fit artifact must record, for observed_map_eval: admitted item count, the reason string",
+      "family_unscoreable_fail_closed, and a citation of this file's",
+      "missing_value_rule.observed_map_arm_verdict as the place the expectation was registered in",
+      "advance.",
+      "The fit artifact must state in the same breath that the frozen policy's 0.243243 observed-map",
+      "transfer result is not inherited."
+    ],
+    "per_family_cohorts": {
+      "legacy_level_and_history": [
+        "organic_train",
+        "organic_eval",
+        "observed_map_eval"
+      ],
+      "recorded_delivery_scores": [
+        "organic_train",
+        "organic_eval",
+        "secondary_anchor"
+      ]
+    },
+    "replacement_cohort": "secondary_anchor",
+    "replacement_cohort_reasons": [
+      "It records the scores: 3723 of 4061 items, 91.7%, against 0 of 686 for observed-map eval.",
+      "It already carries measured, same-signed directions for all five score fields, so the",
+      "replacement is not a hope that a cohort will cooperate.",
+      "It is a genuine distribution shift: it is the ANCHOR stratum, not the primary organic tail the",
+      "fit cohort is drawn from, and its associations are systematically weaker (score +0.088 against",
+      "+0.471 on train), which is what a transfer cohort should look like rather than a re-slice."
+    ],
+    "replacement_cohort_weakness_disclosed": [
+      "secondary_anchor is NOT session-independent from the fit cohort. Its component list in",
+      "dataset-manifest.json overlaps train's -- 0022e83e0bb8c7e58031c2e346740ca904246334a50d0dfe04a30c98d1c6ff35",
+      "is in both -- because the anchor stratum and the primary tail are different ranks of the same",
+      "delivering events.",
+      "So it tests transfer across RETRIEVAL STRATUM, not across sessions. It is the weaker of the two",
+      "kinds of transfer and it is named as such here rather than presented as an independent cohort.",
+      "Session-level independence is supplied by the three-way component split registered below, which",
+      "is where the generalization claim actually rests. secondary_anchor is a direction check, not the",
+      "generalization evidence."
+    ],
+    "three_changes_made": {
+      "1_signed_not_positive": "the constraint becomes 'the registered sign' rather than 'positive', so bm25_score and vector_score are held to negative and a sign flip in either fails them",
+      "2_third_cohort_replaced": "observed_map_eval is replaced by secondary_anchor for this family only",
+      "3_cold_clause_added": "a fourth requirement the original constraint never had: the registered sign must also hold on the cold subpopulation of each cohort"
+    },
+    "why_it_cannot_stand_as_written": [
+      "No candidate-time score feature can satisfy it, because the observed-map arm records no scores",
+      "on any of its 686 items. Applied literally to this family the constraint is not strict, it is",
+      "undefined: there is no association to be positive or negative.",
+      "It also assumes every selected feature is positive. Two members of this family are consistently",
+      "NEGATIVE across all three cohorts that record them, which is a same-signed, transferable",
+      "direction and perfectly usable evidence -- just not a positive one."
+    ]
+  },
+  "feature_family": {
+    "conditional_members": [
+      {
+        "admission_condition": "graph_score enters the scorer only if its consumed-minus-nonconsumed association is strictly positive on the COLD subpopulation of coldstart_train, measured on the transformed values with the real node-id consumption label. That single decision is made on the fit split only.",
+        "name": "graph_score",
+        "prohibited": "graph_score may not be re-admitted with a negative sign. Its registered direction is positive; a sign flip discovered in the data is a finding to report, not a feature to fit.",
+        "registration_evidence": {
+          "organic_eval": 0.02628032,
+          "organic_train": 0.02242963,
+          "secondary_anchor": 0.020816
+        },
+        "required_direction": "positive",
+        "signed_weight": 1.0,
+        "source_field": "graph_score",
+        "status": "excluded_by_default",
+        "verification_condition": "If admitted on coldstart_train cold rows, graph_score must then also show a strictly positive cold-subpopulation association on coldstart_eval and on secondary_anchor. Failing either verification, graph_score is REMOVED and the run continues on the four-member core, because exclusion is the registered default and returning to a registered default is not a new choice.",
+        "why_excluded_by_default": [
+          "The whole-tail direction is positive in all three cohorts, but an approximate probe of the",
+          "cold subpopulation alone (2026-08-01..08-22, rank 3..8, n=3610 cold of 19746) found",
+          "graph_score FLIPPING to -0.011 against +0.017 whole-tail.",
+          "That probe used a proxy consumption label and no component split, so it is go/no-go evidence",
+          "only and cannot by itself reject the feature. It is, however, enough to move the burden of",
+          "proof: graph_score is the one member whose whole-population sign is not safe on the very",
+          "cohort this revision exists to admit.",
+          "Excluded by default therefore means falling back to the four-member core is the",
+          "PRE-REGISTERED outcome, not a post-hoc retreat."
+        ]
+      }
+    ],
+    "excluded_candidates": {
+      "access_count": "already banned at policy.json#selected_policy.bans as a mutable post-outcome stat; not readmitted",
+      "methods": "a thresholded discretization of the four component scores already in the family; redundant by construction",
+      "node_age": "association direction reverses between cohorts; already rejected in the frozen policy and left rejected",
+      "path_length": "available on the RecallResult but absent from feature-analysis.json#associations, so no direction has ever been measured and none can honestly be pre-registered",
+      "residual_rank_or_scope_rank": "a function of the ranker's own ordering and of where the extractor cut the tail (protocol.organic_head_cut = 3); it would encode the stratum boundary rather than the candidate",
+      "scope": "not measured in feature-analysis.json#associations; no registrable direction",
+      "usefulness_score": "already banned at policy.json#selected_policy.bans as a mutable post-outcome stat; not readmitted"
+    },
+    "family_name_already_reserved": "scripts/recall_map_relevance_eval.py:91 FEATURE_FAMILIES already carries 'recorded_delivery_scores'; this pre-registration promotes it from analysis-only to fitted.",
+    "id": "recorded-delivery-scores-v1",
+    "members": [
+      {
+        "name": "result_score",
+        "reading": "the blended rank score the retriever assigned this candidate for this query",
+        "registration_evidence": {
+          "organic_eval": 0.27967287,
+          "organic_train": 0.47068638,
+          "secondary_anchor": 0.08752404
+        },
+        "required_direction": "positive",
+        "signed_weight": 1.0,
+        "source_field": "score",
+        "status": "core"
+      },
+      {
+        "name": "trigger_score",
+        "reading": "the candidate matched a registered trigger, the strongest same-signed component",
+        "registration_evidence": {
+          "organic_eval": 0.16743337,
+          "organic_train": 0.25199926,
+          "secondary_anchor": 0.04680441
+        },
+        "required_direction": "positive",
+        "signed_weight": 1.0,
+        "source_field": "trigger_score",
+        "status": "core"
+      },
+      {
+        "name": "bm25_score",
+        "reading": "consistently NEGATIVE in all three cohorts that record it, which inverts the naive reading that a better lexical match is a better candidate",
+        "registration_evidence": {
+          "organic_eval": -0.07457051,
+          "organic_train": -0.05068905,
+          "secondary_anchor": -0.01995163
+        },
+        "required_direction": "negative",
+        "signed_weight": -1.0,
+        "source_field": "bm25_score",
+        "status": "core"
+      },
+      {
+        "name": "vector_score",
+        "reading": "consistently NEGATIVE in all three cohorts that record it, like bm25",
+        "registration_evidence": {
+          "organic_eval": -0.09368437,
+          "organic_train": -0.08142312,
+          "secondary_anchor": -0.01688523
+        },
+        "required_direction": "negative",
+        "signed_weight": -1.0,
+        "source_field": "vector_score",
+        "status": "core"
+      }
+    ],
+    "overturn_reason": [
+      "The rejection was correct for a policy whose transfer evidence was the observed-map arm.",
+      "It is the wrong rejection for cold start: the family is absent from that ONE historical arm,",
+      "not from the decision. src/living_memory/retrieval.py:345 RecallResult is a frozen dataclass",
+      "whose score, bm25_score, vector_score, graph_score and trigger_score are float fields with 0.0",
+      "defaults, so at live map-build time every residual entry carries all five, always.",
+      "Rejecting a live-always-present family because one historical extractor did not persist it is",
+      "letting a recording gap decide a production feature set."
+    ],
+    "overturned_text": "absent from all 686 observed-map eval items",
+    "overturns": "artifacts/recall-map/relevance/policy.json#selected_policy.rejected_features.recorded_delivery_scores",
+    "source": "the RecallResult of the residual entry being scored, already in hand at src/living_memory/recall_map.py:1930 where _select_pool enumerates results but reads only .node",
+    "transform": {
+      "direction_checked_on": "the transformed values the scorer actually consumes, not the raw values, so the constraint governs exactly what is scored. See limitations.winsorization_shifts_the_measured_statistic.",
+      "no_log_transform": "the registration evidence in feature-analysis.json#associations was measured as a mean difference on raw recorded values; a log transform changes mean differences and would leave the registered directions describing a quantity the scorer does not use",
+      "order": [
+        "winsorize",
+        "standardize",
+        "round"
+      ],
+      "round": "round(..., 8), matching the evaluator's existing feature arithmetic so threshold ties reproduce",
+      "standardize": "subtract the coldstart_train mean, divide by the coldstart_train scale, both published",
+      "winsorize": "clip each member at the 1st and 99th percentile of its value on the coldstart_train split only, cold and warm rows pooled; the two clip points are published in the revised policy",
+      "winsorize_reason": "monotone and sign-preserving, so a registered direction survives it, while bounding the influence any single heavy-tailed row can have on a standardized sum"
+    },
+    "why_this_family_is_the_right_shape": [
+      "It is candidate-time and query-specific: it describes what THIS retrieval found about this node",
+      "for this query, which is exactly the evidence a never-delivered node owns and the history block",
+      "cannot see.",
+      "It is not a restatement of the node. Two different queries give the same node different values,",
+      "so the family cannot degenerate into a per-node lookup the way any node-intrinsic statistic can.",
+      "It is computed upstream by the ranker before the map exists, so it is strictly pre-decision and",
+      "cannot absorb the delivery outcome."
+    ]
+  },
+  "honesty_bound": [
+    "This plan was authored by a node that owns only artifacts/recall-map/relevance/coldstart-prereg.json",
+    "and artifacts/recall-map/relevance/coldstart-design.md. It fitted nothing, wrote no extractor, and",
+    "read no dataset produced by the sibling coldstart-dataset node, which was running in parallel and",
+    "whose output did not exist in this worktree at registration time.",
+    "Every association value quoted here was copied from the already-committed",
+    "feature-analysis.json#associations. No association, consumption rate, precision, lift or admitted",
+    "fraction was COMPUTED by this node from any database.",
+    "The z-term arithmetic, the frozen-policy lifts, and the binomial calibration table WERE computed",
+    "here, from constants already published in policy.json and policy-design.md. They are recomputations",
+    "of committed numbers, not new measurements, and each is reproducible from the cited fields alone.",
+    "The generalization threshold, the admitted-fraction band, the cold minimums and the binomial alpha",
+    "were all fixed before any fitted result existed. That separation is the point of this node, not an",
+    "accident of scheduling.",
+    "No query text, node content, label, task name, host, cache key or session identity appears in this",
+    "artifact."
+  ],
+  "limitations": {
+    "cold_probe_is_approximate": [
+      "The only cold-subpopulation evidence available at registration used a PROXY consumption label",
+      "and no component split, and it did not separate the score components. It is cited as the reason",
+      "graph_score is excluded by default and as the reason the cold-subpopulation clause exists.",
+      "It is not cited as evidence for any registered direction, and no core member's sign rests on it."
+    ],
+    "family_directions_are_whole_tail_priors": [
+      "The four core members' registered signs come from whole-tail associations on cohorts that are",
+      "predominantly history-bearing. The cold-subpopulation clause exists precisely because those",
+      "priors may not survive on cold rows.",
+      "It is a real possibility that a core member fails on cold rows and the revision returns a",
+      "negative result. That outcome is registered as legitimate rather than guarded against, because",
+      "the alternative -- leaving the family unconstrained on cold rows -- is the mistake the frozen",
+      "policy already made in the other direction."
+    ],
+    "no_interaction_or_collinearity_analysis": [
+      "score is the ranker's blend of the four components, so the family deliberately contains both a",
+      "blend and its parts. Under signed unit weights the sum reduces to a channel-composition contrast",
+      "-- high blended score earned by trigger and graph rather than by bm25 and vector -- which is the",
+      "intended reading.",
+      "No variance-inflation or interaction analysis was performed, and equal signed weights are a",
+      "deliberate refusal to search coefficient space rather than a claim that the members are",
+      "independent."
+    ],
+    "secondary_anchor_is_not_session_independent": "recorded in full at direction_constraint_amendment.replacement_cohort_weakness_disclosed: it tests stratum transfer, not session transfer, and it is a direction check rather than the generalization evidence",
+    "the_holdout_is_historical_not_prospective": [
+      "coldstart_holdout is a partition of already-persisted state at a pinned as-of. It cannot show",
+      "how the revised selector behaves on traffic that the revised selector itself shaped.",
+      "That prospective question belongs to the post-deployment field population at",
+      "policy.json#holdout_boundary, which this subtree may neither create nor read, and it is not",
+      "claimed here."
+    ],
+    "winsorization_shifts_the_measured_statistic": [
+      "The registered directions were measured as mean differences on raw values, but the constraint is",
+      "checked on winsorized values. Clipping is monotone and touches at most 2% of rows, so a sign",
+      "flip from winsorization alone is implausible -- but a mean difference is not invariant under",
+      "clipping, so the two are not the same statistic.",
+      "The constraint is deliberately checked on the transformed values, because a constraint should",
+      "govern what the scorer consumes rather than a quantity nobody scores. If a member's sign differs",
+      "between raw and winsorized values, the fit must report both."
+    ]
+  },
+  "missing_value_rule": {
+    "availability_at_registration": {
+      "observed_map_eval": {
+        "items": 686,
+        "with_recorded_scores": 0
+      },
+      "organic_eval": {
+        "items": 1389,
+        "with_recorded_scores": 1389
+      },
+      "organic_train": {
+        "items": 3102,
+        "with_recorded_scores": 3102
+      },
+      "secondary_anchor": {
+        "items": 4061,
+        "with_recorded_scores": 3723
+      }
+    },
+    "cause_a_live_unreadable": {
+      "can_this_occur": "not for a well-formed RecallResult: src/living_memory/retrieval.py:345-357 declares score as a required float and the four components as float = 0.0. The rule below is a fail-closed guard against a malformed residual, not an expected path.",
+      "no_new_reason_code": "SELECTION_REASON_CODES order is frozen and positional and POOL_GATE_REASON_CODES is append only; a fail-closed unscoreable row is below every threshold, so lr already states the truth and no code is added, reordered, or spent",
+      "rationale": "a live row whose own candidate-time evidence cannot be read has, by definition, no candidate-time evidence to be admitted on",
+      "reason_code": "lr, the existing frozen code for a member below the relevance threshold",
+      "rule": "the row is INADMISSIBLE and is excluded from the pool",
+      "when": "a residual entry at map-build time whose score fields cannot be read as finite floats, or which is not a RecallResult at all"
+    },
+    "cause_b_historically_unrecorded": {
+      "rule": [
+        "The row is excluded from this family's fit, from its direction checks, and from threshold",
+        "calibration. It is counted and reported as family_unscoreable, never silently dropped.",
+        "It remains in its cohort for the legacy-feature direction checks and remains in the",
+        "denominator of every admitted-fraction measurement.",
+        "When the revised policy is APPLIED to such a row, the row is inadmissible, exactly as in",
+        "cause A."
+      ],
+      "when": "a row reconstructed from persisted state whose delivery envelope never recorded the scores: all 686 observed-map eval items, and 338 of the 4061 secondary-anchor items"
+    },
+    "no_missingness_indicator": true,
+    "no_missingness_indicator_reason": [
+      "A missingness indicator for this family could not fit on anything real. Live missingness is",
+      "structurally impossible, so the indicator would be trained entirely on which historical extractor",
+      "wrote the row -- that is source identity, already banned at",
+      "policy.json#selected_policy.bans.forbidden_predictors_or_ties.",
+      "It would also be perfectly correlated with the observed-map arm, making it a cohort label."
+    ],
+    "observed_map_arm_verdict": {
+      "consequence_stated_plainly": "The frozen policy's observed-map transfer PASS (37 items, 9 consumed, 0.243243 against the 0.233 floor at policy.json#transfer_verification) is NOT inherited by the revision and must not be claimed for it. The revision's transfer evidence is the three-way cold split registered below, and nothing else.",
+      "expected_admitted_items_reason": "every observed-map row is family_unscoreable and therefore inadmissible under the fail-closed rule. This is registered HERE, before any fit, as the EXPECTED result, so that it cannot later be presented either as a surprise or as a failure.",
+      "expected_admitted_items_under_the_revision": 0,
+      "reason": "0 of 686 items record any delivery score. The arm cannot measure this family's direction, magnitude, or threshold. Keeping it as a transfer cohort for this family would mean verifying a claim against data that cannot express it.",
+      "remains_a_transfer_cohort_for_this_family": false,
+      "retained_roles": [
+        "the direction cohort for the legacy five features, where it keeps its original full force",
+        "an admitted-fraction ceiling cohort",
+        "a reported cohort: its admitted count under the revision must appear in the fit artifact"
+      ]
+    },
+    "prohibited": "mean substitution for any member of this family, under either cause",
+    "prohibited_reason": [
+      "Mean substitution is the defect this whole subtree exists to repair. For the history block it",
+      "asserts that a never-delivered node looks like a node with e**2.8567 = 17 matured windows.",
+      "There is no weaker version of it available here either: omitting a z-term from an additive",
+      "standardized sum is ARITHMETICALLY IDENTICAL to substituting that member's mean, because the",
+      "omitted term's contribution is (mean - mean)/scale = 0. A scorer cannot both be additive and",
+      "treat an unreadable member as neutral without imputing the mean.",
+      "So the only fail-closed rule an additive scorer admits is that an unscoreable row is",
+      "inadmissible. That is the rule registered above, and its consequences are registered below",
+      "rather than discovered later."
+    ],
+    "two_distinct_causes": "Missingness has two causes with different meanings, and collapsing them is how a recording gap would get scored as evidence."
+  },
+  "plan_sha256": "d17082c4d3b321a71cdb1399163c352728511ef4dd25c685fbf10de2d40b5df3",
+  "plan_sha256_over": [
+    "amendment_policy",
+    "artifact",
+    "binds",
+    "cold_candidate_definition",
+    "defect_being_repaired",
+    "direction_constraint_amendment",
+    "feature_family",
+    "honesty_bound",
+    "limitations",
+    "missing_value_rule",
+    "plan_sha256_over",
+    "prose_companion",
+    "reads_at_registration",
+    "registered_by",
+    "schema_version",
+    "scorer_shape",
+    "seal_note",
+    "split_protocol",
+    "verdict_rule"
+  ],
+  "prose_companion": "artifacts/recall-map/relevance/coldstart-design.md",
+  "reads_at_registration": {
+    "artifacts/recall-map/follow-signal/census.json": "frozen_scorer_probe",
+    "artifacts/recall-map/relevance/feature-analysis.json": "associations, availability, feature_policy, transferability",
+    "artifacts/recall-map/relevance/policy-design.md": "prose conventions and the frozen member rule",
+    "artifacts/recall-map/relevance/policy.json": "selected_policy, holdout_boundary, transfer_verification",
+    "scripts/recall_map_relevance_eval.py": "HOLDOUT_MARKERS, assign_component_splits, FEATURE_FAMILIES",
+    "src/living_memory/recall_map.py": "_history_features, _relevance_features, _directional_zsum, _select_pool",
+    "src/living_memory/retrieval.py": "the RecallResult dataclass carried by every residual entry"
+  },
+  "registered_at": "2026-08-24T13:20:00Z",
+  "registered_by": "goal node recall-map-pool-quality/selector-cold-start-recalibration/coldstart-prereg, which owns only artifacts/recall-map/relevance/coldstart-prereg.json and artifacts/recall-map/relevance/coldstart-design.md: it fitted nothing, read no dataset the sibling coldstart-dataset node produces, and computed no consumption rate, precision, lift or admitted fraction of its own",
+  "schema_version": 1,
+  "scorer_shape": {
+    "feature_order_note": "the legacy five keep their existing positions and arithmetic; the family is APPENDED, so feature 0 remains level_schema and features 1..4 remain the history block",
+    "form": "a single additive standardized sum over one feature vector, exactly as _directional_zsum does today",
+    "invariants_the_revision_must_not_disturb": [
+      "SELECTION_REASON_CODES order is frozen and positional; POOL_GATE_REASON_CODES is append only",
+      "_SelectionLedger.freeze keeps trimming trailing zeros, so an unarmed server still emits exactly seven counts in sel.x",
+      "the accounting equation sel.n == sel.e + sum(sel.x) still holds",
+      "RELEVANCE_POLICY_ID and RELEVANCE_POLICY_DIGEST are bumped together"
+    ],
+    "no_cold_branch": true,
+    "no_cold_branch_reason": [
+      "A separate threshold or bonus for rows with matured == 0 would make admission a function of a",
+      "membership test rather than of evidence. That is the flag-gate and skill-gate shape banned at",
+      "policy.json#selected_policy.bans.forbidden_enablement, and it is what the capability contract",
+      "means by a lookup table: it would 'fix' cold start without learning anything about which cold",
+      "nodes are worth delivering.",
+      "If a single threshold cannot satisfy the cold band and the overall ceiling at once, that is a",
+      "PRE-REGISTERED NEGATIVE RESULT to be recorded as such -- not a problem to be solved by adding a",
+      "branch."
+    ],
+    "signed_weights": "every member enters at unit magnitude with its registered sign. No per-feature coefficient is fitted, preserving the frozen policy's weights_rule: no coefficient was optimized on labels.",
+    "structural_deficit_the_family_must_cover": {
+      "cold_row_history_contribution": 0.0,
+      "family_z_needed_by_a_cold_schema_row": 2.2026,
+      "family_z_needed_by_a_cold_trace_or_concept_row": 4.4703,
+      "reading": [
+        "A heavily delivered row carries roughly +5.7 of history z that a cold row structurally cannot",
+        "obtain. For a cold row to compete at all, the family must be able to reach comparable",
+        "magnitude on a genuinely strong candidate.",
+        "Four signed unit-weight members can: a candidate at the top of the score distribution, with a",
+        "trigger match, and with zero bm25 and zero vector -- a node reached by association rather",
+        "than by surface match -- accumulates positive z on all four terms at once.",
+        "That population is real and already named in the codebase: src/living_memory/replay.py:114",
+        "identifies graph_score > 0 with bm25_score == 0 and vector_score == 0 as a distinct kind of",
+        "hit.",
+        "This is also why the family is not narrower. A two-member family could not plausibly reach",
+        "+4.47, so trace and concept nodes would stay categorically inadmissible while cold start was",
+        "declared repaired for schema nodes only -- the same collapse one level down."
+      ],
+      "warm_row_history_contribution_M1000_C0_K1000": 5.6823,
+      "warm_row_history_contribution_M1000_C500_K0": 5.7821
+    },
+    "threshold_inherited": false,
+    "threshold_reason": "3.8708378402511 was the score at descending rank 621 of 3102 warm organic-train items under a five-feature scorer. It is meaningless against a wider vector on a cold-inclusive population and must be refitted, not carried over.",
+    "what_may_be_fitted_on_labels": [
+      "the single scalar admission threshold, on coldstart_train only"
+    ],
+    "what_may_not_be_fitted": [
+      "per-feature weights or coefficient magnitudes",
+      "member signs",
+      "family membership, beyond the one registered conditional rule for graph_score",
+      "any per-cohort, per-scope, per-level or per-coldness branch"
+    ]
+  },
+  "seal_note": [
+    "plan_sha256 is sha256 over canonical_json({k: prereg[k] for k in plan_sha256_over}) encoded utf-8,",
+    "the same construction artifacts/recall-map/prereg.json uses and the same rendering",
+    "src/living_memory/postsession/judge.py:286 canonical_json produces.",
+    "plan_sha256, registered_at and amendments are stamped after sealing and are therefore outside",
+    "plan_sha256_over; the hashed set is exactly what plan_sha256_over names, and plan_sha256_over names",
+    "itself, so the choice of what is sealed is itself sealed.",
+    "coldstart-fit must verify this hash before reading any split, and must record it in the revised",
+    "selected_policy so the fitted result is bound to the plan that preceded it."
+  ],
+  "split_protocol": {
+    "assignment_rule": [
+      "draw = int(sha256(seed + '\\0' + component_id).hexdigest()[:16], 16) / float(16**16)",
+      "draw < 0.60 -> coldstart_train; draw < 0.80 -> coldstart_eval; otherwise coldstart_holdout",
+      "the draw uses only the seed and the opaque component digest, so no label, count or feature value",
+      "can influence assignment"
+    ],
+    "component_membership": "event-level, not item-level: an event carrying no scorable item can still be the cache or session bridge between two events and must still join the component",
+    "forced_assignment": {
+      "reason": "it carries over the existing protection at assign_component_splits (a map delivery forces its whole component out of train) and keeps the holdout free of an arm that is family_unscoreable by construction and so could only dilute it",
+      "rule": "any component containing an observed-map delivery event is forced to coldstart_eval"
+    },
+    "identity_rule": "connected_components(source-qualified cache key, transport session, session)",
+    "identity_rule_unchanged": "the same rule the existing work uses, implemented at scripts/recall_map_relevance_eval.py:702 assign_component_splits and recorded at dataset-manifest.json#split.algorithm",
+    "if_a_split_cannot_reach_the_minimum": "the fit HALTS and reports. It may not proceed on a smaller split, and it may not rebalance the fractions to manufacture one. Changing the minimum requires a new pre-registration under a new plan_sha256 sealed before the next number is read, per amendment_policy.",
+    "known_residual_contamination": {
+      "stated_rather_than_omitted": "recorded here so that the revision's generalization claim is read as 'directions pre-registered, magnitudes and threshold held out' rather than as a claim of a fully blind holdout, which it is not",
+      "what": "feature-analysis.json#associations already publishes this family's aggregate directions over organic_train, organic_eval and secondary_anchor, which jointly cover the population the three new splits are drawn from. The holdout is therefore not virgin with respect to the family's DIRECTION.",
+      "why_it_is_inert": [
+        "Those published numbers are cohort-level mean differences, never item rows",
+        "(dataset-manifest.json#privacy.item_level_rows = false), so they fix no row's membership.",
+        "The directions they inform are pre-registered HERE, in this file, before any fit and before",
+        "the splits exist. Committing to a direction in advance is what a pre-registration is for;",
+        "the leak would be choosing the direction after seeing the holdout, which this file makes",
+        "impossible.",
+        "The holdout IS virgin with respect to every quantity the verdict depends on: the clip points,",
+        "the means and scales, the member set, the threshold, the admitted fraction and the lift."
+      ]
+    },
+    "minimum_cold_candidates_per_split": 400,
+    "minimum_cold_candidates_per_split_derivation": [
+      "Every split must contain cold candidates, because a cohort of history-bearing rows is exactly",
+      "the leakage being repaired -- that is the failure mode of the frozen fit, whose cohort was",
+      "ledger organic-tail items that all had history.",
+      "400 is anchored on the one cold measurement in hand: the cold probe found 3610 cold rows in a",
+      "narrow slice (2026-08-01..08-22, ranks 3..8) of 19746. A 20% partition of even that narrow slice",
+      "yields about 722, so 400 is comfortably reachable while still being large enough that the",
+      "holdout's cold-admission requirement is not decided by a handful of rows."
+    ],
+    "naming_constraint": {
+      "audit_field": "the coldstart block must carry field_subtree_accessed: false and post_deployment_holdout_accessed: false, mirroring policy.json#holdout_boundary.freeze_read_audit",
+      "distinct_population": "the tokens are reserved for the post-deployment field population described at policy.json#holdout_boundary, whose status is semantic_boundary_frozen_population_not_created. That population is a different thing entirely -- candidate-only events created strictly after a sealed deployment instant -- and this subtree may neither create nor read it. coldstart_holdout is a historical partition of already-persisted state and does not touch it.",
+      "rule": "the holdout partition is named coldstart_holdout and lives in artifacts/recall-map/relevance/dataset-manifest.json#coldstart",
+      "why": "scripts/recall_map_relevance_eval.py:64 HOLDOUT_MARKERS rejects three literal substrings BEFORE resolving any path, matching against both the raw text and the resolved lowercased path. A partition or directory carrying one of those tokens would be refused by every command in the evaluator."
+    },
+    "pairwise_component_disjoint": true,
+    "partitions": [
+      "coldstart_train",
+      "coldstart_eval",
+      "coldstart_holdout"
+    ],
+    "per_split_reporting": [
+      "items",
+      "consumed",
+      "rate",
+      "cold_candidates",
+      "cold_candidate_share",
+      "cold_consumed",
+      "cold_base_rate",
+      "family_unscoreable",
+      "opaque component digest list",
+      "membership digest"
+    ],
+    "refit_checkability": {
+      "primary_check": {
+        "executable": true,
+        "name": "withheld_holdout_reproduction",
+        "procedure": "re-run the fit with the coldstart_holdout partition physically absent from the input. The fitted parameter digest -- clip points, means, scales, member set and threshold -- must be BYTE-IDENTICAL to the digest produced by the full run.",
+        "why_this_is_the_strong_form": "it converts an unfalsifiable claim about what a script did not read into a deterministic equality anyone can re-run. If any holdout row influenced any parameter, the digests differ."
+      },
+      "principle": "'not refit on' is reproduced, not asserted",
+      "supporting_checks": [
+        "the membership_digest of coldstart_holdout cited by the revised policy must equal the one in",
+        "dataset-manifest.json#coldstart; a re-drawn holdout changes the digest and fails.",
+        "the commit that introduced the holdout digest must be an ancestor of the commit carrying the",
+        "revised policy, checkable with git merge-base --is-ancestor, so the seal predates the fit in",
+        "recorded history and not merely in prose.",
+        "pairwise intersection of the three published component lists must be empty.",
+        "the revised policy must record no_eval_refit: true and no_holdout_refit: true alongside the",
+        "reproduction result, not instead of it."
+      ]
+    },
+    "seal": {
+      "fail_closed": "the fit script must refuse to open the holdout partition until the parameter digest exists on disk, and must record holdout_first_read_after_parameters_sealed: true",
+      "ordering": [
+        "1. coldstart-dataset writes the three splits and their digests into",
+        "   dataset-manifest.json#coldstart and commits.",
+        "2. coldstart-fit reads coldstart_train, fits, and writes the fitted parameter digest to disk.",
+        "3. Only then may coldstart_eval be read, for direction verification and sensitivity.",
+        "4. Only then may coldstart_holdout be read, exactly once, for the verdict."
+      ],
+      "single_evaluation": "holdout_evaluations must equal 1 in the revised policy",
+      "what_is_published": "for each split, an opaque membership_digest = sha256 over the canonical JSON of the sorted list of per-item opaque keys, plus a component_digest over the sorted component list. Item rows themselves are never published, preserving dataset-manifest.json#privacy.item_level_rows = false"
+    },
+    "seed": "recall-map-coldstart-components-v1",
+    "seed_must_differ_from": "recall-map-relevance-components-v1",
+    "seed_must_differ_reason": [
+      "Reusing the existing seed would reproduce the existing train/eval boundary, so the new holdout",
+      "would be a re-slice of the old eval -- a set already consumed by the frozen policy's transfer",
+      "verification and already summarised in feature-analysis.json.",
+      "A fresh draw over the same identity rule keeps component disjointness while making the holdout's",
+      "membership a set no prior decision was made on."
+    ],
+    "target_fractions": {
+      "coldstart_eval": 0.2,
+      "coldstart_holdout": 0.2,
+      "coldstart_train": 0.6
+    }
+  },
+  "verdict_rule": {
+    "admitted_fraction_ceiling": {
+      "applies_to": "every split, independently",
+      "cold_maximum": 0.25,
+      "denominator": "candidates eligible after the unchanged ballast filter",
+      "overall_maximum": 0.3,
+      "reference_points_at_registration": {
+        "frozen_policy_admitted_fraction_observed_map_eval": 0.0567,
+        "frozen_policy_admitted_fraction_organic_eval": 0.1564,
+        "frozen_policy_admitted_fraction_organic_train": 0.2046,
+        "live_admitted_fraction": "0.0151 to 0.0189"
+      },
+      "why_a_ceiling_is_required": [
+        "The live selector admits 1.51-1.89% of candidates against a policy calibrated for 20%.",
+        "A revision that 'fixes' that by admitting everything is not a fix -- it is the map turning",
+        "into noise, which the root goal names as the one thing the repair must not do.",
+        "Without a stated ceiling nothing in the artifact distinguishes a selector that learned which",
+        "cold nodes are worth delivering from one that stopped selecting.",
+        "The cold ceiling is the tighter of the two because that is where the flooding risk actually",
+        "sits: the live residual is predominantly cold, so an unbounded cold admission rate would",
+        "dominate the pool by itself."
+      ]
+    },
+    "admitted_fraction_floor": {
+      "cold_admitted_band_on_train": [
+        0.05,
+        0.25
+      ],
+      "cold_minimum_on_train": 0.05,
+      "cold_minimum_on_train_reason": "cold admission today is arithmetically zero; any repair must move it materially, and a floor is what stops the fit from satisfying the lift by admitting almost no cold rows at all",
+      "overall_minimum_on_train": 0.1,
+      "overall_minimum_on_train_reason": [
+        "The frozen policy's minimum_train_selection_fraction of 0.20 is NOT carried over unchanged.",
+        "That 0.20 was calibrated against a warm-only fit cohort of 3102 delivered items. The",
+        "cold-inclusive candidate population is a different and much larger denominator, so reusing",
+        "the number would be a category error dressed as continuity.",
+        "0.10 preserves the intent -- the selector must still select a substantial share, not collapse",
+        "-- against the denominator that now applies."
+      ]
+    },
+    "companion_conditions": {
+      "binomial_guard": {
+        "alpha": 0.05,
+        "calibration_checked_at_registration": [
+          "At alpha = 0.05 the two conditions divide labour cleanly rather than one dominating.",
+          "Once about 100 cold rows are admitted, lift >= 1.50 is the binding condition at every",
+          "plausible base rate.",
+          "Below that the binomial binds and demands a proportionally larger effect: at the floor of",
+          "40 admitted rows it requires lift 2.50 at a 0.05 base rate, 2.00 at 0.10, 1.83 at 0.15",
+          "and 1.62 at 0.20.",
+          "alpha = 0.01 was considered and REJECTED as over-constraining: at a 0.05 base rate it",
+          "would demand 427 admitted cold holdout rows before lift 1.50 could clear it, which the",
+          "cold admitted-fraction ceiling could forbid outright."
+        ],
+        "must_hold": true,
+        "role": "small-sample guard, so the lift cannot be met by luck on a handful of admitted rows",
+        "test": "one-sided exact binomial: P(X >= observed consumed | n = admitted cold holdout candidates, p = cold holdout base rate) <= alpha"
+      },
+      "minimum_cold_admitted_on_holdout": 40,
+      "minimum_cold_admitted_on_holdout_reason": "the parent contract requires holdout cold admission strictly greater than zero; a bar of one row is decided by luck, so the registered floor is 40 and the strictly-positive requirement is subsumed by it"
+    },
+    "decision_procedure": [
+      "1. Verify every split meets minimum_cold_candidates_per_split = 400 and that the three component",
+      "   lists are pairwise disjoint. Any failure: HALT, do not proceed on a smaller split.",
+      "2. Check every core member's registered sign on coldstart_train, whole-tail and cold. Any core",
+      "   member failing its registered sign, or indeterminate for want of cold rows: FAIL.",
+      "3. Decide graph_score's inclusion on coldstart_train cold rows alone, per its registered",
+      "   admission_condition.",
+      "4. Fit clip points, means, scales and the threshold on coldstart_train only. Write the parameter",
+      "   digest to disk.",
+      "5. Verify registered signs on coldstart_eval and secondary_anchor, whole-tail and cold. Drop",
+      "   graph_score to the registered default if it fails verification; a core member failing is a FAIL.",
+      "6. Check the admitted-fraction band on coldstart_train and coldstart_eval. Outside the band: FAIL.",
+      "7. Read coldstart_holdout exactly once. Compute admitted cold count, cold lift, the binomial",
+      "   p-value, and the admitted fractions.",
+      "8. PASS requires all of: holdout_cold_lift >= 1.5; admitted cold holdout count >= 40 and > 0;",
+      "   binomial p <= 0.05; overall admitted fraction <= 0.30 and cold admitted fraction <= 0.25 on",
+      "   every split; the withheld-holdout reproduction returning a byte-identical parameter digest.",
+      "9. Any other outcome is a recorded FAIL or NEGATIVE RESULT. Neither may be repaired by widening",
+      "   the family, adding a branch, re-drawing a split, or re-reading the holdout."
+    ],
+    "generalization_threshold": 1.5,
+    "generalization_threshold_comparison": ">=",
+    "generalization_threshold_quantity": "holdout_cold_lift = (consumed among admitted cold holdout candidates / admitted cold holdout candidates) divided by (consumed cold holdout candidates / cold holdout candidates)",
+    "holdout_cold_admission_must_exceed_zero": true,
+    "negative_result_is_a_legitimate_outcome": "If a single additive threshold cannot satisfy the cold band and the overall ceiling at once, or if the family's registered signs do not survive the cold subpopulation, the correct output is a recorded negative result naming which condition failed and by how much. That is a finding about the feature family, and it is worth more than a passing number obtained by amending this file after seeing it.",
+    "threshold_anchor": {
+      "derivation": "the frozen policy's own transfer lift on its disjoint organic eval arm is 1.6138. 1.50 sits just under it: the revision must discriminate among cold candidates nearly as well as the frozen policy discriminates among warm ones on an independent arm, with a small allowance for the fact that cold rows carry no history signal at all.",
+      "frozen_policy_lifts_recomputed_at_registration": {
+        "observed_map_eval": {
+          "base_rate": 0.08309,
+          "lift": 2.9275,
+          "selected_precision": 0.243243
+        },
+        "organic_eval": {
+          "base_rate": 0.37869,
+          "lift": 1.6138,
+          "selected_precision": 0.611111
+        },
+        "organic_train": {
+          "base_rate": 0.505158,
+          "lift": 1.4334,
+          "selected_precision": 0.724083
+        }
+      },
+      "source": "artifacts/recall-map/relevance/policy.json#transfer_verification"
+    },
+    "why_a_lift_and_not_an_absolute_rate": [
+      "The cold subpopulation's consumption base rate has never been measured with a real label, so any",
+      "absolute rate registered now would be a guess that is either vacuous (below the base rate, passed",
+      "by admitting everything) or unreachable.",
+      "A lift is calibration-free and cannot be gamed by volume: a selector that admits every cold",
+      "candidate scores exactly 1.00 by construction, and so does a selector that admits at random.",
+      "It states the capability directly -- the selector DISCRIMINATES among cold candidates -- rather",
+      "than restating the population's base rate."
+    ]
+  }
+}
