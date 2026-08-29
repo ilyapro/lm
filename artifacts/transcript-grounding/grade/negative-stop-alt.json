@@ -1,0 +1,198 @@
+{
+  "goal": "transcript-grounding",
+  "phase": 2,
+  "field_label": "alt",
+  "verdict": "negative-stop",
+  "reason": "join-coverage-below-60pct",
+  "second_independent_reason": "matched-population-is-selection-biased-toward-consumed-events",
+  "phase_2_ran": false,
+  "generated_at": "2026-08-29T08:37:26Z",
+  "generator": "goal-node transcript-grounding/alt-field-grade — gate evaluation only; no grader was written or run",
+  "head": "1520a929d1268d5ef6562d46cf00a6244dd5a0ea",
+
+  "falsifier": {
+    "statement": "If corpus-join coverage is below 60% of recall events, the signal is poor and the goal stops with a recorded negative phase-1 result.",
+    "origin": "root goal intent, registered as a phase-1 falsifier before any measurement existed",
+    "threshold": 0.6,
+    "matched_events": 4426,
+    "total_events": 16098,
+    "observed_share": 0.274941,
+    "observed_over_threshold": 0.458235,
+    "shortfall_absolute": 0.325059,
+    "verdict": "fail"
+  },
+
+  "gate_input": {
+    "coverage_report": {
+      "path": "artifacts/transcript-grounding/join/coverage-alt.json",
+      "sha256": "d54af720103394de080bc9f6fcb498f8d6fb4ca16e51fc38c76d132b62176118",
+      "generated_at": "2026-08-29T08:29:08Z",
+      "falsifier_60pct": {
+        "share": 0.274941,
+        "threshold": 0.6,
+        "verdict": "fail"
+      }
+    },
+    "match_table": {
+      "path": "artifacts/transcript-grounding/join/match-table-alt.jsonl.gz",
+      "rows": 16098,
+      "sha256": "be7375c6e5185ff5988f961b93e8de91963928ad3e65393e9715aaa5de2973ee",
+      "sha256_matches_value_recorded_in_coverage_report": true,
+      "sha256_matches_the_copy_still_on_the_alt_host": true
+    },
+    "store": {
+      "host": "alt",
+      "path": "/home/user/.local/share/living-memory/global.sqlite3",
+      "access": "sqlite3 file: URI, mode=ro plus PRAGMA query_only=1 (read-only, no writes)",
+      "mtime_utc_at_recheck": "2026-08-29T06:44:48.175364Z",
+      "pinned_snapshot_note": "The phase-1 run's pinned snapshot /home/user/tj/work/snapshot.sqlite3 no longer exists on the alt host, so the recheck below used the live store read-only. The store has not been written since before the join (mtime 06:44:48Z, join 08:29:08Z) and its totals still equal the ones coverage-alt.json recorded (16102 events / 2437 consumed), so the recheck is against the same state the join saw."
+    }
+  },
+
+  "independent_recheck": {
+    "method": "This node did not trust the upstream summary fields. Coverage was recounted from the raw tracked match table in this worktree, and every selection-bias quantity was re-derived on the alt host by joining the match table's 16098 event ids against recall_events.feedback_applied on the read-only store.",
+    "agrees_with_coverage_report": true,
+    "recomputed_matched_events": 4426,
+    "recomputed_total_events": 16098,
+    "recomputed_share": 0.274941,
+    "by_method": {
+      "cli_session": 0,
+      "event_id_echo": 4257,
+      "time_cwd_window": 0,
+      "transport_session": 169,
+      "unmatched": 11672
+    },
+    "match_table_integrity": {
+      "distinct_event_ids": 16098,
+      "duplicate_event_ids": 0,
+      "event_ids_not_found_in_the_alt_store": 0
+    },
+    "selection_bias_reproduced_on_the_store": {
+      "matched": {"events": 4426, "consumed": 2387, "share": 0.539313},
+      "unmatched": {"events": 11672, "consumed": 50, "share": 0.004284},
+      "store_wide": {"events": 16102, "consumed": 2437, "share": 0.151348},
+      "by_method": {
+        "event_id_echo": {"events": 4257, "consumed": 2317, "share": 0.54428},
+        "transport_session": {"events": 169, "consumed": 70, "share": 0.414201}
+      },
+      "enrichment_matched_over_store_wide": 3.563397,
+      "enrichment_matched_over_unmatched": 125.890056,
+      "agrees_with_coverage_report": true
+    },
+    "ledger_emptiness": {
+      "transcript_grounding_verdicts_table_present": false,
+      "significance": "The phase-3 ledger is deployed nowhere on the alt host either. No alt verdict rows exist for phase 4 to read."
+    }
+  },
+
+  "gate_evaluation": {
+    "rule_as_pinned_by_the_phase_2_record": "Grading is unblocked for the alt field only if alt falsifier_60pct.verdict is 'pass'; the selection-bias check must be repeated there, since a coverage number alone would not have caught it.",
+    "source_of_the_rule": "artifacts/transcript-grounding/grade/negative-stop.json, key alt_field_gate.instruction_for_the_operator_s_alt_run",
+    "condition_1_coverage": {"required": "verdict == pass", "observed": "fail", "met": false},
+    "condition_2_selection_bias": {
+      "required": "the matched population must not be selected by a mechanism correlated with consumption",
+      "observed": "enrichment 3.563x store-wide via the same event_id_echo detector measured on local",
+      "met": false
+    },
+    "outcome": "Both conditions fail independently. Either alone mandates the stop; the coverage falsifier is the pre-registered one, the selection bias is the one that would still have blocked a grade had coverage cleared 0.60."
+  },
+
+  "selection_bias_against_the_goal_s_own_target": {
+    "why_this_matters": "Phase 2 exists to grade SILENT (non-consumed) recalls. On alt the join recovers 2039 silent events = 12.66% of the store, and selects them by a mechanism correlated with the very outcome variable phase 4 would model. A grade over that sample could not support the phase-4 generalization claim even if the coverage falsifier were ignored.",
+    "mechanism": "The dominant tier (event_id_echo, 4257 of 4426 matches = 96.2%) finds an event precisely because its recall_event_id was written into the transcript, and the main reason an id gets written there is the memory_remember provenance that CONSUMES it. That tier is therefore close to a consumption detector rather than a neutral join.",
+    "replication_of_the_local_finding": {
+      "local": {"store_wide": 0.171734, "matched": 0.647249, "enrichment": 3.77},
+      "alt": {"store_wide": 0.151348, "matched": 0.539313, "enrichment": 3.563397},
+      "conclusion": "The bias is not a property of one host's corpus. It replicates on an independent store, at the same magnitude, through the same tier."
+    },
+    "alt_is_worse_than_local_in_one_specific_way": {
+      "finding": "On local the transport_session tier was a genuine control: consumed share 0.182 against a store base rate of 0.172, i.e. no enrichment. On alt that tier is itself enriched — 0.414201 against a base rate of 0.151348, a 2.74x factor on n=169.",
+      "implication": "The alt field offers no neutral join tier at all, so there is no unbiased sub-sample to fall back to, however small.",
+      "caveat": "n=169 is small and this comparison was not pre-registered; it is recorded as an observation that weakens the fallback, not as a measured refutation of the tier."
+    },
+    "recency_confound_ruled_out": {
+      "test": "consumed share compared between matched and unmatched events within each calendar month",
+      "comparable_months": 2,
+      "min_events_per_cell": 30,
+      "by_month_matched_vs_unmatched": {
+        "2026-07": {"matched": 0.876081, "matched_n": 347, "unmatched": 0.00995, "unmatched_n": 1005},
+        "2026-08": {"matched": 0.510664, "matched_n": 4079, "unmatched": 0.00375, "unmatched_n": 10667}
+      },
+      "conclusion": "The enrichment holds inside every comparable month, so it is not an artifact of which transcripts survived.",
+      "source": "coverage-alt.json selection_bias.within_month_control, produced by the phase-1 alt node"
+    }
+  },
+
+  "supporting_evidence": {
+    "note": "Measured while evaluating the gate, on the same read-only alt store. NOT pre-registered; recorded because it bears on whether the goal should be re-scoped rather than merely retried.",
+    "structural_ceiling": {
+      "event_ids_echoing_in_any_transcript": 4403,
+      "ceiling_share": 0.273512,
+      "observed_share": 0.274941,
+      "implication": "The join is already at its ceiling — it recovers 4426 events against a ceiling of 4403 echoing events (the 169 transport_session matches supply the small excess). Even a flawless join could not exceed ~27.4% here, so the 60% falsifier is unreachable on this corpus too. Not a runner defect, not tunable.",
+      "and_this_is_not_a_retention_effect": "Unlike local, the alt corpus has full retention: missing_transcripts = 0, the corpus window covers 16098 of the store's 16102 events, and all 2983 index rows verified byte-identical. Retention modulates the ceiling (12.6% local vs 27.4% alt) but does not cause the failure; the binding constraint is the echo mechanism itself."
+    },
+    "gradeable_population_that_phase_2_would_have_had": {
+      "matched_events": 4426,
+      "matched_consumed": 2387,
+      "matched_silent": 2039,
+      "matched_silent_share_of_store": 0.12663,
+      "silent_events_with_at_least_one_delivered_result": 2038,
+      "silent_recall_event_node_deliveries": 19349,
+      "store_wide_deliveries": 87471,
+      "deliveries_source_table": "recall_history_result_nodes"
+    },
+    "the_prescribed_method_cannot_reach_the_unbiased_tier": {
+      "finding": "delivery_record_index — the anchor the grading method requires, because grading must start strictly AFTER the delivery instant to avoid the LM tool-result echo trap — is present on exactly the 4257 event_id_echo rows and NULL on all 169 transport_session rows.",
+      "silent_matched_events": 2039,
+      "silent_events_carrying_a_delivery_record_index": 1940,
+      "silent_events_without_one": 99,
+      "implication": "Every event the prescribed method could grade comes from the consumption-detector tier, and every event from the non-detector tier is ungradeable by that method for want of a delivery instant. The bias is not merely large on this field; it is structurally inseparable from the method, so it could not be mitigated by restricting the grade to the clean tier.",
+      "trap_reference": "LM trace 01M156TEX2DMMA8HNNZF52H7B2 — the transcript contains the delivered payload itself at the delivery moment, so grading that does not start strictly after delivery_record_index scores ~1.0 for every event."
+    }
+  },
+
+  "not_produced": {
+    "reason": "The pre-registered gate fired, and the selection-bias check fired independently of it. Producing a verdict distribution, a calibrated threshold and a noise floor over a sample the gate has already declared too poor — and that the bias measurement has declared unrepresentative — would manufacture numbers the goal committed in advance not to trust.",
+    "artifacts": [
+      "scripts/transcript_grounding_grade.py",
+      "artifacts/transcript-grounding/grade/report-alt.json",
+      "per-event verdict JSONL for field 'alt' (recall_event_id, node_id, containment, grounded, method_version, field, delivered_at, graded_at, transcript_session_key)"
+    ],
+    "no_grader_was_written": "The local phase-2 node refused to build one under a fired gate; this node inherits that refusal on the same grounds. scripts/transcript_grounding_grade.py remains absent from the tree.",
+    "no_threshold_was_calibrated": true,
+    "no_noise_floor_was_measured": true,
+    "no_method_version_was_minted": true,
+    "importer_validation_not_run_because_there_is_nothing_to_validate": "living_memory.transcript_ledger.read_verdicts / parse_verdict were not exercised: a JSONL shaped to satisfy them would have had to contain fabricated verdict rows."
+  },
+
+  "splits": {
+    "detail": "No split was read or fitted: no calibration was performed at all, and the bucket function of prereg.md §4 was never evaluated. The phase-4 holdout remains pristine.",
+    "train_untouched": true,
+    "eval_untouched": true,
+    "holdout_untouched": true
+  },
+
+  "boundaries_honored": {
+    "offline_only": true,
+    "live_store_read_only": true,
+    "store_writes": 0,
+    "deploys_or_restarts": 0,
+    "live_path_changes": 0,
+    "imports_into_any_store": 0,
+    "phase_1_artifacts_unedited": true,
+    "prereg_md_unedited": true,
+    "prereg_sha256_unedited": true,
+    "sealed_artifacts_post_session_untouched": true,
+    "sealed_artifacts_recall_map_untouched": true,
+    "alt_join_not_rerun_or_retuned": true
+  },
+
+  "downstream_contract": {
+    "ledger_phase_3": "Unchanged and unfed on both fields. transcript_grounding_verdicts is absent from the alt store as well as the local one; no verdict rows exist to import.",
+    "replay_ab_phase_4": "See artifacts/transcript-grounding/replay/alt-field-reconciliation.json. The alt branch of prereg.md §7.4 ('If an alt-field ledger exists') does not trigger: no alt ledger exists, and no alt method_version was minted.",
+    "valve_phase_5": "Unchanged. The gate condition 'verdict.json absent (negative stop propagated)' still holds and this node deliberately did not write one. The valve stays off and the live path is untouched.",
+    "goal_level_closure": "artifacts/transcript-grounding/closure/two-field-closure.json",
+    "reopening_condition": "This stop is NOT a property of one host's transcript retention — that hypothesis was the local field's diagnosis and the alt run refutes it (full retention, still a 27.4% ceiling). Reopening requires prospective instrumentation that records the delivery instant for recalls independently of whether a memory_remember later consumed them; then the join population would no longer be selected by consumption. Measuring a third field would not help."
+  }
+}

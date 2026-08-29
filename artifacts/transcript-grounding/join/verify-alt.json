@@ -1,0 +1,46 @@
+{
+  "changed": [],
+  "checked": 2983,
+  "content_ok": true,
+  "cross_check": {
+    "counts_differences": {},
+    "counts_match": true,
+    "holdout_alias_match": true,
+    "ok": true,
+    "seal": {
+      "eval": {
+        "match": true,
+        "recomputed": "47ccec0a556a469959af548d4516d1e3db3912600054a5b43bf1c67735cbeee8",
+        "recorded": "47ccec0a556a469959af548d4516d1e3db3912600054a5b43bf1c67735cbeee8"
+      },
+      "holdout": {
+        "match": true,
+        "recomputed": "1322798483057a98e1a05b3fe263e152a4f2a002ccdd5cfbddfaa2c10b14921a",
+        "recorded": "1322798483057a98e1a05b3fe263e152a4f2a002ccdd5cfbddfaa2c10b14921a"
+      },
+      "train": {
+        "match": true,
+        "recomputed": "8c33570e215642a3202db2e16f9d479d7c7719a295d19414f7bf1338b84c1ac9",
+        "recorded": "8c33570e215642a3202db2e16f9d479d7c7719a295d19414f7bf1338b84c1ac9"
+      }
+    }
+  },
+  "holdout_appended": [],
+  "holdout_missing": [],
+  "holdout_rewritten": [],
+  "index": {
+    "actual_lines": 2983,
+    "actual_sha256": "2a9a43c0c4ae2aa0a79afab7b390ede5530750f8cf934f2828be704d188ad7f4",
+    "path": "/home/user/tj/work/corpus-index-alt.jsonl",
+    "present": true,
+    "recorded_lines": 2983,
+    "recorded_sha256": "2a9a43c0c4ae2aa0a79afab7b390ede5530750f8cf934f2828be704d188ad7f4",
+    "sha256_match": true
+  },
+  "missing": [],
+  "mode": "index",
+  "ok": true,
+  "split_mismatches": [],
+  "unchanged_bytes": 4049649660,
+  "verified": 2983
+}

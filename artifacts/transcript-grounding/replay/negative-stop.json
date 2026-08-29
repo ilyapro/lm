@@ -1,0 +1,153 @@
+{
+  "alt_field": {
+    "handoff": "artifacts/transcript-grounding/join/alt-field-handoff.md (owned by the phase-1 node, deliberately unedited)",
+    "rule": "prereg.md §7.4 makes the decision field 'local'. An alt replication cannot rescue this stop: 'local negative -> negative, whatever alt says'. An alt field whose own phase-1 coverage clears 0.60 would, however, reopen the goal on that field — it would be a new measurement, not a retry of this one.",
+    "status": "not run here — the alt field is a separate host and a separate measurement, per the two-field rule in the goal boundaries"
+  },
+  "boundaries_honored": {
+    "deploys_or_restarts": 0,
+    "live_store_read_only": true,
+    "no_tuning_after_a_confirmatory_read": "Vacuous but recorded: no confirmatory read occurred.",
+    "offline_only": true,
+    "phase_1_and_phase_2_artifacts_unedited": true,
+    "prereg_md_unedited": true,
+    "prereg_sha256_unedited": true,
+    "sealed_artifacts_post_session_untouched": true,
+    "sealed_artifacts_recall_map_untouched": true,
+    "store_writes": 0
+  },
+  "field_label": "local",
+  "gate_input": {
+    "phase_1_falsifier": {
+      "matched_events": 6798,
+      "observed_share": 0.11507600636489826,
+      "shortfall_absolute": 0.484924,
+      "statement": "If corpus-join coverage is below 60% of recall events, the signal is poor and the goal stops with a recorded negative phase-1 result.",
+      "threshold": 0.6,
+      "total_events": 59074,
+      "verdict": "fail"
+    },
+    "phase_2_stop": {
+      "declares_this_node_s_branch": "Its downstream_contract.replay_ab_phase_4 states: 'This file is the negative stop propagated from phase 2 that artifacts/transcript-grounding/replay/prereg.md and the replay-ab node accept in place of a verdict artifact. No replay A/B numbers exist or should be manufactured.'",
+      "path": "artifacts/transcript-grounding/grade/negative-stop.json",
+      "phase_2_ran": false,
+      "reason": "join-coverage-below-60pct",
+      "sha256": "8c7cafcde95a8e4835f2f921c13f5ed665260e54a83d862eb74cda7721e4cb4a",
+      "verdict": "negative-stop"
+    }
+  },
+  "generated_at": "2026-08-29T08:02:47Z",
+  "generator": "goal-node transcript-grounding/replay-ab — gate evaluation only; no harness was written and no A/B was computed",
+  "goal": "transcript-grounding",
+  "head": "25fb46ef691717f246533f36c50ce7d277531eaa",
+  "independent_recheck": {
+    "coverage_recomputed_from_match_table": {
+      "agrees_with_phase_1_and_phase_2": true,
+      "by_method": {
+        "cli_session": 0,
+        "event_id_echo": 6360,
+        "time_cwd_window": 4,
+        "transport_session": 434,
+        "unmatched": 52276
+      },
+      "matched_events": 6798,
+      "share": 0.11507600636489826,
+      "total_events": 59074
+    },
+    "digests_verified": {
+      "artifacts/transcript-grounding/join/coverage-local.json": {
+        "expected": "b6fe4a2c2c3d47c5ef2474f4c055672dff49b4ebc92995c95f3702eefe7bc409",
+        "matches": true
+      },
+      "artifacts/transcript-grounding/join/match-table-local.jsonl.gz": {
+        "expected": "5571c8bc124af72c7495550e274b55dfc8f300b5b19e6c1e2bc58c5103828a0f",
+        "matches": true
+      },
+      "artifacts/transcript-grounding/replay/prereg.md": {
+        "expected_from_prereg_sha256_file": "1542f93682784cbf13a6c4ff873346f8bb114a0679bdfe8605571f8a67c9a927",
+        "matches": true,
+        "significance": "prereg.md is byte-identical to its committed, sha256-sealed form; §8.2 (post-hoc threshold amendment) is not triggered. This node read the prereg and edited neither it nor prereg.sha256."
+      }
+    },
+    "ledger_emptiness": {
+      "access": "sqlite3 file: URI, mode=ro&immutable=1 (read-only, no writes)",
+      "checked_on": "the live store and every retained snapshot in ~/.local/share/living-memory/",
+      "live_store": "global.sqlite3",
+      "live_store_recall_events": 59079,
+      "present_in_any_snapshot": false,
+      "significance": "The phase-3 ledger is deployed nowhere and holds no rows on any store on this host. Arm B's differentiating input (§2.4) does not exist.",
+      "transcript_grounding_verdicts_table_present": false
+    },
+    "method": "This node did not trust the upstream summary fields. It recomputed the coverage from the raw tracked match table, re-verified every recorded digest, and checked the ledger's own emptiness directly on the read-only live store."
+  },
+  "not_produced": {
+    "artifacts": [
+      "artifacts/transcript-grounding/replay/verdict.json",
+      "artifacts/transcript-grounding/replay/report.md",
+      "scripts/transcript_grounding_replay.py",
+      "tests/test_transcript_grounding_replay.py"
+    ],
+    "no_harness_was_written": "The harness was to embed the prereg sha256 and refuse to run without it. With no ledger and no V it would refuse on its first precondition; building it to watch it refuse would add untested code to the tree and produce no evidence. It is deferred to the reopening path, where it can be written against a corpus that can actually exercise it.",
+    "verdict_json_deliberately_absent": true,
+    "why": "The phase-5 gate condition recorded by phase 2 is 'verdict.json absent (negative stop propagated)'. Writing a verdict.json — even one carrying verdict 'negative' — would both satisfy that gate falsely and assert a §7 rule evaluation over numbers that do not exist. The prereg requires the verdict artifact to carry per-stage R(A)/R(B)/dR, N(A)/N(B)/dN, split counts and P1-P5 outcomes (§9); every one of those fields would have to be fabricated or null."
+  },
+  "phase": 4,
+  "phase_4_ran": false,
+  "reason": "propagated-from-phase-2-negative-stop",
+  "reason_root_cause": "join-coverage-below-60pct",
+  "reopening_condition": {
+    "prereg_reusability": "prereg.md is unamended and its sha256 still seals it, so a future run on a qualifying corpus may execute it as written. Per §8.2 any change to its thresholds would instead require a NEW pre-registration with a new sha256 — this stop grants no licence to relax them.",
+    "structural_ceiling": {
+      "ceiling_share": 0.126468,
+      "event_ids_echoing_in_any_transcript_still_on_disk": 7471,
+      "implication": "Even a flawless join over the transcripts that still exist could not exceed ~12.6% coverage, so the 60% falsifier is unreachable on this corpus. The failure is disk retention, not matching logic — and not the goal's idea."
+    },
+    "what_would_reopen_phase_4": [
+      "A field measured whose phase-1 join coverage clears 0.60 on a corpus with retained transcripts.",
+      "Prospective extension of transcript retention, so future recalls are joinable before their transcripts roll off disk; phase 1 would then be re-measured, not re-argued.",
+      "Either path requires phase 2 to ship a grade report and a method_version V, and phase 3's ledger to be deployed and fed, before this prereg's §2.1 and §2.4 can be satisfied."
+    ]
+  },
+  "splits_untouched": {
+    "detail": "No split was materialized, read, fitted or counted. No bucket function was evaluated. The confirmatory holdout remains pristine and the §8.1 ordering rule is trivially unviolated: no holdout number exists to have been computed early.",
+    "eval_748_sessions": "untouched",
+    "holdout_837_sessions": "untouched",
+    "holdout_seal_consulted": false,
+    "holdout_sha256": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+    "train_2368_sessions": "untouched"
+  },
+  "verdict": "negative-stop",
+  "verdict_semantics": {
+    "effect_on_phase_5_is_identical": "Under §7.2 the valve opens only on 'positive'. Absent a positive verdict the valve stays off, which is exactly the state this record leaves.",
+    "explanation": "prereg.md §7 defines positive / negative / inconclusive as outcomes OF A RUN. No run occurred, so none of those three labels is honestly available and none is claimed here. 'negative-stop' denotes an upstream gate propagation: the goal's phase-1 falsifier fired, phase 2 stopped on it, and phase 4's gate instruction is to propagate that reason rather than manufacture numbers.",
+    "not_inconclusive_because": "§7.3 'inconclusive' records a run whose preconditions failed and which licenses a better-powered retry under the SAME pre-registration. This corpus cannot support a retry under this prereg at all — the shortfall is structural (see reopening_condition).",
+    "not_invalid_because": "§8 governs runs that produced numbers under a broken protocol. Nothing was computed, so there is nothing to discard.",
+    "not_negative_because": "§7.1 'negative' records a measured refutation — a PASS(eval) or PASS(holdout) that failed on real numbers. Labelling this 'negative' would assert a measurement that was never taken and would wrongly imply the transcript-consumption signal itself was tested and found wanting.",
+    "this_is_not_a_prereg_section_7_verdict": true
+  },
+  "why_the_run_cannot_be_constituted": {
+    "blocking_clauses": [
+      {
+        "clause": "prereg.md §2.1 — Field and method version",
+        "requirement": "V is the single method_version the phase-2 grade report shipped.",
+        "state": "No phase-2 grade report exists (phase 2 took its negative-stop branch and produced no report-local.json and no per-event verdict JSONL). There is no V to name, and §2.1 forbids choosing one after any metric is seen."
+      },
+      {
+        "clause": "prereg.md §2.4 — Arm B",
+        "requirement": "Arm B additionally consumes transcript_grounding_verdicts rows for (field F, method_version V).",
+        "state": "The ledger table is absent from the live store and every snapshot; row count for any (F, V) is 0. Arm B would be byte-identical to arm A, so the contrast the goal asks about has no treatment to measure. This is confirmed here independently, not assumed."
+      },
+      {
+        "clause": "prereg.md §2.2 — Universe U",
+        "requirement": "U = usable recall events whose id appears in the phase-1 join match table AND whose joined transcript session key resolves to an identity group.",
+        "state": "The join admits 6798 of 59074 events (11.5%). Even setting aside the missing ledger, U is a 4.06%-of-store silent slice that phase 2 measured to be selected by a mechanism correlated with the outcome variable (consumption enrichment factor 3.77) — see the phase-2 stop's selection_bias_against_the_goal_s_own_target block."
+      },
+      {
+        "clause": "prereg.md §5.2 — Precondition P2",
+        "requirement": "Treatment materially present: arm B's total update count >= 1.2x arm A's.",
+        "state": "Unsatisfiable with an empty ledger: arm B's update count equals arm A's exactly, so P2 fails by construction. P1 (n_eval >= 200) is likewise unreachable on an empty ledger-joined universe."
+      }
+    ],
+    "summary": "This is not a run that failed, and not a run that was declined. Under the committed pre-registration the run cannot be formed at all: three of its inputs are empty by construction, and each emptiness traces to the phase-1 falsifier that already fired."
+  }
+}

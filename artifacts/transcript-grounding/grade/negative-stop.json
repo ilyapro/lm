@@ -1,0 +1,167 @@
+{
+  "alt_field_gate": {
+    "instruction_for_the_operator_s_alt_run": "Apply this same gate before grading: run the phase-1 join on the alt host, read falsifier_60pct.verdict in its coverage-alt.json, and if it is 'fail', record the alt negative stop rather than grading. Grading is unblocked for the alt field only if alt coverage clears 0.60 \u2014 and the selection-bias check above should be repeated there, since a coverage number alone would not have caught it.",
+    "note": "The phase-1 alt-field handoff pack is owned by the phase-1 node and is deliberately left unedited.",
+    "status": "not run here \u2014 the alt field is a separate host and a separate measurement, per the two-field rule in the goal boundaries"
+  },
+  "boundaries_honored": {
+    "deploys_or_restarts": 0,
+    "live_store_read_only": true,
+    "offline_only": true,
+    "phase_1_artifacts_unedited": true,
+    "prereg_md_not_read_or_edited": true,
+    "sealed_artifacts_post_session_untouched": true,
+    "sealed_artifacts_recall_map_untouched": true,
+    "store_writes": 0
+  },
+  "downstream_contract": {
+    "ledger_phase_3": "The CREATE-only ledger and its importer remain deployed-nowhere and unfed; no verdict rows exist to import. Confirmed on the read-only snapshot: table transcript_grounding_verdicts is absent from the live store.",
+    "reopening_condition": "This stop is a property of the LOCAL field's surviving transcript corpus, not of the idea. It is reopenable if a field is measured whose join coverage clears 0.60 on a corpus with retained transcripts, or if transcript retention is extended prospectively so future recalls are joinable before their transcripts roll off disk.",
+    "replay_ab_phase_4": "This file is the negative stop propagated from phase 2 that artifacts/transcript-grounding/replay/prereg.md and the replay-ab node accept in place of a verdict artifact. No replay A/B numbers exist or should be manufactured.",
+    "valve_phase_5": "Gate condition 'verdict.json absent (negative stop propagated)' is met. The valve stays off and the live path is untouched."
+  },
+  "falsifier": {
+    "matched_events": 6798,
+    "observed_over_threshold": 0.191793,
+    "observed_share": 0.11507600636489826,
+    "origin": "root goal intent, registered as a phase-1 falsifier before any measurement existed",
+    "shortfall_absolute": 0.484924,
+    "statement": "If corpus-join coverage is below 60% of recall events, the signal is poor and the goal stops with a recorded negative phase-1 result.",
+    "threshold": 0.6,
+    "total_events": 59074,
+    "verdict": "fail"
+  },
+  "field_label": "local",
+  "gate_input": {
+    "coverage_report": {
+      "falsifier_60pct": {
+        "share": 0.115076,
+        "threshold": 0.6,
+        "verdict": "fail"
+      },
+      "generated_at": "2026-08-29T07:46:06Z",
+      "path": "artifacts/transcript-grounding/join/coverage-local.json",
+      "sha256": "b6fe4a2c2c3d47c5ef2474f4c055672dff49b4ebc92995c95f3702eefe7bc409"
+    },
+    "match_table": {
+      "path": "artifacts/transcript-grounding/join/match-table-local.jsonl.gz",
+      "rows": 59074,
+      "sha256": "5571c8bc124af72c7495550e274b55dfc8f300b5b19e6c1e2bc58c5103828a0f",
+      "sha256_matches_value_recorded_in_coverage_report": true
+    },
+    "store_snapshot": {
+      "access": "sqlite3 file: URI, mode=ro&immutable=1 (read-only, no writes)",
+      "byte_identical_to_the_phase_1_snapshot": true,
+      "path": "/tmp/tg-join/store-snapshot.sqlite3",
+      "sha256": "13cb5c8dbc1b09354ed8750d625e23e9b7f0d6e74d3ec443b5907b7cc29aae56"
+    }
+  },
+  "generated_at": "2026-08-29T07:57:58Z",
+  "generator": "goal-node transcript-grounding/grounding-grade \u2014 gate evaluation only; no grader was written or run",
+  "goal": "transcript-grounding",
+  "head": "27e7ba7772c8ed9cbf5c95e869c7cbc20c2e481d",
+  "independent_recheck": {
+    "agrees_with_coverage_report": true,
+    "by_method": {
+      "cli_session": 0,
+      "event_id_echo": 6360,
+      "time_cwd_window": 4,
+      "transport_session": 434,
+      "unmatched": 52276
+    },
+    "method": "recounted matched/total directly from the tracked match table rather than trusting the coverage report's summary fields",
+    "recomputed_matched_events": 6798,
+    "recomputed_share": 0.11507600636489826,
+    "recomputed_total_events": 59074
+  },
+  "not_produced": {
+    "artifacts": [
+      "artifacts/transcript-grounding/grade/report-local.json",
+      "per-event verdict JSONL (recall_event_id, node_id, containment, grounded, method_version, field, delivered_at, graded_at, transcript_session_key)"
+    ],
+    "no_noise_floor_was_measured": true,
+    "no_threshold_was_calibrated": true,
+    "reason": "The pre-registered gate fired. Producing a verdict distribution, a calibrated threshold and a noise floor over a sample the gate has already declared too poor would manufacture numbers the goal committed in advance not to trust."
+  },
+  "phase": 2,
+  "phase_2_ran": false,
+  "reason": "join-coverage-below-60pct",
+  "splits": {
+    "detail": "No split was read or fitted: no calibration was performed at all. The phase-4 holdout remains pristine.",
+    "eval_untouched": true,
+    "holdout_untouched": true,
+    "train_untouched": true
+  },
+  "supporting_evidence": {
+    "gradeable_population_that_phase_2_would_have_had": {
+      "matched_consumed": 4400,
+      "matched_events": 6798,
+      "matched_silent": 2398,
+      "matched_silent_share_of_store": 0.040593,
+      "silent_events_with_at_least_one_delivered_result": 2394,
+      "silent_recall_event_node_deliveries": 20542
+    },
+    "note": "Measured while evaluating the gate, on the same read-only snapshot. NOT pre-registered; recorded because it bears on whether the goal should be re-scoped rather than merely retried.",
+    "selection_bias_against_the_goal_s_own_target": {
+      "consumed_share_among_matched_events": 0.647249,
+      "consumed_share_by_join_method": {
+        "event_id_echo": {
+          "consumed": 4317,
+          "n": 6360,
+          "share": 0.6788
+        },
+        "time_cwd_window": {
+          "consumed": 4,
+          "n": 4,
+          "share": 1.0
+        },
+        "transport_session": {
+          "consumed": 79,
+          "n": 434,
+          "share": 0.182
+        }
+      },
+      "enrichment_factor": 3.77,
+      "mechanism": "The dominant tier (event_id_echo, 93.6% of all matches) finds an event precisely because its recall_event_id was written into the transcript, and the main reason an id gets written there is the memory_remember provenance that CONSUMES it. That tier is therefore close to a consumption detector rather than a neutral join. The one tier with no such coupling, transport_session, shows a consumed share of 0.182 \u2014 essentially the store-wide base rate of 0.172 \u2014 and it recovers only 434 events (0.73% of the store).",
+      "recency_confound_ruled_out": {
+        "by_month_matched_vs_unmatched": {
+          "2026-05": {
+            "matched": 0.7407,
+            "matched_n": 1531,
+            "unmatched": 0.0776,
+            "unmatched_n": 27049
+          },
+          "2026-06": {
+            "matched": 0.7663,
+            "matched_n": 1733,
+            "unmatched": 0.1835,
+            "unmatched_n": 15405
+          },
+          "2026-07": {
+            "matched": 0.5854,
+            "matched_n": 123,
+            "unmatched": 0.2029,
+            "unmatched_n": 3775
+          },
+          "2026-08": {
+            "matched": 0.5471,
+            "matched_n": 3411,
+            "unmatched": 0.0089,
+            "unmatched_n": 6047
+          }
+        },
+        "conclusion": "The enrichment holds inside every month, so it is not a recency artifact of which transcripts survive on disk.",
+        "test": "consumed share compared between matched and unmatched events within each calendar month"
+      },
+      "store_wide_consumed_share": 0.171734,
+      "why_this_matters": "Phase 2 exists to grade SILENT (non-consumed) recalls. The join recovers 2398 silent events = 4.06% of the store, and selects them by a mechanism correlated with the very outcome variable phase 4 would model. Grading this sample would yield a distribution over a biased, unrepresentative 4%, and a replay A/B trained on it could not support the pre-registered generalization claim."
+    },
+    "structural_ceiling": {
+      "ceiling_share": 0.126468,
+      "event_ids_echoing_in_any_transcript_still_on_disk": 7471,
+      "implication": "Even a flawless join over the transcripts that still exist could not exceed ~12.6% coverage. The 60% falsifier is unreachable on this corpus, so the failure is structural \u2014 not a defect of the runner, and not fixable by tuning join tiers.",
+      "source": "phase-1 result, artifacts/transcript-grounding/join/alt-field-handoff.md"
+    }
+  },
+  "verdict": "negative-stop"
+}

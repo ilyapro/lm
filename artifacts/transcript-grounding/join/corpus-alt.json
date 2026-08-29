@@ -1,0 +1,125 @@
+{
+  "counts": {
+    "by_cli": {
+      "ae": 57,
+      "claude": 1305,
+      "codex": 798,
+      "unknown": 823
+    },
+    "by_source": {
+      "ae_chat": 57,
+      "ae_node_result": 877,
+      "claude": 1305,
+      "codex": 744
+    },
+    "by_split": {
+      "eval": 625,
+      "holdout": 584,
+      "train": 1774
+    },
+    "by_split_source": {
+      "eval": {
+        "ae_chat": 10,
+        "ae_node_result": 177,
+        "claude": 280,
+        "codex": 158
+      },
+      "holdout": {
+        "ae_chat": 10,
+        "ae_node_result": 160,
+        "claude": 250,
+        "codex": 164
+      },
+      "train": {
+        "ae_chat": 37,
+        "ae_node_result": 540,
+        "claude": 775,
+        "codex": 422
+      }
+    },
+    "bytes": 4049649660,
+    "identity_groups": 2860,
+    "largest_group": 8,
+    "records": 4879298,
+    "sessions": 2983,
+    "sessions_in_multi_transcript_groups": 238,
+    "skipped": {}
+  },
+  "generated_at": "2026-08-29T08:25:11.971881Z",
+  "generator": "scripts/postsession_corpus.py",
+  "holdout_sha256": "1322798483057a98e1a05b3fe263e152a4f2a002ccdd5cfbddfaa2c10b14921a",
+  "index": {
+    "bytes": 2349068,
+    "fields": [
+      "session_key",
+      "source",
+      "cli",
+      "path",
+      "bytes",
+      "sha256",
+      "records",
+      "started_at",
+      "ended_at",
+      "cwd",
+      "repo",
+      "git_branch",
+      "model",
+      "cli_session_id",
+      "linked_session_ids",
+      "split",
+      "bucket",
+      "split_key",
+      "group_size"
+    ],
+    "lines": 2983,
+    "note": "rebuildable from roots; holds absolute paths, so it is gitignored",
+    "path": "work/corpus-index-alt.jsonl",
+    "tracked": false
+  },
+  "index_sha256": "2a9a43c0c4ae2aa0a79afab7b390ede5530750f8cf934f2828be704d188ad7f4",
+  "manifest_version": 2,
+  "roots": {
+    "ae_projects": "/home/user/p/ae/projects",
+    "claude_projects": "/home/user/.claude/projects",
+    "codex_sessions": [
+      "/home/user/.codex/sessions"
+    ],
+    "deepseek_sessions": "/home/user/.deepseek/sessions",
+    "gigacode_projects": "/home/user/.gigacode/projects"
+  },
+  "sources": [
+    "ae_chat",
+    "ae_node_result",
+    "claude",
+    "codex",
+    "deepseek",
+    "gigacode"
+  ],
+  "split_policy": {
+    "buckets": 10,
+    "eval": [
+      6,
+      7
+    ],
+    "holdout": [
+      8,
+      9
+    ],
+    "rule": "bucket = int(sha256(split_key).hexdigest(), 16) % 10",
+    "seal": "sha256(\"\\n\".join(sorted(session_keys)) + \"\\n\") per split",
+    "split_key": "union-find root over session keys and declared id:<uuid> identifiers; equal to the session's own key when it has no duplicate recording",
+    "train": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "split_sha256": {
+    "eval": "47ccec0a556a469959af548d4516d1e3db3912600054a5b43bf1c67735cbeee8",
+    "holdout": "1322798483057a98e1a05b3fe263e152a4f2a002ccdd5cfbddfaa2c10b14921a",
+    "train": "8c33570e215642a3202db2e16f9d479d7c7719a295d19414f7bf1338b84c1ac9"
+  }
+}

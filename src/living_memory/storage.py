@@ -47,6 +47,7 @@ RECALL_HISTORY_RESULT_TABLE = "recall_history_result_nodes"
 RECALL_DELIVERY_HISTORY_TABLE = "recall_delivery_history"
 RECALL_DELIVERY_HISTORY_STATE_TABLE = "recall_delivery_history_state"
 RECALL_LOOKUP_EVENT_TABLE = "recall_lookup_events"
+TRANSCRIPT_GROUNDING_TABLE = "transcript_grounding_verdicts"
 
 # Frozen by artifacts/recall-map/prereg.json and
 # artifacts/recall-map/relevance/policy.json.  Keep these literals local to
@@ -375,6 +376,71 @@ _RECALL_DELIVERY_HISTORY_SCHEMA_SQL = f"""
     -- lookup overall is not at either of its ends.
     CREATE INDEX IF NOT EXISTS idx_recall_lookup_events_time
         ON {RECALL_LOOKUP_EVENT_TABLE}(occurred_at);
+"""
+
+#: Transcript-grounding verdict ledger (additive to schema v8; goal
+#: transcript-grounding, phase 3). Public, unlike its v7/v8 siblings, because
+#: it genuinely has a second caller outside this module:
+#: ``living_memory.transcript_ledger.ensure_ledger_table`` runs the same
+#: script so the offline importer can create the table on a database file the
+#: redeployed server has not opened yet. One constant, two callers, exactly
+#: one shape — the ``_QUERY_ANCHOR_SCHEMA_SQL`` rule.
+#:
+#: There is deliberately no ``_migrate_pre_v9_schema`` and no
+#: ``SCHEMA_VERSION`` bump, for the reason recorded on
+#: ``_RECALL_ATTESTATION_SCHEMA_SQL``: ``_initialize_schema`` runs ``CREATE
+#: TABLE IF NOT EXISTS`` on every open, so that *is* the whole migration for
+#: a brand-new table that has never shipped in any other shape, and there is
+#: no version-keyed branch a bump could guard. Strictly additive: one table
+#: and one index touching nothing that exists, so the ``nodes`` /
+#: ``connections`` / ``recall_events`` DDL a live database already carries
+#: stays byte-identical (``tests/test_transcript_ledger.py`` pins this
+#: against master's fresh-database schema).
+TRANSCRIPT_GROUNDING_SCHEMA_SQL = f"""
+    -- Offline transcript-grounding verdicts (goal transcript-grounding,
+    -- phase 3): one row is one graded delivery of one node by one recall
+    -- event — the IDF-containment of the delivered content against the
+    -- session transcript remainder AFTER the delivery instant, at the
+    -- calibrated threshold behind `method_version`. Rows arrive only through
+    -- scripts/transcript_ledger_import.py (living_memory.transcript_ledger);
+    -- nothing on the live recall/remember path reads or writes this table.
+    -- The phase-5 valve is the intended consumer, env-gated and shipped
+    -- separately.
+    --
+    -- UNIQUE(recall_event_id, node_id, method_version) is the idempotency
+    -- key: re-running the importer over the same verdict file replays
+    -- instead of duplicating, and a re-grade under a *new* method_version
+    -- lands beside the old rows instead of silently rewriting history. The
+    -- importer never updates an existing row — a same-key row with different
+    -- numbers is a method_version discipline violation, reported and not
+    -- applied.
+    --
+    -- No foreign keys, deliberately (the recall_lookup_events rationale):
+    -- verdicts are graded offline against a read-only snapshot, so by import
+    -- time the event may be pruned or the node hard-deleted, and a
+    -- `field = 'alt'` row names ids from the *other* host's store, which
+    -- this file never carried. A row referencing nothing is still a valid
+    -- measurement; this ledger is a record, never a gate.
+    CREATE TABLE IF NOT EXISTS {TRANSCRIPT_GROUNDING_TABLE} (
+        id TEXT PRIMARY KEY,
+        recall_event_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        containment REAL NOT NULL CHECK (containment >= 0.0),
+        grounded INTEGER NOT NULL CHECK (grounded IN (0, 1)),
+        method_version TEXT NOT NULL,
+        field TEXT NOT NULL CHECK (field IN ('local', 'alt')),
+        delivered_at TEXT NOT NULL,
+        graded_at TEXT NOT NULL,
+        transcript_session_key TEXT NOT NULL,
+        imported_at TEXT NOT NULL,
+        UNIQUE(recall_event_id, node_id, method_version)
+    );
+
+    -- The phase-5 valve's read: "the graded verdicts for one node, newest
+    -- first". The UNIQUE index leads with recall_event_id and cannot serve
+    -- a per-node probe.
+    CREATE INDEX IF NOT EXISTS idx_transcript_grounding_node_graded
+        ON {TRANSCRIPT_GROUNDING_TABLE}(node_id, graded_at DESC);
 """
 
 #: Scratch tokenizer behind :meth:`MemoryStore.term_document_frequencies`. It
@@ -4516,6 +4582,12 @@ class MemoryStore:
             # on _RECALL_ATTESTATION_SCHEMA_SQL for why no _migrate_pre_v8_schema
             # exists.
             self._conn.executescript(_RECALL_ATTESTATION_SCHEMA_SQL)
+            # Transcript-grounding verdict ledger. Additive like the
+            # attestation ledger above and created the same way — on every
+            # open, because that *is* the whole migration; see the note on
+            # TRANSCRIPT_GROUNDING_SCHEMA_SQL. Offline import only: no live
+            # read or write path touches it.
+            self._conn.executescript(TRANSCRIPT_GROUNDING_SCHEMA_SQL)
             # Frozen relevance history. The schema is additive; the
             # idempotent reconstruction below is what populates it for a live
             # database whose recall_events predate this release.

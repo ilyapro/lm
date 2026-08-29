@@ -1,0 +1,132 @@
+{
+  "goal": "transcript-grounding",
+  "phases_reconciled": [4, 5],
+  "field_label": "alt",
+  "verdict": "no-run-can-be-formed",
+  "generated_at": "2026-08-29T08:37:26Z",
+  "generator": "goal-node transcript-grounding/alt-field-grade — reconciliation only; no harness was written and no A/B was computed",
+  "head": "1520a929d1268d5ef6562d46cf00a6244dd5a0ea",
+
+  "why_this_file_exists": {
+    "premise_that_changed": "artifacts/transcript-grounding/replay/negative-stop.json and artifacts/transcript-grounding/valve/negative-stop.json were both written while the alt field was unrun. Each carries an alt_field block whose status is literally 'not run here — the alt field is a separate host and a separate measurement'. The alt field has since been run (phase 1, commit 1520a92; phase-2 gate, this node), so that open premise is now closed and must be reconciled rather than left dangling.",
+    "what_changed_in_substance": "Nothing about phases 4 and 5. The alt run supplies the missing measurement and it lands on the same side of every gate. This file records the closure of the premise, not a change of state.",
+    "the_two_earlier_records_are_deliberately_left_unedited": "They are the evidence of what those nodes did and knew at their commit. Amending them retroactively would destroy that record; this file is additive."
+  },
+
+  "prereg_seal": {
+    "path": "artifacts/transcript-grounding/replay/prereg.md",
+    "recomputed_sha256": "1542f93682784cbf13a6c4ff873346f8bb114a0679bdfe8605571f8a67c9a927",
+    "expected_from_prereg_sha256_file": "1542f93682784cbf13a6c4ff873346f8bb114a0679bdfe8605571f8a67c9a927",
+    "matches": true,
+    "significance": "prereg.md is byte-identical to its committed, sha256-sealed form. §8.2 (post-hoc threshold amendment) is not triggered. This node read the pre-registration and edited neither it nor prereg.sha256.",
+    "this_node_edited_prereg": false,
+    "this_node_edited_prereg_sha256": false
+  },
+
+  "section_7_4_field_rule": {
+    "clause": "prereg.md §7.4 — 'If an alt-field ledger exists, the same rule is executed on it as an independent replication and reported separately.'",
+    "antecedent": "an alt-field ledger exists",
+    "antecedent_holds": false,
+    "evidence": "transcript_grounding_verdicts is absent from the alt store (checked read-only on the alt host, sqlite_master lookup, PRAGMA query_only=1). Row count for (field='alt', any method_version) is 0.",
+    "consequence": "The alt replication branch does not open. The §7.4 combination table (local positive + alt positive / negative, etc.) is unreachable in every row, because it presupposes at least one field that produced a §7 verdict, and neither field did.",
+    "note_on_the_decision_field": "§7.4 pins the decision field as 'local'. Even had an alt ledger existed, an alt result could not have licensed the valve on its own — but that path is moot here."
+  },
+
+  "unbindable_parameters": {
+    "statement": "Arm B is parameterised by two values, and both are unbindable on the alt field. Binding either by invention and labelling it pre-registered is the precise failure the pre-registration exists to prevent, so neither was bound and no run was formed.",
+    "parameters": [
+      {
+        "parameter": "method_version V",
+        "clause": "prereg.md §2.1 / §2.4",
+        "requirement": "V is the single method_version the phase-2 grade report shipped; §2.1 forbids choosing one after any metric is seen.",
+        "state": "Alt phase 2 took its negative-stop branch (artifacts/transcript-grounding/grade/negative-stop-alt.json) and shipped no grade report and no per-event verdict JSONL. No V was ever minted for field 'alt'. There is no candidate to name, correctly or incorrectly."
+      },
+      {
+        "parameter": "strictness candidate S",
+        "clause": "prereg.md §5.1 / §2.4",
+        "requirement": "S is selected between S0 (grounded = 1) and S1 (grounded = 1 AND containment >= q75) BY the eval stage of the A/B — it is the run's single degree of freedom.",
+        "state": "The run never happened, so S is unselected. S1 is additionally undefined: q75 is a nearest-rank percentile over train-bucket ledger rows and the ledger holds zero rows for field 'alt', i.e. m = 0, which §5.1 itself maps to 'inconclusive'."
+      }
+    ],
+    "how_this_is_recorded": {
+      "recorded_as": "explicit unbindable-parameters record; no verdict of any kind is claimed",
+      "operative_consequence": "Identical to §8's 'invalid': no verdict may be reported for this field, and none is. Nothing may be described as pre-registered that the pre-registration did not fix.",
+      "why_not_labelled_a_section_8_invalid_run": "§8 governs runs that produced numbers under a broken protocol and requires them to be discarded. Nothing was computed here, so there is nothing to discard. Labelling a non-run 'invalid' would imply an execution occurred and was botched.",
+      "why_not_labelled_inconclusive": "§7.3 'inconclusive' records a run whose preconditions failed and licenses a better-powered retry under the SAME pre-registration. The alt corpus cannot support a retry under this prereg at all: its shortfall is structural (join ceiling 0.273512 under full transcript retention).",
+      "why_not_labelled_negative": "§7.1 'negative' records a measured refutation on real numbers. Claiming it would assert that transcript-grounded reinforcement was tested on alt and found wanting. It was never tested."
+    }
+  },
+
+  "why_the_run_cannot_be_constituted_on_alt": {
+    "blocking_clauses": [
+      {
+        "clause": "prereg.md §2.1 — Field and method version",
+        "requirement": "Exactly one field F and one method_version V, V being the one phase 2 shipped.",
+        "state": "F = 'alt' is well defined; V does not exist. Blocked."
+      },
+      {
+        "clause": "prereg.md §2.4 — Arm B",
+        "requirement": "Arm B additionally consumes transcript_grounding_verdicts rows for (field F, method_version V).",
+        "state": "The ledger table is absent from the alt store. Arm B would be byte-identical to arm A, so the contrast the goal asks about has no treatment to measure. Verified here directly, not assumed."
+      },
+      {
+        "clause": "prereg.md §2.2 — Universe U",
+        "requirement": "U = usable recall events whose id appears in the phase-1 join match table AND whose joined session key resolves to an identity group.",
+        "state": "The alt join admits 4426 of 16098 events (27.49%). Setting aside the missing ledger, U's silent slice is 2039 events selected by a mechanism measured to correlate with the outcome variable (consumption enrichment 3.563x store-wide, 125.9x versus unmatched)."
+      },
+      {
+        "clause": "prereg.md §5.2 — Preconditions P1 and P2",
+        "requirement": "P2: arm B's total update count >= 1.2x arm A's. P1: n_eval >= 200.",
+        "state": "P2 is unsatisfiable with an empty ledger — arm B's update count equals arm A's exactly, so it fails by construction. P1 is likewise unreachable on a ledger-joined universe of size zero."
+      }
+    ],
+    "summary": "This is not a run that failed and not a run that was declined. Under the committed pre-registration the alt run cannot be formed at all: three of its inputs are empty by construction, and each emptiness traces back to the phase-1 coverage falsifier that fired on this field."
+  },
+
+  "stage_protocol_state": {
+    "eval_buckets_6_7": "not computed",
+    "holdout_buckets_8_9": "not computed",
+    "bucket_function_evaluated": false,
+    "detail": "The pre-registered stage protocol (§6) is executable only once verdict rows exist. They do not, on either field, so no bucket = int(sha256(split_key).hexdigest(), 16) % 10 was ever evaluated, no split was materialised, read, fitted or counted, and no eval decision was written. §8.1's ordering rule ('holdout consulted before the eval decision is committed') is trivially unviolated: no holdout number exists to have been computed early.",
+    "holdout_remains_pristine": true
+  },
+
+  "verdict_json": {
+    "path": "artifacts/transcript-grounding/replay/verdict.json",
+    "present": false,
+    "deliberately_not_written": true,
+    "why": "Its ABSENCE is load-bearing: the phase-2 record pins the phase-5 gate condition as literally 'verdict.json absent (negative stop propagated)', and phase 5 recorded that anyone who later 'completes' the goal by adding a verdict.json — even one carrying verdict 'negative' — silently flips that gate. Writing one here would additionally assert a §7 rule evaluation over numbers that do not exist: §9 requires per-stage R(A)/R(B)/dR, N(A)/N(B)/dN, split counts, ledger digests and P1-P5 outcomes, every one of which would have to be fabricated or null.",
+    "rule_this_node_followed": "Write one only from a real run, never to satisfy a gate."
+  },
+
+  "phase_5_state": {
+    "valve_built": false,
+    "changed_by_this_node": false,
+    "gate_condition_still_met": true,
+    "detail": "prereg.md §7.2 licenses the valve only on a 'positive' verdict. No verdict of any kind exists on either field, so the valve stays off. This node wrote no valve code, no test file, no enablement note, and touched no live path.",
+    "existing_record": "artifacts/transcript-grounding/valve/negative-stop.json (sha256 4c6fcdd6ece9b2019b05418e166f308518bf6ee032cba3c14b8d7f674e937cc4) — unedited, and its 'not run here' alt block is closed by this file.",
+    "scope_boundary_still_applies": "prereg.md §2.6: even a positive verdict would have licensed a valve over the retrieval-weight channel only, never anchors or node usefulness."
+  },
+
+  "digests_verified": {
+    "artifacts/transcript-grounding/join/coverage-alt.json": "d54af720103394de080bc9f6fcb498f8d6fb4ca16e51fc38c76d132b62176118",
+    "artifacts/transcript-grounding/join/match-table-alt.jsonl.gz": "be7375c6e5185ff5988f961b93e8de91963928ad3e65393e9715aaa5de2973ee",
+    "artifacts/transcript-grounding/grade/negative-stop.json": "8c7cafcde95a8e4835f2f921c13f5ed665260e54a83d862eb74cda7721e4cb4a",
+    "artifacts/transcript-grounding/replay/negative-stop.json": "a3af25e4422e561ba0842f10e77385c569da585d60075ec3d62a2259a74d4345",
+    "artifacts/transcript-grounding/replay/prereg.md": "1542f93682784cbf13a6c4ff873346f8bb114a0679bdfe8605571f8a67c9a927",
+    "artifacts/transcript-grounding/valve/negative-stop.json": "4c6fcdd6ece9b2019b05418e166f308518bf6ee032cba3c14b8d7f674e937cc4",
+    "method": "recomputed from the tracked files in this worktree, not copied from upstream summary fields"
+  },
+
+  "what_would_reopen_phases_4_and_5": {
+    "no_licence_to_relax": "prereg.md §8.2 requires a NEW pre-registration with a new sha256 for any threshold change. Neither this file nor the alt measurement grants any licence to soften the 60% join falsifier, the §7.2 positive requirement, or the §2.6 channel boundary.",
+    "ordered_prerequisites": [
+      "A field whose phase-1 join coverage clears 0.60 AND whose matched population is not selected by consumption. Neither measured field qualifies: local ceilings at 0.126468 and alt at 0.273512, and both show ~3.5x consumption enrichment through the event_id_echo tier.",
+      "Phase 2 ships a grade report on that field — calibrated threshold, measured noise floor, importer-valid per-event verdict JSONL — and mints the method_version V.",
+      "Phase 3's ledger is deployed and fed with rows for (F, V), which requires the operator deploy + restart described in artifacts/transcript-grounding/ledger/deploy-handoff.md.",
+      "Phase 4 then executes this prereg as written: eval buckets 6-7 decide and are committed first, holdout buckets 8-9 confirm afterwards.",
+      "Only a 'positive' on both stages licenses a phase-5 valve, default-off, limited to the retrieval-weight channel."
+    ],
+    "the_idea_is_still_not_refuted": "Nothing in either field's measurement tests whether transcript-grounded silent-recall reinforcement helps. The blocker sits upstream of the hypothesis: the only mechanism that links a recall event to its transcript is the echo of its id, and that echo is largely written by the consumption event the signal was meant to replace."
+  }
+}

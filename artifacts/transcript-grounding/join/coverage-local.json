@@ -1,0 +1,164 @@
+{
+  "coverage": {
+    "by_method": {
+      "cli_session": 0,
+      "event_id_echo": 6360,
+      "time_cwd_window": 4,
+      "transport_session": 434,
+      "unmatched": 52276
+    },
+    "matched_events": 6798,
+    "share": 0.115076,
+    "total_events": 59074
+  },
+  "denominator": {
+    "definition": "all recall_events whose created_at lies inside the corpus window [min(started_at), max(ended_at)] taken over the corpus-index rows actually used, bounds inclusive, timestamps compared as UTC epoch seconds; events without a parseable created_at are outside the denominator; the denominator is never narrowed to events carrying a transport_session_id or any other join-friendly field",
+    "store_total_events": 59074,
+    "window_utc": {
+      "max_ended_at_epoch": 1787989326.233,
+      "min_started_at_epoch": 1777306112.61
+    }
+  },
+  "diagnostics": {
+    "missing_transcripts": 0,
+    "tier1_ambiguous": 363,
+    "tier1_hits_rejected_by_time": 25071,
+    "tier2_ambiguous": 0,
+    "tier3_ambiguous": 0,
+    "tier4_ambiguous": 181,
+    "transcripts_scanned": 4668
+  },
+  "drift_vs_sealed_manifest": {
+    "counts_drift": {
+      "by_source": {
+        "recorded": {
+          "ae_chat": 184,
+          "ae_node_result": 1018,
+          "claude": 1050,
+          "codex": 1636,
+          "deepseek": 7,
+          "gigacode": 58
+        },
+        "rederived": {
+          "ae_chat": 253,
+          "ae_node_result": 1250,
+          "claude": 1294,
+          "codex": 1786,
+          "deepseek": 7,
+          "gigacode": 78
+        }
+      },
+      "by_split": {
+        "recorded": {
+          "eval": 748,
+          "holdout": 837,
+          "train": 2368
+        },
+        "rederived": {
+          "eval": 913,
+          "holdout": 1005,
+          "train": 2750
+        }
+      },
+      "bytes": {
+        "recorded": 3082715422,
+        "rederived": 3406578426
+      },
+      "records": {
+        "recorded": 11343303,
+        "rederived": 11582942
+      },
+      "sessions": {
+        "recorded": 3953,
+        "rederived": 4668
+      }
+    },
+    "measured": true,
+    "method": "the sealed index is gone, so the sealed roots were rescanned and the corpus re-derived; drift is counted, not matched per session_key",
+    "mode": "rederive",
+    "rederived_index_sha256": "8698315133a954705ffe903b7a3c2f1cbf287482eca4e11aea3e0f60e199af02",
+    "rederived_index_sha256_equals_sealed": false,
+    "report_path": "/home/sfx/p/lm/.worktrees/_node_exec_transcript-grounding_phase1-coverage/artifacts/transcript-grounding/join/verify-vs-sealed.json",
+    "report_sha256": "942cb49a316f1b42096165bd6c0786755a57cb91e65ccc2a6610d2a9b1ae2e08",
+    "sessions": {
+      "on_disk_now": 4668,
+      "sealed": 3953
+    },
+    "split_seal_match": {
+      "eval": false,
+      "holdout": false,
+      "train": false
+    },
+    "verify_ok": true
+  },
+  "fallback_precision": {
+    "agreement_level": "split_key identity group",
+    "by_tier": {
+      "cli_session": {
+        "agreed": 40,
+        "precision": 1.0,
+        "predicted": 40
+      },
+      "time_cwd_window": {
+        "agreed": 62,
+        "precision": 1.0,
+        "predicted": 62
+      }
+    },
+    "gold_min_events": 300,
+    "gold_subset_events": 6794,
+    "low_confidence": false
+  },
+  "falsifier_60pct": {
+    "share": 0.115076,
+    "threshold": 0.6,
+    "verdict": "fail"
+  },
+  "field_label": "local",
+  "generated_at": "2026-08-29T07:46:06Z",
+  "generator": "scripts/transcript_join.py",
+  "index": {
+    "equals_sealed_corpus_index_sha256": false,
+    "gate": "sha256(index) == index_sha256 of the manifest handed to --manifest; the gate never compares against a manifest the run was not given",
+    "path": "/tmp/tg-join/corpus-index-fresh.jsonl",
+    "rows": 4668,
+    "sha256": "35a1f3e6a03d9126389ab075fce83d6a362053f7522323d548c277b66f408e3f",
+    "verified_against_manifest": true
+  },
+  "manifest": {
+    "generated_at": "2026-08-29T07:42:14.292461Z",
+    "index_sha256": "35a1f3e6a03d9126389ab075fce83d6a362053f7522323d548c277b66f408e3f",
+    "is_sealed_corpus": false,
+    "path": "/home/sfx/p/lm/.worktrees/_node_exec_transcript-grounding_phase1-coverage/artifacts/transcript-grounding/join/corpus-fresh.json",
+    "sessions": 4668,
+    "sha256": "53e9c1b1ea7eff52d3df300a3de24017ab3a6bf501d851ea030d5a39bcd954a6"
+  },
+  "match_table": {
+    "path": "/home/sfx/p/lm/.worktrees/_node_exec_transcript-grounding_phase1-coverage/artifacts/transcript-grounding/join/match-table-local.jsonl.gz",
+    "rows": 59074,
+    "sha256": "5571c8bc124af72c7495550e274b55dfc8f300b5b19e6c1e2bc58c5103828a0f"
+  },
+  "python": "3.12.3",
+  "rules": {
+    "ambiguity": "candidate transcripts are collapsed by split_key identity group; a single surviving group is a match (deterministic representative: smallest session_key, tier 1 breaking ties by earliest echo record), multiple surviving groups are ambiguity and the tier yields nothing",
+    "record_index_base": 0,
+    "sealed_prefix": "at most index.records records read per transcript",
+    "window_slack_seconds": 300
+  },
+  "sealed_corpus": {
+    "compared": true,
+    "generated_at": "2026-08-19T01:14:29.477340Z",
+    "index_sha256": "af011614c51b689a1cdaa1dd0f0b5cb8ccdfe5031fa2de12e9f052c7ed2dd85f",
+    "index_used_matches_sealed_index_sha256": false,
+    "manifest_used_is_the_sealed_manifest": false,
+    "path": "/home/sfx/p/lm/.worktrees/_node_exec_transcript-grounding_phase1-coverage/artifacts/post-session/corpus.json",
+    "sessions": 3953,
+    "sha256": "625eb97f2f7120a4bd1634baf0e185d043810224c62aa6b2515feb36921a35fb"
+  },
+  "store": {
+    "access": "sqlite3 file: URI, mode=ro (read-only)",
+    "origin": "/home/sfx/.local/share/living-memory/global.sqlite3",
+    "path": "/tmp/tg-join/store-snapshot.sqlite3",
+    "sha256": "13cb5c8dbc1b09354ed8750d625e23e9b7f0d6e74d3ec443b5907b7cc29aae56"
+  }
+}

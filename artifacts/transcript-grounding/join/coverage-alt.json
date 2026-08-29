@@ -1,0 +1,220 @@
+{
+  "coverage": {
+    "by_method": {
+      "cli_session": 0,
+      "event_id_echo": 4257,
+      "time_cwd_window": 0,
+      "transport_session": 169,
+      "unmatched": 11672
+    },
+    "matched_events": 4426,
+    "share": 0.274941,
+    "total_events": 16098
+  },
+  "denominator": {
+    "definition": "all recall_events whose created_at lies inside the corpus window [min(started_at), max(ended_at)] taken over the corpus-index rows actually used, bounds inclusive, timestamps compared as UTC epoch seconds; events without a parseable created_at are outside the denominator; the denominator is never narrowed to events carrying a transport_session_id or any other join-friendly field",
+    "store_total_events": 16102,
+    "window_utc": {
+      "max_ended_at_epoch": 1787991897.172,
+      "min_started_at_epoch": 1785096494.35
+    }
+  },
+  "diagnostics": {
+    "denominator_events_with_any_echo": 4403,
+    "events_with_any_echo": 4403,
+    "missing_transcripts": 0,
+    "tier1_ambiguous": 131,
+    "tier1_hits_rejected_by_time": 6155,
+    "tier2_ambiguous": 0,
+    "tier3_ambiguous": 0,
+    "tier4_ambiguous": 45,
+    "transcripts_scanned": 2983
+  },
+  "drift_vs_own_manifest": {
+    "appended": 0,
+    "holdout": {
+      "appended": 0,
+      "missing": 0,
+      "rewritten": 0
+    },
+    "index": {
+      "actual_lines": 2983,
+      "actual_sha256": "2a9a43c0c4ae2aa0a79afab7b390ede5530750f8cf934f2828be704d188ad7f4",
+      "path": "/home/user/tj/work/corpus-index-alt.jsonl",
+      "present": true,
+      "recorded_lines": 2983,
+      "recorded_sha256": "2a9a43c0c4ae2aa0a79afab7b390ede5530750f8cf934f2828be704d188ad7f4",
+      "sha256_match": true
+    },
+    "measured": true,
+    "method": "the index handed to --index was checked row by row against the sealed manifest",
+    "missing": 0,
+    "mode": "index",
+    "report_path": "/home/user/tj/work/verify-alt.json",
+    "report_sha256": "e76407f19b7ca4d9af0d83fad4b9593dc1c7a8d090b9bac91061417fce198d20",
+    "rewritten": 0,
+    "rows_byte_identical": 2983,
+    "rows_checked": 2983,
+    "split_mismatches": 0,
+    "verify_ok": true
+  },
+  "drift_vs_sealed_manifest": {
+    "measured": false,
+    "report_path": null
+  },
+  "fallback_precision": {
+    "agreement_level": "split_key identity group",
+    "by_tier": {
+      "cli_session": {
+        "agreed": 2,
+        "precision": 1.0,
+        "predicted": 2
+      },
+      "time_cwd_window": {
+        "agreed": 116,
+        "precision": 1.0,
+        "predicted": 116
+      }
+    },
+    "gold_min_events": 300,
+    "gold_subset_events": 4426,
+    "low_confidence": false
+  },
+  "falsifier_60pct": {
+    "share": 0.274941,
+    "threshold": 0.6,
+    "verdict": "fail"
+  },
+  "field_label": "alt",
+  "generated_at": "2026-08-29T08:29:08Z",
+  "generator": "scripts/transcript_join.py",
+  "index": {
+    "equals_sealed_corpus_index_sha256": null,
+    "gate": "sha256(index) == index_sha256 of the manifest handed to --manifest; the gate never compares against a manifest the run was not given",
+    "path": "/home/user/tj/work/corpus-index-alt.jsonl",
+    "rows": 2983,
+    "sha256": "2a9a43c0c4ae2aa0a79afab7b390ede5530750f8cf934f2828be704d188ad7f4",
+    "verified_against_manifest": true
+  },
+  "manifest": {
+    "generated_at": "2026-08-29T08:25:11.971881Z",
+    "index_sha256": "2a9a43c0c4ae2aa0a79afab7b390ede5530750f8cf934f2828be704d188ad7f4",
+    "is_sealed_corpus": null,
+    "path": "/home/user/tj/work/corpus-alt.json",
+    "sessions": 2983,
+    "sha256": "df722d7e2b5f719d32686efbe7ee4ab4c6580d7a8d3b181ee8bfa76e7141b74a"
+  },
+  "match_table": {
+    "path": "/home/user/tj/out/match-table-alt.jsonl.gz",
+    "rows": 16098,
+    "sha256": "be7375c6e5185ff5988f961b93e8de91963928ad3e65393e9715aaa5de2973ee"
+  },
+  "python": "3.12.3",
+  "rules": {
+    "ambiguity": "candidate transcripts are collapsed by split_key identity group; a single surviving group is a match (deterministic representative: smallest session_key, tier 1 breaking ties by earliest echo record), multiple surviving groups are ambiguity and the tier yields nothing",
+    "record_index_base": 0,
+    "sealed_prefix": "at most index.records records read per transcript",
+    "window_slack_seconds": 300
+  },
+  "sealed_corpus": {
+    "compared": false,
+    "note": "no --sealed-manifest handed, so the run makes no claim about the sealed corpus either way",
+    "path": null
+  },
+  "selection_bias": {
+    "by_method": {
+      "cli_session": {
+        "consumed": 0,
+        "events": 0,
+        "share": null
+      },
+      "event_id_echo": {
+        "consumed": 2317,
+        "events": 4257,
+        "share": 0.54428
+      },
+      "time_cwd_window": {
+        "consumed": 0,
+        "events": 0,
+        "share": null
+      },
+      "transport_session": {
+        "consumed": 70,
+        "events": 169,
+        "share": 0.414201
+      },
+      "unmatched": {
+        "consumed": 50,
+        "events": 11672,
+        "share": 0.004284
+      }
+    },
+    "consumed_definition": "recall_events.feedback_applied = 1 -- a later memory_remember credited this recall event, i.e. it already carries the reinforcement signal that phase 2 exists to recover for the silent remainder",
+    "denominator": {
+      "consumed": 2437,
+      "events": 16098,
+      "share": 0.151385
+    },
+    "enrichment_matched_over_store_wide": 3.563406,
+    "enrichment_matched_over_unmatched": 125.897262,
+    "matched": {
+      "consumed": 2387,
+      "events": 4426,
+      "share": 0.539313
+    },
+    "measured": true,
+    "store_wide": {
+      "consumed": 2437,
+      "events": 16102,
+      "share": 0.151348
+    },
+    "unmatched": {
+      "consumed": 50,
+      "events": 11672,
+      "share": 0.004284
+    },
+    "why_this_is_measured": "the coverage share alone cannot distinguish a neutral join from one that preferentially finds already-consumed events; on the local field the consumed share was 0.1717 store-wide but 0.6472 among matched events (3.8x), holding inside every calendar month separately, which showed the event_id_echo tier to be closer to a consumption detector than a neutral join -- a high coverage produced by that same mechanism would not support the goal's downstream claim, so the enrichment decides as much as the share does",
+    "within_month_control": {
+      "comparable_months": 2,
+      "control": "a recency confound is ruled out only if the matched/unmatched consumed-share gap also holds inside each calendar month taken separately",
+      "matched_exceeds_unmatched_in_every_comparable_month": true,
+      "min_events_per_cell": 30,
+      "months": {
+        "2026-07": {
+          "comparable": true,
+          "matched": {
+            "consumed": 304,
+            "events": 347,
+            "share": 0.876081
+          },
+          "matched_exceeds_unmatched": true,
+          "unmatched": {
+            "consumed": 10,
+            "events": 1005,
+            "share": 0.00995
+          }
+        },
+        "2026-08": {
+          "comparable": true,
+          "matched": {
+            "consumed": 2083,
+            "events": 4079,
+            "share": 0.510664
+          },
+          "matched_exceeds_unmatched": true,
+          "unmatched": {
+            "consumed": 40,
+            "events": 10667,
+            "share": 0.00375
+          }
+        }
+      }
+    }
+  },
+  "store": {
+    "access": "sqlite3 file: URI, mode=ro (read-only)",
+    "origin": "/home/user/.local/share/living-memory/global.sqlite3",
+    "path": "/home/user/tj/work/snapshot.sqlite3",
+    "sha256": "9e7b5e2a95055b114fafa1c9e1e21ff4ced5c4ee178b699bcacc9df63968b0f1"
+  }
+}

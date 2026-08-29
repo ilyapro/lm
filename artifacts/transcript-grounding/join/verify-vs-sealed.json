@@ -1,0 +1,144 @@
+{
+  "changed": [],
+  "checked": 4668,
+  "content_ok": true,
+  "cross_check": {
+    "holdout_alias_match": true,
+    "ok": true
+  },
+  "holdout_appended": [],
+  "holdout_missing": [],
+  "holdout_rewritten": [],
+  "index": {
+    "path": null,
+    "present": false
+  },
+  "missing": [],
+  "mode": "rederive",
+  "ok": true,
+  "rederived": {
+    "counts": {
+      "by_cli": {
+        "ae": 253,
+        "claude": 1294,
+        "codex": 2145,
+        "deepseek": 7,
+        "gigacode": 78,
+        "unknown": 891
+      },
+      "by_source": {
+        "ae_chat": 253,
+        "ae_node_result": 1250,
+        "claude": 1294,
+        "codex": 1786,
+        "deepseek": 7,
+        "gigacode": 78
+      },
+      "by_split": {
+        "eval": 913,
+        "holdout": 1005,
+        "train": 2750
+      },
+      "by_split_source": {
+        "eval": {
+          "ae_chat": 38,
+          "ae_node_result": 266,
+          "claude": 240,
+          "codex": 350,
+          "deepseek": 3,
+          "gigacode": 16
+        },
+        "holdout": {
+          "ae_chat": 64,
+          "ae_node_result": 242,
+          "claude": 324,
+          "codex": 353,
+          "deepseek": 2,
+          "gigacode": 20
+        },
+        "train": {
+          "ae_chat": 151,
+          "ae_node_result": 742,
+          "claude": 730,
+          "codex": 1083,
+          "deepseek": 2,
+          "gigacode": 42
+        }
+      },
+      "bytes": 3406578426,
+      "identity_groups": 3917,
+      "largest_group": 43,
+      "records": 11582942,
+      "sessions": 4668,
+      "sessions_in_multi_transcript_groups": 1332,
+      "skipped": {}
+    },
+    "counts_drift": {
+      "by_source": {
+        "recorded": {
+          "ae_chat": 184,
+          "ae_node_result": 1018,
+          "claude": 1050,
+          "codex": 1636,
+          "deepseek": 7,
+          "gigacode": 58
+        },
+        "rederived": {
+          "ae_chat": 253,
+          "ae_node_result": 1250,
+          "claude": 1294,
+          "codex": 1786,
+          "deepseek": 7,
+          "gigacode": 78
+        }
+      },
+      "by_split": {
+        "recorded": {
+          "eval": 748,
+          "holdout": 837,
+          "train": 2368
+        },
+        "rederived": {
+          "eval": 913,
+          "holdout": 1005,
+          "train": 2750
+        }
+      },
+      "bytes": {
+        "recorded": 3082715422,
+        "rederived": 3406578426
+      },
+      "records": {
+        "recorded": 11343303,
+        "rederived": 11582942
+      },
+      "sessions": {
+        "recorded": 3953,
+        "rederived": 4668
+      }
+    },
+    "index_sha256": "8698315133a954705ffe903b7a3c2f1cbf287482eca4e11aea3e0f60e199af02",
+    "index_sha256_match": false,
+    "note": "no index on disk: the rolling Claude window makes drift expected, so it is reported; rebuild with --build to re-seal",
+    "seal": {
+      "eval": {
+        "match": false,
+        "recorded": "51fd1409dfd1883fd3c29b1cf1ca2c3584c74f7cdcda6d578fa11b395289da28",
+        "rederived": "5429e5c1b1b8fcfbfa2fd3163e706c832e18d05f7851b55257daf40d7541aaee"
+      },
+      "holdout": {
+        "match": false,
+        "recorded": "e7042c4dd49e913c7f2efc59335573fcba246e3eae89a82d0e76476fe22e4ed0",
+        "rederived": "f83a15b06c66791cb6a59388c345473b642395bf63167e098d0f5cf49eef6547"
+      },
+      "train": {
+        "match": false,
+        "recorded": "4eb290a0540265d73bae3f422c3294d114854ed5c66f77f6341950086b644012",
+        "rederived": "400efa213c2b4cee5f1483b9ddc041bd6a31b120e3f40dda01e1beb6558d5851"
+      }
+    }
+  },
+  "split_mismatches": [],
+  "unchanged_bytes": 0,
+  "verified": 4668
+}

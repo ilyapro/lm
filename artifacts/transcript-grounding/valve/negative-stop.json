@@ -1,0 +1,138 @@
+{
+  "boundaries_honored": {
+    "deploys_or_restarts": 0,
+    "live_store_read": false,
+    "live_store_read_note": "This node needed no store access: the gate is decided entirely from tracked artifacts. The phase-4 record's read-only ledger-emptiness check was accepted as the measurement, not re-run.",
+    "phase_1_artifacts_unedited": true,
+    "phase_2_artifacts_unedited": true,
+    "phase_4_artifacts_unedited": true,
+    "prereg_md_unedited": true,
+    "prereg_sha256_unedited": true,
+    "sealed_artifacts_post_session_untouched": true,
+    "sealed_artifacts_recall_map_untouched": true,
+    "store_writes": 0
+  },
+  "falsifier_mapping_stated_honestly": {
+    "falsifier_1": {
+      "fired": true,
+      "matched_events": 6798,
+      "observed_share": 0.11507600636489826,
+      "statement_ru": "Если покрытие corpus join < 60% recall-событий — сигнал беден, цель останавливается с записанным отрицательным результатом фазы 1.",
+      "this_is_the_actual_root_cause": true,
+      "threshold": 0.6,
+      "total_events": 59074
+    },
+    "falsifier_2": {
+      "antecedent_evaluated": false,
+      "antecedent_state": "The replay A/B never ran, so 'does not show improvement' was never observed. Claiming falsifier 2 fired on its own terms would assert a measured refutation of the transcript-consumption signal that was never taken.",
+      "consequent_holds": true,
+      "consequent_reason": "Its operative clause — 'клапан не включается' — holds regardless, via prereg §7.2: the valve is licensed only by a 'positive' verdict, and no verdict of any kind exists.",
+      "statement_ru": "Если replay A/B не показывает улучшения удержания подтверждённо-полезных результатов при неухудшении шума — клапан не включается, вердикт negative."
+    },
+    "net_effect_on_this_node": "Identical either way: the valve is not built and the live path is untouched.",
+    "note": "This node's instruction says to record that the valve is not built 'because the goal's falsifier 2 fired'. That is recorded here with a correction, because mis-citing which falsifier fired would misrepresent what was actually measured."
+  },
+  "field_label": "local",
+  "gate": {
+    "condition_met": true,
+    "instruction": "If artifacts/transcript-grounding/replay/verdict.json records verdict 'negative' OR a replay negative-stop exists, record that the valve is not built, commit, and stop without touching the live path.",
+    "replay_negative_stop": {
+      "path": "artifacts/transcript-grounding/replay/negative-stop.json",
+      "phase_4_ran": false,
+      "sha256": "a3af25e4422e561ba0842f10e77385c569da585d60075ec3d62a2259a74d4345",
+      "verdict": "negative-stop"
+    },
+    "replay_negative_stop_present": true,
+    "replay_verdict_json_present": false,
+    "verdict_json_absence_is_load_bearing": "The phase-2 stop pins this node's gate condition as literally \"verdict.json absent (negative stop propagated)\", and the phase-4 record states its absence is deliberate. This node did NOT treat the missing file as an incomplete upstream to be repaired or waited on: absence IS the gate signal. Anyone who later 'completes' the goal by adding a verdict.json — even one carrying verdict 'negative' — silently flips this gate.",
+    "which_branch_fired": "replay-negative-stop-exists"
+  },
+  "generated_at": "2026-08-29T08:08:32Z",
+  "generator": "goal-node transcript-grounding/valve — gate evaluation only; no valve code, no test file and no enablement note were written",
+  "goal": "transcript-grounding",
+  "head": "91d3939357fd7bbc73091a1590b72ad029e5ca75",
+  "independent_recheck": {
+    "chain_is_unbroken": "phase-1 coverage 0.115076 (fail) -> phase-2 stop -> phase-4 stop -> this phase-5 non-build. Each link's digest was verified here.",
+    "digests_verified": {
+      "artifacts/transcript-grounding/grade/negative-stop.json": {
+        "expected_from_phase_4_record": "8c7cafcde95a8e4835f2f921c13f5ed665260e54a83d862eb74cda7721e4cb4a",
+        "matches": true,
+        "recomputed": "8c7cafcde95a8e4835f2f921c13f5ed665260e54a83d862eb74cda7721e4cb4a"
+      },
+      "artifacts/transcript-grounding/join/coverage-local.json": {
+        "expected_from_phase_4_record": "b6fe4a2c2c3d47c5ef2474f4c055672dff49b4ebc92995c95f3702eefe7bc409",
+        "matches": true,
+        "recomputed": "b6fe4a2c2c3d47c5ef2474f4c055672dff49b4ebc92995c95f3702eefe7bc409"
+      },
+      "artifacts/transcript-grounding/replay/prereg.md": {
+        "expected_from_prereg_sha256_file": "1542f93682784cbf13a6c4ff873346f8bb114a0679bdfe8605571f8a67c9a927",
+        "matches": true,
+        "recomputed": "1542f93682784cbf13a6c4ff873346f8bb114a0679bdfe8605571f8a67c9a927",
+        "significance": "prereg.md is byte-identical to its seal, so §7.2's licensing rule is quoted here in its committed form and §8.2 (post-hoc amendment) is not triggered."
+      }
+    },
+    "method": "This node recomputed every digest it cites from the tracked files themselves rather than copying the upstream summary fields, and confirmed the live path's cleanliness by direct inspection of feedback.py and a repo-wide search for the env valve name."
+  },
+  "live_path_untouched": {
+    "claim": "This node made no change to any live code path, and shipped no valve in any state — neither enabled nor default-off.",
+    "enable_handoff_not_written_because": "The contract keys the enablement note to 'the phase-4 numbers'. There are no phase-4 numbers. A note keyed to nothing would hand the operator a decision aid with fabricated or null provenance for the exact decision it is supposed to inform.",
+    "evidence": {
+      "feedback_py_env_vars_read": [
+        "LM_RETRIEVAL_TUNING_POLICY",
+        "LM_RECALL_CREDIT_POLICY"
+      ],
+      "feedback_py_references_to_transcript_or_ledger": 0,
+      "feedback_py_sha256_at_head": "1e3718b60f704e5ac44e01ff6a74bd0bf2a8f289c702193aeed08eacfd8e4dd7",
+      "git_diff_head_src_tests": "empty",
+      "lm_transcript_reinforce_defined_anywhere_in_repo": false,
+      "off_state_is_vacuously_byte_identical": "No valve exists, so the OFF-state requirement (byte-identical behavior, no ledger reads on the live path) holds by construction rather than by test."
+    },
+    "files_owned_deliberately_not_written": [
+      "src/living_memory/feedback.py (read only; unmodified)",
+      "tests/test_transcript_grounding_valve.py (not created)",
+      "artifacts/transcript-grounding/valve/enable-handoff.md (not created)"
+    ],
+    "test_file_name_discrepancy_noted": "The goal prose names tests/test_transcript_valve.py while the node contract names tests/test_transcript_grounding_valve.py. Neither was created; recorded so a reopening node resolves the name deliberately rather than creating both."
+  },
+  "phase": 5,
+  "reason": "propagated-from-phase-4-negative-stop",
+  "reason_root_cause": "join-coverage-below-60pct",
+  "scope_conflict_recorded_for_the_operator": {
+    "implication": "Even a positive verdict would have licensed a valve over the retrieval-weight channel ONLY. Anchors and usefulness would have needed their own measurement.",
+    "prereg_clause": "§2.6 Scope boundary, stated honestly",
+    "prereg_text": "The replay harness replays the retrieval-weight channel. It does not replay query anchors (feedback._reinforce_query_anchors) or node-level usefulness. Phase 4 therefore decides the weight channel only; a positive verdict licenses the valve for the reinforcement the harness actually measured, and phase 5 must not read it as evidence about anchors.",
+    "why_this_matters_on_reopening": "This node's own goal text asks the valve to apply reinforcement across 'retrieval weights / anchors / usefulness'. The pre-registration is narrower, and the prereg wins: it was sealed first and is the document the operator's evidence would rest on. A future phase-5 node must not silently take the broader reading."
+  },
+  "valve_built": false,
+  "verdict": "not-built",
+  "what_would_reopen_phase_5": {
+    "no_licence_to_relax": "prereg.md §8.2 requires a NEW pre-registration with a new sha256 for any threshold change. This stop grants no licence to soften the 60% join falsifier, the §7.2 positive requirement, or the §2.6 channel boundary.",
+    "ordered_prerequisites": [
+      "A field whose phase-1 join coverage clears 0.60 on a corpus with retained transcripts (the local field's structural ceiling is ~12.6%, so this field cannot qualify without prospective retention changes).",
+      "Phase 2 ships a grade report on that field and mints the method_version V.",
+      "Phase 3's ledger is deployed and fed with rows for (F, V) — requiring the operator deploy+restart the phase-3 handoff describes.",
+      "Phase 4 executes prereg.md as written and returns verdict 'positive' on BOTH eval and holdout (§7.2).",
+      "Only then may a phase-5 valve be built, default-off, with arm-B semantics parameterised by the V and the S that run actually produced — and limited to the retrieval-weight channel per §2.6."
+    ],
+    "the_idea_is_not_refuted": "Nothing here tests whether transcript-grounded silent-recall reinforcement helps. It was never measured. The blocker is transcript disk retention on the local field, upstream of the hypothesis."
+  },
+  "why_the_valve_could_not_be_built_even_if_licensed": {
+    "consequence": "An ON valve would read an absent table for a field/method_version pair that does not exist and apply a strictness rule nobody selected. It would be a no-op wearing the evidence of an experiment that was never run.",
+    "ledger_rows_available_to_a_valve": 0,
+    "summary": "This is the finding that goes beyond the gate. The contract requires a valve whose ON semantics match the replay A/B's arm B 'exactly as pre-registered'. Those semantics are parameterised by two values that only a completed phase 2 and a completed phase-4 run can supply. Both are undefined. A valve claiming to match arm B would therefore have had to invent its own semantics and mislabel them as pre-registered — the precise failure the contract warns against ('a valve that applies different semantics than the A/B measured invalidates the operator's evidence for enabling it').",
+    "undetermined_parameters": [
+      {
+        "clause": "prereg.md §2.1 / §2.4",
+        "parameter": "method_version V",
+        "requirement": "Arm B consumes ledger rows filtered by field = F AND method_version = V.",
+        "state": "Phase 2 took its negative-stop branch and shipped no grade report, so no V was ever minted. §2.1 forbids choosing one after any metric is seen."
+      },
+      {
+        "clause": "prereg.md §5.1 / §2.4",
+        "parameter": "strictness candidate S",
+        "requirement": "Arm B credits only ledger rows 'admitted by the strictness candidate S', where S is chosen between S0 (grounded = 1) and S1 (grounded = 1 AND containment >= q75) BY the eval stage of the A/B.",
+        "state": "S is the run's single degree of freedom and the run never happened, so S is unselected. S1's q75 is additionally undefined: it is a percentile over train-bucket ledger rows, and the ledger holds zero rows (m = 0, which §5.1 itself maps to 'inconclusive')."
+      }
+    ]
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "goal": "transcript-grounding",
+  "record": "goal-level two-field closure",
+  "combined_verdict": "negative-stop",
+  "generated_at": "2026-08-29T08:37:26Z",
+  "generator": "goal-node transcript-grounding/alt-field-grade",
+  "head": "1520a929d1268d5ef6562d46cf00a6244dd5a0ea",
+
+  "what_this_record_closes": {
+    "boundary_obligation": "The goal's boundary section pins the measurement fields as «оба стора (локальный и alt) — фазы 1–2 гоняются на каждом хосте отдельно, урок однохостовых слепых пятен учтён». Phases 1-2 have now been run separately on both hosts. The obligation is discharged; the single-host blind spot is closed by measurement, not by argument.",
+    "why_it_was_open": "All five phase children had returned done, but every one of them had deferred the alt field explicitly (LM trace 01M169ES1X09PCS7DY0PFWWNE4). Closing the goal on the local field alone would have been exactly the blind spot the boundary exists to prevent."
+  },
+
+  "fields": {
+    "local": {
+      "phase_1": {
+        "matched_events": 6798,
+        "total_events": 59074,
+        "share": 0.115076,
+        "threshold": 0.6,
+        "verdict": "fail",
+        "artifact": "artifacts/transcript-grounding/join/coverage-local.json"
+      },
+      "structural_ceiling": {
+        "event_ids_echoing_in_any_surviving_transcript": 7471,
+        "ceiling_share": 0.126468,
+        "transcript_retention": "partial — roughly 446 sealed sessions had rolled off disk"
+      },
+      "selection_bias": {
+        "store_wide_consumed_share": 0.171734,
+        "matched_consumed_share": 0.647249,
+        "enrichment_matched_over_store_wide": 3.77,
+        "dominant_tier": "event_id_echo (6360 of 6798 matches = 93.6%), consumed share 0.6788",
+        "neutral_tier_available": true,
+        "neutral_tier_detail": "transport_session, 434 events, consumed share 0.182 against a base rate of 0.172 — no enrichment, but only 0.73% of the store"
+      },
+      "phase_2": {"verdict": "negative-stop", "ran": false, "artifact": "artifacts/transcript-grounding/grade/negative-stop.json"},
+      "phase_4": {"verdict": "negative-stop", "ran": false, "artifact": "artifacts/transcript-grounding/replay/negative-stop.json"},
+      "phase_5": {"verdict": "not-built", "artifact": "artifacts/transcript-grounding/valve/negative-stop.json"}
+    },
+
+    "alt": {
+      "phase_1": {
+        "matched_events": 4426,
+        "total_events": 16098,
+        "share": 0.274941,
+        "threshold": 0.6,
+        "verdict": "fail",
+        "artifact": "artifacts/transcript-grounding/join/coverage-alt.json"
+      },
+      "structural_ceiling": {
+        "event_ids_echoing_in_any_transcript": 4403,
+        "ceiling_share": 0.273512,
+        "transcript_retention": "full — missing_transcripts = 0, corpus window covers 16098 of the store's 16102 events, all 2983 index rows verified byte-identical"
+      },
+      "selection_bias": {
+        "store_wide_consumed_share": 0.151348,
+        "matched_consumed_share": 0.539313,
+        "unmatched_consumed_share": 0.004284,
+        "enrichment_matched_over_store_wide": 3.563397,
+        "enrichment_matched_over_unmatched": 125.890056,
+        "dominant_tier": "event_id_echo (4257 of 4426 matches = 96.2%), consumed share 0.54428",
+        "neutral_tier_available": false,
+        "neutral_tier_detail": "transport_session is itself enriched here — 169 events, consumed share 0.414201 against a base rate of 0.151348 (2.74x). The alt field offers no unbiased fallback tier, however small."
+      },
+      "phase_2": {"verdict": "negative-stop", "ran": false, "artifact": "artifacts/transcript-grounding/grade/negative-stop-alt.json"},
+      "phases_4_and_5": {"verdict": "no-run-can-be-formed", "artifact": "artifacts/transcript-grounding/replay/alt-field-reconciliation.json"}
+    }
+  },
+
+  "combined_outcome": {
+    "verdict": "negative-stop on both fields, and therefore on the goal",
+    "falsifier_1": {
+      "statement_ru": "Если покрытие corpus join < 60% recall-событий — сигнал беден, цель останавливается с записанным отрицательным результатом фазы 1.",
+      "fired_on_local": true,
+      "fired_on_alt": true,
+      "fired_independently_on_two_hosts": true,
+      "this_is_the_actual_root_cause": true
+    },
+    "falsifier_2": {
+      "statement_ru": "Если replay A/B не показывает улучшения удержания подтверждённо-полезных результатов при неухудшении шума — клапан не включается, вердикт negative.",
+      "antecedent_evaluated": false,
+      "antecedent_state": "No replay A/B ran on either field, so 'does not show improvement' was never observed. Claiming this falsifier fired on its own terms would assert a measured refutation of the transcript-consumption signal that was never taken.",
+      "consequent_holds": true,
+      "consequent_reason": "Its operative clause — «клапан не включается» — holds regardless, via prereg.md §7.2: the valve is licensed only by a 'positive' verdict, and no verdict of any kind exists."
+    },
+    "phase_states": {
+      "phase_1_corpus_join": "done on both fields; both fail the 60% falsifier",
+      "phase_2_grounding_grade": "stopped on both fields; no grader exists, no threshold was calibrated, no noise floor was measured, no method_version was minted",
+      "phase_3_additive_ledger": "code exists, deployed nowhere, fed nothing. transcript_grounding_verdicts is absent from BOTH stores (verified read-only on each).",
+      "phase_4_replay_ab": "no run can be formed on either field; artifacts/transcript-grounding/replay/verdict.json deliberately absent and its absence remains load-bearing",
+      "phase_5_valve": "not built; live path untouched; no deploy, no restart, no store write on either host"
+    }
+  },
+
+  "the_finding_that_outlives_the_goal": {
+    "headline": "The failure is a property of the join mechanism, not of either host's disk retention — and not of the idea being tested.",
+    "evidence": "The local fail was originally diagnosed as structural to local disk retention, i.e. a host property. The alt field refutes that: alt has full transcript retention over its entire event history and still ceilings at 27.4%. Retention modulates the number (12.6% local, 27.4% alt) but does not cause the failure.",
+    "mechanism": "The only tier that finds transcripts at scale, event_id_echo, matches an event because its recall_event_id was written into the transcript — and the dominant reason an id lands there is the memory_remember provenance that CONSUMES it. The join is therefore closer to a consumption detector than to a neutral link, which is why the consumed share among matched events is ~3.5x the store-wide rate on BOTH fields, holding inside every comparable calendar month on both.",
+    "the_sharpest_form_of_the_problem": "On alt, delivery_record_index — the anchor the grading method requires, because grading must begin strictly after the delivery instant — is present on exactly the 4257 event_id_echo rows and NULL on all 169 transport_session rows. Every event the prescribed method could grade comes from the consumption-detector tier; every event from the non-detector tier is ungradeable for want of a delivery instant. The bias is not merely large, it is structurally inseparable from the method.",
+    "consequence_for_the_goal_s_value_claim": {
+      "claim": "«Обучающий сигнал петли ... вырастает кратно (~×5 по покрытию событий)»",
+      "upper_bound_if_every_silent_matched_event_graded_as_grounded": {
+        "alt": {
+          "baseline_consumed_events": 2437,
+          "silent_matched_events_addable": 2039,
+          "store_events": 16102,
+          "coverage_before": 0.151348,
+          "coverage_after": 0.277978,
+          "multiplier": 1.836684
+        },
+        "local": {
+          "baseline_consumed_events_derived_from_recorded_share": 10145,
+          "silent_matched_events_addable": 2398,
+          "store_events": 59074,
+          "coverage_before": 0.171734,
+          "coverage_after": 0.212327,
+          "multiplier": 1.236373
+        }
+      },
+      "reading": "Even granting every silent matched event a grounded verdict — an upper bound no real threshold would reach — the event-coverage multiplier is ~1.8x on alt and ~1.2x on local, against a ~5x claim. The ~5x figure presumed a join that reaches most silent recalls; neither field's join does.",
+      "status": "derived here from the recorded counts, not pre-registered; the local baseline is back-derived from the recorded store-wide share and is approximate to the unit"
+    },
+    "reopening_condition": "Not another host, and not better join tiers. Reopening requires prospective instrumentation that records the delivery instant for recalls independently of whether a memory_remember later consumes them — so that the joinable population stops being selected by the very outcome the signal is meant to predict."
+  },
+
+  "boundaries_honored_by_this_closure": {
+    "offline_only": true,
+    "stores_opened_read_only_on_both_hosts": true,
+    "store_writes": 0,
+    "imports_into_any_store": 0,
+    "deploys_or_restarts": 0,
+    "live_path_changes": 0,
+    "prereg_md_unedited": true,
+    "prereg_sha256_unedited": true,
+    "prereg_seal_still_verifies": true,
+    "join_artifacts_unedited": [
+      "artifacts/transcript-grounding/join/coverage-alt.json",
+      "artifacts/transcript-grounding/join/match-table-alt.jsonl.gz",
+      "artifacts/transcript-grounding/join/coverage-local.json",
+      "artifacts/transcript-grounding/join/match-table-local.jsonl.gz"
+    ],
+    "sealed_trees_untouched": [
+      "artifacts/post-session/",
+      "artifacts/recall-map/"
+    ],
+    "replay_verdict_json_not_written": true,
+    "alt_join_not_rerun_or_retuned": true,
+    "splits_untouched": "no bucket function was evaluated on either field; the phase-4 holdout is pristine"
+  }
+}
