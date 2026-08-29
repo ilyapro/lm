@@ -2522,6 +2522,38 @@ def test_empty_pool_cold_lane_honors_a_collapsing_curtail_verdict(
         assert "curtailed" not in payload
 
 
+def test_empty_pool_cold_lane_reopens_on_a_decay_reprieve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decay valve binds cold exactly as warm: a collapsed key that has
+    served its skip run delivers cold clusters again on the same delivery a
+    warm map would return — and without the valve the same verdict keeps the
+    lane shut."""
+
+    with MemoryStore(tmp_path / "cold-empty-decay.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=0, cold=2)
+        monkeypatch.setattr(
+            RecallMapBuilder,
+            "_curtailment",
+            lambda self, scope, task, task_pattern=None, want_ask_follows=False: (
+                recall_map_module._Curtailment(
+                    streak=11,
+                    offers=recall_map_module.CURTAIL_STREAK,
+                    lead=recall_map_module.CURTAIL_DECAY_SKIP_MAX,
+                )
+            ),
+        )
+        _arm_cold(monkeypatch)
+        _builder, closed = _build_cold(store, results)
+        assert closed.to_dict()["sel"]["c"] == [0, 0]
+
+        monkeypatch.setenv(recall_map_module.CURTAIL_DECAY_GATE_ENV, "1")
+        _builder, reopened = _build_cold(store, results)
+        payload = reopened.to_dict()
+        assert payload["sel"]["c"] == [2, 2]
+        assert len(_cold_clusters(payload)) == 2
+
+
 def test_cold_ranking_orders_by_the_registered_composite_then_tiebreaks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

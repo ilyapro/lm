@@ -22,6 +22,11 @@ tests pin every side of that measurement:
   AE chat;
 * **it comes back** — the window that holds the evidence also expires it, so a
   dark key retries rather than dying;
+* **it decays only by operator word** — behind ``LM_MAP_CURTAIL_DECAY`` a
+  collapsed key retries after ``min(2**(N-1), 8)`` of its own markers, doubles
+  the run when the retry too goes unaccepted, and resets on the first
+  consumption; with the valve unset or misspelled every cadence above is
+  bit-for-bit the frozen one;
 * **it is default-on and read-only** — no flag turns it on, and the probe adds
   no write to the recall path.
 
@@ -43,6 +48,8 @@ import pytest
 
 from living_memory.models import Node
 from living_memory.recall_map import (
+    CURTAIL_DECAY_GATE_ENV,
+    CURTAIL_DECAY_SKIP_MAX,
     CURTAIL_HISTORY_LIMIT,
     CURTAIL_QUERY_OVERLAP,
     CURTAIL_STREAK,
@@ -898,9 +905,12 @@ def test_the_rule_needs_no_flag() -> None:
     thresholds come off a field measurement rather than out of this codebase.
     So the check is narrowed to what it always meant, and made stricter in the
     part that matters. Every env name the module reads is enumerated, each one
-    is a pool gate, and none of them appears anywhere in the curtail path —
-    which is a claim about the code that decides the collapse rather than about
-    the file that happens to contain it.
+    is a registered operator valve, and none of them appears anywhere in the
+    curtail probes — which is a claim about the code that gathers and judges
+    the evidence rather than about the file that happens to contain it. The
+    decay valve is the one registered exception at the decision itself, and it
+    is an exception the guarantee survives: it can shorten a silence, never
+    start one, so the retreat still needs no flag.
     """
 
     import inspect
@@ -916,7 +926,8 @@ def test_the_rule_needs_no_flag() -> None:
         module.POOL_DEMOTION_WINDOWS_ENV,
         module.POOL_COLD_QUOTA_GATE_ENV,
         module.POOL_COLD_SLOTS_ENV,
-    }, "an env name appeared that is not a registered pool valve"
+        module.CURTAIL_DECAY_GATE_ENV,
+    }, "an env name appeared that is not a registered operator valve"
 
     builder = module.RecallMapBuilder
     curtail_path = "\n".join(
@@ -937,6 +948,150 @@ def test_the_rule_needs_no_flag() -> None:
         assert forbidden not in curtail_path, (
             f"{forbidden!r} reached the curtail decision path"
         )
+
+
+# ----------------------------------------------------------------------
+# The decaying retry behind LM_MAP_CURTAIL_DECAY
+# ----------------------------------------------------------------------
+#
+# Registered in ~/p/ae/artifacts/injection-throttle/prereg-draft.md (П2): after
+# N unaccepted offers the key skips min(2**(N-1), 8) deliveries as markers and
+# then offers a full map again; the first consumption resets the walk; the
+# entry threshold does not move. Each test drives the loop the way the server
+# does — build, persist what was built, build again — so the schedule is pinned
+# on the builder's own payloads.
+
+
+def _served(
+    store: MemoryStore, builder: RecallMapBuilder, pool: list[RecallResult]
+) -> RecallMap:
+    """One delivery as the server performs it: build, then persist the result."""
+
+    built = builder.build(pool, scope=SCOPE, task=TASK)
+    assert built is not None
+    deliver(store, built.to_dict())
+    return built
+
+
+@pytest.mark.parametrize("valve", [None, "0", "maybe"])
+def test_without_the_valve_a_served_skip_run_stays_collapsed(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, valve: str | None
+) -> None:
+    """Unset, off, or misspelled, the cadence is the frozen one — no retry at
+    the decay boundary, or anywhere near it. The frozen reopening itself is
+    pinned by test_a_dark_key_offers_again_once_its_evidence_leaves_the_window;
+    this is the control proving the decay fires only on the operator's word.
+    """
+
+    if valve is None:
+        monkeypatch.delenv(CURTAIL_DECAY_GATE_ENV, raising=False)
+    else:
+        monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, valve)
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+
+    for _ in range(CURTAIL_DECAY_SKIP_MAX + 2):
+        assert _served(store, builder, pool).curtailed is True
+
+
+def test_the_valve_does_not_move_the_entry_threshold(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Armed, the key still gets its full allowance and not a delivery more."""
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK - 1)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+
+    built = builder.build(pool, scope=SCOPE, task=TASK)
+    assert built is not None
+    assert built.curtailed is False
+    assert built.clusters, "one short of the streak must still map normally"
+
+    unread_deliveries(store, 1)
+    collapsed = builder.build(pool, scope=SCOPE, task=TASK)
+    assert collapsed is not None
+    assert collapsed.curtailed is True
+    assert collapsed.streak == CURTAIL_STREAK
+
+
+def test_an_armed_collapse_still_opens_with_the_marker(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decay changes when the key retries, not what a collapse ships: the
+    first collapsed delivery is the same marker the unarmed rule emits."""
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+
+    built = RecallMapBuilder(store).build(residual(store), scope=SCOPE, task=TASK)
+
+    assert built is not None
+    payload = built.to_dict()
+    assert payload["curtailed"] is True
+    assert payload["streak"] == CURTAIL_STREAK
+    assert payload["clusters"] == []
+
+
+def test_the_skip_run_is_four_then_doubles_to_the_ceiling(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole registered schedule, on the builder's own deliveries.
+
+    At the entry threshold of 3 the run is ``min(2**2, 8) = 4`` markers, and
+    the fifth delivery is a real map again. That retry goes unconsumed too,
+    so the streak stands at 4 offers and the next run is ``min(2**3, 8) = 8``
+    — the ceiling, where it stays. Both counts are arithmetic on the two
+    constants, so the pin survives either of them moving.
+    """
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+
+    first_run = min(2 ** (CURTAIL_STREAK - 1), CURTAIL_DECAY_SKIP_MAX)
+    for _ in range(first_run):
+        assert _served(store, builder, pool).curtailed is True
+
+    retry = _served(store, builder, pool)
+    assert retry.curtailed is False
+    assert retry.clusters, "the retry must be a real map, not an empty one"
+
+    for _ in range(CURTAIL_DECAY_SKIP_MAX):
+        assert _served(store, builder, pool).curtailed is True
+
+    second_retry = _served(store, builder, pool)
+    assert second_retry.curtailed is False
+    assert second_retry.clusters
+
+
+def test_a_consumption_during_the_skip_run_reopens_and_resets(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first consumed delivery zeroes the counter mid-run: the walk stops
+    at the followed delivery, so the key maps again on the very next build
+    instead of serving out its skip run."""
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    medoids = unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+
+    entry = _served(store, builder, pool)
+    assert entry.curtailed is True
+    # The run is one marker in and far from served when the newest offer's
+    # example is finally reached — the same access `retrieval` records.
+    store.record_access(medoids[-1].id)
+
+    again = builder.build(pool, scope=SCOPE, task=TASK)
+    assert again is not None
+    assert again.curtailed is False
+    assert again.clusters
+    assert builder.last_curtailment.offers == 0
+    assert builder.last_curtailment.streak == 1, "only the marker remains"
 
 
 # ----------------------------------------------------------------------

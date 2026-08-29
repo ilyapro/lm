@@ -151,6 +151,21 @@ in the evidence resolves *against* collapsing — an unreadable history, a
 timestamp tie, a key whose deliveries this store cannot see all read as "used"
 — because the cost of curtailing a map that was working is larger than the cost
 of one more unread map.
+
+How fast a collapsed key *returns* is the one part of the rule that is not in
+that guarantee, and the field found the fixed cadence wrong on exactly the day
+it mattered: when the cold lane first filled the maps on the alt store, the
+curtailed share of a quiet day jumped 0.024 → 0.562 — the streaks strangled
+the channel at the moment it first had something to say
+(``~/p/ae/artifacts/injection-throttle/prereg-draft.md``, П2). So behind
+:data:`CURTAIL_DECAY_GATE_ENV` the retry decays instead of waiting for the
+window: after ``N`` unaccepted offers the key spends
+``min(2**(N-1), CURTAIL_DECAY_SKIP_MAX)`` deliveries on markers and then
+offers a full map again, and the first consumed delivery resets the walk
+exactly as it always did. The entry threshold, the markers, the probes and
+the evidence window are byte-identical either way; the valve can shorten a
+silence and can never start one, and with it unset the cadence is exactly the
+window arithmetic above.
 """
 
 from __future__ import annotations
@@ -2601,6 +2616,24 @@ CURTAIL_HISTORY_LIMIT = 24
 #: vocabulary with a cluster does not clear it.
 CURTAIL_QUERY_OVERLAP = 0.5
 
+#: Valve for the decaying curtail retry, drain-valve spelling like the pool
+#: gates. Off — unset, empty, ``0``, a typo — is the frozen cadence above,
+#: byte for byte. On, a collapsed key retries after
+#: ``min(2**(offers-1), CURTAIL_DECAY_SKIP_MAX)`` collapsed deliveries instead
+#: of waiting for the window to expire its evidence. Registered in
+#: ``~/p/ae/artifacts/injection-throttle/prereg-draft.md`` (П2), off a field
+#: number: the quiet armored day on the alt store that first filled the maps
+#: also pushed their curtailed share 0.024 → 0.562.
+CURTAIL_DECAY_GATE_ENV = "LM_MAP_CURTAIL_DECAY"
+
+#: Ceiling of the decay's skip run, from the registered rule
+#: ``min(2**(N-1), 8)``: at the entry threshold of 3 the first run is 4, one
+#: more unaccepted retry doubles it to 8, and there it stays. At the plateau a
+#: key that is never followed spends 1 delivery in 9 on a map — the same
+#: budget as the frozen 3-in-25 — but its first retry lands 4 deliveries
+#: after the collapse instead of 22.
+CURTAIL_DECAY_SKIP_MAX = 8
+
 #: Context fields consulted by stage 1, in precedence order.
 STRUCTURAL_FIELDS: tuple[str, ...] = (
     "procedure_id",
@@ -3124,10 +3157,33 @@ class _Curtailment:
     #: Of those, the ones that actually offered clusters. Only an offer can go
     #: unaccepted, so only an offer may push the map towards silence.
     offers: int
+    #: The newest deliveries of the streak that offered nothing — how far the
+    #: key is into its current run of markers, zeroed the moment a map goes
+    #: out. Only :attr:`retry_due` reads it; a verdict served from the memo
+    #: carries the default, which is safe because the memo never serves a
+    #: collapse and only a collapse can be retried.
+    lead: int = 0
 
     @property
     def collapse(self) -> bool:
         return self.offers >= CURTAIL_STREAK
+
+    @property
+    def retry_due(self) -> bool:
+        """Whether a decay-armed key has served its skip run.
+
+        Pure arithmetic on the verdict: the valve itself is read at the two
+        collapse decisions, never here or below, so the probe path stays
+        env-free and the unarmed decision is bit-identical to the frozen
+        rule. The run is the registered ``min(2**(N-1), 8)`` with ``N`` the
+        unaccepted offers — 4 at the entry threshold, 8 from the fourth on —
+        and it is measured against a real read, because every collapse
+        verdict comes off one.
+        """
+
+        if not self.collapse:
+            return False
+        return self.lead >= min(2 ** (self.offers - 1), CURTAIL_DECAY_SKIP_MAX)
 
 
 @dataclass(slots=True)
@@ -3798,6 +3854,21 @@ def pool_cold_slots_from_env() -> int | None:
     return value if 1 <= value <= POOL_COLD_SLOTS_MAX else None
 
 
+def curtail_decay_from_env() -> bool:
+    """Whether the operator armed the decaying curtail retry.
+
+    One flag, no number, unlike the paired gates above: there is no threshold
+    to invent because the schedule is the registered rule itself,
+    ``min(2**(N-1), CURTAIL_DECAY_SKIP_MAX)``. Read at the two collapse
+    decisions — :meth:`RecallMapBuilder.build` and
+    :meth:`RecallMapBuilder._with_cold_lane` — and nowhere inside the curtail
+    probes, so the unarmed decision path is bit-identical to the frozen
+    behaviour and ``test_the_rule_needs_no_flag`` keeps holding.
+    """
+
+    return _gate_flag(CURTAIL_DECAY_GATE_ENV)
+
+
 #: Parse-once memo for :func:`_cold_ranking_tables`, keyed by the identity of
 #: the constant so a monkeypatched table set in tests re-parses.
 _COLD_TABLES_MEMO: tuple[int, Mapping[str, _CalibrationTable] | None] | None = None
@@ -4314,7 +4385,10 @@ class RecallMapBuilder:
         A key whose last :data:`CURTAIL_STREAK` maps were delivered and never
         followed gets the collapsed form instead — clusters empty, ``curtailed``
         set, the streak carried — and gets it *before* any clustering runs, so
-        a channel nobody reads also stops costing what it costs to fill.
+        a channel nobody reads also stops costing what it costs to fill. With
+        :data:`CURTAIL_DECAY_GATE_ENV` armed a collapsed key that has served
+        its skip run (:attr:`_Curtailment.retry_due`) builds a full map again
+        instead of the marker; nothing else on either path moves.
 
         With :data:`POOL_DEMOTION_GATE_ENV` armed the curtail verdict is read
         *before* the pool instead of after it, because the gate needs the
@@ -4417,7 +4491,14 @@ class RecallMapBuilder:
         if curtailment is None:
             curtailment = self._curtailment(map_scope, task, task_pattern)
         self.last_curtailment = curtailment
-        if curtailment.collapse:
+        # The decay valve can only turn a collapse into a retry, never the
+        # reverse, so an unarmed build takes exactly the frozen branch. A
+        # retry is a plain map: the next read sees it as the newest offer,
+        # zero lead, and the skip run starts over — doubled, if it too goes
+        # unconsumed.
+        if curtailment.collapse and not (
+            curtail_decay_from_env() and curtailment.retry_due
+        ):
             self._note_delivery(map_scope, task, task_pattern, offered=False)
             return RecallMap(
                 scope=map_scope,
@@ -4807,7 +4888,9 @@ class RecallMapBuilder:
         unread-collapse verdict on the one path that never computed it (the
         empty-pool build): on a key the machinery would collapse, the lane
         does not run and an armed build reports ``c = [0, 0]``, because the
-        collapse defense binds cold content exactly as warm.
+        collapse defense binds cold content exactly as warm — including the
+        decay reprieve, which reopens the lane on the same delivery it would
+        reopen a warm map.
 
         Appended cold examples are shrunk — cold examples only, never a warm
         byte — towards :data:`MAX_RESPONSE_CHARS`; if even bare clusters
@@ -4816,8 +4899,12 @@ class RecallMapBuilder:
         under.
         """
 
-        if read_curtailment and self._curtailment(scope, task, task_pattern).collapse:
-            return replace(built, cold=(0, 0))
+        if read_curtailment:
+            verdict = self._curtailment(scope, task, task_pattern)
+            if verdict.collapse and not (
+                curtail_decay_from_env() and verdict.retry_due
+            ):
+                return replace(built, cold=(0, 0))
         examined, cold_clusters = self._cold_lane(
             cold_rows, slots=slots, warm_clusters=built.clusters
         )
@@ -5461,7 +5548,10 @@ class RecallMapBuilder:
         Newest first, stopping at the first delivery with a consumed cluster:
         what is *before* that delivery cannot make the channel look unused,
         because the channel demonstrably was used. Everything walked past is
-        the streak; the offers among it are what decides the collapse.
+        the streak; the offers among it are what decides the collapse; the
+        offerless run at the head of it is the ``lead`` the decay valve
+        measures its skip quota against, and costs this walk nothing it was
+        not already counting.
 
         Three reads for the whole window, not three per delivery: the medoid
         timestamps and the ledger's lookup verdicts each come back in one
@@ -5519,6 +5609,7 @@ class RecallMapBuilder:
 
         streak = 0
         offers = 0
+        lead = 0
         for index, row in enumerate(history):
             delivered = items[index]
             if delivered and self._was_followed(
@@ -5532,7 +5623,9 @@ class RecallMapBuilder:
             streak += 1
             if delivered:
                 offers += 1
-        return _Curtailment(streak=streak, offers=offers)
+            elif not offers:
+                lead += 1
+        return _Curtailment(streak=streak, offers=offers, lead=lead)
 
     def _delivery_history(
         self, scope: str, task: str | None, task_pattern: str | None = None
@@ -6402,6 +6495,8 @@ __all__ = [
     "COLD_RANKING_CALIBRATION",
     "COLD_RANKING_MEMBERS",
     "CTFIDF_LABEL_TERMS",
+    "CURTAIL_DECAY_GATE_ENV",
+    "CURTAIL_DECAY_SKIP_MAX",
     "CURTAIL_HISTORY_LIMIT",
     "CURTAIL_QUERY_OVERLAP",
     "CURTAIL_STREAK",
@@ -6456,6 +6551,7 @@ __all__ = [
     "SelectionAccounting",
     "SelectionSample",
     "cache_key",
+    "curtail_decay_from_env",
     "normalize_key",
     "pool_cold_slots_from_env",
     "pool_demotion_windows_from_env",

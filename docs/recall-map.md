@@ -475,13 +475,32 @@ output verbatim and omits the key on `None`, so no `server.py` change is needed.
   `recall_delivery_history.lookup_consumed = 1`, whose window is the frozen
   `RECALL_DELIVERY_HISTORY_HORIZON_HOURS` = 24; history reads are bounded by
   `CURTAIL_HISTORY_LIMIT` = 24.
+- **Decaying retry** (`LM_MAP_CURTAIL_DECAY`, default off): with the valve
+  unset a collapsed key retries only when its unread offers slide out of the
+  24-delivery window — 3 maps in 25, first retry 22 deliveries after the
+  collapse. The injection-throttle prereg (П2,
+  `~/p/ae/artifacts/injection-throttle/prereg-draft.md`) measured that cadence
+  strangling the channel on exactly the quiet armored day the cold lane first
+  filled the maps (curtailed share 0.024 → 0.562), so armed, the retry decays:
+  after `N` unaccepted offers the key skips `min(2**(N-1),
+  CURTAIL_DECAY_SKIP_MAX = 8)` deliveries as markers and then offers a full
+  map again — 4 at the entry threshold, 8 from the fourth offer on, the same
+  ~12% duty cycle at the plateau but a retry in 4–8 deliveries instead of 22.
+  The entry threshold, the marker payload, the probes and the reset are
+  byte-identical either way; the valve reads only the `lead` the streak walk
+  already counts (the offerless run at the head of the window) and can shorten
+  a silence, never start or lengthen one. It binds the cold lane exactly as
+  the collapse it relaxes: a reprieved key delivers cold clusters on the same
+  delivery a warm map would return.
 - **Default-on, no env flag.** The protocol channels' machinery ban
   (`test_protocol_channels_advertise_no_non_default_machinery`) forbids
   default-off machinery. A curtail rule that has to be switched on is not a
   curtail rule. This is a claim about the *curtail decision*, and it is pinned
   as one: `test_the_rule_needs_no_flag` enumerates every env name the module
-  reads, checks each is a §11 pool gate, and checks none of them appears
-  anywhere in the curtail path. The pool gates are off by default for the
+  reads, checks each is a registered operator valve, and checks none of them
+  appears anywhere in the curtail probes. The decay valve above is the one
+  registered exception at the decision itself and keeps the guarantee — it can
+  only shorten the silence. The pool gates are off by default for the
   opposite reason — their thresholds are the operator's, not this codebase's —
   and they are advertised in no protocol channel.
 
