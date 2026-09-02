@@ -15,6 +15,7 @@ Three layers:
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import os
 import signal
 import socket
@@ -22,6 +23,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import CodeType
 from typing import Any, Iterator
 
 import httpx
@@ -64,13 +66,29 @@ def no_env_file(tmp_path: Path) -> Path:
 def test_expected_texts_are_imported_from_the_server_module() -> None:
     texts = checker.expected_texts("global")
 
+    assert checker.PROTOCOL_TOOLS == {
+        "memory_recall": "_RECALL_DESCRIPTION",
+        "memory_remember": "_REMEMBER_DESCRIPTION",
+        "memory_teach": "_TEACH_DESCRIPTION",
+        "memory_lookup": "_LOOKUP_DESCRIPTION",
+    }
     assert texts["server instructions"] == lm_server._server_instructions("global")
     # Identity, not equality: a copy of the string would compare equal today and
     # rot the moment the protocol text changes.
     assert texts["memory_recall"] is lm_server._RECALL_DESCRIPTION
     assert texts["memory_remember"] is lm_server._REMEMBER_DESCRIPTION
     assert texts["memory_teach"] is lm_server._TEACH_DESCRIPTION
-    assert texts["memory_consolidate"] is lm_server._CONSOLIDATE_DESCRIPTION
+    lookup_description = getattr(lm_server, "_LOOKUP_DESCRIPTION", None)
+    if lookup_description is not None:
+        assert texts["memory_lookup"] is lookup_description
+    else:
+        lookup_codes = [
+            constant
+            for constant in lm_server._register_tools.__code__.co_consts
+            if isinstance(constant, CodeType) and constant.co_name == "memory_lookup"
+        ]
+        assert len(lookup_codes) == 1
+        assert texts["memory_lookup"] == inspect.cleandoc(lookup_codes[0].co_consts[0])
     assert set(texts) == {"server instructions", *checker.PROTOCOL_TOOLS}
 
 
@@ -81,7 +99,7 @@ def test_script_source_carries_no_copy_of_any_protocol_text() -> None:
         lm_server._RECALL_DESCRIPTION,
         lm_server._REMEMBER_DESCRIPTION,
         lm_server._TEACH_DESCRIPTION,
-        lm_server._CONSOLIDATE_DESCRIPTION,
+        checker.expected_texts("global")["memory_lookup"],
     ]
     for text in protocol_texts:
         # Any fragment long enough to be a paste rather than a coincidence.
@@ -119,7 +137,11 @@ def test_matching_host_exits_zero(
     out = capsys.readouterr().out
     assert code == 0
     assert out.startswith("OK: http://127.0.0.1:8765/mcp/ serves this checkout")
-    assert "memory_recall" in out
+    assert (
+        "5 checked: memory_lookup, memory_recall, memory_remember, memory_teach, "
+        "server instructions" in out
+    )
+    assert "memory_consolidate" not in out
 
 
 def test_stale_tool_description_exits_non_zero_with_a_readable_diff(
@@ -181,14 +203,14 @@ def test_missing_protocol_tool_counts_as_drift(
     no_env_file: Path,
 ) -> None:
     served = checker.expected_texts("global")
-    del served["memory_teach"]
+    del served["memory_lookup"]
     _stub_fetch(monkeypatch, served)
 
     code = checker.main(["--env-file", str(no_env_file)])
 
     out = capsys.readouterr().out
     assert code == 1
-    assert "memory_teach" in out
+    assert "memory_lookup" in out
     assert "does not expose this tool" in out
 
 
@@ -227,6 +249,13 @@ def test_json_verdict_reports_per_text_equality(
     assert code == 1
     assert payload["ok"] is False
     assert payload["differences"] == ["memory_remember"]
+    assert payload["checked"] == [
+        "memory_lookup",
+        "memory_recall",
+        "memory_remember",
+        "memory_teach",
+        "server instructions",
+    ]
     assert payload["texts"]["memory_recall"]["equal"] is True
     assert payload["texts"]["memory_remember"]["equal"] is False
     assert (
@@ -398,6 +427,8 @@ def test_live_server_from_this_worktree_passes_the_check(live_server: int) -> No
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.startswith("OK: ")
+    assert "memory_lookup" in result.stdout
+    assert "memory_consolidate" not in result.stdout
     # The expectation must come from this worktree, not from the installed
     # (editable) package that points at the shared checkout.
     assert f"checkout: {SRC_DIR / 'living_memory' / 'server.py'}" in result.stdout

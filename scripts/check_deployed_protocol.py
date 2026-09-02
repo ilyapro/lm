@@ -9,7 +9,7 @@ host over MCP, reads what the host actually serves, and compares it byte-for-byt
 with the values imported from the checkout this file lives in.
 
 The expected texts are *imported*, never copied here: ``_server_instructions``
-and the ``_*_DESCRIPTION`` constants come straight from
+and the authoritative tool descriptions come straight from
 ``living_memory.server`` of this checkout, so the check keeps working when those
 texts change and never asserts a stale copy of them.
 
@@ -42,6 +42,7 @@ import argparse
 import asyncio
 import difflib
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -51,6 +52,7 @@ import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
+from types import CodeType
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,7 +78,7 @@ PROTOCOL_TOOLS: dict[str, str] = {
     "memory_recall": "_RECALL_DESCRIPTION",
     "memory_remember": "_REMEMBER_DESCRIPTION",
     "memory_teach": "_TEACH_DESCRIPTION",
-    "memory_consolidate": "_CONSOLIDATE_DESCRIPTION",
+    "memory_lookup": "_LOOKUP_DESCRIPTION",
 }
 
 _SCOPE_LINE = re.compile(r"^Your default scope is (?P<scope>.+)\.$", re.MULTILINE)
@@ -107,6 +109,28 @@ class Difference:
         return self.served is None
 
 
+def _nested_tool_description(tool_name: str) -> str | None:
+    """A FastMCP-derived description still held as a nested tool docstring.
+
+    ``memory_lookup`` historically let FastMCP derive its description from the
+    function docstring inside ``living_memory.server._register_tools``. Keep
+    that server text authoritative while checkouts migrate it to the named
+    ``_LOOKUP_DESCRIPTION`` constant used by the other protocol tools.
+    """
+
+    register_tools = getattr(lm_server, "_register_tools", None)
+    code = getattr(register_tools, "__code__", None)
+    if code is None:
+        return None
+    for constant in code.co_consts:
+        if not isinstance(constant, CodeType) or constant.co_name != tool_name:
+            continue
+        raw_docstring = constant.co_consts[0] if constant.co_consts else None
+        if isinstance(raw_docstring, str) and raw_docstring.strip():
+            return inspect.cleandoc(raw_docstring)
+    return None
+
+
 def expected_texts(default_scope: str = DEFAULT_SCOPE) -> dict[str, str]:
     """The protocol texts this checkout would serve, imported from the source.
 
@@ -119,6 +143,8 @@ def expected_texts(default_scope: str = DEFAULT_SCOPE) -> dict[str, str]:
     }
     for tool_name, attribute in PROTOCOL_TOOLS.items():
         value = getattr(lm_server, attribute, None)
+        if value is None and tool_name == "memory_lookup":
+            value = _nested_tool_description(tool_name)
         if not isinstance(value, str) or not value:
             raise CheckError(
                 f"living_memory.server has no usable {attribute} for {tool_name}: "

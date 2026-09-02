@@ -47,6 +47,12 @@ TOKEN = "test-tls-token-abc123"
 DEFAULT_SCOPE = "project:tls-suite"
 LOOPBACK = "127.0.0.1"
 READY_TIMEOUT_SECONDS = 30.0
+AGENT_TOOL_NAMES = {
+    "memory_lookup",
+    "memory_recall",
+    "memory_remember",
+    "memory_teach",
+}
 
 # Mirror scripts/test.sh for bare `pytest .` merge-gate runs. Tests that need
 # the real model path clear or override this variable explicitly.
@@ -66,6 +72,10 @@ def _free_port() -> int:
 
 def _server_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
+    # These tests exercise default discovery; callers may opt in explicitly
+    # through ``extra`` without inheriting either exposure flag by accident.
+    env.pop("LM_EXPOSE_OPERATOR_TOOLS", None)
+    env.pop("LM_EXPOSE_ATTEST", None)
     env["LM_AUTH_TOKEN"] = TOKEN
     # Keep startup off the multi-GB sentence-transformers path (mirrors
     # scripts/test.sh) so the subprocess binds quickly under the ready timeout.
@@ -395,7 +405,7 @@ def test_https_mcp_initialize_and_memory_tools(tmp_path: Path) -> None:
     with _serve(tmp_path, tls=True, cert=cert, key=key) as srv:
         session = asyncio.run(_mcp_session(srv["base_url"], srv["verify"]))
 
-    assert {"memory_health", "memory_status"} <= session["tools"]
+    assert session["tools"] == AGENT_TOOL_NAMES
     assert isinstance(session["health"], dict) and session["health"]
     assert isinstance(session["status"], dict) and session["status"]
 
@@ -436,7 +446,7 @@ def test_plain_http_transport_unchanged_without_tls(tmp_path: Path) -> None:
         assert authed.json()["default_scope"] == DEFAULT_SCOPE
 
         session = asyncio.run(_mcp_session(base, None))
-        assert {"memory_health", "memory_status"} <= session["tools"]
+        assert session["tools"] == AGENT_TOOL_NAMES
 
         # The port speaks plain HTTP, so an https client (as the TLS tests use)
         # must fail here — the inverse of test_tls_port_rejects_plaintext_http.

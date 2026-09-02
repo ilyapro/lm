@@ -11,13 +11,37 @@ The server is a Python package under `src/living_memory`.
 
 | Layer | Modules | Responsibility |
 | --- | --- | --- |
-| MCP surface | `server.py`, `delivery.py` | Registers the ten tools, four resources, and retrieval-context prompt; stamps transport-derived correlation identity into recall/remember/teach; shapes recall responses (session/twin dedup, snippets, context compaction) before serialization. |
+| MCP surface | `server.py`, `delivery.py` | Registers nine core tools, conditionally registers the independently controlled attestation tool, and filters only `tools/list`; also registers four resources and the retrieval-context prompt, stamps transport-derived correlation identity into recall/remember/teach, and shapes recall responses (session/twin dedup, snippets, context compaction) before serialization. |
 | Storage | `storage.py`, `models.py` | Owns SQLite schema, uniform node CRUD, connections, FTS5, and retrieval weights. |
 | Retrieval | `retrieval.py`, `scope.py`, `embeddings.py`, `feedback.py` | Resolves scope, searches FTS5, computes multilingual embeddings, traverses graph edges, reranks, logs access, stores recall events, and tunes weights. |
 | Learning loop | `consolidation.py`, `decay.py`, `temporal.py` | Clusters similar traces into concepts, computes consensus and temporal hints, updates edge weights, records corrections, and soft-deletes expired or superseded records. |
 | Offline credit | `attestation.py`, `postsession/` | Grades a finished session's recall events against evidence lifted from that session's own artifacts and applies the credit the live loop missed. See [post-session-attestation.md](post-session-attestation.md). |
 | Read models | `resources.py`, `prompts.py` | Produces browsable resource payloads and formatted active memory context. |
 | Configuration | `config.py` | Loads TOML settings and supplies defaults. |
+
+### Tool discovery versus call reachability
+
+The nine core handlers are always registered. FastMCP `tools/list` advertises
+exactly `memory_recall`, `memory_remember`, `memory_teach`, and `memory_lookup`
+by default. It filters the five maintenance handlers — `memory_consolidate`,
+`memory_forget`, `memory_connect`, `memory_status`, and `memory_health` — out of
+discovery without removing them from FastMCP lookup. They therefore remain
+directly callable by name over the in-memory, stdio, HTTP, and HTTPS/TLS
+transports. The filter is not an authorization boundary; transport
+authentication still governs calls.
+
+`LM_EXPOSE_OPERATOR_TOOLS=1` includes the five maintenance tools in
+`tools/list`, producing the complete nine-core-tool inventory. The equivalent
+Python constructor option is
+`create_mcp_server(expose_operator_tools=True)`. An explicit constructor
+`True` or `False` wins over the environment; only `None` (including omission)
+consults it.
+
+`memory_attest` is separate from those nine core handlers and is not registered
+by default. `LM_EXPOSE_ATTEST=1` or `expose_attest=True` registers and
+advertises it, while explicit `expose_attest=False` overrides the environment.
+The attestation and operator controls are independent: either can be enabled
+without changing the other surface.
 
 ## Data Flow
 
@@ -70,7 +94,8 @@ The server is a Python package under `src/living_memory`.
    (corrections) is exempt and always applies at full strength.
 7. `memory_teach` appends a corrective trace and creates a `supersedes` edge
    from the correction to the original.
-8. `memory_attest` closes the same loop for events that step 6 never reached —
+8. When independently enabled for the offline stage, `memory_attest` closes the
+   same loop for events that step 6 never reached —
    ~80% of them, because recall is a session-opening ritual and
    `memory_remember` a session-closing one. An offline extractor submits the
    `recall_event_id` plus evidence lifted verbatim from that session's
@@ -301,4 +326,5 @@ npm run server -- --config ./memory.toml --transport stdio
 `.cache/python-deps`, then delegates to the Python test suite through
 `scripts/check.sh` and `scripts/test.sh`. This check path includes a real
 FastMCP server smoke test that verifies the documented runtime can instantiate
-the server surface and exercise the ten registered tools locally.
+the four-tool default discovery surface and exercise all nine registered core
+tools locally, including the five maintenance tools hidden from discovery.

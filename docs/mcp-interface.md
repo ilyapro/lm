@@ -1,14 +1,57 @@
 # Living Memory MCP Interface
 
-The MCP server exposes four core operations through ten tools, four
-browsable resources, and one prompt. Create it in Python with
+The MCP server registers nine core tools, exposes a deliberately smaller
+discovery surface, and also provides four browsable resources and one prompt.
+Create it in Python with
 `living_memory.server:create_mcp_server`, run it from the repository with
 `npm run server -- ./living_memory.sqlite3`, or run
 `python -m living_memory.server` after installing the package dependencies.
 
+## Tool visibility contract
+
+With no operator exposure setting, real FastMCP `tools/list` advertises exactly
+these four agent tools:
+
+* `memory_recall`
+* `memory_remember`
+* `memory_teach`
+* `memory_lookup`
+
+The served server instructions name the same four tools in their bootstrap
+directive ("load the Living Memory tools NOW"), so a session whose client
+defers tool schemas is never told to load a tool it cannot discover.
+
+The other five core tools are maintenance tools:
+
+* `memory_consolidate`
+* `memory_forget`
+* `memory_connect`
+* `memory_status`
+* `memory_health`
+
+They are always registered and directly callable by name through real FastMCP,
+including the in-memory, stdio, HTTP, and HTTPS/TLS transports. By default they
+are merely omitted from `tools/list`; the discovery filter does not disable the
+handlers or remove them from FastMCP lookup. This is not an authorization
+boundary; configured transport authentication applies as usual.
+
+Set the literal environment value `LM_EXPOSE_OPERATOR_TOOLS=1` to include all
+five maintenance tools in discovery, for all nine core tools. Python embedders
+can pass `expose_operator_tools=True` or `False` to `create_mcp_server`. The
+constructor has precedence: an explicit boolean is authoritative even when the
+environment says the opposite; `None` (the default) consults the environment.
+
+The optional attestation tool is controlled independently. It is not registered
+by default. `LM_EXPOSE_ATTEST=1` or `expose_attest=True` registers and advertises
+`memory_attest`, while explicit `expose_attest=False` overrides the environment.
+Thus operator-only exposure lists the nine core tools without attestation,
+attestation-only exposure lists the four agent tools plus `memory_attest`, and
+enabling both lists ten tools.
+
 ## Transport and TLS
 
-The same tool, resource, and prompt surface is reachable over every transport.
+The same configured tool, resource, and prompt surface is reachable over every
+transport.
 `python -m living_memory.server` defaults to stdio; `--transport http` (or
 `--transport sse`) with `--host`/`--port` serves the `/mcp` endpoint plus the
 admin routes over the network. By default those transports use plain `http://`.
@@ -565,10 +608,11 @@ Output:
   recorded: the stored verdict is returned verbatim and **nothing is applied**.
   Every other field then describes the recorded attestation, not this call.
 
-`memory_attest` is deliberately not one of the four protocol-bearing tools
-`scripts/check_deployed_protocol.py` compares byte-for-byte: it is an offline
-extractor's tool, not part of the in-session recall/remember/teach/consolidate
-discipline every connected client pays for on every request.
+`memory_attest` is deliberately not one of the four default-visible,
+protocol-bearing tools `scripts/check_deployed_protocol.py` compares
+byte-for-byte: it is an offline extractor's tool, not part of the in-session
+`memory_recall`/`memory_remember`/`memory_teach`/`memory_lookup` surface every
+connected client pays for on every request.
 
 ### `memory_lookup`
 

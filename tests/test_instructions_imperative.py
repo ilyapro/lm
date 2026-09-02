@@ -49,7 +49,9 @@ import pytest
 
 from living_memory.instructions_map import HEADING, MAX_SECTION_CHARS
 from living_memory.server import (
+    _AGENT_TOOL_NAMES,
     _CONSOLIDATE_DESCRIPTION,
+    _OPERATOR_TOOL_NAMES,
     _RECALL_DESCRIPTION,
     _REMEMBER_DESCRIPTION,
     _TEACH_DESCRIPTION,
@@ -251,11 +253,21 @@ def test_instructions_bootstrap_directive(instructions: str) -> None:
     In current claude-code every MCP tool is deferred behind a search step
     even for a single-tool server, so descriptions are a pull channel; the
     instructions are the only push channel left and must trigger the pull.
+
+    The names it pushes are the default-visible agent tools and nothing
+    else: ``tools/list`` hides the maintenance tools by default, so a
+    session told to load ``memory_consolidate`` would search for a tool it
+    cannot discover.
     """
 
-    for tool in DESCRIPTIONS:
+    for tool in sorted(_AGENT_TOOL_NAMES):
         assert tool in instructions, (
             f"bootstrap directive must name {tool} so agents know what to load"
+        )
+    for tool in sorted(_OPERATOR_TOOL_NAMES):
+        assert tool not in instructions, (
+            f"bootstrap directive must not name hidden {tool}: agents cannot "
+            "discover it through the default tools/list"
         )
     lowered = instructions.lower()
     assert "defers" in lowered or "deferred" in lowered

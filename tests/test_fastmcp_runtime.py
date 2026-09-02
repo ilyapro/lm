@@ -9,8 +9,13 @@ import pytest
 from living_memory.server import create_mcp_server
 
 
-def test_real_fastmcp_server_registers_and_exercises_all_tools(tmp_path: Path) -> None:
+def test_real_fastmcp_server_registers_and_exercises_all_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     pytest.importorskip("fastmcp")
+    monkeypatch.delenv("LM_EXPOSE_OPERATOR_TOOLS", raising=False)
+    monkeypatch.delenv("LM_EXPOSE_ATTEST", raising=False)
     asyncio.run(_exercise_real_fastmcp_server(tmp_path))
 
 
@@ -38,13 +43,8 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
     assert tools == {
         "memory_remember",
         "memory_teach",
-        "memory_connect",
         "memory_recall",
         "memory_lookup",
-        "memory_consolidate",
-        "memory_forget",
-        "memory_status",
-        "memory_health",
     }
     assert resources == {
         "memory://global/concepts",
@@ -57,6 +57,9 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
 
     status = _structured(await mcp.call_tool("memory_status", {"scope": "project:runtime"}))
     assert status["scope"] == "project:runtime"
+
+    health = _structured(await mcp.call_tool("memory_health", {"scope": "project:runtime"}))
+    assert health["scope"] == "project:runtime"
 
     first = _structured(
         await mcp.call_tool(

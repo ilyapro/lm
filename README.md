@@ -41,7 +41,30 @@ npm run server -- ./living_memory.sqlite3
 `npm run check` installs the Python test/runtime dependencies into the ignored
 `.cache/python-deps` directory and runs the Python test suite through
 `scripts/check.sh`. The suite includes a real FastMCP integration smoke test
-that instantiates the server and exercises the ten registered tools locally.
+that instantiates the server, verifies the four-tool default discovery surface,
+and exercises all nine registered core tools locally.
+
+## Tool discovery and operator access
+
+By default, FastMCP `tools/list` advertises exactly the four agent tools:
+`memory_recall`, `memory_remember`, `memory_teach`, and `memory_lookup`. The five
+maintenance tools — `memory_consolidate`, `memory_forget`, `memory_connect`,
+`memory_status`, and `memory_health` — remain registered and directly callable
+by name over the in-memory, stdio, HTTP, and HTTPS/TLS transports; they are only
+hidden from discovery. This is a tool-list diet, not an authorization boundary;
+configured transport authentication still applies to every call.
+
+Set the literal environment value `LM_EXPOSE_OPERATOR_TOOLS=1` before starting
+the server to advertise all nine core tools. Python embedders can instead pass
+`expose_operator_tools=True` or `False` to `create_mcp_server`; an explicit
+constructor value takes precedence over the environment, while `None` (the
+default) falls back to it.
+
+Attestation has an independent, default-off control. `LM_EXPOSE_ATTEST=1` or
+`create_mcp_server(expose_attest=True)` registers and advertises
+`memory_attest`; an explicit `expose_attest=False` overrides its environment
+variable. Neither attestation control changes maintenance-tool visibility, and
+the operator-tool control does not enable attestation.
 
 FastMCP and sentence-transformers are declared runtime dependencies. When
 sentence-transformers is absent in a source checkout or a model is unavailable

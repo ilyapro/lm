@@ -43,6 +43,31 @@ deployment is `git pull` in that checkout plus a restart** — there is no copy 
 the code to reinstall. Reinstall only when `pyproject.toml` changes
 `dependencies` or `[project.scripts]`.
 
+## Tool discovery controls
+
+With no visibility setting, `tools/list` advertises exactly
+`memory_recall`, `memory_remember`, `memory_teach`, and `memory_lookup`. The
+maintenance tools `memory_consolidate`, `memory_forget`, `memory_connect`,
+`memory_status`, and `memory_health` are still registered and directly callable
+by name over stdio, HTTP, and HTTPS/TLS; hiding them changes discovery only and
+is not an authorization boundary. Normal transport authentication still
+applies.
+
+For an operator or offline maintenance stage, put the literal value
+`LM_EXPOSE_OPERATOR_TOOLS=1` in the unit's environment file and restart the
+server. `tools/list` will then advertise all nine core tools. Removing the
+setting (or giving it any value other than `1`) hides the five maintenance
+tools again on the next restart; with attestation also off, the result is the
+four-tool default. Python embedders have the corresponding
+`create_mcp_server(expose_operator_tools=True)` or `False` override: an
+explicit boolean wins over the environment, and only `None`/omission reads it.
+
+Attestation is independently default-off. `LM_EXPOSE_ATTEST=1` (or the Python
+override `expose_attest=True`) registers and advertises `memory_attest`;
+explicit `expose_attest=False` overrides that environment setting. Enabling
+attestation does not expose the five maintenance tools, and enabling operator
+tools does not register or advertise attestation.
+
 ## Update the local host
 
 ```sh
@@ -82,7 +107,7 @@ answers `503` with no `"ok"` in the body while a restart is in flight.
 `scripts/check_deployed_protocol.py` is the executable answer to "is this host
 serving the code I think it is". It opens an MCP session, reads the server
 instructions and the four protocol-bearing tool descriptions (`memory_recall`,
-`memory_remember`, `memory_teach`, `memory_consolidate`) as the host actually
+`memory_remember`, `memory_teach`, `memory_lookup`) as the host actually
 serves them, and compares them byte-for-byte against the values imported from
 the checkout the script runs from:
 
@@ -91,6 +116,11 @@ the checkout the script runs from:
   protocol tool the host does not expose at all);
 * exit `2` — the check could not run (connection, auth, or usage error). This is
   never reported as drift.
+
+Those four tools are the default-visible protocol surface, so the checker does
+not require operator exposure. In particular, it does not expect hidden
+`memory_consolidate` to appear in `tools/list`; maintenance call reachability is
+verified separately.
 
 It reads the bearer token from `--token`, else `$LM_AUTH_TOKEN`, else
 `LM_AUTH_TOKEN=` in `--env-file` (default `~/.config/living-memory/env`), and

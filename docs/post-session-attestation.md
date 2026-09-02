@@ -14,6 +14,16 @@ implementation is `src/living_memory/attestation.py`, the offline evidence
 assembler is `src/living_memory/postsession/evidence.py`, and the field check is
 `scripts/attest_eval.py` → `artifacts/post-session/attestation-eval.json`.
 
+`memory_attest` is not registered or advertised by default. Enable it for the
+offline extraction stage with the literal environment value
+`LM_EXPOSE_ATTEST=1`, or in an embedded server with
+`create_mcp_server(expose_attest=True)`. An explicit constructor `True` or
+`False` takes precedence over the environment; only `None`/omission reads it.
+This control is independent of operator-tool discovery:
+`LM_EXPOSE_OPERATOR_TOOLS=1` exposes the five maintenance tools but does not
+enable attestation, while attestation-only exposure leaves those maintenance
+tools hidden (and still directly callable by name).
+
 ## The rule that makes it honest: the client submits evidence, the server decides
 
 A client sends a `recall_event_id` and a list of evidence strings lifted
@@ -382,8 +392,9 @@ in the suite, so it is worth knowing which of the two actually ran.
   instead of a literal, so a future re-fit cannot quietly shrink it into a toy.
 * `python3 scripts/check_deployed_protocol.py --port <spare> --token <scratch>`
   against a throwaway server started from this worktree over a scratch database
-  — `OK: … serves this checkout's protocol texts (5 checked: memory_consolidate,
+  — `OK: … serves this checkout's protocol texts (5 checked: memory_lookup,
   memory_recall, memory_remember, memory_teach, server instructions)`, exit 0.
-  The four protocol-bearing descriptions are untouched by this work;
+  The four default-visible protocol-bearing descriptions are untouched by this
+  work;
   `memory_attest`'s own description changed only where it quotes the caps,
   which the checker does not compare and clients would otherwise read as a lie.

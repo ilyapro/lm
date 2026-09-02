@@ -99,6 +99,24 @@ _DROPPABLE_TRAILING_STUBS = (
 # file, so it stays out of logs, diffs, and traces.
 _AUTH_TOKEN_KV_KEY = "auth_token"
 
+_AGENT_TOOL_NAMES = frozenset(
+    {
+        "memory_lookup",
+        "memory_recall",
+        "memory_remember",
+        "memory_teach",
+    }
+)
+_OPERATOR_TOOL_NAMES = frozenset(
+    {
+        "memory_connect",
+        "memory_consolidate",
+        "memory_forget",
+        "memory_health",
+        "memory_status",
+    }
+)
+
 _TOOL_METRICS: dict[str, dict[str, Any]] = {}
 
 def _track_latency(tool_name: str) -> Any:
@@ -129,8 +147,15 @@ def create_mcp_server(
     mcp_factory: Any | None = None,
     auth_token: str | None = None,
     expose_attest: bool | None = None,
+    expose_operator_tools: bool | None = None,
 ) -> Any:
-    """Create a FastMCP server bound to one SQLite store."""
+    """Create a FastMCP server bound to one SQLite store.
+
+    Maintenance handlers are always registered and directly callable. By
+    default only the four agent tools are advertised by ``tools/list``;
+    ``expose_operator_tools=True`` (or ``LM_EXPOSE_OPERATOR_TOOLS=1``) adds
+    the five operator tools to discovery without changing call access.
+    """
 
     store = MemoryStore(
         _resolve_config(
@@ -167,7 +192,16 @@ def create_mcp_server(
     _attach(mcp, "auth_token_state", auth_state)
     if expose_attest is None:
         expose_attest = os.environ.get("LM_EXPOSE_ATTEST", "") == "1"
+    if expose_operator_tools is None:
+        expose_operator_tools = (
+            os.environ.get("LM_EXPOSE_OPERATOR_TOOLS", "") == "1"
+        )
     _register_tools(mcp, store, runtime_lock, expose_attest=expose_attest)
+    _configure_tool_list_visibility(
+        mcp,
+        expose_attest=expose_attest,
+        expose_operator_tools=expose_operator_tools,
+    )
     _register_resources(mcp, store, runtime_lock)
     _register_prompts(mcp, store, runtime_lock)
     _register_admin_routes(
@@ -525,6 +559,12 @@ def _server_instructions(default_scope: str, map_section: str = "") -> str:
     #   pin in this paragraph ("load the Living Memory tools NOW", "recall
     #   the task at hand", "as protocol", "defers", the four tool names)
     #   is untouched.
+    # - Bootstrap's four names are the default-visible agent tools
+    #   (_AGENT_TOOL_NAMES): `memory_lookup` took the slot of
+    #   `memory_consolidate` when tools/list stopped advertising the
+    #   maintenance tools — a session must not be told to load a tool it
+    #   cannot discover, and consolidation runs from memory_remember's
+    #   auto pass and the operator/offline stages, not from the agent.
     static = (
         "You and Living Memory form ONE cognitive system: you supply "
         "ephemeral reasoning, LM durable memory. Recall is perception — "
@@ -552,7 +592,7 @@ def _server_instructions(default_scope: str, map_section: str = "") -> str:
         "The binding trigger protocol is in the tool descriptions "
         "themselves: `memory_recall` (BEFORE triggers), `memory_remember` "
         "(write policy and closure notes), `memory_teach` (correction "
-        "rules), `memory_consolidate` (promotion to schemas). If this "
+        "rules), `memory_lookup` (content_ref re-fetch). If this "
         "session defers or hides tool schemas behind a search step, you "
         "MUST load the Living Memory tools NOW, at session start, recall "
         "the task at hand, and follow their descriptions as protocol, "
@@ -1678,6 +1718,40 @@ def _load_fastmcp() -> Any:
             "FastMCP is required to run the MCP server. Install project dependencies first."
         ) from exc
     return FastMCP
+
+
+def _configure_tool_list_visibility(
+    mcp: Any,
+    *,
+    expose_attest: bool,
+    expose_operator_tools: bool,
+) -> None:
+    """Filter tool discovery without changing registration or call lookup."""
+
+    add_middleware = getattr(mcp, "add_middleware", None)
+    if add_middleware is None:
+        # Lightweight test factories expose their registration dictionaries
+        # directly and deliberately do not implement the FastMCP runtime.
+        return
+
+    from fastmcp.server.middleware import Middleware
+
+    advertised_names = set(_AGENT_TOOL_NAMES)
+    if expose_operator_tools:
+        advertised_names.update(_OPERATOR_TOOL_NAMES)
+    if expose_attest:
+        advertised_names.add("memory_attest")
+
+    class _ToolListVisibilityMiddleware(Middleware):
+        async def on_list_tools(
+            self,
+            context: Any,
+            call_next: Any,
+        ) -> Sequence[Any]:
+            tools = await call_next(context)
+            return [tool for tool in tools if tool.name in advertised_names]
+
+    add_middleware(_ToolListVisibilityMiddleware())
 
 
 def _consolidation_result_to_dict(result: ConsolidationResult) -> dict[str, Any]:
