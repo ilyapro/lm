@@ -166,17 +166,36 @@ exactly as it always did. The entry threshold, the markers, the probes and
 the evidence window are byte-identical either way; the valve can shorten a
 silence and can never start one, and with it unset the cadence is exactly the
 window arithmetic above.
+
+The first field read of that valve (``~/p/ae/artifacts/injection-throttle/
+read-2026-09-02/READ.md``) found the retry firing into nothing: a served skip
+run rebuilt the map over a pool that had nothing deliverable in it, the empty
+map counted as one more marker-shaped delivery, and the next build retried
+again — every delivery after the run became an *empty, uncollapsed* map, so
+the curtailed share fell to nothing while the empty share stayed at the storm
+level. So the retry is pool-aware. The first marker after an offer persists a
+digest of the key's pool (``pd``: the admitted members, the anchors that would
+partition them, the cold-lane candidates) inside the marker it was going to
+write anyway. A served skip run rebuilds the pool and compares: unchanged, the
+key writes the same digest into one more marker and the run starts over —
+not an offer, the streak's offer count does not move; changed, it builds the
+full map, and if that map has nothing deliverable in it either, the marker
+carries the new digest instead. The decay wakes only when the key has
+something new to say. The digest lives in the same window the streak is read
+from, so it survives a restart and needs no table; with the valve unset it is
+neither computed nor written.
 """
 
 from __future__ import annotations
 
 from bisect import bisect_left
 from collections import Counter
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from math import fsum, isfinite, log, log1p, sqrt
 from typing import TYPE_CHECKING, Any
+import hashlib
 import json
 import os
 import re
@@ -2634,6 +2653,11 @@ CURTAIL_DECAY_GATE_ENV = "LM_MAP_CURTAIL_DECAY"
 #: after the collapse instead of 22.
 CURTAIL_DECAY_SKIP_MAX = 8
 
+#: Hex characters of the pool digest a decay-armed marker persists (``pd``).
+#: 64 bits: the comparison is one key's window against itself, and the marker
+#: has ~640 of its 700 characters to spare.
+CURTAIL_POOL_DIGEST_CHARS = 16
+
 #: Context fields consulted by stage 1, in precedence order.
 STRUCTURAL_FIELDS: tuple[str, ...] = (
     "procedure_id",
@@ -2943,6 +2967,12 @@ class RecallMap:
     #: same way. ``None`` (the valves-off value) emits nothing, so absence of
     #: the lane stays encoded exactly one way.
     cold: tuple[int, int] | None = None
+    #: Digest of the pool this delivery was decided over (``pd``), present on
+    #: exactly the deliveries a decay-armed key uses as a baseline: the first
+    #: marker after an offer, and a served skip run that rebuilt the pool and
+    #: found nothing new in it. ``None`` — the valve-unset value — emits
+    #: nothing, so the frozen marker stays byte-identical.
+    pool_digest: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """The response-shaped form, budgeted by :data:`MAX_RESPONSE_CHARS`."""
@@ -2959,6 +2989,7 @@ class RecallMap:
             selection=self.selection,
             selection_sample_limit=self.selection_sample_limit,
             cold=self.cold,
+            pool_digest=self.pool_digest,
         )
 
     def plan_items(self) -> list[str]:
@@ -3163,6 +3194,19 @@ class _Curtailment:
     #: carries the default, which is safe because the memo never serves a
     #: collapse and only a collapse can be retried.
     lead: int = 0
+    #: The pool digest the newest lead row carries, when one does: the
+    #: baseline a decay-armed retry compares the rebuilt pool against. Written
+    #: by the first marker after an offer and by every retry that found
+    #: nothing new (:meth:`RecallMapBuilder._reoffer`), read back off the same
+    #: window the streak is, so it survives a restart and is shared by every
+    #: process serving the key. ``None`` on a window written with the valve
+    #: unset — which is every window until the valve is armed — and on one
+    #: whose digest rows have all slid out.
+    pool_digest: str | None = None
+    #: Lead rows newer than the one carrying :attr:`pool_digest`. Counting the
+    #: digest row itself, this is how much of the skip run the key has served
+    #: since it last looked at its pool.
+    since_digest: int = 0
 
     @property
     def collapse(self) -> bool:
@@ -3172,18 +3216,25 @@ class _Curtailment:
     def retry_due(self) -> bool:
         """Whether a decay-armed key has served its skip run.
 
-        Pure arithmetic on the verdict: the valve itself is read at the two
-        collapse decisions, never here or below, so the probe path stays
-        env-free and the unarmed decision is bit-identical to the frozen
-        rule. The run is the registered ``min(2**(N-1), 8)`` with ``N`` the
-        unaccepted offers — 4 at the entry threshold, 8 from the fourth on —
-        and it is measured against a real read, because every collapse
-        verdict comes off one.
+        Pure arithmetic on the verdict: the valve itself is read at the one
+        collapse decision (:meth:`RecallMapBuilder._reoffer`), never here or
+        below, so the probe path stays env-free and the unarmed decision is
+        bit-identical to the frozen rule. The run is the registered
+        ``min(2**(N-1), 8)`` with ``N`` the unaccepted offers — 4 at the
+        entry threshold, 8 from the fourth on — and it is measured against a
+        real read, because every collapse verdict comes off one.
+
+        The run is counted from the last time the key looked at its pool: the
+        digest row when the window carries one (the first marker after an
+        offer, or a retry that found nothing new), the head of the lead when
+        it carries none, which is every window the frozen code wrote and so
+        the frozen schedule exactly.
         """
 
         if not self.collapse:
             return False
-        return self.lead >= min(2 ** (self.offers - 1), CURTAIL_DECAY_SKIP_MAX)
+        served = self.lead if self.pool_digest is None else self.since_digest + 1
+        return served >= min(2 ** (self.offers - 1), CURTAIL_DECAY_SKIP_MAX)
 
 
 @dataclass(slots=True)
@@ -4387,8 +4438,11 @@ class RecallMapBuilder:
         set, the streak carried — and gets it *before* any clustering runs, so
         a channel nobody reads also stops costing what it costs to fill. With
         :data:`CURTAIL_DECAY_GATE_ENV` armed a collapsed key that has served
-        its skip run (:attr:`_Curtailment.retry_due`) builds a full map again
-        instead of the marker; nothing else on either path moves.
+        its skip run (:attr:`_Curtailment.retry_due`) rebuilds its pool and,
+        only if the pool moved since the key last looked (:meth:`_reoffer`),
+        builds a full map again instead of the marker; a map that comes back
+        with nothing deliverable in it is persisted as a marker too, carrying
+        the new baseline. Nothing else on either path moves.
 
         With :data:`POOL_DEMOTION_GATE_ENV` armed the curtail verdict is read
         *before* the pool instead of after it, because the gate needs the
@@ -4491,36 +4545,37 @@ class RecallMapBuilder:
         if curtailment is None:
             curtailment = self._curtailment(map_scope, task, task_pattern)
         self.last_curtailment = curtailment
+
+        # The lane's eligible candidates, computed at most once per build: the
+        # pool digest needs them on a collapsed key, the lane needs them when
+        # it runs, and the probe behind them is a read.
+        cold_candidates: list[tuple[int, Node, Any, dict[str, float]]] | None = None
+
+        def digest() -> str:
+            nonlocal cold_candidates
+            if cold_rows is not None and cold_candidates is None:
+                cold_candidates = self._cold_candidates(cold_rows)
+            return self._pool_digest(pool, cold_rows, candidates=cold_candidates)
+
         # The decay valve can only turn a collapse into a retry, never the
-        # reverse, so an unarmed build takes exactly the frozen branch. A
-        # retry is a plain map: the next read sees it as the newest offer,
-        # zero lead, and the skip run starts over — doubled, if it too goes
-        # unconsumed.
-        if curtailment.collapse and not (
-            curtail_decay_from_env() and curtailment.retry_due
-        ):
+        # reverse, so an unarmed build takes exactly the frozen branch and
+        # never computes a digest. A retry that delivers is a plain map: the
+        # next read sees it as the newest offer, zero lead, and the skip run
+        # starts over — doubled, if it too goes unconsumed.
+        offer, pool_digest = self._reoffer(curtailment, digest)
+        if not offer:
             self._note_delivery(map_scope, task, task_pattern, offered=False)
-            return RecallMap(
-                scope=map_scope,
-                key=key,
-                clusters=(),
+            return self._collapsed(
+                map_scope,
+                key,
                 pool_size=len(pool),
-                covered=0,
-                curtailed=True,
                 streak=curtailment.streak,
                 selection=selection,
-                selection_sample_limit=_selection_sample_limit(
-                    (),
-                    len(pool),
-                    0,
-                    selection=selection,
-                    curtailed=True,
-                    streak=curtailment.streak,
-                ),
                 # On a curtailed key the lane does not run: the unread-collapse
                 # defense binds cold content exactly as warm, and an armed
                 # server states that fact on the wire as c = [0, 0].
                 cold=(0, 0) if cold_slots is not None else None,
+                pool_digest=pool_digest,
             )
 
         revision = self._corpus_revision()
@@ -4544,9 +4599,9 @@ class RecallMapBuilder:
             selection=selection,
         )
         if built is not None and cold_slots is not None:
-            # The curtail verdict on this path was already read and was not a
-            # collapse — the collapse branch returned above — so the lane runs
-            # against the finished warm map.
+            # The curtail verdict on this path was already read and either was
+            # not a collapse or was reprieved — the collapse branch returned
+            # above — so the lane runs against the finished warm map.
             built = self._with_cold_lane(
                 built,
                 cold_rows or (),
@@ -4555,6 +4610,23 @@ class RecallMapBuilder:
                 task=task,
                 task_pattern=task_pattern,
                 read_curtailment=False,
+                candidates=cold_candidates,
+            )
+        if built is not None and pool_digest is not None and not built.clusters:
+            # A reprieved key that rebuilt its map and found nothing deliverable
+            # in it did not wake up. The wire says so — a marker, not an empty
+            # uncollapsed map — and the marker carries the digest of the pool
+            # that had nothing to say, so the next look compares against it
+            # rather than re-discovering the same nothing every delivery.
+            self._note_delivery(map_scope, task, task_pattern, offered=False)
+            return self._collapsed(
+                map_scope,
+                key,
+                pool_size=len(pool),
+                streak=curtailment.streak,
+                selection=selection,
+                cold=built.cold,
+                pool_digest=pool_digest,
             )
         if built is not None:
             # A journal-only map reaches the server so a fully gated pool does
@@ -4770,31 +4842,23 @@ class RecallMapBuilder:
             return None
         return frozenset(ids) - delivered
 
-    def _cold_lane(
-        self,
-        cold_rows: Sequence[tuple[int, Node, Any, Any]],
-        *,
-        slots: int,
-        warm_clusters: Sequence[MapCluster],
-    ) -> tuple[int, list[MapCluster]]:
-        """Rank the captured cold candidates and deliver into free capacity.
+    def _cold_candidates(
+        self, cold_rows: Sequence[tuple[int, Node, Any, Any]]
+    ) -> list[tuple[int, Node, Any, dict[str, float]]]:
+        """The lane's eligible candidates: E1-E5 survivors, before ranking.
 
-        Returns ``(g, delivered)``: the count of cold-eligible candidates
-        examined this build (E1-E5 survivors, before ranking and guards) and
-        the marked singleton clusters to append. Candidates are ranked only
-        against each other on the published composite; the tie-break — higher
-        raw ``result_score``, then lower residual ordinal — makes the order
-        total and deterministic. Two per-candidate guards run at delivery
-        time, each skipping to the next-ranked candidate: the same
-        deliverable-label gate every warm cluster passes, and the inter-slot
-        near-duplicate guard at :data:`EMBEDDING_CLUSTER_COSINE`, which
-        abstains (delivers) when either embedding is unavailable — absence of
-        a verdict is not a duplicate verdict.
+        Captured rows whose composite the published tables can value, that
+        carry no matured window, and that the delivery ledger affirmatively
+        has never delivered. Empty — not ``None`` — when the lane cannot rank
+        or the ledger cannot answer, because on both counts the lane delivers
+        nothing and a digest of "nothing eligible" is the honest one. One
+        ledger probe per call; :meth:`build` calls it at most once per build
+        and hands the result to both the digest and the lane.
         """
 
         tables = _cold_ranking_tables()
         if tables is None or not cold_rows:
-            return 0, []
+            return []
 
         candidates: list[tuple[int, Node, Any, dict[str, float]]] = []
         probe_ids: list[str] = []
@@ -4815,15 +4879,46 @@ class RecallMapBuilder:
 
         undelivered = self._cold_undelivered(probe_ids)
         if undelivered is None:
-            return 0, []
-        eligible = [
+            return []
+        return [
             (ordinal, node, result, values)
             for ordinal, node, result, values in candidates
             if node.id in undelivered
         ]
+
+    def _cold_lane(
+        self,
+        cold_rows: Sequence[tuple[int, Node, Any, Any]],
+        *,
+        slots: int,
+        warm_clusters: Sequence[MapCluster],
+        candidates: Sequence[tuple[int, Node, Any, dict[str, float]]] | None = None,
+    ) -> tuple[int, list[MapCluster]]:
+        """Rank the captured cold candidates and deliver into free capacity.
+
+        Returns ``(g, delivered)``: the count of cold-eligible candidates
+        examined this build (E1-E5 survivors, before ranking and guards) and
+        the marked singleton clusters to append. Candidates are ranked only
+        against each other on the published composite; the tie-break — higher
+        raw ``result_score``, then lower residual ordinal — makes the order
+        total and deterministic. Two per-candidate guards run at delivery
+        time, each skipping to the next-ranked candidate: the same
+        deliverable-label gate every warm cluster passes, and the inter-slot
+        near-duplicate guard at :data:`EMBEDDING_CLUSTER_COSINE`, which
+        abstains (delivers) when either embedding is unavailable — absence of
+        a verdict is not a duplicate verdict.
+
+        ``candidates`` is the eligible list a caller already computed through
+        :meth:`_cold_candidates`; absent, the lane computes it here.
+        """
+
+        eligible = (
+            self._cold_candidates(cold_rows) if candidates is None else candidates
+        )
         examined = len(eligible)
+        tables = _cold_ranking_tables()
         capacity = min(int(slots), self.max_clusters - len(warm_clusters))
-        if capacity <= 0 or not eligible:
+        if tables is None or capacity <= 0 or not eligible:
             return examined, []
 
         def order(entry: tuple[int, Node, Any, dict[str, float]]) -> tuple:
@@ -4878,6 +4973,7 @@ class RecallMapBuilder:
         task: str | None,
         task_pattern: str | None,
         read_curtailment: bool,
+        candidates: list[tuple[int, Node, Any, dict[str, float]]] | None = None,
     ) -> RecallMap:
         """Append the lane's outcome to a built map, warm bytes untouched.
 
@@ -4890,7 +4986,12 @@ class RecallMapBuilder:
         does not run and an armed build reports ``c = [0, 0]``, because the
         collapse defense binds cold content exactly as warm — including the
         decay reprieve, which reopens the lane on the same delivery it would
-        reopen a warm map.
+        reopen a warm map, and the pool-aware look that precedes it: on this
+        path the pool is the lane's eligible candidates, and a served run that
+        finds them unchanged states ``c = [0, 0]`` and the digest, delivering
+        nothing. The wire on this path never carries ``curtailed`` — the
+        collapse machinery issued no such verdict for an empty pool — so the
+        digest rides the empty map exactly as it rides a marker.
 
         Appended cold examples are shrunk — cold examples only, never a warm
         byte — towards :data:`MAX_RESPONSE_CHARS`; if even bare clusters
@@ -4899,17 +5000,27 @@ class RecallMapBuilder:
         under.
         """
 
+        pool_digest = built.pool_digest
         if read_curtailment:
             verdict = self._curtailment(scope, task, task_pattern)
-            if verdict.collapse and not (
-                curtail_decay_from_env() and verdict.retry_due
-            ):
-                return replace(built, cold=(0, 0))
+
+            def digest() -> str:
+                nonlocal candidates
+                if candidates is None:
+                    candidates = self._cold_candidates(cold_rows)
+                return self._pool_digest((), cold_rows, candidates=candidates)
+
+            offer, pool_digest = self._reoffer(verdict, digest)
+            if not offer:
+                return replace(built, cold=(0, 0), pool_digest=pool_digest)
         examined, cold_clusters = self._cold_lane(
-            cold_rows, slots=slots, warm_clusters=built.clusters
+            cold_rows,
+            slots=slots,
+            warm_clusters=built.clusters,
+            candidates=candidates,
         )
         if not cold_clusters:
-            return replace(built, cold=(examined, 0))
+            return replace(built, cold=(examined, 0), pool_digest=pool_digest)
 
         outcome = (examined, len(cold_clusters))
         filtered = _filter_block(
@@ -5112,16 +5223,15 @@ class RecallMapBuilder:
             )
         return groups, rest
 
-    def _stage_anchor(
-        self, members: list[_Member]
-    ) -> tuple[list[_Group], list[_Member]]:
-        """Group by the live query anchor whose edges cover each node.
+    def _anchor_assignment(
+        self, members: Sequence[_Member]
+    ) -> tuple[dict[str, str], dict[str, Any], list[_Member]]:
+        """``node_id -> anchor_id`` for every member a live anchor covers.
 
-        One indexed lookup per unclaimed node — ``idx_query_anchor_edges_target``
-        exists precisely for this direction — and one anchor row per distinct
-        anchor reached, memoized. A node covered by several anchors goes to the
-        heaviest edge, ties to the lower anchor id, so the assignment does not
-        depend on the order the edge table returns.
+        Also returns the anchors reached, by id, and the members no live
+        anchor covers, in their input order. This is stage 3's partition
+        input, factored out so the pool digest can name the anchors that
+        would take part without running the stage.
         """
 
         anchors: dict[str, Any] = {}
@@ -5145,6 +5255,21 @@ class RecallMapBuilder:
                 rest.append(member)
             else:
                 assignment[member.node.id] = best[1]
+        return assignment, anchors, rest
+
+    def _stage_anchor(
+        self, members: list[_Member]
+    ) -> tuple[list[_Group], list[_Member]]:
+        """Group by the live query anchor whose edges cover each node.
+
+        One indexed lookup per unclaimed node — ``idx_query_anchor_edges_target``
+        exists precisely for this direction — and one anchor row per distinct
+        anchor reached, memoized. A node covered by several anchors goes to the
+        heaviest edge, ties to the lower anchor id, so the assignment does not
+        depend on the order the edge table returns.
+        """
+
+        assignment, anchors, rest = self._anchor_assignment(members)
 
         buckets: dict[str, list[_Member]] = {}
         for member in members:
@@ -5449,6 +5574,109 @@ class RecallMapBuilder:
 
     # -- curtail -------------------------------------------------------
 
+    def _reoffer(
+        self, verdict: _Curtailment, digest: Callable[[], str]
+    ) -> tuple[bool, str | None]:
+        """Whether a build under ``verdict`` offers a map, and what it persists.
+
+        ``(True, None)`` is an open key: a map, and nothing to persist.
+        ``(False, None)`` is the frozen collapse — the valve unset, or an
+        armed key inside its skip run — the marker exactly as it always was.
+        The other two shapes are the valve's. ``(False, digest)`` is a marker
+        that carries the pool's digest: the first marker after an offer,
+        which records the baseline, or a served skip run whose rebuilt pool
+        matched it, which starts the run over instead of re-offering — not an
+        offer, so the offer count and the run's width do not move. ``(True,
+        digest)`` is a served skip run whose pool moved, or one with no
+        baseline to compare against (a window the frozen code wrote): build
+        the full map, and should it come back with nothing deliverable in it,
+        persist the digest on the marker as the new baseline.
+
+        ``digest`` is a thunk because computing it is the one new cost — the
+        anchor lookups and the cold-lane ledger probe — and the frozen branch
+        must not pay it: with the valve unset this method returns before
+        calling it, so an unarmed build is byte-identical to the frozen one.
+        The valve is read here and nowhere else on the collapse path.
+        """
+
+        if not verdict.collapse:
+            return True, None
+        if not curtail_decay_from_env():
+            return False, None
+        if not verdict.retry_due:
+            return False, digest() if verdict.lead == 0 else None
+        current = digest()
+        if verdict.pool_digest is not None and current == verdict.pool_digest:
+            return False, current
+        return True, current
+
+    def _collapsed(
+        self,
+        scope: str,
+        key: str,
+        *,
+        pool_size: int,
+        streak: int,
+        selection: SelectionAccounting,
+        cold: tuple[int, int] | None,
+        pool_digest: str | None,
+    ) -> RecallMap:
+        """The collapsed form: shape kept, content dropped, streak carried."""
+
+        return RecallMap(
+            scope=scope,
+            key=key,
+            clusters=(),
+            pool_size=pool_size,
+            covered=0,
+            curtailed=True,
+            streak=streak,
+            selection=selection,
+            selection_sample_limit=_selection_sample_limit(
+                (),
+                pool_size,
+                0,
+                selection=selection,
+                curtailed=True,
+                streak=streak,
+                pool_digest=pool_digest,
+            ),
+            cold=cold,
+            pool_digest=pool_digest,
+        )
+
+    def _pool_digest(
+        self,
+        pool: Sequence[_Member],
+        cold_rows: Sequence[tuple[int, Node, Any, Any]] | None,
+        *,
+        candidates: Sequence[tuple[int, Node, Any, dict[str, float]]] | None,
+    ) -> str:
+        """What this build could have said, as one comparable string.
+
+        Three sorted id lists: the admitted members of the residual pool, the
+        ``(member, anchor)`` pairs stage 3 would partition them by, and the
+        cold-lane candidates the lane would rank — the eligible ones, after
+        the ledger probe, because a candidate the lane would not deliver is
+        not something new to say. Order-free, so two processes or two
+        deliveries over the same pool agree; content-free, so the digest
+        carries no text onto the wire. An unarmed lane contributes the same
+        empty list an armed lane with nothing eligible does.
+        """
+
+        members = sorted(member.node.id for member in pool)
+        assignment, _anchors, _rest = self._anchor_assignment(pool)
+        anchors = [list(pair) for pair in sorted(assignment.items())]
+        cold = (
+            sorted(node.id for _ordinal, node, _result, _values in candidates)
+            if cold_rows is not None and candidates
+            else []
+        )
+        canonical = json.dumps([members, anchors, cold], separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[
+            :CURTAIL_POOL_DIGEST_CHARS
+        ]
+
     def _curtailment(
         self,
         scope: str,
@@ -5610,6 +5838,8 @@ class RecallMapBuilder:
         streak = 0
         offers = 0
         lead = 0
+        pool_digest: str | None = None
+        since_digest = 0
         for index, row in enumerate(history):
             delivered = items[index]
             if delivered and self._was_followed(
@@ -5625,7 +5855,25 @@ class RecallMapBuilder:
                 offers += 1
             elif not offers:
                 lead += 1
-        return _Curtailment(streak=streak, offers=offers, lead=lead)
+                if pool_digest is None:
+                    # The newest lead row carrying a digest is the baseline;
+                    # the rows above it are the run served since. Parsed off
+                    # the payload already in hand, and consulted by nothing
+                    # on the frozen path.
+                    payload = row.get("recall_map")
+                    digest = (
+                        payload.get("pd") if isinstance(payload, Mapping) else None
+                    )
+                    if isinstance(digest, str) and digest:
+                        pool_digest = digest
+                        since_digest = lead - 1
+        return _Curtailment(
+            streak=streak,
+            offers=offers,
+            lead=lead,
+            pool_digest=pool_digest,
+            since_digest=since_digest,
+        )
 
     def _delivery_history(
         self, scope: str, task: str | None, task_pattern: str | None = None
@@ -6390,6 +6638,7 @@ def _payload(
     selection: SelectionAccounting | None = None,
     selection_sample_limit: int = SELECTION_SAMPLE_LIMIT,
     cold: tuple[int, int] | None = None,
+    pool_digest: str | None = None,
 ) -> dict[str, Any]:
     """The wire form. Curtailed maps keep the shape and drop the content.
 
@@ -6428,6 +6677,11 @@ def _payload(
     if curtailed:
         payload["curtailed"] = True
         payload["streak"] = streak
+    if pool_digest is not None:
+        # The decay valve's baseline, on the marker it was writing anyway. A
+        # sibling key like ``filtered``: never inside ``clusters``, and read
+        # back only by ``_read_curtailment``, which walks the same rows.
+        payload["pd"] = pool_digest
     return payload
 
 
@@ -6440,6 +6694,7 @@ def _selection_sample_limit(
     selection: SelectionAccounting,
     curtailed: bool = False,
     streak: int = 0,
+    pool_digest: str | None = None,
 ) -> int:
     """Most ``q`` examples that fit without changing existing semantics."""
 
@@ -6454,6 +6709,7 @@ def _selection_sample_limit(
             filtered=filtered,
             selection=selection,
             selection_sample_limit=sample_limit,
+            pool_digest=pool_digest,
         )
         if len(
             json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -6498,6 +6754,7 @@ __all__ = [
     "CURTAIL_DECAY_GATE_ENV",
     "CURTAIL_DECAY_SKIP_MAX",
     "CURTAIL_HISTORY_LIMIT",
+    "CURTAIL_POOL_DIGEST_CHARS",
     "CURTAIL_QUERY_OVERLAP",
     "CURTAIL_STREAK",
     "DEMOTION_REDELIVERY_WEIGHT",

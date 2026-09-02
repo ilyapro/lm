@@ -492,6 +492,33 @@ output verbatim and omits the key on `None`, so no `server.py` change is needed.
   a silence, never start or lengthen one. It binds the cold lane exactly as
   the collapse it relaxes: a reprieved key delivers cold clusters on the same
   delivery a warm map would return.
+- **Pool-aware re-offer** (same valve). The first field read of the decay
+  (`~/p/ae/artifacts/injection-throttle/read-2026-09-02/READ.md`) found the
+  retry firing into nothing: a served run rebuilt the map over a pool with
+  nothing deliverable in it, the empty map read as one more offerless
+  delivery, the next build retried again, and every delivery after the run
+  became an empty *uncollapsed* map — curtailed share ≤ 0.01 with the empty
+  share at the storm level (M1 0.77–0.88). So armed, a served run looks
+  before it offers. The first marker after an offer persists a digest of the
+  key's pool — sorted admitted member ids, the `(member, anchor)` pairs stage
+  3 would partition by, the cold-lane candidates the lane would rank — as
+  `pd` on the marker it was writing anyway. A served run rebuilds the pool
+  (already done on every build) and compares: unchanged, it writes the same
+  digest into one more marker and the run starts over from that marker — not
+  an offer, so `offers` and the run's width do not move; moved, it builds the
+  full map, and if that comes back with nothing deliverable in it, the wire is
+  a marker carrying the new digest rather than an empty map. On the empty-pool
+  path (cold lane armed) the same rule runs over the lane's eligible
+  candidates, and the digest rides the empty map, which never carried
+  `curtailed` and still does not. The digest is read back by the same walk
+  that reads the streak, from the same window, so a restart or a second
+  process sees the baseline; a window written before this rule (no `pd`)
+  gets the frozen schedule up to its first look. With the valve unset the
+  digest is neither computed nor written, and the marker is byte-identical
+  (`test_without_the_valve_the_pool_is_never_looked_at`). Cost of a look: the
+  anchor lookups stage 3 would do and one cold-lane ledger probe, once per
+  run rather than a full cascade per delivery. The census reads `curtailed`,
+  so extended markers count as curtailed, never as empty uncollapsed maps.
 - **Default-on, no env flag.** The protocol channels' machinery ban
   (`test_protocol_channels_advertise_no_non_default_machinery`) forbids
   default-off machinery. A curtail rule that has to be switched on is not a

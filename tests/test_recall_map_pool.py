@@ -2530,6 +2530,9 @@ def test_empty_pool_cold_lane_reopens_on_a_decay_reprieve(
     warm map would return — and without the valve the same verdict keeps the
     lane shut."""
 
+    # The operator's shell may export the valve (sfx does); the closed arm
+    # below is the point of the test, so it is unset here rather than assumed.
+    monkeypatch.delenv(recall_map_module.CURTAIL_DECAY_GATE_ENV, raising=False)
     with MemoryStore(tmp_path / "cold-empty-decay.sqlite3") as store:
         results, _warm = _cold_scenario(store, warm=0, cold=2)
         monkeypatch.setattr(
@@ -2552,6 +2555,75 @@ def test_empty_pool_cold_lane_reopens_on_a_decay_reprieve(
         payload = reopened.to_dict()
         assert payload["sel"]["c"] == [2, 2]
         assert len(_cold_clusters(payload)) == 2
+
+
+def test_empty_pool_cold_lane_extends_the_run_when_nothing_new_is_eligible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pool-aware on the empty-pool path, where the pool *is* the lane's
+    eligible candidates. The first collapsed delivery after an offer writes
+    the digest onto the empty map it was writing anyway; a served run whose
+    candidates match it delivers nothing, states ``c = [0, 0]`` and carries
+    the digest again; inside the run nothing is looked at; a moved baseline
+    lets the lane run — and a lane that then delivers nothing carries the new
+    digest. The wire on this path never carries ``curtailed``, exactly as
+    before."""
+
+    curtailment = recall_map_module._Curtailment
+
+    def verdict(**fields):
+        monkeypatch.setattr(
+            RecallMapBuilder,
+            "_curtailment",
+            lambda self, scope, task, task_pattern=None, want_ask_follows=False: (
+                curtailment(**fields)
+            ),
+        )
+
+    with MemoryStore(tmp_path / "cold-empty-extend.sqlite3") as store:
+        results, _warm = _cold_scenario(store, warm=0, cold=2)
+        _arm_cold(monkeypatch)
+        monkeypatch.setenv(recall_map_module.CURTAIL_DECAY_GATE_ENV, "1")
+        streak = recall_map_module.CURTAIL_STREAK
+
+        verdict(streak=streak, offers=streak, lead=0)
+        _builder, first = _build_cold(store, results)
+        payload = first.to_dict()
+        assert payload["clusters"] == [] and payload["sel"]["c"] == [0, 0]
+        assert "curtailed" not in payload
+        baseline = payload["pd"]
+        assert isinstance(baseline, str)
+        assert len(baseline) == recall_map_module.CURTAIL_POOL_DIGEST_CHARS
+
+        verdict(streak=streak + 4, offers=streak, lead=4, pool_digest=baseline, since_digest=3)
+        _builder, extended = _build_cold(store, results)
+        payload = extended.to_dict()
+        assert payload["clusters"] == [] and payload["sel"]["c"] == [0, 0]
+        assert payload["pd"] == baseline
+        assert "curtailed" not in payload
+
+        verdict(streak=streak + 2, offers=streak, lead=2, pool_digest=baseline, since_digest=1)
+        _builder, inside = _build_cold(store, results)
+        payload = inside.to_dict()
+        assert payload["clusters"] == [] and payload["sel"]["c"] == [0, 0]
+        assert "pd" not in payload
+
+        moved = "0" * recall_map_module.CURTAIL_POOL_DIGEST_CHARS
+        verdict(streak=streak + 4, offers=streak, lead=4, pool_digest=moved, since_digest=3)
+        _builder, reopened = _build_cold(store, results)
+        payload = reopened.to_dict()
+        assert payload["sel"]["c"] == [2, 2]
+        assert len(_cold_clusters(payload)) == 2
+        assert "pd" not in payload, "an offer carries no digest"
+
+        monkeypatch.setattr(RecallMapBuilder, "_deliverable", lambda self, label: False)
+        _builder, nothing = _build_cold(store, results)
+        payload = nothing.to_dict()
+        assert payload["clusters"] == [] and payload["sel"]["c"] == [2, 0]
+        assert payload["pd"] == baseline, (
+            "the digest of the candidates that had nothing deliverable"
+        )
+        assert "curtailed" not in payload
 
 
 def test_cold_ranking_orders_by_the_registered_composite_then_tiebreaks(

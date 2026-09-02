@@ -27,6 +27,11 @@ tests pin every side of that measurement:
   the run when the retry too goes unaccepted, and resets on the first
   consumption; with the valve unset or misspelled every cadence above is
   bit-for-bit the frozen one;
+* **it wakes only for something new** — a served skip run looks at the pool
+  before re-offering: unchanged since the key last looked, it writes one more
+  marker (carrying the pool digest) and starts the run over; moved, it builds
+  the full map, and a map with nothing deliverable in it is a marker too. The
+  digest lives in the delivery window, so a restart does not forget it;
 * **it is default-on and read-only** — no flag turns it on, and the probe adds
   no write to the recall path.
 
@@ -51,9 +56,16 @@ from living_memory.recall_map import (
     CURTAIL_DECAY_GATE_ENV,
     CURTAIL_DECAY_SKIP_MAX,
     CURTAIL_HISTORY_LIMIT,
+    CURTAIL_POOL_DIGEST_CHARS,
     CURTAIL_QUERY_OVERLAP,
     CURTAIL_STREAK,
     MAX_RESPONSE_CHARS,
+    POOL_COLD_QUOTA_GATE_ENV,
+    POOL_COLD_SLOTS_ENV,
+    POOL_DEMOTION_GATE_ENV,
+    POOL_DEMOTION_WINDOWS_ENV,
+    POOL_USEFULNESS_FLOOR_ENV,
+    POOL_USEFULNESS_GATE_ENV,
     RecallMap,
     RecallMapBuilder,
     _echoes,
@@ -99,8 +111,25 @@ IDLE_QUERY = "unrelated housekeeping question"
 CORPUS_DOCUMENTS = 32
 
 
+#: Every operator valve the module reads. The frozen cadence is the subject
+#: of this file, and the shell that runs it may carry the live valves (the
+#: sfx shell exports the decay valve and the cold pair): scrubbed per test,
+#: so a test that arms one does so itself and in the open.
+OPERATOR_VALVES = (
+    CURTAIL_DECAY_GATE_ENV,
+    POOL_COLD_QUOTA_GATE_ENV,
+    POOL_COLD_SLOTS_ENV,
+    POOL_DEMOTION_GATE_ENV,
+    POOL_DEMOTION_WINDOWS_ENV,
+    POOL_USEFULNESS_GATE_ENV,
+    POOL_USEFULNESS_FLOOR_ENV,
+)
+
+
 @pytest.fixture()
 def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    for name in OPERATOR_VALVES:
+        monkeypatch.delenv(name, raising=False)
     with MemoryStore(tmp_path / "curtail.sqlite3") as opened:
         monkeypatch.setattr(
             opened,
@@ -1035,16 +1064,50 @@ def test_an_armed_collapse_still_opens_with_the_marker(
     assert payload["clusters"] == []
 
 
+def _moved(store: MemoryStore, pool: list[RecallResult]) -> list[RecallResult]:
+    """The pool with one member the key has not seen: something new to say.
+
+    The member joins an existing structural cluster, so the map's labels stay
+    the deliverable ones the fixture was sized for; only the membership — and
+    with it the digest — moves.
+    """
+
+    extra = make_node(
+        store, f"anchor bench arm rotation {len(pool)}", procedure_id="anchor-bench"
+    )
+    return [*pool, RecallResult(node=extra, score=0.5)]
+
+
+def _count_looks(monkeypatch: pytest.MonkeyPatch):
+    """How many times the builder looked at its pool (computed a digest)."""
+
+    calls: list[int] = []
+    original = RecallMapBuilder._pool_digest
+
+    def counted(self, *args, **kwargs):
+        calls.append(1)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(RecallMapBuilder, "_pool_digest", counted)
+    return lambda: len(calls)
+
+
+def _skip_run(offers: int) -> int:
+    return min(2 ** (offers - 1), CURTAIL_DECAY_SKIP_MAX)
+
+
 def test_the_skip_run_is_four_then_doubles_to_the_ceiling(
     store: MemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The whole registered schedule, on the builder's own deliveries.
+    """The whole registered schedule, on the builder's own deliveries, for a
+    key whose pool moves between runs.
 
-    At the entry threshold of 3 the run is ``min(2**2, 8) = 4`` markers, and
-    the fifth delivery is a real map again. That retry goes unconsumed too,
-    so the streak stands at 4 offers and the next run is ``min(2**3, 8) = 8``
-    — the ceiling, where it stays. Both counts are arithmetic on the two
-    constants, so the pin survives either of them moving.
+    At the entry threshold of 3 the run is ``min(2**2, 8) = 4`` markers; the
+    fifth delivery looks at the pool, finds it moved, and is a real map
+    again. That retry goes unconsumed too, so the streak stands at 4 offers
+    and the next run is ``min(2**3, 8) = 8`` — the ceiling, where it stays.
+    Both counts are arithmetic on the two constants, so the pin survives
+    either of them moving.
     """
 
     monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
@@ -1052,20 +1115,311 @@ def test_the_skip_run_is_four_then_doubles_to_the_ceiling(
     pool = residual(store)
     builder = RecallMapBuilder(store)
 
-    first_run = min(2 ** (CURTAIL_STREAK - 1), CURTAIL_DECAY_SKIP_MAX)
-    for _ in range(first_run):
+    for _ in range(_skip_run(CURTAIL_STREAK)):
         assert _served(store, builder, pool).curtailed is True
 
+    pool = _moved(store, pool)
     retry = _served(store, builder, pool)
     assert retry.curtailed is False
     assert retry.clusters, "the retry must be a real map, not an empty one"
+    assert retry.pool_digest is None, "an offer carries no digest"
 
     for _ in range(CURTAIL_DECAY_SKIP_MAX):
         assert _served(store, builder, pool).curtailed is True
 
+    pool = _moved(store, pool)
     second_retry = _served(store, builder, pool)
     assert second_retry.curtailed is False
     assert second_retry.clusters
+
+
+def test_an_unchanged_pool_extends_the_run_instead_of_reoffering(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A served skip run over the pool the key already looked at is not an
+    offer: the delivery is a marker carrying the digest, the offer count and
+    with it the run's width do not move, and the next look is a full run
+    away. The first marker after the offers records the baseline; the markers
+    inside a run carry nothing and look at nothing.
+    """
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+    looks = _count_looks(monkeypatch)
+    run = _skip_run(CURTAIL_STREAK)
+
+    baseline = _served(store, builder, pool)
+    assert baseline.curtailed is True
+    assert isinstance(baseline.pool_digest, str)
+    assert len(baseline.pool_digest) == CURTAIL_POOL_DIGEST_CHARS
+    assert baseline.to_dict()["pd"] == baseline.pool_digest
+    assert looks() == 1
+    for _ in range(run - 1):
+        inherited = _served(store, builder, pool)
+        assert inherited.curtailed is True
+        assert inherited.pool_digest is None
+        assert "pd" not in inherited.to_dict()
+    assert looks() == 1, "inside the run the pool is not looked at"
+
+    for cycle in range(1, 4):
+        extended = _served(store, builder, pool)
+        assert extended.curtailed is True
+        assert extended.clusters == ()
+        assert extended.pool_digest == baseline.pool_digest
+        assert extended.to_dict()["curtailed"] is True
+        assert builder.last_curtailment.retry_due, "the look fell on the due delivery"
+        assert builder.last_curtailment.offers == CURTAIL_STREAK, (
+            "an extension is not an offer"
+        )
+        assert looks() == 1 + cycle
+        for _ in range(run - 1):
+            inherited = _served(store, builder, pool)
+            assert inherited.curtailed is True
+            assert inherited.pool_digest is None
+        assert looks() == 1 + cycle
+
+
+def test_a_moved_pool_reoffers_and_the_first_consumption_resets(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Moved since the key last looked, the served run is a full map; the
+    first consumed delivery zeroes the walk exactly as it always did."""
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+
+    for _ in range(_skip_run(CURTAIL_STREAK)):
+        assert _served(store, builder, pool).curtailed is True
+
+    pool = _moved(store, pool)
+    retry = _served(store, builder, pool)
+    assert retry.curtailed is False
+    assert retry.clusters
+    assert "pd" not in retry.to_dict()
+
+    # The retry's own example is finally reached — the access `retrieval`
+    # records — and the key maps again on the very next build.
+    store.record_access(retry.clusters[0].medoid.node_id)
+    again = builder.build(pool, scope=SCOPE, task=TASK)
+    assert again is not None
+    assert again.curtailed is False
+    assert again.clusters
+    assert builder.last_curtailment.offers == 0
+    assert builder.last_curtailment.streak == 0
+    assert builder.last_curtailment.pool_digest is None
+
+
+def test_a_reoffer_that_finds_nothing_deliverable_stays_a_marker(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pool moved, the key rebuilt its map, and the label gate withheld
+    every cluster: the wire says marker — not an empty uncollapsed map — and
+    the marker carries the digest of the pool that had nothing to say, so the
+    next look is a full run away and compares against it. This is the shape
+    the field read found the decay producing every delivery
+    (``read-2026-09-02/READ.md``): retries into a pool with nothing
+    deliverable, each one counted as an empty uncurtailed map.
+    """
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+    run = _skip_run(CURTAIL_STREAK)
+
+    for _ in range(run):
+        assert _served(store, builder, pool).curtailed is True
+
+    monkeypatch.setattr(RecallMapBuilder, "_deliverable", lambda self, label: False)
+    looks = _count_looks(monkeypatch)
+    pool = _moved(store, pool)
+    woke = _served(store, builder, pool)
+    payload = woke.to_dict()
+    assert woke.curtailed is True
+    assert payload["curtailed"] is True
+    assert payload["clusters"] == []
+    assert payload["pd"] == woke.pool_digest
+    assert payload["streak"] == woke.streak
+    assert builder.last_curtailment.offers == CURTAIL_STREAK
+    assert looks() == 1
+
+    for _ in range(run - 1):
+        inherited = _served(store, builder, pool)
+        assert inherited.curtailed is True
+        assert inherited.pool_digest is None
+    assert looks() == 1
+
+    extended = _served(store, builder, pool)
+    assert extended.curtailed is True
+    assert extended.pool_digest == woke.pool_digest, (
+        "the next look compares against the pool that had nothing to say"
+    )
+    assert looks() == 2
+
+
+def test_the_baseline_survives_a_restart(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The digest lives in the delivery window, not in the process: a builder
+    that has never seen the key reads the baseline the previous one wrote and
+    extends the run rather than re-offering."""
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    run = _skip_run(CURTAIL_STREAK)
+
+    first = RecallMapBuilder(store)
+    baseline = _served(store, first, pool)
+    assert baseline.pool_digest is not None
+    for _ in range(run - 1):
+        assert _served(store, first, pool).curtailed is True
+
+    second = RecallMapBuilder(store)
+    extended = _served(store, second, pool)
+    assert extended.curtailed is True
+    assert extended.pool_digest == baseline.pool_digest
+    assert second.last_curtailment.pool_digest == baseline.pool_digest
+    assert second.last_curtailment.since_digest == run - 1
+
+
+@pytest.mark.parametrize("valve", [None, "0"])
+def test_without_the_valve_the_pool_is_never_looked_at(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, valve: str | None
+) -> None:
+    """The frozen path neither computes nor writes a digest.
+
+    Through the collapse, the whole evidence window and the frozen reopening,
+    no build looks at its pool, no payload carries ``pd``, and every marker is
+    the frozen shape in the frozen key order. The reopening itself lands on
+    the delivery the window arithmetic puts it on. This is the pin that the
+    valve-unset behaviour is the one ``cdd29f4`` shipped: the only new code on
+    this path is a parse of a key that is never present.
+    """
+
+    if valve is None:
+        monkeypatch.delenv(CURTAIL_DECAY_GATE_ENV, raising=False)
+    else:
+        monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, valve)
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+    looks = _count_looks(monkeypatch)
+    reopen = CURTAIL_HISTORY_LIMIT - CURTAIL_STREAK + 1
+
+    collapsed: list[bool] = []
+    for index in range(reopen + 2):
+        built = _served(store, builder, pool)
+        payload = built.to_dict()
+        assert built.pool_digest is None
+        assert "pd" not in payload
+        collapsed.append(built.curtailed)
+        if built.curtailed:
+            assert list(payload) == [
+                "clusters", "pool", "covered", "sel", "curtailed", "streak",
+            ]
+            assert payload["clusters"] == []
+            assert payload["covered"] == 0
+            assert payload["pool"] == len(pool)
+            assert payload["streak"] == CURTAIL_STREAK + index
+    assert looks() == 0
+    assert collapsed[:reopen] == [True] * reopen
+    assert collapsed[reopen] is False
+
+
+def test_the_pool_look_writes_nothing(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The look is reads only — anchor edges, anchor rows, the delivery
+    ledger's existence probe — measured the way the probe's own write-freedom
+    is: a SQLite authorizer over ``main``, across the baseline marker, the
+    run, and the extension."""
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+    looks = _count_looks(monkeypatch)
+
+    written: list[tuple[int, str]] = []
+    mutations = {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
+
+    def authorize(action: int, table: Any, column: Any, database: Any, trigger: Any) -> int:
+        if action in mutations and database == "main":
+            written.append((action, str(table)))
+        return sqlite3.SQLITE_OK
+
+    store.connection.set_authorizer(authorize)
+    try:
+        served: list[RecallMap] = []
+        for _ in range(_skip_run(CURTAIL_STREAK) + 1):
+            built = builder.build(pool, scope=SCOPE, task=TASK)
+            assert built is not None and built.curtailed is True
+            assert written == []
+            served.append(built)
+            store.connection.set_authorizer(None)
+            deliver(store, built.to_dict())
+            store.connection.set_authorizer(authorize)
+    finally:
+        store.connection.set_authorizer(None)
+    assert served[0].pool_digest is not None
+    assert served[-1].pool_digest == served[0].pool_digest
+    assert looks() == 2
+
+
+def test_the_extended_marker_is_a_curtailed_map_to_the_census(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The quality census files every pool-aware marker — the baseline after
+    the offers, the extension after a served run — under the curtailed
+    population and never under uncurtailed-without-clusters: it reads
+    ``curtailed``, which both carry, and ``pd`` is a key it never looks at.
+    Built through the real builder and persisted through the real writer, so
+    the census reads what production would persist.
+    """
+
+    import importlib.util
+    import sys
+
+    name = "recall_map_quality_census"
+    census = sys.modules.get(name)
+    if census is None:
+        path = Path(__file__).resolve().parents[1] / "scripts" / f"{name}.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec is not None and spec.loader is not None
+        census = importlib.util.module_from_spec(spec)
+        sys.modules[name] = census
+        spec.loader.exec_module(census)
+
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+    pool = residual(store)
+    builder = RecallMapBuilder(store)
+    run = _skip_run(CURTAIL_STREAK)
+
+    served = [_served(store, builder, pool) for _ in range(run + 1)]
+    assert served[0].pool_digest is not None, "the baseline marker"
+    assert served[-1].pool_digest == served[0].pool_digest, "the extension"
+    assert all(built.curtailed for built in served)
+
+    counters = census.LoadCounters()
+    records = census.load_records(
+        store.connection,
+        as_of="2100-01-01T00:00:00Z",
+        salt=census.DEFAULT_LABEL_SALT,
+        counters=counters,
+    )
+    presence = census._cluster_presence(records)
+    assert counters.no_cluster_list == 0
+    assert presence["maps"] == CURTAIL_STREAK + len(served)
+    assert presence["curtailed"]["maps"] == len(served)
+    assert presence["curtailed"]["without_clusters"] == len(served)
+    assert presence["uncurtailed"]["maps"] == CURTAIL_STREAK
+    assert presence["uncurtailed"]["without_clusters"] == 0
 
 
 def test_a_consumption_during_the_skip_run_reopens_and_resets(
