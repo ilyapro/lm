@@ -595,7 +595,7 @@ def test_protocol_wording_served_intact(tmp_path: Path) -> None:
     # the contentful opener (tests/test_instructions_imperative.py pins the
     # general ban and the opener).
     assert "Experimental repeat gating is default-off." not in tools["memory_recall"]
-    assert "text, vector, and graph signals" in tools["memory_recall"]
+    assert "Recall before acting and at every new turn of thought." in tools["memory_recall"]
     assert len(tools["memory_recall"]) <= 1024
     assert "MUST teach the moment a belief changes" in tools["memory_teach"]
     assert "supersedes edge" in tools["memory_teach"]

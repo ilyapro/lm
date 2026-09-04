@@ -149,7 +149,7 @@ PLANTED_ADVERTS = {
 LEGITIMATE_PROTOCOL_WORDING = (
     "Your default scope is global.",
     "Default: when uncertain, recall.",
-    "Retrieve memories by text, vector, and graph signals.",
+    "Recall before acting and at every new turn of thought.",
     "Read broad: omit scope to transfer across scopes.",
     "A level:schema result is a binding procedure — follow it literally.",
     "Non-full results carry a content_ref — refetch via memory_lookup.",
@@ -381,20 +381,23 @@ def test_cross_project_transfer_explicit(union: str) -> None:
 # ── memory_recall description: the BEFORE hooks ─────────────────────────────
 
 
-def test_recall_opens_by_naming_the_retrieval_signals() -> None:
+def test_recall_opens_with_the_law() -> None:
     """The opening sentence is the highest-value position in the channel.
 
-    It is what a client shows in a collapsed tool list, so it must say what
-    recall actually does — retrieval over text, vector and graph signals —
-    rather than be squeezed down to a stub to pay for something else.
+    It is what a client shows in a collapsed tool list, so it must carry the
+    protocol itself — recall before acting and at every turn of thought —
+    rather than retrieval mechanics (which signals rank a result is
+    operator/docs material: an agent cannot act on it) or a stub squeezed
+    down to pay for something else.
     """
 
     opener = _RECALL_DESCRIPTION.split(".", 1)[0]
-    missing = [s for s in ("text", "vector", "graph") if s not in opener]
-    assert not missing, (
-        f"the opening sentence {opener!r} does not name the retrieval "
-        f"signals {missing} — it is the first thing every client shows"
+    assert opener == "Recall before acting and at every new turn of thought", (
+        f"the opening sentence {opener!r} must state the recall law — it is "
+        "the first thing every client shows"
     )
+    for word in ("text", "vector", "graph"):
+        assert word not in opener, f"retrieval mechanics ({word}) back in the opener"
     size = len(_RECALL_DESCRIPTION)
     assert size < MAX_DESCRIPTION_CHARS, (
         f"memory_recall is {size} chars, flush against the "
