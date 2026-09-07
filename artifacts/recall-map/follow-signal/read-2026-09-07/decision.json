@@ -1,0 +1,221 @@
+{
+ "artifact": "recall-map demotion gate read",
+ "schema_version": 1,
+ "read_at": "2026-09-07T06:57:03Z",
+ "procedure": "artifacts/recall-map/follow-signal/procedure.md §4.2, §5",
+ "checklist_5": {
+  "sfx": {
+   "ledger_format_version": 2,
+   "ledger_complete": true,
+   "known_windows": 9167,
+   "powered": true,
+   "observed_days_to_last_activity": 14.335,
+   "echo_disagreements": 0,
+   "admission_threshold": 3.8708378402511,
+   "decision_at": "2026-09-07T06:57:03.982967Z"
+  },
+  "alt": {
+   "ledger_format_version": 2,
+   "ledger_complete": true,
+   "known_windows": 33868,
+   "powered": true,
+   "observed_days_to_last_activity": 14.329,
+   "echo_disagreements": 0,
+   "admission_threshold": 3.8708378402511,
+   "decision_at": "2026-09-07T06:58:17.299709Z"
+  },
+  "verdict": "all six items pass on both hosts (signal deployed, ≥30 followed rows, ≥14 days, echo agreement 0, admission_threshold 3.8708378402511 unchanged, rule written before numbers)"
+ },
+ "estimator_4_2": {
+  "note": "own estimator over recall_delivery_history: exogenous follow = lookup_consumed=1 only (ask-follow probe NOT replicated → follows under-counted, runs over-estimated, N conservative); redelivery weight 0.5; held-out = last 20% of windows by delivered_at (pre-registered)",
+  "sfx": {
+   "holdout_cut": "2026-09-04T16:47:06.000000Z",
+   "train_80pct": {
+    "rows_with_follow_and_prior_window": 115,
+    "q95": 6.0,
+    "N": 7,
+    "median": 0.0,
+    "max": 40.0
+   },
+   "all_windows": {
+    "rows_with_follow_and_prior_window": 167,
+    "q95": 6.0,
+    "N": 7,
+    "median": 0.0,
+    "max": 103.0
+   },
+   "falsifier_at_N": {
+    "N": 7,
+    "rows_demoted_in_holdout": 35,
+    "followed_in_next_window": 1
+   }
+  },
+  "alt": {
+   "train_80pct": {
+    "rows_with_follow_and_prior_window": 521,
+    "q95": 2.0,
+    "N": 3,
+    "median": 0.0,
+    "max": 47.0
+   },
+   "all_windows": {
+    "rows_with_follow_and_prior_window": 696,
+    "q95": 2.0,
+    "N": 3
+   },
+   "falsifier_at_N": {
+    "N": 3,
+    "rows_demoted_in_holdout": 502,
+    "followed_in_next_window": 3
+   },
+   "holdout_cut": "2026-09-02T08:55:03Z"
+  }
+ },
+ "falsifier_sweep_heldout": {
+  "sfx": [
+   {
+    "N": 3,
+    "demoted": 165,
+    "followed_next": 0
+   },
+   {
+    "N": 4,
+    "demoted": 117,
+    "followed_next": 0
+   },
+   {
+    "N": 5,
+    "demoted": 74,
+    "followed_next": 0
+   },
+   {
+    "N": 6,
+    "demoted": 53,
+    "followed_next": 1
+   },
+   {
+    "N": 7,
+    "demoted": 35,
+    "followed_next": 1
+   },
+   {
+    "N": 8,
+    "demoted": 27,
+    "followed_next": 0
+   },
+   {
+    "N": 9,
+    "demoted": 20,
+    "followed_next": 0
+   },
+   {
+    "N": 10,
+    "demoted": 17,
+    "followed_next": 0
+   },
+   {
+    "N": 11,
+    "demoted": 15,
+    "followed_next": 0
+   },
+   {
+    "N": 12,
+    "demoted": 14,
+    "followed_next": 0
+   },
+   {
+    "N": 13,
+    "demoted": 13,
+    "followed_next": 0
+   },
+   {
+    "N": 14,
+    "demoted": 12,
+    "followed_next": 0
+   },
+   {
+    "N": 15,
+    "demoted": 10,
+    "followed_next": 0
+   }
+  ],
+  "alt": [
+   {
+    "N": 3,
+    "demoted": 502,
+    "followed_next": 3
+   },
+   {
+    "N": 4,
+    "demoted": 378,
+    "followed_next": 2
+   },
+   {
+    "N": 5,
+    "demoted": 300,
+    "followed_next": 0
+   },
+   {
+    "N": 6,
+    "demoted": 256,
+    "followed_next": 1
+   },
+   {
+    "N": 7,
+    "demoted": 225,
+    "followed_next": 1
+   },
+   {
+    "N": 8,
+    "demoted": 193,
+    "followed_next": 0
+   },
+   {
+    "N": 9,
+    "demoted": 167,
+    "followed_next": 0
+   },
+   {
+    "N": 10,
+    "demoted": 136,
+    "followed_next": 0
+   },
+   {
+    "N": 11,
+    "demoted": 114,
+    "followed_next": 0
+   },
+   {
+    "N": 12,
+    "demoted": 101,
+    "followed_next": 0
+   },
+   {
+    "N": 13,
+    "demoted": 89,
+    "followed_next": 0
+   },
+   {
+    "N": 14,
+    "demoted": 81,
+    "followed_next": 1
+   },
+   {
+    "N": 15,
+    "demoted": 72,
+    "followed_next": 0
+   }
+  ]
+ },
+ "decision": {
+  "demotion_valve": {
+   "charged": false,
+   "env_left_unset": [
+    "LM_MAP_POOL_DEMOTION_GATE",
+    "LM_MAP_POOL_DEMOTE_AFTER"
+   ]
+  },
+  "why": "§4.2 falsifier fires on BOTH hosts at the pre-registered N: sfx N=7 → 35 held-out demotions, 1 followed in the next window; alt N=3 → 502 demotions, 3 followed next. Rule: 'N is too small and the measurement is repeated one horizon later' (24h). Hosts also disagree on N (7 vs 3); the symmetry directive would force one value, and the sweep is non-monotonic (single-row violations at N=6,7 on sfx and N=3,4,6,7,14 on alt), i.e. the falsifier's evidence is one row thick — a longer horizon, not a larger N, is the honest next step.",
+  "next": "repeat 2026-09-08T07:00Z (one horizon); if the falsifier still fires, escalate to the operator with the sweep instead of picking N by hand"
+ }
+}
