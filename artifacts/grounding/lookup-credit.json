@@ -1,0 +1,1088 @@
+{
+  "ab": {
+    "arms": [
+      "grounded",
+      "grounded_or_lookup"
+    ],
+    "bootstrap": {
+      "resamples": 2000,
+      "seed": 20260818
+    },
+    "control_labels": [
+      "reconsumed",
+      "usefulness"
+    ],
+    "corpus": {
+      "empty_results": 20,
+      "incomplete_results": 0,
+      "total_events": 62494,
+      "usable_events": 62474
+    },
+    "cutoff": "2026-09-04T00:00:00Z",
+    "db_path": "/home/sfx/.cache/living-memory-harness/usage-signal/sfx-2026-09-07.sqlite3",
+    "final_weights": {
+      "grounded": {
+        "default": {
+          "bm25": 1.0,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.0
+        },
+        "global": {
+          "bm25": 0.447856,
+          "graph": 0.051606,
+          "learning_rate": 0.05,
+          "vector": 0.500538
+        },
+        "project": {
+          "bm25": 0.7,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.3
+        },
+        "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+          "bm25": 0.619029,
+          "graph": 0.061616,
+          "learning_rate": 0.2,
+          "vector": 0.319355
+        },
+        "project:/root/p/octopus": {
+          "bm25": 0.660496,
+          "graph": 0.021755,
+          "learning_rate": 0.2,
+          "vector": 0.317749
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+          "bm25": 0.686103,
+          "graph": 0.007368,
+          "learning_rate": 0.05,
+          "vector": 0.30653
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+          "bm25": 0.692898,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.307102
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+          "bm25": 0.69584,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.30416
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+          "bm25": 0.679874,
+          "graph": 0.009336,
+          "learning_rate": 0.05,
+          "vector": 0.31079
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+          "bm25": 0.70006,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.29994
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+          "bm25": 0.697258,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.302742
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+          "bm25": 0.697116,
+          "graph": 0.00448,
+          "learning_rate": 0.05,
+          "vector": 0.298404
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+          "bm25": 0.685014,
+          "graph": 0.01939,
+          "learning_rate": 0.2,
+          "vector": 0.295596
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+          "bm25": 0.689422,
+          "graph": 0.00625,
+          "learning_rate": 0.05,
+          "vector": 0.304329
+        },
+        "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+          "bm25": 0.691655,
+          "graph": 0.005255,
+          "learning_rate": 0.05,
+          "vector": 0.30309
+        },
+        "project:/root/p/octopus/.worktrees/goal-landing": {
+          "bm25": 0.693577,
+          "graph": 0.007503,
+          "learning_rate": 0.05,
+          "vector": 0.298919
+        },
+        "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+          "bm25": 0.697844,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.302156
+        },
+        "project:/root/p/octopus/.worktrees/goal-rise": {
+          "bm25": 0.699699,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.300301
+        },
+        "project:2gis": {
+          "bm25": 0.635319,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.314681
+        },
+        "project:2gis-seaf-web": {
+          "bm25": 0.614152,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.335848
+        },
+        "project:DesktopTouchpad": {
+          "bm25": 0.61052,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.33948
+        },
+        "project:ae": {
+          "bm25": 0.283432,
+          "graph": 0.117757,
+          "learning_rate": 0.02,
+          "vector": 0.598811
+        },
+        "project:breakthrough/gemini-flash-contract": {
+          "bm25": 0.617845,
+          "graph": 0.0,
+          "learning_rate": 0.2,
+          "vector": 0.382155
+        },
+        "project:breakthrough/programming-capability-loop": {
+          "bm25": 0.674577,
+          "graph": 0.0,
+          "learning_rate": 0.2,
+          "vector": 0.325423
+        },
+        "project:flamp4": {
+          "bm25": 0.627911,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.322089
+        },
+        "project:gas-stations-ui": {
+          "bm25": 0.618537,
+          "graph": 0.053089,
+          "learning_rate": 0.05,
+          "vector": 0.328374
+        },
+        "project:goal-tree": {
+          "bm25": 0.639404,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.310596
+        },
+        "project:id-2gis-com": {
+          "bm25": 0.635015,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.314985
+        },
+        "project:ilyapro/ae": {
+          "bm25": 0.649525,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.300475
+        },
+        "project:living-memory": {
+          "bm25": 0.530751,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.419249
+        },
+        "project:lm": {
+          "bm25": 0.255536,
+          "graph": 0.061777,
+          "learning_rate": 0.02,
+          "vector": 0.682687
+        },
+        "project:mm": {
+          "bm25": 0.356602,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.593398
+        },
+        "project:natural-flow/downstream-route-propagation/_critique/review-packet-route-triple": {
+          "bm25": 0.61031,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.33969
+        },
+        "project:octopus": {
+          "bm25": 0.108176,
+          "graph": 0.104056,
+          "learning_rate": 0.02,
+          "vector": 0.787767
+        },
+        "project:online": {
+          "bm25": 0.229932,
+          "graph": 0.066958,
+          "learning_rate": 0.02,
+          "vector": 0.70311
+        },
+        "project:online-beautyshare": {
+          "bm25": 0.582519,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.367481
+        },
+        "project:online-sitemaps": {
+          "bm25": 0.644372,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.305628
+        },
+        "project:rise/gemini-comparator-execution": {
+          "bm25": 0.702383,
+          "graph": 0.0,
+          "learning_rate": 0.2,
+          "vector": 0.297617
+        },
+        "project:sfx": {
+          "bm25": 0.541389,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.408611
+        },
+        "project:x": {
+          "bm25": 0.129793,
+          "graph": 0.075678,
+          "learning_rate": 0.02,
+          "vector": 0.794529
+        },
+        "session": {
+          "bm25": 0.8,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.2
+        }
+      },
+      "grounded_or_lookup": {
+        "default": {
+          "bm25": 1.0,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.0
+        },
+        "global": {
+          "bm25": 0.407697,
+          "graph": 0.072037,
+          "learning_rate": 0.05,
+          "vector": 0.520266
+        },
+        "project": {
+          "bm25": 0.7,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.3
+        },
+        "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+          "bm25": 0.619029,
+          "graph": 0.061616,
+          "learning_rate": 0.2,
+          "vector": 0.319355
+        },
+        "project:/root/p/octopus": {
+          "bm25": 0.660496,
+          "graph": 0.021755,
+          "learning_rate": 0.2,
+          "vector": 0.317749
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+          "bm25": 0.686103,
+          "graph": 0.007368,
+          "learning_rate": 0.05,
+          "vector": 0.30653
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+          "bm25": 0.692898,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.307102
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+          "bm25": 0.69584,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.30416
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+          "bm25": 0.679874,
+          "graph": 0.009336,
+          "learning_rate": 0.05,
+          "vector": 0.31079
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+          "bm25": 0.70006,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.29994
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+          "bm25": 0.697258,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.302742
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+          "bm25": 0.697116,
+          "graph": 0.00448,
+          "learning_rate": 0.05,
+          "vector": 0.298404
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+          "bm25": 0.685014,
+          "graph": 0.01939,
+          "learning_rate": 0.2,
+          "vector": 0.295596
+        },
+        "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+          "bm25": 0.689422,
+          "graph": 0.00625,
+          "learning_rate": 0.05,
+          "vector": 0.304329
+        },
+        "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+          "bm25": 0.691655,
+          "graph": 0.005255,
+          "learning_rate": 0.05,
+          "vector": 0.30309
+        },
+        "project:/root/p/octopus/.worktrees/goal-landing": {
+          "bm25": 0.693577,
+          "graph": 0.007503,
+          "learning_rate": 0.05,
+          "vector": 0.298919
+        },
+        "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+          "bm25": 0.697844,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.302156
+        },
+        "project:/root/p/octopus/.worktrees/goal-rise": {
+          "bm25": 0.699699,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.300301
+        },
+        "project:2gis": {
+          "bm25": 0.621053,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.328947
+        },
+        "project:2gis-seaf-web": {
+          "bm25": 0.56312,
+          "graph": 0.060182,
+          "learning_rate": 0.1,
+          "vector": 0.376698
+        },
+        "project:DesktopTouchpad": {
+          "bm25": 0.61052,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.33948
+        },
+        "project:ae": {
+          "bm25": 0.29219,
+          "graph": 0.11066,
+          "learning_rate": 0.02,
+          "vector": 0.597151
+        },
+        "project:breakthrough/gemini-flash-contract": {
+          "bm25": 0.617845,
+          "graph": 0.0,
+          "learning_rate": 0.2,
+          "vector": 0.382155
+        },
+        "project:breakthrough/programming-capability-loop": {
+          "bm25": 0.674577,
+          "graph": 0.0,
+          "learning_rate": 0.2,
+          "vector": 0.325423
+        },
+        "project:flamp4": {
+          "bm25": 0.627911,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.322089
+        },
+        "project:gas-stations-ui": {
+          "bm25": 0.618537,
+          "graph": 0.053089,
+          "learning_rate": 0.05,
+          "vector": 0.328374
+        },
+        "project:goal-tree": {
+          "bm25": 0.639404,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.310596
+        },
+        "project:id-2gis-com": {
+          "bm25": 0.635015,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.314985
+        },
+        "project:ilyapro/ae": {
+          "bm25": 0.649525,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.300475
+        },
+        "project:living-memory": {
+          "bm25": 0.515578,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.434422
+        },
+        "project:lm": {
+          "bm25": 0.261288,
+          "graph": 0.060907,
+          "learning_rate": 0.02,
+          "vector": 0.677805
+        },
+        "project:mm": {
+          "bm25": 0.356602,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.593398
+        },
+        "project:natural-flow/downstream-route-propagation/_critique/review-packet-route-triple": {
+          "bm25": 0.61031,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.33969
+        },
+        "project:octopus": {
+          "bm25": 0.108176,
+          "graph": 0.104056,
+          "learning_rate": 0.02,
+          "vector": 0.787767
+        },
+        "project:online": {
+          "bm25": 0.238096,
+          "graph": 0.064219,
+          "learning_rate": 0.02,
+          "vector": 0.697684
+        },
+        "project:online-beautyshare": {
+          "bm25": 0.582519,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.367481
+        },
+        "project:online-sitemaps": {
+          "bm25": 0.644372,
+          "graph": 0.05,
+          "learning_rate": 0.1,
+          "vector": 0.305628
+        },
+        "project:rise/gemini-comparator-execution": {
+          "bm25": 0.702383,
+          "graph": 0.0,
+          "learning_rate": 0.2,
+          "vector": 0.297617
+        },
+        "project:sfx": {
+          "bm25": 0.541389,
+          "graph": 0.05,
+          "learning_rate": 0.2,
+          "vector": 0.408611
+        },
+        "project:x": {
+          "bm25": 0.129793,
+          "graph": 0.075678,
+          "learning_rate": 0.02,
+          "vector": 0.794529
+        },
+        "session": {
+          "bm25": 0.8,
+          "graph": 0.0,
+          "learning_rate": 0.05,
+          "vector": 0.2
+        }
+      }
+    },
+    "grounding": {
+      "corpus_idf_agreement": 0.963391,
+      "graded_results": 83504,
+      "grounded_results": 9036,
+      "grounded_share": 0.10821,
+      "min_containment": 0.25
+    },
+    "incumbent": "grounded",
+    "lookup_window_seconds": 86400.0,
+    "lookups": {
+      "events_with_follow": 98,
+      "events_with_transport": 15473,
+      "first_lookup_at": "2026-08-23T22:55:05Z",
+      "followed_and_grounded": 8,
+      "followed_only": 137,
+      "holdout_unbounded": {
+        "labeled_events": 421,
+        "labeled_events_with_follow": 102,
+        "labeled_results_followed": 168
+      },
+      "labeled_events_with_follow": 50,
+      "labeled_results_followed": 70,
+      "last_lookup_at": "2026-09-06T21:50:54Z",
+      "lookup_events": 296,
+      "not_after": "2026-09-04T00:00:00Z",
+      "not_after_excluded_results": 173,
+      "results_followed": 145,
+      "rows": 548,
+      "rows_with_transport": 548,
+      "same_instant_results": 4,
+      "table_present": true,
+      "unparsable_rows": 0,
+      "window_seconds": 86400.0
+    },
+    "primary_label": "grounded",
+    "results": {
+      "grounded": {
+        "arms": {
+          "grounded": {
+            "holdout": {
+              "events": 421,
+              "events_with_useful": 78,
+              "hit@1": 0.5,
+              "hit@10": 1.0,
+              "hit@5": 0.871795,
+              "mrr": 0.654441
+            },
+            "overall": {
+              "events": 10969,
+              "events_with_useful": 4443,
+              "hit@1": 0.508215,
+              "hit@10": 0.986721,
+              "hit@5": 0.923475,
+              "mrr": 0.679747
+            },
+            "train": {
+              "events": 10548,
+              "events_with_useful": 4365,
+              "hit@1": 0.508362,
+              "hit@10": 0.986483,
+              "hit@5": 0.924399,
+              "mrr": 0.680199
+            },
+            "weight_updates": 8949
+          },
+          "grounded_or_lookup": {
+            "holdout": {
+              "events": 421,
+              "events_with_useful": 78,
+              "hit@1": 0.512821,
+              "hit@10": 1.0,
+              "hit@5": 0.871795,
+              "mrr": 0.660852
+            },
+            "overall": {
+              "events": 10969,
+              "events_with_useful": 4443,
+              "hit@1": 0.508215,
+              "hit@10": 0.986721,
+              "hit@5": 0.923475,
+              "mrr": 0.679758
+            },
+            "paired_vs_incumbent": {
+              "hit@5": {
+                "ci95_high": 0.0,
+                "ci95_low": 0.0,
+                "distinguishable": false,
+                "mean_delta": 0.0,
+                "n": 78
+              },
+              "mrr": {
+                "ci95_high": 0.019231,
+                "ci95_low": 0.0,
+                "distinguishable": false,
+                "mean_delta": 0.00641,
+                "n": 78
+              }
+            },
+            "train": {
+              "events": 10548,
+              "events_with_useful": 4365,
+              "hit@1": 0.508133,
+              "hit@10": 0.986483,
+              "hit@5": 0.924399,
+              "mrr": 0.680096
+            },
+            "weight_updates": 9011
+          }
+        },
+        "discrimination": {
+          "all_useful_fraction": 0.007044,
+          "mean_useful_share": 0.134651,
+          "multi_result_events": 10932,
+          "none_useful_fraction": 0.593944,
+          "strict_subset_events": 4362,
+          "strict_subset_fraction": 0.399012
+        },
+        "events_with_useful": 4443,
+        "label": {
+          "min_containment": 0.25,
+          "protocol": "grounded",
+          "reconsume_min_traces": 2,
+          "usefulness_threshold": 0.8
+        },
+        "useful_results": 11691
+      },
+      "reconsumed": {
+        "arms": {
+          "grounded": {
+            "holdout": {
+              "events": 421,
+              "events_with_useful": 327,
+              "hit@1": 0.489297,
+              "hit@10": 1.0,
+              "hit@5": 0.93578,
+              "mrr": 0.669395
+            },
+            "overall": {
+              "events": 10969,
+              "events_with_useful": 10818,
+              "hit@1": 0.822426,
+              "hit@10": 0.994361,
+              "hit@5": 0.989277,
+              "mrr": 0.894968
+            },
+            "train": {
+              "events": 10548,
+              "events_with_useful": 10491,
+              "hit@1": 0.832809,
+              "hit@10": 0.994185,
+              "hit@5": 0.990945,
+              "mrr": 0.901999
+            },
+            "weight_updates": 8949
+          },
+          "grounded_or_lookup": {
+            "holdout": {
+              "events": 421,
+              "events_with_useful": 327,
+              "hit@1": 0.48318,
+              "hit@10": 1.0,
+              "hit@5": 0.93578,
+              "mrr": 0.665572
+            },
+            "overall": {
+              "events": 10969,
+              "events_with_useful": 10818,
+              "hit@1": 0.822241,
+              "hit@10": 0.994361,
+              "hit@5": 0.989277,
+              "mrr": 0.89484
+            },
+            "paired_vs_incumbent": {
+              "hit@5": {
+                "ci95_high": 0.0,
+                "ci95_low": 0.0,
+                "distinguishable": false,
+                "mean_delta": 0.0,
+                "n": 327
+              },
+              "mrr": {
+                "ci95_high": 0.001529,
+                "ci95_low": -0.010194,
+                "distinguishable": false,
+                "mean_delta": -0.003823,
+                "n": 327
+              }
+            },
+            "train": {
+              "events": 10548,
+              "events_with_useful": 10491,
+              "hit@1": 0.832809,
+              "hit@10": 0.994185,
+              "hit@5": 0.990945,
+              "mrr": 0.901986
+            },
+            "weight_updates": 9011
+          }
+        },
+        "discrimination": {
+          "all_useful_fraction": 0.594493,
+          "mean_useful_share": 0.879203,
+          "multi_result_events": 10932,
+          "none_useful_fraction": 0.012898,
+          "strict_subset_events": 4292,
+          "strict_subset_fraction": 0.392609
+        },
+        "events_with_useful": 10818,
+        "label": {
+          "min_containment": 0.25,
+          "protocol": "reconsumed",
+          "reconsume_min_traces": 2,
+          "usefulness_threshold": 0.8
+        },
+        "useful_results": 73957
+      },
+      "usefulness": {
+        "arms": {
+          "grounded": {
+            "holdout": {
+              "events": 421,
+              "events_with_useful": 390,
+              "hit@1": 0.166667,
+              "hit@10": 1.0,
+              "hit@5": 0.869231,
+              "mrr": 0.424908
+            },
+            "overall": {
+              "events": 10969,
+              "events_with_useful": 10430,
+              "hit@1": 0.386673,
+              "hit@10": 0.952541,
+              "hit@5": 0.889933,
+              "mrr": 0.583737
+            },
+            "train": {
+              "events": 10548,
+              "events_with_useful": 10040,
+              "hit@1": 0.395219,
+              "hit@10": 0.950697,
+              "hit@5": 0.890737,
+              "mrr": 0.589906
+            },
+            "weight_updates": 8949
+          },
+          "grounded_or_lookup": {
+            "holdout": {
+              "events": 421,
+              "events_with_useful": 390,
+              "hit@1": 0.169231,
+              "hit@10": 1.0,
+              "hit@5": 0.869231,
+              "mrr": 0.425635
+            },
+            "overall": {
+              "events": 10969,
+              "events_with_useful": 10430,
+              "hit@1": 0.386769,
+              "hit@10": 0.952541,
+              "hit@5": 0.889933,
+              "mrr": 0.583767
+            },
+            "paired_vs_incumbent": {
+              "hit@5": {
+                "ci95_high": 0.0,
+                "ci95_low": 0.0,
+                "distinguishable": false,
+                "mean_delta": 0.0,
+                "n": 390
+              },
+              "mrr": {
+                "ci95_high": 0.003632,
+                "ci95_low": -0.001068,
+                "distinguishable": false,
+                "mean_delta": 0.000726,
+                "n": 390
+              }
+            },
+            "train": {
+              "events": 10548,
+              "events_with_useful": 10040,
+              "hit@1": 0.395219,
+              "hit@10": 0.950697,
+              "hit@5": 0.890737,
+              "mrr": 0.58991
+            },
+            "weight_updates": 9011
+          }
+        },
+        "discrimination": {
+          "all_useful_fraction": 0.141054,
+          "mean_useful_share": 0.605014,
+          "multi_result_events": 10932,
+          "none_useful_fraction": 0.047201,
+          "strict_subset_events": 8874,
+          "strict_subset_fraction": 0.811745
+        },
+        "events_with_useful": 10430,
+        "label": {
+          "min_containment": 0.25,
+          "protocol": "usefulness",
+          "reconsume_min_traces": 2,
+          "usefulness_threshold": 0.8
+        },
+        "useful_results": 51566
+      }
+    },
+    "ungrounded_negative_factor": 0.25,
+    "verdict": {
+      "per_arm": {
+        "grounded_or_lookup": {
+          "checks": {
+            "grounded": {
+              "hit@5": {
+                "arm": 0.871795,
+                "ci95": [
+                  0.0,
+                  0.0
+                ],
+                "delta": 0.0,
+                "distinguishable": false,
+                "gain": false,
+                "incumbent": 0.871795,
+                "regression": false
+              },
+              "mrr": {
+                "arm": 0.660852,
+                "ci95": [
+                  0.0,
+                  0.019231
+                ],
+                "delta": 0.006411,
+                "distinguishable": false,
+                "gain": false,
+                "incumbent": 0.654441,
+                "regression": false
+              }
+            },
+            "reconsumed": {
+              "hit@5": {
+                "arm": 0.93578,
+                "ci95": [
+                  0.0,
+                  0.0
+                ],
+                "delta": 0.0,
+                "distinguishable": false,
+                "gain": false,
+                "incumbent": 0.93578,
+                "regression": false
+              },
+              "mrr": {
+                "arm": 0.665572,
+                "ci95": [
+                  -0.010194,
+                  0.001529
+                ],
+                "delta": -0.003823,
+                "distinguishable": false,
+                "gain": false,
+                "incumbent": 0.669395,
+                "regression": false
+              }
+            },
+            "usefulness": {
+              "hit@5": {
+                "arm": 0.869231,
+                "ci95": [
+                  0.0,
+                  0.0
+                ],
+                "delta": 0.0,
+                "distinguishable": false,
+                "gain": false,
+                "incumbent": 0.869231,
+                "regression": false
+              },
+              "mrr": {
+                "arm": 0.425635,
+                "ci95": [
+                  -0.001068,
+                  0.003632
+                ],
+                "delta": 0.000727,
+                "distinguishable": false,
+                "gain": false,
+                "incumbent": 0.424908,
+                "regression": false
+              }
+            }
+          },
+          "pass": false,
+          "primary_gains": [],
+          "significant_regressions": [],
+          "weights_degenerate": false
+        }
+      },
+      "winner": "grounded"
+    },
+    "weight_sanity": {
+      "grounded": {
+        "graph_limit": 0.5,
+        "graph_over_limit": 0,
+        "graph_over_limit_scopes": [],
+        "max_graph": 0.117757,
+        "mean_graph": 0.03229,
+        "scopes": 41
+      },
+      "grounded_or_lookup": {
+        "graph_limit": 0.5,
+        "graph_over_limit": 0,
+        "graph_over_limit_scopes": [],
+        "max_graph": 0.11066,
+        "mean_graph": 0.032775,
+        "scopes": 41
+      }
+    }
+  },
+  "after": {
+    "alt": {
+      "closures_total": 423,
+      "credit": "grounded_or_lookup",
+      "credited_closures": 184,
+      "credited_share": 0.435,
+      "lookup_closures": 119,
+      "lookup_only_pairs": 191,
+      "lookup_pairs": 227,
+      "lookup_window_seconds": 86400.0,
+      "min_containment": 0.25,
+      "overlap_pairs": 36,
+      "same_transport": true
+    },
+    "description": "Closures crediting at least one node under grounded or same-transport lookup credit: a delivered result counts when the closing trace grounds it or a memory_lookup on the same transport fetched it within 86400 s of delivery, deduplicated once per (event, node) as the recall credit ledger does.",
+    "pooled": {
+      "closures_total": 844,
+      "credit": "grounded_or_lookup",
+      "credited_closures": 323,
+      "credited_share": 0.3827,
+      "lookup_closures": 221,
+      "lookup_only_pairs": 337,
+      "lookup_pairs": 395,
+      "lookup_window_seconds": 86400.0,
+      "min_containment": 0.25,
+      "overlap_pairs": 58,
+      "same_transport": true
+    },
+    "sfx": {
+      "closures_total": 421,
+      "credit": "grounded_or_lookup",
+      "credited_closures": 139,
+      "credited_share": 0.3302,
+      "lookup_closures": 102,
+      "lookup_only_pairs": 146,
+      "lookup_pairs": 168,
+      "lookup_window_seconds": 86400.0,
+      "min_containment": 0.25,
+      "overlap_pairs": 22,
+      "same_transport": true
+    }
+  },
+  "before": {
+    "alt": {
+      "closures_total": 423,
+      "credit": "grounded",
+      "credited_closures": 100,
+      "credited_share": 0.2364,
+      "min_containment": 0.25
+    },
+    "description": "Closures crediting at least one node under grounded-only credit (LM_RECALL_CREDIT_POLICY=grounded) at min_containment 0.25 on the master tokenizer, the live gate at the time of the replay.",
+    "pooled": {
+      "closures_total": 844,
+      "credit": "grounded",
+      "credited_closures": 160,
+      "credited_share": 0.1896,
+      "min_containment": 0.25
+    },
+    "sfx": {
+      "closures_total": 421,
+      "credit": "grounded",
+      "credited_closures": 60,
+      "credited_share": 0.1425,
+      "min_containment": 0.25
+    }
+  },
+  "commands": [
+    "python3 scripts/usage_signal_replay.py --corpus ~/.cache/living-memory-harness/usage-signal/sfx-closures.jsonl --report /tmp/lc-sfx.json",
+    "python3 scripts/usage_signal_replay.py --corpus ~/.cache/living-memory-harness/usage-signal/alt-closures.jsonl --report /tmp/lc-alt.json",
+    "python3 scripts/usage_signal_replay.py --corpus ~/.cache/living-memory-harness/usage-signal/sfx-closures.jsonl --corpus ~/.cache/living-memory-harness/usage-signal/alt-closures.jsonl --report /tmp/lc-pooled.json",
+    "timeout 5400 python3 scripts/credit_rule_ab.py --db ~/.cache/living-memory-harness/usage-signal/sfx-2026-09-07.sqlite3 --cutoff 2026-09-04T00:00:00Z --incumbent grounded --arms grounded,grounded_or_lookup --report /tmp/lc-ab.json",
+    "bash scripts/test.sh tests/test_replay_harness.py -q"
+  ],
+  "coverage": {
+    "alt": {
+      "after_closures": 184,
+      "after_share": 0.435,
+      "before_closures": 100,
+      "before_share": 0.2364,
+      "closures_total": 423,
+      "corpus": [
+        "/home/sfx/.cache/living-memory-harness/usage-signal/alt-closures.jsonl"
+      ],
+      "lookup_closures": 119,
+      "lookup_only_pairs": 191,
+      "lookup_pairs": 227,
+      "lookup_window_seconds": 86400.0,
+      "min_containment": 0.25,
+      "overlap_pairs": 36,
+      "pairs_total": 3847,
+      "same_transport": true
+    },
+    "pooled": {
+      "after_closures": 323,
+      "after_share": 0.3827,
+      "before_closures": 160,
+      "before_share": 0.1896,
+      "closures_total": 844,
+      "corpus": [
+        "/home/sfx/.cache/living-memory-harness/usage-signal/sfx-closures.jsonl",
+        "/home/sfx/.cache/living-memory-harness/usage-signal/alt-closures.jsonl"
+      ],
+      "lookup_closures": 221,
+      "lookup_only_pairs": 337,
+      "lookup_pairs": 395,
+      "lookup_window_seconds": 86400.0,
+      "min_containment": 0.25,
+      "overlap_pairs": 58,
+      "pairs_total": 6806,
+      "same_transport": true
+    },
+    "sfx": {
+      "after_closures": 139,
+      "after_share": 0.3302,
+      "before_closures": 60,
+      "before_share": 0.1425,
+      "closures_total": 421,
+      "corpus": [
+        "/home/sfx/.cache/living-memory-harness/usage-signal/sfx-closures.jsonl"
+      ],
+      "lookup_closures": 102,
+      "lookup_only_pairs": 146,
+      "lookup_pairs": 168,
+      "lookup_window_seconds": 86400.0,
+      "min_containment": 0.25,
+      "overlap_pairs": 22,
+      "pairs_total": 2959,
+      "same_transport": true
+    }
+  },
+  "criterion": "LM_LOOKUP_CREDIT_POLICY=delivered stays the default if the grounded_or_lookup arm shows no significant regression against the grounded incumbent under any label (grounded, reconsumed, usefulness; holdout hit@5 and MRR, paired bootstrap 95% CI must exclude zero to count) and its learned weights are non-degenerate (no scope with graph share above 0.5). A significant primary gain is NOT required: the case for lookup credit is coverage (closures that credit anything), which the A/B cannot reward because holdout events are never reinforced in replay. The script's own winner field additionally demands a significant primary gain; where it disagrees, both are printed and the coverage criterion decides.",
+  "holdout": {
+    "all_events_followed_only": 137,
+    "all_events_results_followed": 145,
+    "cutoff": "2026-09-04T00:00:00Z",
+    "events_with_lookup_follow": 102,
+    "labeled_events": 421,
+    "lookup_epoch": "2026-08-23T22:55:05Z",
+    "lookup_events": 296,
+    "lookup_ledger_rows": 548,
+    "not_after_excluded_results": 173,
+    "results_with_lookup_follow": 168,
+    "train_followed_and_grounded": 8,
+    "train_followed_only": 62,
+    "train_labeled_events_with_follow": 50,
+    "train_labeled_results_followed": 70,
+    "train_lookup_days": 12
+  },
+  "verdict": "Keep LM_LOOKUP_CREDIT_POLICY=delivered as the default: on the sfx holdout the grounded_or_lookup arm is non-degenerate and shows no significant regression under any label (grounded MRR delta +0.006411 [+0.000000, +0.019231], hit@5 +0.000000 [+0.000000, +0.000000]), while lookup credit lifts closure coverage from 160/844 to 323/844 pooled (60/421 to 139/421 on sfx)."
+}

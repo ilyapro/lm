@@ -19,7 +19,12 @@ from datetime import UTC, datetime, timedelta
 
 from living_memory.chunking import TextChunk, chunk_text
 from living_memory.config import MemoryConfig, RetrievalWeightConfig
-from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity, tokenize
+from living_memory.embeddings import (
+    LocalEmbeddingModel,
+    cosine_similarity,
+    fts_prefix_term_allowed,
+    tokenize,
+)
 from living_memory.models import (
     CONNECTION_TYPES,
     NODE_LEVELS,
@@ -48,6 +53,7 @@ RECALL_DELIVERY_HISTORY_TABLE = "recall_delivery_history"
 RECALL_DELIVERY_HISTORY_STATE_TABLE = "recall_delivery_history_state"
 RECALL_LOOKUP_EVENT_TABLE = "recall_lookup_events"
 TRANSCRIPT_GROUNDING_TABLE = "transcript_grounding_verdicts"
+RECALL_CREDIT_LEDGER_TABLE = "recall_credit_ledger"
 
 # Frozen by artifacts/recall-map/prereg.json and
 # artifacts/recall-map/relevance/policy.json.  Keep these literals local to
@@ -441,6 +447,47 @@ TRANSCRIPT_GROUNDING_SCHEMA_SQL = f"""
     -- a per-node probe.
     CREATE INDEX IF NOT EXISTS idx_transcript_grounding_node_graded
         ON {TRANSCRIPT_GROUNDING_TABLE}(node_id, graded_at DESC);
+"""
+
+#: Recall credit ledger (additive to schema v8; goal feedback-usage-signal,
+#: lookup-credit). One row per (recall event, node) pair that has been
+#: *credited* — its usefulness, its scope's retrieval weights and a query
+#: anchor edge reinforced — by whichever usage signal arrived first: the
+#: consuming trace grounding the node's content (``basis = 'grounded'``,
+#: ``source_id`` is the trace id) or a same-session ``memory_lookup`` of the
+#: delivered id (``basis = 'lookup'``, ``source_id`` is the lookup event id).
+#: ``UNIQUE(recall_event_id, node_id)`` is the whole dedup rule: the second
+#: signal for a pair finds the row taken and applies nothing, so credit is at
+#: most once per pair no matter which signal comes first, and the row says
+#: which one did. Claimed *before* the credit is applied, as the attestation
+#: ledger is: a crash mid-apply leaves a claimed-but-uncredited pair, i.e.
+#: under-crediting, the conservative direction for a signal that must not be
+#: inflatable.
+#:
+#: Private like ``_RECALL_ATTESTATION_SCHEMA_SQL``: only ``_initialize_schema``
+#: runs it. No ``_migrate_pre_v9_schema`` and no ``SCHEMA_VERSION`` bump, for
+#: the reason recorded there and on ``TRANSCRIPT_GROUNDING_SCHEMA_SQL``:
+#: ``CREATE TABLE IF NOT EXISTS`` on every open *is* the migration for a
+#: brand-new table, and there is no version-keyed branch a bump could guard.
+#: Strictly additive — one table, no index beyond the UNIQUE constraint's own
+#: (which leads with ``recall_event_id`` and so serves the per-event read),
+#: touching nothing that exists — so every DDL string a live database already
+#: carries stays byte-identical.
+_RECALL_CREDIT_LEDGER_SCHEMA_SQL = f"""
+    -- No foreign keys, deliberately (the recall_lookup_events rationale): a
+    -- lookup names ids the caller was handed, and by the time a closure or a
+    -- late lookup claims a pair the event may be pruned or the node hard
+    -- deleted. A row referencing nothing still records that the pair's
+    -- credit was spent; this ledger is a guard against double credit, never
+    -- a gate on the write that earned it.
+    CREATE TABLE IF NOT EXISTS {RECALL_CREDIT_LEDGER_TABLE} (
+        recall_event_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        basis TEXT NOT NULL CHECK (basis IN ('grounded', 'lookup')),
+        source_id TEXT NOT NULL,
+        credited_at TEXT NOT NULL,
+        UNIQUE(recall_event_id, node_id)
+    );
 """
 
 #: Scratch tokenizer behind :meth:`MemoryStore.term_document_frequencies`. It
@@ -2009,6 +2056,96 @@ class MemoryStore:
             f"SELECT MIN(occurred_at) AS first_at FROM {RECALL_LOOKUP_EVENT_TABLE}"
         ).fetchone()
         return None if row is None else _optional_str(row["first_at"])
+
+    # ------------------------------------------------------------------
+    # Recall credit ledger
+    #
+    # One claim per (event, node) pair, whichever usage signal comes first —
+    # the consuming trace grounding the node or a same-session lookup of it.
+    # See the note on _RECALL_CREDIT_LEDGER_SCHEMA_SQL.
+    # ------------------------------------------------------------------
+
+    def claim_recall_credit(
+        self,
+        recall_event_id: str,
+        node_id: str,
+        *,
+        basis: str,
+        source_id: str,
+        credited_at: str | datetime | None = None,
+    ) -> bool:
+        """Take the (event, node) credit for ``basis``; True only when new.
+
+        One ``INSERT OR IGNORE``, committed: a pair already credited — by an
+        earlier grounding or an earlier lookup — leaves the row as it was and
+        returns False, and the caller must then apply nothing. ``basis`` is
+        ``'grounded'`` (``source_id`` is the consuming trace id) or
+        ``'lookup'`` (``source_id`` is the lookup event id).
+        """
+
+        if basis not in ("grounded", "lookup"):
+            raise ValueError(f"unknown credit basis: {basis!r}")
+        if credited_at is None:
+            instant = _utc_now()
+        else:
+            instant = _normalize_recall_history_instant(credited_at)
+            if instant is None:
+                raise ValueError(f"unparsable credit instant: {credited_at!r}")
+        with self._conn:
+            cursor = self._conn.execute(
+                f"""
+                INSERT OR IGNORE INTO {RECALL_CREDIT_LEDGER_TABLE} (
+                    recall_event_id, node_id, basis, source_id, credited_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (str(recall_event_id), str(node_id), basis, str(source_id), instant),
+            )
+        return cursor.rowcount == 1
+
+    def credited_node_ids(self, recall_event_id: str) -> set[str]:
+        """Node ids whose credit for one recall event has already been spent."""
+
+        rows = self._conn.execute(
+            f"""
+            SELECT node_id FROM {RECALL_CREDIT_LEDGER_TABLE}
+            WHERE recall_event_id = ?
+            """,
+            (str(recall_event_id),),
+        ).fetchall()
+        return {str(row["node_id"]) for row in rows}
+
+    def recall_events_for_transport(
+        self,
+        transport_session_id: str | None,
+        *,
+        limit: int = 200,
+    ) -> list[RecallEvent]:
+        """The most recent recall events stamped with one transport session.
+
+        Newest first, served by ``idx_recall_events_transport_created``, and
+        bounded like :meth:`delivered_node_ids`: on a long-lived session only
+        the ``limit`` most recent events are candidates for the lookup-credit
+        join, and a ``None`` or empty transport id identifies no session and
+        returns nothing without touching the database. Closed events are
+        included on purpose — a lookup after the closure of an event whose
+        trace grounded nothing is still evidence that a delivered node was
+        used; the credit ledger, not ``feedback_applied``, decides whether
+        that evidence has already been spent.
+        """
+
+        if not transport_session_id or limit <= 0:
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM recall_events
+            WHERE transport_session_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT ?
+            """,
+            (str(transport_session_id), int(limit)),
+        ).fetchall()
+        return [_recall_event_from_row(row) for row in rows]
 
     def _record_recall_history_event(
         self,
@@ -4588,6 +4725,9 @@ class MemoryStore:
             # TRANSCRIPT_GROUNDING_SCHEMA_SQL. Offline import only: no live
             # read or write path touches it.
             self._conn.executescript(TRANSCRIPT_GROUNDING_SCHEMA_SQL)
+            # Recall credit ledger. Additive and created the same way, on
+            # every open; see the note on _RECALL_CREDIT_LEDGER_SCHEMA_SQL.
+            self._conn.executescript(_RECALL_CREDIT_LEDGER_SCHEMA_SQL)
             # Frozen relevance history. The schema is additive; the
             # idempotent reconstruction below is what populates it for a live
             # database whose recall_events predate this release.
@@ -5379,9 +5519,33 @@ def _json_loads(value: str | None, default: Any) -> Any:
     return json.loads(value)
 
 
+_FTS_QUERY_TERM_RE = re.compile(r"\w+\*?")
+
+
 def _fts_query(query: str) -> str:
-    tokens = re.findall(r"\w+", query)
-    return " OR ".join(f'"{token}"' for token in tokens)
+    """Turn free text into an FTS5 MATCH expression: quoted terms joined by OR.
+
+    Every ``\\w+`` run becomes an exact quoted term, as it always has. A run
+    immediately followed by ``*`` becomes a prefix term (``"миграц"*``) when
+    :func:`living_memory.embeddings.fts_prefix_term_allowed` accepts it --
+    an all-Cyrillic term while Cyrillic stemming is on. That is how the stems
+    ``retrieval._expanded_query`` appends reach the unstemmed ``unicode61``
+    index. For every other run the star is dropped, so Latin terms keep their
+    exact form and ``LM_TOKENIZE_CYRILLIC_STEM=off`` yields the previous
+    expression byte for byte.
+    """
+
+    terms: list[str] = []
+    for match in _FTS_QUERY_TERM_RE.findall(query):
+        if match.endswith("*"):
+            term = match[:-1]
+            if fts_prefix_term_allowed(term):
+                terms.append(f'"{term}"*')
+                continue
+            terms.append(f'"{term}"')
+        else:
+            terms.append(f'"{match}"')
+    return " OR ".join(terms)
 
 
 def _as_list(value: Any) -> list[Any]:

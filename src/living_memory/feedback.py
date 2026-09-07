@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 import logging
 import math
 import os
@@ -14,6 +15,7 @@ from living_memory.grounding import DEFAULT_MIN_CONTAINMENT, ground_results
 from living_memory.models import Node, RecallEvent, RetrievalWeights
 from living_memory.query_anchors import upsert_anchor
 from living_memory.storage import ChunkEmbedder, MemoryStore
+from living_memory.temporal import parse_timestamp
 
 _LOG = logging.getLogger(__name__)
 
@@ -45,17 +47,63 @@ _LOG = logging.getLogger(__name__)
 #
 # The default is the arm chosen by the replay A/B over the recorded history;
 # see artifacts/grounding/credit-ab.md for the numbers.
+#
+# A second usage signal, the lookup (goal feedback-usage-signal). Grounding
+# sees only what the closing trace *quotes*, and on the 2026-09-07 snapshots
+# that is 19.0% of closures (sfx 14.2%): traces grew threefold, the remember
+# protocol forbids copies, so the agent writes a new adjacent fact and the
+# delivered node it built on goes uncredited. A ``memory_lookup`` id-fetch of
+# a delivered node in the same transport session is the other honest "I used
+# this" the server can see — naming an exact ULID is something only a reader
+# who was handed it does — and it names a delivered node in 26.2% of closures,
+# overlapping the grounded set in only 58 of 395 pairs. ``apply_lookup_credit``
+# turns it into credit with the *same* assignment as a grounded result: the
+# event's recorded per-channel scores, ``signal = max(0.2, 1/(rank+1))``,
+# ``scope = event.scope``, and one anchor edge to the looked-up node only.
+#
+# The two signals share one ledger (``recall_credit_ledger`` in storage):
+# whichever arrives first for a (event, node) pair claims the row and applies
+# the credit; the other finds the row taken and applies nothing, so credit is
+# at most once per pair. Linkage — related edges, provenance, closing the
+# event — stays with the grounded path exactly as before; the ledger gates
+# reinforcement only. A lookup never touches a node that was not requested
+# and never credits an event that did not deliver the node, and with no
+# transport identity on either side there is no join and no credit.
+#
+# Policies (``LM_LOOKUP_CREDIT_POLICY``):
+#
+# * ``delivered`` — credit as above.
+# * ``off`` — record the lookup event only, exactly the pre-ledger behaviour.
+#
+# ``LM_LOOKUP_CREDIT_WINDOW_SECONDS`` bounds how far back a lookup can reach
+# for the delivering event (default 24 h, the delivery-history horizon); an
+# unknown policy or an unparsable window falls back to the default, like
+# ``LM_RECALL_CREDIT_POLICY``. See artifacts/grounding/lookup-credit.md for
+# the replay numbers.
 RECALL_CREDIT_POLICIES: tuple[str, ...] = ("grounded", "grounded_negative", "all")
 DEFAULT_RECALL_CREDIT_POLICY = "grounded"
+
+LOOKUP_CREDIT_POLICIES: tuple[str, ...] = ("delivered", "off")
+DEFAULT_LOOKUP_CREDIT_POLICY = "delivered"
+DEFAULT_LOOKUP_CREDIT_WINDOW_SECONDS = 86400
+#: Candidate events per lookup: the newest this many events of the transport
+#: session, the same horizon ``MemoryStore.delivered_node_ids`` bounds the
+#: session-delivery dedup with.
+_LOOKUP_CREDIT_EVENT_LIMIT = 200
 
 # Blame multiplier for a delivered-but-ungrounded result under the
 # ``grounded_negative`` policy, relative to the positive signal a grounded
 # result at the same rank would earn.
 UNGROUNDED_NEGATIVE_FACTOR = 0.25
 
-# Containment threshold for the live grounding gate. Held at the replay
-# default: per-event and whole-corpus IDF agree on 96.2% of the 72,023
-# recorded result/trace pairs at this value (scripts/grounding_calibration.py).
+# Containment threshold for the live grounding gate: the shared
+# ``grounding.DEFAULT_MIN_CONTAINMENT`` (0.22 since the September 2026
+# recalibration on the closed recall events of the 2026-09-07 snapshots,
+# artifacts/grounding/recalibration-2026-09.md; ``LM_GROUNDING_MIN_CONTAINMENT``
+# overrides it at import). The June value 0.25 was the point where per-event
+# and whole-corpus IDF agreed on 96.2% of 72,023 recorded pairs
+# (scripts/grounding_calibration.py); the recalibration replaced that
+# agreement argument with a signal/noise one against encoder relatedness.
 RECALL_CREDIT_MIN_CONTAINMENT = DEFAULT_MIN_CONTAINMENT
 
 
@@ -161,6 +209,34 @@ def _recall_credit_policy() -> str:
     return DEFAULT_RECALL_CREDIT_POLICY
 
 
+def _lookup_credit_policy() -> str:
+    """Active lookup-credit policy; an unknown value falls back to the default."""
+
+    policy = os.environ.get("LM_LOOKUP_CREDIT_POLICY", "").strip().lower()
+    if policy in LOOKUP_CREDIT_POLICIES:
+        return policy
+    return DEFAULT_LOOKUP_CREDIT_POLICY
+
+
+def _lookup_credit_window() -> timedelta:
+    """How far back a lookup may reach for its delivering event.
+
+    ``LM_LOOKUP_CREDIT_WINDOW_SECONDS``; anything unparsable or not positive
+    falls back to the default rather than widening or closing the window.
+    """
+
+    raw = os.environ.get("LM_LOOKUP_CREDIT_WINDOW_SECONDS", "").strip()
+    seconds = DEFAULT_LOOKUP_CREDIT_WINDOW_SECONDS
+    if raw:
+        try:
+            parsed = int(raw)
+        except ValueError:
+            parsed = 0
+        if parsed > 0:
+            seconds = parsed
+    return timedelta(seconds=seconds)
+
+
 def ungrounded_negative_signals(result: Any, signal: float) -> dict[str, float]:
     """Damped per-channel blame for a delivered result the trace never used.
 
@@ -226,10 +302,12 @@ class ImplicitRecallFeedback:
     events: list[RecallEvent]
     linked_node_ids: list[str]
     feedback_applied: bool
-    #: Results whose content the consuming trace actually grounded. Always a
-    #: subset of ``linked_node_ids``: linkage stays exhaustive for provenance
-    #: and graph traversal, only *reinforcement* is gated. Empty when
-    #: reinforcement was skipped or the policy is ``all``.
+    #: Results this consumption reinforced: those whose content the consuming
+    #: trace actually grounded (every delivered result under policy ``all``),
+    #: minus pairs whose credit a same-session lookup had already claimed in
+    #: the recall credit ledger. Always a subset of ``linked_node_ids``:
+    #: linkage stays exhaustive for provenance and graph traversal, only
+    #: *reinforcement* is gated. Empty when reinforcement was skipped.
     grounded_node_ids: list[str] = field(default_factory=list)
     #: Query anchors created or reinforced by this consumption, deduplicated —
     #: one per consumed event that grounded at least one result. Empty when
@@ -343,6 +421,15 @@ def apply_pending_recall_feedback(
         # Per event, not accumulated across the batch: an anchor's edges may
         # only carry the results *its own* query earned.
         event_grounded: list[str] = []
+        # Pairs a same-session lookup already credited. Read once per event,
+        # and only where it can matter: under ``grounded_negative`` an
+        # ungrounded-but-looked-up result is not blamed, because the ledger
+        # says it was used. Grounded results claim their own row below.
+        already_credited: set[str] = (
+            store.credited_node_ids(event.id)
+            if reinforce_results and policy == "grounded_negative"
+            else set()
+        )
         # Resolve every result once: linkage needs the node, and grounding
         # needs its content. One get_node per result, as before.
         resolved: list[tuple[int, dict[str, Any], Node]] = []
@@ -394,12 +481,20 @@ def apply_pending_recall_feedback(
 
             verdict = verdicts.get(node_id)
             content_grounded = verdict is not None and verdict.grounded
-            if content_grounded:
-                event_grounded.append(node_id)
             grounded = policy == "all" or content_grounded
-            if grounded and node_id not in grounded_node_ids:
-                grounded_node_ids.append(node_id)
-            if not grounded and policy != "grounded_negative":
+            if grounded:
+                # Claim the pair before crediting it. False means a lookup
+                # in this session already spent this credit: no second
+                # reinforcement, no second anchor edge. Linkage above stays.
+                if not store.claim_recall_credit(
+                    event.id, node_id, basis="grounded", source_id=trace.id
+                ):
+                    continue
+                if content_grounded:
+                    event_grounded.append(node_id)
+                if node_id not in grounded_node_ids:
+                    grounded_node_ids.append(node_id)
+            elif policy != "grounded_negative" or node_id in already_credited:
                 continue
 
             synthetic_result = SimpleNamespace(
@@ -447,6 +542,145 @@ def apply_pending_recall_feedback(
         grounded_node_ids=grounded_node_ids,
         anchor_ids=anchor_ids,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class LookupCredit:
+    """What one ``memory_lookup`` id-fetch was credited for."""
+
+    lookup_event_id: str
+    #: ``(recall_event_id, node_id)`` pairs this lookup claimed and reinforced,
+    #: in request order. Empty under policy ``off``, without a transport
+    #: identity, and when every requested node was undelivered, out of the
+    #: window, or already credited.
+    credited: list[tuple[str, str]] = field(default_factory=list)
+    #: Query anchors created or reinforced, deduplicated; empty when nothing
+    #: was credited or the anchor write failed (logged, never raised).
+    anchor_ids: list[str] = field(default_factory=list)
+
+
+def apply_lookup_credit(
+    store: MemoryStore,
+    lookup_event_id: str,
+    node_ids: Iterable[str],
+    transport_session_id: str | None,
+    occurred_at: str | datetime,
+) -> LookupCredit:
+    """Credit a same-session id-fetch of delivered nodes as usage. Never raises.
+
+    For each requested node id, the delivering event is the *newest*
+    ``recall_events`` row stamped with the same ``transport_session_id`` whose
+    ``created_at`` is not later than the lookup and not older than the window
+    (``_lookup_credit_window``) and whose recorded results name that node.
+    Instants are compared as parsed datetimes at second precision — recall
+    events are stamped to the second, lookups carry microseconds, and a
+    lookup in the same second as the delivery is after it, not before.
+
+    A hit claims the ledger row (``basis='lookup'``); a pair already credited
+    by an earlier grounding or lookup is skipped. A new claim is credited
+    exactly as a grounded result is: ``apply_retrieval_feedback`` with the
+    event's recorded per-channel scores for that result, ``useful=True``,
+    ``signal = max(0.2, 1/(rank+1))`` at the result's delivered rank, in the
+    event's scope; then one anchor per credited event with edges to the
+    looked-up nodes only.
+
+    Policy ``off`` or a missing transport identity returns before any read.
+    Any failure is logged and swallowed, as an anchor write's is: a credit is
+    derived from the lookup and must never fail it. Because the row is
+    claimed before the credit is applied, a failure between the two leaves
+    the pair claimed and uncredited — under-crediting, the conservative
+    direction (the attestation ledger's rule).
+    """
+
+    outcome = LookupCredit(lookup_event_id=str(lookup_event_id))
+    if _lookup_credit_policy() == "off" or not transport_session_id:
+        return outcome
+    requested: list[str] = []
+    for candidate in node_ids:
+        text = str(candidate or "").strip()
+        if text and text not in requested:
+            requested.append(text)
+    if not requested:
+        return outcome
+
+    try:
+        lookup_at = _lookup_instant(occurred_at)
+        if lookup_at is None:
+            _LOG.warning(
+                "lookup credit skipped for %s: unparsable instant %r",
+                lookup_event_id,
+                occurred_at,
+            )
+            return outcome
+        earliest = lookup_at - _lookup_credit_window()
+
+        # Newest first, so the first event naming a node is its newest
+        # delivery; each node is credited against at most one event.
+        hits: list[tuple[RecallEvent, int, dict[str, Any], str]] = []
+        pending = list(requested)
+        for event in store.recall_events_for_transport(
+            str(transport_session_id), limit=_LOOKUP_CREDIT_EVENT_LIMIT
+        ):
+            if not pending:
+                break
+            created_at = _lookup_instant(event.created_at)
+            if created_at is None or created_at > lookup_at or created_at < earliest:
+                continue
+            for rank, result in enumerate(event.results):
+                node_id = str(result.get("node_id") or "")
+                if node_id in pending:
+                    pending.remove(node_id)
+                    hits.append((event, rank, result, node_id))
+
+        anchor_work: dict[str, tuple[RecallEvent, list[str]]] = {}
+        for event, rank, result, node_id in hits:
+            if not store.claim_recall_credit(
+                event.id, node_id, basis="lookup", source_id=str(lookup_event_id)
+            ):
+                continue
+            apply_retrieval_feedback(
+                store,
+                SimpleNamespace(
+                    node_id=node_id,
+                    bm25_score=float(result.get("bm25_score", 0.0) or 0.0),
+                    vector_score=float(result.get("vector_score", 0.0) or 0.0),
+                    graph_score=float(result.get("graph_score", 0.0) or 0.0),
+                ),
+                useful=True,
+                signal=max(0.2, 1.0 / (rank + 1)),
+                scope=event.scope,
+            )
+            outcome.credited.append((event.id, node_id))
+            anchor_work.setdefault(event.id, (event, []))[1].append(node_id)
+
+        if anchor_work:
+            outcome.anchor_ids.extend(
+                _reinforce_query_anchors(
+                    store,
+                    [(event, tuple(targets)) for event, targets in anchor_work.values()],
+                )
+            )
+    except Exception:
+        _LOG.warning(
+            "lookup credit failed for lookup event %s (%d requested id(s))",
+            lookup_event_id,
+            len(requested),
+            exc_info=True,
+        )
+    return outcome
+
+
+def _lookup_instant(value: str | datetime | Any) -> datetime | None:
+    """A UTC instant at second precision for the lookup-credit join."""
+
+    if isinstance(value, datetime):
+        parsed = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        parsed = parsed.astimezone(UTC)
+    else:
+        parsed = parse_timestamp(value)
+    if parsed is None:
+        return None
+    return parsed.replace(microsecond=0)
 
 
 def _reinforce_query_anchors(

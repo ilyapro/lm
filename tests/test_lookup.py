@@ -430,15 +430,27 @@ def test_memory_lookup_id_fetch_records_the_requested_ids(
     assert len({event["lookup_event_id"] for event in _lookup_events(store)}) == 2
 
 
-def test_memory_lookup_id_fetch_leaves_the_node_untouched(tmp_path: Path) -> None:
+def test_memory_lookup_id_fetch_leaves_the_node_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The regression this whole signal exists to avoid feeding.
 
     ``access_count`` and ``last_accessed`` are what the map's own
     ``_was_followed`` probe and the usefulness score read. If a lookup bumped
     them, the signal would certify itself and the hub nodes it is meant to
     demote would be immortal by construction.
+
+    Since the lookup-credit work a same-transport fetch of a node an earlier
+    recall *delivered* does move ``usefulness_score`` (that is the usage
+    signal; tests/test_lookup_credit.py owns it), so this test states the
+    invariant honestly: with the transport identity stamped, a lookup with no
+    prior delivery touches nothing under every policy; under
+    ``LM_LOOKUP_CREDIT_POLICY=off`` even a delivered node stays untouched;
+    and under the default the delivered node is credited while its access
+    counters still never move.
     """
 
+    monkeypatch.setattr(server_module, "_transport_session_id", lambda: "agent-connection")
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     store = mcp.memory_store
     remembered = mcp.tools["memory_remember"]("untouched by reading", {"scope": "project:pure"})
@@ -454,6 +466,7 @@ def test_memory_lookup_id_fetch_leaves_the_node_untouched(tmp_path: Path) -> Non
         ).fetchone()
         return dict(row)
 
+    # --- No prior delivery: untouched under the default policy ------------
     before = snapshot()
     before_events = len(store.list_recall_events())
 
@@ -468,6 +481,30 @@ def test_memory_lookup_id_fetch_leaves_the_node_untouched(tmp_path: Path) -> Non
     ).fetchone()[0] == 0
     # ...and the lookups themselves were recorded all the same.
     assert len(_lookup_events(store)) == 5
+
+    # --- Delivered on this transport, policy off: still untouched ----------
+    recalled = mcp.tools["memory_recall"]("untouched reading", scope="project:pure")
+    assert [result["node"]["id"] for result in recalled["results"]] == [target_id]
+    delivered = snapshot()
+    assert delivered["access_count"] == before["access_count"] + 1, "the recall, not a lookup"
+
+    monkeypatch.setenv("LM_LOOKUP_CREDIT_POLICY", "off")
+    for _ in range(5):
+        mcp.tools["memory_lookup"](node_id=target_id)
+    assert snapshot() == delivered
+    assert len(_lookup_events(store)) == 10
+
+    # --- Delivered on this transport, default policy: credited once, and
+    # only usefulness moves; the access counters stay a recall's alone.
+    monkeypatch.delenv("LM_LOOKUP_CREDIT_POLICY")
+    for _ in range(5):
+        mcp.tools["memory_lookup"](node_id=target_id)
+    credited = snapshot()
+    assert credited["usefulness_score"] > delivered["usefulness_score"]
+    assert credited["access_count"] == delivered["access_count"]
+    assert credited["last_accessed"] == delivered["last_accessed"]
+    assert len(store.list_recall_events()) == before_events + 1
+    assert len(_lookup_events(store)) == 15
 
 
 def test_memory_lookup_records_nothing_off_the_id_fetch_path(tmp_path: Path) -> None:

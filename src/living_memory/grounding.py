@@ -22,25 +22,86 @@ Corpus for the IDF differs by caller and that difference is deliberate:
 * The live loop only holds the consuming trace and the results of the event
   being consumed, so it builds a per-event index from exactly those documents.
 
-Measured on the 2026-08-17 snapshot (72,023 result/trace pairs over 9,069
-consumed events, ``scripts/grounding_calibration.py``): per-event IDF
-containment correlates with global-corpus IDF containment at Pearson 0.984,
-and the two agree on the >= 0.25 grounded/not-grounded decision for 96.2% of
-pairs. The shared default threshold therefore stays at the replay value; see
-``artifacts/grounding/calibration.json`` for the threshold sweep.
+The threshold. ``CALIBRATED_MIN_CONTAINMENT`` is 0.22, adopted in September
+2026 (``scripts/grounding_recalibration.py``,
+``artifacts/grounding/recalibration-2026-09.md``) on the closed recall events
+of the 2026-09-07 sfx and alt snapshots under the Cyrillic-stemming tokenizer.
+The criterion, fixed before the sweep, uses the production encoder's cosine
+between the delivered node and the closing trace as a reference the lexical
+measure shares nothing with: adopt the lowest threshold at which, pooled and
+on each host and at two relatedness cuts (0.5/0.3 and 0.6/0.4), at most 5% of
+*unrelated* result/trace pairs ground and *related* pairs ground at least five
+times as often. 0.15 grounds 8-17% of unrelated pairs, 0.20 and 0.21 still
+exceed 5% on alt, 0.22 is the first value that clears everywhere; it lifts
+closures that reinforce at least one node from 28.4% to 40.5% pooled (sfx
+17.8% -> 24.7%, alt 39.0% -> 56.3%). The June value 0.25 was chosen on the
+2026-08-17 snapshot for the agreement between this per-event view and the
+replay's whole-corpus view (96.2% of 72,023 pairs,
+``scripts/grounding_calibration.py``, ``artifacts/grounding/calibration.md``);
+that agreement is re-reported at the new value in the recalibration artifact.
+
+``LM_GROUNDING_MIN_CONTAINMENT`` overrides the constant for one process. It is
+read once, at import, because every consumer binds ``DEFAULT_MIN_CONTAINMENT``
+by name at its own import; a value that is not a finite number in ``(0, 1]``
+is logged and ignored.
 """
 
 from __future__ import annotations
 
+import logging
 import math
+import os
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from living_memory.embeddings import tokenize
 
-#: Containment at or above which a result counts as used by the trace.
-DEFAULT_MIN_CONTAINMENT = 0.25
+_LOG = logging.getLogger(__name__)
+
+#: Environment variable that overrides the shipped threshold at import time.
+MIN_CONTAINMENT_ENV_VAR = "LM_GROUNDING_MIN_CONTAINMENT"
+
+#: The calibrated threshold; see ``artifacts/grounding/recalibration-2026-09.md``.
+CALIBRATED_MIN_CONTAINMENT = 0.22
+
+
+def resolve_min_containment(
+    raw: str | None, *, fallback: float = CALIBRATED_MIN_CONTAINMENT
+) -> float:
+    """Threshold from an environment value, or ``fallback`` when it is unusable.
+
+    Accepts a decimal in ``(0, 1]``. Unset or blank means "not overridden";
+    anything that does not parse as a finite number in that range is logged and
+    ignored, because a credit gate that silently opened to 0 or closed to 1
+    on a typo would look exactly like the signal changing.
+    """
+
+    if raw is None:
+        return fallback
+    text = raw.strip()
+    if not text:
+        return fallback
+    try:
+        value = float(text)
+    except ValueError:
+        _LOG.warning(
+            "%s=%r is not a number; using %s", MIN_CONTAINMENT_ENV_VAR, raw, fallback
+        )
+        return fallback
+    if not math.isfinite(value) or not 0.0 < value <= 1.0:
+        _LOG.warning(
+            "%s=%r is outside (0, 1]; using %s", MIN_CONTAINMENT_ENV_VAR, raw, fallback
+        )
+        return fallback
+    return value
+
+
+#: Containment at or above which a result counts as used by the trace. Read
+#: once, at import: every caller (``feedback``, ``replay``, ``attestation``)
+#: binds this name at its own import, so the override must be in the process
+#: environment before ``living_memory`` is first imported.
+DEFAULT_MIN_CONTAINMENT = resolve_min_containment(os.environ.get(MIN_CONTAINMENT_ENV_VAR))
 
 
 def token_set(text: str) -> frozenset[str]:

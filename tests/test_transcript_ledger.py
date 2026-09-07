@@ -36,7 +36,11 @@ import types
 import pytest
 
 from living_memory.server import create_mcp_server
-from living_memory.storage import MemoryStore, TRANSCRIPT_GROUNDING_TABLE
+from living_memory.storage import (
+    MemoryStore,
+    RECALL_CREDIT_LEDGER_TABLE,
+    TRANSCRIPT_GROUNDING_TABLE,
+)
 from living_memory.transcript_ledger import (
     TranscriptLedgerError,
     ensure_ledger_table,
@@ -47,8 +51,12 @@ from living_memory.transcript_ledger import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LEDGER_INDEX = "idx_transcript_grounding_node_graded"
-#: The only objects this release may add to a database.
-NEW_OBJECTS = {TRANSCRIPT_GROUNDING_TABLE, LEDGER_INDEX}
+#: The only objects this release may add to a database: the transcript
+#: grounding ledger and its index, and the recall credit ledger
+#: (feedback-usage-signal), which is created the same way — on every open,
+#: additive, no SCHEMA_VERSION bump — and whose UNIQUE constraint leaves no
+#: named index in sqlite_master (autoindexes carry NULL sql).
+NEW_OBJECTS = {TRANSCRIPT_GROUNDING_TABLE, LEDGER_INDEX, RECALL_CREDIT_LEDGER_TABLE}
 
 SCOPE = "project:ledger"
 AMBIENT = {"agent": "seeder", "task": "ledger-fixture", "session_id": "seed-session"}

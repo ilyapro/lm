@@ -15,8 +15,16 @@ def test_unicode_tokenizer_keeps_non_latin_terms_and_maps_known_aliases() -> Non
     assert "deployment" in tokens
     assert "failure" in tokens
     assert "database" in tokens
-    assert "пользовательский" in tokens
+    # Cyrillic terms survive as one token per lemma: the Russian stemmer folds
+    # "пользовательский"/"пользовательские"/"пользовательского" onto one stem
+    # and leaves "индекс" (no inflectional ending) as it is. The surface form
+    # is what tokenize returned before Cyrillic stemming existed and is still
+    # what LM_TOKENIZE_CYRILLIC_STEM=off returns (tests/test_tokenize_cyrillic.py).
     assert "индекс" in tokens
+    assert "пользовательск" in tokens
+    assert tokens[2:4] == ["пользовательск", "индекс"]
+    assert tokenize("пользовательские индексы") == tokens[2:4]
+    assert tokenize("пользовательского индекса") == tokens[2:4]
 
 
 def test_cross_language_embedding_similarity_for_deployment_failure() -> None:

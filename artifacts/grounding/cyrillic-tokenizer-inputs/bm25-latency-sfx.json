@@ -1,0 +1,129 @@
+{
+  "snapshot": "/home/sfx/.cache/living-memory-harness/usage-signal/sfx-2026-09-07.sqlite3",
+  "since": "2026-08-01",
+  "queries": 400,
+  "rounds": 3,
+  "max_results": 5,
+  "arms": [
+    {
+      "switch": "off",
+      "queries": 400,
+      "rounds": 3,
+      "per_query": {
+        "p50_ms": 22.238,
+        "p90_ms": 34.845,
+        "p95_ms": 37.071,
+        "p99_ms": 41.919,
+        "max_ms": 60.151,
+        "mean_ms": 21.15
+      },
+      "per_search_content_call": {
+        "p50_ms": 11.588,
+        "p90_ms": 17.833,
+        "p95_ms": 19.092,
+        "p99_ms": 22.32,
+        "max_ms": 36.916,
+        "mean_ms": 11.339
+      },
+      "prefix_terms_per_query": {
+        "mean": 0.0,
+        "max": 0
+      },
+      "fts_terms_per_query": {
+        "mean": 42.9,
+        "max": 103
+      },
+      "results_per_query_mean": 73.54
+    },
+    {
+      "switch": "on",
+      "queries": 400,
+      "rounds": 3,
+      "per_query": {
+        "p50_ms": 22.924,
+        "p90_ms": 35.544,
+        "p95_ms": 37.619,
+        "p99_ms": 42.647,
+        "max_ms": 68.992,
+        "mean_ms": 21.867
+      },
+      "per_search_content_call": {
+        "p50_ms": 11.965,
+        "p90_ms": 18.331,
+        "p95_ms": 19.548,
+        "p99_ms": 22.926,
+        "max_ms": 39.155,
+        "mean_ms": 11.724
+      },
+      "prefix_terms_per_query": {
+        "mean": 8.092,
+        "max": 20
+      },
+      "fts_terms_per_query": {
+        "mean": 42.62,
+        "max": 102
+      },
+      "results_per_query_mean": 73.957
+    },
+    {
+      "switch": "off",
+      "queries": 400,
+      "rounds": 3,
+      "per_query": {
+        "p50_ms": 22.275,
+        "p90_ms": 34.374,
+        "p95_ms": 36.997,
+        "p99_ms": 42.303,
+        "max_ms": 54.269,
+        "mean_ms": 21.133
+      },
+      "per_search_content_call": {
+        "p50_ms": 11.658,
+        "p90_ms": 17.797,
+        "p95_ms": 19.108,
+        "p99_ms": 22.694,
+        "max_ms": 32.826,
+        "mean_ms": 11.331
+      },
+      "prefix_terms_per_query": {
+        "mean": 0.0,
+        "max": 0
+      },
+      "fts_terms_per_query": {
+        "mean": 42.9,
+        "max": 103
+      },
+      "results_per_query_mean": 73.54
+    },
+    {
+      "switch": "on",
+      "queries": 400,
+      "rounds": 3,
+      "per_query": {
+        "p50_ms": 23.021,
+        "p90_ms": 36.259,
+        "p95_ms": 38.996,
+        "p99_ms": 43.08,
+        "max_ms": 55.271,
+        "mean_ms": 21.932
+      },
+      "per_search_content_call": {
+        "p50_ms": 11.886,
+        "p90_ms": 18.538,
+        "p95_ms": 19.847,
+        "p99_ms": 23.127,
+        "max_ms": 29.938,
+        "mean_ms": 11.759
+      },
+      "prefix_terms_per_query": {
+        "mean": 8.092,
+        "max": 20
+      },
+      "fts_terms_per_query": {
+        "mean": 42.62,
+        "max": 102
+      },
+      "results_per_query_mean": 73.957
+    }
+  ]
+}

@@ -253,6 +253,318 @@ _SYNONYMS = {
 
 _TOKEN_RE = re.compile(r"\w+", flags=re.UNICODE)
 
+# ---------------------------------------------------------------------------
+# Russian light stemmer (Snowball-Russian endings) for Cyrillic tokens.
+# ---------------------------------------------------------------------------
+#
+# ``_stem`` used to suffix-strip ASCII tokens only, so a Cyrillic word was
+# matched purely as its surface form: "миграция" / "миграцию" / "миграций"
+# were three unrelated tokens for IDF containment, schema-trigger overlap and
+# the BM25 query expansion. The stemmer below folds the inflections of one
+# lemma onto one token. It is the Snowball Russian algorithm (perfective
+# gerund, adjectival = adjective [+ participle], reflexive, verb, noun endings
+# searched in RV; trailing "и"; derivational "-ость/-ост" in R2; superlative
+# "-ейш/-айш"-style endings, "нн" undoubling and a trailing "ь"), with two
+# guards that keep short words intact: tokens of three characters or fewer
+# are never stemmed (the same floor the ASCII branch has) and a stem shorter
+# than ``_RU_MIN_STEM`` characters is rejected in favour of the surface form.
+#
+# Only tokens made entirely of Russian letters are eligible. Anything else --
+# Latin, digits, mixed-script identifiers, other Cyrillic alphabets -- takes
+# exactly the path it took before, which is what keeps every non-Cyrillic
+# input byte-identical to the previous tokenizer (pinned by
+# tests/test_tokenize_cyrillic.py against a fixture generated from it).
+#
+# The switch ``LM_TOKENIZE_CYRILLIC_STEM`` (``on`` by default; ``off``, ``0``,
+# ``false``, ``no`` or ``disabled`` restore the surface-form behaviour) is
+# read once per process and cached; ``reset_cyrillic_stem_cache`` re-reads it
+# so tests and benchmarks can flip it.
+#
+# The BM25 index (``nodes_fts``) is FTS5 ``unicode61`` and does not stem, so a
+# stem such as "миграц" is never an index token. ``cyrillic_prefix_terms``
+# turns the Russian content words of a query into FTS5 prefix terms
+# (``миграц*``) that ``retrieval._expanded_query`` appends and
+# ``storage._fts_query`` emits as ``"миграц"*``; the index itself is untouched.
+
+CYRILLIC_STEM_ENV_VAR = "LM_TOKENIZE_CYRILLIC_STEM"
+_CYRILLIC_STEM_OFF_VALUES = frozenset({"off", "0", "false", "no", "disabled"})
+_CYRILLIC_STEM_ENABLED: bool | None = None
+
+_RU_VOWELS = frozenset("аеиоуыэюя")
+_RU_LETTERS = frozenset("абвгдежзийклмнопрстуфхцчшщъыьэюяё")
+_RU_MIN_STEM = 3
+#: Shortest stem that may become an FTS5 prefix term. A three-letter Cyrillic
+#: prefix ("рев*" from "ревью", "цел*" from "цели", "дан*" from "данных")
+#: covers a wide slice of the vocabulary and, measured on the retrieval
+#: harness, pushed relevant nodes down more often than it lifted them; four
+#: letters keeps the prefix specific to the lemma. A word whose stem is
+#: shorter keeps matching exactly as before (its surface form stays in the
+#: raw query).
+_RU_MIN_PREFIX = 4
+
+
+def _ru_endings(*groups: tuple[tuple[str, ...], bool]) -> tuple[tuple[str, bool], ...]:
+    """Endings as ``(suffix, needs_a_or_ya)`` pairs, longest first.
+
+    Snowball's ``among`` takes the longest suffix that fits inside the region
+    and then applies that suffix's condition; a failed condition fails the
+    whole step rather than falling back to a shorter suffix. Sorting once here
+    lets ``_ru_longest`` reproduce that with a single scan.
+    """
+
+    flat = [(suffix, guarded) for suffixes, guarded in groups for suffix in suffixes]
+    return tuple(sorted(flat, key=lambda item: -len(item[0])))
+
+
+_RU_PERFECTIVE_GERUND = _ru_endings(
+    (("в", "вши", "вшись"), True),
+    (("ив", "ивши", "ившись", "ыв", "ывши", "ывшись"), False),
+)
+_RU_ADJECTIVE = _ru_endings(
+    (
+        (
+            "ее", "ие", "ые", "ое", "ими", "ыми", "ей", "ий", "ый", "ой", "ем", "им",
+            "ым", "ом", "его", "ого", "ему", "ому", "их", "ых", "ую", "юю", "ая", "яя",
+            "ою", "ею",
+        ),
+        False,
+    ),
+)
+_RU_PARTICIPLE = _ru_endings(
+    (("ем", "нн", "вш", "ющ", "щ"), True),
+    (("ивш", "ывш", "ующ"), False),
+)
+_RU_REFLEXIVE = _ru_endings((("ся", "сь"), False))
+_RU_VERB = _ru_endings(
+    (
+        (
+            "ла", "на", "ете", "йте", "ли", "й", "л", "ем", "н", "ло", "но", "ет", "ют",
+            "ны", "ть", "ешь", "нно",
+        ),
+        True,
+    ),
+    (
+        (
+            "ила", "ыла", "ена", "ейте", "уйте", "ите", "или", "ыли", "ей", "уй", "ил",
+            "ыл", "им", "ым", "ен", "ило", "ыло", "ено", "ят", "ует", "уют", "ит", "ыт",
+            "ены", "ить", "ыть", "ишь", "ую", "ю",
+        ),
+        False,
+    ),
+)
+_RU_NOUN = _ru_endings(
+    (
+        (
+            "а", "ев", "ов", "ие", "ье", "е", "иями", "ями", "ами", "еи", "ии", "и", "ией",
+            "ей", "ой", "ий", "й", "иям", "ям", "ием", "ем", "ам", "ом", "о", "у", "ах",
+            "иях", "ях", "ы", "ь", "ию", "ью", "ю", "ия", "ья", "я",
+        ),
+        False,
+    ),
+)
+_RU_SUPERLATIVE = _ru_endings((("ейш", "ейше", "айш", "айше"), False))
+_RU_DERIVATIONAL = _ru_endings((("ост", "ость"), False))
+
+
+def cyrillic_stem_enabled() -> bool:
+    """Whether Cyrillic tokens are stemmed (``LM_TOKENIZE_CYRILLIC_STEM``)."""
+
+    global _CYRILLIC_STEM_ENABLED
+    if _CYRILLIC_STEM_ENABLED is None:
+        raw = os.environ.get(CYRILLIC_STEM_ENV_VAR, "on").strip().lower()
+        _CYRILLIC_STEM_ENABLED = raw not in _CYRILLIC_STEM_OFF_VALUES
+    return _CYRILLIC_STEM_ENABLED
+
+
+def reset_cyrillic_stem_cache() -> None:
+    """Forget the cached ``LM_TOKENIZE_CYRILLIC_STEM`` reading."""
+
+    global _CYRILLIC_STEM_ENABLED
+    _CYRILLIC_STEM_ENABLED = None
+
+
+def _is_russian_token(token: str) -> bool:
+    return bool(token) and all(char in _RU_LETTERS for char in token)
+
+
+def _ru_regions(word: str) -> tuple[int, int]:
+    """``(RV, R2)`` start offsets in the Snowball sense.
+
+    RV is the region after the first vowel; R1 the region after the first
+    non-vowel that follows a vowel; R2 the same construction inside R1. R1 is
+    only needed to derive R2. A region that does not exist starts at the end
+    of the word, so nothing can be matched inside it.
+    """
+
+    length = len(word)
+    rv = length
+    for index, char in enumerate(word):
+        if char in _RU_VOWELS:
+            rv = index + 1
+            break
+    r1 = length
+    for index in range(1, length):
+        if word[index] not in _RU_VOWELS and word[index - 1] in _RU_VOWELS:
+            r1 = index + 1
+            break
+    r2 = length
+    for index in range(r1 + 1, length):
+        if word[index] not in _RU_VOWELS and word[index - 1] in _RU_VOWELS:
+            r2 = index + 1
+            break
+    return rv, r2
+
+
+def _ru_longest(word: str, endings: tuple[tuple[str, bool], ...], region: int) -> tuple[str, bool] | None:
+    """Longest ending that lies entirely inside ``word[region:]``."""
+
+    for suffix, guarded in endings:
+        if word.endswith(suffix) and len(word) - len(suffix) >= region:
+            return suffix, guarded
+    return None
+
+
+def _ru_strip(word: str, endings: tuple[tuple[str, bool], ...], region: int) -> str | None:
+    """Remove the longest fitting ending; ``None`` when the step fails.
+
+    A guarded ending (Snowball's group 1) must be preceded by "а" or "я" and
+    that letter must itself lie inside the region; otherwise the step fails
+    without trying a shorter ending, exactly like the ``among`` it mirrors.
+    """
+
+    found = _ru_longest(word, endings, region)
+    if found is None:
+        return None
+    suffix, guarded = found
+    cut = len(word) - len(suffix)
+    if guarded and (cut - 1 < region or word[cut - 1] not in ("а", "я")):
+        return None
+    return word[:cut]
+
+
+def _stem_russian(token: str) -> str:
+    """Snowball Russian stem of a lowercase, all-Cyrillic token."""
+
+    word = token.replace("ё", "е")
+    rv, r2 = _ru_regions(word)
+    if rv >= len(word):
+        return token
+
+    stripped = _ru_strip(word, _RU_PERFECTIVE_GERUND, rv)
+    if stripped is not None:
+        word = stripped
+    else:
+        stripped = _ru_strip(word, _RU_REFLEXIVE, rv)
+        if stripped is not None:
+            word = stripped
+        stripped = _ru_strip(word, _RU_ADJECTIVE, rv)
+        if stripped is not None:
+            word = stripped
+            stripped = _ru_strip(word, _RU_PARTICIPLE, rv)
+            if stripped is not None:
+                word = stripped
+        else:
+            stripped = _ru_strip(word, _RU_VERB, rv)
+            if stripped is None:
+                stripped = _ru_strip(word, _RU_NOUN, rv)
+            if stripped is not None:
+                word = stripped
+
+    if word.endswith("и") and len(word) - 1 >= rv:
+        word = word[:-1]
+
+    stripped = _ru_strip(word, _RU_DERIVATIONAL, r2)
+    if stripped is not None:
+        word = stripped
+
+    if word.endswith("нн") and len(word) - 1 >= rv:
+        word = word[:-1]
+    else:
+        stripped = _ru_strip(word, _RU_SUPERLATIVE, rv)
+        if stripped is not None:
+            word = stripped
+            if word.endswith("нн") and len(word) - 1 >= rv:
+                word = word[:-1]
+        elif word.endswith("ь") and len(word) - 1 >= rv:
+            word = word[:-1]
+
+    if len(word) < _RU_MIN_STEM:
+        return token
+    return word
+
+
+def _build_cyrillic_stem_synonyms() -> dict[str, str]:
+    """Stem -> canonical token for every Cyrillic ``_SYNONYMS`` key.
+
+    A direct ``_SYNONYMS`` hit still wins (``_canonical_token`` looks the
+    surface form up first), so this only adds the inflections the table does
+    not list: "базой" stems to "баз", the stem of the listed "база"/"базы"/
+    "базе"/"базу", and reaches "database" through this map. A stem two keys
+    disagree about is left unmapped, and keys in ``_CYRILLIC_STEM_SYNONYM_SKIP``
+    are excluded because their stem is a common unrelated word.
+    """
+
+    derived: dict[str, str] = {}
+    conflicts: set[str] = set()
+    for key, value in _SYNONYMS.items():
+        if key in _CYRILLIC_STEM_SYNONYM_SKIP or not _is_russian_token(key):
+            continue
+        stem = _stem_russian(key) if len(key) > 3 else key
+        if stem in _SYNONYMS:
+            continue
+        previous = derived.get(stem)
+        if previous is not None and previous != value:
+            conflicts.add(stem)
+        derived.setdefault(stem, value)
+    for stem in conflicts:
+        derived.pop(stem, None)
+    return derived
+
+
+#: Cyrillic synonym keys whose stem is a common unrelated word: "потому" stems
+#: to "пот", which is also the stem of "потом" ("later"), so a derived
+#: "пот" -> "cause" entry would relabel every "потом".
+_CYRILLIC_STEM_SYNONYM_SKIP = frozenset({"потому"})
+_CYRILLIC_STEM_SYNONYMS = _build_cyrillic_stem_synonyms()
+
+
+def cyrillic_prefix_terms(text: str) -> list[str]:
+    """FTS5 prefix terms (``стем*``) for the Russian content words of ``text``.
+
+    One term per distinct stem, in order of first appearance, for every
+    all-Cyrillic word of more than three letters that is not a stop word and
+    whose stem has at least ``_RU_MIN_PREFIX`` (four) letters. A word spelled with
+    "ё" yields a second term in the original spelling, because ``unicode61``
+    keeps "ё" and "е" distinct while the stemmer folds them. Empty when
+    Cyrillic stemming is off, which leaves the BM25 query exactly as before.
+    """
+
+    if not cyrillic_stem_enabled():
+        return []
+    separated = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+    separated = separated.replace("_", " ").replace("-", " ").replace("/", " ").replace(".", " ")
+    terms: dict[str, None] = {}
+    for raw in _TOKEN_RE.findall(separated.lower()):
+        folded = raw.replace("ё", "е")
+        if len(folded) <= 3 or folded in _STOP_WORDS or not _is_russian_token(folded):
+            continue
+        stem = _stem_russian(folded)
+        if len(stem) < _RU_MIN_PREFIX:
+            continue
+        terms.setdefault(f"{stem}*")
+        if "ё" in raw:
+            spelled = raw[: len(stem)]
+            if spelled != stem:
+                terms.setdefault(f"{spelled}*")
+    return list(terms)
+
+
+def fts_prefix_term_allowed(term: str) -> bool:
+    """Whether ``storage._fts_query`` may emit ``term`` as an FTS5 prefix term."""
+
+    return cyrillic_stem_enabled() and _is_russian_token(term)
+
+
 _HASH_BACKENDS = {"hash", "fallback", "local-hash"}
 _ONLINE_BACKENDS = {"online", "remote", "download", "network"}
 _OFFLINE_ENV_VARS = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
@@ -584,15 +896,22 @@ def _canonical_token(token: str) -> str:
     if direct is not None:
         return direct
     stemmed = _stem(token)
-    return _SYNONYMS.get(stemmed, stemmed)
+    canonical = _SYNONYMS.get(stemmed)
+    if canonical is None and cyrillic_stem_enabled():
+        canonical = _CYRILLIC_STEM_SYNONYMS.get(stemmed)
+    return stemmed if canonical is None else canonical
 
 
 def _stem(token: str) -> str:
-    if len(token) <= 3 or not _is_latin_token(token):
+    if len(token) <= 3:
         return token
-    for suffix in ("ingly", "edly", "ing", "ed", "es", "s"):
-        if token.endswith(suffix) and len(token) - len(suffix) >= 3:
-            return token[: -len(suffix)]
+    if _is_latin_token(token):
+        for suffix in ("ingly", "edly", "ing", "ed", "es", "s"):
+            if token.endswith(suffix) and len(token) - len(suffix) >= 3:
+                return token[: -len(suffix)]
+        return token
+    if cyrillic_stem_enabled() and _is_russian_token(token):
+        return _stem_russian(token)
     return token
 
 

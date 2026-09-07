@@ -550,7 +550,10 @@ Input:
 **The client submits evidence; the server decides.** The server loads *that
 event's own* result nodes from its own database and recomputes containment with
 `grounding.ground_results(..., min_containment=RECALL_CREDIT_MIN_CONTAINMENT)` —
-the same 0.25 gate the live credit path uses. A `grounded`, `containment` or
+the same gate the live credit path uses (0.22 since the September 2026
+recalibration, `artifacts/grounding/recalibration-2026-09.md`;
+`LM_GROUNDING_MIN_CONTAINMENT` overrides it for a process). A `grounded`,
+`containment` or
 `useful` verdict asserted anywhere in the payload is never read. Grounding runs
 **per evidence item**, and each node keeps its maximum across items.
 
@@ -578,7 +581,7 @@ Output:
   "evidence_sha256": "digest over the canonical items",
   "evidence_items": 12,
   "evidence_chars": 6104,
-  "min_containment": 0.25,
+  "min_containment": 0.22,
   "results": [
     { "node_id": "…", "rank": 0, "containment": 0.41,
       "grounded": true, "evidence_index": 3 }
@@ -643,6 +646,19 @@ flag set. A `scope` passed alongside ids verifies instead of filtering:
 mismatching nodes stay in `results` and are reported under
 `scope_mismatches`. Combining ids with context filters is rejected with an
 `error`.
+
+An id fetch is also a usage signal. The request is recorded in
+`recall_lookup_events` (every id asked for, resolved or not; no access counter
+moves), and when a `memory_recall` on the same transport session delivered
+one of those ids within `LM_LOOKUP_CREDIT_WINDOW_SECONDS` (24 h), that node is
+credited as if the closing trace had grounded it — usefulness, the event
+scope's retrieval weights, one query-anchor edge — with the delivered rank's
+signal. `recall_credit_ledger` holds one row per (recall event, node), so a
+lookup and a later grounded closure credit the pair once, whichever comes
+first; ids the recall never delivered, lookups from another transport, and
+lookups outside the window credit nothing. `LM_LOOKUP_CREDIT_POLICY=off`
+keeps the record and skips the credit. The credit is derived from the lookup
+and never fails it. Measured in `artifacts/grounding/lookup-credit.md`.
 
 ### `memory_consolidate`
 

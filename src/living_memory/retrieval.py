@@ -213,7 +213,12 @@ from math import log2, sqrt
 from typing import Any
 
 from living_memory.edge_derivation import CONTENT_REFERENCE_KIND, DERIVED_FROM_KIND
-from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity, tokenize
+from living_memory.embeddings import (
+    LocalEmbeddingModel,
+    cosine_similarity,
+    cyrillic_prefix_terms,
+    tokenize,
+)
 from living_memory.feedback import FeedbackService, feedback_weighted_score
 from living_memory.models import (
     REJECTED_ALTERNATIVE_KIND,
@@ -1989,10 +1994,26 @@ def _is_causal_query(query: str) -> bool:
 
 
 def _expanded_query(query: str) -> str:
+    """The BM25 query: the raw text plus its normalized tokens and prefix terms.
+
+    The raw query keeps every surface form (``unicode61`` indexes surface
+    forms), ``tokenize`` adds the canonical tokens the synonym table maps to
+    ("миграции" -> "schema"), and :func:`cyrillic_prefix_terms` adds one FTS5
+    prefix term per Russian content word ("миграц*") so that every inflection
+    of the word in the index matches, not just the one spelled in the query.
+    A Cyrillic stem that already has a prefix term is not repeated as an
+    exact term -- the index never holds a bare stem. With
+    ``LM_TOKENIZE_CYRILLIC_STEM=off`` there are no prefix terms and the query
+    is exactly what it was before Cyrillic stemming existed.
+    """
+
     expanded_tokens = tokenize(query)
-    if not expanded_tokens:
+    prefix_terms = cyrillic_prefix_terms(query)
+    if not expanded_tokens and not prefix_terms:
         return query
-    return f"{query} {' '.join(dict.fromkeys(expanded_tokens))}"
+    stems = {term[:-1] for term in prefix_terms}
+    parts = [token for token in expanded_tokens if token not in stems] + prefix_terms
+    return f"{query} {' '.join(dict.fromkeys(parts))}"
 
 
 def _traversal(

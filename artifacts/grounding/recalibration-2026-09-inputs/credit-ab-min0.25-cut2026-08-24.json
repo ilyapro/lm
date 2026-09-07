@@ -1,0 +1,1687 @@
+{
+  "arms": [
+    "proportional",
+    "grounded",
+    "grounded_negative"
+  ],
+  "bootstrap": {
+    "resamples": 2000,
+    "seed": 20260818
+  },
+  "control_labels": [
+    "reconsumed",
+    "usefulness"
+  ],
+  "corpus": {
+    "empty_results": 20,
+    "incomplete_results": 0,
+    "total_events": 62494,
+    "usable_events": 62474
+  },
+  "cutoff": "2026-08-24T00:00:00Z",
+  "db_path": "/home/sfx/.cache/living-memory-harness/usage-signal/sfx-2026-09-07.sqlite3",
+  "final_weights": {
+    "grounded": {
+      "default": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.0
+      },
+      "global": {
+        "bm25": 0.398526,
+        "graph": 0.050324,
+        "learning_rate": 0.05,
+        "vector": 0.55115
+      },
+      "project": {
+        "bm25": 0.7,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.3
+      },
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+        "bm25": 0.619029,
+        "graph": 0.061616,
+        "learning_rate": 0.2,
+        "vector": 0.319355
+      },
+      "project:/root/p/octopus": {
+        "bm25": 0.660496,
+        "graph": 0.021755,
+        "learning_rate": 0.2,
+        "vector": 0.317749
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+        "bm25": 0.686103,
+        "graph": 0.007368,
+        "learning_rate": 0.05,
+        "vector": 0.30653
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+        "bm25": 0.692898,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.307102
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+        "bm25": 0.69584,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.30416
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+        "bm25": 0.679874,
+        "graph": 0.009336,
+        "learning_rate": 0.05,
+        "vector": 0.31079
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+        "bm25": 0.70006,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.29994
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+        "bm25": 0.697258,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.302742
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+        "bm25": 0.697116,
+        "graph": 0.00448,
+        "learning_rate": 0.05,
+        "vector": 0.298404
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+        "bm25": 0.685014,
+        "graph": 0.01939,
+        "learning_rate": 0.2,
+        "vector": 0.295596
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+        "bm25": 0.689422,
+        "graph": 0.00625,
+        "learning_rate": 0.05,
+        "vector": 0.304329
+      },
+      "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+        "bm25": 0.691655,
+        "graph": 0.005255,
+        "learning_rate": 0.05,
+        "vector": 0.30309
+      },
+      "project:/root/p/octopus/.worktrees/goal-landing": {
+        "bm25": 0.693577,
+        "graph": 0.007503,
+        "learning_rate": 0.05,
+        "vector": 0.298919
+      },
+      "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+        "bm25": 0.697844,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.302156
+      },
+      "project:/root/p/octopus/.worktrees/goal-rise": {
+        "bm25": 0.699699,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.300301
+      },
+      "project:2gis": {
+        "bm25": 0.665503,
+        "graph": 0.056002,
+        "learning_rate": 0.1,
+        "vector": 0.278495
+      },
+      "project:DesktopTouchpad": {
+        "bm25": 0.61052,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.33948
+      },
+      "project:ae": {
+        "bm25": 0.299194,
+        "graph": 0.105896,
+        "learning_rate": 0.02,
+        "vector": 0.59491
+      },
+      "project:breakthrough/gemini-flash-contract": {
+        "bm25": 0.617845,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.382155
+      },
+      "project:breakthrough/programming-capability-loop": {
+        "bm25": 0.674577,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.325423
+      },
+      "project:flamp4": {
+        "bm25": 0.627911,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.322089
+      },
+      "project:gas-stations-ui": {
+        "bm25": 0.60033,
+        "graph": 0.055855,
+        "learning_rate": 0.05,
+        "vector": 0.343816
+      },
+      "project:goal-tree": {
+        "bm25": 0.639404,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.310596
+      },
+      "project:id-2gis-com": {
+        "bm25": 0.635015,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.314985
+      },
+      "project:ilyapro/ae": {
+        "bm25": 0.649525,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.300475
+      },
+      "project:living-memory": {
+        "bm25": 0.581674,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.368326
+      },
+      "project:lm": {
+        "bm25": 0.294434,
+        "graph": 0.051765,
+        "learning_rate": 0.02,
+        "vector": 0.653801
+      },
+      "project:mm": {
+        "bm25": 0.356602,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.593398
+      },
+      "project:natural-flow/downstream-route-propagation/_critique/review-packet-route-triple": {
+        "bm25": 0.61031,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.33969
+      },
+      "project:octopus": {
+        "bm25": 0.108176,
+        "graph": 0.104056,
+        "learning_rate": 0.02,
+        "vector": 0.787767
+      },
+      "project:online": {
+        "bm25": 0.244029,
+        "graph": 0.061202,
+        "learning_rate": 0.02,
+        "vector": 0.694769
+      },
+      "project:online-beautyshare": {
+        "bm25": 0.582519,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.367481
+      },
+      "project:online-sitemaps": {
+        "bm25": 0.644372,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.305628
+      },
+      "project:rise/gemini-comparator-execution": {
+        "bm25": 0.702383,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.297617
+      },
+      "project:sfx": {
+        "bm25": 0.541389,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.408611
+      },
+      "project:x": {
+        "bm25": 0.130312,
+        "graph": 0.075981,
+        "learning_rate": 0.02,
+        "vector": 0.793707
+      },
+      "session": {
+        "bm25": 0.8,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      }
+    },
+    "grounded_negative": {
+      "default": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.0
+      },
+      "global": {
+        "bm25": 0.1,
+        "graph": 0.7,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      },
+      "project": {
+        "bm25": 0.7,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.3
+      },
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+        "bm25": 0.629039,
+        "graph": 0.051085,
+        "learning_rate": 0.2,
+        "vector": 0.319876
+      },
+      "project:/root/p/lm": {
+        "bm25": 0.664354,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.335646
+      },
+      "project:/root/p/octopus": {
+        "bm25": 0.540453,
+        "graph": 0.010417,
+        "learning_rate": 0.2,
+        "vector": 0.44913
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+        "bm25": 0.694479,
+        "graph": 0.006098,
+        "learning_rate": 0.05,
+        "vector": 0.299423
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough_gemini-flash-contract": {
+        "bm25": 0.699563,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.300437
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+        "bm25": 0.697561,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.302439
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+        "bm25": 0.696963,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.303037
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+        "bm25": 0.685107,
+        "graph": 0.005972,
+        "learning_rate": 0.05,
+        "vector": 0.308921
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+        "bm25": 0.700162,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.299838
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+        "bm25": 0.699818,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.300182
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+        "bm25": 0.718398,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.281602
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+        "bm25": 0.70357,
+        "graph": 0.01939,
+        "learning_rate": 0.2,
+        "vector": 0.27704
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+        "bm25": 0.690753,
+        "graph": 0.006265,
+        "learning_rate": 0.05,
+        "vector": 0.302982
+      },
+      "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+        "bm25": 0.694852,
+        "graph": 0.004368,
+        "learning_rate": 0.05,
+        "vector": 0.30078
+      },
+      "project:/root/p/octopus/.worktrees/goal-landing": {
+        "bm25": 0.697773,
+        "graph": 0.005138,
+        "learning_rate": 0.05,
+        "vector": 0.297089
+      },
+      "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+        "bm25": 0.707504,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.292496
+      },
+      "project:/root/p/octopus/.worktrees/goal-rise": {
+        "bm25": 0.703456,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.296544
+      },
+      "project:2gis": {
+        "bm25": 0.748792,
+        "graph": 0.101208,
+        "learning_rate": 0.1,
+        "vector": 0.15
+      },
+      "project:2gis-seaf-service-online": {
+        "bm25": 0.656273,
+        "graph": 0.054376,
+        "learning_rate": 0.05,
+        "vector": 0.289352
+      },
+      "project:DesktopTouchpad": {
+        "bm25": 0.76202,
+        "graph": 0.08798,
+        "learning_rate": 0.2,
+        "vector": 0.15
+      },
+      "project:ae": {
+        "bm25": 0.1,
+        "graph": 0.75,
+        "learning_rate": 0.02,
+        "vector": 0.15
+      },
+      "project:ae-probe-throwaway": {
+        "bm25": 0.65815,
+        "graph": 0.05081,
+        "learning_rate": 0.05,
+        "vector": 0.29104
+      },
+      "project:benchmark": {
+        "bm25": 0.716637,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.283363
+      },
+      "project:breakthrough/gemini-flash-contract": {
+        "bm25": 0.6296,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.3704
+      },
+      "project:breakthrough/programming-capability-loop": {
+        "bm25": 0.683155,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.316845
+      },
+      "project:drastically-improvement/rise-real-gpu-utilization-on-canonical-run/strict-sm-gates-and-contract": {
+        "bm25": 0.777086,
+        "graph": 0.072914,
+        "learning_rate": 0.2,
+        "vector": 0.15
+      },
+      "project:flamp": {
+        "bm25": 0.710721,
+        "graph": 0.054978,
+        "learning_rate": 0.2,
+        "vector": 0.234301
+      },
+      "project:flamp4": {
+        "bm25": 0.763159,
+        "graph": 0.053867,
+        "learning_rate": 0.1,
+        "vector": 0.182974
+      },
+      "project:game": {
+        "bm25": 0.821897,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.178103
+      },
+      "project:gas-stations-ui": {
+        "bm25": 0.770788,
+        "graph": 0.079212,
+        "learning_rate": 0.05,
+        "vector": 0.15
+      },
+      "project:goal-tree": {
+        "bm25": 0.734446,
+        "graph": 0.099349,
+        "learning_rate": 0.2,
+        "vector": 0.166205
+      },
+      "project:id-2gis-com": {
+        "bm25": 0.743116,
+        "graph": 0.106884,
+        "learning_rate": 0.1,
+        "vector": 0.15
+      },
+      "project:ilyapro/ae": {
+        "bm25": 0.782145,
+        "graph": 0.067855,
+        "learning_rate": 0.2,
+        "vector": 0.15
+      },
+      "project:living-memory": {
+        "bm25": 0.735475,
+        "graph": 0.114525,
+        "learning_rate": 0.1,
+        "vector": 0.15
+      },
+      "project:lm": {
+        "bm25": 0.1,
+        "graph": 0.75,
+        "learning_rate": 0.02,
+        "vector": 0.15
+      },
+      "project:mm": {
+        "bm25": 0.1,
+        "graph": 0.75,
+        "learning_rate": 0.1,
+        "vector": 0.15
+      },
+      "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": {
+        "bm25": 0.72691,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.27309
+      },
+      "project:natural-flow/downstream-route-propagation/_critique/review-packet-route-triple": {
+        "bm25": 0.735472,
+        "graph": 0.114528,
+        "learning_rate": 0.2,
+        "vector": 0.15
+      },
+      "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": {
+        "bm25": 0.716157,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.283843
+      },
+      "project:natural-flow/shared-organism-training": {
+        "bm25": 0.735214,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.264786
+      },
+      "project:natural-flow/shared-organism-training-and-capability-measurement": {
+        "bm25": 0.765608,
+        "graph": 0.084392,
+        "learning_rate": 0.2,
+        "vector": 0.15
+      },
+      "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": {
+        "bm25": 0.722573,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.277427
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": {
+        "bm25": 0.734405,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.265595
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": {
+        "bm25": 0.839195,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.160805
+      },
+      "project:octopus": {
+        "bm25": 0.1,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.85
+      },
+      "project:octopus-capability-stack": {
+        "bm25": 0.883568,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.116432
+      },
+      "project:online": {
+        "bm25": 0.1,
+        "graph": 0.74985,
+        "learning_rate": 0.02,
+        "vector": 0.15015
+      },
+      "project:online-beautyshare": {
+        "bm25": 0.632702,
+        "graph": 0.051531,
+        "learning_rate": 0.2,
+        "vector": 0.315768
+      },
+      "project:online-sitemaps": {
+        "bm25": 0.764904,
+        "graph": 0.085096,
+        "learning_rate": 0.1,
+        "vector": 0.15
+      },
+      "project:project": {
+        "bm25": 0.790628,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.209372
+      },
+      "project:prompt-engine-v3-lm-driven": {
+        "bm25": 0.67924,
+        "graph": 0.0,
+        "learning_rate": 0.1,
+        "vector": 0.32076
+      },
+      "project:repo": {
+        "bm25": 0.768478,
+        "graph": 0.081522,
+        "learning_rate": 0.2,
+        "vector": 0.15
+      },
+      "project:rise/gemini-comparator-execution": {
+        "bm25": 0.714659,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.285341
+      },
+      "project:sfx": {
+        "bm25": 0.752251,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.197749
+      },
+      "project:smarter-simpler-faster/shared-ocpa-token-decoder": {
+        "bm25": 0.710118,
+        "graph": 0.063633,
+        "learning_rate": 0.2,
+        "vector": 0.22625
+      },
+      "project:x": {
+        "bm25": 0.189265,
+        "graph": 0.052132,
+        "learning_rate": 0.02,
+        "vector": 0.758603
+      },
+      "session": {
+        "bm25": 0.8,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      },
+      "session:2026-08-23-materialize": {
+        "bm25": 0.82098,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.17902
+      },
+      "session:EZ-14207-2026-08-11": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.0
+      },
+      "session:ae-chat": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.0
+      },
+      "session:ae-dashboard-chat": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.0
+      },
+      "session:goal-EZ-14208-tooltip-position": {
+        "bm25": 0.905142,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.094858
+      },
+      "session:stream-agents-thinking-map": {
+        "bm25": 0.814781,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.185219
+      }
+    },
+    "proportional": {
+      "default": {
+        "bm25": 1.0,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.0
+      },
+      "global": {
+        "bm25": 0.230885,
+        "graph": 0.060704,
+        "learning_rate": 0.05,
+        "vector": 0.70841
+      },
+      "project": {
+        "bm25": 0.7,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.3
+      },
+      "project:/root/p/ae/.worktrees/_node_exec_system-integration-end-to-end_assertion-helpers": {
+        "bm25": 0.51645,
+        "graph": 0.13446,
+        "learning_rate": 0.2,
+        "vector": 0.34909
+      },
+      "project:/root/p/lm": {
+        "bm25": 0.704123,
+        "graph": 0.090369,
+        "learning_rate": 0.2,
+        "vector": 0.205508
+      },
+      "project:/root/p/octopus": {
+        "bm25": 0.563526,
+        "graph": 0.066687,
+        "learning_rate": 0.2,
+        "vector": 0.369787
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough": {
+        "bm25": 0.653341,
+        "graph": 0.01767,
+        "learning_rate": 0.05,
+        "vector": 0.32899
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_breakthrough_gemini-flash-contract": {
+        "bm25": 0.701303,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.298697
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-canary-integration": {
+        "bm25": 0.657724,
+        "graph": 0.024971,
+        "learning_rate": 0.05,
+        "vector": 0.317305
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-corpus": {
+        "bm25": 0.680889,
+        "graph": 0.016393,
+        "learning_rate": 0.05,
+        "vector": 0.302717
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-eval-harness-and-artifact": {
+        "bm25": 0.659495,
+        "graph": 0.02241,
+        "learning_rate": 0.05,
+        "vector": 0.318096
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_liven_bilingual-en-ru-capability_bilingual-perception": {
+        "bm25": 0.684183,
+        "graph": 0.022124,
+        "learning_rate": 0.05,
+        "vector": 0.293693
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_ocpa-generative-action-substrate-v1": {
+        "bm25": 0.680535,
+        "graph": 0.009901,
+        "learning_rate": 0.05,
+        "vector": 0.309564
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise": {
+        "bm25": 0.57789,
+        "graph": 0.095608,
+        "learning_rate": 0.05,
+        "vector": 0.326503
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise2": {
+        "bm25": 0.553781,
+        "graph": 0.123827,
+        "learning_rate": 0.2,
+        "vector": 0.322392
+      },
+      "project:/root/p/octopus/.worktrees/_node_exec_rise_run-ocpa-capability-optimization": {
+        "bm25": 0.684292,
+        "graph": 0.006188,
+        "learning_rate": 0.05,
+        "vector": 0.309521
+      },
+      "project:/root/p/octopus/.worktrees/goal-breakthrough": {
+        "bm25": 0.672951,
+        "graph": 0.017781,
+        "learning_rate": 0.05,
+        "vector": 0.309267
+      },
+      "project:/root/p/octopus/.worktrees/goal-landing": {
+        "bm25": 0.671291,
+        "graph": 0.025322,
+        "learning_rate": 0.05,
+        "vector": 0.303387
+      },
+      "project:/root/p/octopus/.worktrees/goal-ocpa-generative-action-substrate-v1": {
+        "bm25": 0.655211,
+        "graph": 0.011772,
+        "learning_rate": 0.05,
+        "vector": 0.333017
+      },
+      "project:/root/p/octopus/.worktrees/goal-rise": {
+        "bm25": 0.667861,
+        "graph": 0.02597,
+        "learning_rate": 0.05,
+        "vector": 0.306169
+      },
+      "project:2gis": {
+        "bm25": 0.456368,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.493632
+      },
+      "project:2gis-seaf-service-online": {
+        "bm25": 0.609464,
+        "graph": 0.055528,
+        "learning_rate": 0.05,
+        "vector": 0.335009
+      },
+      "project:DesktopTouchpad": {
+        "bm25": 0.312841,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.637159
+      },
+      "project:ae": {
+        "bm25": 0.155958,
+        "graph": 0.268494,
+        "learning_rate": 0.02,
+        "vector": 0.575548
+      },
+      "project:ae-probe-throwaway": {
+        "bm25": 0.615854,
+        "graph": 0.05,
+        "learning_rate": 0.05,
+        "vector": 0.334146
+      },
+      "project:benchmark": {
+        "bm25": 0.63899,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.36101
+      },
+      "project:breakthrough/gemini-flash-contract": {
+        "bm25": 0.487135,
+        "graph": 0.152266,
+        "learning_rate": 0.2,
+        "vector": 0.360599
+      },
+      "project:breakthrough/programming-capability-loop": {
+        "bm25": 0.646852,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.353148
+      },
+      "project:drastically-improvement/rise-real-gpu-utilization-on-canonical-run/strict-sm-gates-and-contract": {
+        "bm25": 0.333745,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.616255
+      },
+      "project:flamp": {
+        "bm25": 0.468756,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.481244
+      },
+      "project:flamp4": {
+        "bm25": 0.327614,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.622386
+      },
+      "project:game": {
+        "bm25": 0.335114,
+        "graph": 0.087971,
+        "learning_rate": 0.2,
+        "vector": 0.576915
+      },
+      "project:gas-stations-ui": {
+        "bm25": 0.282211,
+        "graph": 0.05,
+        "learning_rate": 0.05,
+        "vector": 0.667789
+      },
+      "project:goal-tree": {
+        "bm25": 0.488872,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.461128
+      },
+      "project:id-2gis-com": {
+        "bm25": 0.205712,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.744288
+      },
+      "project:ilyapro/ae": {
+        "bm25": 0.313461,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.636539
+      },
+      "project:living-memory": {
+        "bm25": 0.434532,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.515468
+      },
+      "project:lm": {
+        "bm25": 0.11198,
+        "graph": 0.05,
+        "learning_rate": 0.02,
+        "vector": 0.83802
+      },
+      "project:mm": {
+        "bm25": 0.180398,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.769602
+      },
+      "project:natural-flow/canonical-training-hardware-utilization-rise-v2/_critique": {
+        "bm25": 0.590833,
+        "graph": 0.039353,
+        "learning_rate": 0.2,
+        "vector": 0.369814
+      },
+      "project:natural-flow/downstream-route-propagation/_critique/review-packet-route-triple": {
+        "bm25": 0.151163,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.798837
+      },
+      "project:natural-flow/hardware-utilization-rise/e-verify-sustained-70-percent-final/restore-anti-shortcut-strict-prerequisites/postopt-final-holdout-measurements": {
+        "bm25": 0.64624,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.35376
+      },
+      "project:natural-flow/shared-organism-training": {
+        "bm25": 0.585324,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.414676
+      },
+      "project:natural-flow/shared-organism-training-and-capability-measurement": {
+        "bm25": 0.227934,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.722066
+      },
+      "project:natural-flow/shared-organism-training/rebuild-postopt-source-snapshot/materialize-canonical-training-inputs": {
+        "bm25": 0.603828,
+        "graph": 0.031244,
+        "learning_rate": 0.2,
+        "vector": 0.364927
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check": {
+        "bm25": 0.588417,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.411583
+      },
+      "project:natural-flow/shared-organism-training/source-snapshot-chain/efficiency-gate-check/dialogue-substrate-wall-time-fit": {
+        "bm25": 0.500039,
+        "graph": 0.07019,
+        "learning_rate": 0.2,
+        "vector": 0.429771
+      },
+      "project:octopus": {
+        "bm25": 0.104279,
+        "graph": 0.255962,
+        "learning_rate": 0.02,
+        "vector": 0.63976
+      },
+      "project:octopus-capability-stack": {
+        "bm25": 0.443607,
+        "graph": 0.025319,
+        "learning_rate": 0.2,
+        "vector": 0.531074
+      },
+      "project:online": {
+        "bm25": 0.14818,
+        "graph": 0.204483,
+        "learning_rate": 0.02,
+        "vector": 0.647337
+      },
+      "project:online-beautyshare": {
+        "bm25": 0.435883,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.514117
+      },
+      "project:online-sitemaps": {
+        "bm25": 0.263075,
+        "graph": 0.05,
+        "learning_rate": 0.1,
+        "vector": 0.686925
+      },
+      "project:project": {
+        "bm25": 0.458445,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.541555
+      },
+      "project:prompt-engine-v3-lm-driven": {
+        "bm25": 0.715136,
+        "graph": 0.029833,
+        "learning_rate": 0.1,
+        "vector": 0.255031
+      },
+      "project:repo": {
+        "bm25": 0.11071,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.83929
+      },
+      "project:rise/gemini-comparator-execution": {
+        "bm25": 0.579743,
+        "graph": 0.130335,
+        "learning_rate": 0.2,
+        "vector": 0.289922
+      },
+      "project:sfx": {
+        "bm25": 0.242998,
+        "graph": 0.124251,
+        "learning_rate": 0.2,
+        "vector": 0.632751
+      },
+      "project:smarter-simpler-faster/shared-ocpa-token-decoder": {
+        "bm25": 0.459947,
+        "graph": 0.05,
+        "learning_rate": 0.2,
+        "vector": 0.490053
+      },
+      "project:x": {
+        "bm25": 0.145496,
+        "graph": 0.06999,
+        "learning_rate": 0.02,
+        "vector": 0.784513
+      },
+      "session": {
+        "bm25": 0.8,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.2
+      },
+      "session:2026-08-23-materialize": {
+        "bm25": 0.72313,
+        "graph": 0.0,
+        "learning_rate": 0.05,
+        "vector": 0.27687
+      },
+      "session:EZ-14207-2026-08-11": {
+        "bm25": 0.326204,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.673796
+      },
+      "session:ae-chat": {
+        "bm25": 0.254393,
+        "graph": 0.001847,
+        "learning_rate": 0.2,
+        "vector": 0.743759
+      },
+      "session:ae-dashboard-chat": {
+        "bm25": 0.367942,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.632058
+      },
+      "session:goal-EZ-14208-tooltip-position": {
+        "bm25": 0.511455,
+        "graph": 0.0,
+        "learning_rate": 0.2,
+        "vector": 0.488545
+      },
+      "session:stream-agents-thinking-map": {
+        "bm25": 0.73793,
+        "graph": 0.008929,
+        "learning_rate": 0.05,
+        "vector": 0.253141
+      }
+    }
+  },
+  "grounding": {
+    "corpus_idf_agreement": 0.961607,
+    "graded_results": 83504,
+    "grounded_results": 9267,
+    "grounded_share": 0.110977,
+    "min_containment": 0.25
+  },
+  "incumbent": "proportional",
+  "primary_label": "grounded",
+  "results": {
+    "grounded": {
+      "arms": {
+        "grounded": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 274,
+            "hit@1": 0.5,
+            "hit@10": 1.0,
+            "hit@5": 0.948905,
+            "mrr": 0.686553
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 4608,
+            "hit@1": 0.513238,
+            "hit@10": 0.98763,
+            "hit@5": 0.926432,
+            "mrr": 0.683607
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.025547,
+              "ci95_low": 0.0,
+              "distinguishable": false,
+              "mean_delta": 0.010949,
+              "n": 274
+            },
+            "mrr": {
+              "ci95_high": 0.014942,
+              "ci95_low": -0.01253,
+              "distinguishable": false,
+              "mean_delta": 0.001464,
+              "n": 274
+            }
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 4334,
+            "hit@1": 0.514075,
+            "hit@10": 0.986848,
+            "hit@5": 0.925012,
+            "mrr": 0.683421
+          },
+          "weight_updates": 8984
+        },
+        "grounded_negative": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 274,
+            "hit@1": 0.394161,
+            "hit@10": 1.0,
+            "hit@5": 0.919708,
+            "mrr": 0.610801
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 4608,
+            "hit@1": 0.489149,
+            "hit@10": 0.987413,
+            "hit@5": 0.919922,
+            "mrr": 0.666274
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.00365,
+              "ci95_low": -0.040146,
+              "distinguishable": false,
+              "mean_delta": -0.018248,
+              "n": 274
+            },
+            "mrr": {
+              "ci95_high": -0.048219,
+              "ci95_low": -0.103185,
+              "distinguishable": true,
+              "mean_delta": -0.074287,
+              "n": 274
+            }
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 4334,
+            "hit@1": 0.495155,
+            "hit@10": 0.986617,
+            "hit@5": 0.919935,
+            "mrr": 0.669781
+          },
+          "weight_updates": 76516
+        },
+        "proportional": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 274,
+            "hit@1": 0.50365,
+            "hit@10": 1.0,
+            "hit@5": 0.937956,
+            "mrr": 0.685089
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 4608,
+            "hit@1": 0.505642,
+            "hit@10": 0.987847,
+            "hit@5": 0.923828,
+            "mrr": 0.678796
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 4334,
+            "hit@1": 0.505768,
+            "hit@10": 0.987079,
+            "hit@5": 0.922935,
+            "mrr": 0.678399
+          },
+          "weight_updates": 76516
+        }
+      },
+      "discrimination": {
+        "all_useful_fraction": 0.007409,
+        "mean_useful_share": 0.139629,
+        "multi_result_events": 10932,
+        "none_useful_fraction": 0.578851,
+        "strict_subset_events": 4523,
+        "strict_subset_fraction": 0.413739
+      },
+      "events_with_useful": 4608,
+      "label": {
+        "min_containment": 0.25,
+        "protocol": "grounded",
+        "reconsume_min_traces": 2,
+        "usefulness_threshold": 0.8
+      },
+      "useful_results": 12099
+    },
+    "reconsumed": {
+      "arms": {
+        "grounded": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 1093,
+            "hit@1": 0.625801,
+            "hit@10": 0.999085,
+            "hit@5": 0.976212,
+            "mrr": 0.768325
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 10818,
+            "hit@1": 0.822241,
+            "hit@10": 0.994361,
+            "hit@5": 0.98937,
+            "mrr": 0.894814
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.009149,
+              "ci95_low": -0.002745,
+              "distinguishable": false,
+              "mean_delta": 0.002745,
+              "n": 1093
+            },
+            "mrr": {
+              "ci95_high": 0.007989,
+              "ci95_low": -0.006054,
+              "distinguishable": false,
+              "mean_delta": 0.000953,
+              "n": 1093
+            }
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 9725,
+            "hit@1": 0.844319,
+            "hit@10": 0.99383,
+            "hit@5": 0.990848,
+            "mrr": 0.90903
+          },
+          "weight_updates": 8984
+        },
+        "grounded_negative": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 1093,
+            "hit@1": 0.664227,
+            "hit@10": 0.999085,
+            "hit@5": 0.971638,
+            "mrr": 0.794489
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 10818,
+            "hit@1": 0.836199,
+            "hit@10": 0.994361,
+            "hit@5": 0.989185,
+            "mrr": 0.903483
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.005489,
+              "ci95_low": -0.009149,
+              "distinguishable": false,
+              "mean_delta": -0.00183,
+              "n": 1093
+            },
+            "mrr": {
+              "ci95_high": 0.038768,
+              "ci95_low": 0.015991,
+              "distinguishable": true,
+              "mean_delta": 0.027117,
+              "n": 1093
+            }
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 9725,
+            "hit@1": 0.855527,
+            "hit@10": 0.99383,
+            "hit@5": 0.991157,
+            "mrr": 0.915733
+          },
+          "weight_updates": 76516
+        },
+        "proportional": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 1093,
+            "hit@1": 0.623971,
+            "hit@10": 0.999085,
+            "hit@5": 0.973468,
+            "mrr": 0.767372
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 10818,
+            "hit@1": 0.824459,
+            "hit@10": 0.994361,
+            "hit@5": 0.989462,
+            "mrr": 0.896
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 9725,
+            "hit@1": 0.846992,
+            "hit@10": 0.99383,
+            "hit@5": 0.99126,
+            "mrr": 0.910457
+          },
+          "weight_updates": 76516
+        }
+      },
+      "discrimination": {
+        "all_useful_fraction": 0.594493,
+        "mean_useful_share": 0.879203,
+        "multi_result_events": 10932,
+        "none_useful_fraction": 0.012898,
+        "strict_subset_events": 4292,
+        "strict_subset_fraction": 0.392609
+      },
+      "events_with_useful": 10818,
+      "label": {
+        "min_containment": 0.25,
+        "protocol": "reconsumed",
+        "reconsume_min_traces": 2,
+        "usefulness_threshold": 0.8
+      },
+      "useful_results": 73957
+    },
+    "usefulness": {
+      "arms": {
+        "grounded": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 1087,
+            "hit@1": 0.23919,
+            "hit@10": 0.99356,
+            "hit@5": 0.910764,
+            "mrr": 0.491101
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 10430,
+            "hit@1": 0.386577,
+            "hit@10": 0.952541,
+            "hit@5": 0.890221,
+            "mrr": 0.583725
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.00184,
+              "ci95_low": -0.012879,
+              "distinguishable": false,
+              "mean_delta": -0.00552,
+              "n": 1087
+            },
+            "mrr": {
+              "ci95_high": -0.002062,
+              "ci95_low": -0.013796,
+              "distinguishable": true,
+              "mean_delta": -0.007893,
+              "n": 1087
+            }
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 9343,
+            "hit@1": 0.403725,
+            "hit@10": 0.947768,
+            "hit@5": 0.88783,
+            "mrr": 0.594501
+          },
+          "weight_updates": 8984
+        },
+        "grounded_negative": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 1087,
+            "hit@1": 0.339466,
+            "hit@10": 0.99356,
+            "hit@5": 0.935603,
+            "mrr": 0.568094
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 10430,
+            "hit@1": 0.416203,
+            "hit@10": 0.952637,
+            "hit@5": 0.897411,
+            "mrr": 0.606773
+          },
+          "paired_vs_incumbent": {
+            "hit@5": {
+              "ci95_high": 0.030359,
+              "ci95_low": 0.0092,
+              "distinguishable": true,
+              "mean_delta": 0.019319,
+              "n": 1087
+            },
+            "mrr": {
+              "ci95_high": 0.081596,
+              "ci95_low": 0.057374,
+              "distinguishable": true,
+              "mean_delta": 0.0691,
+              "n": 1087
+            }
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 9343,
+            "hit@1": 0.425131,
+            "hit@10": 0.947875,
+            "hit@5": 0.892968,
+            "mrr": 0.611273
+          },
+          "weight_updates": 76516
+        },
+        "proportional": {
+          "holdout": {
+            "events": 1224,
+            "events_with_useful": 1087,
+            "hit@1": 0.24471,
+            "hit@10": 0.99356,
+            "hit@5": 0.916283,
+            "mrr": 0.498994
+          },
+          "overall": {
+            "events": 10969,
+            "events_with_useful": 10430,
+            "hit@1": 0.391275,
+            "hit@10": 0.952541,
+            "hit@5": 0.890412,
+            "mrr": 0.58656
+          },
+          "train": {
+            "events": 9745,
+            "events_with_useful": 9343,
+            "hit@1": 0.408327,
+            "hit@10": 0.947768,
+            "hit@5": 0.887402,
+            "mrr": 0.596747
+          },
+          "weight_updates": 76516
+        }
+      },
+      "discrimination": {
+        "all_useful_fraction": 0.141054,
+        "mean_useful_share": 0.605014,
+        "multi_result_events": 10932,
+        "none_useful_fraction": 0.047201,
+        "strict_subset_events": 8874,
+        "strict_subset_fraction": 0.811745
+      },
+      "events_with_useful": 10430,
+      "label": {
+        "min_containment": 0.25,
+        "protocol": "usefulness",
+        "reconsume_min_traces": 2,
+        "usefulness_threshold": 0.8
+      },
+      "useful_results": 51566
+    }
+  },
+  "ungrounded_negative_factor": 0.25,
+  "verdict": {
+    "per_arm": {
+      "grounded": {
+        "checks": {
+          "grounded": {
+            "hit@5": {
+              "arm": 0.948905,
+              "ci95": [
+                0.0,
+                0.025547
+              ],
+              "delta": 0.010949,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.937956,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.686553,
+              "ci95": [
+                -0.01253,
+                0.014942
+              ],
+              "delta": 0.001464,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.685089,
+              "regression": false
+            }
+          },
+          "reconsumed": {
+            "hit@5": {
+              "arm": 0.976212,
+              "ci95": [
+                -0.002745,
+                0.009149
+              ],
+              "delta": 0.002744,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.973468,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.768325,
+              "ci95": [
+                -0.006054,
+                0.007989
+              ],
+              "delta": 0.000953,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.767372,
+              "regression": false
+            }
+          },
+          "usefulness": {
+            "hit@5": {
+              "arm": 0.910764,
+              "ci95": [
+                -0.012879,
+                0.00184
+              ],
+              "delta": -0.005519,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.916283,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.491101,
+              "ci95": [
+                -0.013796,
+                -0.002062
+              ],
+              "delta": -0.007893,
+              "distinguishable": true,
+              "gain": false,
+              "incumbent": 0.498994,
+              "regression": true
+            }
+          }
+        },
+        "pass": false,
+        "primary_gains": [],
+        "significant_regressions": [
+          "usefulness.mrr"
+        ],
+        "weights_degenerate": false
+      },
+      "grounded_negative": {
+        "checks": {
+          "grounded": {
+            "hit@5": {
+              "arm": 0.919708,
+              "ci95": [
+                -0.040146,
+                0.00365
+              ],
+              "delta": -0.018248,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.937956,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.610801,
+              "ci95": [
+                -0.103185,
+                -0.048219
+              ],
+              "delta": -0.074288,
+              "distinguishable": true,
+              "gain": false,
+              "incumbent": 0.685089,
+              "regression": true
+            }
+          },
+          "reconsumed": {
+            "hit@5": {
+              "arm": 0.971638,
+              "ci95": [
+                -0.009149,
+                0.005489
+              ],
+              "delta": -0.00183,
+              "distinguishable": false,
+              "gain": false,
+              "incumbent": 0.973468,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.794489,
+              "ci95": [
+                0.015991,
+                0.038768
+              ],
+              "delta": 0.027117,
+              "distinguishable": true,
+              "gain": true,
+              "incumbent": 0.767372,
+              "regression": false
+            }
+          },
+          "usefulness": {
+            "hit@5": {
+              "arm": 0.935603,
+              "ci95": [
+                0.0092,
+                0.030359
+              ],
+              "delta": 0.01932,
+              "distinguishable": true,
+              "gain": true,
+              "incumbent": 0.916283,
+              "regression": false
+            },
+            "mrr": {
+              "arm": 0.568094,
+              "ci95": [
+                0.057374,
+                0.081596
+              ],
+              "delta": 0.0691,
+              "distinguishable": true,
+              "gain": true,
+              "incumbent": 0.498994,
+              "regression": false
+            }
+          }
+        },
+        "pass": false,
+        "primary_gains": [],
+        "significant_regressions": [
+          "grounded.mrr"
+        ],
+        "weights_degenerate": true
+      }
+    },
+    "winner": "proportional"
+  },
+  "weight_sanity": {
+    "grounded": {
+      "graph_limit": 0.5,
+      "graph_over_limit": 0,
+      "graph_over_limit_scopes": [],
+      "max_graph": 0.105896,
+      "mean_graph": 0.031351,
+      "scopes": 40
+    },
+    "grounded_negative": {
+      "graph_limit": 0.5,
+      "graph_over_limit": 5,
+      "graph_over_limit_scopes": [
+        "global",
+        "project:ae",
+        "project:lm",
+        "project:mm",
+        "project:online"
+      ],
+      "max_graph": 0.75,
+      "mean_graph": 0.081597,
+      "scopes": 66
+    },
+    "proportional": {
+      "graph_limit": 0.5,
+      "graph_over_limit": 0,
+      "graph_over_limit_scopes": [],
+      "max_graph": 0.268494,
+      "mean_graph": 0.049669,
+      "scopes": 66
+    }
+  }
+}

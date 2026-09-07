@@ -10,6 +10,16 @@ results earn credit:
 * ``grounded`` — only results the consuming trace grounded; the rest neutral.
 * ``grounded_negative`` — grounded results reinforced, ungrounded ones blamed
   at ``feedback.UNGROUNDED_NEGATIVE_FACTOR``.
+* ``grounded_or_lookup`` — grounded results plus results a same-transport
+  ``memory_lookup`` fetched after delivery (``replay.load_lookup_follows``,
+  window ``--lookup-window`` seconds, never after the cutoff); the rest
+  neutral. Mirrors ``LM_RECALL_CREDIT_POLICY=grounded`` with
+  ``LM_LOOKUP_CREDIT_POLICY=delivered``.
+
+``--incumbent`` picks the arm the others are measured against (default
+``proportional``, the original live rule) and ``--arms`` restricts the arms
+replayed, so a later A/B can run a challenger against an already-adopted
+rule without re-running the whole ladder.
 
 Generalization design. Weight updates stop at ``--cutoff``, so holdout events
 are ranked under weights each arm froze before it ever saw them; the holdout
@@ -23,6 +33,10 @@ scored under labels that use no grounding at all (``reconsumed``:
 later re-consumption by other traces; ``usefulness``: accrued node
 usefulness). A grounded arm that wins under the grounded label while
 regressing under both independent labels is reported as NOT clearing the bar.
+The lookup arm is different in kind: it gates on a signal (a same-session
+id-fetch) that none of the labels use, so under the grounded label it can
+only be scored by what its extra credit does to the learned weights, not by
+a definitional match.
 
 Usage::
 
@@ -30,6 +44,12 @@ Usage::
         --db ~/.cache/living-memory-harness/snapshot.sqlite3 \
         --cutoff 2026-06-10T00:00:00Z \
         --report artifacts/grounding/credit-ab.json
+
+    python3 scripts/credit_rule_ab.py \
+        --db ~/.cache/living-memory-harness/usage-signal/sfx-2026-09-07.sqlite3 \
+        --cutoff 2026-09-04T00:00:00Z \
+        --incumbent grounded --arms grounded,grounded_or_lookup \
+        --report artifacts/grounding/lookup-credit-ab.json
 """
 
 from __future__ import annotations
@@ -48,6 +68,7 @@ from living_memory.config import MemoryConfig  # noqa: E402
 from living_memory.feedback import UNGROUNDED_NEGATIVE_FACTOR  # noqa: E402
 from living_memory.replay import (  # noqa: E402
     CREDIT_RULES,
+    DEFAULT_LOOKUP_WINDOW_SECONDS,
     LabelConfig,
     WeightTrajectory,
     _weights_dict,
@@ -55,6 +76,7 @@ from living_memory.replay import (  # noqa: E402
     apply_labels,
     build_label_data,
     load_live_weights,
+    load_lookup_follows,
     load_replay_events,
     normalize_cutoff,
     open_readonly,
@@ -63,8 +85,21 @@ from living_memory.replay import (  # noqa: E402
     snapshot_evidence,
 )
 
-ARMS = ("proportional", "grounded", "grounded_negative")
+ARMS = ("proportional", "grounded", "grounded_negative", "grounded_or_lookup")
 INCUMBENT = "proportional"
+#: One-line description per arm for the markdown header.
+ARM_NOTES = {
+    "proportional": "reinforces **every** result of a consumed event, rank-decayed",
+    "grounded": "reinforces only the results the consuming trace grounded; the rest neutral",
+    "grounded_negative": (
+        "reinforces grounded results and blames ungrounded ones at "
+        "`feedback.UNGROUNDED_NEGATIVE_FACTOR`"
+    ),
+    "grounded_or_lookup": (
+        "reinforces grounded results plus results a same-transport `memory_lookup` "
+        "fetched after delivery; the rest neutral"
+    ),
+}
 #: Labels that do not derive from content grounding; the grounded arms must
 #: not regress on these for a win under the grounded label to count.
 CONTROL_LABELS = ("reconsumed", "usefulness")
@@ -98,7 +133,15 @@ def _paired_bootstrap(
         if event_id in base
     ]
     if not deltas:
-        return {"n": 0}
+        # No paired events under this label: nothing to distinguish, and the
+        # verdict must read it as such rather than as a missing key.
+        return {
+            "n": 0,
+            "mean_delta": 0.0,
+            "ci95_low": 0.0,
+            "ci95_high": 0.0,
+            "distinguishable": False,
+        }
     rng = random.Random(BOOTSTRAP_SEED)
     size = len(deltas)
     means = []
@@ -138,7 +181,21 @@ def _weight_sanity(weights: dict[str, dict[str, float]]) -> dict[str, Any]:
     }
 
 
-def run(db_path: str, cutoff_raw: str, *, min_scope_events: int) -> dict[str, Any]:
+def run(
+    db_path: str,
+    cutoff_raw: str,
+    *,
+    min_scope_events: int,
+    incumbent: str = INCUMBENT,
+    arms: tuple[str, ...] = ARMS,
+    lookup_window: float = DEFAULT_LOOKUP_WINDOW_SECONDS,
+) -> dict[str, Any]:
+    arms = tuple(dict.fromkeys(arms))
+    unknown = [arm for arm in arms if arm not in CREDIT_RULES]
+    if unknown:
+        raise ValueError(f"unknown credit rule(s): {', '.join(unknown)}")
+    if incumbent not in arms:
+        raise ValueError(f"incumbent {incumbent!r} is not among the arms {arms}")
     cutoff = normalize_cutoff(cutoff_raw)
     connection = open_readonly(db_path)
     try:
@@ -153,6 +210,28 @@ def run(db_path: str, cutoff_raw: str, *, min_scope_events: int) -> dict[str, An
         }
         # Grounding is label-independent: graded once, reused by every arm.
         grounding = apply_grounding(events, label_data)
+        # Lookup follows, twice. The unbounded pass only *counts* how many
+        # holdout closures carry a follow (the credit rule never reinforces
+        # holdout events, so this is descriptive). The bounded pass, which is
+        # the one left in place, stops at the cutoff so a post-cutoff fetch
+        # cannot feed a pre-cutoff weight update.
+        load_lookup_follows(connection, events, window_seconds=lookup_window)
+        holdout_labeled = [
+            event for event in events if event.labeled and event.created_at > cutoff
+        ]
+        holdout_follows = {
+            "labeled_events": len(holdout_labeled),
+            "labeled_events_with_follow": sum(
+                1 for event in holdout_labeled if any(r.looked_up for r in event.results)
+            ),
+            "labeled_results_followed": sum(
+                1 for event in holdout_labeled for r in event.results if r.looked_up
+            ),
+        }
+        lookups = load_lookup_follows(
+            connection, events, window_seconds=lookup_window, not_after=cutoff
+        )
+        lookups["holdout_unbounded"] = holdout_follows
 
         results: dict[str, Any] = {}
         final_weights: dict[str, Any] = {}
@@ -162,7 +241,7 @@ def run(db_path: str, cutoff_raw: str, *, min_scope_events: int) -> dict[str, An
             )
             per_arm: dict[str, Any] = {}
             holdout_samples: dict[str, list[tuple[str, float, float]]] = {}
-            for arm in ARMS:
+            for arm in arms:
                 trajectory = WeightTrajectory(
                     memory_config,
                     evidence=evidence,
@@ -193,15 +272,15 @@ def run(db_path: str, cutoff_raw: str, *, min_scope_events: int) -> dict[str, An
                         scope: _weights_dict(weights)
                         for scope, weights in sorted(trajectory.weights.items())
                     }
-            for arm in ARMS:
-                if arm == INCUMBENT:
+            for arm in arms:
+                if arm == incumbent:
                     continue
                 per_arm[arm]["paired_vs_incumbent"] = {
                     "mrr": _paired_bootstrap(
-                        holdout_samples[arm], holdout_samples[INCUMBENT], index=1
+                        holdout_samples[arm], holdout_samples[incumbent], index=1
                     ),
                     "hit@5": _paired_bootstrap(
-                        holdout_samples[arm], holdout_samples[INCUMBENT], index=2
+                        holdout_samples[arm], holdout_samples[incumbent], index=2
                     ),
                 }
             results[label_protocol] = {
@@ -214,16 +293,18 @@ def run(db_path: str, cutoff_raw: str, *, min_scope_events: int) -> dict[str, An
     finally:
         connection.close()
 
-    sanity = {arm: _weight_sanity(final_weights[arm]) for arm in ARMS}
-    verdict = _decide(results, sanity)
+    sanity = {arm: _weight_sanity(final_weights[arm]) for arm in arms}
+    verdict = _decide(results, sanity, incumbent=incumbent, arms=arms)
     return {
         "db_path": str(db_path),
         "cutoff": cutoff,
         "corpus": load_stats,
         "grounding": grounding,
+        "lookups": lookups,
+        "lookup_window_seconds": float(lookup_window),
         "ungrounded_negative_factor": UNGROUNDED_NEGATIVE_FACTOR,
-        "incumbent": INCUMBENT,
-        "arms": list(ARMS),
+        "incumbent": incumbent,
+        "arms": list(arms),
         "primary_label": PRIMARY_LABEL,
         "control_labels": list(CONTROL_LABELS),
         "bootstrap": {"resamples": BOOTSTRAP_RESAMPLES, "seed": BOOTSTRAP_SEED},
@@ -234,7 +315,13 @@ def run(db_path: str, cutoff_raw: str, *, min_scope_events: int) -> dict[str, An
     }
 
 
-def _decide(results: dict[str, Any], sanity: dict[str, Any]) -> dict[str, Any]:
+def _decide(
+    results: dict[str, Any],
+    sanity: dict[str, Any],
+    *,
+    incumbent: str = INCUMBENT,
+    arms: tuple[str, ...] = ARMS,
+) -> dict[str, Any]:
     """Pick the arm that improves the primary label without regressing elsewhere.
 
     Three conditions, applied in order:
@@ -251,12 +338,12 @@ def _decide(results: dict[str, Any], sanity: dict[str, Any]) -> dict[str, Any]:
     """
 
     verdict: dict[str, Any] = {"per_arm": {}}
-    for arm in ARMS:
-        if arm == INCUMBENT:
+    for arm in arms:
+        if arm == incumbent:
             continue
         checks = {}
         for label_protocol, block in results.items():
-            base = block["arms"][INCUMBENT]["holdout"]
+            base = block["arms"][incumbent]["holdout"]
             arm_block = block["arms"][arm]["holdout"]
             paired = block["arms"][arm]["paired_vs_incumbent"]
             checks[label_protocol] = {
@@ -297,14 +384,17 @@ def _decide(results: dict[str, Any], sanity: dict[str, Any]) -> dict[str, Any]:
             key=lambda arm: verdict["per_arm"][arm]["checks"][PRIMARY_LABEL]["mrr"]["delta"],
         )
         if passing
-        else INCUMBENT
+        else incumbent
     )
     return verdict
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    incumbent = report["incumbent"]
+    challengers = [arm for arm in report["arms"] if arm != incumbent]
     lines = [
-        "# Credit-rule A/B: grounded vs reinforce-everything",
+        f"# Credit-rule A/B: {', '.join(f'`{arm}`' for arm in challengers)} "
+        f"vs incumbent `{incumbent}`",
         "",
         f"DB: `{report['db_path']}` | cutoff `{report['cutoff']}` | "
         f"{report['corpus']['usable_events']} usable events",
@@ -314,11 +404,44 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"{report['grounding']['graded_results']} consumed results grounded "
         f"({report['grounding']['grounded_share']:.4f}); per-event vs whole-corpus "
         f"IDF agreement {report['grounding']['corpus_idf_agreement']:.4f}",
-        f"- Incumbent `{report['incumbent']}` reinforces **every** result; the "
-        f"grounded arms reinforce that {report['grounding']['grounded_share']:.1%} "
-        "share only",
-        f"- `grounded_negative` blames ungrounded results at "
-        f"{report['ungrounded_negative_factor']} of the positive signal",
+    ]
+    for arm in report["arms"]:
+        role = "incumbent" if arm == incumbent else "arm"
+        note = ARM_NOTES.get(arm, "credit rule from `replay.CREDIT_RULES`")
+        lines.append(f"- {role} `{arm}` {note}")
+    if "grounded_negative" in report["arms"]:
+        lines.append(
+            f"- `grounded_negative` blames ungrounded results at "
+            f"{report['ungrounded_negative_factor']} of the positive signal"
+        )
+    lookups = report.get("lookups")
+    if lookups is not None:
+        if lookups.get("table_present"):
+            holdout = lookups.get("holdout_unbounded", {})
+            lines.append(
+                f"- Lookup follows (same transport, within "
+                f"{lookups['window_seconds']:.0f} s, not after the cutoff): "
+                f"{lookups['rows']} ledger rows in {lookups['lookup_events']} lookup "
+                f"events since {lookups['first_lookup_at']}; "
+                f"{lookups['results_followed']} results followed across all events "
+                f"({lookups['followed_and_grounded']} also grounded, "
+                f"{lookups['followed_only']} lookup-only); within consumed events, "
+                f"the only ones a credit rule reinforces, "
+                f"{lookups['labeled_events_with_follow']} events carry a follow and "
+                f"{lookups['labeled_results_followed']} results are followed; "
+                f"{lookups['not_after_excluded_results']} results whose follow fell "
+                f"after the cutoff were withheld. Holdout, unbounded: "
+                f"{holdout.get('labeled_events_with_follow', 0)} of "
+                f"{holdout.get('labeled_events', 0)} consumed holdout events carry "
+                "a follow (descriptive only; holdout events are never reinforced)."
+            )
+        else:
+            lines.append(
+                "- Lookup follows: the snapshot has no `recall_lookup_events` table, "
+                "so no result is followed and `grounded_or_lookup` collapses to "
+                "`grounded`."
+            )
+    lines += [
         "",
         "## Holdout metrics by label and arm",
         "",
@@ -389,8 +512,16 @@ def render_markdown(report: dict[str, Any]) -> str:
         "hub-node biased (the replay module documents `reconsumed` as nearly "
         "vacuous and `usefulness` as rank-circular), which is why a weight-sanity "
         "check that does not go through any label is applied first.",
-        "",
     ]
+    if "grounded_or_lookup" in report["arms"]:
+        lines.append(
+            "`grounded_or_lookup` gates on a signal the grounded label does not "
+            "use — a same-transport `memory_lookup` id-fetch after delivery — so "
+            "under the grounded label its extra credit can only show up through "
+            "the weights it moves, never by definitional agreement with the label; "
+            "the lookup arm is scored on the same three labels as the others."
+        )
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -401,9 +532,35 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", required=True)
     parser.add_argument("--markdown")
     parser.add_argument("--min-scope-events", type=int, default=50)
+    parser.add_argument(
+        "--incumbent",
+        default=INCUMBENT,
+        help=f"arm the others are measured against (default {INCUMBENT})",
+    )
+    parser.add_argument(
+        "--arms",
+        default=",".join(ARMS),
+        help="comma-separated credit rules to replay (default: all of "
+        f"{', '.join(ARMS)}); must include the incumbent",
+    )
+    parser.add_argument(
+        "--lookup-window",
+        type=float,
+        default=DEFAULT_LOOKUP_WINDOW_SECONDS,
+        help="seconds after an event within which a same-transport memory_lookup "
+        "of a delivered node counts as a follow for grounded_or_lookup",
+    )
     args = parser.parse_args(argv)
 
-    report = run(args.db, args.cutoff, min_scope_events=args.min_scope_events)
+    arms = tuple(part.strip() for part in args.arms.split(",") if part.strip())
+    report = run(
+        args.db,
+        args.cutoff,
+        min_scope_events=args.min_scope_events,
+        incumbent=args.incumbent,
+        arms=arms,
+        lookup_window=args.lookup_window,
+    )
     report_path = Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

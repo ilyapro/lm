@@ -10,19 +10,31 @@ These tests pin the arithmetic, and pin that neither caller re-implements it.
 from __future__ import annotations
 
 import inspect
+import json
 import math
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 from living_memory import grounding
 from living_memory.grounding import (
+    CALIBRATED_MIN_CONTAINMENT,
     DEFAULT_MIN_CONTAINMENT,
+    MIN_CONTAINMENT_ENV_VAR,
     Grounding,
     build_idf,
     containment,
     ground_results,
     ground_token_sets,
+    resolve_min_containment,
     token_set,
+)
+
+RECALIBRATION_ARTIFACT = (
+    Path(__file__).resolve().parent.parent / "artifacts" / "grounding" / "recalibration-2026-09.json"
 )
 
 
@@ -175,11 +187,101 @@ def test_ground_results_delegates_to_ground_token_sets() -> None:
     assert from_text == from_tokens
 
 
-def test_default_threshold_is_the_replay_default() -> None:
+def test_default_threshold_is_the_recalibrated_value() -> None:
+    """The constant is the value the September 2026 recalibration adopted.
+
+    ``artifacts/grounding/recalibration-2026-09.json`` states the criterion and
+    the sweep; its ``adopted`` key and the constant must not drift apart. The
+    process default equals the constant unless the environment overrides it.
+    """
+
     from living_memory import replay
 
-    assert DEFAULT_MIN_CONTAINMENT == 0.25
+    assert CALIBRATED_MIN_CONTAINMENT == 0.22
+    artifact = json.loads(RECALIBRATION_ARTIFACT.read_text(encoding="utf-8"))
+    assert artifact["adopted"] == CALIBRATED_MIN_CONTAINMENT
+    assert DEFAULT_MIN_CONTAINMENT == resolve_min_containment(
+        os.environ.get(MIN_CONTAINMENT_ENV_VAR)
+    )
     assert replay.DEFAULT_MIN_CONTAINMENT is DEFAULT_MIN_CONTAINMENT
+
+
+# ---------------------------------------------------------------------------
+# Environment override
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("0.2", 0.2), (" 0.15 ", 0.15), ("1", 1.0), ("1e-2", 0.01), ("0.999", 0.999)],
+)
+def test_resolve_min_containment_accepts_a_decimal_in_the_unit_interval(
+    raw: str, expected: float
+) -> None:
+    assert resolve_min_containment(raw, fallback=0.4) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [None, "", "   ", "abc", "0,25", "0", "-0.1", "1.0001", "2", "nan", "inf", "-inf"],
+)
+def test_resolve_min_containment_falls_back_on_unusable_values(raw: str | None) -> None:
+    """Unset or blank means no override; garbage or out of (0, 1] is ignored."""
+
+    assert resolve_min_containment(raw, fallback=0.4) == 0.4
+
+
+def test_resolve_min_containment_default_fallback_is_the_calibrated_constant() -> None:
+    assert resolve_min_containment(None) == CALIBRATED_MIN_CONTAINMENT
+    assert resolve_min_containment("garbage") == CALIBRATED_MIN_CONTAINMENT
+
+
+_CONSUMER_PROBE = """
+import json
+from living_memory import attestation, feedback, grounding, replay
+print(json.dumps({
+    "grounding": grounding.DEFAULT_MIN_CONTAINMENT,
+    "feedback": feedback.RECALL_CREDIT_MIN_CONTAINMENT,
+    "attestation": attestation.ATTESTATION_MIN_CONTAINMENT,
+    "replay": replay.DEFAULT_MIN_CONTAINMENT,
+    "label_config": replay.LabelConfig().min_containment,
+}))
+"""
+
+
+def _consumers_in_fresh_process(env_value: str | None) -> dict[str, float]:
+    """Import every consumer in a new interpreter with the override set (or unset)."""
+
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(sys.path)
+    env.pop(MIN_CONTAINMENT_ENV_VAR, None)
+    if env_value is not None:
+        env[MIN_CONTAINMENT_ENV_VAR] = env_value
+    completed = subprocess.run(
+        [sys.executable, "-c", _CONSUMER_PROBE],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=120,
+    )
+    return json.loads(completed.stdout.strip().splitlines()[-1])
+
+
+def test_env_override_reaches_every_consumer_at_import() -> None:
+    """The override is read once at import and every caller binds that value."""
+
+    values = _consumers_in_fresh_process("0.2")
+
+    assert values == {key: 0.2 for key in values}
+    assert set(values) == {"grounding", "feedback", "attestation", "replay", "label_config"}
+
+
+@pytest.mark.parametrize("env_value", [None, "not-a-number", "1.5", "0"])
+def test_env_override_falls_back_to_the_constant_at_import(env_value: str | None) -> None:
+    values = _consumers_in_fresh_process(env_value)
+
+    assert values == {key: CALIBRATED_MIN_CONTAINMENT for key in values}
 
 
 # ---------------------------------------------------------------------------

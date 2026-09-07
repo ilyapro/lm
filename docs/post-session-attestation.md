@@ -31,7 +31,9 @@ verbatim from the session's artifacts. It does **not** send a verdict. The
 server loads *that event's own* result nodes from its own database and
 recomputes containment itself with
 `grounding.ground_results(..., min_containment=RECALL_CREDIT_MIN_CONTAINMENT)` —
-the same 0.25 gate, the same arithmetic, the same module as the live path.
+the same gate (0.22 since the September 2026 recalibration; 0.25 when the
+bounds below were fitted), the same arithmetic, the same module as the live
+path.
 
 A `grounded: true` in a client payload is ignored. Not filtered — *never read*:
 `attestation.py` does not contain the key names `grounded`, `containment` or
@@ -48,13 +50,15 @@ post-session stage is graded on a metric it cannot write to.
 ## Why grounding runs per item, with a maximum, and not over one concatenation
 
 Containment is the IDF-weighted share of a **node's** tokens that appear in the
-graded document. The 0.25 threshold was calibrated
-(`artifacts/grounding/calibration.md`, 72,023 result/trace pairs) with the
+graded document. The threshold was calibrated (0.25 in June,
+`artifacts/grounding/calibration.md`, 72,023 result/trace pairs; 0.22 since
+September 2026, `artifacts/grounding/recalibration-2026-09.md`) with the
 consuming `memory_remember` trace as that document — a trace-sized text.
 
 Concatenating a whole session into one document and grading against it would
 leave the calibrated regime entirely: a long enough document eventually contains
-every common token, so nodes the session never touched clear 0.25 by accident.
+every common token, so nodes the session never touched clear the threshold by
+accident.
 So each evidence item is graded separately and each node keeps its **maximum**
 across items, with `evidence_index` recording which item produced it. That is
 also strictly more conservative than grading the union of the items: the union
@@ -253,7 +257,7 @@ so a large enough evidence item covers a quarter of any node's tokens by
 coincidence, whoever wrote it.
 
 Measured on train (`memory_remember`/`memory_teach` content over 2,368 train
-sessions, n = 1,876 writes), the trace-sized document the 0.25 threshold was
+sessions, n = 1,876 writes), the trace-sized document the threshold was
 calibrated on is **572 chars at the median**, 889 at p75, 2,281 at p95. The
 original 4000-char item cap sat *above the p95* — seven times the median — so
 every item was graded outside the calibrated regime.
@@ -278,16 +282,24 @@ Adopted, in `attestation.py`:
   document**, the scale the threshold was fitted on;
 * `EVIDENCE_MAX_TOTAL_CHARS: 64000 → 19200` — 32 trace-sized documents. Because
   each node keeps its *maximum* across items, every extra item is another
-  independent chance of clearing 0.25 by coincidence, so the total is the bound
+  independent chance of clearing the threshold by coincidence, so the total is the bound
   that decides how many chances there are. At the old item size 64000 could
   never bind at all;
 * `EVIDENCE_MAX_ITEMS: 64` — **unchanged**. A session made of many small hunks
   should still be able to send them all; the total is what bounds the noise.
 
-Nothing else moved. `ATTESTATION_MIN_CONTAINMENT` and
-`RECALL_CREDIT_MIN_CONTAINMENT` stay at 0.25: that value is calibrated in
+Nothing else moved at the time. `ATTESTATION_MIN_CONTAINMENT` and
+`RECALL_CREDIT_MIN_CONTAINMENT` stayed at 0.25: that value was calibrated in
 `artifacts/grounding/calibration.md` and moving it to make a number look better
 is exactly the "optimize the applicability metric" failure the design forbids.
+Since September 2026 both are 0.22 through the shared
+`grounding.DEFAULT_MIN_CONTAINMENT`, recalibrated on the live credit corpus
+against an encoder-relatedness signal/noise criterion
+(`artifacts/grounding/recalibration-2026-09.md`), not on this metric. The
+shuffled-session bounds in the table above were measured at 0.25 and have not
+been re-measured at 0.22; a lower gate can only raise them, so the attestation
+applicability rate needs a fresh shuffled run before it is read against the
+bar.
 The grounding rule, the credit arithmetic and the tool contract are unchanged;
 only the size of the document handed to the calibrated rule was corrected.
 
@@ -334,7 +346,7 @@ re-seal, and if the shuffled rate approaches 0.05, tighten in this order:
 
 Three things are **not** available as responses. Lowering
 `ATTESTATION_MIN_CONTAINMENT` would make credit easier exactly when the noise
-rose. Raising it above the calibrated 0.25 to suppress a symptom is the same
+rose. Raising it above the calibrated value to suppress a symptom is the same
 mistake in the other direction and needs a recalibration run, not an edit.
 Grading against snippet-truncated deliveries would flatter the number by
 shrinking the denominator. If none of the permitted levers reach the bar, the

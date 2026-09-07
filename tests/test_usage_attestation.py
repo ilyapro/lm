@@ -15,7 +15,7 @@ and each rule below is one a client would otherwise be able to bend:
   threshold that only separates toys separates nothing in the field.
 * **Per evidence item, never concatenated.** Five fragments that each fall well
   under the gate must stay ungrounded even though their concatenation clears it
-  comfortably. This is the whole reason grounding runs per item: 0.25 was
+  comfortably. This is the whole reason grounding runs per item: the gate was
   calibrated on trace-sized documents, and a long enough document contains
   every common token by accident.
 * **Credit mirrors the live path.** Rank decay, the grounded subset only, the
@@ -50,6 +50,7 @@ from living_memory.attestation import (
     canonical_evidence,
 )
 from living_memory.feedback import RECALL_CREDIT_MIN_CONTAINMENT
+from living_memory.grounding import CALIBRATED_MIN_CONTAINMENT
 from living_memory.query_anchors import ANCHOR_EDGE_WEIGHT
 from living_memory.server import create_mcp_server
 from living_memory.storage import MemoryStore, RECALL_ATTESTATION_TABLE
@@ -339,7 +340,7 @@ def test_overlapping_evidence_credits_only_the_used_node(tmp_path: Path) -> None
     assert verdict["credited"] is True
     assert verdict["replay"] is False
     assert verdict["scope"] == SCOPE
-    assert verdict["min_containment"] == ATTESTATION_MIN_CONTAINMENT == 0.25
+    assert verdict["min_containment"] == ATTESTATION_MIN_CONTAINMENT == CALIBRATED_MIN_CONTAINMENT
     assert verdict["evidence_items"] == 1
     assert verdict["evidence_chars"] == len(EVICTION_DIFF.rstrip("\n"))
     assert {entry["node_id"] for entry in verdict["results"]} == set(node_ids)
@@ -476,7 +477,7 @@ def test_evidence_is_graded_per_item_never_concatenated(tmp_path: Path) -> None:
     couple of node 2's tokens. Joined they clear the gate by a wide margin;
     individually none reaches half of it. Grading a single concatenated
     document would credit a node that no artifact in the session evidences —
-    the accidental grounding the 0.25 threshold cannot survive at document
+    the accidental grounding the calibrated threshold cannot survive at document
     scale.
     """
 
@@ -805,7 +806,7 @@ def test_canonical_evidence_normalizes_and_digests() -> None:
     # different split of the same text is a different submission.
     assert canonical_evidence(["  line one\n\tline two\nsecond item"])[1] != digest
     assert len(digest) == 64
-    assert ATTESTATION_MIN_CONTAINMENT == RECALL_CREDIT_MIN_CONTAINMENT == 0.25
+    assert ATTESTATION_MIN_CONTAINMENT == RECALL_CREDIT_MIN_CONTAINMENT == CALIBRATED_MIN_CONTAINMENT
 
 
 @pytest.mark.parametrize(

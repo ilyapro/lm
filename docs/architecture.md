@@ -91,7 +91,16 @@ without changing the other surface.
    frequently delivered nodes re-earn rank far more slowly than fresh ones
    and the delivery → reinforcement → delivery loop stops concentrating
    deliveries on a handful of saturated nodes. Explicit negative feedback
-   (corrections) is exempt and always applies at full strength.
+   (corrections) is exempt and always applies at full strength. Reinforcement
+   is gated on *usage*, not on delivery: a result is credited when the
+   consuming trace grounds its content (IDF containment at
+   `DEFAULT_MIN_CONTAINMENT`), or when the agent id-fetched it with
+   `memory_lookup` on the same transport session within 24 h of the delivery
+   (`feedback.apply_lookup_credit`, run at lookup time). Either signal claims
+   the (event, node) row in `recall_credit_ledger` before crediting, so the
+   pair is credited once whichever comes first; linkage and event closure stay
+   with the closing trace. `LM_RECALL_CREDIT_POLICY` and
+   `LM_LOOKUP_CREDIT_POLICY` switch the two gates (see Configuration).
 7. `memory_teach` appends a corrective trace and creates a `supersedes` edge
    from the correction to the original.
 8. When independently enabled for the offline stage, `memory_attest` closes the
@@ -101,8 +110,10 @@ without changing the other surface.
    `recall_event_id` plus evidence lifted verbatim from that session's
    artifacts (diff hunks, command output — never agent prose, never a
    `memory_*` payload); the server loads *that event's own* result nodes from
-   its own database and recomputes containment with the same 0.25 gate the
-   live path uses, so a verdict asserted by the client is never read. Grounded
+   its own database and recomputes containment with the same gate the live
+   path uses (`RECALL_CREDIT_MIN_CONTAINMENT`, 0.22 since the September 2026
+   recalibration in `artifacts/grounding/recalibration-2026-09.md`), so a
+   verdict asserted by the client is never read. Grounded
    results earn the same `feedback.apply_retrieval_feedback` call with the same
    `max(0.2, 1 / (rank + 1))` decay under the *event's* scope, plus anchor
    reinforcement over the grounded subset only. Idempotent per
@@ -241,7 +252,29 @@ idempotency does and does not cover.
 
 ### `nodes_fts`
 
-SQLite FTS5 virtual table that indexes node content for BM25 retrieval.
+SQLite FTS5 virtual table that indexes node content for BM25 retrieval. Its
+tokenizer is `unicode61` (Unicode case folding, Latin diacritics removed, no
+stemming, `ё` and `е` distinct), so the index holds surface forms only and is
+never rebuilt for a change in the Python tokenizer.
+
+The query side is where normalization lives. `retrieval._expanded_query` sends
+the raw query text plus `embeddings.tokenize(query)`: lowercase, `ё` folded to
+`е`, camelCase and `_-/.` split, stop words dropped, a synonym table
+(`база`/`базы`/`базе` → `database`, `migration` → `schema`), a light suffix
+stemmer for ASCII tokens and a Snowball-style Russian stemmer for all-Cyrillic
+tokens. Because a Russian stem such as `миграц` is not an index token, the
+expansion also carries one FTS5 prefix term per Russian content word whose
+stem has at least four letters (`миграц*`), which `storage._fts_query` emits
+as `"миграц"*` while every other
+term stays an exact quoted term. Identifiers, paths, hashes and mixed-script
+tokens are never stemmed. `LM_TOKENIZE_CYRILLIC_STEM=off` disables the Russian
+stemmer and the prefix terms together and restores the surface-form behaviour;
+the setting is read once per process (`embeddings.reset_cyrillic_stem_cache`
+re-reads it). The same `tokenize` feeds IDF containment in `grounding.py`, the
+schema-trigger overlap and the pending-recall text match, so those see one
+token per Russian lemma too; recall-map labels keep their own unstemmed term
+extraction (`recall_map._terms`) because they are looked up in
+`nodes_fts_vocab`.
 
 ### `retrieval_weights`
 
@@ -287,6 +320,25 @@ The default embedding backend is offline-only. `embedding_model` can point to a
 local sentence-transformers directory or a model already present in the local
 cache. Missing models fall back to hash embeddings; model downloads require the
 explicit environment override `LIVING_MEMORY_EMBEDDING_BACKEND=online`.
+
+Lexical normalization has one switch of its own: `LM_TOKENIZE_CYRILLIC_STEM`
+(`on` by default; `off`, `0`, `false`, `no` or `disabled` turn the Russian
+stemmer and the BM25 prefix terms off, see [`nodes_fts`](#nodes_fts)). The
+grounding gate has one too: `LM_GROUNDING_MIN_CONTAINMENT`, a decimal in
+`(0, 1]` that replaces `grounding.DEFAULT_MIN_CONTAINMENT` (0.22, calibrated in
+`artifacts/grounding/recalibration-2026-09.md`) for the process; it is read
+once at import, so it must be in the server's environment before start, and a
+value that is not a finite number in that range is logged and ignored. The
+lookup usage signal has two: `LM_LOOKUP_CREDIT_POLICY` (`delivered` by
+default — a same-transport `memory_lookup` id-fetch of a node a recall
+delivered within the window is credited exactly as a grounded result, once per
+(event, node) across both signals through `recall_credit_ledger`; `off` keeps
+recording the lookup event and credits nothing; an unknown value falls back
+to the default, like `LM_RECALL_CREDIT_POLICY`) and
+`LM_LOOKUP_CREDIT_WINDOW_SECONDS` (how far back a lookup may reach for its
+delivering event, 86400 by default; unparsable or non-positive falls back).
+Measurements: `artifacts/grounding/lookup-credit.md` and the integrated
+`artifacts/grounding/usage-signal-after.md`.
 
 ```toml
 [storage]

@@ -1,0 +1,1907 @@
+{
+  "records": 844,
+  "pairs": 6806,
+  "hosts": [
+    "alt",
+    "sfx"
+  ],
+  "relatedness": {
+    "related_cosine": 0.5,
+    "unrelated_cosine": 0.3
+  },
+  "lookup": {
+    "window_seconds": 86400.0,
+    "same_transport": true
+  },
+  "default_min_containment": 0.25,
+  "per_host": {
+    "alt": [
+      {
+        "threshold": 0.1,
+        "pairs": {
+          "n": 3847,
+          "hit": 2139,
+          "share": 0.556
+        },
+        "pairs_by_script": {
+          "cyr-any": {
+            "n": 3816,
+            "hit": 2119,
+            "share": 0.5553
+          },
+          "lat/lat": {
+            "n": 31,
+            "hit": 20,
+            "share": 0.6452
+          }
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 1138,
+            "hit": 361,
+            "share": 0.3172
+          },
+          "related": {
+            "n": 2569,
+            "hit": 1756,
+            "share": 0.6835
+          },
+          "unrelated": {
+            "n": 140,
+            "hit": 22,
+            "share": 0.1571
+          }
+        },
+        "pairs_by_script_relatedness": {
+          "cyr-any|middle": {
+            "n": 1126,
+            "hit": 355,
+            "share": 0.3153
+          },
+          "cyr-any|related": {
+            "n": 2554,
+            "hit": 1742,
+            "share": 0.6821
+          },
+          "cyr-any|unrelated": {
+            "n": 136,
+            "hit": 22,
+            "share": 0.1618
+          },
+          "lat/lat|middle": {
+            "n": 12,
+            "hit": 6,
+            "share": 0.5
+          },
+          "lat/lat|related": {
+            "n": 15,
+            "hit": 14,
+            "share": 0.9333
+          },
+          "lat/lat|unrelated": {
+            "n": 4,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "pair_signal_to_noise": {
+          "signal_share": 0.6835,
+          "noise_share": 0.1571,
+          "ratio": 4.351,
+          "difference": 0.5264
+        },
+        "closures": {
+          "n": 423,
+          "hit": 399,
+          "share": 0.9433
+        },
+        "closures_by_relatedness": {
+          "middle": {
+            "n": 94,
+            "hit": 89,
+            "share": 0.9468
+          },
+          "related": {
+            "n": 285,
+            "hit": 273,
+            "share": 0.9579
+          },
+          "unrelated": {
+            "n": 44,
+            "hit": 37,
+            "share": 0.8409
+          }
+        },
+        "closures_by_trace_script": {
+          "cyr": {
+            "n": 413,
+            "hit": 390,
+            "share": 0.9443
+          },
+          "lat": {
+            "n": 9,
+            "hit": 8,
+            "share": 0.8889
+          },
+          "mixed": {
+            "n": 1,
+            "hit": 1,
+            "share": 1.0
+          }
+        },
+        "closure_signal_to_noise": {
+          "signal_share": 0.9579,
+          "noise_share": 0.8409,
+          "ratio": 1.139,
+          "difference": 0.117
+        },
+        "lookups": {
+          "pairs": {
+            "n": 3847,
+            "hit": 227,
+            "share": 0.059
+          },
+          "closures": {
+            "n": 423,
+            "hit": 119,
+            "share": 0.2813
+          },
+          "pairs_by_relatedness": {
+            "middle": {
+              "n": 1138,
+              "hit": 36,
+              "share": 0.0316
+            },
+            "related": {
+              "n": 2569,
+              "hit": 187,
+              "share": 0.0728
+            },
+            "unrelated": {
+              "n": 140,
+              "hit": 4,
+              "share": 0.0286
+            }
+          },
+          "overlap_pairs_grounded_and_looked_up": 188,
+          "lookup_only_pairs": 39,
+          "closures_grounded_or_looked_up": {
+            "n": 423,
+            "hit": 407,
+            "share": 0.9622
+          }
+        }
+      },
+      {
+        "threshold": 0.15,
+        "pairs": {
+          "n": 3847,
+          "hit": 1063,
+          "share": 0.2763
+        },
+        "pairs_by_script": {
+          "cyr-any": {
+            "n": 3816,
+            "hit": 1045,
+            "share": 0.2738
+          },
+          "lat/lat": {
+            "n": 31,
+            "hit": 18,
+            "share": 0.5806
+          }
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 1138,
+            "hit": 134,
+            "share": 0.1178
+          },
+          "related": {
+            "n": 2569,
+            "hit": 919,
+            "share": 0.3577
+          },
+          "unrelated": {
+            "n": 140,
+            "hit": 10,
+            "share": 0.0714
+          }
+        },
+        "pairs_by_script_relatedness": {
+          "cyr-any|middle": {
+            "n": 1126,
+            "hit": 129,
+            "share": 0.1146
+          },
+          "cyr-any|related": {
+            "n": 2554,
+            "hit": 906,
+            "share": 0.3547
+          },
+          "cyr-any|unrelated": {
+            "n": 136,
+            "hit": 10,
+            "share": 0.0735
+          },
+          "lat/lat|middle": {
+            "n": 12,
+            "hit": 5,
+            "share": 0.4167
+          },
+          "lat/lat|related": {
+            "n": 15,
+            "hit": 13,
+            "share": 0.8667
+          },
+          "lat/lat|unrelated": {
+            "n": 4,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "pair_signal_to_noise": {
+          "signal_share": 0.3577,
+          "noise_share": 0.0714,
+          "ratio": 5.01,
+          "difference": 0.2863
+        },
+        "closures": {
+          "n": 423,
+          "hit": 317,
+          "share": 0.7494
+        },
+        "closures_by_relatedness": {
+          "middle": {
+            "n": 94,
+            "hit": 67,
+            "share": 0.7128
+          },
+          "related": {
+            "n": 285,
+            "hit": 228,
+            "share": 0.8
+          },
+          "unrelated": {
+            "n": 44,
+            "hit": 22,
+            "share": 0.5
+          }
+        },
+        "closures_by_trace_script": {
+          "cyr": {
+            "n": 413,
+            "hit": 309,
+            "share": 0.7482
+          },
+          "lat": {
+            "n": 9,
+            "hit": 7,
+            "share": 0.7778
+          },
+          "mixed": {
+            "n": 1,
+            "hit": 1,
+            "share": 1.0
+          }
+        },
+        "closure_signal_to_noise": {
+          "signal_share": 0.8,
+          "noise_share": 0.5,
+          "ratio": 1.6,
+          "difference": 0.3
+        },
+        "lookups": {
+          "pairs": {
+            "n": 3847,
+            "hit": 227,
+            "share": 0.059
+          },
+          "closures": {
+            "n": 423,
+            "hit": 119,
+            "share": 0.2813
+          },
+          "pairs_by_relatedness": {
+            "middle": {
+              "n": 1138,
+              "hit": 36,
+              "share": 0.0316
+            },
+            "related": {
+              "n": 2569,
+              "hit": 187,
+              "share": 0.0728
+            },
+            "unrelated": {
+              "n": 140,
+              "hit": 4,
+              "share": 0.0286
+            }
+          },
+          "overlap_pairs_grounded_and_looked_up": 128,
+          "lookup_only_pairs": 99,
+          "closures_grounded_or_looked_up": {
+            "n": 423,
+            "hit": 345,
+            "share": 0.8156
+          }
+        }
+      },
+      {
+        "threshold": 0.2,
+        "pairs": {
+          "n": 3847,
+          "hit": 460,
+          "share": 0.1196
+        },
+        "pairs_by_script": {
+          "cyr-any": {
+            "n": 3816,
+            "hit": 448,
+            "share": 0.1174
+          },
+          "lat/lat": {
+            "n": 31,
+            "hit": 12,
+            "share": 0.3871
+          }
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 1138,
+            "hit": 40,
+            "share": 0.0351
+          },
+          "related": {
+            "n": 2569,
+            "hit": 414,
+            "share": 0.1612
+          },
+          "unrelated": {
+            "n": 140,
+            "hit": 6,
+            "share": 0.0429
+          }
+        },
+        "pairs_by_script_relatedness": {
+          "cyr-any|middle": {
+            "n": 1126,
+            "hit": 38,
+            "share": 0.0337
+          },
+          "cyr-any|related": {
+            "n": 2554,
+            "hit": 404,
+            "share": 0.1582
+          },
+          "cyr-any|unrelated": {
+            "n": 136,
+            "hit": 6,
+            "share": 0.0441
+          },
+          "lat/lat|middle": {
+            "n": 12,
+            "hit": 2,
+            "share": 0.1667
+          },
+          "lat/lat|related": {
+            "n": 15,
+            "hit": 10,
+            "share": 0.6667
+          },
+          "lat/lat|unrelated": {
+            "n": 4,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "pair_signal_to_noise": {
+          "signal_share": 0.1612,
+          "noise_share": 0.0429,
+          "ratio": 3.758,
+          "difference": 0.1183
+        },
+        "closures": {
+          "n": 423,
+          "hit": 203,
+          "share": 0.4799
+        },
+        "closures_by_relatedness": {
+          "middle": {
+            "n": 94,
+            "hit": 38,
+            "share": 0.4043
+          },
+          "related": {
+            "n": 285,
+            "hit": 152,
+            "share": 0.5333
+          },
+          "unrelated": {
+            "n": 44,
+            "hit": 13,
+            "share": 0.2955
+          }
+        },
+        "closures_by_trace_script": {
+          "cyr": {
+            "n": 413,
+            "hit": 196,
+            "share": 0.4746
+          },
+          "lat": {
+            "n": 9,
+            "hit": 6,
+            "share": 0.6667
+          },
+          "mixed": {
+            "n": 1,
+            "hit": 1,
+            "share": 1.0
+          }
+        },
+        "closure_signal_to_noise": {
+          "signal_share": 0.5333,
+          "noise_share": 0.2955,
+          "ratio": 1.805,
+          "difference": 0.2378
+        },
+        "lookups": {
+          "pairs": {
+            "n": 3847,
+            "hit": 227,
+            "share": 0.059
+          },
+          "closures": {
+            "n": 423,
+            "hit": 119,
+            "share": 0.2813
+          },
+          "pairs_by_relatedness": {
+            "middle": {
+              "n": 1138,
+              "hit": 36,
+              "share": 0.0316
+            },
+            "related": {
+              "n": 2569,
+              "hit": 187,
+              "share": 0.0728
+            },
+            "unrelated": {
+              "n": 140,
+              "hit": 4,
+              "share": 0.0286
+            }
+          },
+          "overlap_pairs_grounded_and_looked_up": 71,
+          "lookup_only_pairs": 156,
+          "closures_grounded_or_looked_up": {
+            "n": 423,
+            "hit": 250,
+            "share": 0.591
+          }
+        }
+      },
+      {
+        "threshold": 0.25,
+        "pairs": {
+          "n": 3847,
+          "hit": 188,
+          "share": 0.0489
+        },
+        "pairs_by_script": {
+          "cyr-any": {
+            "n": 3816,
+            "hit": 181,
+            "share": 0.0474
+          },
+          "lat/lat": {
+            "n": 31,
+            "hit": 7,
+            "share": 0.2258
+          }
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 1138,
+            "hit": 15,
+            "share": 0.0132
+          },
+          "related": {
+            "n": 2569,
+            "hit": 171,
+            "share": 0.0666
+          },
+          "unrelated": {
+            "n": 140,
+            "hit": 2,
+            "share": 0.0143
+          }
+        },
+        "pairs_by_script_relatedness": {
+          "cyr-any|middle": {
+            "n": 1126,
+            "hit": 15,
+            "share": 0.0133
+          },
+          "cyr-any|related": {
+            "n": 2554,
+            "hit": 164,
+            "share": 0.0642
+          },
+          "cyr-any|unrelated": {
+            "n": 136,
+            "hit": 2,
+            "share": 0.0147
+          },
+          "lat/lat|middle": {
+            "n": 12,
+            "hit": 0,
+            "share": 0.0
+          },
+          "lat/lat|related": {
+            "n": 15,
+            "hit": 7,
+            "share": 0.4667
+          },
+          "lat/lat|unrelated": {
+            "n": 4,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "pair_signal_to_noise": {
+          "signal_share": 0.0666,
+          "noise_share": 0.0143,
+          "ratio": 4.657,
+          "difference": 0.0523
+        },
+        "closures": {
+          "n": 423,
+          "hit": 100,
+          "share": 0.2364
+        },
+        "closures_by_relatedness": {
+          "middle": {
+            "n": 94,
+            "hit": 20,
+            "share": 0.2128
+          },
+          "related": {
+            "n": 285,
+            "hit": 75,
+            "share": 0.2632
+          },
+          "unrelated": {
+            "n": 44,
+            "hit": 5,
+            "share": 0.1136
+          }
+        },
+        "closures_by_trace_script": {
+          "cyr": {
+            "n": 413,
+            "hit": 97,
+            "share": 0.2349
+          },
+          "lat": {
+            "n": 9,
+            "hit": 3,
+            "share": 0.3333
+          },
+          "mixed": {
+            "n": 1,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "closure_signal_to_noise": {
+          "signal_share": 0.2632,
+          "noise_share": 0.1136,
+          "ratio": 2.317,
+          "difference": 0.1496
+        },
+        "lookups": {
+          "pairs": {
+            "n": 3847,
+            "hit": 227,
+            "share": 0.059
+          },
+          "closures": {
+            "n": 423,
+            "hit": 119,
+            "share": 0.2813
+          },
+          "pairs_by_relatedness": {
+            "middle": {
+              "n": 1138,
+              "hit": 36,
+              "share": 0.0316
+            },
+            "related": {
+              "n": 2569,
+              "hit": 187,
+              "share": 0.0728
+            },
+            "unrelated": {
+              "n": 140,
+              "hit": 4,
+              "share": 0.0286
+            }
+          },
+          "overlap_pairs_grounded_and_looked_up": 36,
+          "lookup_only_pairs": 191,
+          "closures_grounded_or_looked_up": {
+            "n": 423,
+            "hit": 184,
+            "share": 0.435
+          }
+        }
+      }
+    ],
+    "sfx": [
+      {
+        "threshold": 0.1,
+        "pairs": {
+          "n": 2959,
+          "hit": 999,
+          "share": 0.3376
+        },
+        "pairs_by_script": {
+          "cyr-any": {
+            "n": 1684,
+            "hit": 367,
+            "share": 0.2179
+          },
+          "lat/lat": {
+            "n": 1275,
+            "hit": 632,
+            "share": 0.4957
+          }
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 1648,
+            "hit": 455,
+            "share": 0.2761
+          },
+          "related": {
+            "n": 1058,
+            "hit": 511,
+            "share": 0.483
+          },
+          "unrelated": {
+            "n": 253,
+            "hit": 33,
+            "share": 0.1304
+          }
+        },
+        "pairs_by_script_relatedness": {
+          "cyr-any|middle": {
+            "n": 966,
+            "hit": 172,
+            "share": 0.1781
+          },
+          "cyr-any|related": {
+            "n": 561,
+            "hit": 183,
+            "share": 0.3262
+          },
+          "cyr-any|unrelated": {
+            "n": 157,
+            "hit": 12,
+            "share": 0.0764
+          },
+          "lat/lat|middle": {
+            "n": 682,
+            "hit": 283,
+            "share": 0.415
+          },
+          "lat/lat|related": {
+            "n": 497,
+            "hit": 328,
+            "share": 0.66
+          },
+          "lat/lat|unrelated": {
+            "n": 96,
+            "hit": 21,
+            "share": 0.2188
+          }
+        },
+        "pair_signal_to_noise": {
+          "signal_share": 0.483,
+          "noise_share": 0.1304,
+          "ratio": 3.704,
+          "difference": 0.3526
+        },
+        "closures": {
+          "n": 421,
+          "hit": 317,
+          "share": 0.753
+        },
+        "closures_by_relatedness": {
+          "middle": {
+            "n": 175,
+            "hit": 130,
+            "share": 0.7429
+          },
+          "related": {
+            "n": 204,
+            "hit": 162,
+            "share": 0.7941
+          },
+          "unrelated": {
+            "n": 42,
+            "hit": 25,
+            "share": 0.5952
+          }
+        },
+        "closures_by_trace_script": {
+          "cyr": {
+            "n": 177,
+            "hit": 132,
+            "share": 0.7458
+          },
+          "lat": {
+            "n": 241,
+            "hit": 184,
+            "share": 0.7635
+          },
+          "mixed": {
+            "n": 3,
+            "hit": 1,
+            "share": 0.3333
+          }
+        },
+        "closure_signal_to_noise": {
+          "signal_share": 0.7941,
+          "noise_share": 0.5952,
+          "ratio": 1.334,
+          "difference": 0.1989
+        },
+        "lookups": {
+          "pairs": {
+            "n": 2959,
+            "hit": 168,
+            "share": 0.0568
+          },
+          "closures": {
+            "n": 421,
+            "hit": 102,
+            "share": 0.2423
+          },
+          "pairs_by_relatedness": {
+            "middle": {
+              "n": 1648,
+              "hit": 57,
+              "share": 0.0346
+            },
+            "related": {
+              "n": 1058,
+              "hit": 107,
+              "share": 0.1011
+            },
+            "unrelated": {
+              "n": 253,
+              "hit": 4,
+              "share": 0.0158
+            }
+          },
+          "overlap_pairs_grounded_and_looked_up": 105,
+          "lookup_only_pairs": 63,
+          "closures_grounded_or_looked_up": {
+            "n": 421,
+            "hit": 332,
+            "share": 0.7886
+          }
+        }
+      },
+      {
+        "threshold": 0.15,
+        "pairs": {
+          "n": 2959,
+          "hit": 410,
+          "share": 0.1386
+        },
+        "pairs_by_script": {
+          "cyr-any": {
+            "n": 1684,
+            "hit": 141,
+            "share": 0.0837
+          },
+          "lat/lat": {
+            "n": 1275,
+            "hit": 269,
+            "share": 0.211
+          }
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 1648,
+            "hit": 126,
+            "share": 0.0765
+          },
+          "related": {
+            "n": 1058,
+            "hit": 272,
+            "share": 0.2571
+          },
+          "unrelated": {
+            "n": 253,
+            "hit": 12,
+            "share": 0.0474
+          }
+        },
+        "pairs_by_script_relatedness": {
+          "cyr-any|middle": {
+            "n": 966,
+            "hit": 45,
+            "share": 0.0466
+          },
+          "cyr-any|related": {
+            "n": 561,
+            "hit": 89,
+            "share": 0.1586
+          },
+          "cyr-any|unrelated": {
+            "n": 157,
+            "hit": 7,
+            "share": 0.0446
+          },
+          "lat/lat|middle": {
+            "n": 682,
+            "hit": 81,
+            "share": 0.1188
+          },
+          "lat/lat|related": {
+            "n": 497,
+            "hit": 183,
+            "share": 0.3682
+          },
+          "lat/lat|unrelated": {
+            "n": 96,
+            "hit": 5,
+            "share": 0.0521
+          }
+        },
+        "pair_signal_to_noise": {
+          "signal_share": 0.2571,
+          "noise_share": 0.0474,
+          "ratio": 5.424,
+          "difference": 0.2097
+        },
+        "closures": {
+          "n": 421,
+          "hit": 188,
+          "share": 0.4466
+        },
+        "closures_by_relatedness": {
+          "middle": {
+            "n": 175,
+            "hit": 67,
+            "share": 0.3829
+          },
+          "related": {
+            "n": 204,
+            "hit": 106,
+            "share": 0.5196
+          },
+          "unrelated": {
+            "n": 42,
+            "hit": 15,
+            "share": 0.3571
+          }
+        },
+        "closures_by_trace_script": {
+          "cyr": {
+            "n": 177,
+            "hit": 73,
+            "share": 0.4124
+          },
+          "lat": {
+            "n": 241,
+            "hit": 115,
+            "share": 0.4772
+          },
+          "mixed": {
+            "n": 3,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "closure_signal_to_noise": {
+          "signal_share": 0.5196,
+          "noise_share": 0.3571,
+          "ratio": 1.455,
+          "difference": 0.1625
+        },
+        "lookups": {
+          "pairs": {
+            "n": 2959,
+            "hit": 168,
+            "share": 0.0568
+          },
+          "closures": {
+            "n": 421,
+            "hit": 102,
+            "share": 0.2423
+          },
+          "pairs_by_relatedness": {
+            "middle": {
+              "n": 1648,
+              "hit": 57,
+              "share": 0.0346
+            },
+            "related": {
+              "n": 1058,
+              "hit": 107,
+              "share": 0.1011
+            },
+            "unrelated": {
+              "n": 253,
+              "hit": 4,
+              "share": 0.0158
+            }
+          },
+          "overlap_pairs_grounded_and_looked_up": 60,
+          "lookup_only_pairs": 108,
+          "closures_grounded_or_looked_up": {
+            "n": 421,
+            "hit": 227,
+            "share": 0.5392
+          }
+        }
+      },
+      {
+        "threshold": 0.2,
+        "pairs": {
+          "n": 2959,
+          "hit": 170,
+          "share": 0.0575
+        },
+        "pairs_by_script": {
+          "cyr-any": {
+            "n": 1684,
+            "hit": 56,
+            "share": 0.0333
+          },
+          "lat/lat": {
+            "n": 1275,
+            "hit": 114,
+            "share": 0.0894
+          }
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 1648,
+            "hit": 45,
+            "share": 0.0273
+          },
+          "related": {
+            "n": 1058,
+            "hit": 124,
+            "share": 0.1172
+          },
+          "unrelated": {
+            "n": 253,
+            "hit": 1,
+            "share": 0.004
+          }
+        },
+        "pairs_by_script_relatedness": {
+          "cyr-any|middle": {
+            "n": 966,
+            "hit": 19,
+            "share": 0.0197
+          },
+          "cyr-any|related": {
+            "n": 561,
+            "hit": 36,
+            "share": 0.0642
+          },
+          "cyr-any|unrelated": {
+            "n": 157,
+            "hit": 1,
+            "share": 0.0064
+          },
+          "lat/lat|middle": {
+            "n": 682,
+            "hit": 26,
+            "share": 0.0381
+          },
+          "lat/lat|related": {
+            "n": 497,
+            "hit": 88,
+            "share": 0.1771
+          },
+          "lat/lat|unrelated": {
+            "n": 96,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "pair_signal_to_noise": {
+          "signal_share": 0.1172,
+          "noise_share": 0.004,
+          "ratio": 29.3,
+          "difference": 0.1132
+        },
+        "closures": {
+          "n": 421,
+          "hit": 101,
+          "share": 0.2399
+        },
+        "closures_by_relatedness": {
+          "middle": {
+            "n": 175,
+            "hit": 36,
+            "share": 0.2057
+          },
+          "related": {
+            "n": 204,
+            "hit": 62,
+            "share": 0.3039
+          },
+          "unrelated": {
+            "n": 42,
+            "hit": 3,
+            "share": 0.0714
+          }
+        },
+        "closures_by_trace_script": {
+          "cyr": {
+            "n": 177,
+            "hit": 37,
+            "share": 0.209
+          },
+          "lat": {
+            "n": 241,
+            "hit": 64,
+            "share": 0.2656
+          },
+          "mixed": {
+            "n": 3,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "closure_signal_to_noise": {
+          "signal_share": 0.3039,
+          "noise_share": 0.0714,
+          "ratio": 4.256,
+          "difference": 0.2325
+        },
+        "lookups": {
+          "pairs": {
+            "n": 2959,
+            "hit": 168,
+            "share": 0.0568
+          },
+          "closures": {
+            "n": 421,
+            "hit": 102,
+            "share": 0.2423
+          },
+          "pairs_by_relatedness": {
+            "middle": {
+              "n": 1648,
+              "hit": 57,
+              "share": 0.0346
+            },
+            "related": {
+              "n": 1058,
+              "hit": 107,
+              "share": 0.1011
+            },
+            "unrelated": {
+              "n": 253,
+              "hit": 4,
+              "share": 0.0158
+            }
+          },
+          "overlap_pairs_grounded_and_looked_up": 31,
+          "lookup_only_pairs": 137,
+          "closures_grounded_or_looked_up": {
+            "n": 421,
+            "hit": 168,
+            "share": 0.399
+          }
+        }
+      },
+      {
+        "threshold": 0.25,
+        "pairs": {
+          "n": 2959,
+          "hit": 80,
+          "share": 0.027
+        },
+        "pairs_by_script": {
+          "cyr-any": {
+            "n": 1684,
+            "hit": 20,
+            "share": 0.0119
+          },
+          "lat/lat": {
+            "n": 1275,
+            "hit": 60,
+            "share": 0.0471
+          }
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 1648,
+            "hit": 6,
+            "share": 0.0036
+          },
+          "related": {
+            "n": 1058,
+            "hit": 74,
+            "share": 0.0699
+          },
+          "unrelated": {
+            "n": 253,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "pairs_by_script_relatedness": {
+          "cyr-any|middle": {
+            "n": 966,
+            "hit": 2,
+            "share": 0.0021
+          },
+          "cyr-any|related": {
+            "n": 561,
+            "hit": 18,
+            "share": 0.0321
+          },
+          "cyr-any|unrelated": {
+            "n": 157,
+            "hit": 0,
+            "share": 0.0
+          },
+          "lat/lat|middle": {
+            "n": 682,
+            "hit": 4,
+            "share": 0.0059
+          },
+          "lat/lat|related": {
+            "n": 497,
+            "hit": 56,
+            "share": 0.1127
+          },
+          "lat/lat|unrelated": {
+            "n": 96,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "pair_signal_to_noise": {
+          "signal_share": 0.0699,
+          "noise_share": 0.0,
+          "ratio": Infinity,
+          "difference": 0.0699
+        },
+        "closures": {
+          "n": 421,
+          "hit": 60,
+          "share": 0.1425
+        },
+        "closures_by_relatedness": {
+          "middle": {
+            "n": 175,
+            "hit": 17,
+            "share": 0.0971
+          },
+          "related": {
+            "n": 204,
+            "hit": 42,
+            "share": 0.2059
+          },
+          "unrelated": {
+            "n": 42,
+            "hit": 1,
+            "share": 0.0238
+          }
+        },
+        "closures_by_trace_script": {
+          "cyr": {
+            "n": 177,
+            "hit": 17,
+            "share": 0.096
+          },
+          "lat": {
+            "n": 241,
+            "hit": 43,
+            "share": 0.1784
+          },
+          "mixed": {
+            "n": 3,
+            "hit": 0,
+            "share": 0.0
+          }
+        },
+        "closure_signal_to_noise": {
+          "signal_share": 0.2059,
+          "noise_share": 0.0238,
+          "ratio": 8.651,
+          "difference": 0.1821
+        },
+        "lookups": {
+          "pairs": {
+            "n": 2959,
+            "hit": 168,
+            "share": 0.0568
+          },
+          "closures": {
+            "n": 421,
+            "hit": 102,
+            "share": 0.2423
+          },
+          "pairs_by_relatedness": {
+            "middle": {
+              "n": 1648,
+              "hit": 57,
+              "share": 0.0346
+            },
+            "related": {
+              "n": 1058,
+              "hit": 107,
+              "share": 0.1011
+            },
+            "unrelated": {
+              "n": 253,
+              "hit": 4,
+              "share": 0.0158
+            }
+          },
+          "overlap_pairs_grounded_and_looked_up": 22,
+          "lookup_only_pairs": 146,
+          "closures_grounded_or_looked_up": {
+            "n": 421,
+            "hit": 139,
+            "share": 0.3302
+          }
+        }
+      }
+    ]
+  },
+  "pooled": [
+    {
+      "threshold": 0.1,
+      "pairs": {
+        "n": 6806,
+        "hit": 3138,
+        "share": 0.4611
+      },
+      "pairs_by_script": {
+        "cyr-any": {
+          "n": 5500,
+          "hit": 2486,
+          "share": 0.452
+        },
+        "lat/lat": {
+          "n": 1306,
+          "hit": 652,
+          "share": 0.4992
+        }
+      },
+      "pairs_by_relatedness": {
+        "middle": {
+          "n": 2786,
+          "hit": 816,
+          "share": 0.2929
+        },
+        "related": {
+          "n": 3627,
+          "hit": 2267,
+          "share": 0.625
+        },
+        "unrelated": {
+          "n": 393,
+          "hit": 55,
+          "share": 0.1399
+        }
+      },
+      "pairs_by_script_relatedness": {
+        "cyr-any|middle": {
+          "n": 2092,
+          "hit": 527,
+          "share": 0.2519
+        },
+        "cyr-any|related": {
+          "n": 3115,
+          "hit": 1925,
+          "share": 0.618
+        },
+        "cyr-any|unrelated": {
+          "n": 293,
+          "hit": 34,
+          "share": 0.116
+        },
+        "lat/lat|middle": {
+          "n": 694,
+          "hit": 289,
+          "share": 0.4164
+        },
+        "lat/lat|related": {
+          "n": 512,
+          "hit": 342,
+          "share": 0.668
+        },
+        "lat/lat|unrelated": {
+          "n": 100,
+          "hit": 21,
+          "share": 0.21
+        }
+      },
+      "pair_signal_to_noise": {
+        "signal_share": 0.625,
+        "noise_share": 0.1399,
+        "ratio": 4.467,
+        "difference": 0.4851
+      },
+      "closures": {
+        "n": 844,
+        "hit": 716,
+        "share": 0.8483
+      },
+      "closures_by_relatedness": {
+        "middle": {
+          "n": 269,
+          "hit": 219,
+          "share": 0.8141
+        },
+        "related": {
+          "n": 489,
+          "hit": 435,
+          "share": 0.8896
+        },
+        "unrelated": {
+          "n": 86,
+          "hit": 62,
+          "share": 0.7209
+        }
+      },
+      "closures_by_trace_script": {
+        "cyr": {
+          "n": 590,
+          "hit": 522,
+          "share": 0.8847
+        },
+        "lat": {
+          "n": 250,
+          "hit": 192,
+          "share": 0.768
+        },
+        "mixed": {
+          "n": 4,
+          "hit": 2,
+          "share": 0.5
+        }
+      },
+      "closure_signal_to_noise": {
+        "signal_share": 0.8896,
+        "noise_share": 0.7209,
+        "ratio": 1.234,
+        "difference": 0.1687
+      },
+      "lookups": {
+        "pairs": {
+          "n": 6806,
+          "hit": 395,
+          "share": 0.058
+        },
+        "closures": {
+          "n": 844,
+          "hit": 221,
+          "share": 0.2618
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 2786,
+            "hit": 93,
+            "share": 0.0334
+          },
+          "related": {
+            "n": 3627,
+            "hit": 294,
+            "share": 0.0811
+          },
+          "unrelated": {
+            "n": 393,
+            "hit": 8,
+            "share": 0.0204
+          }
+        },
+        "overlap_pairs_grounded_and_looked_up": 293,
+        "lookup_only_pairs": 102,
+        "closures_grounded_or_looked_up": {
+          "n": 844,
+          "hit": 739,
+          "share": 0.8756
+        }
+      }
+    },
+    {
+      "threshold": 0.15,
+      "pairs": {
+        "n": 6806,
+        "hit": 1473,
+        "share": 0.2164
+      },
+      "pairs_by_script": {
+        "cyr-any": {
+          "n": 5500,
+          "hit": 1186,
+          "share": 0.2156
+        },
+        "lat/lat": {
+          "n": 1306,
+          "hit": 287,
+          "share": 0.2198
+        }
+      },
+      "pairs_by_relatedness": {
+        "middle": {
+          "n": 2786,
+          "hit": 260,
+          "share": 0.0933
+        },
+        "related": {
+          "n": 3627,
+          "hit": 1191,
+          "share": 0.3284
+        },
+        "unrelated": {
+          "n": 393,
+          "hit": 22,
+          "share": 0.056
+        }
+      },
+      "pairs_by_script_relatedness": {
+        "cyr-any|middle": {
+          "n": 2092,
+          "hit": 174,
+          "share": 0.0832
+        },
+        "cyr-any|related": {
+          "n": 3115,
+          "hit": 995,
+          "share": 0.3194
+        },
+        "cyr-any|unrelated": {
+          "n": 293,
+          "hit": 17,
+          "share": 0.058
+        },
+        "lat/lat|middle": {
+          "n": 694,
+          "hit": 86,
+          "share": 0.1239
+        },
+        "lat/lat|related": {
+          "n": 512,
+          "hit": 196,
+          "share": 0.3828
+        },
+        "lat/lat|unrelated": {
+          "n": 100,
+          "hit": 5,
+          "share": 0.05
+        }
+      },
+      "pair_signal_to_noise": {
+        "signal_share": 0.3284,
+        "noise_share": 0.056,
+        "ratio": 5.864,
+        "difference": 0.2724
+      },
+      "closures": {
+        "n": 844,
+        "hit": 505,
+        "share": 0.5983
+      },
+      "closures_by_relatedness": {
+        "middle": {
+          "n": 269,
+          "hit": 134,
+          "share": 0.4981
+        },
+        "related": {
+          "n": 489,
+          "hit": 334,
+          "share": 0.683
+        },
+        "unrelated": {
+          "n": 86,
+          "hit": 37,
+          "share": 0.4302
+        }
+      },
+      "closures_by_trace_script": {
+        "cyr": {
+          "n": 590,
+          "hit": 382,
+          "share": 0.6475
+        },
+        "lat": {
+          "n": 250,
+          "hit": 122,
+          "share": 0.488
+        },
+        "mixed": {
+          "n": 4,
+          "hit": 1,
+          "share": 0.25
+        }
+      },
+      "closure_signal_to_noise": {
+        "signal_share": 0.683,
+        "noise_share": 0.4302,
+        "ratio": 1.588,
+        "difference": 0.2528
+      },
+      "lookups": {
+        "pairs": {
+          "n": 6806,
+          "hit": 395,
+          "share": 0.058
+        },
+        "closures": {
+          "n": 844,
+          "hit": 221,
+          "share": 0.2618
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 2786,
+            "hit": 93,
+            "share": 0.0334
+          },
+          "related": {
+            "n": 3627,
+            "hit": 294,
+            "share": 0.0811
+          },
+          "unrelated": {
+            "n": 393,
+            "hit": 8,
+            "share": 0.0204
+          }
+        },
+        "overlap_pairs_grounded_and_looked_up": 188,
+        "lookup_only_pairs": 207,
+        "closures_grounded_or_looked_up": {
+          "n": 844,
+          "hit": 572,
+          "share": 0.6777
+        }
+      }
+    },
+    {
+      "threshold": 0.2,
+      "pairs": {
+        "n": 6806,
+        "hit": 630,
+        "share": 0.0926
+      },
+      "pairs_by_script": {
+        "cyr-any": {
+          "n": 5500,
+          "hit": 504,
+          "share": 0.0916
+        },
+        "lat/lat": {
+          "n": 1306,
+          "hit": 126,
+          "share": 0.0965
+        }
+      },
+      "pairs_by_relatedness": {
+        "middle": {
+          "n": 2786,
+          "hit": 85,
+          "share": 0.0305
+        },
+        "related": {
+          "n": 3627,
+          "hit": 538,
+          "share": 0.1483
+        },
+        "unrelated": {
+          "n": 393,
+          "hit": 7,
+          "share": 0.0178
+        }
+      },
+      "pairs_by_script_relatedness": {
+        "cyr-any|middle": {
+          "n": 2092,
+          "hit": 57,
+          "share": 0.0272
+        },
+        "cyr-any|related": {
+          "n": 3115,
+          "hit": 440,
+          "share": 0.1413
+        },
+        "cyr-any|unrelated": {
+          "n": 293,
+          "hit": 7,
+          "share": 0.0239
+        },
+        "lat/lat|middle": {
+          "n": 694,
+          "hit": 28,
+          "share": 0.0403
+        },
+        "lat/lat|related": {
+          "n": 512,
+          "hit": 98,
+          "share": 0.1914
+        },
+        "lat/lat|unrelated": {
+          "n": 100,
+          "hit": 0,
+          "share": 0.0
+        }
+      },
+      "pair_signal_to_noise": {
+        "signal_share": 0.1483,
+        "noise_share": 0.0178,
+        "ratio": 8.331,
+        "difference": 0.1305
+      },
+      "closures": {
+        "n": 844,
+        "hit": 304,
+        "share": 0.3602
+      },
+      "closures_by_relatedness": {
+        "middle": {
+          "n": 269,
+          "hit": 74,
+          "share": 0.2751
+        },
+        "related": {
+          "n": 489,
+          "hit": 214,
+          "share": 0.4376
+        },
+        "unrelated": {
+          "n": 86,
+          "hit": 16,
+          "share": 0.186
+        }
+      },
+      "closures_by_trace_script": {
+        "cyr": {
+          "n": 590,
+          "hit": 233,
+          "share": 0.3949
+        },
+        "lat": {
+          "n": 250,
+          "hit": 70,
+          "share": 0.28
+        },
+        "mixed": {
+          "n": 4,
+          "hit": 1,
+          "share": 0.25
+        }
+      },
+      "closure_signal_to_noise": {
+        "signal_share": 0.4376,
+        "noise_share": 0.186,
+        "ratio": 2.353,
+        "difference": 0.2516
+      },
+      "lookups": {
+        "pairs": {
+          "n": 6806,
+          "hit": 395,
+          "share": 0.058
+        },
+        "closures": {
+          "n": 844,
+          "hit": 221,
+          "share": 0.2618
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 2786,
+            "hit": 93,
+            "share": 0.0334
+          },
+          "related": {
+            "n": 3627,
+            "hit": 294,
+            "share": 0.0811
+          },
+          "unrelated": {
+            "n": 393,
+            "hit": 8,
+            "share": 0.0204
+          }
+        },
+        "overlap_pairs_grounded_and_looked_up": 102,
+        "lookup_only_pairs": 293,
+        "closures_grounded_or_looked_up": {
+          "n": 844,
+          "hit": 418,
+          "share": 0.4953
+        }
+      }
+    },
+    {
+      "threshold": 0.25,
+      "pairs": {
+        "n": 6806,
+        "hit": 268,
+        "share": 0.0394
+      },
+      "pairs_by_script": {
+        "cyr-any": {
+          "n": 5500,
+          "hit": 201,
+          "share": 0.0365
+        },
+        "lat/lat": {
+          "n": 1306,
+          "hit": 67,
+          "share": 0.0513
+        }
+      },
+      "pairs_by_relatedness": {
+        "middle": {
+          "n": 2786,
+          "hit": 21,
+          "share": 0.0075
+        },
+        "related": {
+          "n": 3627,
+          "hit": 245,
+          "share": 0.0675
+        },
+        "unrelated": {
+          "n": 393,
+          "hit": 2,
+          "share": 0.0051
+        }
+      },
+      "pairs_by_script_relatedness": {
+        "cyr-any|middle": {
+          "n": 2092,
+          "hit": 17,
+          "share": 0.0081
+        },
+        "cyr-any|related": {
+          "n": 3115,
+          "hit": 182,
+          "share": 0.0584
+        },
+        "cyr-any|unrelated": {
+          "n": 293,
+          "hit": 2,
+          "share": 0.0068
+        },
+        "lat/lat|middle": {
+          "n": 694,
+          "hit": 4,
+          "share": 0.0058
+        },
+        "lat/lat|related": {
+          "n": 512,
+          "hit": 63,
+          "share": 0.123
+        },
+        "lat/lat|unrelated": {
+          "n": 100,
+          "hit": 0,
+          "share": 0.0
+        }
+      },
+      "pair_signal_to_noise": {
+        "signal_share": 0.0675,
+        "noise_share": 0.0051,
+        "ratio": 13.235,
+        "difference": 0.0624
+      },
+      "closures": {
+        "n": 844,
+        "hit": 160,
+        "share": 0.1896
+      },
+      "closures_by_relatedness": {
+        "middle": {
+          "n": 269,
+          "hit": 37,
+          "share": 0.1375
+        },
+        "related": {
+          "n": 489,
+          "hit": 117,
+          "share": 0.2393
+        },
+        "unrelated": {
+          "n": 86,
+          "hit": 6,
+          "share": 0.0698
+        }
+      },
+      "closures_by_trace_script": {
+        "cyr": {
+          "n": 590,
+          "hit": 114,
+          "share": 0.1932
+        },
+        "lat": {
+          "n": 250,
+          "hit": 46,
+          "share": 0.184
+        },
+        "mixed": {
+          "n": 4,
+          "hit": 0,
+          "share": 0.0
+        }
+      },
+      "closure_signal_to_noise": {
+        "signal_share": 0.2393,
+        "noise_share": 0.0698,
+        "ratio": 3.428,
+        "difference": 0.1695
+      },
+      "lookups": {
+        "pairs": {
+          "n": 6806,
+          "hit": 395,
+          "share": 0.058
+        },
+        "closures": {
+          "n": 844,
+          "hit": 221,
+          "share": 0.2618
+        },
+        "pairs_by_relatedness": {
+          "middle": {
+            "n": 2786,
+            "hit": 93,
+            "share": 0.0334
+          },
+          "related": {
+            "n": 3627,
+            "hit": 294,
+            "share": 0.0811
+          },
+          "unrelated": {
+            "n": 393,
+            "hit": 8,
+            "share": 0.0204
+          }
+        },
+        "overlap_pairs_grounded_and_looked_up": 58,
+        "lookup_only_pairs": 337,
+        "closures_grounded_or_looked_up": {
+          "n": 844,
+          "hit": 323,
+          "share": 0.3827
+        }
+      }
+    }
+  ],
+  "pair_containment_percentiles": {
+    "p50": 0.0937,
+    "p75": 0.1418,
+    "p90": 0.1945,
+    "p95": 0.2351
+  },
+  "corpus": [
+    "/home/sfx/.cache/living-memory-harness/usage-signal/sfx-closures.jsonl",
+    "/home/sfx/.cache/living-memory-harness/usage-signal/alt-closures.jsonl"
+  ]
+}

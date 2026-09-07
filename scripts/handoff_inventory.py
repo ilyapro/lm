@@ -438,9 +438,11 @@ def surface_tokens(text: str) -> list[str]:
 
     Mirrors ``living_memory.embeddings.tokenize`` up to (but excluding)
     ``_canonical_token``: camelCase split, ``_-/.`` -> space, lowercase, yo-fold,
-    ``\\w+``. Cyrillic tokens are unaffected by ``_stem`` (latin-only) and by
-    ``_SYNONYMS`` (latin-only keys), so for the Cyrillic dictionary the surface
-    form IS the form the bm25 channel searches for.
+    ``\\w+``. Written when ``_stem`` was latin-only and ``_SYNONYMS`` had no
+    Cyrillic keys, so the Cyrillic surface form WAS the form the bm25 channel
+    searched for; since the Russian stemmer (``LM_TOKENIZE_CYRILLIC_STEM``)
+    the channel also matches inflections through prefix terms, and this helper
+    deliberately keeps reporting surface forms.
     """
 
     separated = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)

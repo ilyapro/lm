@@ -618,6 +618,15 @@ def run_probe() -> dict[str, Any]:
     # The whole point of the child: the real encoder, with nothing of it left
     # behind in this process.
     environment.pop("LIVING_MEMORY_EMBEDDING_BACKEND", None)
+    # The reference and pre-fix services are retrieval.py frozen at older
+    # commits, bound to the live storage and embeddings modules. Their BM25
+    # expansion predates the Cyrillic prefix terms the current
+    # ``_expanded_query`` emits, so with Russian stemming on the two services
+    # would differ in the BM25 query of every Cyrillic probe query -- a
+    # tokenizer difference, not the anchor difference these comparisons
+    # isolate. Hold the switch at its pre-stemming behaviour for the whole
+    # probe so the code under test stays the only difference.
+    environment["LM_TOKENIZE_CYRILLIC_STEM"] = "off"
 
     completed = subprocess.run(
         [sys.executable, "-c", PROBE],

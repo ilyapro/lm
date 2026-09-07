@@ -34,7 +34,9 @@ Key design decisions (documented in the generated markdown report as well):
   0-based rank ``r`` the reinforcement signal is ``max(0.2, 1/(r+1))``,
   applied at the *event's* scope through a pluggable credit rule — the
   ``proportional`` rule delegates to the live ``feedback._method_signals``,
-  while ``winner_take_all`` keeps the pre-fix rule frozen for A/B replays —
+  while ``winner_take_all`` keeps the pre-fix rule frozen for A/B replays,
+  and ``grounded_or_lookup`` additionally credits results a same-transport
+  ``memory_lookup`` fetched after delivery (``load_lookup_follows``) —
   and the exact ``update_retrieval_weights`` arithmetic including
   ``apply_retrieval_weight_floors``. Updates are ordered
   by ``feedback_applied_at`` (batch-internal order: newest event first, like
@@ -51,7 +53,7 @@ import sys
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -68,12 +70,21 @@ from living_memory.grounding import (
 from living_memory.models import NODE_LEVELS, Node, RetrievalWeights
 from living_memory.retrieval import MemoryRecallService, _Candidate, _is_decision_depth, _parse_depth
 from living_memory.scope import ScopePlan
-from living_memory.storage import MemoryStore, _scope_family
+from living_memory.storage import (
+    CHUNK_EMBEDDING_TABLE,
+    RECALL_LOOKUP_EVENT_TABLE,
+    MemoryStore,
+    _scope_family,
+)
 
 HIT_KS: tuple[int, ...] = (1, 5, 10)
 DEFAULT_RECONSUME_MIN_TRACES = 2
 DEFAULT_USEFULNESS_THRESHOLD = 0.8
 DEFAULT_MIN_SCOPE_EVENTS = 50
+#: Same-transport lookup window, in seconds, after a recall event within which
+#: an id-fetch of a delivered node counts as a follow. Matches the closure
+#: corpus grader (``scripts/usage_signal_corpus.py``) and the baseline.
+DEFAULT_LOOKUP_WINDOW_SECONDS = 24 * 3600.0
 OTHER_SCOPE_BUCKET = "_other"
 LABEL_PROTOCOLS = ("grounded", "reconsumed", "usefulness", "grounded_or_reconsumed")
 STATIC_SCHEMES = ("recorded", "live_weights", "floor_defaults", "uniform")
@@ -106,6 +117,11 @@ class ReplayResult:
     #: IDF. Credit rules read ``grounded``; metrics read ``useful``.
     grounded: bool = False
     containment: float = 0.0
+    #: A same-transport ``memory_lookup`` id-fetch of this node landed after
+    #: the event, within the lookup window (``load_lookup_follows``). The
+    #: usage signal the ``grounded_or_lookup`` credit rule adds to grounding;
+    #: never part of any label.
+    looked_up: bool = False
 
     @property
     def graph_only(self) -> bool:
@@ -129,6 +145,10 @@ class ReplayEvent:
     feedback_trace_id: str | None
     feedback_applied_at: str | None
     results: list[ReplayResult]
+    #: MCP transport identity stamped on the event; the join key that ties a
+    #: later ``memory_lookup`` to this delivery. ``None`` on events recorded
+    #: before transports were stamped, which can therefore never be followed.
+    transport_session_id: str | None = None
 
     @property
     def labeled(self) -> bool:
@@ -179,10 +199,19 @@ def load_replay_events(
 
     stats = {"total_events": 0, "empty_results": 0, "incomplete_results": 0, "usable_events": 0}
     events: list[ReplayEvent] = []
+    # Snapshots taken before transports were stamped lack the column; they
+    # load fine and simply never carry a lookup follow.
+    columns = {
+        str(row["name"]) for row in connection.execute("PRAGMA table_info(recall_events)")
+    }
+    transport_column = (
+        "transport_session_id" if "transport_session_id" in columns else "NULL"
+    )
     rows = connection.execute(
-        """
+        f"""
         SELECT id, created_at, scope, requested_scope, resolved_scopes, depth,
-               max_results, query, results, feedback_trace_id, feedback_applied_at
+               max_results, query, results, feedback_trace_id, feedback_applied_at,
+               {transport_column} AS transport_session_id
         FROM recall_events
         ORDER BY created_at ASC, rowid ASC
         """
@@ -218,12 +247,176 @@ def load_replay_events(
                 feedback_trace_id=row["feedback_trace_id"],
                 feedback_applied_at=row["feedback_applied_at"],
                 results=[result for result in parsed if result is not None],
+                transport_session_id=(
+                    str(row["transport_session_id"]) or None
+                    if row["transport_session_id"] is not None
+                    else None
+                ),
             )
         )
         stats["usable_events"] += 1
         if max_events is not None and stats["usable_events"] >= max_events:
             break
     return events, stats
+
+
+def _parse_instant(raw: str) -> datetime:
+    """Storage timestamp -> aware UTC datetime.
+
+    ``recall_events.created_at`` is second precision while
+    ``recall_lookup_events.occurred_at`` carries microseconds, so the two are
+    only comparable as parsed datetimes, never as strings.
+    """
+
+    text = raw.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def load_lookup_follows(
+    connection: sqlite3.Connection,
+    events: Sequence[ReplayEvent],
+    *,
+    window_seconds: float = DEFAULT_LOOKUP_WINDOW_SECONDS,
+    not_after: str | None = None,
+) -> dict[str, Any]:
+    """Set ``result.looked_up`` in place from the ``recall_lookup_events`` ledger.
+
+    A result is *followed* when a later ``memory_lookup`` id-fetch named its
+    node from the same transport session as the event, strictly after the
+    event's ``created_at`` and within ``window_seconds`` of it — the
+    same-transport / 24 h definition ``scripts/usage_signal_corpus.py`` grades
+    closures with. Events without a transport identity are never followed: the
+    transport is the only key that ties a fetch to a delivery. ``not_after``
+    (a storage timestamp, in practice the replay cutoff) additionally rejects
+    lookups after that instant, so a post-cutoff fetch can never leak into the
+    pre-cutoff weight trajectory of an event that closed before the cutoff.
+
+    Older snapshots predate the ledger (the table arrived with the
+    lookup-consumed recall-map signal); such a database yields zero follows
+    and ``table_present=False`` instead of an exception.
+
+    The ``followed_and_grounded`` / ``followed_only`` counters read
+    ``result.grounded`` as currently set, so run this after
+    ``apply_grounding`` for the overlap to mean anything. Counters prefixed
+    ``labeled_`` cover only closed events, the ones a credit rule ever sees.
+    """
+
+    for event in events:
+        for result in event.results:
+            result.looked_up = False
+    stats: dict[str, Any] = {
+        "table_present": False,
+        "window_seconds": float(window_seconds),
+        "not_after": normalize_cutoff(not_after) if not_after else None,
+        "rows": 0,
+        "rows_with_transport": 0,
+        "unparsable_rows": 0,
+        "lookup_events": 0,
+        "first_lookup_at": None,
+        "last_lookup_at": None,
+        "events_with_transport": 0,
+        "events_with_follow": 0,
+        "labeled_events_with_follow": 0,
+        "results_followed": 0,
+        "labeled_results_followed": 0,
+        "followed_and_grounded": 0,
+        "followed_only": 0,
+        # Results whose only in-window fetch came after ``not_after``.
+        "not_after_excluded_results": 0,
+        # Results fetched at exactly ``created_at`` (second precision): not a
+        # follow under the strict "after" rule, counted so the choice is visible.
+        "same_instant_results": 0,
+    }
+    present = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (RECALL_LOOKUP_EVENT_TABLE,),
+    ).fetchone()
+    if present is None:
+        return stats
+    stats["table_present"] = True
+
+    follows: dict[tuple[str, str], list[datetime]] = defaultdict(list)
+    lookup_ids: set[str] = set()
+    earliest: datetime | None = None
+    latest: datetime | None = None
+    rows = connection.execute(
+        f"SELECT lookup_event_id, node_id, occurred_at, transport_session_id "
+        f"FROM {RECALL_LOOKUP_EVENT_TABLE}"
+    )
+    for row in rows:
+        stats["rows"] += 1
+        lookup_ids.add(str(row["lookup_event_id"]))
+        try:
+            instant = _parse_instant(str(row["occurred_at"]))
+        except ValueError:
+            stats["unparsable_rows"] += 1
+            continue
+        earliest = instant if earliest is None or instant < earliest else earliest
+        latest = instant if latest is None or instant > latest else latest
+        transport = row["transport_session_id"]
+        if transport is None or not str(transport):
+            continue
+        stats["rows_with_transport"] += 1
+        follows[(str(transport), str(row["node_id"]))].append(instant)
+    stats["lookup_events"] = len(lookup_ids)
+    stats["first_lookup_at"] = _format_instant(earliest)
+    stats["last_lookup_at"] = _format_instant(latest)
+
+    window = timedelta(seconds=float(window_seconds))
+    limit = _parse_instant(not_after) if not_after else None
+    for event in events:
+        if not event.transport_session_id:
+            continue
+        stats["events_with_transport"] += 1
+        try:
+            created = _parse_instant(event.created_at)
+        except ValueError:
+            continue
+        deadline = created + window
+        followed_here = 0
+        for result in event.results:
+            instants = follows.get((event.transport_session_id, result.node_id))
+            if not instants:
+                continue
+            in_window = False
+            admitted = False
+            for instant in instants:
+                if instant == created:
+                    stats["same_instant_results"] += 1
+                    continue
+                if instant < created or instant > deadline:
+                    continue
+                in_window = True
+                if limit is None or instant <= limit:
+                    admitted = True
+                    break
+            if in_window and not admitted:
+                stats["not_after_excluded_results"] += 1
+            if not admitted:
+                continue
+            result.looked_up = True
+            followed_here += 1
+            stats["results_followed"] += 1
+            stats["followed_and_grounded"] += int(result.grounded)
+            stats["followed_only"] += int(not result.grounded)
+            if event.labeled:
+                stats["labeled_results_followed"] += 1
+        if followed_here:
+            stats["events_with_follow"] += 1
+            if event.labeled:
+                stats["labeled_events_with_follow"] += 1
+    return stats
+
+
+def _format_instant(instant: datetime | None) -> str | None:
+    if instant is None:
+        return None
+    return instant.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 # ---------------------------------------------------------------------------
@@ -607,15 +800,49 @@ def snapshot_evidence(connection: sqlite3.Connection) -> Callable[[str], tuple[b
     """
 
     cache: dict[str, tuple[bool, bool]] = {}
+    # Mirror ``MemoryStore._has_vector_evidence`` across both storage shapes:
+    # pre-v6 snapshots keep a JSON ``nodes.embedding`` column, later ones (the
+    # 2026-09 snapshots) dropped it in favour of ``node_chunk_embeddings``.
+    node_columns = {
+        str(row["name"]) for row in connection.execute("PRAGMA table_info(nodes)")
+    }
+    embedding_column = "embedding" in node_columns
+    chunk_table = (
+        connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (CHUNK_EMBEDDING_TABLE,),
+        ).fetchone()
+        is not None
+    )
+
+    def has_vector(scope: str) -> bool:
+        if embedding_column:
+            row = connection.execute(
+                "SELECT 1 FROM nodes WHERE scope = ? AND decayed = 0 "
+                "AND embedding IS NOT NULL LIMIT 1",
+                (scope,),
+            ).fetchone()
+            if row is not None:
+                return True
+        if not chunk_table:
+            return False
+        row = connection.execute(
+            f"""
+            SELECT 1
+            FROM {CHUNK_EMBEDDING_TABLE} c
+            JOIN nodes n ON n.id = c.node_id
+            WHERE n.scope = ? AND n.decayed = 0
+            LIMIT 1
+            """,
+            (scope,),
+        ).fetchone()
+        return row is not None
 
     def evidence(scope: str) -> tuple[bool, bool]:
         cached = cache.get(scope)
         if cached is not None:
             return cached
-        vector_row = connection.execute(
-            "SELECT 1 FROM nodes WHERE scope = ? AND decayed = 0 AND embedding IS NOT NULL LIMIT 1",
-            (scope,),
-        ).fetchone()
+        vector_row = has_vector(scope)
         graph_row = connection.execute(
             """
             SELECT 1
@@ -628,7 +855,7 @@ def snapshot_evidence(connection: sqlite3.Connection) -> Callable[[str], tuple[b
             """,
             (scope, scope),
         ).fetchone()
-        result = (vector_row is not None, graph_row is not None)
+        result = (vector_row, graph_row is not None)
         cache[scope] = result
         return result
 
@@ -760,11 +987,37 @@ def grounded_negative_credit(result: ReplayResult, signal: float) -> dict[str, f
     return ungrounded_negative_signals(synthetic, signal)
 
 
+def grounded_or_lookup_credit(result: ReplayResult, signal: float) -> dict[str, float] | None:
+    """Proportional credit for results the trace grounded *or* the agent fetched.
+
+    Mirrors the live policy pair ``LM_RECALL_CREDIT_POLICY=grounded`` plus
+    ``LM_LOOKUP_CREDIT_POLICY=delivered``: a delivered result earns credit
+    when the closing trace grounds it (``result.grounded``) or when a
+    same-transport ``memory_lookup`` fetched it after delivery
+    (``result.looked_up``, set by ``load_lookup_follows``); everything else
+    stays neutral. One proportional credit per result whichever signal fired,
+    which is the live ledger's at-most-once-per-(event, node) rule, so the
+    overlap between the two signals is deduplicated by construction.
+
+    Timing caveat: the replay applies lookup credit at the event's
+    reinforcement instant (``feedback_applied_at``, when the closing trace
+    lands), not at lookup time as the live path does, and events that never
+    closed are never reinforced here even though the live path credits their
+    lookups. The A/B therefore measures lookup credit on the closed-event
+    stream only.
+    """
+
+    if not (result.grounded or result.looked_up):
+        return None
+    return proportional_credit(result, signal)
+
+
 CREDIT_RULES: dict[str, CreditRule] = {
     "winner_take_all": winner_take_all_credit,
     "proportional": proportional_credit,
     "grounded": grounded_credit,
     "grounded_negative": grounded_negative_credit,
+    "grounded_or_lookup": grounded_or_lookup_credit,
 }
 
 
@@ -1088,6 +1341,7 @@ class HarnessConfig:
     max_events: int | None = None
     label_sensitivity: bool = True
     trajectory_out: Path | None = None
+    lookup_window_seconds: float = DEFAULT_LOOKUP_WINDOW_SECONDS
 
 
 def normalize_cutoff(raw: str) -> str:
@@ -1204,6 +1458,11 @@ def _run_replay(
     grounding_summary = apply_grounding(
         events, label_data, config.label.min_containment
     )
+    # Lookup follows are bounded by the cutoff so a post-cutoff fetch cannot
+    # feed a pre-cutoff weight update; grounding first, so the overlap counts.
+    lookup_summary = load_lookup_follows(
+        connection, events, window_seconds=config.lookup_window_seconds, not_after=cutoff
+    )
 
     labeled_events = [event for event in events if event.labeled]
     buckets = scope_buckets(events, config.min_scope_events)
@@ -1303,6 +1562,7 @@ def _run_replay(
             "lr_policy": config.lr_policy,
             "supersedes": "snapshot" if config.use_snapshot_supersedes else "none",
             "min_scope_events": config.min_scope_events,
+            "lookup_window_seconds": config.lookup_window_seconds,
         },
         "corpus": {
             **load_stats,
@@ -1325,6 +1585,7 @@ def _run_replay(
         },
         "labeling": label_summary,
         "grounding": grounding_summary,
+        "lookups": lookup_summary,
         "weights": {
             "live": {
                 scope: _weights_dict(weights) for scope, weights in sorted(live_weights.items())
@@ -1642,6 +1903,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--min-containment", type=float, default=DEFAULT_MIN_CONTAINMENT)
     parser.add_argument(
+        "--lookup-window",
+        type=float,
+        default=DEFAULT_LOOKUP_WINDOW_SECONDS,
+        help="seconds after an event within which a same-transport memory_lookup of a "
+        "delivered node counts as a follow (grounded_or_lookup credit rule)",
+    )
+    parser.add_argument(
         "--reconsume-min-traces", type=int, default=DEFAULT_RECONSUME_MIN_TRACES
     )
     parser.add_argument(
@@ -1701,6 +1969,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_events=args.max_events,
         label_sensitivity=not args.no_label_sensitivity,
         trajectory_out=Path(args.trajectory_out) if args.trajectory_out else None,
+        lookup_window_seconds=args.lookup_window,
     )
     report = run_replay(args.db, config)
 

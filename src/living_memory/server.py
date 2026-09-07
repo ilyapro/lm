@@ -65,7 +65,8 @@ from living_memory.resources import (
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import normalize_scope, resolve_scope
 from living_memory.embeddings import LocalEmbeddingModel
-from living_memory.feedback import apply_pending_recall_feedback
+from living_memory.feedback import apply_lookup_credit, apply_pending_recall_feedback
+from living_memory import storage as storage_module
 from living_memory.storage import (
     FingerprintGatePolicy,
     MemoryStore,
@@ -1331,11 +1332,38 @@ def _register_tools(
                 # table and no access counter, recall event, or pending
                 # feedback moves. Ids are recorded as requested, missing ones
                 # included, because the request is the signal.
+                #
+                # Then the signal is spent: a requested id that a recall on
+                # this same transport delivered within the window earns the
+                # usage credit a grounded closure would have given it
+                # (feedback.apply_lookup_credit — usefulness, the event
+                # scope's weights, one anchor edge), once per (event, node)
+                # across both signals via the recall credit ledger.
+                # LM_LOOKUP_CREDIT_POLICY=off keeps the record and skips the
+                # credit. The instant is read once, from the storage clock
+                # that stamps every other ledger row (recall events, delivery
+                # history), so the event row, the delivery-window correlation
+                # and the credit join all see the same lookup time — a wall
+                # clock read here would drift from a frozen or offset storage
+                # clock and put the lookup outside its own delivery window.
+                # A failed credit is logged inside apply_lookup_credit, never
+                # raised here.
                 identity = _with_transport_identity(None) or {}
-                store.record_lookup_event(
+                transport_session_id = identity.get(_TRANSPORT_SESSION_KEY)
+                occurred_at = storage_module._utc_now()
+                lookup_event_id = store.record_lookup_event(
                     requested_ids,
-                    transport_session_id=identity.get(_TRANSPORT_SESSION_KEY),
+                    transport_session_id=transport_session_id,
+                    occurred_at=occurred_at,
                 )
+                if lookup_event_id is not None:
+                    apply_lookup_credit(
+                        store,
+                        lookup_event_id,
+                        requested_ids,
+                        transport_session_id,
+                        occurred_at,
+                    )
                 return response
 
             if not filters:
