@@ -1,0 +1,205 @@
+{
+ "artifact": "recall-map demotion gate read (second horizon)",
+ "schema_version": 1,
+ "read_at": "2026-09-08T07:09:13Z",
+ "previous": "read-2026-09-07/decision.json",
+ "checklist_5": {
+  "sfx": {
+   "known_windows": 10535,
+   "powered": true,
+   "observed_days_to_last_activity": 15.07,
+   "echo_disagreements": 0,
+   "admission_threshold": 3.8708378402511,
+   "decision_at": "2026-09-08T07:09:13.648453Z"
+  },
+  "alt": {
+   "known_windows": 34907,
+   "powered": true,
+   "observed_days_to_last_activity": 15.337,
+   "echo_disagreements": 0,
+   "admission_threshold": 3.8708378402511,
+   "decision_at": "2026-09-08T07:10:27.810053Z"
+  },
+  "verdict": "passes on both hosts"
+ },
+ "estimator_4_2": {
+  "note": "same estimator as read-2026-09-07 (lookup-only follows, redelivery weight 0.5, held-out = last 20% by delivered_at)",
+  "sfx": {
+   "holdout_cut": "2026-09-07T13:05:58Z",
+   "train_80pct": {
+    "rows_with_follow_and_prior_window": 183,
+    "q95": 6.0,
+    "N": 7
+   },
+   "falsifier_at_N": {
+    "N": 7,
+    "rows_demoted_in_holdout": 31,
+    "followed_in_next_window": 0
+   }
+  },
+  "alt": {
+   "holdout_cut": "2026-09-02T13:11:03Z",
+   "train_80pct": {
+    "rows_with_follow_and_prior_window": 540,
+    "q95": 2.0,
+    "N": 3
+   },
+   "falsifier_at_N": {
+    "N": 3,
+    "rows_demoted_in_holdout": 485,
+    "followed_in_next_window": 5
+   }
+  }
+ },
+ "falsifier_sweep_heldout": {
+  "sfx": [
+   {
+    "N": 3,
+    "demoted": 83,
+    "followed_next": 0
+   },
+   {
+    "N": 4,
+    "demoted": 57,
+    "followed_next": 0
+   },
+   {
+    "N": 5,
+    "demoted": 46,
+    "followed_next": 0
+   },
+   {
+    "N": 6,
+    "demoted": 36,
+    "followed_next": 0
+   },
+   {
+    "N": 7,
+    "demoted": 31,
+    "followed_next": 0
+   },
+   {
+    "N": 8,
+    "demoted": 26,
+    "followed_next": 0
+   },
+   {
+    "N": 9,
+    "demoted": 24,
+    "followed_next": 0
+   },
+   {
+    "N": 10,
+    "demoted": 21,
+    "followed_next": 0
+   },
+   {
+    "N": 11,
+    "demoted": 21,
+    "followed_next": 0
+   },
+   {
+    "N": 12,
+    "demoted": 18,
+    "followed_next": 0
+   },
+   {
+    "N": 13,
+    "demoted": 18,
+    "followed_next": 0
+   },
+   {
+    "N": 14,
+    "demoted": 18,
+    "followed_next": 0
+   },
+   {
+    "N": 15,
+    "demoted": 16,
+    "followed_next": 0
+   }
+  ],
+  "alt": [
+   {
+    "N": 3,
+    "demoted": 485,
+    "followed_next": 5
+   },
+   {
+    "N": 4,
+    "demoted": 364,
+    "followed_next": 1
+   },
+   {
+    "N": 5,
+    "demoted": 295,
+    "followed_next": 1
+   },
+   {
+    "N": 6,
+    "demoted": 252,
+    "followed_next": 1
+   },
+   {
+    "N": 7,
+    "demoted": 228,
+    "followed_next": 3
+   },
+   {
+    "N": 8,
+    "demoted": 187,
+    "followed_next": 2
+   },
+   {
+    "N": 9,
+    "demoted": 157,
+    "followed_next": 1
+   },
+   {
+    "N": 10,
+    "demoted": 134,
+    "followed_next": 1
+   },
+   {
+    "N": 11,
+    "demoted": 113,
+    "followed_next": 2
+   },
+   {
+    "N": 12,
+    "demoted": 95,
+    "followed_next": 0
+   },
+   {
+    "N": 13,
+    "demoted": 85,
+    "followed_next": 0
+   },
+   {
+    "N": 14,
+    "demoted": 75,
+    "followed_next": 0
+   },
+   {
+    "N": 15,
+    "demoted": 71,
+    "followed_next": 0
+   }
+  ]
+ },
+ "decision": {
+  "demotion_valve": {
+   "charged": false,
+   "env_left_unset": [
+    "LM_MAP_POOL_DEMOTION_GATE",
+    "LM_MAP_POOL_DEMOTE_AFTER"
+   ]
+  },
+  "why": "sfx now passes at the rule's N=7 (31 held-out demotions, 0 followed next; clean at every N 3..15). alt still fails at the rule's N=3 (5/485) and stays dirty up to N=11 (1-3 single-row violations), clean only from N=12. Hosts must be armed symmetrically; the rule yields different N per host and alt's does not survive its falsifier for the second horizon running. Charging N=12 on both would be a documented deviation from §4.2 (sweep-clean on both hosts, not rule-derived) — escalated to the operator rather than chosen here.",
+  "options_for_operator": [
+   "charge N=12 symmetric as a documented §5.6 deviation (alt clean from 12; sfx clean everywhere)",
+   "keep repeating horizons (alt has been dirty two reads running; its held-out spans 6 days, unlikely to clean by itself)",
+   "leave the valve off"
+  ]
+ }
+}

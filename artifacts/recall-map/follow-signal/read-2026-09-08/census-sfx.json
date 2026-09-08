@@ -1,0 +1,4243 @@
+{
+  "artifact": "recall-map follow-signal census",
+  "generated_at": "2026-09-08T07:09:13Z",
+  "generator": "scripts/recall_map_follow_signal_census.py",
+  "decision_at": "2026-09-08T07:09:13.648453Z",
+  "sets_no_defaults": true,
+  "definitions": {
+    "window": "one (delivery_event_id, node_id) row of recall_delivery_history: the frozen 24h outcome horizon opened by one recall",
+    "matured": "delivered_at < decision_at AND outcome_end <= decision_at",
+    "horizon_hours": 24,
+    "classes": {
+      "lookup_followed": "lookup_consumed = 1 (exogenous id-fetch in window)",
+      "ask_follow": "a later recall in the window echoed the delivered label or ask_hint under recall_map._echoes",
+      "redelivered_only": "neither exogenous probe fired and the frozen consumed bit (transport_consumed if transport_matched else fallback_consumed) is set",
+      "nothing": "no signal of any kind"
+    },
+    "class_priority": [
+      "lookup_followed",
+      "ask_follow",
+      "redelivered_only",
+      "nothing"
+    ],
+    "known_window": "lookup_consumed IS NOT NULL",
+    "null_window": "lookup_consumed IS NULL: the window closed before this database recorded any lookup, so its outcome is unobservable, not absent",
+    "ask_follow_applicability": "only map-medoid windows carry a label; organic-tail windows are counted not_applicable rather than as a probe that found nothing",
+    "curtail_query_overlap": 0.5,
+    "max_clusters": 6,
+    "ledger_organic_ranks": [
+      3,
+      8
+    ]
+  },
+  "frozen_scorer_probe": {
+    "question": "with matured = 20 and consumed = 0, does a longer unfollowed tail lower the frozen relevance score?",
+    "admission_threshold": 3.8708378402511,
+    "curves": {
+      "schema": [
+        {
+          "trailing_nonconsumed": 0,
+          "score": 0.427201
+        },
+        {
+          "trailing_nonconsumed": 1,
+          "score": 0.819704
+        },
+        {
+          "trailing_nonconsumed": 3,
+          "score": 1.212206
+        },
+        {
+          "trailing_nonconsumed": 5,
+          "score": 1.441806
+        },
+        {
+          "trailing_nonconsumed": 10,
+          "score": 1.785037
+        },
+        {
+          "trailing_nonconsumed": 20,
+          "score": 2.151198
+        }
+      ],
+      "trace": [
+        {
+          "trailing_nonconsumed": 0,
+          "score": -1.840455
+        },
+        {
+          "trailing_nonconsumed": 1,
+          "score": -1.447952
+        },
+        {
+          "trailing_nonconsumed": 3,
+          "score": -1.055449
+        },
+        {
+          "trailing_nonconsumed": 5,
+          "score": -0.82585
+        },
+        {
+          "trailing_nonconsumed": 10,
+          "score": -0.482618
+        },
+        {
+          "trailing_nonconsumed": 20,
+          "score": -0.116458
+        }
+      ]
+    },
+    "k_tail_is_demoting": false,
+    "finding": "the K term is monotonically increasing: a row delivered twenty times and consumed none of them scores higher the longer it has gone unconsumed. Demotion therefore cannot be obtained by feeding a better signal into trailing_nonconsumed; it has to be a gate applied outside the frozen zsum, which is also the only shape the frozen-evaluator boundary permits."
+  },
+  "field_known_windows": 10535,
+  "arms": [
+    {
+      "label": "sfx-live",
+      "provenance": "field",
+      "note": "",
+      "path": "/home/sfx/.local/share/living-memory/global.sqlite3",
+      "usable": true,
+      "field_evidence": true,
+      "read": {
+        "opened": "mode=ro",
+        "query_only": true,
+        "file_bytes": 745078784,
+        "file_mtime_utc": "2026-09-08T00:19:38.742362+00:00"
+      },
+      "schema": {
+        "ledger_present": true,
+        "lookup_column_present": true,
+        "lookup_table_present": true,
+        "ledger_format_version": 2,
+        "ledger_format_expected": 2,
+        "ledger_complete": true,
+        "ledger_unavailable_reason": null
+      },
+      "corpus": {
+        "recall_events": 63736,
+        "first_recall_at": "2026-05-14T20:05:23Z",
+        "last_recall_at": "2026-09-08T00:34:14Z",
+        "events_with_map": 8744,
+        "events_with_map_clusters": 4106,
+        "events_with_unparsed_map": 0,
+        "distinct_delivered_nodes": 8312,
+        "nodes_with_truncated_history": 25
+      },
+      "volume": {
+        "matured_windows": 197699,
+        "known_windows": 10535,
+        "null_windows": 187164,
+        "lookup_signal": {
+          "recorded": true,
+          "reason": null,
+          "requested_pairs": 1054,
+          "events": 536,
+          "node_ids": 566,
+          "first_at": "2026-08-23T22:55:05.000000Z",
+          "last_at": "2026-09-08T00:35:32.000000Z",
+          "observed_hours_to_decision": 368.236,
+          "observed_hours_to_last_activity": 361.674,
+          "observed_days_to_last_activity": 15.07
+        },
+        "power": {
+          "target_half_width": 0.1,
+          "known_windows": 10535,
+          "matured_windows": 197699,
+          "known_share_of_matured": 0.053288,
+          "windows_needed_worst_case": 97,
+          "windows_needed_if_rate_near_0_1": 35,
+          "powered": true,
+          "widest_interval_at_this_n": {
+            "point": 0.0,
+            "low": 0.0,
+            "high": 0.000365,
+            "half_width": 0.000182
+          },
+          "verdict": "powered"
+        }
+      },
+      "distribution": {
+        "overall": {
+          "windows": 197699,
+          "map_medoid_windows": 8497,
+          "organic_only_windows": 189202,
+          "redelivered": 12433,
+          "known_windows": 10535,
+          "null_windows": 187164,
+          "known": {
+            "total": 10535,
+            "by_ask_correlation": {
+              "any_transport": {
+                "classes": {
+                  "lookup_followed": 1378,
+                  "ask_follow": 2672,
+                  "redelivered_only": 217,
+                  "nothing": 6268
+                },
+                "shares": {
+                  "lookup_followed": 0.130802,
+                  "ask_follow": 0.253631,
+                  "redelivered_only": 0.020598,
+                  "nothing": 0.594969
+                }
+              },
+              "same_transport": {
+                "classes": {
+                  "lookup_followed": 1378,
+                  "ask_follow": 592,
+                  "redelivered_only": 302,
+                  "nothing": 8263
+                },
+                "shares": {
+                  "lookup_followed": 0.130802,
+                  "ask_follow": 0.056194,
+                  "redelivered_only": 0.028666,
+                  "nothing": 0.784338
+                }
+              }
+            },
+            "lookup_by_redelivery": {
+              "signal_1__redelivered_1": 176,
+              "signal_1__redelivered_0": 1202,
+              "signal_0__redelivered_1": 506,
+              "signal_0__redelivered_0": 8651
+            },
+            "lookup_follow_rate": {
+              "point": 0.130802,
+              "low": 0.124498,
+              "high": 0.137376,
+              "half_width": 0.006439
+            }
+          },
+          "null": {
+            "total": 187164,
+            "by_ask_correlation": {
+              "any_transport": {
+                "classes": {
+                  "ask_follow": 2032,
+                  "redelivered_only": 11550,
+                  "nothing": 173582
+                },
+                "shares": {
+                  "ask_follow": 0.010857,
+                  "redelivered_only": 0.061711,
+                  "nothing": 0.927433
+                }
+              },
+              "same_transport": {
+                "classes": {
+                  "ask_follow": 305,
+                  "redelivered_only": 11655,
+                  "nothing": 175204
+                },
+                "shares": {
+                  "ask_follow": 0.00163,
+                  "redelivered_only": 0.062272,
+                  "nothing": 0.936099
+                }
+              }
+            }
+          },
+          "ask_follow_probe": {
+            "applicable_windows": 8497,
+            "not_applicable_windows": 189202,
+            "fired": {
+              "any_transport": 5678,
+              "same_transport": 1039
+            },
+            "rate": {
+              "any_transport": {
+                "point": 0.668236,
+                "low": 0.65815,
+                "high": 0.678169,
+                "half_width": 0.010009
+              },
+              "same_transport": {
+                "point": 0.122278,
+                "low": 0.115483,
+                "high": 0.129415,
+                "half_width": 0.006966
+              }
+            },
+            "ask_by_redelivery": {
+              "any_transport": {
+                "signal_1__redelivered_1": 633,
+                "signal_1__redelivered_0": 5045,
+                "signal_0__redelivered_1": 83,
+                "signal_0__redelivered_0": 2736
+              },
+              "same_transport": {
+                "signal_1__redelivered_1": 396,
+                "signal_1__redelivered_0": 643,
+                "signal_0__redelivered_1": 320,
+                "signal_0__redelivered_0": 7138
+              }
+            },
+            "redelivery_precision_for_ask_follow": {
+              "any_transport": {
+                "p_signal_given_redelivered": {
+                  "point": 0.884078,
+                  "low": 0.858553,
+                  "high": 0.905504,
+                  "half_width": 0.023476
+                },
+                "p_signal_given_not_redelivered": {
+                  "point": 0.648374,
+                  "low": 0.637694,
+                  "high": 0.658908,
+                  "half_width": 0.010607
+                },
+                "lift": 1.363531
+              },
+              "same_transport": {
+                "p_signal_given_redelivered": {
+                  "point": 0.553073,
+                  "low": 0.516469,
+                  "high": 0.58911,
+                  "half_width": 0.036321
+                },
+                "p_signal_given_not_redelivered": {
+                  "point": 0.082637,
+                  "low": 0.076723,
+                  "high": 0.088963,
+                  "half_width": 0.00612
+                },
+                "lift": 6.692801
+              }
+            }
+          }
+        },
+        "map_medoid_windows_only": {
+          "windows": 8497,
+          "map_medoid_windows": 8497,
+          "organic_only_windows": 0,
+          "redelivered": 716,
+          "known_windows": 5866,
+          "null_windows": 2631,
+          "known": {
+            "total": 5866,
+            "by_ask_correlation": {
+              "any_transport": {
+                "classes": {
+                  "lookup_followed": 1073,
+                  "ask_follow": 2672,
+                  "redelivered_only": 32,
+                  "nothing": 2089
+                },
+                "shares": {
+                  "lookup_followed": 0.182919,
+                  "ask_follow": 0.455506,
+                  "redelivered_only": 0.005455,
+                  "nothing": 0.35612
+                }
+              },
+              "same_transport": {
+                "classes": {
+                  "lookup_followed": 1073,
+                  "ask_follow": 592,
+                  "redelivered_only": 117,
+                  "nothing": 4084
+                },
+                "shares": {
+                  "lookup_followed": 0.182919,
+                  "ask_follow": 0.100921,
+                  "redelivered_only": 0.019945,
+                  "nothing": 0.696215
+                }
+              }
+            },
+            "lookup_by_redelivery": {
+              "signal_1__redelivered_1": 151,
+              "signal_1__redelivered_0": 922,
+              "signal_0__redelivered_1": 321,
+              "signal_0__redelivered_0": 4472
+            },
+            "lookup_follow_rate": {
+              "point": 0.182919,
+              "low": 0.173234,
+              "high": 0.193018,
+              "half_width": 0.009892
+            }
+          },
+          "null": {
+            "total": 2631,
+            "by_ask_correlation": {
+              "any_transport": {
+                "classes": {
+                  "ask_follow": 2032,
+                  "redelivered_only": 43,
+                  "nothing": 556
+                },
+                "shares": {
+                  "ask_follow": 0.77233,
+                  "redelivered_only": 0.016344,
+                  "nothing": 0.211326
+                }
+              },
+              "same_transport": {
+                "classes": {
+                  "ask_follow": 305,
+                  "redelivered_only": 148,
+                  "nothing": 2178
+                },
+                "shares": {
+                  "ask_follow": 0.115926,
+                  "redelivered_only": 0.056252,
+                  "nothing": 0.827822
+                }
+              }
+            }
+          },
+          "ask_follow_probe": {
+            "applicable_windows": 8497,
+            "not_applicable_windows": 0,
+            "fired": {
+              "any_transport": 5678,
+              "same_transport": 1039
+            },
+            "rate": {
+              "any_transport": {
+                "point": 0.668236,
+                "low": 0.65815,
+                "high": 0.678169,
+                "half_width": 0.010009
+              },
+              "same_transport": {
+                "point": 0.122278,
+                "low": 0.115483,
+                "high": 0.129415,
+                "half_width": 0.006966
+              }
+            },
+            "ask_by_redelivery": {
+              "any_transport": {
+                "signal_1__redelivered_1": 633,
+                "signal_1__redelivered_0": 5045,
+                "signal_0__redelivered_1": 83,
+                "signal_0__redelivered_0": 2736
+              },
+              "same_transport": {
+                "signal_1__redelivered_1": 396,
+                "signal_1__redelivered_0": 643,
+                "signal_0__redelivered_1": 320,
+                "signal_0__redelivered_0": 7138
+              }
+            },
+            "redelivery_precision_for_ask_follow": {
+              "any_transport": {
+                "p_signal_given_redelivered": {
+                  "point": 0.884078,
+                  "low": 0.858553,
+                  "high": 0.905504,
+                  "half_width": 0.023476
+                },
+                "p_signal_given_not_redelivered": {
+                  "point": 0.648374,
+                  "low": 0.637694,
+                  "high": 0.658908,
+                  "half_width": 0.010607
+                },
+                "lift": 1.363531
+              },
+              "same_transport": {
+                "p_signal_given_redelivered": {
+                  "point": 0.553073,
+                  "low": 0.516469,
+                  "high": 0.58911,
+                  "half_width": 0.036321
+                },
+                "p_signal_given_not_redelivered": {
+                  "point": 0.082637,
+                  "low": 0.076723,
+                  "high": 0.088963,
+                  "half_width": 0.00612
+                },
+                "lift": 6.692801
+              }
+            }
+          }
+        },
+        "top_sticky_cohorts": {
+          "by_redelivery_count": {
+            "members": [
+              "01KSETVHGHE31KD376EJ5HDN6E",
+              "01KS0HCRKH57E9YE9EFRRGFMQZ",
+              "01KS7P6QR3KNXY0X5D31EXJ8WS",
+              "01KSG93S07XH7Z6KHR2Y91A017",
+              "01KS0N3J9YDASHJRP0RNW4Z1W2",
+              "01KS7FZCPAPR3N8QR2VJ5E4BAD",
+              "01KS0FEZ9CWGWH6Y6Z1HY00J41",
+              "01KS7544HD5GTKQDMS378VSY0A",
+              "01KRZVVR565QZ75YYVA4AA641N",
+              "01KS0QBT496YKNTN4NZXAC6DK4"
+            ],
+            "windows": {
+              "windows": 6197,
+              "map_medoid_windows": 635,
+              "organic_only_windows": 5562,
+              "redelivered": 1810,
+              "known_windows": 639,
+              "null_windows": 5558,
+              "known": {
+                "total": 639,
+                "by_ask_correlation": {
+                  "any_transport": {
+                    "classes": {
+                      "lookup_followed": 28,
+                      "ask_follow": 555,
+                      "redelivered_only": 1,
+                      "nothing": 55
+                    },
+                    "shares": {
+                      "lookup_followed": 0.043818,
+                      "ask_follow": 0.868545,
+                      "redelivered_only": 0.001565,
+                      "nothing": 0.086072
+                    }
+                  },
+                  "same_transport": {
+                    "classes": {
+                      "lookup_followed": 28,
+                      "ask_follow": 184,
+                      "redelivered_only": 20,
+                      "nothing": 407
+                    },
+                    "shares": {
+                      "lookup_followed": 0.043818,
+                      "ask_follow": 0.28795,
+                      "redelivered_only": 0.031299,
+                      "nothing": 0.636933
+                    }
+                  }
+                },
+                "lookup_by_redelivery": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 28,
+                  "signal_0__redelivered_1": 40,
+                  "signal_0__redelivered_0": 571
+                },
+                "lookup_follow_rate": {
+                  "point": 0.043818,
+                  "low": 0.030488,
+                  "high": 0.062601,
+                  "half_width": 0.016056
+                }
+              },
+              "null": {
+                "total": 5558,
+                "by_ask_correlation": {
+                  "any_transport": {
+                    "classes": {
+                      "ask_follow": 13,
+                      "redelivered_only": 1768,
+                      "nothing": 3777
+                    },
+                    "shares": {
+                      "ask_follow": 0.002339,
+                      "redelivered_only": 0.3181,
+                      "nothing": 0.679561
+                    }
+                  },
+                  "same_transport": {
+                    "classes": {
+                      "ask_follow": 4,
+                      "redelivered_only": 1769,
+                      "nothing": 3785
+                    },
+                    "shares": {
+                      "ask_follow": 0.00072,
+                      "redelivered_only": 0.31828,
+                      "nothing": 0.681
+                    }
+                  }
+                }
+              },
+              "ask_follow_probe": {
+                "applicable_windows": 635,
+                "not_applicable_windows": 5562,
+                "fired": {
+                  "any_transport": 596,
+                  "same_transport": 200
+                },
+                "rate": {
+                  "any_transport": {
+                    "point": 0.938583,
+                    "low": 0.917142,
+                    "high": 0.954749,
+                    "half_width": 0.018804
+                  },
+                  "same_transport": {
+                    "point": 0.314961,
+                    "low": 0.280037,
+                    "high": 0.35211,
+                    "half_width": 0.036037
+                  }
+                },
+                "ask_by_redelivery": {
+                  "any_transport": {
+                    "signal_1__redelivered_1": 41,
+                    "signal_1__redelivered_0": 555,
+                    "signal_0__redelivered_1": 2,
+                    "signal_0__redelivered_0": 37
+                  },
+                  "same_transport": {
+                    "signal_1__redelivered_1": 21,
+                    "signal_1__redelivered_0": 179,
+                    "signal_0__redelivered_1": 22,
+                    "signal_0__redelivered_0": 413
+                  }
+                },
+                "redelivery_precision_for_ask_follow": {
+                  "any_transport": {
+                    "p_signal_given_redelivered": {
+                      "point": 0.953488,
+                      "low": 0.845445,
+                      "high": 0.987151,
+                      "half_width": 0.070853
+                    },
+                    "p_signal_given_not_redelivered": {
+                      "point": 0.9375,
+                      "low": 0.91504,
+                      "high": 0.954319,
+                      "half_width": 0.01964
+                    },
+                    "lift": 1.017054
+                  },
+                  "same_transport": {
+                    "p_signal_given_redelivered": {
+                      "point": 0.488372,
+                      "low": 0.346174,
+                      "high": 0.632477,
+                      "half_width": 0.143151
+                    },
+                    "p_signal_given_not_redelivered": {
+                      "point": 0.302365,
+                      "low": 0.266739,
+                      "high": 0.340539,
+                      "half_width": 0.0369
+                    },
+                    "lift": 1.615174
+                  }
+                }
+              }
+            }
+          },
+          "by_map_offer_count": {
+            "members": [
+              "01KSB3GDM0J3ZB24QSRA97RRWJ",
+              "01KRWVEF08GR0365E296ZDNDWH",
+              "01KRVVE5XP69G159YJ94JTM020",
+              "01KSG93S07XH7Z6KHR2Y91A017",
+              "01KSETVHGHE31KD376EJ5HDN6E",
+              "01M1FCG4KM4S0JBG2PT0ZPEW3D",
+              "01KRWVEF00JXWVY4N0T6J9CN84",
+              "01KWQ5YJCYJ6QHXHVT4WX8TR8N",
+              "01KWQ5YJCBF7C2TAQFDCNNV80F",
+              "01KRTS56QSYSJEQDQXM8CK9KKJ"
+            ],
+            "windows": {
+              "windows": 4702,
+              "map_medoid_windows": 2776,
+              "organic_only_windows": 1926,
+              "redelivered": 1029,
+              "known_windows": 2696,
+              "null_windows": 2006,
+              "known": {
+                "total": 2696,
+                "by_ask_correlation": {
+                  "any_transport": {
+                    "classes": {
+                      "lookup_followed": 846,
+                      "ask_follow": 1761,
+                      "redelivered_only": 2,
+                      "nothing": 87
+                    },
+                    "shares": {
+                      "lookup_followed": 0.313798,
+                      "ask_follow": 0.65319,
+                      "redelivered_only": 0.000742,
+                      "nothing": 0.03227
+                    }
+                  },
+                  "same_transport": {
+                    "classes": {
+                      "lookup_followed": 846,
+                      "ask_follow": 360,
+                      "redelivered_only": 51,
+                      "nothing": 1439
+                    },
+                    "shares": {
+                      "lookup_followed": 0.313798,
+                      "ask_follow": 0.133531,
+                      "redelivered_only": 0.018917,
+                      "nothing": 0.533754
+                    }
+                  }
+                },
+                "lookup_by_redelivery": {
+                  "signal_1__redelivered_1": 120,
+                  "signal_1__redelivered_0": 726,
+                  "signal_0__redelivered_1": 231,
+                  "signal_0__redelivered_0": 1619
+                },
+                "lookup_follow_rate": {
+                  "point": 0.313798,
+                  "low": 0.296557,
+                  "high": 0.331569,
+                  "half_width": 0.017506
+                }
+              },
+              "null": {
+                "total": 2006,
+                "by_ask_correlation": {
+                  "any_transport": {
+                    "classes": {
+                      "ask_follow": 121,
+                      "redelivered_only": 663,
+                      "nothing": 1222
+                    },
+                    "shares": {
+                      "ask_follow": 0.060319,
+                      "redelivered_only": 0.330508,
+                      "nothing": 0.609172
+                    }
+                  },
+                  "same_transport": {
+                    "classes": {
+                      "ask_follow": 13,
+                      "redelivered_only": 665,
+                      "nothing": 1328
+                    },
+                    "shares": {
+                      "ask_follow": 0.006481,
+                      "redelivered_only": 0.331505,
+                      "nothing": 0.662014
+                    }
+                  }
+                }
+              },
+              "ask_follow_probe": {
+                "applicable_windows": 2776,
+                "not_applicable_windows": 1926,
+                "fired": {
+                  "any_transport": 2718,
+                  "same_transport": 487
+                },
+                "rate": {
+                  "any_transport": {
+                    "point": 0.979107,
+                    "low": 0.973087,
+                    "high": 0.983803,
+                    "half_width": 0.005358
+                  },
+                  "same_transport": {
+                    "point": 0.175432,
+                    "low": 0.161735,
+                    "high": 0.190026,
+                    "half_width": 0.014146
+                  }
+                },
+                "ask_by_redelivery": {
+                  "any_transport": {
+                    "signal_1__redelivered_1": 364,
+                    "signal_1__redelivered_0": 2354,
+                    "signal_0__redelivered_1": 2,
+                    "signal_0__redelivered_0": 56
+                  },
+                  "same_transport": {
+                    "signal_1__redelivered_1": 278,
+                    "signal_1__redelivered_0": 209,
+                    "signal_0__redelivered_1": 88,
+                    "signal_0__redelivered_0": 2201
+                  }
+                },
+                "redelivery_precision_for_ask_follow": {
+                  "any_transport": {
+                    "p_signal_given_redelivered": {
+                      "point": 0.994536,
+                      "low": 0.980298,
+                      "high": 0.9985,
+                      "half_width": 0.009101
+                    },
+                    "p_signal_given_not_redelivered": {
+                      "point": 0.976763,
+                      "low": 0.969947,
+                      "high": 0.982062,
+                      "half_width": 0.006058
+                    },
+                    "lift": 1.018196
+                  },
+                  "same_transport": {
+                    "p_signal_given_redelivered": {
+                      "point": 0.759563,
+                      "low": 0.71323,
+                      "high": 0.800504,
+                      "half_width": 0.043637
+                    },
+                    "p_signal_given_not_redelivered": {
+                      "point": 0.086722,
+                      "low": 0.076134,
+                      "high": 0.098626,
+                      "half_width": 0.011246
+                    },
+                    "lift": 8.758596
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "top_sticky_rows": [
+        {
+          "node_id": "01KSETVHGHE31KD376EJ5HDN6E",
+          "rank": {
+            "by_redelivery_count": 1,
+            "by_map_offer_count": 5
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:online",
+            "access_count": 1186,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Correction: routing the experiment tooltip root through openCatalogEntityFromMar",
+            "returned_by_recalls": 1186
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 750,
+            "consumed": 236,
+            "trailing_nonconsumed": 27,
+            "lookup_consumed": 0,
+            "lookup_known": 179,
+            "lookup_trailing_absent": 179,
+            "rows": 750
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.314667,
+            "trailing_nonconsumed": 27,
+            "score": 5.381381,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.460734,
+              "log1p_unconsumed": 1.35165,
+              "log1p_trailing_nonconsumed": 0.992218,
+              "consumed_ratio": 2.176224
+            }
+          },
+          "windows": {
+            "windows": 750,
+            "map_medoid_windows": 181,
+            "organic_only_windows": 569,
+            "redelivered": 236,
+            "known_windows": 179,
+            "null_windows": 571,
+            "known": {
+              "total": 179,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 179,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 1.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 14,
+                    "redelivered_only": 15,
+                    "nothing": 150
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.078212,
+                    "redelivered_only": 0.083799,
+                    "nothing": 0.837989
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 17,
+                "signal_0__redelivered_0": 162
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.02101,
+                "half_width": 0.010505
+              }
+            },
+            "null": {
+              "total": 571,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 2,
+                    "redelivered_only": 219,
+                    "nothing": 350
+                  },
+                  "shares": {
+                    "ask_follow": 0.003503,
+                    "redelivered_only": 0.383538,
+                    "nothing": 0.61296
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 219,
+                    "nothing": 352
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.383538,
+                    "nothing": 0.616462
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 181,
+              "not_applicable_windows": 569,
+              "fired": {
+                "any_transport": 181,
+                "same_transport": 14
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.979218,
+                  "high": 1.0,
+                  "half_width": 0.010391
+                },
+                "same_transport": {
+                  "point": 0.077348,
+                  "low": 0.046631,
+                  "high": 0.125632,
+                  "half_width": 0.039501
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 17,
+                  "signal_1__redelivered_0": 164,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 2,
+                  "signal_1__redelivered_0": 12,
+                  "signal_0__redelivered_1": 15,
+                  "signal_0__redelivered_0": 152
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.815682,
+                    "high": 1.0,
+                    "half_width": 0.092159
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.977113,
+                    "high": 1.0,
+                    "half_width": 0.011444
+                  },
+                  "lift": 1.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.117647,
+                    "low": 0.03288,
+                    "high": 0.343364,
+                    "half_width": 0.155242
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.073171,
+                    "low": 0.042349,
+                    "high": 0.12353,
+                    "half_width": 0.04059
+                  },
+                  "lift": 1.607836
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KS0HCRKH57E9YE9EFRRGFMQZ",
+          "rank": {
+            "by_redelivery_count": 2,
+            "by_map_offer_count": 27
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:online",
+            "access_count": 998,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Reopen lesson [EZ-13771-tooltip-experiment]: Verify reopened tooltip work agains",
+            "returned_by_recalls": 998
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 836,
+            "consumed": 229,
+            "trailing_nonconsumed": 20,
+            "lookup_consumed": 0,
+            "lookup_known": 18,
+            "lookup_trailing_absent": 18,
+            "rows": 836
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.273923,
+            "trailing_nonconsumed": 20,
+            "score": 4.976507,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.502801,
+              "log1p_unconsumed": 1.416598,
+              "log1p_trailing_nonconsumed": 0.829314,
+              "consumed_ratio": 1.827239
+            }
+          },
+          "windows": {
+            "windows": 836,
+            "map_medoid_windows": 21,
+            "organic_only_windows": 815,
+            "redelivered": 229,
+            "known_windows": 18,
+            "null_windows": 818,
+            "known": {
+              "total": 18,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 17,
+                    "redelivered_only": 0,
+                    "nothing": 1
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.944444,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.055556
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 2,
+                    "redelivered_only": 0,
+                    "nothing": 16
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.111111,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.888889
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 18
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.175879,
+                "half_width": 0.08794
+              }
+            },
+            "null": {
+              "total": 818,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 3,
+                    "redelivered_only": 228,
+                    "nothing": 587
+                  },
+                  "shares": {
+                    "ask_follow": 0.003667,
+                    "redelivered_only": 0.278729,
+                    "nothing": 0.717604
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 229,
+                    "nothing": 589
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.279951,
+                    "nothing": 0.720049
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 21,
+              "not_applicable_windows": 815,
+              "fired": {
+                "any_transport": 20,
+                "same_transport": 2
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.952381,
+                  "low": 0.773306,
+                  "high": 0.991544,
+                  "half_width": 0.109119
+                },
+                "same_transport": {
+                  "point": 0.095238,
+                  "low": 0.026519,
+                  "high": 0.289141,
+                  "half_width": 0.131311
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 19,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 1
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 2,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 18
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.95,
+                    "low": 0.763869,
+                    "high": 0.991119,
+                    "half_width": 0.113625
+                  },
+                  "lift": 1.052632
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.793451,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.1,
+                    "low": 0.027866,
+                    "high": 0.301034,
+                    "half_width": 0.136584
+                  },
+                  "lift": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KS7P6QR3KNXY0X5D31EXJ8WS",
+          "rank": {
+            "by_redelivery_count": 3,
+            "by_map_offer_count": 45
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:online",
+            "access_count": 569,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "EZ-13771 tooltip-implementation _verify node (2nd verification) result: FAIL. Ve",
+            "returned_by_recalls": 569
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 385,
+            "consumed": 194,
+            "trailing_nonconsumed": 17,
+            "lookup_consumed": 0,
+            "lookup_known": 11,
+            "lookup_trailing_absent": 11,
+            "rows": 385
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.503896,
+            "trailing_nonconsumed": 17,
+            "score": 6.107762,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.20249,
+              "log1p_unconsumed": 0.965628,
+              "log1p_trailing_nonconsumed": 0.742025,
+              "consumed_ratio": 3.797064
+            }
+          },
+          "windows": {
+            "windows": 385,
+            "map_medoid_windows": 11,
+            "organic_only_windows": 374,
+            "redelivered": 194,
+            "known_windows": 11,
+            "null_windows": 374,
+            "known": {
+              "total": 11,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 9,
+                    "redelivered_only": 0,
+                    "nothing": 2
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.818182,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.181818
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 11
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 11
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.258833,
+                "half_width": 0.129416
+              }
+            },
+            "null": {
+              "total": 374,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 194,
+                    "nothing": 180
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.518717,
+                    "nothing": 0.481283
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 194,
+                    "nothing": 180
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.518717,
+                    "nothing": 0.481283
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 11,
+              "not_applicable_windows": 374,
+              "fired": {
+                "any_transport": 9,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.818182,
+                  "low": 0.523019,
+                  "high": 0.948632,
+                  "half_width": 0.212806
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.258833,
+                  "half_width": 0.129416
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 9,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 2
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 11
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.818182,
+                    "low": 0.523019,
+                    "high": 0.948632,
+                    "half_width": 0.212806
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.258833,
+                    "half_width": 0.129416
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KSG93S07XH7Z6KHR2Y91A017",
+          "rank": {
+            "by_redelivery_count": 4,
+            "by_map_offer_count": 4
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:online",
+            "access_count": 1012,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Correction for EZ-13771: do not decouple map-opened firm cards by generating a f",
+            "returned_by_recalls": 1012
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 620,
+            "consumed": 187,
+            "trailing_nonconsumed": 106,
+            "lookup_consumed": 25,
+            "lookup_known": 208,
+            "lookup_trailing_absent": 183,
+            "rows": 620
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.301613,
+            "trailing_nonconsumed": 106,
+            "score": 5.888014,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.386984,
+              "log1p_unconsumed": 1.2847,
+              "log1p_trailing_nonconsumed": 1.751362,
+              "consumed_ratio": 2.064412
+            }
+          },
+          "windows": {
+            "windows": 620,
+            "map_medoid_windows": 206,
+            "organic_only_windows": 414,
+            "redelivered": 187,
+            "known_windows": 208,
+            "null_windows": 412,
+            "known": {
+              "total": 208,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 25,
+                    "ask_follow": 171,
+                    "redelivered_only": 0,
+                    "nothing": 12
+                  },
+                  "shares": {
+                    "lookup_followed": 0.120192,
+                    "ask_follow": 0.822115,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.057692
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 25,
+                    "ask_follow": 87,
+                    "redelivered_only": 1,
+                    "nothing": 95
+                  },
+                  "shares": {
+                    "lookup_followed": 0.120192,
+                    "ask_follow": 0.418269,
+                    "redelivered_only": 0.004808,
+                    "nothing": 0.456731
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 25,
+                "signal_0__redelivered_1": 19,
+                "signal_0__redelivered_0": 164
+              },
+              "lookup_follow_rate": {
+                "point": 0.120192,
+                "low": 0.082751,
+                "high": 0.171408,
+                "half_width": 0.044328
+              }
+            },
+            "null": {
+              "total": 412,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 168,
+                    "nothing": 244
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.407767,
+                    "nothing": 0.592233
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 168,
+                    "nothing": 244
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.407767,
+                    "nothing": 0.592233
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 206,
+              "not_applicable_windows": 414,
+              "fired": {
+                "any_transport": 196,
+                "same_transport": 99
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.951456,
+                  "low": 0.912962,
+                  "high": 0.973421,
+                  "half_width": 0.03023
+                },
+                "same_transport": {
+                  "point": 0.480583,
+                  "low": 0.413337,
+                  "high": 0.548539,
+                  "half_width": 0.067601
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 19,
+                  "signal_1__redelivered_0": 177,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 9
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 18,
+                  "signal_1__redelivered_0": 81,
+                  "signal_0__redelivered_1": 2,
+                  "signal_0__redelivered_0": 105
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.95,
+                    "low": 0.763869,
+                    "high": 0.991119,
+                    "half_width": 0.113625
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.951613,
+                    "low": 0.910611,
+                    "high": 0.974337,
+                    "half_width": 0.031863
+                  },
+                  "lift": 0.998305
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.9,
+                    "low": 0.698966,
+                    "high": 0.972134,
+                    "half_width": 0.136584
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.435484,
+                    "low": 0.366247,
+                    "high": 0.507332,
+                    "half_width": 0.070543
+                  },
+                  "lift": 2.066666
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KS0N3J9YDASHJRP0RNW4Z1W2",
+          "rank": {
+            "by_redelivery_count": 5,
+            "by_map_offer_count": 11
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:online",
+            "access_count": 650,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Correction: removing CatalogTooltip from entities/entity barrels was not suffici",
+            "returned_by_recalls": 650
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 432,
+            "consumed": 175,
+            "trailing_nonconsumed": 0,
+            "lookup_consumed": 3,
+            "lookup_known": 109,
+            "lookup_trailing_absent": 96,
+            "rows": 432
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.405093,
+            "trailing_nonconsumed": 0,
+            "score": 3.784934,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.247072,
+              "log1p_unconsumed": 1.081224,
+              "log1p_trailing_nonconsumed": -0.894682,
+              "consumed_ratio": 2.950765
+            }
+          },
+          "windows": {
+            "windows": 432,
+            "map_medoid_windows": 110,
+            "organic_only_windows": 322,
+            "redelivered": 175,
+            "known_windows": 109,
+            "null_windows": 323,
+            "known": {
+              "total": 109,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 3,
+                    "ask_follow": 102,
+                    "redelivered_only": 0,
+                    "nothing": 4
+                  },
+                  "shares": {
+                    "lookup_followed": 0.027523,
+                    "ask_follow": 0.93578,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.036697
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 3,
+                    "ask_follow": 67,
+                    "redelivered_only": 3,
+                    "nothing": 36
+                  },
+                  "shares": {
+                    "lookup_followed": 0.027523,
+                    "ask_follow": 0.614679,
+                    "redelivered_only": 0.027523,
+                    "nothing": 0.330275
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 3,
+                "signal_0__redelivered_1": 3,
+                "signal_0__redelivered_0": 103
+              },
+              "lookup_follow_rate": {
+                "point": 0.027523,
+                "low": 0.009404,
+                "high": 0.077811,
+                "half_width": 0.034204
+              }
+            },
+            "null": {
+              "total": 323,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 172,
+                    "nothing": 151
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.532508,
+                    "nothing": 0.467492
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 172,
+                    "nothing": 151
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.532508,
+                    "nothing": 0.467492
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 110,
+              "not_applicable_windows": 322,
+              "fired": {
+                "any_transport": 105,
+                "same_transport": 67
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.954545,
+                  "low": 0.897984,
+                  "high": 0.980431,
+                  "half_width": 0.041223
+                },
+                "same_transport": {
+                  "point": 0.609091,
+                  "low": 0.515699,
+                  "high": 0.69512,
+                  "half_width": 0.08971
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 3,
+                  "signal_1__redelivered_0": 102,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 5
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 67,
+                  "signal_0__redelivered_1": 3,
+                  "signal_0__redelivered_0": 40
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.438503,
+                    "high": 1.0,
+                    "half_width": 0.280749
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.953271,
+                    "low": 0.895246,
+                    "high": 0.979877,
+                    "half_width": 0.042315
+                  },
+                  "lift": 1.04902
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.561497,
+                    "half_width": 0.280749
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.626168,
+                    "low": 0.531619,
+                    "high": 0.711972,
+                    "half_width": 0.090176
+                  },
+                  "lift": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KS7FZCPAPR3N8QR2VJ5E4BAD",
+          "rank": {
+            "by_redelivery_count": 6,
+            "by_map_offer_count": 24
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "global",
+            "access_count": 1662,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "EZ-13771 tooltip-implementation verification result: FAIL. Verify worktree at /h",
+            "returned_by_recalls": 1662
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 792,
+            "consumed": 170,
+            "trailing_nonconsumed": 14,
+            "lookup_consumed": 0,
+            "lookup_known": 37,
+            "lookup_trailing_absent": 37,
+            "rows": 792
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.214646,
+            "trailing_nonconsumed": 14,
+            "score": 4.266823,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.481848,
+              "log1p_unconsumed": 1.426133,
+              "log1p_trailing_nonconsumed": 0.638783,
+              "consumed_ratio": 1.319503
+            }
+          },
+          "windows": {
+            "windows": 792,
+            "map_medoid_windows": 26,
+            "organic_only_windows": 766,
+            "redelivered": 170,
+            "known_windows": 37,
+            "null_windows": 755,
+            "known": {
+              "total": 37,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 15,
+                    "redelivered_only": 1,
+                    "nothing": 21
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.405405,
+                    "redelivered_only": 0.027027,
+                    "nothing": 0.567568
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 1,
+                    "nothing": 36
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.027027,
+                    "nothing": 0.972973
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 1,
+                "signal_0__redelivered_0": 36
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.094058,
+                "half_width": 0.047029
+              }
+            },
+            "null": {
+              "total": 755,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 2,
+                    "redelivered_only": 169,
+                    "nothing": 584
+                  },
+                  "shares": {
+                    "ask_follow": 0.002649,
+                    "redelivered_only": 0.223841,
+                    "nothing": 0.77351
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 1,
+                    "redelivered_only": 169,
+                    "nothing": 585
+                  },
+                  "shares": {
+                    "ask_follow": 0.001325,
+                    "redelivered_only": 0.223841,
+                    "nothing": 0.774834
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 26,
+              "not_applicable_windows": 766,
+              "fired": {
+                "any_transport": 17,
+                "same_transport": 1
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.653846,
+                  "low": 0.462206,
+                  "high": 0.805878,
+                  "half_width": 0.171836
+                },
+                "same_transport": {
+                  "point": 0.038462,
+                  "low": 0.006822,
+                  "high": 0.188928,
+                  "half_width": 0.091053
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 17,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 8
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 1,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 24
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.793451,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.68,
+                    "low": 0.484103,
+                    "high": 0.827948,
+                    "half_width": 0.171923
+                  },
+                  "lift": 0.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.793451,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.04,
+                    "low": 0.007096,
+                    "high": 0.195441,
+                    "half_width": 0.094172
+                  },
+                  "lift": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KS0FEZ9CWGWH6Y6Z1HY00J41",
+          "rank": {
+            "by_redelivery_count": 7,
+            "by_map_offer_count": 18
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:online",
+            "access_count": 497,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "EZ-13771 integration-polish concrete reopen fix in worktree _node_exec_EZ-13771-",
+            "returned_by_recalls": 497
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 324,
+            "consumed": 163,
+            "trailing_nonconsumed": 67,
+            "lookup_consumed": 0,
+            "lookup_known": 54,
+            "lookup_trailing_absent": 54,
+            "rows": 324
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.503086,
+            "trailing_nonconsumed": 67,
+            "score": 6.720253,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.135748,
+              "log1p_unconsumed": 0.899157,
+              "log1p_trailing_nonconsumed": 1.494664,
+              "consumed_ratio": 3.790128
+            }
+          },
+          "windows": {
+            "windows": 324,
+            "map_medoid_windows": 55,
+            "organic_only_windows": 269,
+            "redelivered": 163,
+            "known_windows": 54,
+            "null_windows": 270,
+            "known": {
+              "total": 54,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 48,
+                    "redelivered_only": 0,
+                    "nothing": 6
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.888889,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.111111
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 14,
+                    "redelivered_only": 0,
+                    "nothing": 40
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.259259,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.740741
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 54
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.066414,
+                "half_width": 0.033207
+              }
+            },
+            "null": {
+              "total": 270,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 163,
+                    "nothing": 107
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.603704,
+                    "nothing": 0.396296
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 163,
+                    "nothing": 107
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.603704,
+                    "nothing": 0.396296
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 55,
+              "not_applicable_windows": 269,
+              "fired": {
+                "any_transport": 48,
+                "same_transport": 14
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.872727,
+                  "low": 0.75983,
+                  "high": 0.936958,
+                  "half_width": 0.088564
+                },
+                "same_transport": {
+                  "point": 0.254545,
+                  "low": 0.158121,
+                  "high": 0.383019,
+                  "half_width": 0.112449
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 48,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 7
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 14,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 41
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.872727,
+                    "low": 0.75983,
+                    "high": 0.936958,
+                    "half_width": 0.088564
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.254545,
+                    "low": 0.158121,
+                    "high": 0.383019,
+                    "half_width": 0.112449
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KS7544HD5GTKQDMS378VSY0A",
+          "rank": {
+            "by_redelivery_count": 8,
+            "by_map_offer_count": 28
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "global",
+            "access_count": 1616,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "COMPLETE CODEBASE MAP FOR EZ-13771 TOOLTIP EXPERIMENT  PROJECT STRUCTURE: - /pac",
+            "returned_by_recalls": 1616
+          },
+          "matured_history": {
+            "available": false,
+            "unavailable_reason": "history_truncated",
+            "matured": null,
+            "consumed": null,
+            "trailing_nonconsumed": null,
+            "lookup_consumed": null,
+            "lookup_known": null,
+            "lookup_trailing_absent": null,
+            "rows": 1028
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": null,
+            "trailing_nonconsumed": null,
+            "score": -0.599445,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 0.0,
+              "log1p_unconsumed": 0.0,
+              "log1p_trailing_nonconsumed": 0.0,
+              "consumed_ratio": 0.0
+            }
+          },
+          "windows": {
+            "windows": 1028,
+            "map_medoid_windows": 20,
+            "organic_only_windows": 1008,
+            "redelivered": 156,
+            "known_windows": 23,
+            "null_windows": 1005,
+            "known": {
+              "total": 23,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 14,
+                    "redelivered_only": 0,
+                    "nothing": 9
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.608696,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.391304
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 23
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 23
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.143117,
+                "half_width": 0.071558
+              }
+            },
+            "null": {
+              "total": 1005,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 1,
+                    "redelivered_only": 156,
+                    "nothing": 848
+                  },
+                  "shares": {
+                    "ask_follow": 0.000995,
+                    "redelivered_only": 0.155224,
+                    "nothing": 0.843781
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 1,
+                    "redelivered_only": 156,
+                    "nothing": 848
+                  },
+                  "shares": {
+                    "ask_follow": 0.000995,
+                    "redelivered_only": 0.155224,
+                    "nothing": 0.843781
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 20,
+              "not_applicable_windows": 1008,
+              "fired": {
+                "any_transport": 15,
+                "same_transport": 1
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.75,
+                  "low": 0.531299,
+                  "high": 0.888138,
+                  "half_width": 0.17842
+                },
+                "same_transport": {
+                  "point": 0.05,
+                  "low": 0.008881,
+                  "high": 0.236131,
+                  "half_width": 0.113625
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 15,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 5
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 1,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 19
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.75,
+                    "low": 0.531299,
+                    "high": 0.888138,
+                    "half_width": 0.17842
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.05,
+                    "low": 0.008881,
+                    "high": 0.236131,
+                    "half_width": 0.113625
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KRZVVR565QZ75YYVA4AA641N",
+          "rank": {
+            "by_redelivery_count": 9,
+            "by_map_offer_count": 463
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:online",
+            "access_count": 758,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Reopen lesson [EZ-13771-tooltip-experiment]: When the heavy experiment view (Ent",
+            "returned_by_recalls": 758
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 647,
+            "consumed": 152,
+            "trailing_nonconsumed": 4,
+            "lookup_consumed": 0,
+            "lookup_known": 0,
+            "lookup_trailing_absent": 0,
+            "rows": 647
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.23493,
+            "trailing_nonconsumed": 4,
+            "score": 3.650922,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.403497,
+              "log1p_unconsumed": 1.336943,
+              "log1p_trailing_nonconsumed": 0.016681,
+              "consumed_ratio": 1.493245
+            }
+          },
+          "windows": {
+            "windows": 647,
+            "map_medoid_windows": 1,
+            "organic_only_windows": 646,
+            "redelivered": 152,
+            "known_windows": 0,
+            "null_windows": 647,
+            "known": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": null,
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": null,
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 0
+              },
+              "lookup_follow_rate": {
+                "point": null,
+                "low": null,
+                "high": null,
+                "half_width": null
+              }
+            },
+            "null": {
+              "total": 647,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 1,
+                    "redelivered_only": 152,
+                    "nothing": 494
+                  },
+                  "shares": {
+                    "ask_follow": 0.001546,
+                    "redelivered_only": 0.23493,
+                    "nothing": 0.763524
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 152,
+                    "nothing": 495
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.23493,
+                    "nothing": 0.76507
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 1,
+              "not_applicable_windows": 646,
+              "fired": {
+                "any_transport": 1,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.206549,
+                  "high": 1.0,
+                  "half_width": 0.396725
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.793451,
+                  "half_width": 0.396725
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 1,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 1
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.793451,
+                    "half_width": 0.396725
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KS0QBT496YKNTN4NZXAC6DK4",
+          "rank": {
+            "by_redelivery_count": 10,
+            "by_map_offer_count": 151
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:online",
+            "access_count": 989,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "The trace's claim that net `git diff origin/EZ-13771-tooltip-experiment` was onl",
+            "returned_by_recalls": 989
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 383,
+            "consumed": 148,
+            "trailing_nonconsumed": 1,
+            "lookup_consumed": 0,
+            "lookup_known": 0,
+            "lookup_trailing_absent": 0,
+            "rows": 383
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.386423,
+            "trailing_nonconsumed": 1,
+            "score": 3.936055,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.200474,
+              "log1p_unconsumed": 1.046354,
+              "log1p_trailing_nonconsumed": -0.50218,
+              "consumed_ratio": 2.790851
+            }
+          },
+          "windows": {
+            "windows": 383,
+            "map_medoid_windows": 4,
+            "organic_only_windows": 379,
+            "redelivered": 148,
+            "known_windows": 0,
+            "null_windows": 383,
+            "known": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": null,
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": null,
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 0
+              },
+              "lookup_follow_rate": {
+                "point": null,
+                "low": null,
+                "high": null,
+                "half_width": null
+              }
+            },
+            "null": {
+              "total": 383,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 4,
+                    "redelivered_only": 147,
+                    "nothing": 232
+                  },
+                  "shares": {
+                    "ask_follow": 0.010444,
+                    "redelivered_only": 0.383812,
+                    "nothing": 0.605744
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 2,
+                    "redelivered_only": 147,
+                    "nothing": 234
+                  },
+                  "shares": {
+                    "ask_follow": 0.005222,
+                    "redelivered_only": 0.383812,
+                    "nothing": 0.610966
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 4,
+              "not_applicable_windows": 379,
+              "fired": {
+                "any_transport": 4,
+                "same_transport": 2
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.510109,
+                  "high": 1.0,
+                  "half_width": 0.244945
+                },
+                "same_transport": {
+                  "point": 0.5,
+                  "low": 0.150039,
+                  "high": 0.849961,
+                  "half_width": 0.349961
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 3,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 1,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 2
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.438503,
+                    "high": 1.0,
+                    "half_width": 0.280749
+                  },
+                  "lift": 1.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.333333,
+                    "low": 0.061492,
+                    "high": 0.79234,
+                    "half_width": 0.365424
+                  },
+                  "lift": 3.000003
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KSB3GDM0J3ZB24QSRA97RRWJ",
+          "rank": {
+            "by_redelivery_count": 22,
+            "by_map_offer_count": 1
+          },
+          "pinned": true,
+          "node": {
+            "level": "schema",
+            "scope": "project:ae",
+            "access_count": 4657,
+            "usefulness_score": 0.07771683161328542,
+            "decayed": false,
+            "content_head": "Procedure: reopen lesson 1. reopen_lesson:goal-attachments: Rejected alternative",
+            "returned_by_recalls": 4657
+          },
+          "matured_history": {
+            "available": false,
+            "unavailable_reason": "history_truncated",
+            "matured": null,
+            "consumed": null,
+            "trailing_nonconsumed": null,
+            "lookup_consumed": null,
+            "lookup_known": null,
+            "lookup_trailing_absent": null,
+            "rows": 1026
+          },
+          "frozen_relevance": {
+            "level": "schema",
+            "consumed_ratio": null,
+            "trailing_nonconsumed": null,
+            "score": 1.668211,
+            "contributions": {
+              "level_is_schema": 1.668211,
+              "log1p_matured": 0.0,
+              "log1p_unconsumed": 0.0,
+              "log1p_trailing_nonconsumed": 0.0,
+              "consumed_ratio": 0.0
+            }
+          },
+          "windows": {
+            "windows": 1026,
+            "map_medoid_windows": 774,
+            "organic_only_windows": 252,
+            "redelivered": 113,
+            "known_windows": 773,
+            "null_windows": 253,
+            "known": {
+              "total": 773,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 313,
+                    "ask_follow": 457,
+                    "redelivered_only": 0,
+                    "nothing": 3
+                  },
+                  "shares": {
+                    "lookup_followed": 0.404916,
+                    "ask_follow": 0.591203,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.003881
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 313,
+                    "ask_follow": 28,
+                    "redelivered_only": 2,
+                    "nothing": 430
+                  },
+                  "shares": {
+                    "lookup_followed": 0.404916,
+                    "ask_follow": 0.036223,
+                    "redelivered_only": 0.002587,
+                    "nothing": 0.556274
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 17,
+                "signal_1__redelivered_0": 296,
+                "signal_0__redelivered_1": 4,
+                "signal_0__redelivered_0": 456
+              },
+              "lookup_follow_rate": {
+                "point": 0.404916,
+                "low": 0.370864,
+                "high": 0.439908,
+                "half_width": 0.034522
+              }
+            },
+            "null": {
+              "total": 253,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 4,
+                    "redelivered_only": 92,
+                    "nothing": 157
+                  },
+                  "shares": {
+                    "ask_follow": 0.01581,
+                    "redelivered_only": 0.363636,
+                    "nothing": 0.620553
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 92,
+                    "nothing": 161
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.363636,
+                    "nothing": 0.636364
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 774,
+              "not_applicable_windows": 252,
+              "fired": {
+                "any_transport": 772,
+                "same_transport": 52
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.997416,
+                  "low": 0.990628,
+                  "high": 0.999291,
+                  "half_width": 0.004332
+                },
+                "same_transport": {
+                  "point": 0.067183,
+                  "low": 0.051599,
+                  "high": 0.087043,
+                  "half_width": 0.017722
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 21,
+                  "signal_1__redelivered_0": 751,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 2
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 17,
+                  "signal_1__redelivered_0": 35,
+                  "signal_0__redelivered_1": 4,
+                  "signal_0__redelivered_0": 718
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.845361,
+                    "high": 1.0,
+                    "half_width": 0.07732
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.997344,
+                    "low": 0.990368,
+                    "high": 0.999271,
+                    "half_width": 0.004452
+                  },
+                  "lift": 1.002663
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.809524,
+                    "low": 0.599994,
+                    "high": 0.923324,
+                    "half_width": 0.161665
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.046481,
+                    "low": 0.033609,
+                    "high": 0.063957,
+                    "half_width": 0.015174
+                  },
+                  "lift": 17.416235
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KRWVEF08GR0365E296ZDNDWH",
+          "rank": {
+            "by_redelivery_count": 15,
+            "by_map_offer_count": 2
+          },
+          "pinned": false,
+          "node": {
+            "level": "schema",
+            "scope": "project:ae",
+            "access_count": 1675,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Procedure: verify pass 1. dashboard-opreq-json-support: Dashboard JSON operator_",
+            "returned_by_recalls": 1675
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 702,
+            "consumed": 134,
+            "trailing_nonconsumed": 95,
+            "lookup_consumed": 254,
+            "lookup_known": 528,
+            "lookup_trailing_absent": 191,
+            "rows": 702
+          },
+          "frozen_relevance": {
+            "level": "schema",
+            "consumed_ratio": 0.190883,
+            "trailing_nonconsumed": 95,
+            "score": 7.299872,
+            "contributions": {
+              "level_is_schema": 1.668211,
+              "log1p_matured": 1.435107,
+              "log1p_unconsumed": 1.390661,
+              "log1p_trailing_nonconsumed": 1.689934,
+              "consumed_ratio": 1.11596
+            }
+          },
+          "windows": {
+            "windows": 702,
+            "map_medoid_windows": 576,
+            "organic_only_windows": 126,
+            "redelivered": 134,
+            "known_windows": 528,
+            "null_windows": 174,
+            "known": {
+              "total": 528,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 254,
+                    "ask_follow": 264,
+                    "redelivered_only": 0,
+                    "nothing": 10
+                  },
+                  "shares": {
+                    "lookup_followed": 0.481061,
+                    "ask_follow": 0.5,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.018939
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 254,
+                    "ask_follow": 3,
+                    "redelivered_only": 25,
+                    "nothing": 246
+                  },
+                  "shares": {
+                    "lookup_followed": 0.481061,
+                    "ask_follow": 0.005682,
+                    "redelivered_only": 0.047348,
+                    "nothing": 0.465909
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 67,
+                "signal_1__redelivered_0": 187,
+                "signal_0__redelivered_1": 27,
+                "signal_0__redelivered_0": 247
+              },
+              "lookup_follow_rate": {
+                "point": 0.481061,
+                "low": 0.438734,
+                "high": 0.523661,
+                "half_width": 0.042464
+              }
+            },
+            "null": {
+              "total": 174,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 51,
+                    "redelivered_only": 27,
+                    "nothing": 96
+                  },
+                  "shares": {
+                    "ask_follow": 0.293103,
+                    "redelivered_only": 0.155172,
+                    "nothing": 0.551724
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 12,
+                    "redelivered_only": 28,
+                    "nothing": 134
+                  },
+                  "shares": {
+                    "ask_follow": 0.068966,
+                    "redelivered_only": 0.16092,
+                    "nothing": 0.770115
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 576,
+              "not_applicable_windows": 126,
+              "fired": {
+                "any_transport": 563,
+                "same_transport": 49
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.977431,
+                  "low": 0.961771,
+                  "high": 0.986764,
+                  "half_width": 0.012496
+                },
+                "same_transport": {
+                  "point": 0.085069,
+                  "low": 0.064945,
+                  "high": 0.110692,
+                  "half_width": 0.022874
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 107,
+                  "signal_1__redelivered_0": 456,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 13
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 48,
+                  "signal_1__redelivered_0": 1,
+                  "signal_0__redelivered_1": 59,
+                  "signal_0__redelivered_0": 468
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.965343,
+                    "high": 1.0,
+                    "half_width": 0.017329
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.972281,
+                    "low": 0.953158,
+                    "high": 0.983731,
+                    "half_width": 0.015286
+                  },
+                  "lift": 1.028509
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.448598,
+                    "low": 0.357773,
+                    "high": 0.542986,
+                    "half_width": 0.092606
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.002132,
+                    "low": 0.000376,
+                    "high": 0.011977,
+                    "half_width": 0.0058
+                  },
+                  "lift": 210.41182
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KRVVE5XP69G159YJ94JTM020",
+          "rank": {
+            "by_redelivery_count": 37,
+            "by_map_offer_count": 3
+          },
+          "pinned": false,
+          "node": {
+            "level": "schema",
+            "scope": "project:ae",
+            "access_count": 453,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Procedure: task outcome 1. dashboard-opreq-json-support: Dashboard JSON operator",
+            "returned_by_recalls": 453
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 435,
+            "consumed": 82,
+            "trailing_nonconsumed": 0,
+            "lookup_consumed": 178,
+            "lookup_known": 307,
+            "lookup_trailing_absent": 129,
+            "rows": 435
+          },
+          "frozen_relevance": {
+            "level": "schema",
+            "consumed_ratio": 0.188506,
+            "trailing_nonconsumed": 0,
+            "score": 4.323862,
+            "contributions": {
+              "level_is_schema": 1.668211,
+              "log1p_matured": 1.249751,
+              "log1p_unconsumed": 1.204987,
+              "log1p_trailing_nonconsumed": -0.894682,
+              "consumed_ratio": 1.095596
+            }
+          },
+          "windows": {
+            "windows": 435,
+            "map_medoid_windows": 335,
+            "organic_only_windows": 100,
+            "redelivered": 82,
+            "known_windows": 307,
+            "null_windows": 128,
+            "known": {
+              "total": 307,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 178,
+                    "ask_follow": 101,
+                    "redelivered_only": 0,
+                    "nothing": 28
+                  },
+                  "shares": {
+                    "lookup_followed": 0.579805,
+                    "ask_follow": 0.32899,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.091205
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 178,
+                    "ask_follow": 22,
+                    "redelivered_only": 3,
+                    "nothing": 104
+                  },
+                  "shares": {
+                    "lookup_followed": 0.579805,
+                    "ask_follow": 0.071661,
+                    "redelivered_only": 0.009772,
+                    "nothing": 0.338762
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 35,
+                "signal_1__redelivered_0": 143,
+                "signal_0__redelivered_1": 25,
+                "signal_0__redelivered_0": 104
+              },
+              "lookup_follow_rate": {
+                "point": 0.579805,
+                "low": 0.523938,
+                "high": 0.633698,
+                "half_width": 0.05488
+              }
+            },
+            "null": {
+              "total": 128,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 28,
+                    "redelivered_only": 22,
+                    "nothing": 78
+                  },
+                  "shares": {
+                    "ask_follow": 0.21875,
+                    "redelivered_only": 0.171875,
+                    "nothing": 0.609375
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 22,
+                    "nothing": 106
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.171875,
+                    "nothing": 0.828125
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 335,
+              "not_applicable_windows": 100,
+              "fired": {
+                "any_transport": 307,
+                "same_transport": 59
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.916418,
+                  "low": 0.881853,
+                  "high": 0.941541,
+                  "half_width": 0.029844
+                },
+                "same_transport": {
+                  "point": 0.176119,
+                  "low": 0.139067,
+                  "high": 0.220516,
+                  "half_width": 0.040725
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 60,
+                  "signal_1__redelivered_0": 247,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 28
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 57,
+                  "signal_1__redelivered_0": 2,
+                  "signal_0__redelivered_1": 3,
+                  "signal_0__redelivered_0": 273
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.939828,
+                    "high": 1.0,
+                    "half_width": 0.030086
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.898182,
+                    "low": 0.85678,
+                    "high": 0.928612,
+                    "half_width": 0.035916
+                  },
+                  "lift": 1.11336
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.95,
+                    "low": 0.862995,
+                    "high": 0.98285,
+                    "half_width": 0.059928
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.007273,
+                    "low": 0.001997,
+                    "high": 0.026125,
+                    "half_width": 0.012064
+                  },
+                  "lift": 130.620102
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01M1FCG4KM4S0JBG2PT0ZPEW3D",
+          "rank": {
+            "by_redelivery_count": 32,
+            "by_map_offer_count": 6
+          },
+          "pinned": false,
+          "node": {
+            "level": "schema",
+            "scope": "project:ae",
+            "access_count": 442,
+            "usefulness_score": 0.0,
+            "decayed": false,
+            "content_head": "Procedure: dashboard agent chats 1. goal chat-format-tables (2026-09-05): dashbo",
+            "returned_by_recalls": 442
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 175,
+            "consumed": 91,
+            "trailing_nonconsumed": 19,
+            "lookup_consumed": 22,
+            "lookup_known": 175,
+            "lookup_trailing_absent": 5,
+            "rows": 175
+          },
+          "frozen_relevance": {
+            "level": "schema",
+            "consumed_ratio": 0.52,
+            "trailing_nonconsumed": 19,
+            "score": 7.949499,
+            "contributions": {
+              "level_is_schema": 1.668211,
+              "log1p_matured": 0.897769,
+              "log1p_unconsumed": 0.646832,
+              "log1p_trailing_nonconsumed": 0.801686,
+              "consumed_ratio": 3.935001
+            }
+          },
+          "windows": {
+            "windows": 175,
+            "map_medoid_windows": 171,
+            "organic_only_windows": 4,
+            "redelivered": 91,
+            "known_windows": 175,
+            "null_windows": 0,
+            "known": {
+              "total": 175,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 22,
+                    "ask_follow": 146,
+                    "redelivered_only": 2,
+                    "nothing": 5
+                  },
+                  "shares": {
+                    "lookup_followed": 0.125714,
+                    "ask_follow": 0.834286,
+                    "redelivered_only": 0.011429,
+                    "nothing": 0.028571
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 22,
+                    "ask_follow": 88,
+                    "redelivered_only": 2,
+                    "nothing": 63
+                  },
+                  "shares": {
+                    "lookup_followed": 0.125714,
+                    "ask_follow": 0.502857,
+                    "redelivered_only": 0.011429,
+                    "nothing": 0.36
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 1,
+                "signal_1__redelivered_0": 21,
+                "signal_0__redelivered_1": 90,
+                "signal_0__redelivered_0": 63
+              },
+              "lookup_follow_rate": {
+                "point": 0.125714,
+                "low": 0.084505,
+                "high": 0.183003,
+                "half_width": 0.049249
+              }
+            },
+            "null": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 171,
+              "not_applicable_windows": 4,
+              "fired": {
+                "any_transport": 168,
+                "same_transport": 90
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.982456,
+                  "low": 0.949696,
+                  "high": 0.994016,
+                  "half_width": 0.02216
+                },
+                "same_transport": {
+                  "point": 0.526316,
+                  "low": 0.451725,
+                  "high": 0.59975,
+                  "half_width": 0.074013
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 89,
+                  "signal_1__redelivered_0": 79,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 2
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 89,
+                  "signal_1__redelivered_0": 1,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 80
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.988889,
+                    "low": 0.939716,
+                    "high": 0.998036,
+                    "half_width": 0.02916
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.975309,
+                    "low": 0.914373,
+                    "high": 0.993202,
+                    "half_width": 0.039415
+                  },
+                  "lift": 1.013924
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.988889,
+                    "low": 0.939716,
+                    "high": 0.998036,
+                    "half_width": 0.02916
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.012346,
+                    "low": 0.002183,
+                    "high": 0.066669,
+                    "half_width": 0.032243
+                  },
+                  "lift": 80.097926
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KRWVEF00JXWVY4N0T6J9CN84",
+          "rank": {
+            "by_redelivery_count": 34,
+            "by_map_offer_count": 7
+          },
+          "pinned": false,
+          "node": {
+            "level": "schema",
+            "scope": "project:ae",
+            "access_count": 839,
+            "usefulness_score": 0.03200000000000001,
+            "decayed": false,
+            "content_head": "Procedure: verification result 1. prompt-engine-v3-lm-driven/_verify: Verificati",
+            "returned_by_recalls": 839
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 319,
+            "consumed": 84,
+            "trailing_nonconsumed": 27,
+            "lookup_consumed": 0,
+            "lookup_known": 160,
+            "lookup_trailing_absent": 160,
+            "rows": 319
+          },
+          "frozen_relevance": {
+            "level": "schema",
+            "consumed_ratio": 0.263323,
+            "trailing_nonconsumed": 27,
+            "score": 6.572955,
+            "contributions": {
+              "level_is_schema": 1.668211,
+              "log1p_matured": 1.129733,
+              "log1p_unconsumed": 1.046354,
+              "log1p_trailing_nonconsumed": 0.992218,
+              "consumed_ratio": 1.73644
+            }
+          },
+          "windows": {
+            "windows": 319,
+            "map_medoid_windows": 163,
+            "organic_only_windows": 156,
+            "redelivered": 84,
+            "known_windows": 160,
+            "null_windows": 159,
+            "known": {
+              "total": 160,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 158,
+                    "redelivered_only": 0,
+                    "nothing": 2
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.9875,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.0125
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 52,
+                    "redelivered_only": 2,
+                    "nothing": 106
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.325,
+                    "redelivered_only": 0.0125,
+                    "nothing": 0.6625
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 45,
+                "signal_0__redelivered_0": 115
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.023446,
+                "half_width": 0.011723
+              }
+            },
+            "null": {
+              "total": 159,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 4,
+                    "redelivered_only": 38,
+                    "nothing": 117
+                  },
+                  "shares": {
+                    "ask_follow": 0.025157,
+                    "redelivered_only": 0.238994,
+                    "nothing": 0.735849
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 1,
+                    "redelivered_only": 38,
+                    "nothing": 120
+                  },
+                  "shares": {
+                    "ask_follow": 0.006289,
+                    "redelivered_only": 0.238994,
+                    "nothing": 0.754717
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 163,
+              "not_applicable_windows": 156,
+              "fired": {
+                "any_transport": 162,
+                "same_transport": 53
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.993865,
+                  "low": 0.966072,
+                  "high": 0.998916,
+                  "half_width": 0.016422
+                },
+                "same_transport": {
+                  "point": 0.325153,
+                  "low": 0.257986,
+                  "high": 0.400372,
+                  "half_width": 0.071193
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 46,
+                  "signal_1__redelivered_0": 116,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 1
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 44,
+                  "signal_1__redelivered_0": 9,
+                  "signal_0__redelivered_1": 2,
+                  "signal_0__redelivered_0": 108
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.922926,
+                    "high": 1.0,
+                    "half_width": 0.038537
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.991453,
+                    "low": 0.95317,
+                    "high": 0.99849,
+                    "half_width": 0.02266
+                  },
+                  "lift": 1.008621
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.956522,
+                    "low": 0.854677,
+                    "high": 0.987995,
+                    "half_width": 0.066659
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.076923,
+                    "low": 0.040995,
+                    "high": 0.13975,
+                    "half_width": 0.049377
+                  },
+                  "lift": 12.434798
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KWQ5YJCYJ6QHXHVT4WX8TR8N",
+          "rank": {
+            "by_redelivery_count": 198,
+            "by_map_offer_count": 8
+          },
+          "pinned": false,
+          "node": {
+            "level": "schema",
+            "scope": "project:ae",
+            "access_count": 69,
+            "usefulness_score": 0.0,
+            "decayed": false,
+            "content_head": "Procedure: reopen lesson 1. reopen_lesson:auth-doc-review: Reopen lesson [auth-d",
+            "returned_by_recalls": 69
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 192,
+            "consumed": 13,
+            "trailing_nonconsumed": 151,
+            "lookup_consumed": 30,
+            "lookup_known": 121,
+            "lookup_trailing_absent": 51,
+            "rows": 192
+          },
+          "frozen_relevance": {
+            "level": "schema",
+            "consumed_ratio": 0.067708,
+            "trailing_nonconsumed": 151,
+            "score": 5.553192,
+            "contributions": {
+              "level_is_schema": 1.668211,
+              "log1p_matured": 0.933545,
+              "log1p_unconsumed": 0.940378,
+              "log1p_trailing_nonconsumed": 1.950149,
+              "consumed_ratio": 0.060909
+            }
+          },
+          "windows": {
+            "windows": 192,
+            "map_medoid_windows": 126,
+            "organic_only_windows": 66,
+            "redelivered": 13,
+            "known_windows": 121,
+            "null_windows": 71,
+            "known": {
+              "total": 121,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 30,
+                    "ask_follow": 79,
+                    "redelivered_only": 0,
+                    "nothing": 12
+                  },
+                  "shares": {
+                    "lookup_followed": 0.247934,
+                    "ask_follow": 0.652893,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.099174
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 30,
+                    "ask_follow": 5,
+                    "redelivered_only": 0,
+                    "nothing": 86
+                  },
+                  "shares": {
+                    "lookup_followed": 0.247934,
+                    "ask_follow": 0.041322,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.710744
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 30,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 91
+              },
+              "lookup_follow_rate": {
+                "point": 0.247934,
+                "low": 0.179547,
+                "high": 0.331833,
+                "half_width": 0.076143
+              }
+            },
+            "null": {
+              "total": 71,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 17,
+                    "redelivered_only": 13,
+                    "nothing": 41
+                  },
+                  "shares": {
+                    "ask_follow": 0.239437,
+                    "redelivered_only": 0.183099,
+                    "nothing": 0.577465
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 13,
+                    "nothing": 58
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.183099,
+                    "nothing": 0.816901
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 126,
+              "not_applicable_windows": 66,
+              "fired": {
+                "any_transport": 126,
+                "same_transport": 7
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.970414,
+                  "high": 1.0,
+                  "half_width": 0.014793
+                },
+                "same_transport": {
+                  "point": 0.055556,
+                  "low": 0.027169,
+                  "high": 0.110241,
+                  "half_width": 0.041536
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 126,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 7,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 119
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.970414,
+                    "high": 1.0,
+                    "half_width": 0.014793
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.055556,
+                    "low": 0.027169,
+                    "high": 0.110241,
+                    "half_width": 0.041536
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KWQ5YJCBF7C2TAQFDCNNV80F",
+          "rank": {
+            "by_redelivery_count": 33,
+            "by_map_offer_count": 9
+          },
+          "pinned": false,
+          "node": {
+            "level": "schema",
+            "scope": "project:ae",
+            "access_count": 240,
+            "usefulness_score": 0.0425,
+            "decayed": false,
+            "content_head": "Procedure: reopen lesson 1. reopen_lesson:dashboard-agent-chats: Reopen lesson [",
+            "returned_by_recalls": 240
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 363,
+            "consumed": 84,
+            "trailing_nonconsumed": 142,
+            "lookup_consumed": 24,
+            "lookup_known": 126,
+            "lookup_trailing_absent": 78,
+            "rows": 363
+          },
+          "frozen_relevance": {
+            "level": "schema",
+            "consumed_ratio": 0.231405,
+            "trailing_nonconsumed": 142,
+            "score": 7.339805,
+            "contributions": {
+              "level_is_schema": 1.668211,
+              "log1p_matured": 1.179721,
+              "log1p_unconsumed": 1.113239,
+              "log1p_trailing_nonconsumed": 1.915587,
+              "consumed_ratio": 1.463048
+            }
+          },
+          "windows": {
+            "windows": 363,
+            "map_medoid_windows": 124,
+            "organic_only_windows": 239,
+            "redelivered": 84,
+            "known_windows": 126,
+            "null_windows": 237,
+            "known": {
+              "total": 126,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 24,
+                    "ask_follow": 87,
+                    "redelivered_only": 0,
+                    "nothing": 15
+                  },
+                  "shares": {
+                    "lookup_followed": 0.190476,
+                    "ask_follow": 0.690476,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.119048
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 24,
+                    "ask_follow": 9,
+                    "redelivered_only": 0,
+                    "nothing": 93
+                  },
+                  "shares": {
+                    "lookup_followed": 0.190476,
+                    "ask_follow": 0.071429,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.738095
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 24,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 102
+              },
+              "lookup_follow_rate": {
+                "point": 0.190476,
+                "low": 0.131473,
+                "high": 0.267794,
+                "half_width": 0.06816
+              }
+            },
+            "null": {
+              "total": 237,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 14,
+                    "redelivered_only": 84,
+                    "nothing": 139
+                  },
+                  "shares": {
+                    "ask_follow": 0.059072,
+                    "redelivered_only": 0.35443,
+                    "nothing": 0.586498
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 84,
+                    "nothing": 153
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.35443,
+                    "nothing": 0.64557
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 124,
+              "not_applicable_windows": 239,
+              "fired": {
+                "any_transport": 123,
+                "same_transport": 12
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.991935,
+                  "low": 0.955732,
+                  "high": 0.998575,
+                  "half_width": 0.021421
+                },
+                "same_transport": {
+                  "point": 0.096774,
+                  "low": 0.056228,
+                  "high": 0.161553,
+                  "half_width": 0.052662
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 123,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 1
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 12,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 112
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.991935,
+                    "low": 0.955732,
+                    "high": 0.998575,
+                    "half_width": 0.021421
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.096774,
+                    "low": 0.056228,
+                    "high": 0.161553,
+                    "half_width": 0.052662
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KRTS56QSYSJEQDQXM8CK9KKJ",
+          "rank": {
+            "by_redelivery_count": 349,
+            "by_map_offer_count": 10
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:lm",
+            "access_count": 8,
+            "usefulness_score": 0.2,
+            "decayed": false,
+            "content_head": "## Knowledge Base Files  | Path | Description | | --- | --- | | `/home/sfx/p/ae/",
+            "returned_by_recalls": 8
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 120,
+            "consumed": 5,
+            "trailing_nonconsumed": 29,
+            "lookup_consumed": 0,
+            "lookup_known": 119,
+            "lookup_trailing_absent": 119,
+            "rows": 120
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.041667,
+            "trailing_nonconsumed": 29,
+            "score": 1.790559,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 0.752386,
+              "log1p_unconsumed": 0.768482,
+              "log1p_trailing_nonconsumed": 1.031286,
+              "consumed_ratio": -0.162151
+            }
+          },
+          "windows": {
+            "windows": 120,
+            "map_medoid_windows": 120,
+            "organic_only_windows": 0,
+            "redelivered": 5,
+            "known_windows": 119,
+            "null_windows": 1,
+            "known": {
+              "total": 119,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 119,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 1.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 52,
+                    "redelivered_only": 1,
+                    "nothing": 66
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.436975,
+                    "redelivered_only": 0.008403,
+                    "nothing": 0.554622
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 4,
+                "signal_0__redelivered_0": 115
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.031272,
+                "half_width": 0.015636
+              }
+            },
+            "null": {
+              "total": 1,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 1,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": 1.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 1,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 1.0,
+                    "nothing": 0.0
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 120,
+              "not_applicable_windows": 0,
+              "fired": {
+                "any_transport": 120,
+                "same_transport": 52
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.968981,
+                  "high": 1.0,
+                  "half_width": 0.01551
+                },
+                "same_transport": {
+                  "point": 0.433333,
+                  "low": 0.348102,
+                  "high": 0.522701,
+                  "half_width": 0.0873
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 5,
+                  "signal_1__redelivered_0": 115,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 3,
+                  "signal_1__redelivered_0": 49,
+                  "signal_0__redelivered_1": 2,
+                  "signal_0__redelivered_0": 66
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.565518,
+                    "high": 1.0,
+                    "half_width": 0.217241
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.967676,
+                    "high": 1.0,
+                    "half_width": 0.016162
+                  },
+                  "lift": 1.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.6,
+                    "low": 0.230724,
+                    "high": 0.882379,
+                    "half_width": 0.325827
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.426087,
+                    "low": 0.339537,
+                    "high": 0.517415,
+                    "half_width": 0.088939
+                  },
+                  "lift": 1.408163
+                }
+              }
+            }
+          }
+        }
+      ],
+      "diagnostics": {
+        "ledger_rows_scanned": 197699,
+        "delivery_events_with_ask_probe": 3562,
+        "unresolved_instants": 0,
+        "echo_agreement": {
+          "probe_calls_replayed": 200,
+          "disagreements": 0
+        }
+      }
+    }
+  ]
+}

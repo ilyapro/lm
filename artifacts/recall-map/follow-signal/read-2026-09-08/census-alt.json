@@ -1,0 +1,4052 @@
+{
+  "artifact": "recall-map follow-signal census",
+  "generated_at": "2026-09-08T07:10:27Z",
+  "generator": "scripts/recall_map_follow_signal_census.py",
+  "decision_at": "2026-09-08T07:10:27.810053Z",
+  "sets_no_defaults": true,
+  "definitions": {
+    "window": "one (delivery_event_id, node_id) row of recall_delivery_history: the frozen 24h outcome horizon opened by one recall",
+    "matured": "delivered_at < decision_at AND outcome_end <= decision_at",
+    "horizon_hours": 24,
+    "classes": {
+      "lookup_followed": "lookup_consumed = 1 (exogenous id-fetch in window)",
+      "ask_follow": "a later recall in the window echoed the delivered label or ask_hint under recall_map._echoes",
+      "redelivered_only": "neither exogenous probe fired and the frozen consumed bit (transport_consumed if transport_matched else fallback_consumed) is set",
+      "nothing": "no signal of any kind"
+    },
+    "class_priority": [
+      "lookup_followed",
+      "ask_follow",
+      "redelivered_only",
+      "nothing"
+    ],
+    "known_window": "lookup_consumed IS NOT NULL",
+    "null_window": "lookup_consumed IS NULL: the window closed before this database recorded any lookup, so its outcome is unobservable, not absent",
+    "ask_follow_applicability": "only map-medoid windows carry a label; organic-tail windows are counted not_applicable rather than as a probe that found nothing",
+    "curtail_query_overlap": 0.5,
+    "max_clusters": 6,
+    "ledger_organic_ranks": [
+      3,
+      8
+    ]
+  },
+  "frozen_scorer_probe": {
+    "question": "with matured = 20 and consumed = 0, does a longer unfollowed tail lower the frozen relevance score?",
+    "admission_threshold": 3.8708378402511,
+    "curves": {
+      "schema": [
+        {
+          "trailing_nonconsumed": 0,
+          "score": 0.427201
+        },
+        {
+          "trailing_nonconsumed": 1,
+          "score": 0.819704
+        },
+        {
+          "trailing_nonconsumed": 3,
+          "score": 1.212206
+        },
+        {
+          "trailing_nonconsumed": 5,
+          "score": 1.441806
+        },
+        {
+          "trailing_nonconsumed": 10,
+          "score": 1.785037
+        },
+        {
+          "trailing_nonconsumed": 20,
+          "score": 2.151198
+        }
+      ],
+      "trace": [
+        {
+          "trailing_nonconsumed": 0,
+          "score": -1.840455
+        },
+        {
+          "trailing_nonconsumed": 1,
+          "score": -1.447952
+        },
+        {
+          "trailing_nonconsumed": 3,
+          "score": -1.055449
+        },
+        {
+          "trailing_nonconsumed": 5,
+          "score": -0.82585
+        },
+        {
+          "trailing_nonconsumed": 10,
+          "score": -0.482618
+        },
+        {
+          "trailing_nonconsumed": 20,
+          "score": -0.116458
+        }
+      ]
+    },
+    "k_tail_is_demoting": false,
+    "finding": "the K term is monotonically increasing: a row delivered twenty times and consumed none of them scores higher the longer it has gone unconsumed. Demotion therefore cannot be obtained by feeding a better signal into trailing_nonconsumed; it has to be a gate applied outside the frozen zsum, which is also the only shape the frozen-evaluator boundary permits."
+  },
+  "field_known_windows": 34907,
+  "arms": [
+    {
+      "label": "alt-live",
+      "provenance": "field",
+      "note": "",
+      "path": "/home/user/.local/share/living-memory/global.sqlite3",
+      "usable": true,
+      "field_evidence": true,
+      "read": {
+        "opened": "mode=ro",
+        "query_only": true,
+        "file_bytes": 448950272,
+        "file_mtime_utc": "2026-09-08T04:12:18.223327+00:00"
+      },
+      "schema": {
+        "ledger_present": true,
+        "lookup_column_present": true,
+        "lookup_table_present": true,
+        "ledger_format_version": 2,
+        "ledger_format_expected": 2,
+        "ledger_complete": true,
+        "ledger_unavailable_reason": null
+      },
+      "corpus": {
+        "recall_events": 39736,
+        "first_recall_at": "2026-07-26T20:06:24Z",
+        "last_recall_at": "2026-09-08T07:09:11Z",
+        "events_with_map": 33540,
+        "events_with_map_clusters": 5905,
+        "events_with_unparsed_map": 0,
+        "distinct_delivered_nodes": 5839,
+        "nodes_with_truncated_history": 0
+      },
+      "volume": {
+        "matured_windows": 62528,
+        "known_windows": 34907,
+        "null_windows": 27621,
+        "lookup_signal": {
+          "recorded": true,
+          "reason": null,
+          "requested_pairs": 1652,
+          "events": 1026,
+          "node_ids": 1101,
+          "first_at": "2026-08-23T23:04:31.000000Z",
+          "last_at": "2026-09-08T04:30:43.000000Z",
+          "observed_hours_to_decision": 368.099,
+          "observed_hours_to_last_activity": 368.078,
+          "observed_days_to_last_activity": 15.337
+        },
+        "power": {
+          "target_half_width": 0.1,
+          "known_windows": 34907,
+          "matured_windows": 62528,
+          "known_share_of_matured": 0.558262,
+          "windows_needed_worst_case": 97,
+          "windows_needed_if_rate_near_0_1": 35,
+          "powered": true,
+          "widest_interval_at_this_n": {
+            "point": 0.0,
+            "low": 0.0,
+            "high": 0.00011,
+            "half_width": 5.5e-05
+          },
+          "verdict": "powered"
+        }
+      },
+      "distribution": {
+        "overall": {
+          "windows": 62528,
+          "map_medoid_windows": 8556,
+          "organic_only_windows": 53972,
+          "redelivered": 8661,
+          "known_windows": 34907,
+          "null_windows": 27621,
+          "known": {
+            "total": 34907,
+            "by_ask_correlation": {
+              "any_transport": {
+                "classes": {
+                  "lookup_followed": 3821,
+                  "ask_follow": 2466,
+                  "redelivered_only": 3896,
+                  "nothing": 24724
+                },
+                "shares": {
+                  "lookup_followed": 0.109462,
+                  "ask_follow": 0.070645,
+                  "redelivered_only": 0.111611,
+                  "nothing": 0.708282
+                }
+              },
+              "same_transport": {
+                "classes": {
+                  "lookup_followed": 3821,
+                  "ask_follow": 192,
+                  "redelivered_only": 4040,
+                  "nothing": 26854
+                },
+                "shares": {
+                  "lookup_followed": 0.109462,
+                  "ask_follow": 0.0055,
+                  "redelivered_only": 0.115736,
+                  "nothing": 0.769301
+                }
+              }
+            },
+            "lookup_by_redelivery": {
+              "signal_1__redelivered_1": 909,
+              "signal_1__redelivered_0": 2912,
+              "signal_0__redelivered_1": 4126,
+              "signal_0__redelivered_0": 26960
+            },
+            "lookup_follow_rate": {
+              "point": 0.109462,
+              "low": 0.10623,
+              "high": 0.112781,
+              "half_width": 0.003275
+            }
+          },
+          "null": {
+            "total": 27621,
+            "by_ask_correlation": {
+              "any_transport": {
+                "classes": {
+                  "ask_follow": 1770,
+                  "redelivered_only": 3460,
+                  "nothing": 22391
+                },
+                "shares": {
+                  "ask_follow": 0.064082,
+                  "redelivered_only": 0.125267,
+                  "nothing": 0.810651
+                }
+              },
+              "same_transport": {
+                "classes": {
+                  "ask_follow": 485,
+                  "redelivered_only": 3554,
+                  "nothing": 23582
+                },
+                "shares": {
+                  "ask_follow": 0.017559,
+                  "redelivered_only": 0.12867,
+                  "nothing": 0.853771
+                }
+              }
+            }
+          },
+          "ask_follow_probe": {
+            "applicable_windows": 8556,
+            "not_applicable_windows": 53972,
+            "fired": {
+              "any_transport": 4897,
+              "same_transport": 755
+            },
+            "rate": {
+              "any_transport": {
+                "point": 0.572347,
+                "low": 0.561834,
+                "high": 0.582795,
+                "half_width": 0.010481
+              },
+              "same_transport": {
+                "point": 0.088242,
+                "low": 0.082415,
+                "high": 0.094439,
+                "half_width": 0.006012
+              }
+            },
+            "ask_by_redelivery": {
+              "any_transport": {
+                "signal_1__redelivered_1": 528,
+                "signal_1__redelivered_0": 4369,
+                "signal_0__redelivered_1": 213,
+                "signal_0__redelivered_0": 3446
+              },
+              "same_transport": {
+                "signal_1__redelivered_1": 205,
+                "signal_1__redelivered_0": 550,
+                "signal_0__redelivered_1": 536,
+                "signal_0__redelivered_0": 7265
+              }
+            },
+            "redelivery_precision_for_ask_follow": {
+              "any_transport": {
+                "p_signal_given_redelivered": {
+                  "point": 0.712551,
+                  "low": 0.678934,
+                  "high": 0.743974,
+                  "half_width": 0.03252
+                },
+                "p_signal_given_not_redelivered": {
+                  "point": 0.559053,
+                  "low": 0.548019,
+                  "high": 0.570029,
+                  "half_width": 0.011005
+                },
+                "lift": 1.274568
+              },
+              "same_transport": {
+                "p_signal_given_redelivered": {
+                  "point": 0.276653,
+                  "low": 0.245658,
+                  "high": 0.309952,
+                  "half_width": 0.032147
+                },
+                "p_signal_given_not_redelivered": {
+                  "point": 0.070377,
+                  "low": 0.064915,
+                  "high": 0.076262,
+                  "half_width": 0.005673
+                },
+                "lift": 3.931014
+              }
+            }
+          }
+        },
+        "map_medoid_windows_only": {
+          "windows": 8556,
+          "map_medoid_windows": 8556,
+          "organic_only_windows": 0,
+          "redelivered": 741,
+          "known_windows": 6031,
+          "null_windows": 2525,
+          "known": {
+            "total": 6031,
+            "by_ask_correlation": {
+              "any_transport": {
+                "classes": {
+                  "lookup_followed": 918,
+                  "ask_follow": 2466,
+                  "redelivered_only": 117,
+                  "nothing": 2530
+                },
+                "shares": {
+                  "lookup_followed": 0.152214,
+                  "ask_follow": 0.408887,
+                  "redelivered_only": 0.0194,
+                  "nothing": 0.419499
+                }
+              },
+              "same_transport": {
+                "classes": {
+                  "lookup_followed": 918,
+                  "ask_follow": 192,
+                  "redelivered_only": 261,
+                  "nothing": 4660
+                },
+                "shares": {
+                  "lookup_followed": 0.152214,
+                  "ask_follow": 0.031836,
+                  "redelivered_only": 0.043276,
+                  "nothing": 0.772675
+                }
+              }
+            },
+            "lookup_by_redelivery": {
+              "signal_1__redelivered_1": 156,
+              "signal_1__redelivered_0": 762,
+              "signal_0__redelivered_1": 347,
+              "signal_0__redelivered_0": 4766
+            },
+            "lookup_follow_rate": {
+              "point": 0.152214,
+              "low": 0.143369,
+              "high": 0.161501,
+              "half_width": 0.009066
+            }
+          },
+          "null": {
+            "total": 2525,
+            "by_ask_correlation": {
+              "any_transport": {
+                "classes": {
+                  "ask_follow": 1770,
+                  "redelivered_only": 72,
+                  "nothing": 683
+                },
+                "shares": {
+                  "ask_follow": 0.70099,
+                  "redelivered_only": 0.028515,
+                  "nothing": 0.270495
+                }
+              },
+              "same_transport": {
+                "classes": {
+                  "ask_follow": 485,
+                  "redelivered_only": 166,
+                  "nothing": 1874
+                },
+                "shares": {
+                  "ask_follow": 0.192079,
+                  "redelivered_only": 0.065743,
+                  "nothing": 0.742178
+                }
+              }
+            }
+          },
+          "ask_follow_probe": {
+            "applicable_windows": 8556,
+            "not_applicable_windows": 0,
+            "fired": {
+              "any_transport": 4897,
+              "same_transport": 755
+            },
+            "rate": {
+              "any_transport": {
+                "point": 0.572347,
+                "low": 0.561834,
+                "high": 0.582795,
+                "half_width": 0.010481
+              },
+              "same_transport": {
+                "point": 0.088242,
+                "low": 0.082415,
+                "high": 0.094439,
+                "half_width": 0.006012
+              }
+            },
+            "ask_by_redelivery": {
+              "any_transport": {
+                "signal_1__redelivered_1": 528,
+                "signal_1__redelivered_0": 4369,
+                "signal_0__redelivered_1": 213,
+                "signal_0__redelivered_0": 3446
+              },
+              "same_transport": {
+                "signal_1__redelivered_1": 205,
+                "signal_1__redelivered_0": 550,
+                "signal_0__redelivered_1": 536,
+                "signal_0__redelivered_0": 7265
+              }
+            },
+            "redelivery_precision_for_ask_follow": {
+              "any_transport": {
+                "p_signal_given_redelivered": {
+                  "point": 0.712551,
+                  "low": 0.678934,
+                  "high": 0.743974,
+                  "half_width": 0.03252
+                },
+                "p_signal_given_not_redelivered": {
+                  "point": 0.559053,
+                  "low": 0.548019,
+                  "high": 0.570029,
+                  "half_width": 0.011005
+                },
+                "lift": 1.274568
+              },
+              "same_transport": {
+                "p_signal_given_redelivered": {
+                  "point": 0.276653,
+                  "low": 0.245658,
+                  "high": 0.309952,
+                  "half_width": 0.032147
+                },
+                "p_signal_given_not_redelivered": {
+                  "point": 0.070377,
+                  "low": 0.064915,
+                  "high": 0.076262,
+                  "half_width": 0.005673
+                },
+                "lift": 3.931014
+              }
+            }
+          }
+        },
+        "top_sticky_cohorts": {
+          "by_redelivery_count": {
+            "members": [
+              "01KZYMKNWQW0PH7PCNZED9KVBE",
+              "01KYSQQCC1T9PKT4SMCJ7CFTK8",
+              "01KZYMPWZDYB78R83SP6VSG98K",
+              "01KZY2RRPQ2D62PPN73RTY1VHZ",
+              "01M183J4PWTJBMDCAJZFQPEPYB",
+              "01KZYPE58RHF3XVMAM7P3JJEB8",
+              "01KYSYWCAKWKWNF12YGKHZ45W5",
+              "01KYJFADE5483VEW68SN26KY6R",
+              "01KYT67RN8FNBEHTZHDQG304WZ",
+              "01KYVSWGQ52ZDE53XNAYYECDVY"
+            ],
+            "windows": {
+              "windows": 3604,
+              "map_medoid_windows": 387,
+              "organic_only_windows": 3217,
+              "redelivered": 1064,
+              "known_windows": 1672,
+              "null_windows": 1932,
+              "known": {
+                "total": 1672,
+                "by_ask_correlation": {
+                  "any_transport": {
+                    "classes": {
+                      "lookup_followed": 13,
+                      "ask_follow": 150,
+                      "redelivered_only": 317,
+                      "nothing": 1192
+                    },
+                    "shares": {
+                      "lookup_followed": 0.007775,
+                      "ask_follow": 0.089713,
+                      "redelivered_only": 0.189593,
+                      "nothing": 0.712919
+                    }
+                  },
+                  "same_transport": {
+                    "classes": {
+                      "lookup_followed": 13,
+                      "ask_follow": 8,
+                      "redelivered_only": 345,
+                      "nothing": 1306
+                    },
+                    "shares": {
+                      "lookup_followed": 0.007775,
+                      "ask_follow": 0.004785,
+                      "redelivered_only": 0.20634,
+                      "nothing": 0.7811
+                    }
+                  }
+                },
+                "lookup_by_redelivery": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 12,
+                  "signal_0__redelivered_1": 348,
+                  "signal_0__redelivered_0": 1311
+                },
+                "lookup_follow_rate": {
+                  "point": 0.007775,
+                  "low": 0.004549,
+                  "high": 0.013257,
+                  "half_width": 0.004354
+                }
+              },
+              "null": {
+                "total": 1932,
+                "by_ask_correlation": {
+                  "any_transport": {
+                    "classes": {
+                      "ask_follow": 32,
+                      "redelivered_only": 711,
+                      "nothing": 1189
+                    },
+                    "shares": {
+                      "ask_follow": 0.016563,
+                      "redelivered_only": 0.368012,
+                      "nothing": 0.615424
+                    }
+                  },
+                  "same_transport": {
+                    "classes": {
+                      "ask_follow": 3,
+                      "redelivered_only": 714,
+                      "nothing": 1215
+                    },
+                    "shares": {
+                      "ask_follow": 0.001553,
+                      "redelivered_only": 0.369565,
+                      "nothing": 0.628882
+                    }
+                  }
+                }
+              },
+              "ask_follow_probe": {
+                "applicable_windows": 387,
+                "not_applicable_windows": 3217,
+                "fired": {
+                  "any_transport": 182,
+                  "same_transport": 11
+                },
+                "rate": {
+                  "any_transport": {
+                    "point": 0.470284,
+                    "low": 0.421093,
+                    "high": 0.520059,
+                    "half_width": 0.049483
+                  },
+                  "same_transport": {
+                    "point": 0.028424,
+                    "low": 0.015944,
+                    "high": 0.050173,
+                    "half_width": 0.017115
+                  }
+                },
+                "ask_by_redelivery": {
+                  "any_transport": {
+                    "signal_1__redelivered_1": 35,
+                    "signal_1__redelivered_0": 147,
+                    "signal_0__redelivered_1": 26,
+                    "signal_0__redelivered_0": 179
+                  },
+                  "same_transport": {
+                    "signal_1__redelivered_1": 4,
+                    "signal_1__redelivered_0": 7,
+                    "signal_0__redelivered_1": 57,
+                    "signal_0__redelivered_0": 319
+                  }
+                },
+                "redelivery_precision_for_ask_follow": {
+                  "any_transport": {
+                    "p_signal_given_redelivered": {
+                      "point": 0.57377,
+                      "low": 0.448952,
+                      "high": 0.689848,
+                      "half_width": 0.120448
+                    },
+                    "p_signal_given_not_redelivered": {
+                      "point": 0.45092,
+                      "low": 0.39779,
+                      "high": 0.505194,
+                      "half_width": 0.053702
+                    },
+                    "lift": 1.272443
+                  },
+                  "same_transport": {
+                    "p_signal_given_redelivered": {
+                      "point": 0.065574,
+                      "low": 0.025794,
+                      "high": 0.156828,
+                      "half_width": 0.065517
+                    },
+                    "p_signal_given_not_redelivered": {
+                      "point": 0.021472,
+                      "low": 0.010439,
+                      "high": 0.043652,
+                      "half_width": 0.016606
+                    },
+                    "lift": 3.053931
+                  }
+                }
+              }
+            }
+          },
+          "by_map_offer_count": {
+            "members": [
+              "01M14FB3NZA48TQD9BMGN6B49N",
+              "01KZYMKNWQW0PH7PCNZED9KVBE",
+              "01KZYPE58RHF3XVMAM7P3JJEB8",
+              "01M19V3PPPXZM4XR9H78MDD110",
+              "01KZYMPWZDYB78R83SP6VSG98K",
+              "01M1CCA932SZMC4Y4K315VHA84",
+              "01KZRRPT94ESE0H0EV3VQB48JM",
+              "01M18158QBM2MVMM3NX6R4KT2E",
+              "01M19YNVX7BBZTPC77YAK8DFC3",
+              "01KZ0QEX5WG2X395BXKXRBTT1M"
+            ],
+            "windows": {
+              "windows": 1988,
+              "map_medoid_windows": 778,
+              "organic_only_windows": 1210,
+              "redelivered": 490,
+              "known_windows": 1354,
+              "null_windows": 634,
+              "known": {
+                "total": 1354,
+                "by_ask_correlation": {
+                  "any_transport": {
+                    "classes": {
+                      "lookup_followed": 154,
+                      "ask_follow": 430,
+                      "redelivered_only": 163,
+                      "nothing": 607
+                    },
+                    "shares": {
+                      "lookup_followed": 0.113737,
+                      "ask_follow": 0.317578,
+                      "redelivered_only": 0.120384,
+                      "nothing": 0.448301
+                    }
+                  },
+                  "same_transport": {
+                    "classes": {
+                      "lookup_followed": 154,
+                      "ask_follow": 33,
+                      "redelivered_only": 211,
+                      "nothing": 956
+                    },
+                    "shares": {
+                      "lookup_followed": 0.113737,
+                      "ask_follow": 0.024372,
+                      "redelivered_only": 0.155835,
+                      "nothing": 0.706056
+                    }
+                  }
+                },
+                "lookup_by_redelivery": {
+                  "signal_1__redelivered_1": 45,
+                  "signal_1__redelivered_0": 109,
+                  "signal_0__redelivered_1": 219,
+                  "signal_0__redelivered_0": 981
+                },
+                "lookup_follow_rate": {
+                  "point": 0.113737,
+                  "low": 0.097907,
+                  "high": 0.131752,
+                  "half_width": 0.016922
+                }
+              },
+              "null": {
+                "total": 634,
+                "by_ask_correlation": {
+                  "any_transport": {
+                    "classes": {
+                      "ask_follow": 82,
+                      "redelivered_only": 217,
+                      "nothing": 335
+                    },
+                    "shares": {
+                      "ask_follow": 0.129338,
+                      "redelivered_only": 0.342271,
+                      "nothing": 0.528391
+                    }
+                  },
+                  "same_transport": {
+                    "classes": {
+                      "ask_follow": 14,
+                      "redelivered_only": 225,
+                      "nothing": 395
+                    },
+                    "shares": {
+                      "ask_follow": 0.022082,
+                      "redelivered_only": 0.35489,
+                      "nothing": 0.623028
+                    }
+                  }
+                }
+              },
+              "ask_follow_probe": {
+                "applicable_windows": 778,
+                "not_applicable_windows": 1210,
+                "fired": {
+                  "any_transport": 648,
+                  "same_transport": 67
+                },
+                "rate": {
+                  "any_transport": {
+                    "point": 0.832905,
+                    "low": 0.805068,
+                    "high": 0.85747,
+                    "half_width": 0.026201
+                  },
+                  "same_transport": {
+                    "point": 0.086118,
+                    "low": 0.068383,
+                    "high": 0.107921,
+                    "half_width": 0.019769
+                  }
+                },
+                "ask_by_redelivery": {
+                  "any_transport": {
+                    "signal_1__redelivered_1": 104,
+                    "signal_1__redelivered_0": 544,
+                    "signal_0__redelivered_1": 27,
+                    "signal_0__redelivered_0": 103
+                  },
+                  "same_transport": {
+                    "signal_1__redelivered_1": 22,
+                    "signal_1__redelivered_0": 45,
+                    "signal_0__redelivered_1": 109,
+                    "signal_0__redelivered_0": 602
+                  }
+                },
+                "redelivery_precision_for_ask_follow": {
+                  "any_transport": {
+                    "p_signal_given_redelivered": {
+                      "point": 0.793893,
+                      "low": 0.716734,
+                      "high": 0.854307,
+                      "half_width": 0.068787
+                    },
+                    "p_signal_given_not_redelivered": {
+                      "point": 0.840804,
+                      "low": 0.810613,
+                      "high": 0.866972,
+                      "half_width": 0.02818
+                    },
+                    "lift": 0.944207
+                  },
+                  "same_transport": {
+                    "p_signal_given_redelivered": {
+                      "point": 0.167939,
+                      "low": 0.113599,
+                      "high": 0.241198,
+                      "half_width": 0.063799
+                    },
+                    "p_signal_given_not_redelivered": {
+                      "point": 0.069552,
+                      "low": 0.052384,
+                      "high": 0.091801,
+                      "half_width": 0.019708
+                    },
+                    "lift": 2.414582
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "top_sticky_rows": [
+        {
+          "node_id": "01KZYMKNWQW0PH7PCNZED9KVBE",
+          "rank": {
+            "by_redelivery_count": 1,
+            "by_map_offer_count": 2
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:game",
+            "access_count": 1297,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "В актуальной архитектурной версии observer.js migrationScore принимает текущий l",
+            "returned_by_recalls": 1297
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 491,
+            "consumed": 129,
+            "trailing_nonconsumed": 9,
+            "lookup_consumed": 0,
+            "lookup_known": 376,
+            "lookup_trailing_absent": 376,
+            "rows": 491
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.262729,
+            "trailing_nonconsumed": 9,
+            "score": 4.052539,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.296636,
+              "log1p_unconsumed": 1.214809,
+              "log1p_trailing_nonconsumed": 0.409184,
+              "consumed_ratio": 1.731354
+            }
+          },
+          "windows": {
+            "windows": 491,
+            "map_medoid_windows": 111,
+            "organic_only_windows": 380,
+            "redelivered": 129,
+            "known_windows": 376,
+            "null_windows": 115,
+            "known": {
+              "total": 376,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 90,
+                    "redelivered_only": 58,
+                    "nothing": 228
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.239362,
+                    "redelivered_only": 0.154255,
+                    "nothing": 0.606383
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 8,
+                    "redelivered_only": 75,
+                    "nothing": 293
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.021277,
+                    "redelivered_only": 0.199468,
+                    "nothing": 0.779255
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 78,
+                "signal_0__redelivered_0": 298
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.010113,
+                "half_width": 0.005057
+              }
+            },
+            "null": {
+              "total": 115,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 21,
+                    "redelivered_only": 47,
+                    "nothing": 47
+                  },
+                  "shares": {
+                    "ask_follow": 0.182609,
+                    "redelivered_only": 0.408696,
+                    "nothing": 0.408696
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 3,
+                    "redelivered_only": 50,
+                    "nothing": 62
+                  },
+                  "shares": {
+                    "ask_follow": 0.026087,
+                    "redelivered_only": 0.434783,
+                    "nothing": 0.53913
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 111,
+              "not_applicable_windows": 380,
+              "fired": {
+                "any_transport": 111,
+                "same_transport": 11
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.96655,
+                  "high": 1.0,
+                  "half_width": 0.016725
+                },
+                "same_transport": {
+                  "point": 0.099099,
+                  "low": 0.05624,
+                  "high": 0.168778,
+                  "half_width": 0.056269
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 24,
+                  "signal_1__redelivered_0": 87,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 4,
+                  "signal_1__redelivered_0": 7,
+                  "signal_0__redelivered_1": 20,
+                  "signal_0__redelivered_0": 80
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.862024,
+                    "high": 1.0,
+                    "half_width": 0.068988
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.957712,
+                    "high": 1.0,
+                    "half_width": 0.021144
+                  },
+                  "lift": 1.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.166667,
+                    "low": 0.066787,
+                    "high": 0.358531,
+                    "half_width": 0.145872
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.08046,
+                    "low": 0.03952,
+                    "high": 0.156882,
+                    "half_width": 0.058681
+                  },
+                  "lift": 2.071427
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KYSQQCC1T9PKT4SMCJ7CFTK8",
+          "rank": {
+            "by_redelivery_count": 2,
+            "by_map_offer_count": 37
+          },
+          "pinned": false,
+          "node": {
+            "level": "concept",
+            "scope": "global",
+            "access_count": 512,
+            "usefulness_score": 0.5338743715108575,
+            "decayed": false,
+            "content_head": "AETHER 3D-вид: РОДИТЕЛЬСКИЙ УЗЕЛ `aether-3d-view` ПРОВЕРЕН И ЗАКРЫТ (2026-07-27,",
+            "returned_by_recalls": 512
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 364,
+            "consumed": 120,
+            "trailing_nonconsumed": 44,
+            "lookup_consumed": 6,
+            "lookup_known": 50,
+            "lookup_trailing_absent": 35,
+            "rows": 364
+          },
+          "frozen_relevance": {
+            "level": "concept",
+            "consumed_ratio": 0.32967,
+            "trailing_nonconsumed": 44,
+            "score": 5.20796,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.180785,
+              "log1p_unconsumed": 1.060997,
+              "log1p_trailing_nonconsumed": 1.260885,
+              "consumed_ratio": 2.304737
+            }
+          },
+          "windows": {
+            "windows": 364,
+            "map_medoid_windows": 24,
+            "organic_only_windows": 340,
+            "redelivered": 120,
+            "known_windows": 50,
+            "null_windows": 314,
+            "known": {
+              "total": 50,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 6,
+                    "ask_follow": 0,
+                    "redelivered_only": 2,
+                    "nothing": 42
+                  },
+                  "shares": {
+                    "lookup_followed": 0.12,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.04,
+                    "nothing": 0.84
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 6,
+                    "ask_follow": 0,
+                    "redelivered_only": 2,
+                    "nothing": 42
+                  },
+                  "shares": {
+                    "lookup_followed": 0.12,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.04,
+                    "nothing": 0.84
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 6,
+                "signal_0__redelivered_1": 2,
+                "signal_0__redelivered_0": 42
+              },
+              "lookup_follow_rate": {
+                "point": 0.12,
+                "low": 0.056176,
+                "high": 0.238048,
+                "half_width": 0.090936
+              }
+            },
+            "null": {
+              "total": 314,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 1,
+                    "redelivered_only": 118,
+                    "nothing": 195
+                  },
+                  "shares": {
+                    "ask_follow": 0.003185,
+                    "redelivered_only": 0.375796,
+                    "nothing": 0.621019
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 118,
+                    "nothing": 196
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.375796,
+                    "nothing": 0.624204
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 24,
+              "not_applicable_windows": 340,
+              "fired": {
+                "any_transport": 1,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.041667,
+                  "low": 0.007393,
+                  "high": 0.202418,
+                  "half_width": 0.097512
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.137976,
+                  "half_width": 0.068988
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 1,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 23
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 24
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.041667,
+                    "low": 0.007393,
+                    "high": 0.202418,
+                    "half_width": 0.097512
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.137976,
+                    "half_width": 0.068988
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KZYMPWZDYB78R83SP6VSG98K",
+          "rank": {
+            "by_redelivery_count": 3,
+            "by_map_offer_count": 5
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:game",
+            "access_count": 1282,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Актуальный observer.js теперь проверяет для каждой sealed trajectory `obs.seq ==",
+            "returned_by_recalls": 1282
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 345,
+            "consumed": 115,
+            "trailing_nonconsumed": 8,
+            "lookup_consumed": 7,
+            "lookup_known": 231,
+            "lookup_trailing_absent": 222,
+            "rows": 345
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.333333,
+            "trailing_nonconsumed": 8,
+            "score": 4.284209,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.160043,
+              "log1p_unconsumed": 1.037976,
+              "log1p_trailing_nonconsumed": 0.349522,
+              "consumed_ratio": 2.336113
+            }
+          },
+          "windows": {
+            "windows": 345,
+            "map_medoid_windows": 76,
+            "organic_only_windows": 269,
+            "redelivered": 115,
+            "known_windows": 231,
+            "null_windows": 114,
+            "known": {
+              "total": 231,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 7,
+                    "ask_follow": 41,
+                    "redelivered_only": 50,
+                    "nothing": 133
+                  },
+                  "shares": {
+                    "lookup_followed": 0.030303,
+                    "ask_follow": 0.177489,
+                    "redelivered_only": 0.21645,
+                    "nothing": 0.575758
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 7,
+                    "ask_follow": 0,
+                    "redelivered_only": 58,
+                    "nothing": 166
+                  },
+                  "shares": {
+                    "lookup_followed": 0.030303,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.251082,
+                    "nothing": 0.718615
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 1,
+                "signal_1__redelivered_0": 6,
+                "signal_0__redelivered_1": 58,
+                "signal_0__redelivered_0": 166
+              },
+              "lookup_follow_rate": {
+                "point": 0.030303,
+                "low": 0.014755,
+                "high": 0.061218,
+                "half_width": 0.023231
+              }
+            },
+            "null": {
+              "total": 114,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 3,
+                    "redelivered_only": 56,
+                    "nothing": 55
+                  },
+                  "shares": {
+                    "ask_follow": 0.026316,
+                    "redelivered_only": 0.491228,
+                    "nothing": 0.482456
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 56,
+                    "nothing": 58
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.491228,
+                    "nothing": 0.508772
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 76,
+              "not_applicable_windows": 269,
+              "fired": {
+                "any_transport": 44,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.578947,
+                  "low": 0.466784,
+                  "high": 0.683514,
+                  "half_width": 0.108365
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.048114,
+                  "half_width": 0.024057
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 8,
+                  "signal_1__redelivered_0": 36,
+                  "signal_0__redelivered_1": 10,
+                  "signal_0__redelivered_0": 22
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 18,
+                  "signal_0__redelivered_0": 58
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.444444,
+                    "low": 0.245595,
+                    "high": 0.662836,
+                    "half_width": 0.20862
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.62069,
+                    "low": 0.492028,
+                    "high": 0.734357,
+                    "half_width": 0.121165
+                  },
+                  "lift": 0.716048
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.175879,
+                    "half_width": 0.08794
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.062118,
+                    "half_width": 0.031059
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KZY2RRPQ2D62PPN73RTY1VHZ",
+          "rank": {
+            "by_redelivery_count": 4,
+            "by_map_offer_count": 11
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:game",
+            "access_count": 1769,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "УСТАРЕЛО после обновления PROBE_BENCH: initial/seen generation tracking удалено.",
+            "returned_by_recalls": 1769
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 381,
+            "consumed": 114,
+            "trailing_nonconsumed": 30,
+            "lookup_consumed": 0,
+            "lookup_known": 255,
+            "lookup_trailing_absent": 255,
+            "rows": 381
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.299213,
+            "trailing_nonconsumed": 30,
+            "score": 4.788812,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.198448,
+              "log1p_unconsumed": 1.096102,
+              "log1p_trailing_nonconsumed": 1.049853,
+              "consumed_ratio": 2.043852
+            }
+          },
+          "windows": {
+            "windows": 381,
+            "map_medoid_windows": 48,
+            "organic_only_windows": 333,
+            "redelivered": 114,
+            "known_windows": 255,
+            "null_windows": 126,
+            "known": {
+              "total": 255,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 68,
+                    "nothing": 187
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.266667,
+                    "nothing": 0.733333
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 68,
+                    "nothing": 187
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.266667,
+                    "nothing": 0.733333
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 68,
+                "signal_0__redelivered_0": 187
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.014841,
+                "half_width": 0.00742
+              }
+            },
+            "null": {
+              "total": 126,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 2,
+                    "redelivered_only": 46,
+                    "nothing": 78
+                  },
+                  "shares": {
+                    "ask_follow": 0.015873,
+                    "redelivered_only": 0.365079,
+                    "nothing": 0.619048
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 46,
+                    "nothing": 80
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.365079,
+                    "nothing": 0.634921
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 48,
+              "not_applicable_windows": 333,
+              "fired": {
+                "any_transport": 2,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.041667,
+                  "low": 0.011502,
+                  "high": 0.139757,
+                  "half_width": 0.064127
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.0741,
+                  "half_width": 0.03705
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 2,
+                  "signal_0__redelivered_1": 8,
+                  "signal_0__redelivered_0": 38
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 8,
+                  "signal_0__redelivered_0": 40
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.324408,
+                    "half_width": 0.162204
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.05,
+                    "low": 0.013821,
+                    "high": 0.165039,
+                    "half_width": 0.075609
+                  },
+                  "lift": 0.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.324408,
+                    "half_width": 0.162204
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.087622,
+                    "half_width": 0.043811
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01M183J4PWTJBMDCAJZFQPEPYB",
+          "rank": {
+            "by_redelivery_count": 5,
+            "by_map_offer_count": 243
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:game",
+            "access_count": 1425,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Для retry admission-adversarial-seal-v2 из immutable failed artifact следует выб",
+            "returned_by_recalls": 1425
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 490,
+            "consumed": 101,
+            "trailing_nonconsumed": 31,
+            "lookup_consumed": 0,
+            "lookup_known": 490,
+            "lookup_trailing_absent": 490,
+            "rows": 490
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.206122,
+            "trailing_nonconsumed": 31,
+            "score": 4.253603,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.295847,
+              "log1p_unconsumed": 1.242878,
+              "log1p_trailing_nonconsumed": 1.067832,
+              "consumed_ratio": 1.246491
+            }
+          },
+          "windows": {
+            "windows": 490,
+            "map_medoid_windows": 4,
+            "organic_only_windows": 486,
+            "redelivered": 101,
+            "known_windows": 490,
+            "null_windows": 0,
+            "known": {
+              "total": 490,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 4,
+                    "redelivered_only": 100,
+                    "nothing": 386
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.008163,
+                    "redelivered_only": 0.204082,
+                    "nothing": 0.787755
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 101,
+                    "nothing": 389
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.206122,
+                    "nothing": 0.793878
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 101,
+                "signal_0__redelivered_0": 389
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.007779,
+                "half_width": 0.003889
+              }
+            },
+            "null": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 4,
+              "not_applicable_windows": 486,
+              "fired": {
+                "any_transport": 4,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.510109,
+                  "high": 1.0,
+                  "half_width": 0.244945
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.489891,
+                  "half_width": 0.244945
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 3,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 3
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.438503,
+                    "high": 1.0,
+                    "half_width": 0.280749
+                  },
+                  "lift": 1.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.793451,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.561497,
+                    "half_width": 0.280749
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KZYPE58RHF3XVMAM7P3JJEB8",
+          "rank": {
+            "by_redelivery_count": 6,
+            "by_map_offer_count": 3
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:game",
+            "access_count": 714,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "В snapshot 9ffd03 архитектура исправила более фундаментальный prequalification c",
+            "returned_by_recalls": 714
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 341,
+            "consumed": 100,
+            "trailing_nonconsumed": 14,
+            "lookup_consumed": 0,
+            "lookup_known": 201,
+            "lookup_trailing_absent": 201,
+            "rows": 341
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.293255,
+            "trailing_nonconsumed": 14,
+            "score": 4.24387,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.155531,
+              "log1p_unconsumed": 1.056177,
+              "log1p_trailing_nonconsumed": 0.638783,
+              "consumed_ratio": 1.992824
+            }
+          },
+          "windows": {
+            "windows": 341,
+            "map_medoid_windows": 91,
+            "organic_only_windows": 250,
+            "redelivered": 100,
+            "known_windows": 201,
+            "null_windows": 140,
+            "known": {
+              "total": 201,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 14,
+                    "redelivered_only": 36,
+                    "nothing": 151
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.069652,
+                    "redelivered_only": 0.179104,
+                    "nothing": 0.751244
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 38,
+                    "nothing": 163
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.189055,
+                    "nothing": 0.810945
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 38,
+                "signal_0__redelivered_0": 163
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.018753,
+                "half_width": 0.009377
+              }
+            },
+            "null": {
+              "total": 140,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 2,
+                    "redelivered_only": 62,
+                    "nothing": 76
+                  },
+                  "shares": {
+                    "ask_follow": 0.014286,
+                    "redelivered_only": 0.442857,
+                    "nothing": 0.542857
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 62,
+                    "nothing": 78
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.442857,
+                    "nothing": 0.557143
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 91,
+              "not_applicable_windows": 250,
+              "fired": {
+                "any_transport": 16,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.175824,
+                  "low": 0.111225,
+                  "high": 0.266684,
+                  "half_width": 0.077729
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.040504,
+                  "half_width": 0.020252
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 2,
+                  "signal_1__redelivered_0": 14,
+                  "signal_0__redelivered_1": 8,
+                  "signal_0__redelivered_0": 67
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 10,
+                  "signal_0__redelivered_0": 81
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.2,
+                    "low": 0.056682,
+                    "high": 0.509838,
+                    "half_width": 0.226578
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.17284,
+                    "low": 0.105844,
+                    "high": 0.269461,
+                    "half_width": 0.081809
+                  },
+                  "lift": 1.15714
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.277533,
+                    "half_width": 0.138766
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.045278,
+                    "half_width": 0.022639
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KYSYWCAKWKWNF12YGKHZ45W5",
+          "rank": {
+            "by_redelivery_count": 7,
+            "by_map_offer_count": 137
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "global",
+            "access_count": 1136,
+            "usefulness_score": 0.6389266845080374,
+            "decayed": false,
+            "content_head": "AETHER (проект `game`), 2026-07-30 ~18:45: цель `aether-render-quality` СНЯТА С",
+            "returned_by_recalls": 1136
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 251,
+            "consumed": 100,
+            "trailing_nonconsumed": 23,
+            "lookup_consumed": 0,
+            "lookup_known": 20,
+            "lookup_trailing_absent": 20,
+            "rows": 251
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.398406,
+            "trailing_nonconsumed": 23,
+            "score": 5.110249,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.037041,
+              "log1p_unconsumed": 0.87423,
+              "log1p_trailing_nonconsumed": 0.904928,
+              "consumed_ratio": 2.893494
+            }
+          },
+          "windows": {
+            "windows": 251,
+            "map_medoid_windows": 8,
+            "organic_only_windows": 243,
+            "redelivered": 100,
+            "known_windows": 20,
+            "null_windows": 231,
+            "known": {
+              "total": 20,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 20
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 20
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 20
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.161125,
+                "half_width": 0.080563
+              }
+            },
+            "null": {
+              "total": 231,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 100,
+                    "nothing": 131
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.4329,
+                    "nothing": 0.5671
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 100,
+                    "nothing": 131
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.4329,
+                    "nothing": 0.5671
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 8,
+              "not_applicable_windows": 243,
+              "fired": {
+                "any_transport": 0,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.324408,
+                  "half_width": 0.162204
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.324408,
+                  "half_width": 0.162204
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 8
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 8
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.324408,
+                    "half_width": 0.162204
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.324408,
+                    "half_width": 0.162204
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KYJFADE5483VEW68SN26KY6R",
+          "rank": {
+            "by_redelivery_count": 8,
+            "by_map_offer_count": 66
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "global",
+            "access_count": 782,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "AETHER 3D-вид: РОДИТЕЛЬСКИЙ УЗЕЛ `aether-3d-view` ПРОВЕРЕН И ЗАКРЫТ (2026-07-27,",
+            "returned_by_recalls": 782
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 431,
+            "consumed": 96,
+            "trailing_nonconsumed": 33,
+            "lookup_consumed": 0,
+            "lookup_known": 15,
+            "lookup_trailing_absent": 15,
+            "rows": 431
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.222738,
+            "trailing_nonconsumed": 33,
+            "score": 4.322271,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.246175,
+              "log1p_unconsumed": 1.18457,
+              "log1p_trailing_nonconsumed": 1.102161,
+              "consumed_ratio": 1.38881
+            }
+          },
+          "windows": {
+            "windows": 431,
+            "map_medoid_windows": 15,
+            "organic_only_windows": 416,
+            "redelivered": 96,
+            "known_windows": 15,
+            "null_windows": 416,
+            "known": {
+              "total": 15,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 1,
+                    "redelivered_only": 0,
+                    "nothing": 14
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.066667,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.933333
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 15
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 15
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.203883,
+                "half_width": 0.101942
+              }
+            },
+            "null": {
+              "total": 416,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 3,
+                    "redelivered_only": 96,
+                    "nothing": 317
+                  },
+                  "shares": {
+                    "ask_follow": 0.007212,
+                    "redelivered_only": 0.230769,
+                    "nothing": 0.762019
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 96,
+                    "nothing": 320
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.230769,
+                    "nothing": 0.769231
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 15,
+              "not_applicable_windows": 416,
+              "fired": {
+                "any_transport": 4,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.266667,
+                  "low": 0.108975,
+                  "high": 0.519504,
+                  "half_width": 0.205265
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.203883,
+                  "half_width": 0.101942
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 4,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 11
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 15
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.266667,
+                    "low": 0.108975,
+                    "high": 0.519504,
+                    "half_width": 0.205265
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.203883,
+                    "half_width": 0.101942
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KYT67RN8FNBEHTZHDQG304WZ",
+          "rank": {
+            "by_redelivery_count": 9,
+            "by_map_offer_count": 370
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "global",
+            "access_count": 396,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "AETHER / переезд на WebGPU: ДВЕ ЛОВУШКИ УЗЛА `scene-core`, найденные разведкой 2",
+            "returned_by_recalls": 396
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 290,
+            "consumed": 95,
+            "trailing_nonconsumed": 23,
+            "lookup_consumed": 0,
+            "lookup_known": 11,
+            "lookup_trailing_absent": 11,
+            "rows": 290
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.327586,
+            "trailing_nonconsumed": 23,
+            "score": 4.658938,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.092873,
+              "log1p_unconsumed": 0.973695,
+              "log1p_trailing_nonconsumed": 0.904928,
+              "consumed_ratio": 2.286886
+            }
+          },
+          "windows": {
+            "windows": 290,
+            "map_medoid_windows": 2,
+            "organic_only_windows": 288,
+            "redelivered": 95,
+            "known_windows": 11,
+            "null_windows": 279,
+            "known": {
+              "total": 11,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 11
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 11
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 11
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.258833,
+                "half_width": 0.129416
+              }
+            },
+            "null": {
+              "total": 279,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 95,
+                    "nothing": 184
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.340502,
+                    "nothing": 0.659498
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 95,
+                    "nothing": 184
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.340502,
+                    "nothing": 0.659498
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 2,
+              "not_applicable_windows": 288,
+              "fired": {
+                "any_transport": 0,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.65762,
+                  "half_width": 0.32881
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.65762,
+                  "half_width": 0.32881
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 2
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 2
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.65762,
+                    "half_width": 0.32881
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.65762,
+                    "half_width": 0.32881
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KYVSWGQ52ZDE53XNAYYECDVY",
+          "rank": {
+            "by_redelivery_count": 10,
+            "by_map_offer_count": 138
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "global",
+            "access_count": 285,
+            "usefulness_score": 0.2174099857938468,
+            "decayed": false,
+            "content_head": "AETHER (project:game) — как ДЕТЕРМИНИРОВАННО закрепить долю разрешения сцены для",
+            "returned_by_recalls": 285
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 220,
+            "consumed": 94,
+            "trailing_nonconsumed": 5,
+            "lookup_consumed": 0,
+            "lookup_known": 23,
+            "lookup_trailing_absent": 23,
+            "rows": 220
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.427273,
+            "trailing_nonconsumed": 5,
+            "score": 4.451262,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 0.986109,
+              "log1p_unconsumed": 0.803927,
+              "log1p_trailing_nonconsumed": 0.119923,
+              "consumed_ratio": 3.140748
+            }
+          },
+          "windows": {
+            "windows": 220,
+            "map_medoid_windows": 8,
+            "organic_only_windows": 212,
+            "redelivered": 94,
+            "known_windows": 23,
+            "null_windows": 197,
+            "known": {
+              "total": 23,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 3,
+                    "nothing": 20
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.130435,
+                    "nothing": 0.869565
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 3,
+                    "nothing": 20
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.130435,
+                    "nothing": 0.869565
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 3,
+                "signal_0__redelivered_0": 20
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.143117,
+                "half_width": 0.071558
+              }
+            },
+            "null": {
+              "total": 197,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 91,
+                    "nothing": 106
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.461929,
+                    "nothing": 0.538071
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 91,
+                    "nothing": 106
+                  },
+                  "shares": {
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.461929,
+                    "nothing": 0.538071
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 8,
+              "not_applicable_windows": 212,
+              "fired": {
+                "any_transport": 0,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.324408,
+                  "half_width": 0.162204
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.324408,
+                  "half_width": 0.162204
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 8
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 8
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.324408,
+                    "half_width": 0.162204
+                  },
+                  "lift": null
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": null,
+                    "low": null,
+                    "high": null,
+                    "half_width": null
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.324408,
+                    "half_width": 0.162204
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01M14FB3NZA48TQD9BMGN6B49N",
+          "rank": {
+            "by_redelivery_count": 186,
+            "by_map_offer_count": 1
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:ae",
+            "access_count": 21,
+            "usefulness_score": 0.0,
+            "decayed": false,
+            "content_head": "AE/node.sh, ЛОВУШКА: infra-hold во время родительского реплана СЖИГАЕТ счётчик f",
+            "returned_by_recalls": 21
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 127,
+            "consumed": 10,
+            "trailing_nonconsumed": 81,
+            "lookup_consumed": 64,
+            "lookup_known": 127,
+            "lookup_trailing_absent": 62,
+            "rows": 127
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.07874,
+            "trailing_nonconsumed": 81,
+            "score": 2.706008,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 0.774207,
+              "log1p_unconsumed": 0.77517,
+              "log1p_trailing_nonconsumed": 1.600674,
+              "consumed_ratio": 0.155401
+            }
+          },
+          "windows": {
+            "windows": 127,
+            "map_medoid_windows": 127,
+            "organic_only_windows": 0,
+            "redelivered": 10,
+            "known_windows": 127,
+            "null_windows": 0,
+            "known": {
+              "total": 127,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 64,
+                    "ask_follow": 62,
+                    "redelivered_only": 1,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": 0.503937,
+                    "ask_follow": 0.488189,
+                    "redelivered_only": 0.007874,
+                    "nothing": 0.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 64,
+                    "ask_follow": 13,
+                    "redelivered_only": 1,
+                    "nothing": 49
+                  },
+                  "shares": {
+                    "lookup_followed": 0.503937,
+                    "ask_follow": 0.102362,
+                    "redelivered_only": 0.007874,
+                    "nothing": 0.385827
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 9,
+                "signal_1__redelivered_0": 55,
+                "signal_0__redelivered_1": 1,
+                "signal_0__redelivered_0": 62
+              },
+              "lookup_follow_rate": {
+                "point": 0.503937,
+                "low": 0.418151,
+                "high": 0.589492,
+                "half_width": 0.085671
+              }
+            },
+            "null": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 127,
+              "not_applicable_windows": 0,
+              "fired": {
+                "any_transport": 126,
+                "same_transport": 26
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.992126,
+                  "low": 0.956746,
+                  "high": 0.998609,
+                  "half_width": 0.020931
+                },
+                "same_transport": {
+                  "point": 0.204724,
+                  "low": 0.143714,
+                  "high": 0.283073,
+                  "half_width": 0.06968
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 9,
+                  "signal_1__redelivered_0": 117,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 7,
+                  "signal_1__redelivered_0": 19,
+                  "signal_0__redelivered_1": 3,
+                  "signal_0__redelivered_0": 98
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.9,
+                    "low": 0.59585,
+                    "high": 0.982124,
+                    "half_width": 0.193137
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.968211,
+                    "high": 1.0,
+                    "half_width": 0.015895
+                  },
+                  "lift": 0.9
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.7,
+                    "low": 0.396778,
+                    "high": 0.892209,
+                    "half_width": 0.247715
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.162393,
+                    "low": 0.106498,
+                    "high": 0.239753,
+                    "half_width": 0.066627
+                  },
+                  "lift": 4.310531
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01M19V3PPPXZM4XR9H78MDD110",
+          "rank": {
+            "by_redelivery_count": 31,
+            "by_map_offer_count": 4
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:ae",
+            "access_count": 57,
+            "usefulness_score": 0.0,
+            "decayed": false,
+            "content_head": "ae, ЛОВУШКА при ручном прогоне селфтестов node.sh: профиль шелла экспортирует AE",
+            "returned_by_recalls": 57
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 83,
+            "consumed": 51,
+            "trailing_nonconsumed": 9,
+            "lookup_consumed": 55,
+            "lookup_known": 83,
+            "lookup_trailing_absent": 3,
+            "rows": 83
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.614458,
+            "trailing_nonconsumed": 9,
+            "score": 5.441257,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 0.610774,
+              "log1p_unconsumed": 0.276666,
+              "log1p_trailing_nonconsumed": 0.409184,
+              "consumed_ratio": 4.744077
+            }
+          },
+          "windows": {
+            "windows": 83,
+            "map_medoid_windows": 83,
+            "organic_only_windows": 0,
+            "redelivered": 51,
+            "known_windows": 83,
+            "null_windows": 0,
+            "known": {
+              "total": 83,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 55,
+                    "ask_follow": 28,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": 0.662651,
+                    "ask_follow": 0.337349,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 55,
+                    "ask_follow": 4,
+                    "redelivered_only": 18,
+                    "nothing": 6
+                  },
+                  "shares": {
+                    "lookup_followed": 0.662651,
+                    "ask_follow": 0.048193,
+                    "redelivered_only": 0.216867,
+                    "nothing": 0.072289
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 29,
+                "signal_1__redelivered_0": 26,
+                "signal_0__redelivered_1": 22,
+                "signal_0__redelivered_0": 6
+              },
+              "lookup_follow_rate": {
+                "point": 0.662651,
+                "low": 0.555754,
+                "high": 0.755157,
+                "half_width": 0.099701
+              }
+            },
+            "null": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 83,
+              "not_applicable_windows": 0,
+              "fired": {
+                "any_transport": 83,
+                "same_transport": 10
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.955765,
+                  "high": 1.0,
+                  "half_width": 0.022118
+                },
+                "same_transport": {
+                  "point": 0.120482,
+                  "low": 0.066777,
+                  "high": 0.207763,
+                  "half_width": 0.070493
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 51,
+                  "signal_1__redelivered_0": 32,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 9,
+                  "signal_1__redelivered_0": 1,
+                  "signal_0__redelivered_1": 42,
+                  "signal_0__redelivered_0": 31
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.929953,
+                    "high": 1.0,
+                    "half_width": 0.035023
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.892821,
+                    "high": 1.0,
+                    "half_width": 0.05359
+                  },
+                  "lift": 1.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.176471,
+                    "low": 0.095724,
+                    "high": 0.302541,
+                    "half_width": 0.103409
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.03125,
+                    "low": 0.005538,
+                    "high": 0.157443,
+                    "half_width": 0.075952
+                  },
+                  "lift": 5.647072
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01M1CCA932SZMC4Y4K315VHA84",
+          "rank": {
+            "by_redelivery_count": 702,
+            "by_map_offer_count": 6
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:game",
+            "access_count": 7,
+            "usefulness_score": 0.0,
+            "decayed": false,
+            "content_head": "At the exact six-species 19:00 Europe/Amsterdam freeze, HEAD remained clean at 8",
+            "returned_by_recalls": 7
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 69,
+            "consumed": 1,
+            "trailing_nonconsumed": 68,
+            "lookup_consumed": 0,
+            "lookup_known": 69,
+            "lookup_trailing_absent": 69,
+            "rows": 69
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.014493,
+            "trailing_nonconsumed": 68,
+            "score": 1.613851,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 0.540032,
+              "log1p_unconsumed": 0.565241,
+              "log1p_trailing_nonconsumed": 1.50293,
+              "consumed_ratio": -0.394908
+            }
+          },
+          "windows": {
+            "windows": 69,
+            "map_medoid_windows": 67,
+            "organic_only_windows": 2,
+            "redelivered": 1,
+            "known_windows": 69,
+            "null_windows": 0,
+            "known": {
+              "total": 69,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 66,
+                    "redelivered_only": 1,
+                    "nothing": 2
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.956522,
+                    "redelivered_only": 0.014493,
+                    "nothing": 0.028986
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 1,
+                    "nothing": 68
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.014493,
+                    "nothing": 0.985507
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 1,
+                "signal_0__redelivered_0": 68
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.052737,
+                "half_width": 0.026369
+              }
+            },
+            "null": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 67,
+              "not_applicable_windows": 2,
+              "fired": {
+                "any_transport": 66,
+                "same_transport": 0
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.985075,
+                  "low": 0.920181,
+                  "high": 0.99736,
+                  "half_width": 0.03859
+                },
+                "same_transport": {
+                  "point": 0.0,
+                  "low": 0.0,
+                  "high": 0.054226,
+                  "half_width": 0.027113
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 66,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 1,
+                  "signal_0__redelivered_0": 66
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.793451,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.944997,
+                    "high": 1.0,
+                    "half_width": 0.027501
+                  },
+                  "lift": 0.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.793451,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.055003,
+                    "half_width": 0.027501
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KZRRPT94ESE0H0EV3VQB48JM",
+          "rank": {
+            "by_redelivery_count": 14,
+            "by_map_offer_count": 7
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:game",
+            "access_count": 455,
+            "usefulness_score": 1.0,
+            "decayed": false,
+            "content_head": "Горный подлесок полностью позеленел без изменения порогов: после исключения деко",
+            "returned_by_recalls": 455
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 264,
+            "consumed": 69,
+            "trailing_nonconsumed": 73,
+            "lookup_consumed": 0,
+            "lookup_known": 138,
+            "lookup_trailing_absent": 138,
+            "rows": 264
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.261364,
+            "trailing_nonconsumed": 73,
+            "score": 4.693012,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 1.056558,
+              "log1p_unconsumed": 0.973695,
+              "log1p_trailing_nonconsumed": 1.542545,
+              "consumed_ratio": 1.719658
+            }
+          },
+          "windows": {
+            "windows": 264,
+            "map_medoid_windows": 61,
+            "organic_only_windows": 203,
+            "redelivered": 69,
+            "known_windows": 138,
+            "null_windows": 126,
+            "known": {
+              "total": 138,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 36,
+                    "redelivered_only": 17,
+                    "nothing": 85
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.26087,
+                    "redelivered_only": 0.123188,
+                    "nothing": 0.615942
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 20,
+                    "nothing": 118
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.144928,
+                    "nothing": 0.855072
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 20,
+                "signal_0__redelivered_0": 118
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.027083,
+                "half_width": 0.013541
+              }
+            },
+            "null": {
+              "total": 126,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 7,
+                    "redelivered_only": 48,
+                    "nothing": 71
+                  },
+                  "shares": {
+                    "ask_follow": 0.055556,
+                    "redelivered_only": 0.380952,
+                    "nothing": 0.563492
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 2,
+                    "redelivered_only": 49,
+                    "nothing": 75
+                  },
+                  "shares": {
+                    "ask_follow": 0.015873,
+                    "redelivered_only": 0.388889,
+                    "nothing": 0.595238
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 61,
+              "not_applicable_windows": 203,
+              "fired": {
+                "any_transport": 43,
+                "same_transport": 2
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.704918,
+                  "low": 0.581106,
+                  "high": 0.80445,
+                  "half_width": 0.111672
+                },
+                "same_transport": {
+                  "point": 0.032787,
+                  "low": 0.009038,
+                  "high": 0.111895,
+                  "half_width": 0.051429
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 4,
+                  "signal_1__redelivered_0": 39,
+                  "signal_0__redelivered_1": 7,
+                  "signal_0__redelivered_0": 11
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 2,
+                  "signal_0__redelivered_1": 11,
+                  "signal_0__redelivered_0": 48
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.363636,
+                    "low": 0.151665,
+                    "high": 0.646199,
+                    "half_width": 0.247267
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.78,
+                    "low": 0.647585,
+                    "high": 0.872461,
+                    "half_width": 0.112438
+                  },
+                  "lift": 0.4662
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.258833,
+                    "half_width": 0.129416
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.04,
+                    "low": 0.011039,
+                    "high": 0.134601,
+                    "half_width": 0.061781
+                  },
+                  "lift": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01M18158QBM2MVMM3NX6R4KT2E",
+          "rank": {
+            "by_redelivery_count": 282,
+            "by_map_offer_count": 8
+          },
+          "pinned": false,
+          "node": {
+            "level": "schema",
+            "scope": "project:game",
+            "access_count": 60,
+            "usefulness_score": 0.0313024480636873,
+            "decayed": false,
+            "content_head": "Procedure: exact ref declared only sparse materialization 1. camera-clearance-v1",
+            "returned_by_recalls": 60
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 74,
+            "consumed": 6,
+            "trailing_nonconsumed": 62,
+            "lookup_consumed": 12,
+            "lookup_known": 74,
+            "lookup_trailing_absent": 62,
+            "rows": 74
+          },
+          "frozen_relevance": {
+            "level": "schema",
+            "consumed_ratio": 0.081081,
+            "trailing_nonconsumed": 62,
+            "score": 4.427123,
+            "contributions": {
+              "level_is_schema": 1.668211,
+              "log1p_matured": 0.566802,
+              "log1p_unconsumed": 0.565241,
+              "log1p_trailing_nonconsumed": 1.451417,
+              "consumed_ratio": 0.175452
+            }
+          },
+          "windows": {
+            "windows": 74,
+            "map_medoid_windows": 61,
+            "organic_only_windows": 13,
+            "redelivered": 6,
+            "known_windows": 74,
+            "null_windows": 0,
+            "known": {
+              "total": 74,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 12,
+                    "ask_follow": 57,
+                    "redelivered_only": 0,
+                    "nothing": 5
+                  },
+                  "shares": {
+                    "lookup_followed": 0.162162,
+                    "ask_follow": 0.77027,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.067568
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 12,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 62
+                  },
+                  "shares": {
+                    "lookup_followed": 0.162162,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.837838
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 6,
+                "signal_1__redelivered_0": 6,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 62
+              },
+              "lookup_follow_rate": {
+                "point": 0.162162,
+                "low": 0.095271,
+                "high": 0.262398,
+                "half_width": 0.083564
+              }
+            },
+            "null": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 61,
+              "not_applicable_windows": 13,
+              "fired": {
+                "any_transport": 58,
+                "same_transport": 1
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 0.95082,
+                  "low": 0.865089,
+                  "high": 0.983134,
+                  "half_width": 0.059023
+                },
+                "same_transport": {
+                  "point": 0.016393,
+                  "low": 0.0029,
+                  "high": 0.087189,
+                  "half_width": 0.042144
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 57,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 3
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 0,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 60
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.95,
+                    "low": 0.862995,
+                    "high": 0.98285,
+                    "half_width": 0.059928
+                  },
+                  "lift": 1.052632
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.060172,
+                    "half_width": 0.030086
+                  },
+                  "lift": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01M19YNVX7BBZTPC77YAK8DFC3",
+          "rank": {
+            "by_redelivery_count": 707,
+            "by_map_offer_count": 9
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:ae",
+            "access_count": 5,
+            "usefulness_score": 0.0,
+            "decayed": false,
+            "content_head": "AE cross-parent-deps, узел e2e-test ЗАКРЫТ (коммит 8c3ef350, tests/test_node_cro",
+            "returned_by_recalls": 5
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 52,
+            "consumed": 1,
+            "trailing_nonconsumed": 51,
+            "lookup_consumed": 16,
+            "lookup_known": 52,
+            "lookup_trailing_absent": 35,
+            "rows": 52
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.019231,
+            "trailing_nonconsumed": 51,
+            "score": 1.27565,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 0.432088,
+              "log1p_unconsumed": 0.454575,
+              "log1p_trailing_nonconsumed": 1.342756,
+              "consumed_ratio": -0.354325
+            }
+          },
+          "windows": {
+            "windows": 52,
+            "map_medoid_windows": 52,
+            "organic_only_windows": 0,
+            "redelivered": 1,
+            "known_windows": 52,
+            "null_windows": 0,
+            "known": {
+              "total": 52,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 16,
+                    "ask_follow": 36,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "lookup_followed": 0.307692,
+                    "ask_follow": 0.692308,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 16,
+                    "ask_follow": 8,
+                    "redelivered_only": 0,
+                    "nothing": 28
+                  },
+                  "shares": {
+                    "lookup_followed": 0.307692,
+                    "ask_follow": 0.153846,
+                    "redelivered_only": 0.0,
+                    "nothing": 0.538462
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 16,
+                "signal_0__redelivered_1": 1,
+                "signal_0__redelivered_0": 35
+              },
+              "lookup_follow_rate": {
+                "point": 0.307692,
+                "low": 0.199147,
+                "high": 0.442696,
+                "half_width": 0.121774
+              }
+            },
+            "null": {
+              "total": 0,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 0
+                  },
+                  "shares": {
+                    "ask_follow": null,
+                    "redelivered_only": null,
+                    "nothing": null
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 52,
+              "not_applicable_windows": 0,
+              "fired": {
+                "any_transport": 52,
+                "same_transport": 8
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.931208,
+                  "high": 1.0,
+                  "half_width": 0.034396
+                },
+                "same_transport": {
+                  "point": 0.153846,
+                  "low": 0.080077,
+                  "high": 0.275241,
+                  "half_width": 0.097582
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 51,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 1,
+                  "signal_1__redelivered_0": 7,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 44
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.929953,
+                    "high": 1.0,
+                    "half_width": 0.035023
+                  },
+                  "lift": 1.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.206549,
+                    "high": 1.0,
+                    "half_width": 0.396725
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.137255,
+                    "low": 0.068111,
+                    "high": 0.257217,
+                    "half_width": 0.094553
+                  },
+                  "lift": 7.285709
+                }
+              }
+            }
+          }
+        },
+        {
+          "node_id": "01KZ0QEX5WG2X395BXKXRBTT1M",
+          "rank": {
+            "by_redelivery_count": 231,
+            "by_map_offer_count": 10
+          },
+          "pinned": false,
+          "node": {
+            "level": "trace",
+            "scope": "project:game",
+            "access_count": 265,
+            "usefulness_score": 0.35090921498336347,
+            "decayed": false,
+            "content_head": "AETHER, корень aether-worldclass: ДЕКОМПОЗИЦИЯ (2026-08-02, ветка aether-worldcl",
+            "returned_by_recalls": 265
+          },
+          "matured_history": {
+            "available": true,
+            "unavailable_reason": null,
+            "matured": 142,
+            "consumed": 8,
+            "trailing_nonconsumed": 19,
+            "lookup_consumed": 0,
+            "lookup_known": 3,
+            "lookup_trailing_absent": 3,
+            "rows": 142
+          },
+          "frozen_relevance": {
+            "level": "trace",
+            "consumed_ratio": 0.056338,
+            "trailing_nonconsumed": 19,
+            "score": 1.810789,
+            "contributions": {
+              "level_is_schema": -0.599445,
+              "log1p_matured": 0.817204,
+              "log1p_unconsumed": 0.827827,
+              "log1p_trailing_nonconsumed": 0.801686,
+              "consumed_ratio": -0.036483
+            }
+          },
+          "windows": {
+            "windows": 142,
+            "map_medoid_windows": 49,
+            "organic_only_windows": 93,
+            "redelivered": 8,
+            "known_windows": 3,
+            "null_windows": 139,
+            "known": {
+              "total": 3,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 3
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "lookup_followed": 0,
+                    "ask_follow": 0,
+                    "redelivered_only": 0,
+                    "nothing": 3
+                  },
+                  "shares": {
+                    "lookup_followed": 0.0,
+                    "ask_follow": 0.0,
+                    "redelivered_only": 0.0,
+                    "nothing": 1.0
+                  }
+                }
+              },
+              "lookup_by_redelivery": {
+                "signal_1__redelivered_1": 0,
+                "signal_1__redelivered_0": 0,
+                "signal_0__redelivered_1": 0,
+                "signal_0__redelivered_0": 3
+              },
+              "lookup_follow_rate": {
+                "point": 0.0,
+                "low": 0.0,
+                "high": 0.561497,
+                "half_width": 0.280749
+              }
+            },
+            "null": {
+              "total": 139,
+              "by_ask_correlation": {
+                "any_transport": {
+                  "classes": {
+                    "ask_follow": 49,
+                    "redelivered_only": 4,
+                    "nothing": 86
+                  },
+                  "shares": {
+                    "ask_follow": 0.352518,
+                    "redelivered_only": 0.028777,
+                    "nothing": 0.618705
+                  }
+                },
+                "same_transport": {
+                  "classes": {
+                    "ask_follow": 9,
+                    "redelivered_only": 8,
+                    "nothing": 122
+                  },
+                  "shares": {
+                    "ask_follow": 0.064748,
+                    "redelivered_only": 0.057554,
+                    "nothing": 0.877698
+                  }
+                }
+              }
+            },
+            "ask_follow_probe": {
+              "applicable_windows": 49,
+              "not_applicable_windows": 93,
+              "fired": {
+                "any_transport": 49,
+                "same_transport": 9
+              },
+              "rate": {
+                "any_transport": {
+                  "point": 1.0,
+                  "low": 0.927302,
+                  "high": 1.0,
+                  "half_width": 0.036349
+                },
+                "same_transport": {
+                  "point": 0.183673,
+                  "low": 0.099763,
+                  "high": 0.313576,
+                  "half_width": 0.106906
+                }
+              },
+              "ask_by_redelivery": {
+                "any_transport": {
+                  "signal_1__redelivered_1": 4,
+                  "signal_1__redelivered_0": 45,
+                  "signal_0__redelivered_1": 0,
+                  "signal_0__redelivered_0": 0
+                },
+                "same_transport": {
+                  "signal_1__redelivered_1": 0,
+                  "signal_1__redelivered_0": 9,
+                  "signal_0__redelivered_1": 4,
+                  "signal_0__redelivered_0": 36
+                }
+              },
+              "redelivery_precision_for_ask_follow": {
+                "any_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 1.0,
+                    "low": 0.510109,
+                    "high": 1.0,
+                    "half_width": 0.244945
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 1.0,
+                    "low": 0.921348,
+                    "high": 1.0,
+                    "half_width": 0.039326
+                  },
+                  "lift": 1.0
+                },
+                "same_transport": {
+                  "p_signal_given_redelivered": {
+                    "point": 0.0,
+                    "low": 0.0,
+                    "high": 0.489891,
+                    "half_width": 0.244945
+                  },
+                  "p_signal_given_not_redelivered": {
+                    "point": 0.2,
+                    "low": 0.108961,
+                    "high": 0.33823,
+                    "half_width": 0.114634
+                  },
+                  "lift": 0.0
+                }
+              }
+            }
+          }
+        }
+      ],
+      "diagnostics": {
+        "ledger_rows_scanned": 62528,
+        "delivery_events_with_ask_probe": 5649,
+        "unresolved_instants": 0,
+        "echo_agreement": {
+          "probe_calls_replayed": 200,
+          "disagreements": 0
+        }
+      }
+    }
+  ]
+}
