@@ -273,3 +273,31 @@ def test_retrieval_context_prompt_includes_decision_history_only_when_present(
         assert "Alternatives rejected: 2" in block
         assert "misses canonical marker" in block
         assert "requires JIRA_BASE_URL+JIRA_API_TOKEN" in block
+
+
+def test_rejected_alternative_ingest_accepts_guessed_key_names(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        _, rejected = store.append_trace_with_rejected_alternatives(
+            "Used /api/goals/create after /api/switch",
+            {"scope": "project:ae", "task": "add goal"},
+            alternatives_considered=[
+                {"option": "restart the dashboard", "rejected": "not authorized"},
+                {"alternative": "fire the loop by hand", "reason": "eats the trigger"},
+            ],
+        )
+
+        assert [node.content for node in rejected] == [
+            "Rejected alternative: restart the dashboard\nRejected because: not authorized",
+            "Rejected alternative: fire the loop by hand\nRejected because: eats the trigger",
+        ]
+
+
+def test_rejected_alternative_error_names_the_expected_keys(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        with pytest.raises(ValueError, match=r"approach must be non-empty.*got keys \['idea', 'rejected_because'\]"):
+            store.append_trace_with_rejected_alternatives(
+                "Used /api/goals/create after /api/switch",
+                {"scope": "project:ae", "task": "add goal"},
+                alternatives_considered=[{"idea": "restart", "rejected_because": "no"}],
+            )
+        assert store.trace_count() == 0

@@ -5558,6 +5558,27 @@ def _as_list(value: Any) -> list[Any]:
     raise ValueError("value must be a list")
 
 
+# Models without the schema in view guess these names for the two fields;
+# accepting them keeps the whole write from failing on a key spelling.
+_ALTERNATIVE_APPROACH_KEYS = ("approach", "alternative", "option", "name")
+_ALTERNATIVE_REASON_KEYS = (
+    "rejected_because",
+    "reason",
+    "rejected",
+    "why",
+    "why_rejected",
+    "rationale",
+)
+
+
+def _first_text(item: Mapping[str, Any], keys: Iterable[str]) -> str:
+    for key in keys:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
 def _normalize_rejected_alternatives(
     alternatives: Iterable[Mapping[str, Any]] | None,
 ) -> list[dict[str, str]]:
@@ -5565,12 +5586,20 @@ def _normalize_rejected_alternatives(
     for item in alternatives or ():
         if not isinstance(item, Mapping):
             raise ValueError("alternatives_considered items must be objects")
-        approach = str(item.get("approach") or "").strip()
-        reason = str(item.get("rejected_because") or item.get("reason") or "").strip()
+        approach = _first_text(item, _ALTERNATIVE_APPROACH_KEYS)
+        reason = _first_text(item, _ALTERNATIVE_REASON_KEYS)
         if not approach:
-            raise ValueError("alternative approach must be non-empty")
+            raise ValueError(
+                "alternative approach must be non-empty: each alternatives_considered "
+                'item is {"approach": ..., "rejected_because": ...}, got keys '
+                f"{sorted(map(str, item))}"
+            )
         if not reason:
-            raise ValueError("alternative rejected_because must be non-empty")
+            raise ValueError(
+                "alternative rejected_because must be non-empty: each "
+                'alternatives_considered item is {"approach": ..., "rejected_because": ...}, '
+                f"got keys {sorted(map(str, item))}"
+            )
         normalized.append({"approach": approach, "rejected_because": reason})
     return normalized
 

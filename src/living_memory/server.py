@@ -10,13 +10,15 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from threading import RLock, Timer
-from typing import Any
+from typing import Annotated, Any
 from uuid import uuid4
 import json
 import os
 import secrets
 import sys
 import time as _time
+
+from pydantic import Field
 
 from living_memory.config import MemoryConfig, load_config
 from living_memory.consolidation import (
@@ -752,6 +754,12 @@ _REMEMBER_DESCRIPTION = (
     "time). Corrections NEVER go here — use memory_teach."
 )
 
+_ALTERNATIVES_CONSIDERED_DESCRIPTION = (
+    "Rejected options behind this decision. Each item is an object "
+    "{\"approach\": \"<what you did not do>\", \"rejected_because\": \"<why>\"}; "
+    "both fields are non-empty strings."
+)
+
 _TEACH_DESCRIPTION = (
     "Store a corrective trace and connect it to the original via a "
     "supersedes edge. You MUST teach the moment a belief changes: a "
@@ -977,7 +985,10 @@ def _register_tools(
         content: str,
         context: dict[str, Any] | None = None,
         feedback: dict[str, Any] | None = None,
-        alternatives_considered: list[dict[str, Any]] | None = None,
+        alternatives_considered: Annotated[
+            list[dict[str, Any]] | None,
+            Field(description=_ALTERNATIVES_CONSIDERED_DESCRIPTION),
+        ] = None,
     ) -> dict[str, Any]:
         """Store a new append-only trace.
 
