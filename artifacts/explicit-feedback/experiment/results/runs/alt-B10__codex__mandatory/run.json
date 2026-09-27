@@ -1,0 +1,52 @@
+{
+  "agent": "codex",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 90.3,
+  "ended_at": "2026-09-27T12:29:48Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 4,
+    "recall_feedback_marks": 19,
+    "recall_lookup_events": 5
+  },
+  "final_text": "Found in Living Memory (`project:game`):\n- **2026-09-24 tree decision:** installer passed on slot03 `9ba1c8aa`, rc0; no lockfile, HEAD/tree/refs/index unchanged.\n- **Isolation-result `cc68c15f` / tree `9aa2dcee`:** native capture and post-install provenance verification passed, rc0.\n- Acceptance passed **26 fixture + 30 mutation controls**, repeats **2/3**, `canonicalStable=true`; truthful quarantine **16/19**, lineage **4/4**.\n- Preserve bound policy `immutable=[]`, required root `verify.mjs`/`entry-result.json`, original provenance baseline and protected bytes.\n- Evidence: `/home/user/p/ae/artifacts/grand-world/unblock-20260907/slot03-fresh-20260924-wnwx816v/final-validation.json`.\n- Later landing confirmed: candidate **`642e7991`**, transfer **`5afb30f2`**, parent **`1bb7dbc3`**, exactly **3 changed paths**; `GATE DEFERRED` prose was stale.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:28:18Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18800,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "alt-B10__codex__mandatory",
+  "scoring": {
+    "marks": 19,
+    "observations": 23
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:28:12Z",
+  "stderr_foreign_urls": [],
+  "store": "alt",
+  "task_id": "alt-B10",
+  "timed_out": false,
+  "tokens_in": 259206,
+  "tokens_out": 1215,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_lookup"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

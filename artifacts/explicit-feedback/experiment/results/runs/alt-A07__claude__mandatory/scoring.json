@@ -1,0 +1,170 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:04:21.000000Z",
+      "id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "n_results": 10,
+      "query": "biome-successors R1 supervisor 265 species-content-repair infeasible fulgurax migrationDrive scope replan_required",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:04:37.000000Z",
+      "id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "n_results": 5,
+      "query": "fulgurax migrationDrive infeasible population-only species.json argmax 809",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:04:26.000000Z",
+    "2026-09-27T12:04:26.000000Z",
+    "2026-09-27T12:04:26.000000Z",
+    "2026-09-27T12:04:26.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M3EJ7WQ85XVE17GQT0WPE0KA",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "2",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M3EPEZEANP6PVNSD5D5STKB8",
+      "rank": 4,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "3",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M3EP17XSN01J6VVYN2QM0FF4",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "4",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M3EPFQM01YKM9JTAF614ZA6A",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "5",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M3GP4E5G7CHGBVGSFWCQH6NJ",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "6",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M1C60SC4XD94P74D7Z65JNA5",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "7",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M3AV8G1AQ97R52ZG0Q93S3TB",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "8",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M1C206875ZCYBAXHNYNVKX52",
+      "rank": 8,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "9",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M3GRRJF1Z95W2XWDEAATXVCR",
+      "rank": 9,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HC100SQJJCGZH11AHD2FAW",
+      "id": "10",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:04:37.000000Z",
+      "node_id": "01M3DQD8FG9REC6DXNPQPFHFYH",
+      "rank": 6,
+      "reject_reason": null,
+      "source_id": "01M3HC1F7PAJWYV544TX61QJKB",
+      "transport": "7294996dc9f448f48453fb58f3da2dc5",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 2
+  }
+}

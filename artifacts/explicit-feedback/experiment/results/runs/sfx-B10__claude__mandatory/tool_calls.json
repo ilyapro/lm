@@ -1,0 +1,146 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "generation 6 renderer fresh source proof failure pitfalls sealed cue worklib exact anchors null holdout boreal route merge",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M21AWKPS7MCQ21WK6C565HME",
+        "01M2G075X8QEX31M0QVK7PDT4Y",
+        "01M2G08MXAMBXGZK996JG44X5D",
+        "01M2FRRW9W1KPKVQH2AAFTJ4VE",
+        "01M2XHANBJ74G7SV1BAY19T7K6",
+        "01M2XQ3CVBS0PTWWP1R9P7G142",
+        "01M2FR9ECC3926BPS30X5MPFW6",
+        "01M22ZGTE7FY3WA7J60Q5XG0EC",
+        "01M2G1WCHR18APD3B756DHX3PR",
+        "01M30GC51V7JDGMYQ0AZ0B7VTD"
+      ],
+      "max_results": 10,
+      "query": "boreal route sealed cue worklib holdout"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KZK39NKZM06YS56CNNWSGN9G",
+        "01M0QY644KG6VD1YGGKDC204XD",
+        "01KS9FTT75Z27M1NYJME0MFQXG",
+        "01M37242H0NTRFNF1HHD00RBWS",
+        "01M1Q0T3T0F1DTPZHV13PNCW40",
+        "01M36VA28FVSEJVX5AX2911GGR",
+        "01KS8X5EGKN152JMQV98M5E7A2",
+        "01KS7FZCPAPR3N8QR2VJ5E4BAD",
+        "01KS9273N864RQAPA8GY2BPNP7"
+      ],
+      "max_results": 10,
+      "query": "midwork bench tasks_v6 generation 6 renderer fresh-source proof",
+      "used": [
+        "01M1VSTNEW3RQN36Y9YN4VXA5B"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M36YFQY01RA97WZXY2XYFR2G",
+        "01KRYJQT3DX3S98WD6G3V58QGQ",
+        "01KS8X5EGKN152JMQV98M5E7A2",
+        "01KRY9XWFT4KYC8J652TS7CX50",
+        "01M1SGJRMX61HQPNNJMKZHGSG5",
+        "01M1V9F89J7ZZSHRPVA2HPHEMK",
+        "01M01ME1FFBK17EHQQ2TYTFE5H",
+        "01KS544TZSPBCDJZ5916Z3MK9J"
+      ],
+      "max_results": 10,
+      "query": "tasks_v6 renderer sealed cue exact anchors null holdout package boreal merge failure",
+      "used": [
+        "01M23Y62EC1GHZSFQ58G6A69E3",
+        "01M23Z9SJ6YWAK3WW9GAW96R2G"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "task_pattern": "midwork-recall-bench/tasks-v6"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M1VSTNEW3RQN36Y9YN4VXA5B",
+        "01M23Z9SJ6YWAK3WW9GAW96R2G"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KTC0A0XZ5DWY2CCKZKN4CJJ0",
+        "01KTXWTMDCMY7GVX1D9QZH4FA9",
+        "01KVT18E9K2QPCRQM87H4WFABS",
+        "01KTSASZVQ7218KDDYE2TMP1XM",
+        "01KTVSBMC7508WBEYJRY38JGQS",
+        "01KV3B2XXRTK3R6NVGT0GTCRPH",
+        "01KTGG3EH0052RKT4TQECZ7QPQ",
+        "01KTNXWAQVF81F5QQNYND3S3SZ",
+        "01KTBMVY09TTR86J0GY5T9VCQP",
+        "01KVVMR60764ED2WR39Z9WC68P"
+      ],
+      "max_results": 10,
+      "query": "worklib generation-6 package renderer exact anchor proof from fresh source",
+      "used": [
+        "01M1VSTNEW3RQN36Y9YN4VXA5B",
+        "01M23Z9SJ6YWAK3WW9GAW96R2G"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KVC1S14A42N3MH8Q2K432YAB",
+        "01KTSASZVQ7218KDDYE2TMP1XM",
+        "01KVKN1NKPPXCAFM74V76ZJ1G6",
+        "01KWS9MMGEEASDS372C75Z2CRV",
+        "01KTS6WNGZ6KQT046WKNXX9QY0",
+        "01KVMD7QB8YAE1QZQZXGA0SYA3",
+        "01KVKN19696F8838KHDWR5F1NX",
+        "01KVRSYKP61CE67C7J9H49CWPB",
+        "01KTD0G94WC8W5K7HK718A00Z7",
+        "01KT9YKAYH68BY0BKWG6ATTABC"
+      ],
+      "max_results": 10,
+      "query": "midwork-bench v6 cue null-holdout package validate_tasks generation 6"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M247TE4FN2VPYCSK1YQSZS2Z",
+        "01KS11Q1ZASTFGJ3MFZ7THP1Z2",
+        "01KSEWMFV1M257HQRF91J8NCN9",
+        "01M0X96GNSZNJ635MW6MA51BEP",
+        "01M1VN7ZD863KWS4VN914W8TCS",
+        "01M23YNVC8ARW5PDEQN0TVGW9X"
+      ],
+      "max_results": 10,
+      "query": "tasks_v6 render package from fresh source, anchors must match exactly, boreal holdout merge",
+      "used": [
+        "01M246SYC7T9WTH709HB7MAFWW"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

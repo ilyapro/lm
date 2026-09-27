@@ -1,0 +1,29 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "simplify-rating-consumers",
+      "scope": "project:online"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M3FARADW9RDJ144VXPG1G1GR",
+        "01M1XV0Z2Y5A1AQ1M3SP3V0MYP",
+        "01M1YM892KWDGCNT47G7HWVQ1Q",
+        "01M1XHVKTYG2CAXXWR42VSA9FK"
+      ],
+      "query": "simplify-rating-consumers result commit MiniBranch confirmedRating",
+      "scope": "project:online",
+      "used": [
+        "01M1YM47TVMF72PKG45S5DJNZN",
+        "01M1YMQ5KFKTTN6KNH0GVPAT15",
+        "01M1YG0KRS1D39ECYYCYMJ3FAZ",
+        "01M1YM6SC4HF2X7E6BX3G94CY2"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

@@ -1,0 +1,51 @@
+{
+  "agent": "codex",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 85.8,
+  "ended_at": "2026-09-27T12:19:39Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 0,
+    "recall_events": 5,
+    "recall_feedback_marks": 21,
+    "recall_lookup_events": 0
+  },
+  "final_text": "В Living Memory `project:2gis-seaf-web` найдено:\n- Паспорт `504012804 v57` от `17.08.2026`, п. 11: CatalogAPI — HA/DR `Да/Active/Полное`, масштабирование вертикальное и горизонтальное; это заявление документа, без проверки работающего контура.\n- Backup противоречив: п. 11 — обе копии отсутствуют; п. 15 — восстановление повторным импортом, геораспределённые копии «Да», DRP отсутствует, учения не проводятся.\n- `seo-store`, HEAD `6e90f00`, проверка `07.09.2026`: `src/lib/fetchProjects.ts` → `http://catalog.api.2gis.ru/2.0/region/list`; `src/lib/fetchCityAliases.ts` → `http://catalog.web-staging.2gis.ru/3.0/aliases`.\n- На `14.09.2026`: `online__webapi` → `2gis.app_system.2gis.webapi`, сервисы `get_region_list/get_items` без specs.\n- Опубликованы `2gis.app_system.web.webapi.ipa` и 12 контрактов `2gis.srv.web.webapi.ipa.*`; переключение ссылок оставлено отдельной задачей.\n- По `627113888`, geocoder, Scala и проверке `endpoint_uri/responses` конкретных сведений не найдено.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:18:13Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18802,
+  "provider_error": false,
+  "ready_s": 12.4,
+  "run_id": "sfx-A08__codex__mandatory",
+  "scoring": {
+    "marks": 21,
+    "observations": 23
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:18:01Z",
+  "stderr_foreign_urls": [],
+  "store": "sfx",
+  "task_id": "sfx-A08",
+  "timed_out": false,
+  "tokens_in": 219156,
+  "tokens_out": 1347,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

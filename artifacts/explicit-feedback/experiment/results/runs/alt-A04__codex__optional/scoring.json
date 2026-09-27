@@ -1,0 +1,48 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:11:18.000000Z",
+      "id": "01M3HCDPWHRQJA57YQYXYWAJK2",
+      "n_results": 8,
+      "query": "shared-hunt e2e.js Торн/Каэль failure dmgBy first frame root replan object-successors",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:23.000000Z",
+      "id": "01M3HCDVN0E60BVQWM89W3171V",
+      "n_results": 5,
+      "query": "shared-hunt",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:23.000000Z",
+      "id": "01M3HCDWBTRSKHT6C3E0P6V8BA",
+      "n_results": 5,
+      "query": "dmgBy",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:24.000000Z",
+      "id": "01M3HCDWZ30F74ASW7CY79BMZD",
+      "n_results": 5,
+      "query": "Торн Каэль",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:30.000000Z",
+      "id": "01M3HCE2QKQ8348RM4VC2JXPPQ",
+      "n_results": 5,
+      "query": "shared-hunt first frame staging dmgBy",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:11:30.000000Z",
+    "2026-09-27T12:11:30.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 5
+  }
+}

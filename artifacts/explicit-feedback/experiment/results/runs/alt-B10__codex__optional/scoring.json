@@ -1,0 +1,47 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:28:32.000000Z",
+      "id": "01M3HDD8K672VDENJTD43PSCCR",
+      "n_results": 8,
+      "query": "slot03 isolation-result tree-decision 20260924 installer capture cc68c15 admission common provenance",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:37.000000Z",
+      "id": "01M3HDDDRMFQR6VWBXW1VT9QX5",
+      "n_results": 6,
+      "query": "slot03 isolation-result tree-decision 20260924",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:38.000000Z",
+      "id": "01M3HDDEESXW0T6NKGM6649FVQ",
+      "n_results": 6,
+      "query": "cc68c15",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:54.000000Z",
+      "id": "01M3HDDXVS0SQM64R3YW10AP91",
+      "n_results": 6,
+      "query": "slot03 isolation-result capture admission common provenance",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:29:05.000000Z",
+      "id": "01M3HDE8T6Y0BE2AJY0XGN2T8M",
+      "n_results": 5,
+      "query": "slot03 fresh 20260924 common provenance admission cc68c15f6ee0e25b1604a036a833da1aef18c8b7",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:28:43.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 5
+  }
+}

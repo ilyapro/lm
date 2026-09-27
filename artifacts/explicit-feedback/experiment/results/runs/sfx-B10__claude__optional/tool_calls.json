@@ -1,0 +1,32 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "generation 6 renderer fresh source proof failure pitfalls sealed cue worklib exact anchors null holdout boreal route merge",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "sealed cue worklib exact anchors null holdout"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "boreal route merge generation 6 renderer"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 5,
+      "query": "worklib boreal sealed cue fresh-source proof",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

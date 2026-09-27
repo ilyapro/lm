@@ -1,0 +1,41 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "biome-successors R1 supervisor 265 species-content-repair infeasible fulgurax migrationDrive scope replan_required",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M3EPEZEANP6PVNSD5D5STKB8",
+        "01M3EP17XSN01J6VVYN2QM0FF4",
+        "01M3EPFQM01YKM9JTAF614ZA6A",
+        "01M3EP9ZHMWEZNMECPAEESS4VZ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M3GP4E5G7CHGBVGSFWCQH6NJ",
+        "01M1C60SC4XD94P74D7Z65JNA5",
+        "01M3AV8G1AQ97R52ZG0Q93S3TB",
+        "01M1C206875ZCYBAXHNYNVKX52",
+        "01M3GRRJF1Z95W2XWDEAATXVCR",
+        "01M3DQD8FG9REC6DXNPQPFHFYH"
+      ],
+      "query": "fulgurax migrationDrive infeasible population-only species.json argmax 809",
+      "used": [
+        "01M3EJ7WQ85XVE17GQT0WPE0KA",
+        "01M3EPEZEANP6PVNSD5D5STKB8",
+        "01M3EP17XSN01J6VVYN2QM0FF4",
+        "01M3EPFQM01YKM9JTAF614ZA6A"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

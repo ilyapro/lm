@@ -1,0 +1,43 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:22:33.000000Z",
+      "id": "01M3HD2APJ01EN51C25Q8K5WF6",
+      "n_results": 8,
+      "query": "slot08 package-lock native provenance reproduction npm install owned namespace avoid metadata frozenReferences audit JSON L4",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:22:46.000000Z",
+      "id": "01M3HD2QA28QJH0QS0G8KZTR6W",
+      "n_results": 6,
+      "query": "slot08 package-lock frozenReferences",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:23:09.000000Z",
+      "id": "01M3HD3DJGVX707J4CQD46Q9ZR",
+      "n_results": 5,
+      "query": "slot08 owned namespace avoid metadata frozenReferences audit JSON L4",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:23:32.000000Z",
+      "id": "01M3HD43Y0N2V3QCPNJZJ5V4ZT",
+      "n_results": 3,
+      "query": "slot08 provenance reproduction owned namespace metadata",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:22:47.000000Z",
+    "2026-09-27T12:23:15.000000Z",
+    "2026-09-27T12:23:15.000000Z",
+    "2026-09-27T12:23:15.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 4
+  }
+}

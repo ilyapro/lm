@@ -1,0 +1,49 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 26.7,
+  "ended_at": "2026-09-27T12:20:55Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 3,
+    "recall_events": 4,
+    "recall_feedback_marks": 22,
+    "recall_lookup_events": 3
+  },
+  "final_text": "Memory has nothing on `public/docs/auth2_api_v2_1.yml` or any auth2 OpenAPI spec file. I found no trace that says where that spec lives, which endpoints it defines, or that it was used as a source for the Online/ID SEAF model.\n\nRelated facts I did find:\n- **Target repo:** new SEAF work for the Online team goes to `archascode/2gis-seaf/2gis-seaf-web` (GitLab project 14280). Online, ID and satellites live in `architecture/online` and shared dependencies in `architecture/externals`. Set `mr_default_target_self=false`, meaning the MR must target the model project itself, not upstream.\n- **Service sources:** code for the service being described is read from the neighbouring folder `~/p/<service>` (for example `~/p/id-2gis-com`), not from the model repo.\n- **ID model:** merged in MR !2 (merge commit cec2d07). It treats `2gis.app_system.auth2` as the master system for accounts, tokens, recovery tokens and provider bindings, and puts the ID L2 in `architecture/app/systems/id_l2.yaml`.\n- **auth2 hosts:** production uses `api.auth.2gis.com`, staging uses `auth2.web-staging.2gis.ru`, and KZ overrides it via `auth2_api_url` in `deploy/config.yaml`.",
+  "first_input_tokens": 8843,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:20:28Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 6,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18809,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "sfx-B11__claude__mandatory",
+  "scoring": {
+    "marks": 22,
+    "observations": 27
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:20:21Z",
+  "stderr_foreign_urls": null,
+  "store": "sfx",
+  "task_id": "sfx-B11",
+  "timed_out": false,
+  "tokens_in": 114649,
+  "tokens_out": 2026,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

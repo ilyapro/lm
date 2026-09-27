@@ -219,7 +219,12 @@ from living_memory.embeddings import (
     cyrillic_prefix_terms,
     tokenize,
 )
-from living_memory.feedback import FeedbackService, feedback_weighted_score
+from living_memory.feedback import (
+    FeedbackService,
+    _explicit_feedback_policy,
+    feedback_weighted_score,
+)
+from living_memory.irrelevance import query_demotions
 from living_memory.models import (
     REJECTED_ALTERNATIVE_KIND,
     Connection,
@@ -662,6 +667,7 @@ class MemoryRecallService:
             plan,
             causal_mode=causal_mode,
             decision_mode=decision_mode,
+            demotions=self._collect_query_demotions(plan, query_embedding),
         )
         limited = ranked[:max_results]
         self.last_residual = ranked[max_results:]
@@ -708,7 +714,16 @@ class MemoryRecallService:
         *,
         causal_mode: bool = False,
         decision_mode: bool = False,
+        demotions: Mapping[str, float] | None = None,
     ) -> list[RecallResult]:
+        """Score and order candidates.
+
+        ``demotions`` maps node id -> a multiplier in (0, 1] applied to that
+        node's final score for this query only (query-relative irrelevance,
+        ``living_memory.irrelevance``). Applied before sorting, so the
+        correction-dominance pass still sees the demoted order.
+        """
+
         results: list[RecallResult] = []
         corrections_by_superseded, superseding_ids = self._supersedes_sets()
         ungated_scopes = _ungated_scopes(plan)
@@ -806,6 +821,8 @@ class MemoryRecallService:
                         effective_graph = candidate.graph_score
             if adjusted <= 0.0:
                 continue
+            if demotions:
+                adjusted *= demotions.get(node.id, 1.0)
 
             results.append(
                 RecallResult(
@@ -1402,6 +1419,32 @@ class MemoryRecallService:
         return dict(
             sorted(seeds.items(), key=lambda item: (-item[1], item[0]))[:GRAPH_SEED_LIMIT]
         )
+
+    def _collect_query_demotions(
+        self, plan: ScopePlan, query_embedding: list[float]
+    ) -> dict[str, float]:
+        """Query-relative irrelevance multipliers for this recall. Never raises.
+
+        Active only under ``LM_EXPLICIT_FEEDBACK_POLICY=credit`` -- the valve
+        that writes the rows also gates reading them, so switching it back to
+        ``audit`` or ``off`` restores the undemoted ranking without touching
+        the store -- and only when ``LM_QUERY_IRRELEVANCE_FACTOR`` < 1. Anchor
+        matching is ``match_anchors`` with the anchor channel's floor and
+        limit, served from the same cached vectors, independent of the graph
+        depth and of ``anchor_seeding``. The probe for any live row runs
+        first, so a store that never saw a credited irrelevant mark pays one
+        indexed lookup and no anchor scan.
+        """
+
+        if not query_embedding or _explicit_feedback_policy() != "credit":
+            return {}
+        try:
+            source = self._anchor_vector_source()
+            if source is None:
+                return {}
+            return query_demotions(source, query_embedding, plan)
+        except Exception:  # pragma: no cover - derived signal, never fatal
+            return {}
 
     def _anchor_vector_source(self) -> _CachedAnchorVectors | None:
         """The live anchor vectors, cached until ``query_anchor_revision`` moves.

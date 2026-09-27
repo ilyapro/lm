@@ -1,0 +1,112 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "gigacode.ru connect timeout proxy VPN required reachability ai-llm-proxy provider proxy setting"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1HJ6007QMRKRJTV6YRCQT17",
+        "01KRV5XXNNFK38D17WFM1RN1A2",
+        "01KZYTQD8M54H2QQWYGV8PDFXB",
+        "01KZYTQD5FW9Y7GT59RK0EGQTF",
+        "01M0R0JDYTWC0J7HNFMNT4VSX0",
+        "01KZYVFVGWZQC8JDDBQJ9Y4WD0",
+        "01M0CW4PJNRY7W02211AAQG2E9"
+      ],
+      "max_results": 6,
+      "query": "gigacode.ru",
+      "used": [
+        "01M28TF2Z879QBJ3BZSEF6CZ1Y"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1TZ7Y37BG8RA3ERDEWEDW0X",
+        "01M0NQAMYC3PRV2499GZGDMNTQ",
+        "01KZ8PCNF10GH1Q9KH7HE39WBX",
+        "01M2NYFG913EPA84SX9803723Q",
+        "01M0NN81D9WBC30ZPRYQE1656R",
+        "01KVFKPW1X2DAQ3BS1TYJ1WCJD"
+      ],
+      "max_results": 5,
+      "query": "gigacode connect timeout proxy",
+      "scope": "project:lm",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M00CRN3911ZTFCT5KEYTSYBP",
+        "01M1HJ6007QMRKRJTV6YRCQT17",
+        "01M09YV65QDHAVQRVP75S5SNR3",
+        "01KZYTQD8M54H2QQWYGV8PDFXB",
+        "01M1J281ZK7WVV9Z4K8CQ0A86A"
+      ],
+      "max_results": 4,
+      "query": "ai-llm-proxy provider proxy VPN",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M28TF2Z879QBJ3BZSEF6CZ1Y"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1HJ6007QMRKRJTV6YRCQT17",
+        "01KZYTQD7JSH5Q2G6HVTKFA34R",
+        "01KS2P62CJAS3A9D4SJBBE5FHB",
+        "01KRV5XXNNFK38D17WFM1RN1A2"
+      ],
+      "max_results": 5,
+      "query": "gigacode timeout proxy VPN",
+      "scope": "project:ae",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M2V7R3BXNC978BKTAKBVXR90",
+        "01M3027WV05TPF5GBFT2M248QH"
+      ],
+      "max_results": 3,
+      "query": "gigacode VPN required AE_PROVIDER_HTTP_PROXY",
+      "scope": "project:ae",
+      "used": [
+        "01M2FRVGG12TKRCEJFFS38Q6TP",
+        "01M2E6YT9YJ4XNWM52GECH75HM",
+        "01M218Q87NM6WQ4E9ZPAA360J0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

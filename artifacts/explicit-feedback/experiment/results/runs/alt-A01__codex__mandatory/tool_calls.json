@@ -1,0 +1,135 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "gate-dependencies-published successor gate-dependency-preparation 4311caaf baseline generated_create_only publisher sidecar"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1FDYWK79AP9AA32K5EC6B0V",
+        "01M1F7H1TW7VSSMGRFZ12QJAE3",
+        "01M3DNCZ414Q48CFWS876FRVRS",
+        "01M1S9YMRZEQHR4SSBH8DYZDZD",
+        "01M1J7ERWW9SG17A2DW9GEBA15",
+        "01KZJW2MZ0PCSVP38P6PY3T03R",
+        "01M1MMDQMHJS0K4W4FK1ZZAF2F",
+        "01M1VA80TNA8YPEWG76BS06JRR"
+      ],
+      "max_results": 6,
+      "query": "gate-dependencies-published 4311caaf",
+      "scope": "project:ae",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M21ACG0FXZ9973M3CMW9TP0H",
+        "01M20SYZ9M4943WQKHYAPXGN1M",
+        "01M21HC5XZ67WBK2KFG5ACEXV5",
+        "01M24PMYFHZ3RXB5KPVRGTN6HN",
+        "01M22XMP0D6YFSZWXBBV0015V3"
+      ],
+      "max_results": 5,
+      "query": "\"gate-dependencies-published\"",
+      "scope": "project:ae",
+      "used": [
+        "01M21H3A1YKXAHJP2ZH9MHHH9N"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M21HC5XZ67WBK2KFG5ACEXV5",
+        "01M213VMFEYXTSZZFB7NVD7PMW"
+      ],
+      "max_results": 5,
+      "query": "gate-dependency-preparation successor baseline generated_create_only",
+      "scope": "project:ae",
+      "used": [
+        "01M21BSQ8NF2ZCBFNG4HM0RKN0",
+        "01M22ZB2F6VNFPNH6ZSPPZAFRW",
+        "01M21DSHZQRMMVRHD3QHW9WZ1E"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M21DSHZQRMMVRHD3QHW9WZ1E"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M23Z8X7MZW948MMB4Z5FFS9M",
+        "01M230T9C6NW389X7NXWXG0AQZ",
+        "01M22YRK98Y27V6JG1HTYH1Q5Z",
+        "01M23F7YEN1G81R5VFVRVY15K2"
+      ],
+      "max_results": 3,
+      "query": "4311caaf",
+      "scope": "project:ae",
+      "used": [
+        "01M21H3A1YKXAHJP2ZH9MHHH9N"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:ae",
+      "task_pattern": "gate-dependencies-published"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M24PMYFHZ3RXB5KPVRGTN6HN",
+        "01M2369SXBAS6AEBESZSQ5731C"
+      ],
+      "max_results": 4,
+      "query": "gate-dependencies-published baseline publisher 26",
+      "scope": "project:ae",
+      "used": [
+        "01M21S3NQBRP6N9SYX1YTBZ6RG"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M21HC16EC9A65KC3D9F8NRD2",
+        "01M21EASPX3K5J6V4MWV6XRKAZ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

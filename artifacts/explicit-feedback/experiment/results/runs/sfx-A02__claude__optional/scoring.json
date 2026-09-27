@@ -1,0 +1,40 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:09:41.000000Z",
+      "id": "01M3HCARF24RACDT9D547VX5AR",
+      "n_results": 8,
+      "query": "lm_instance.py seeded_clusters compose_seeded_tail Memory nearby tail",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:09:50.000000Z",
+      "id": "01M3HCB19FW0X2X9ZMEYR2E43E",
+      "n_results": 8,
+      "query": "seeded clusters \"Memory nearby\" tail appended to recall output, compose tail",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:09:56.000000Z",
+      "id": "01M3HCB728ZB43KJSSV65THGCQ",
+      "n_results": 8,
+      "query": "lm_instance.py experiment harness seeded memory instance",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:10:10.000000Z",
+      "id": "01M3HCBN210Z8WA35QFJKPR1B1",
+      "n_results": 8,
+      "query": "midwork_bench harness-v6 _seed_store recall history seeded_clusters Memory nearby tail non-empty",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:09:58.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 4
+  }
+}

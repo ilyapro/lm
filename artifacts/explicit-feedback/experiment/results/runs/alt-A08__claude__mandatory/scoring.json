@@ -1,0 +1,200 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:17:48.000000Z",
+      "id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "n_results": 8,
+      "query": "slot13 causal-history-reachability causal-role verify historical membership pause continuation",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:17:58.000000Z",
+      "id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "n_results": 8,
+      "query": "slot13 causal-role reachability pause continuation historical HEAD replay",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:18:13.000000Z",
+      "id": "01M3HCTC3DWEZ87M6G3FHYNQTD",
+      "n_results": 8,
+      "query": "causal-role verify.mjs historical-executable-verifier membership audit acceptedBase",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:17:58.000000Z",
+      "node_id": "01M21KA1MKQQDNEFQY0HC517CM",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "id": "2",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:17:58.000000Z",
+      "node_id": "01M20T59NBT3DFP725EJB5SGDA",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "id": "3",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:17:58.000000Z",
+      "node_id": "01M211CR5TY0ZJJ4T95WJX8PWA",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "id": "4",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:17:58.000000Z",
+      "node_id": "01M3ANGQGJMVG63NMZ965B6EN4",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "id": "5",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:17:58.000000Z",
+      "node_id": "01M1XY4Y1KNF3HM7H8PCQ1TAZE",
+      "rank": 4,
+      "reject_reason": null,
+      "source_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "id": "6",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:17:58.000000Z",
+      "node_id": "01M15RV4KPW1S3XMABQVWRH7J4",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "id": "7",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:17:58.000000Z",
+      "node_id": "01M0Y7S6Y81TVWGJ1T1PG9DGA2",
+      "rank": 6,
+      "reject_reason": null,
+      "source_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSKFT4YDZQ2VT4EXJX3X0",
+      "id": "8",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:17:58.000000Z",
+      "node_id": "01M132J2W0KPWF2P942HDKCN49",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "id": "9",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:18:13.000000Z",
+      "node_id": "01M21KA1MKQQDNEFQY0HC517CM",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HCTC3DWEZ87M6G3FHYNQTD",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "id": "10",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:18:13.000000Z",
+      "node_id": "01M21CMNF7KTWFVTY6T4HPNT79",
+      "rank": 6,
+      "reject_reason": null,
+      "source_id": "01M3HCTC3DWEZ87M6G3FHYNQTD",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "id": "11",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:18:13.000000Z",
+      "node_id": "01M3H53PKDYRW896JY62P4HW3G",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HCTC3DWEZ87M6G3FHYNQTD",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCSXH26Y5XTMFTEG1CV7R0",
+      "id": "12",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:18:13.000000Z",
+      "node_id": "01M1ZAAFDEFWEXDGV70835WDT2",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HCTC3DWEZ87M6G3FHYNQTD",
+      "transport": "3e219a70505d463ab6ef845d8b0ceb91",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 3
+  }
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "Noctifer acquisition final receipt normalize quarantine publication null performed false Nimbara final receipt location",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M1XF606NMVFY0X1PHRQ6BA6V",
+        "01M1XHN8N1G5Y2GTFE210A2GTK",
+        "01M1XGPJ0ZYATVY5EZD8KBYCV0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  }
+]

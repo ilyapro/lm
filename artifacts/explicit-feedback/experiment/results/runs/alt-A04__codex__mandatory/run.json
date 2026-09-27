@@ -1,0 +1,49 @@
+{
+  "agent": "codex",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 51.0,
+  "ended_at": "2026-09-27T12:11:54Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 3,
+    "recall_events": 3,
+    "recall_feedback_marks": 18,
+    "recall_lookup_events": 3
+  },
+  "final_text": "Found in Living Memory (`project:game`, 2026-09-26):\n- `d887aae3`: Торн/Каэль shared-hunt gate reported `248/3`; intermittent (batches: `1/3` and `6/6` red), unrelated to object files.\n- First captured frame at tick `125200` already had both in `dmgBy`: `1002:20 + 1003:13`; all three assertions required a leader-only frame.\n- Cause: `mmo/test/e2e.js` staged the joiner inside bite reach at target assignment; both bites could land together. The old TCP-order/stopped-wait fix was already present.\n- Fix: commit `6d9a5cb9`, e2e blob `21d21f17`; stage joiner behind leader and evaluate `sharedHuntPhase()` on `why.firstStaged` even without a joint kill.\n- Negative control: `mmo/server/player.js` hunting(), `shared = false`, must produce `✗ shared-hunt`.\n- Root added `/shared-hunt-e2e-prerequisite`; `object-successors` must inherit the fixed blob and pass e2e before resuming slot07.\n- Later prerequisite gate failure was separately in `mmo/test/server/beast-runs.js`; successful final integration was not established by these records.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:11:03Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18804,
+  "provider_error": false,
+  "ready_s": 10.4,
+  "run_id": "alt-A04__codex__mandatory",
+  "scoring": {
+    "marks": 18,
+    "observations": 18
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:10:52Z",
+  "stderr_foreign_urls": [],
+  "store": "alt",
+  "task_id": "alt-A04",
+  "timed_out": false,
+  "tokens_in": 151691,
+  "tokens_out": 1052,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "slot07 bounds-lod-measurements-v3 lifecycle_snapshot_changed c01fd4bd verify self-test origin-v5",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "bounds-lod-measurements-v3 c01fd4bd"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M3G629D1ZC3PSV1C0K5EGXR7",
+        "01M3EK7R9Y1EBPC6SQB0ZNTD68"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot07 bounds lod measurements v3 re-issue lifecycle_snapshot_changed harness race DONE",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

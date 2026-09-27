@@ -1,0 +1,50 @@
+{
+  "agent": "codex",
+  "arm": "optional",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 65.1,
+  "ended_at": "2026-09-27T12:29:21Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 5,
+    "recall_feedback_marks": 0,
+    "recall_lookup_events": 1
+  },
+  "final_text": "- Found in Living Memory, `project:game`: the 2026-09-24 installer blocker was resolved; historical `df828957` package-lock failures remain diagnostic evidence.\n- Tree-decision tested HEAD `9ba1c8aae3a5df77018ca647891174741369f89d`, tree `a2d0eb68c7c77bdc6cfb2cce386947bc8c929c34`: installer rc0, no lockfile, unchanged HEAD/tree/refs/index, clean status.\n- Receipt: `/home/user/p/ae/artifacts/grand-world/unblock-20260907/slot03-decision-20260924-evx6s1z5/installer-reproduction.json`.\n- Fresh isolation-result HEAD `cc68c15f6ee0e25b1604a036a833da1aef18c8b7`: native installer, provenance capture, and post-install verification all rc0; baseline and ancestor contracts preserved.\n- Evidence: `/home/user/p/ae/artifacts/grand-world/unblock-20260907/slot03-fresh-20260924-wnwx816v/current-installer.json`.\n- Same-id reopen must preserve `immutable=[]` and required root artifacts `verify.mjs`/`entry-result.json`; final product acceptance/native landing remained separate.\n- Earlier `df828957` acceptance: lineage 4/4, gates 16/19, `admitted=true`, `candidateReady=false`, `productionReachable=false`; repeats 2 and 3 were VERIFIED and canonically stable.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:28:16Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "8afc5d057efb8374f46b75e93f9191f821d490e4b6b32e646cd0af6ad61d6cbe",
+  "port": 18804,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "alt-B10__codex__optional",
+  "scoring": {
+    "marks": 0,
+    "observations": 31
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:28:10Z",
+  "stderr_foreign_urls": [],
+  "store": "alt",
+  "task_id": "alt-B10",
+  "timed_out": false,
+  "tokens_in": 227640,
+  "tokens_out": 764,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

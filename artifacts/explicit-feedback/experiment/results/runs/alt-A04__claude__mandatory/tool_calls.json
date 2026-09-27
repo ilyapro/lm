@@ -1,0 +1,36 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "shared-hunt e2e.js Торн/Каэль failure dmgBy first frame root replan object-successors",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M3F0XA9AQ7SWDMP78MSXTY79"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M3BKPHBS07DPJ7VFZE43A8G6",
+        "01M3AM7E0PH9BT4XCMNX4C56P2",
+        "01M204GM9YE8KKCZBBEVT88QTD",
+        "01M16S6ND23T91M7BFF82CM1RT"
+      ],
+      "max_results": 3,
+      "query": "shared-hunt-e2e-prerequisite 6d9a5cb9 object-successors depend root replan",
+      "scope": "project:game",
+      "used": [
+        "01M3EYQCR1QWPCGWVN2AMDCWK8",
+        "01M3F3GDTJKM3ZDAPGP5Z9ZZ43",
+        "01M3EYQN280WEDWNJ0DP4YJ0EW",
+        "01M3F0XA9AQ7SWDMP78MSXTY79"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

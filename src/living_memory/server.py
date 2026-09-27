@@ -22,6 +22,7 @@ from pydantic import Field
 
 from living_memory.config import MemoryConfig, load_config
 from living_memory.consolidation import (
+    _correction_text,
     DEFAULT_MIN_CLUSTER_SIZE,
     ConsolidationResult,
     ConsolidationService,
@@ -67,7 +68,13 @@ from living_memory.resources import (
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import normalize_scope, resolve_scope
 from living_memory.embeddings import LocalEmbeddingModel
-from living_memory.feedback import apply_lookup_credit, apply_pending_recall_feedback
+from living_memory.feedback import (
+    apply_explicit_marks,
+    apply_lookup_credit,
+    apply_pending_recall_feedback,
+    has_explicit_marks,
+    resolve_explicit_marks,
+)
 from living_memory import storage as storage_module
 from living_memory.storage import (
     FingerprintGatePolicy,
@@ -773,6 +780,108 @@ _TEACH_DESCRIPTION = (
     "self-correct silently."
 )
 
+# Explicit-feedback description arms (``LM_EXPLICIT_FEEDBACK_PROMPT``), for
+# the optional-vs-mandatory experiment of goal explicit-recall-feedback. The
+# default ``optional`` arm leaves every tool description above and below
+# byte-identical and puts only a short hint in the ``used``/``irrelevant``
+# field schemas. ``mandatory`` swaps in a reworded memory_recall description
+# that carries one binding sentence — fitted into the 1024-char budget by
+# rewording (the mid-work law no longer repeats the opener's "at every new
+# turn of thought", "searching," and the depth hint are dropped, the query
+# and content_ref hints are shortened), never by appending — and binding
+# field descriptions on all three tools. An unknown value is ``optional``.
+# Character costs per arm: docs/explicit-feedback.md.
+EXPLICIT_FEEDBACK_PROMPT_ARMS: tuple[str, ...] = ("optional", "mandatory")
+DEFAULT_EXPLICIT_FEEDBACK_PROMPT_ARM = "optional"
+
+_RECALL_DESCRIPTION_MANDATORY = (
+    "Recall before acting and at every new turn of thought. You MUST "
+    "recall BEFORE acting: changing any artifact (conventions, rejected "
+    "approaches); creating or mutating state (recall the concept before "
+    "inventing one); irreversible or outward-facing steps (recall action "
+    "plus target); pulling knowledge from the world — measuring (memory "
+    "first: the world only after recall returns nothing — anti-pattern: "
+    "world-before-memory); choosing a design or approach (recall "
+    "cross-project); entering anything new — task, message. You MUST "
+    "recall MID-WORK: ask what memory holds nearby so nothing related is "
+    "missed; stuck or surprised means overdue, 'if only I knew' means "
+    "recall NOW. Query by identifiers; re-ask. Default: when uncertain, "
+    "recall. Read broad: omit scope to transfer across scopes. A "
+    "level:schema result is a binding procedure — follow it literally. "
+    "Refetch a non-full result's content_ref via memory_lookup. You MUST "
+    "mark each recall's results on your next call: used ids as used, "
+    "off-topic ids as irrelevant."
+)
+
+_USED_FIELD_DESCRIPTION = (
+    "Optional: ids of results from your earlier recalls this session that "
+    "you used."
+)
+_IRRELEVANT_FIELD_DESCRIPTION = (
+    "Optional: ids of earlier recall results that did not fit their query."
+)
+_USED_FIELD_DESCRIPTION_MANDATORY = (
+    "REQUIRED after a recall: ids of the previous recall's results you used."
+)
+_IRRELEVANT_FIELD_DESCRIPTION_MANDATORY = (
+    "REQUIRED after a recall: ids of the previous recall's results that were "
+    "off-topic for its query."
+)
+
+
+#: Placeholder annotation of the ``used``/``irrelevant`` parameters. The real
+#: one, carrying the active arm's field description, is installed by
+#: ``_with_mark_fields``: ``from __future__ import annotations`` makes every
+#: annotation a string that pydantic evaluates against module globals, so a
+#: per-server description cannot be spelled inline.
+_MarkIds = list[str] | None
+
+
+def _with_mark_fields(texts: dict[str, str]) -> Any:
+    """Decorator installing the arm's ``used``/``irrelevant`` field schemas."""
+
+    def decorate(func: Any) -> Any:
+        func.__annotations__["used"] = Annotated[
+            list[str] | None, Field(description=texts["used"])
+        ]
+        func.__annotations__["irrelevant"] = Annotated[
+            list[str] | None, Field(description=texts["irrelevant"])
+        ]
+        return func
+
+    return decorate
+
+
+def _explicit_feedback_prompt_arm() -> str:
+    """Active description arm; an unknown value falls back to the default."""
+
+    arm = os.environ.get("LM_EXPLICIT_FEEDBACK_PROMPT", "").strip().lower()
+    if arm in EXPLICIT_FEEDBACK_PROMPT_ARMS:
+        return arm
+    return DEFAULT_EXPLICIT_FEEDBACK_PROMPT_ARM
+
+
+def _explicit_feedback_texts(arm: str | None = None) -> dict[str, str]:
+    """Tool and field descriptions for one arm (the active one by default)."""
+
+    chosen = _explicit_feedback_prompt_arm() if arm is None else arm
+    if chosen == "mandatory":
+        return {
+            "recall": _RECALL_DESCRIPTION_MANDATORY,
+            "remember": _REMEMBER_DESCRIPTION,
+            "teach": _TEACH_DESCRIPTION,
+            "used": _USED_FIELD_DESCRIPTION_MANDATORY,
+            "irrelevant": _IRRELEVANT_FIELD_DESCRIPTION_MANDATORY,
+        }
+    return {
+        "recall": _RECALL_DESCRIPTION,
+        "remember": _REMEMBER_DESCRIPTION,
+        "teach": _TEACH_DESCRIPTION,
+        "used": _USED_FIELD_DESCRIPTION,
+        "irrelevant": _IRRELEVANT_FIELD_DESCRIPTION,
+    }
+
+
 _CONSOLIDATE_DESCRIPTION = (
     "Run one consolidation and decay maintenance pass. Consolidation "
     "promotes repeated know-how into level:schema procedural skills. "
@@ -978,8 +1087,13 @@ def _register_tools(
     # holds one sqlite connection shared across threads, and the refresh reads
     # it. One bounded indexed query, after the response is already built.
     refresh_instructions = _InstructionsRefresh(mcp, store)
+    # Read once per server, like every description: the experiment switches
+    # arms by restarting a sandbox server with LM_EXPLICIT_FEEDBACK_PROMPT.
+    feedback_texts = _explicit_feedback_texts()
+    mark_fields = _with_mark_fields(feedback_texts)
 
-    @mcp.tool(description=_REMEMBER_DESCRIPTION)
+    @mcp.tool(description=feedback_texts["remember"])
+    @mark_fields
     @_track_latency("memory_remember")
     def memory_remember(
         content: str,
@@ -989,6 +1103,8 @@ def _register_tools(
             list[dict[str, Any]] | None,
             Field(description=_ALTERNATIVES_CONSIDERED_DESCRIPTION),
         ] = None,
+        used: _MarkIds = None,
+        irrelevant: _MarkIds = None,
     ) -> dict[str, Any]:
         """Store a new append-only trace.
 
@@ -1013,6 +1129,19 @@ def _register_tools(
                     alternatives_considered=alternatives_considered,
                 )
                 rejected_alternatives = [rejected.id for rejected in rejected_nodes]
+            # Explicit marks before implicit feedback, so an irrelevant mark
+            # carried on the closing call already keeps its edge out.
+            marks = None
+            if has_explicit_marks(used, irrelevant):
+                marks = apply_explicit_marks(
+                    store,
+                    used,
+                    irrelevant,
+                    via_tool="memory_remember",
+                    source_id=node.id,
+                    transport_session_id=_context_transport(context),
+                    agent=_ambient_text(context, "agent"),
+                )
             implicit_feedback = apply_pending_recall_feedback(store, node)
             node = implicit_feedback.trace
             # Typed-edge derivation (edge_derivation.py go-rules) runs after
@@ -1036,28 +1165,61 @@ def _register_tools(
             }
             if rejected_alternatives is not None:
                 response["rejected_alternatives"] = rejected_alternatives
+            if marks is not None:
+                response["feedback_marks"] = marks.summary()
             refresh_instructions()
             return response
 
-    @mcp.tool(description=_TEACH_DESCRIPTION)
+    @mcp.tool(description=feedback_texts["teach"])
+    @mark_fields
     @_track_latency("memory_teach")
     def memory_teach(
         trace_id: str,
         correction: str | dict[str, Any],
         confidence: float | None = None,
         context: dict[str, Any] | None = None,
+        used: _MarkIds = None,
+        irrelevant: _MarkIds = None,
     ) -> dict[str, Any]:
         """Store a corrective trace and connect it to the original."""
 
         context = _with_transport_identity(context)
         with runtime_lock:
+            # Marks must precede the implicit feedback memory_teach runs
+            # inside, so they are recorded before the corrective trace exists
+            # and stamped with its id after. A teach that is about to fail on
+            # its own arguments records nothing.
+            marks = None
+            if (
+                has_explicit_marks(used, irrelevant)
+                and store.get_node(trace_id) is not None
+                and _correction_text(correction)
+            ):
+                marks = apply_explicit_marks(
+                    store,
+                    used,
+                    irrelevant,
+                    via_tool="memory_teach",
+                    source_id="",
+                    transport_session_id=_context_transport(context),
+                    agent=_ambient_text(context, "agent"),
+                )
             taught = consolidation_service.memory_teach(
                 trace_id,
                 correction,
                 confidence=confidence,
                 context=context,
             )
-            return _teach_result_to_dict(taught)
+            response = _teach_result_to_dict(taught)
+            if marks is not None:
+                try:
+                    store.set_feedback_marks_source(
+                        marks.mark_ids, taught.corrective_trace.id
+                    )
+                except Exception:
+                    pass
+                response["feedback_marks"] = marks.summary()
+            return response
 
     @mcp.tool
     @_track_latency("memory_connect")
@@ -1080,7 +1242,8 @@ def _register_tools(
             )
             return {"connection": connection_to_dict(connection)}
 
-    @mcp.tool(description=_RECALL_DESCRIPTION)
+    @mcp.tool(description=feedback_texts["recall"])
+    @mark_fields
     @_track_latency("memory_recall")
     def memory_recall(
         query: str,
@@ -1088,6 +1251,8 @@ def _register_tools(
         depth: int | str | None = 1,
         max_results: int = 5,
         ambient_context: dict[str, Any] | None = None,
+        used: _MarkIds = None,
+        irrelevant: _MarkIds = None,
     ) -> dict[str, Any]:
         """Retrieve relevant memory nodes using scope, text, vector, and graph signals.
 
@@ -1115,6 +1280,10 @@ def _register_tools(
         for the next recall. It never reorders or replaces ``results``, and it
         is absent whenever there is no residual or nothing worth saying about
         it (``LM_RECALL_MAP=0`` removes it outright).
+
+        Optional ``used``/``irrelevant`` mark results of *earlier* recalls on
+        this transport session (docs/explicit-feedback.md); the response then
+        carries a ``feedback_marks`` summary.
         """
 
         ambient_context = _with_transport_identity(ambient_context)
@@ -1125,6 +1294,14 @@ def _register_tools(
         session_dedup = bool(transport_session_id) and session_dedup_enabled_from_env()
         with runtime_lock:
             auto_decay = _maybe_decay_sweep(store)
+            # Resolve explicit marks before this call's own event exists, so a
+            # mark can only name an earlier delivery; recorded after, with the
+            # new event id as their source.
+            pending_marks = (
+                resolve_explicit_marks(store, used, irrelevant, transport_session_id)
+                if has_explicit_marks(used, irrelevant)
+                else None
+            )
             # Snapshot delivered ids BEFORE the service records this call's
             # recall_event, so the current response cannot stub itself.
             already_delivered = (
@@ -1202,6 +1379,18 @@ def _register_tools(
                 "results": shaped,
                 "auto_decay": auto_decay,
             }
+            if pending_marks is not None:
+                marks = apply_explicit_marks(
+                    store,
+                    used,
+                    irrelevant,
+                    via_tool="memory_recall",
+                    source_id=recall_service.last_recall_event_id or "",
+                    transport_session_id=transport_session_id,
+                    agent=_ambient_text(ambient_context, "agent"),
+                    resolved=pending_marks,
+                )
+                response["feedback_marks"] = marks.summary()
             # The map of what the cut left behind, attached verbatim as one
             # more top-level key — the same additive shape ``auto_decay``
             # established. Everything about *what* it says lives in
@@ -1600,6 +1789,13 @@ def _near_duplicate_map(
         identifier_veto=identifier_veto_enabled(),
     )
     return duplicate_of or None
+
+
+def _context_transport(context: dict[str, Any] | None) -> str | None:
+    """The transport id a write is stamped with, as storage stamps it."""
+
+    value = (context or {}).get(_TRANSPORT_SESSION_KEY)
+    return str(value) if value is not None and str(value) else None
 
 
 def _ambient_text(ambient_context: dict[str, Any] | None, key: str) -> str | None:

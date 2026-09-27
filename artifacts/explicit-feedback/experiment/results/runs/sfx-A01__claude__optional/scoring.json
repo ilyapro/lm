@@ -1,0 +1,50 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:25:43.000000Z",
+      "id": "01M3HD83N90MZR0MEXAM3TK1DZ",
+      "n_results": 10,
+      "query": "gigacode.ru connect timeout proxy VPN required reachability ai-llm-proxy provider proxy setting",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:46.000000Z",
+      "id": "01M3HD86CCDE8J8548KD37G5QP",
+      "n_results": 8,
+      "query": "gigacode.ru unreachable without VPN connect timeout provider proxy",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:48.000000Z",
+      "id": "01M3HD88HYBN4NBSNF4EBY7ZPV",
+      "n_results": 8,
+      "query": "ai-llm-proxy gigacode provider proxy setting timeout",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:51.000000Z",
+      "id": "01M3HD8B9PVDWW0AYJBZQ7TJ5B",
+      "n_results": 8,
+      "query": "gigacode недоступен без VPN прокси провайдера таймаут подключения",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:54.000000Z",
+      "id": "01M3HD8ETPJ4V8013KEEDPE29S",
+      "n_results": 8,
+      "query": "gigacode.ru connect timeout from sfx host requires proxy; provider proxy URL setting dashboard",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:25:46.000000Z",
+    "2026-09-27T12:25:54.000000Z",
+    "2026-09-27T12:25:54.000000Z",
+    "2026-09-27T12:25:54.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 5
+  }
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "simplify-rating-consumers",
+      "scope": "project:online"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1YM6SC4HF2X7E6BX3G94CY2",
+        "01M3FARADW9RDJ144VXPG1G1GR",
+        "01M1YG0KRS1D39ECYYCYMJ3FAZ",
+        "01M1XV0Z2Y5A1AQ1M3SP3V0MYP"
+      ],
+      "max_results": 5,
+      "query": "simplify-rating-consumers bd8d59ed44 confirmedRating Header ReviewsTab",
+      "scope": "project:online",
+      "used": [
+        "01M1YM47TVMF72PKG45S5DJNZN",
+        "01M1YMQ5KFKTTN6KNH0GVPAT15"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KZXPK81DCQYTA6YPGSYYQTRM",
+        "01M1YM6SC4HF2X7E6BX3G94CY2",
+        "01M1YG0KRS1D39ECYYCYMJ3FAZ"
+      ],
+      "max_results": 0,
+      "query": "simplify-rating-consumers",
+      "scope": "project:online",
+      "used": [
+        "01M1YMQ5KFKTTN6KNH0GVPAT15",
+        "01M1YN1PATZD0Z9QTHGAQA4S6P"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

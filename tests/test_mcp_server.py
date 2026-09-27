@@ -470,6 +470,11 @@ def test_memory_remember_signature_unchanged_and_consolidate_report_stays_full(
         "context",
         "feedback",
         "alternatives_considered",
+        # Optional explicit recall feedback (docs/explicit-feedback.md),
+        # appended after every existing parameter so positional callers
+        # are unaffected.
+        "used",
+        "irrelevant",
     ]
 
     for index in range(3):

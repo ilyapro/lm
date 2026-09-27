@@ -1,0 +1,63 @@
+[
+  {
+    "error": null,
+    "input": {
+      "depth": "causal",
+      "max_results": 8,
+      "query": "shared-hunt e2e.js Торн/Каэль failure dmgBy first frame root replan object-successors"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "shared-hunt",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "dmgBy",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "Торн Каэль",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M3EXQKFT69P7A0RBPC82MF0C",
+        "01M3F0XA9AQ7SWDMP78MSXTY79"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "shared-hunt first frame staging dmgBy",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

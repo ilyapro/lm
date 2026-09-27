@@ -1,0 +1,52 @@
+{
+  "agent": "claude",
+  "arm": "optional",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 63.7,
+  "ended_at": "2026-09-27T12:06:28Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 7,
+    "recall_feedback_marks": 7,
+    "recall_lookup_events": 1
+  },
+  "final_text": "Nothing about this is stored under `project:lm`, and there is no memory for the exact name \"ai-llm-proxy\". What exists is global-scope memory from project `ae`:\n\n- **GigaCode raw model (tested live 2026-08-27, CLI 26.7.33):** first POST to `https://gigacode.ru/api/v2/auth/plugin` with JSON `{device_code: <~/.gigacode/device_id>, plugin_name:\"cli-plugin\", plugin_version:\"26.7.33\", env_name:\"linux\", login, locale}`. It returns a JWT `access_token` that lasts only 600 s, so `~/.gigacode/gigacode_token.json` is usually expired. Then POST `https://gigacode.ru/api/v2/chat/completions` with `Authorization: Bearer <token>` and `model:\"vllm/CodeChat\"`, the only model (listed in `GET /api/v2/config` under `chat.models`; `/api/v2/models` returns 404). The format is plain OpenAI; streaming and tool calls work.\n- **GigaCode pitfalls:** the response has a `reasoning_content` field but it was always null. Calling twice within a couple of seconds returns plain-text `Too Many Requests`, not JSON. The GigaCode path has no thinking or effort setting; the `reasoning.effort` code in the CLI bundle belongs to the Anthropic generator inherited from qwen-code.\n- **The closest proxy is `ai-dev-proxy`:** `https://ai-dev-proxy.k8s.n3.2gis.io` with endpoints `/chat/completions`, `/models` and `/v1/user/models`. The auth key is OPK from `~/.config/opk.env` (the same value as `GIS_OPK` in the bridge). `local-coding-medium` and `coding-medium` map to `internal/internal-deepseek-v4`, which is really DeepSeek V4.1 Flash on sglang with `--reasoning-parser deepseek-v41`. On 2026-09-22 and again on 2026-09-27 that model returned 401 \"Ошибка авторизации\" (\"authorization error\") because the proxy's auth to the internal upstream was broken, not the key. The workaround is `coding-large`, `coding-large-next` or `coding-medium-next`.\n- **Not found:** memory holds nothing specific on how DeepSeek thinking is sent or configured through the proxy, beyond the `deepseek-v41` reasoning parser.",
+  "first_input_tokens": 8799,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:05:24Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 9,
+  "payload_sha256": "8afc5d057efb8374f46b75e93f9191f821d490e4b6b32e646cd0af6ad61d6cbe",
+  "port": 18808,
+  "provider_error": false,
+  "ready_s": 12.4,
+  "run_id": "sfx-B09__claude__optional",
+  "scoring": {
+    "marks": 7,
+    "observations": 52
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:05:12Z",
+  "stderr_foreign_urls": null,
+  "store": "sfx",
+  "task_id": "sfx-B09",
+  "timed_out": false,
+  "tokens_in": 213353,
+  "tokens_out": 2221,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

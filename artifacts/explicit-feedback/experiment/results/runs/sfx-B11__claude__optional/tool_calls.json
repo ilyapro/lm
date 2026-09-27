@@ -1,0 +1,33 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "SEAF auth2 OpenAPI public/docs/auth2_api_v2_1.yml Online ID API source specs",
+      "scope": "project:online"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "auth2_api_v2_1.yml ID API OpenAPI spec id.2gis.com SEAF interfaces"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M1C77ST4VEJ5A4NDT2M64891",
+        "01M1E5RBDYEDJAJBTNQY0QPSH7"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 6,
+      "query": "public/docs auth2 api yaml OpenAPI specification id-2gis-com repo api contract swagger"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

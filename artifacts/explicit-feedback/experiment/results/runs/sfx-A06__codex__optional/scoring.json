@@ -1,0 +1,58 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:25:24.000000Z",
+      "id": "01M3HD7H2HXMG1HMWJ0H0KVNN9",
+      "n_results": 10,
+      "query": "goal tree node decompose SUBGOALS pitfalls acceptance checks worktree evidence roots artifacts manifest",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:28.000000Z",
+      "id": "01M3HD7MXA2XNSKNNBMSWS9WQ8",
+      "n_results": 8,
+      "query": "goal tree node decompose SUBGOALS pitfalls acceptance checks worktree evidence roots artifacts manifest",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:37.000000Z",
+      "id": "01M3HD7Y6S4R2MNFAHA1H2R1G2",
+      "n_results": 20,
+      "query": "SUBGOALS decompose evidence roots manifest",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:45.000000Z",
+      "id": "01M3HD85HHMXMVR6BA5EJPNP8B",
+      "n_results": 6,
+      "query": "\"SUBGOALS\" \"acceptance\" \"evidence roots\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:50.000000Z",
+      "id": "01M3HD8AJT3G38A7NTZC9G003P",
+      "n_results": 5,
+      "query": "project:goal-tree SUBGOALS acceptance checks",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:50.000000Z",
+      "id": "01M3HD8B0PKDHFG7KZWFCAN3B9",
+      "n_results": 5,
+      "query": "worktree evidence roots artifacts manifest pitfalls",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:25:58.000000Z",
+    "2026-09-27T12:25:58.000000Z",
+    "2026-09-27T12:25:58.000000Z",
+    "2026-09-27T12:25:58.000000Z",
+    "2026-09-27T12:25:58.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 6
+  }
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "AE dashboard-static-build server-static-root dependency integration provider-product chat-routes-store-ui AE_DASHBOARD_REACT_BUILD_DIR static_serve tests isolated processes"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M21EW43N9ZQ4CNYPENX62X3J",
+        "01KWQ5YJC24QT34EZ89D1V6VA8",
+        "01M22WYD370NGJR170N0KA50WH",
+        "01M1MGAGN6A93KAZKMCW912NRZ",
+        "01M2QPRYCJPVECTB5GFQNTMGZ3",
+        "01M235N0J6ZWA0JAVBJMP4Q4JY"
+      ],
+      "max_results": 6,
+      "query": "\"dashboard-static-build\" \"AE_DASHBOARD_REACT_BUILD_DIR\" \"server-static-root\"",
+      "scope": "project:ae",
+      "used": [
+        "01M2MSFCF1F43D78P9HYK5GC6R",
+        "01M3FDSR66BENE6J2RPAHWYA68"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M2MSFCF1F43D78P9HYK5GC6R"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KRVVBBMVYV0YRPTWBVVWDQ7Y",
+        "01M1Q5R1XN71A7KERN3JJF1G94"
+      ],
+      "max_results": 4,
+      "query": "server-static-root static_serve tests isolated processes",
+      "scope": "project:ae",
+      "used": [
+        "01M2G0Z01G47CA9AZT2GDZBC0V",
+        "01M2MSFCF1F43D78P9HYK5GC6R",
+        "01M3FDSR66BENE6J2RPAHWYA68",
+        "01M2MQEFYXDZ8QQC6XRPYEVS09"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M0SYNBQNK4BK2NPZ32ZYXGKH"
+      ],
+      "max_results": 3,
+      "query": "server-static-root AE_DASHBOARD_REACT_BUILD_DIR isolated processes tests",
+      "scope": "project:ae",
+      "used": [
+        "01M3FDSR66BENE6J2RPAHWYA68",
+        "01M2G12YQ0M7328CG00RT8S1GV",
+        "01M2G245R1D7B0DZP175NVQJJY"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

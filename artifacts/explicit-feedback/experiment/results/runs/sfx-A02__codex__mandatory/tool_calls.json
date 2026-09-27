@@ -1,0 +1,90 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "lm_instance.py seeded_clusters compose_seeded_tail Memory nearby tail"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KZZP1SX23K3R98WAC74A4M74",
+        "01KZZ8GAD9KCQQA3WWX3VGRVVB",
+        "01M0FCG21BDV1CQQ64AXB9SNBP",
+        "01KS7994YXH7W2CS67PCKH32SX",
+        "01KRV5ZNWH2SC475CSJYVDAA5D",
+        "01KRV5YJAJV34HPTTZV2C5FRZW",
+        "01KTTTQE0QN5E8RA6PSM3RMZD1",
+        "01KS2P69NR1NWTQF16BRKMXHM2"
+      ],
+      "max_results": 10,
+      "query": "\"compose_seeded_tail\" \"seeded_clusters\" \"lm_instance.py\"",
+      "scope": "project:lm",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KZZP1SX23K3R98WAC74A4M74",
+        "01M0NV78PG4KWPM5V42RCSSQH0",
+        "01KZZTC0BQPAW5Q3ZGPW2JJCDK",
+        "01M0R6R7YNC49GM04GQRKNX11H",
+        "01M00DJSXVTJCHEJVD8G445357",
+        "01KS7994YXH7W2CS67PCKH32SX",
+        "01KTTTQE0QN5E8RA6PSM3RMZD1",
+        "01KRV5ZNWH2SC475CSJYVDAA5D",
+        "01KRTS51DCF505AXAK7RMNWKT2",
+        "01KRTS53Z0212CXDXPSX3J0JYG"
+      ],
+      "max_results": 6,
+      "query": "\"Memory nearby\" tail",
+      "scope": "project:lm",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M16AXZHMQ2MWY0KXCMPVR3Q8",
+        "01KZYFPR4Q6YJ50KNMVBFC8PAY",
+        "01KWYF6RNGSZ4BFR6J52TCT7KK",
+        "01M0FCG21BDV1CQQ64AXB9SNBP",
+        "01KZW430B4PPQPJ2ZG4AC7DG5Z",
+        "01KTQ205MK62QCBV2E6Y0WWF36"
+      ],
+      "max_results": 3,
+      "query": "compose_seeded_tail",
+      "scope": "project:lm",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M0873GDRXRSJQ7KGVXXYKCH2",
+        "01M08FNSYGA938PSWG4AZC7VSN",
+        "01KZZP1SX23K3R98WAC74A4M74"
+      ],
+      "max_results": 2,
+      "query": "lm_instance.py",
+      "scope": "project:lm",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

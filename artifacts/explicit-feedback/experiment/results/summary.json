@@ -1,0 +1,1194 @@
+{
+  "cells": {},
+  "generated_at": "2026-09-27T12:33:17Z",
+  "payload": {
+    "mandatory": {
+      "description_chars": {
+        "memory_lookup": 477,
+        "memory_recall": 1010,
+        "memory_remember": 1022,
+        "memory_teach": 614
+      },
+      "ready_s": 6.1,
+      "schema_chars": {
+        "memory_lookup": 660,
+        "memory_recall": 875,
+        "memory_remember": 1103,
+        "memory_teach": 844
+      },
+      "sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+      "token_method": "tiktoken o200k_base",
+      "tool_names": [
+        "memory_lookup",
+        "memory_recall",
+        "memory_remember",
+        "memory_teach"
+      ],
+      "visible_payload_chars": 6865,
+      "visible_payload_tokens": 1724
+    },
+    "optional": {
+      "description_chars": {
+        "memory_lookup": 477,
+        "memory_recall": 1015,
+        "memory_remember": 1022,
+        "memory_teach": 614
+      },
+      "ready_s": 8.6,
+      "schema_chars": {
+        "memory_lookup": 660,
+        "memory_recall": 855,
+        "memory_remember": 1083,
+        "memory_teach": 824
+      },
+      "sha256": "8afc5d057efb8374f46b75e93f9191f821d490e4b6b32e646cd0af6ad61d6cbe",
+      "token_method": "tiktoken o200k_base",
+      "tool_names": [
+        "memory_lookup",
+        "memory_recall",
+        "memory_remember",
+        "memory_teach"
+      ],
+      "visible_payload_chars": 6810,
+      "visible_payload_tokens": 1702
+    }
+  },
+  "stores": {
+    "alt": {
+      "by_agent": {
+        "claude": {
+          "answer_outcome": {
+            "mandatory": {
+              "A_names_gold_id": "0/8",
+              "B_says_not_found": "2/4"
+            },
+            "optional": {
+              "A_names_gold_id": "0/8",
+              "B_says_not_found": "2/4"
+            }
+          },
+          "duration_per_run_s": {
+            "mandatory": 36.8,
+            "optional": 34.2
+          },
+          "first_request_input_delta_median": 40.0,
+          "mandatory": {
+            "C": 0.625,
+            "C_markable": 0.9524,
+            "D_irr": {
+              "D": 0.4444,
+              "better_than_random": true,
+              "ci95": [
+                0.322,
+                0.5833
+              ],
+              "n_events": 12,
+              "n_marks": 50,
+              "p": 0.0001,
+              "status": "decided"
+            },
+            "D_used": {
+              "D": 0.4967,
+              "better_than_random": true,
+              "ci95": [
+                0.3122,
+                0.6667
+              ],
+              "n_events": 12,
+              "n_marks": 36,
+              "p": 0.0001,
+              "status": "decided"
+            },
+            "D_used_grounded_only_descriptive": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "accepted_irrelevant": 98,
+            "accepted_used": 48,
+            "both_share": 0.5938,
+            "evaluable_events": 13,
+            "gold": {
+              "events_with_gold_delivered": 6,
+              "gold_hit_rate": 0.25,
+              "used_marks_in_those": 16,
+              "used_on_gold": 4
+            },
+            "irrelevant_only_share": 0.0312,
+            "known_irrelevant": {
+              "delivered": 12,
+              "marked_irrelevant": 5,
+              "marked_used": 1
+            },
+            "markable_events": 21,
+            "marked_events": 20,
+            "marks_per_marked_event": 7.25,
+            "marks_total_rows": 148,
+            "pairs_dropped_no_twin": 0,
+            "recall_events": 32,
+            "recalls_per_run_mean": 2.67,
+            "reject_rate": 0.0135,
+            "ritual": {
+              "RS": 0.0,
+              "R_all": 0,
+              "R_noclose": 5,
+              "R_noclose_share": 0.1064,
+              "R_rank1": 0,
+              "R_rank1_runs": 0,
+              "used_marks": 47
+            },
+            "runs": 12,
+            "used_only_share": 0.0,
+            "used_rate_by_class": {
+              "answer_in_memory": 0.2273,
+              "answer_not_in_memory": 0.17
+            },
+            "zero_recall_runs": 0
+          },
+          "optional": {
+            "C": 0.2812,
+            "C_markable": 0.3913,
+            "D_irr": {
+              "D": 0.381,
+              "better_than_random": false,
+              "ci95": [
+                0.1429,
+                0.6667
+              ],
+              "n_events": 3,
+              "n_marks": 7,
+              "p": 0.0788,
+              "status": "inconclusive (<20 marks or <8 events)"
+            },
+            "D_used": {
+              "D": 0.5758,
+              "better_than_random": false,
+              "ci95": [
+                0.2961,
+                0.7965
+              ],
+              "n_events": 5,
+              "n_marks": 9,
+              "p": 0.0019,
+              "status": "inconclusive (<20 marks or <8 events)"
+            },
+            "D_used_grounded_only_descriptive": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "accepted_irrelevant": 7,
+            "accepted_used": 13,
+            "both_share": 0.0625,
+            "evaluable_events": 12,
+            "gold": {
+              "events_with_gold_delivered": 6,
+              "gold_hit_rate": 0.1667,
+              "used_marks_in_those": 6,
+              "used_on_gold": 1
+            },
+            "irrelevant_only_share": 0.0312,
+            "known_irrelevant": {
+              "delivered": 12,
+              "marked_irrelevant": 2,
+              "marked_used": 0
+            },
+            "markable_events": 23,
+            "marked_events": 9,
+            "marks_per_marked_event": 2.22,
+            "marks_total_rows": 22,
+            "pairs_dropped_no_twin": 0,
+            "recall_events": 32,
+            "recalls_per_run_mean": 2.67,
+            "reject_rate": 0.0909,
+            "ritual": {
+              "RS": 0.1538,
+              "R_all": 0,
+              "R_noclose": 0,
+              "R_noclose_share": 0.0,
+              "R_rank1": 2,
+              "R_rank1_runs": 1,
+              "used_marks": 13
+            },
+            "runs": 12,
+            "used_only_share": 0.1875,
+            "used_rate_by_class": {
+              "answer_in_memory": 0.0769,
+              "answer_not_in_memory": 0.0299
+            },
+            "zero_recall_runs": 0
+          },
+          "tokens_per_run": {
+            "mandatory": 83682,
+            "optional": 92008
+          }
+        },
+        "codex": {
+          "answer_outcome": {
+            "mandatory": {
+              "A_names_gold_id": "1/8",
+              "B_says_not_found": "2/4"
+            },
+            "optional": {
+              "A_names_gold_id": "0/8",
+              "B_says_not_found": "3/4"
+            }
+          },
+          "duration_per_run_s": {
+            "mandatory": 90.5,
+            "optional": 69.5
+          },
+          "first_request_input_delta_median": null,
+          "mandatory": {
+            "C": 0.8358,
+            "C_markable": 0.9649,
+            "D_irr": {
+              "D": 0.5169,
+              "better_than_random": true,
+              "ci95": [
+                0.4131,
+                0.6341
+              ],
+              "n_events": 19,
+              "n_marks": 61,
+              "p": 0.0001,
+              "status": "decided"
+            },
+            "D_used": {
+              "D": 0.5294,
+              "better_than_random": true,
+              "ci95": [
+                0.4423,
+                0.6279
+              ],
+              "n_events": 19,
+              "n_marks": 51,
+              "p": 0.0001,
+              "status": "decided"
+            },
+            "D_used_grounded_only_descriptive": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "accepted_irrelevant": 219,
+            "accepted_used": 88,
+            "both_share": 0.5373,
+            "evaluable_events": 21,
+            "gold": {
+              "events_with_gold_delivered": 6,
+              "gold_hit_rate": 0.4286,
+              "used_marks_in_those": 14,
+              "used_on_gold": 6
+            },
+            "irrelevant_only_share": 0.2687,
+            "known_irrelevant": {
+              "delivered": 6,
+              "marked_irrelevant": 3,
+              "marked_used": 2
+            },
+            "markable_events": 57,
+            "marked_events": 56,
+            "marks_per_marked_event": 5.48,
+            "marks_total_rows": 307,
+            "pairs_dropped_no_twin": 0,
+            "recall_events": 67,
+            "recalls_per_run_mean": 5.58,
+            "reject_rate": 0.0,
+            "ritual": {
+              "RS": 0.1136,
+              "R_all": 10,
+              "R_noclose": 27,
+              "R_noclose_share": 0.3068,
+              "R_rank1": 0,
+              "R_rank1_runs": 0,
+              "used_marks": 88
+            },
+            "runs": 12,
+            "used_only_share": 0.0299,
+            "used_rate_by_class": {
+              "answer_in_memory": 0.2835,
+              "answer_not_in_memory": 0.2185
+            },
+            "zero_recall_runs": 0
+          },
+          "optional": {
+            "C": 0.0139,
+            "C_markable": 0.0164,
+            "D_irr": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "D_used": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "D_used_grounded_only_descriptive": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "accepted_irrelevant": 0,
+            "accepted_used": 2,
+            "both_share": 0.0,
+            "evaluable_events": 17,
+            "gold": {
+              "events_with_gold_delivered": 10,
+              "gold_hit_rate": 0.0,
+              "used_marks_in_those": 2,
+              "used_on_gold": 0
+            },
+            "irrelevant_only_share": 0.0,
+            "known_irrelevant": {
+              "delivered": 12,
+              "marked_irrelevant": 0,
+              "marked_used": 0
+            },
+            "markable_events": 61,
+            "marked_events": 1,
+            "marks_per_marked_event": 2.0,
+            "marks_total_rows": 2,
+            "pairs_dropped_no_twin": 0,
+            "recall_events": 72,
+            "recalls_per_run_mean": 6.0,
+            "reject_rate": 0.0,
+            "ritual": {
+              "RS": 0.0,
+              "R_all": 0,
+              "R_noclose": 0,
+              "R_noclose_share": 0.0,
+              "R_rank1": 0,
+              "R_rank1_runs": 0,
+              "used_marks": 2
+            },
+            "runs": 12,
+            "used_only_share": 0.0139,
+            "used_rate_by_class": {
+              "answer_in_memory": 0.0089,
+              "answer_not_in_memory": 0.0
+            },
+            "zero_recall_runs": 0
+          },
+          "tokens_per_run": {
+            "mandatory": 253116,
+            "optional": 216076
+          }
+        }
+      },
+      "decision": {
+        "LM_EXPLICIT_CREDIT_WEIGHT": 1.0,
+        "LM_EXPLICIT_FEEDBACK_POLICY": "credit",
+        "LM_EXPLICIT_FEEDBACK_PROMPT": "mandatory",
+        "falsifiers": {
+          "F1_no_agreement_either_arm": false,
+          "F2_mandatory_rejected_ritual": false,
+          "F3_optional_channel_poor": true
+        },
+        "flags": {
+          "AG_m": true,
+          "AG_m_inconclusive": false,
+          "AG_o": false,
+          "C_m": 0.7677,
+          "C_o": 0.0962,
+          "POOR_o": true,
+          "RIT_m": false,
+          "RIT_m_inconclusive": false
+        },
+        "row": "P1",
+        "weight_halved_for_agents": []
+      },
+      "invalid": null,
+      "pooled": {
+        "mandatory": {
+          "C": 0.7677,
+          "C_markable": 0.9615,
+          "D_irr": {
+            "D": 0.4758,
+            "better_than_random": true,
+            "ci95": [
+              0.3919,
+              0.5686
+            ],
+            "n_events": 31,
+            "n_marks": 111,
+            "p": 0.0001,
+            "status": "decided"
+          },
+          "D_used": {
+            "D": 0.5077,
+            "better_than_random": true,
+            "ci95": [
+              0.4037,
+              0.6076
+            ],
+            "n_events": 31,
+            "n_marks": 87,
+            "p": 0.0001,
+            "status": "decided"
+          },
+          "D_used_grounded_only_descriptive": {
+            "D": null,
+            "better_than_random": false,
+            "ci95": [
+              null,
+              null
+            ],
+            "n_events": 0,
+            "n_marks": 0,
+            "p": null,
+            "status": "no marks"
+          },
+          "accepted_irrelevant": 317,
+          "accepted_used": 136,
+          "both_share": 0.5556,
+          "evaluable_events": 34,
+          "gold": {
+            "events_with_gold_delivered": 12,
+            "gold_hit_rate": 0.3333,
+            "used_marks_in_those": 30,
+            "used_on_gold": 10
+          },
+          "irrelevant_only_share": 0.1919,
+          "known_irrelevant": {
+            "delivered": 18,
+            "marked_irrelevant": 8,
+            "marked_used": 3
+          },
+          "markable_events": 78,
+          "marked_events": 76,
+          "marks_per_marked_event": 5.95,
+          "marks_total_rows": 455,
+          "pairs_dropped_no_twin": 0,
+          "recall_events": 99,
+          "recalls_per_run_mean": 4.12,
+          "reject_rate": 0.0044,
+          "ritual": {
+            "RS": 0.0741,
+            "R_all": 10,
+            "R_noclose": 32,
+            "R_noclose_share": 0.237,
+            "R_rank1": 0,
+            "R_rank1_runs": 0,
+            "used_marks": 135
+          },
+          "runs": 24,
+          "used_only_share": 0.0202,
+          "used_rate_by_class": {
+            "answer_in_memory": 0.2607,
+            "answer_not_in_memory": 0.1992
+          },
+          "zero_recall_runs": 0
+        },
+        "optional": {
+          "C": 0.0962,
+          "C_markable": 0.119,
+          "D_irr": {
+            "D": 0.381,
+            "better_than_random": false,
+            "ci95": [
+              0.1429,
+              0.6667
+            ],
+            "n_events": 3,
+            "n_marks": 7,
+            "p": 0.0788,
+            "status": "inconclusive (<20 marks or <8 events)"
+          },
+          "D_used": {
+            "D": 0.5758,
+            "better_than_random": false,
+            "ci95": [
+              0.2961,
+              0.7965
+            ],
+            "n_events": 5,
+            "n_marks": 9,
+            "p": 0.0019,
+            "status": "inconclusive (<20 marks or <8 events)"
+          },
+          "D_used_grounded_only_descriptive": {
+            "D": null,
+            "better_than_random": false,
+            "ci95": [
+              null,
+              null
+            ],
+            "n_events": 0,
+            "n_marks": 0,
+            "p": null,
+            "status": "no marks"
+          },
+          "accepted_irrelevant": 7,
+          "accepted_used": 15,
+          "both_share": 0.0192,
+          "evaluable_events": 29,
+          "gold": {
+            "events_with_gold_delivered": 16,
+            "gold_hit_rate": 0.125,
+            "used_marks_in_those": 8,
+            "used_on_gold": 1
+          },
+          "irrelevant_only_share": 0.0096,
+          "known_irrelevant": {
+            "delivered": 24,
+            "marked_irrelevant": 2,
+            "marked_used": 0
+          },
+          "markable_events": 84,
+          "marked_events": 10,
+          "marks_per_marked_event": 2.2,
+          "marks_total_rows": 24,
+          "pairs_dropped_no_twin": 0,
+          "recall_events": 104,
+          "recalls_per_run_mean": 4.33,
+          "reject_rate": 0.0833,
+          "ritual": {
+            "RS": 0.1333,
+            "R_all": 0,
+            "R_noclose": 0,
+            "R_noclose_share": 0.0,
+            "R_rank1": 2,
+            "R_rank1_runs": 1,
+            "used_marks": 15
+          },
+          "runs": 24,
+          "used_only_share": 0.0673,
+          "used_rate_by_class": {
+            "answer_in_memory": 0.0323,
+            "answer_not_in_memory": 0.0127
+          },
+          "zero_recall_runs": 0
+        }
+      }
+    },
+    "sfx": {
+      "by_agent": {
+        "claude": {
+          "answer_outcome": {
+            "mandatory": {
+              "A_names_gold_id": "4/8",
+              "B_says_not_found": "2/4"
+            },
+            "optional": {
+              "A_names_gold_id": "3/8",
+              "B_says_not_found": "1/4"
+            }
+          },
+          "duration_per_run_s": {
+            "mandatory": 49.3,
+            "optional": 41.3
+          },
+          "first_request_input_delta_median": 40.0,
+          "mandatory": {
+            "C": 0.7209,
+            "C_markable": 0.9688,
+            "D_irr": {
+              "D": 0.5372,
+              "better_than_random": true,
+              "ci95": [
+                0.3939,
+                0.7
+              ],
+              "n_events": 11,
+              "n_marks": 69,
+              "p": 0.0001,
+              "status": "decided"
+            },
+            "D_used": {
+              "D": 0.6263,
+              "better_than_random": true,
+              "ci95": [
+                0.52,
+                0.7596
+              ],
+              "n_events": 11,
+              "n_marks": 25,
+              "p": 0.0001,
+              "status": "decided"
+            },
+            "D_used_grounded_only_descriptive": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "accepted_irrelevant": 203,
+            "accepted_used": 41,
+            "both_share": 0.4419,
+            "evaluable_events": 11,
+            "gold": {
+              "events_with_gold_delivered": 10,
+              "gold_hit_rate": 0.4,
+              "used_marks_in_those": 10,
+              "used_on_gold": 4
+            },
+            "irrelevant_only_share": 0.2791,
+            "known_irrelevant": {
+              "delivered": 16,
+              "marked_irrelevant": 8,
+              "marked_used": 2
+            },
+            "markable_events": 32,
+            "marked_events": 31,
+            "marks_per_marked_event": 7.81,
+            "marks_total_rows": 244,
+            "pairs_dropped_no_twin": 0,
+            "recall_events": 43,
+            "recalls_per_run_mean": 3.58,
+            "reject_rate": 0.0,
+            "ritual": {
+              "RS": 0.0,
+              "R_all": 0,
+              "R_noclose": 13,
+              "R_noclose_share": 0.3333,
+              "R_rank1": 0,
+              "R_rank1_runs": 0,
+              "used_marks": 39
+            },
+            "runs": 12,
+            "used_only_share": 0.0,
+            "used_rate_by_class": {
+              "answer_in_memory": 0.1229,
+              "answer_not_in_memory": 0.1104
+            },
+            "zero_recall_runs": 0
+          },
+          "optional": {
+            "C": 0.1579,
+            "C_markable": 0.2069,
+            "D_irr": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "D_used": {
+              "D": 0.5,
+              "better_than_random": false,
+              "ci95": [
+                0.5,
+                0.5
+              ],
+              "n_events": 2,
+              "n_marks": 4,
+              "p": 0.0839,
+              "status": "inconclusive (<20 marks or <8 events)"
+            },
+            "D_used_grounded_only_descriptive": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "accepted_irrelevant": 3,
+            "accepted_used": 8,
+            "both_share": 0.0,
+            "evaluable_events": 12,
+            "gold": {
+              "events_with_gold_delivered": 10,
+              "gold_hit_rate": 0.5,
+              "used_marks_in_those": 2,
+              "used_on_gold": 1
+            },
+            "irrelevant_only_share": 0.0263,
+            "known_irrelevant": {
+              "delivered": 14,
+              "marked_irrelevant": 0,
+              "marked_used": 0
+            },
+            "markable_events": 29,
+            "marked_events": 6,
+            "marks_per_marked_event": 1.83,
+            "marks_total_rows": 12,
+            "pairs_dropped_no_twin": 0,
+            "recall_events": 38,
+            "recalls_per_run_mean": 3.17,
+            "reject_rate": 0.0833,
+            "ritual": {
+              "RS": 0.0,
+              "R_all": 0,
+              "R_noclose": 4,
+              "R_noclose_share": 0.5,
+              "R_rank1": 0,
+              "R_rank1_runs": 0,
+              "used_marks": 8
+            },
+            "runs": 12,
+            "used_only_share": 0.1316,
+            "used_rate_by_class": {
+              "answer_in_memory": 0.0216,
+              "answer_not_in_memory": 0.0348
+            },
+            "zero_recall_runs": 0
+          },
+          "tokens_per_run": {
+            "mandatory": 121230,
+            "optional": 97830
+          }
+        },
+        "codex": {
+          "answer_outcome": {
+            "mandatory": {
+              "A_names_gold_id": "0/8",
+              "B_says_not_found": "2/4"
+            },
+            "optional": {
+              "A_names_gold_id": "1/8",
+              "B_says_not_found": "1/4"
+            }
+          },
+          "duration_per_run_s": {
+            "mandatory": 98.2,
+            "optional": 73.3
+          },
+          "first_request_input_delta_median": null,
+          "mandatory": {
+            "C": 0.8966,
+            "C_markable": 1.0,
+            "D_irr": {
+              "D": 0.2345,
+              "better_than_random": true,
+              "ci95": [
+                0.0523,
+                0.4439
+              ],
+              "n_events": 17,
+              "n_marks": 70,
+              "p": 0.0002,
+              "status": "decided"
+            },
+            "D_used": {
+              "D": 0.2593,
+              "better_than_random": true,
+              "ci95": [
+                0.12,
+                0.4348
+              ],
+              "n_events": 12,
+              "n_marks": 27,
+              "p": 0.0002,
+              "status": "decided"
+            },
+            "D_used_grounded_only_descriptive": {
+              "D": 0.0,
+              "better_than_random": false,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "n_events": 6,
+              "n_marks": 14,
+              "p": 1.0,
+              "status": "inconclusive (<20 marks or <8 events)"
+            },
+            "accepted_irrelevant": 229,
+            "accepted_used": 54,
+            "both_share": 0.4828,
+            "evaluable_events": 18,
+            "gold": {
+              "events_with_gold_delivered": 10,
+              "gold_hit_rate": 0.3333,
+              "used_marks_in_those": 9,
+              "used_on_gold": 3
+            },
+            "irrelevant_only_share": 0.3966,
+            "known_irrelevant": {
+              "delivered": 12,
+              "marked_irrelevant": 12,
+              "marked_used": 0
+            },
+            "markable_events": 48,
+            "marked_events": 52,
+            "marks_per_marked_event": 5.44,
+            "marks_total_rows": 283,
+            "pairs_dropped_no_twin": 0,
+            "recall_events": 58,
+            "recalls_per_run_mean": 4.83,
+            "reject_rate": 0.0,
+            "ritual": {
+              "RS": 0.0556,
+              "R_all": 3,
+              "R_noclose": 20,
+              "R_noclose_share": 0.3704,
+              "R_rank1": 0,
+              "R_rank1_runs": 0,
+              "used_marks": 54
+            },
+            "runs": 12,
+            "used_only_share": 0.0172,
+            "used_rate_by_class": {
+              "answer_in_memory": 0.1857,
+              "answer_not_in_memory": 0.1724
+            },
+            "zero_recall_runs": 0
+          },
+          "optional": {
+            "C": 0.0167,
+            "C_markable": 0.0204,
+            "D_irr": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "D_used": {
+              "D": -0.3333,
+              "better_than_random": false,
+              "ci95": [
+                -0.3333,
+                -0.3333
+              ],
+              "n_events": 1,
+              "n_marks": 2,
+              "p": 1.0,
+              "status": "inconclusive (<20 marks or <8 events)"
+            },
+            "D_used_grounded_only_descriptive": {
+              "D": null,
+              "better_than_random": false,
+              "ci95": [
+                null,
+                null
+              ],
+              "n_events": 0,
+              "n_marks": 0,
+              "p": null,
+              "status": "no marks"
+            },
+            "accepted_irrelevant": 0,
+            "accepted_used": 2,
+            "both_share": 0.0,
+            "evaluable_events": 16,
+            "gold": {
+              "events_with_gold_delivered": 10,
+              "gold_hit_rate": null,
+              "used_marks_in_those": 0,
+              "used_on_gold": 0
+            },
+            "irrelevant_only_share": 0.0,
+            "known_irrelevant": {
+              "delivered": 17,
+              "marked_irrelevant": 0,
+              "marked_used": 0
+            },
+            "markable_events": 49,
+            "marked_events": 1,
+            "marks_per_marked_event": 2.0,
+            "marks_total_rows": 2,
+            "pairs_dropped_no_twin": 0,
+            "recall_events": 60,
+            "recalls_per_run_mean": 5.0,
+            "reject_rate": 0.0,
+            "ritual": {
+              "RS": 0.0,
+              "R_all": 0,
+              "R_noclose": 0,
+              "R_noclose_share": 0.0,
+              "R_rank1": 0,
+              "R_rank1_runs": 0,
+              "used_marks": 2
+            },
+            "runs": 12,
+            "used_only_share": 0.0167,
+            "used_rate_by_class": {
+              "answer_in_memory": 0.009,
+              "answer_not_in_memory": 0.0
+            },
+            "zero_recall_runs": 0
+          },
+          "tokens_per_run": {
+            "mandatory": 266390,
+            "optional": 211045
+          }
+        }
+      },
+      "decision": {
+        "LM_EXPLICIT_CREDIT_WEIGHT": 1.0,
+        "LM_EXPLICIT_FEEDBACK_POLICY": "credit",
+        "LM_EXPLICIT_FEEDBACK_PROMPT": "mandatory",
+        "falsifiers": {
+          "F1_no_agreement_either_arm": false,
+          "F2_mandatory_rejected_ritual": false,
+          "F3_optional_channel_poor": true
+        },
+        "flags": {
+          "AG_m": true,
+          "AG_m_inconclusive": false,
+          "AG_o": false,
+          "C_m": 0.8218,
+          "C_o": 0.0714,
+          "POOR_o": true,
+          "RIT_m": false,
+          "RIT_m_inconclusive": false
+        },
+        "row": "P1",
+        "weight_halved_for_agents": []
+      },
+      "invalid": null,
+      "pooled": {
+        "mandatory": {
+          "C": 0.8218,
+          "C_markable": 0.9875,
+          "D_irr": {
+            "D": 0.398,
+            "better_than_random": true,
+            "ci95": [
+              0.2632,
+              0.5391
+            ],
+            "n_events": 28,
+            "n_marks": 139,
+            "p": 0.0001,
+            "status": "decided"
+          },
+          "D_used": {
+            "D": 0.4334,
+            "better_than_random": true,
+            "ci95": [
+              0.3019,
+              0.5699
+            ],
+            "n_events": 23,
+            "n_marks": 52,
+            "p": 0.0001,
+            "status": "decided"
+          },
+          "D_used_grounded_only_descriptive": {
+            "D": 0.0,
+            "better_than_random": false,
+            "ci95": [
+              0.0,
+              0.0
+            ],
+            "n_events": 6,
+            "n_marks": 14,
+            "p": 1.0,
+            "status": "inconclusive (<20 marks or <8 events)"
+          },
+          "accepted_irrelevant": 432,
+          "accepted_used": 95,
+          "both_share": 0.4653,
+          "evaluable_events": 29,
+          "gold": {
+            "events_with_gold_delivered": 20,
+            "gold_hit_rate": 0.3684,
+            "used_marks_in_those": 19,
+            "used_on_gold": 7
+          },
+          "irrelevant_only_share": 0.3465,
+          "known_irrelevant": {
+            "delivered": 28,
+            "marked_irrelevant": 20,
+            "marked_used": 2
+          },
+          "markable_events": 80,
+          "marked_events": 83,
+          "marks_per_marked_event": 6.33,
+          "marks_total_rows": 527,
+          "pairs_dropped_no_twin": 0,
+          "recall_events": 101,
+          "recalls_per_run_mean": 4.21,
+          "reject_rate": 0.0,
+          "ritual": {
+            "RS": 0.0323,
+            "R_all": 3,
+            "R_noclose": 33,
+            "R_noclose_share": 0.3548,
+            "R_rank1": 0,
+            "R_rank1_runs": 0,
+            "used_marks": 93
+          },
+          "runs": 24,
+          "used_only_share": 0.0099,
+          "used_rate_by_class": {
+            "answer_in_memory": 0.1568,
+            "answer_not_in_memory": 0.1328
+          },
+          "zero_recall_runs": 0
+        },
+        "optional": {
+          "C": 0.0714,
+          "C_markable": 0.0897,
+          "D_irr": {
+            "D": null,
+            "better_than_random": false,
+            "ci95": [
+              null,
+              null
+            ],
+            "n_events": 0,
+            "n_marks": 0,
+            "p": null,
+            "status": "no marks"
+          },
+          "D_used": {
+            "D": 0.2564,
+            "better_than_random": false,
+            "ci95": [
+              -0.3333,
+              0.5
+            ],
+            "n_events": 3,
+            "n_marks": 6,
+            "p": 0.2502,
+            "status": "inconclusive (<20 marks or <8 events)"
+          },
+          "D_used_grounded_only_descriptive": {
+            "D": null,
+            "better_than_random": false,
+            "ci95": [
+              null,
+              null
+            ],
+            "n_events": 0,
+            "n_marks": 0,
+            "p": null,
+            "status": "no marks"
+          },
+          "accepted_irrelevant": 3,
+          "accepted_used": 10,
+          "both_share": 0.0,
+          "evaluable_events": 28,
+          "gold": {
+            "events_with_gold_delivered": 20,
+            "gold_hit_rate": 0.5,
+            "used_marks_in_those": 2,
+            "used_on_gold": 1
+          },
+          "irrelevant_only_share": 0.0102,
+          "known_irrelevant": {
+            "delivered": 31,
+            "marked_irrelevant": 0,
+            "marked_used": 0
+          },
+          "markable_events": 78,
+          "marked_events": 7,
+          "marks_per_marked_event": 1.86,
+          "marks_total_rows": 14,
+          "pairs_dropped_no_twin": 0,
+          "recall_events": 98,
+          "recalls_per_run_mean": 4.08,
+          "reject_rate": 0.0714,
+          "ritual": {
+            "RS": 0.0,
+            "R_all": 0,
+            "R_noclose": 4,
+            "R_noclose_share": 0.4,
+            "R_rank1": 0,
+            "R_rank1_runs": 0,
+            "used_marks": 10
+          },
+          "runs": 24,
+          "used_only_share": 0.0612,
+          "used_rate_by_class": {
+            "answer_in_memory": 0.0148,
+            "answer_not_in_memory": 0.0153
+          },
+          "zero_recall_runs": 0
+        }
+      }
+    }
+  },
+  "validity": {
+    "alt-claude": {
+      "X3_cell_invalid": false,
+      "invalid_reasons": {},
+      "invalid_runs": 0,
+      "retried_runs": 0,
+      "runs": 24,
+      "valid_pairs": 12
+    },
+    "alt-codex": {
+      "X3_cell_invalid": false,
+      "invalid_reasons": {},
+      "invalid_runs": 0,
+      "retried_runs": 0,
+      "runs": 24,
+      "valid_pairs": 12
+    },
+    "sfx-claude": {
+      "X3_cell_invalid": false,
+      "invalid_reasons": {},
+      "invalid_runs": 0,
+      "retried_runs": 0,
+      "runs": 24,
+      "valid_pairs": 12
+    },
+    "sfx-codex": {
+      "X3_cell_invalid": false,
+      "invalid_reasons": {},
+      "invalid_runs": 0,
+      "retried_runs": 0,
+      "runs": 24,
+      "valid_pairs": 12
+    }
+  }
+}

@@ -1,0 +1,4513 @@
+{
+ "host_label": "alt",
+ "db": "/tmp/lm-alt-effect-snapshot.sqlite3",
+ "opened_as": "file:/tmp/lm-alt-effect-snapshot.sqlite3?mode=ro",
+ "generated_at": "2026-09-27T11:18:33Z",
+ "window": {
+  "since": "2026-09-07",
+  "until": "2026-09-27",
+  "days_utc": "created_at[:10], inclusive"
+ },
+ "definitions": {
+  "used": "recall_credit_ledger row for (event, node) with basis in ['grounded', 'lookup']",
+  "rank1_used": "events whose rank-1 delivered node is used / events with >=1 delivered node",
+  "top3_used": "events with a used node among ranks 1..3 / events with >=1 delivered node",
+  "useful_node_share": "used delivered (event,node) pairs / delivered pairs",
+  "closed": "recall_events.feedback_applied = 1 (closed by a later remember/teach)",
+  "explicit": "ledger basis 'explicit' or a *explicit*credit* side table; marked_used = accepted 'used' rows of recall_feedback_marks",
+  "exclusion": "per transport session: receipt > fixture_provenance > fixture_task > synthetic_scope > fixture_query_family > fixture_scope (near proven traffic)"
+ },
+ "sources": {
+  "receipt_ids": 1604,
+  "receipt_ids_matched_sessions": 0,
+  "ledger_bases": [
+   "grounded",
+   "lookup"
+  ],
+  "explicit_present": false,
+  "recall_feedback_marks_present": false,
+  "fixture_task_families": [
+   "development-battery",
+   "development-intake",
+   "development-ledger",
+   "development-packaging",
+   "development-transfer",
+   "development-water",
+   "ev-calibration",
+   "ev-flood",
+   "ev-labels",
+   "ev-parcel",
+   "ev-recovery",
+   "ev-source-malformed",
+   "ev-source-missing",
+   "ev-source-unreadable",
+   "ev-stock",
+   "ev-timetable"
+  ],
+  "receipt_roots": [
+   "/home/sfx/p/ae/artifacts"
+  ],
+  "receipt_id_files": []
+ },
+ "totals": {
+  "all_events": 4675,
+  "kept_events": 4675,
+  "excluded_events": 0,
+  "metrics": {
+   "events": 4675,
+   "closed_events": 4162,
+   "never_closed_events": 513,
+   "used": {
+    "events_with_results": 4675,
+    "rank1_used_events": 551,
+    "top3_used_events": 1070,
+    "delivered_nodes": 18837,
+    "used_delivered_nodes": 2187,
+    "rank1_used": 0.1179,
+    "top3_used": 0.2289,
+    "useful_node_share": 0.1161
+   },
+   "per_basis": {
+    "explicit": {
+     "events_with_results": 4675,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 18837,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    },
+    "grounded": {
+     "events_with_results": 4675,
+     "rank1_used_events": 457,
+     "top3_used_events": 743,
+     "delivered_nodes": 18837,
+     "used_delivered_nodes": 1111,
+     "rank1_used": 0.0978,
+     "top3_used": 0.1589,
+     "useful_node_share": 0.059
+    },
+    "lookup": {
+     "events_with_results": 4675,
+     "rank1_used_events": 94,
+     "top3_used_events": 370,
+     "delivered_nodes": 18837,
+     "used_delivered_nodes": 1076,
+     "rank1_used": 0.0201,
+     "top3_used": 0.0791,
+     "useful_node_share": 0.0571
+    }
+   },
+   "used_with_explicit": {
+    "events_with_results": 4675,
+    "rank1_used_events": 551,
+    "top3_used_events": 1070,
+    "delivered_nodes": 18837,
+    "used_delivered_nodes": 2187,
+    "rank1_used": 0.1179,
+    "top3_used": 0.2289,
+    "useful_node_share": 0.1161
+   }
+  }
+ },
+ "leak_check": {
+  "day": "2026-09-23",
+  "events_excluded_new_but_not_legacy": 0,
+  "sessions": 0,
+  "by_reason": {},
+  "sample": []
+ },
+ "days": [
+  {
+   "day": "2026-09-07",
+   "all_events": 630,
+   "kept_events": 630,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 630,
+    "closed_events": 580,
+    "never_closed_events": 50,
+    "used": {
+     "events_with_results": 630,
+     "rank1_used_events": 48,
+     "top3_used_events": 99,
+     "delivered_nodes": 2468,
+     "used_delivered_nodes": 189,
+     "rank1_used": 0.0762,
+     "top3_used": 0.1571,
+     "useful_node_share": 0.0766
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 630,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 2468,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 630,
+      "rank1_used_events": 39,
+      "top3_used_events": 67,
+      "delivered_nodes": 2468,
+      "used_delivered_nodes": 76,
+      "rank1_used": 0.0619,
+      "top3_used": 0.1063,
+      "useful_node_share": 0.0308
+     },
+     "lookup": {
+      "events_with_results": 630,
+      "rank1_used_events": 9,
+      "top3_used_events": 34,
+      "delivered_nodes": 2468,
+      "used_delivered_nodes": 113,
+      "rank1_used": 0.0143,
+      "top3_used": 0.054,
+      "useful_node_share": 0.0458
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 630,
+     "rank1_used_events": 48,
+     "top3_used_events": 99,
+     "delivered_nodes": 2468,
+     "used_delivered_nodes": 189,
+     "rank1_used": 0.0762,
+     "top3_used": 0.1571,
+     "useful_node_share": 0.0766
+    }
+   },
+   "closed": {
+    "events": 580,
+    "closed_events": 580,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 580,
+     "rank1_used_events": 46,
+     "top3_used_events": 96,
+     "delivered_nodes": 2333,
+     "used_delivered_nodes": 184,
+     "rank1_used": 0.0793,
+     "top3_used": 0.1655,
+     "useful_node_share": 0.0789
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 580,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 2333,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 580,
+      "rank1_used_events": 39,
+      "top3_used_events": 67,
+      "delivered_nodes": 2333,
+      "used_delivered_nodes": 76,
+      "rank1_used": 0.0672,
+      "top3_used": 0.1155,
+      "useful_node_share": 0.0326
+     },
+     "lookup": {
+      "events_with_results": 580,
+      "rank1_used_events": 7,
+      "top3_used_events": 31,
+      "delivered_nodes": 2333,
+      "used_delivered_nodes": 108,
+      "rank1_used": 0.0121,
+      "top3_used": 0.0534,
+      "useful_node_share": 0.0463
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 580,
+     "rank1_used_events": 46,
+     "top3_used_events": 96,
+     "delivered_nodes": 2333,
+     "used_delivered_nodes": 184,
+     "rank1_used": 0.0793,
+     "top3_used": 0.1655,
+     "useful_node_share": 0.0789
+    }
+   },
+   "never_closed": {
+    "events": 50,
+    "closed_events": 0,
+    "never_closed_events": 50,
+    "used": {
+     "events_with_results": 50,
+     "rank1_used_events": 2,
+     "top3_used_events": 3,
+     "delivered_nodes": 135,
+     "used_delivered_nodes": 5,
+     "rank1_used": 0.04,
+     "top3_used": 0.06,
+     "useful_node_share": 0.037
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 50,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 135,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 50,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 135,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 50,
+      "rank1_used_events": 2,
+      "top3_used_events": 3,
+      "delivered_nodes": 135,
+      "used_delivered_nodes": 5,
+      "rank1_used": 0.04,
+      "top3_used": 0.06,
+      "useful_node_share": 0.037
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 50,
+     "rank1_used_events": 2,
+     "top3_used_events": 3,
+     "delivered_nodes": 135,
+     "used_delivered_nodes": 5,
+     "rank1_used": 0.04,
+     "top3_used": 0.06,
+     "useful_node_share": 0.037
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 578,
+    "used": {
+     "events_with_results": 578,
+     "rank1_used_events": 44,
+     "top3_used_events": 91,
+     "delivered_nodes": 2265,
+     "used_delivered_nodes": 175,
+     "rank1_used": 0.0761,
+     "top3_used": 0.1574,
+     "useful_node_share": 0.0773
+    }
+   }
+  },
+  {
+   "day": "2026-09-08",
+   "all_events": 1766,
+   "kept_events": 1766,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 1766,
+    "closed_events": 1448,
+    "never_closed_events": 318,
+    "used": {
+     "events_with_results": 1766,
+     "rank1_used_events": 214,
+     "top3_used_events": 409,
+     "delivered_nodes": 6785,
+     "used_delivered_nodes": 793,
+     "rank1_used": 0.1212,
+     "top3_used": 0.2316,
+     "useful_node_share": 0.1169
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 1766,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 6785,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 1766,
+      "rank1_used_events": 182,
+      "top3_used_events": 275,
+      "delivered_nodes": 6785,
+      "used_delivered_nodes": 409,
+      "rank1_used": 0.1031,
+      "top3_used": 0.1557,
+      "useful_node_share": 0.0603
+     },
+     "lookup": {
+      "events_with_results": 1766,
+      "rank1_used_events": 32,
+      "top3_used_events": 152,
+      "delivered_nodes": 6785,
+      "used_delivered_nodes": 384,
+      "rank1_used": 0.0181,
+      "top3_used": 0.0861,
+      "useful_node_share": 0.0566
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 1766,
+     "rank1_used_events": 214,
+     "top3_used_events": 409,
+     "delivered_nodes": 6785,
+     "used_delivered_nodes": 793,
+     "rank1_used": 0.1212,
+     "top3_used": 0.2316,
+     "useful_node_share": 0.1169
+    }
+   },
+   "closed": {
+    "events": 1448,
+    "closed_events": 1448,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 1448,
+     "rank1_used_events": 210,
+     "top3_used_events": 390,
+     "delivered_nodes": 5809,
+     "used_delivered_nodes": 758,
+     "rank1_used": 0.145,
+     "top3_used": 0.2693,
+     "useful_node_share": 0.1305
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 1448,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5809,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 1448,
+      "rank1_used_events": 182,
+      "top3_used_events": 275,
+      "delivered_nodes": 5809,
+      "used_delivered_nodes": 409,
+      "rank1_used": 0.1257,
+      "top3_used": 0.1899,
+      "useful_node_share": 0.0704
+     },
+     "lookup": {
+      "events_with_results": 1448,
+      "rank1_used_events": 28,
+      "top3_used_events": 133,
+      "delivered_nodes": 5809,
+      "used_delivered_nodes": 349,
+      "rank1_used": 0.0193,
+      "top3_used": 0.0919,
+      "useful_node_share": 0.0601
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 1448,
+     "rank1_used_events": 210,
+     "top3_used_events": 390,
+     "delivered_nodes": 5809,
+     "used_delivered_nodes": 758,
+     "rank1_used": 0.145,
+     "top3_used": 0.2693,
+     "useful_node_share": 0.1305
+    }
+   },
+   "never_closed": {
+    "events": 318,
+    "closed_events": 0,
+    "never_closed_events": 318,
+    "used": {
+     "events_with_results": 318,
+     "rank1_used_events": 4,
+     "top3_used_events": 19,
+     "delivered_nodes": 976,
+     "used_delivered_nodes": 35,
+     "rank1_used": 0.0126,
+     "top3_used": 0.0597,
+     "useful_node_share": 0.0359
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 318,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 976,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 318,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 976,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 318,
+      "rank1_used_events": 4,
+      "top3_used_events": 19,
+      "delivered_nodes": 976,
+      "used_delivered_nodes": 35,
+      "rank1_used": 0.0126,
+      "top3_used": 0.0597,
+      "useful_node_share": 0.0359
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 318,
+     "rank1_used_events": 4,
+     "top3_used_events": 19,
+     "delivered_nodes": 976,
+     "used_delivered_nodes": 35,
+     "rank1_used": 0.0126,
+     "top3_used": 0.0597,
+     "useful_node_share": 0.0359
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 1608,
+    "used": {
+     "events_with_results": 1608,
+     "rank1_used_events": 191,
+     "top3_used_events": 379,
+     "delivered_nodes": 6297,
+     "used_delivered_nodes": 748,
+     "rank1_used": 0.1188,
+     "top3_used": 0.2357,
+     "useful_node_share": 0.1188
+    }
+   }
+  },
+  {
+   "day": "2026-09-09",
+   "all_events": 1067,
+   "kept_events": 1067,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 1067,
+    "closed_events": 983,
+    "never_closed_events": 84,
+    "used": {
+     "events_with_results": 1067,
+     "rank1_used_events": 131,
+     "top3_used_events": 252,
+     "delivered_nodes": 4334,
+     "used_delivered_nodes": 524,
+     "rank1_used": 0.1228,
+     "top3_used": 0.2362,
+     "useful_node_share": 0.1209
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 1067,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 4334,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 1067,
+      "rank1_used_events": 93,
+      "top3_used_events": 162,
+      "delivered_nodes": 4334,
+      "used_delivered_nodes": 251,
+      "rank1_used": 0.0872,
+      "top3_used": 0.1518,
+      "useful_node_share": 0.0579
+     },
+     "lookup": {
+      "events_with_results": 1067,
+      "rank1_used_events": 38,
+      "top3_used_events": 101,
+      "delivered_nodes": 4334,
+      "used_delivered_nodes": 273,
+      "rank1_used": 0.0356,
+      "top3_used": 0.0947,
+      "useful_node_share": 0.063
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 1067,
+     "rank1_used_events": 131,
+     "top3_used_events": 252,
+     "delivered_nodes": 4334,
+     "used_delivered_nodes": 524,
+     "rank1_used": 0.1228,
+     "top3_used": 0.2362,
+     "useful_node_share": 0.1209
+    }
+   },
+   "closed": {
+    "events": 983,
+    "closed_events": 983,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 983,
+     "rank1_used_events": 128,
+     "top3_used_events": 248,
+     "delivered_nodes": 4086,
+     "used_delivered_nodes": 516,
+     "rank1_used": 0.1302,
+     "top3_used": 0.2523,
+     "useful_node_share": 0.1263
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 983,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 4086,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 983,
+      "rank1_used_events": 93,
+      "top3_used_events": 162,
+      "delivered_nodes": 4086,
+      "used_delivered_nodes": 251,
+      "rank1_used": 0.0946,
+      "top3_used": 0.1648,
+      "useful_node_share": 0.0614
+     },
+     "lookup": {
+      "events_with_results": 983,
+      "rank1_used_events": 35,
+      "top3_used_events": 97,
+      "delivered_nodes": 4086,
+      "used_delivered_nodes": 265,
+      "rank1_used": 0.0356,
+      "top3_used": 0.0987,
+      "useful_node_share": 0.0649
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 983,
+     "rank1_used_events": 128,
+     "top3_used_events": 248,
+     "delivered_nodes": 4086,
+     "used_delivered_nodes": 516,
+     "rank1_used": 0.1302,
+     "top3_used": 0.2523,
+     "useful_node_share": 0.1263
+    }
+   },
+   "never_closed": {
+    "events": 84,
+    "closed_events": 0,
+    "never_closed_events": 84,
+    "used": {
+     "events_with_results": 84,
+     "rank1_used_events": 3,
+     "top3_used_events": 4,
+     "delivered_nodes": 248,
+     "used_delivered_nodes": 8,
+     "rank1_used": 0.0357,
+     "top3_used": 0.0476,
+     "useful_node_share": 0.0323
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 84,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 248,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 84,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 248,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 84,
+      "rank1_used_events": 3,
+      "top3_used_events": 4,
+      "delivered_nodes": 248,
+      "used_delivered_nodes": 8,
+      "rank1_used": 0.0357,
+      "top3_used": 0.0476,
+      "useful_node_share": 0.0323
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 84,
+     "rank1_used_events": 3,
+     "top3_used_events": 4,
+     "delivered_nodes": 248,
+     "used_delivered_nodes": 8,
+     "rank1_used": 0.0357,
+     "top3_used": 0.0476,
+     "useful_node_share": 0.0323
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 945,
+    "used": {
+     "events_with_results": 945,
+     "rank1_used_events": 122,
+     "top3_used_events": 231,
+     "delivered_nodes": 3852,
+     "used_delivered_nodes": 478,
+     "rank1_used": 0.1291,
+     "top3_used": 0.2444,
+     "useful_node_share": 0.1241
+    }
+   }
+  },
+  {
+   "day": "2026-09-10",
+   "all_events": 24,
+   "kept_events": 24,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 24,
+    "closed_events": 23,
+    "never_closed_events": 1,
+    "used": {
+     "events_with_results": 24,
+     "rank1_used_events": 4,
+     "top3_used_events": 9,
+     "delivered_nodes": 210,
+     "used_delivered_nodes": 27,
+     "rank1_used": 0.1667,
+     "top3_used": 0.375,
+     "useful_node_share": 0.1286
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 24,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 210,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 24,
+      "rank1_used_events": 2,
+      "top3_used_events": 4,
+      "delivered_nodes": 210,
+      "used_delivered_nodes": 9,
+      "rank1_used": 0.0833,
+      "top3_used": 0.1667,
+      "useful_node_share": 0.0429
+     },
+     "lookup": {
+      "events_with_results": 24,
+      "rank1_used_events": 2,
+      "top3_used_events": 6,
+      "delivered_nodes": 210,
+      "used_delivered_nodes": 18,
+      "rank1_used": 0.0833,
+      "top3_used": 0.25,
+      "useful_node_share": 0.0857
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 24,
+     "rank1_used_events": 4,
+     "top3_used_events": 9,
+     "delivered_nodes": 210,
+     "used_delivered_nodes": 27,
+     "rank1_used": 0.1667,
+     "top3_used": 0.375,
+     "useful_node_share": 0.1286
+    }
+   },
+   "closed": {
+    "events": 23,
+    "closed_events": 23,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 23,
+     "rank1_used_events": 4,
+     "top3_used_events": 9,
+     "delivered_nodes": 205,
+     "used_delivered_nodes": 27,
+     "rank1_used": 0.1739,
+     "top3_used": 0.3913,
+     "useful_node_share": 0.1317
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 23,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 205,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 23,
+      "rank1_used_events": 2,
+      "top3_used_events": 4,
+      "delivered_nodes": 205,
+      "used_delivered_nodes": 9,
+      "rank1_used": 0.087,
+      "top3_used": 0.1739,
+      "useful_node_share": 0.0439
+     },
+     "lookup": {
+      "events_with_results": 23,
+      "rank1_used_events": 2,
+      "top3_used_events": 6,
+      "delivered_nodes": 205,
+      "used_delivered_nodes": 18,
+      "rank1_used": 0.087,
+      "top3_used": 0.2609,
+      "useful_node_share": 0.0878
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 23,
+     "rank1_used_events": 4,
+     "top3_used_events": 9,
+     "delivered_nodes": 205,
+     "used_delivered_nodes": 27,
+     "rank1_used": 0.1739,
+     "top3_used": 0.3913,
+     "useful_node_share": 0.1317
+    }
+   },
+   "never_closed": {
+    "events": 1,
+    "closed_events": 0,
+    "never_closed_events": 1,
+    "used": {
+     "events_with_results": 1,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 5,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 1,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 5,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 24,
+    "used": {
+     "events_with_results": 24,
+     "rank1_used_events": 4,
+     "top3_used_events": 9,
+     "delivered_nodes": 210,
+     "used_delivered_nodes": 27,
+     "rank1_used": 0.1667,
+     "top3_used": 0.375,
+     "useful_node_share": 0.1286
+    }
+   }
+  },
+  {
+   "day": "2026-09-11",
+   "all_events": 12,
+   "kept_events": 12,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 12,
+    "closed_events": 11,
+    "never_closed_events": 1,
+    "used": {
+     "events_with_results": 12,
+     "rank1_used_events": 1,
+     "top3_used_events": 4,
+     "delivered_nodes": 103,
+     "used_delivered_nodes": 15,
+     "rank1_used": 0.0833,
+     "top3_used": 0.3333,
+     "useful_node_share": 0.1456
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 12,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 103,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 12,
+      "rank1_used_events": 1,
+      "top3_used_events": 3,
+      "delivered_nodes": 103,
+      "used_delivered_nodes": 7,
+      "rank1_used": 0.0833,
+      "top3_used": 0.25,
+      "useful_node_share": 0.068
+     },
+     "lookup": {
+      "events_with_results": 12,
+      "rank1_used_events": 0,
+      "top3_used_events": 1,
+      "delivered_nodes": 103,
+      "used_delivered_nodes": 8,
+      "rank1_used": 0.0,
+      "top3_used": 0.0833,
+      "useful_node_share": 0.0777
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 12,
+     "rank1_used_events": 1,
+     "top3_used_events": 4,
+     "delivered_nodes": 103,
+     "used_delivered_nodes": 15,
+     "rank1_used": 0.0833,
+     "top3_used": 0.3333,
+     "useful_node_share": 0.1456
+    }
+   },
+   "closed": {
+    "events": 11,
+    "closed_events": 11,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 11,
+     "rank1_used_events": 1,
+     "top3_used_events": 4,
+     "delivered_nodes": 98,
+     "used_delivered_nodes": 15,
+     "rank1_used": 0.0909,
+     "top3_used": 0.3636,
+     "useful_node_share": 0.1531
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 11,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 98,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 11,
+      "rank1_used_events": 1,
+      "top3_used_events": 3,
+      "delivered_nodes": 98,
+      "used_delivered_nodes": 7,
+      "rank1_used": 0.0909,
+      "top3_used": 0.2727,
+      "useful_node_share": 0.0714
+     },
+     "lookup": {
+      "events_with_results": 11,
+      "rank1_used_events": 0,
+      "top3_used_events": 1,
+      "delivered_nodes": 98,
+      "used_delivered_nodes": 8,
+      "rank1_used": 0.0,
+      "top3_used": 0.0909,
+      "useful_node_share": 0.0816
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 11,
+     "rank1_used_events": 1,
+     "top3_used_events": 4,
+     "delivered_nodes": 98,
+     "used_delivered_nodes": 15,
+     "rank1_used": 0.0909,
+     "top3_used": 0.3636,
+     "useful_node_share": 0.1531
+    }
+   },
+   "never_closed": {
+    "events": 1,
+    "closed_events": 0,
+    "never_closed_events": 1,
+    "used": {
+     "events_with_results": 1,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 5,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 1,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 5,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 12,
+    "used": {
+     "events_with_results": 12,
+     "rank1_used_events": 1,
+     "top3_used_events": 4,
+     "delivered_nodes": 103,
+     "used_delivered_nodes": 15,
+     "rank1_used": 0.0833,
+     "top3_used": 0.3333,
+     "useful_node_share": 0.1456
+    }
+   }
+  },
+  {
+   "day": "2026-09-12",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-13",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-14",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-15",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-16",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-17",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-18",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-19",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-20",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-21",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-22",
+   "all_events": 0,
+   "kept_events": 0,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "never_closed": {
+    "events": 0,
+    "closed_events": 0,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "grounded": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     },
+     "lookup": {
+      "events_with_results": 0,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 0,
+      "used_delivered_nodes": 0,
+      "rank1_used": null,
+      "top3_used": null,
+      "useful_node_share": null
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 0,
+    "used": {
+     "events_with_results": 0,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 0,
+     "used_delivered_nodes": 0,
+     "rank1_used": null,
+     "top3_used": null,
+     "useful_node_share": null
+    }
+   }
+  },
+  {
+   "day": "2026-09-23",
+   "all_events": 6,
+   "kept_events": 6,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 6,
+    "closed_events": 5,
+    "never_closed_events": 1,
+    "used": {
+     "events_with_results": 6,
+     "rank1_used_events": 0,
+     "top3_used_events": 1,
+     "delivered_nodes": 53,
+     "used_delivered_nodes": 1,
+     "rank1_used": 0.0,
+     "top3_used": 0.1667,
+     "useful_node_share": 0.0189
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 6,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 53,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 6,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 53,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 6,
+      "rank1_used_events": 0,
+      "top3_used_events": 1,
+      "delivered_nodes": 53,
+      "used_delivered_nodes": 1,
+      "rank1_used": 0.0,
+      "top3_used": 0.1667,
+      "useful_node_share": 0.0189
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 6,
+     "rank1_used_events": 0,
+     "top3_used_events": 1,
+     "delivered_nodes": 53,
+     "used_delivered_nodes": 1,
+     "rank1_used": 0.0,
+     "top3_used": 0.1667,
+     "useful_node_share": 0.0189
+    }
+   },
+   "closed": {
+    "events": 5,
+    "closed_events": 5,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 5,
+     "rank1_used_events": 0,
+     "top3_used_events": 1,
+     "delivered_nodes": 50,
+     "used_delivered_nodes": 1,
+     "rank1_used": 0.0,
+     "top3_used": 0.2,
+     "useful_node_share": 0.02
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 5,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 50,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 5,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 50,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 5,
+      "rank1_used_events": 0,
+      "top3_used_events": 1,
+      "delivered_nodes": 50,
+      "used_delivered_nodes": 1,
+      "rank1_used": 0.0,
+      "top3_used": 0.2,
+      "useful_node_share": 0.02
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 5,
+     "rank1_used_events": 0,
+     "top3_used_events": 1,
+     "delivered_nodes": 50,
+     "used_delivered_nodes": 1,
+     "rank1_used": 0.0,
+     "top3_used": 0.2,
+     "useful_node_share": 0.02
+    }
+   },
+   "never_closed": {
+    "events": 1,
+    "closed_events": 0,
+    "never_closed_events": 1,
+    "used": {
+     "events_with_results": 1,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 3,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 3,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 3,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 1,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 3,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 1,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 3,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 6,
+    "used": {
+     "events_with_results": 6,
+     "rank1_used_events": 0,
+     "top3_used_events": 1,
+     "delivered_nodes": 53,
+     "used_delivered_nodes": 1,
+     "rank1_used": 0.0,
+     "top3_used": 0.1667,
+     "useful_node_share": 0.0189
+    }
+   }
+  },
+  {
+   "day": "2026-09-24",
+   "all_events": 734,
+   "kept_events": 734,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 734,
+    "closed_events": 696,
+    "never_closed_events": 38,
+    "used": {
+     "events_with_results": 734,
+     "rank1_used_events": 98,
+     "top3_used_events": 175,
+     "delivered_nodes": 2835,
+     "used_delivered_nodes": 340,
+     "rank1_used": 0.1335,
+     "top3_used": 0.2384,
+     "useful_node_share": 0.1199
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 734,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 2835,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 734,
+      "rank1_used_events": 87,
+      "top3_used_events": 140,
+      "delivered_nodes": 2835,
+      "used_delivered_nodes": 222,
+      "rank1_used": 0.1185,
+      "top3_used": 0.1907,
+      "useful_node_share": 0.0783
+     },
+     "lookup": {
+      "events_with_results": 734,
+      "rank1_used_events": 11,
+      "top3_used_events": 40,
+      "delivered_nodes": 2835,
+      "used_delivered_nodes": 118,
+      "rank1_used": 0.015,
+      "top3_used": 0.0545,
+      "useful_node_share": 0.0416
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 734,
+     "rank1_used_events": 98,
+     "top3_used_events": 175,
+     "delivered_nodes": 2835,
+     "used_delivered_nodes": 340,
+     "rank1_used": 0.1335,
+     "top3_used": 0.2384,
+     "useful_node_share": 0.1199
+    }
+   },
+   "closed": {
+    "events": 696,
+    "closed_events": 696,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 696,
+     "rank1_used_events": 98,
+     "top3_used_events": 174,
+     "delivered_nodes": 2708,
+     "used_delivered_nodes": 338,
+     "rank1_used": 0.1408,
+     "top3_used": 0.25,
+     "useful_node_share": 0.1248
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 696,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 2708,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 696,
+      "rank1_used_events": 87,
+      "top3_used_events": 140,
+      "delivered_nodes": 2708,
+      "used_delivered_nodes": 222,
+      "rank1_used": 0.125,
+      "top3_used": 0.2011,
+      "useful_node_share": 0.082
+     },
+     "lookup": {
+      "events_with_results": 696,
+      "rank1_used_events": 11,
+      "top3_used_events": 39,
+      "delivered_nodes": 2708,
+      "used_delivered_nodes": 116,
+      "rank1_used": 0.0158,
+      "top3_used": 0.056,
+      "useful_node_share": 0.0428
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 696,
+     "rank1_used_events": 98,
+     "top3_used_events": 174,
+     "delivered_nodes": 2708,
+     "used_delivered_nodes": 338,
+     "rank1_used": 0.1408,
+     "top3_used": 0.25,
+     "useful_node_share": 0.1248
+    }
+   },
+   "never_closed": {
+    "events": 38,
+    "closed_events": 0,
+    "never_closed_events": 38,
+    "used": {
+     "events_with_results": 38,
+     "rank1_used_events": 0,
+     "top3_used_events": 1,
+     "delivered_nodes": 127,
+     "used_delivered_nodes": 2,
+     "rank1_used": 0.0,
+     "top3_used": 0.0263,
+     "useful_node_share": 0.0157
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 38,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 127,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 38,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 127,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 38,
+      "rank1_used_events": 0,
+      "top3_used_events": 1,
+      "delivered_nodes": 127,
+      "used_delivered_nodes": 2,
+      "rank1_used": 0.0,
+      "top3_used": 0.0263,
+      "useful_node_share": 0.0157
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 38,
+     "rank1_used_events": 0,
+     "top3_used_events": 1,
+     "delivered_nodes": 127,
+     "used_delivered_nodes": 2,
+     "rank1_used": 0.0,
+     "top3_used": 0.0263,
+     "useful_node_share": 0.0157
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 710,
+    "used": {
+     "events_with_results": 710,
+     "rank1_used_events": 97,
+     "top3_used_events": 171,
+     "delivered_nodes": 2777,
+     "used_delivered_nodes": 335,
+     "rank1_used": 0.1366,
+     "top3_used": 0.2408,
+     "useful_node_share": 0.1206
+    }
+   }
+  },
+  {
+   "day": "2026-09-25",
+   "all_events": 144,
+   "kept_events": 144,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 144,
+    "closed_events": 140,
+    "never_closed_events": 4,
+    "used": {
+     "events_with_results": 144,
+     "rank1_used_events": 17,
+     "top3_used_events": 35,
+     "delivered_nodes": 530,
+     "used_delivered_nodes": 75,
+     "rank1_used": 0.1181,
+     "top3_used": 0.2431,
+     "useful_node_share": 0.1415
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 144,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 530,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 144,
+      "rank1_used_events": 15,
+      "top3_used_events": 29,
+      "delivered_nodes": 530,
+      "used_delivered_nodes": 44,
+      "rank1_used": 0.1042,
+      "top3_used": 0.2014,
+      "useful_node_share": 0.083
+     },
+     "lookup": {
+      "events_with_results": 144,
+      "rank1_used_events": 2,
+      "top3_used_events": 7,
+      "delivered_nodes": 530,
+      "used_delivered_nodes": 31,
+      "rank1_used": 0.0139,
+      "top3_used": 0.0486,
+      "useful_node_share": 0.0585
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 144,
+     "rank1_used_events": 17,
+     "top3_used_events": 35,
+     "delivered_nodes": 530,
+     "used_delivered_nodes": 75,
+     "rank1_used": 0.1181,
+     "top3_used": 0.2431,
+     "useful_node_share": 0.1415
+    }
+   },
+   "closed": {
+    "events": 140,
+    "closed_events": 140,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 140,
+     "rank1_used_events": 17,
+     "top3_used_events": 35,
+     "delivered_nodes": 525,
+     "used_delivered_nodes": 75,
+     "rank1_used": 0.1214,
+     "top3_used": 0.25,
+     "useful_node_share": 0.1429
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 140,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 525,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 140,
+      "rank1_used_events": 15,
+      "top3_used_events": 29,
+      "delivered_nodes": 525,
+      "used_delivered_nodes": 44,
+      "rank1_used": 0.1071,
+      "top3_used": 0.2071,
+      "useful_node_share": 0.0838
+     },
+     "lookup": {
+      "events_with_results": 140,
+      "rank1_used_events": 2,
+      "top3_used_events": 7,
+      "delivered_nodes": 525,
+      "used_delivered_nodes": 31,
+      "rank1_used": 0.0143,
+      "top3_used": 0.05,
+      "useful_node_share": 0.059
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 140,
+     "rank1_used_events": 17,
+     "top3_used_events": 35,
+     "delivered_nodes": 525,
+     "used_delivered_nodes": 75,
+     "rank1_used": 0.1214,
+     "top3_used": 0.25,
+     "useful_node_share": 0.1429
+    }
+   },
+   "never_closed": {
+    "events": 4,
+    "closed_events": 0,
+    "never_closed_events": 4,
+    "used": {
+     "events_with_results": 4,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 5,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 4,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 4,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 4,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 5,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 4,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 5,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 140,
+    "used": {
+     "events_with_results": 140,
+     "rank1_used_events": 17,
+     "top3_used_events": 35,
+     "delivered_nodes": 521,
+     "used_delivered_nodes": 75,
+     "rank1_used": 0.1214,
+     "top3_used": 0.25,
+     "useful_node_share": 0.144
+    }
+   }
+  },
+  {
+   "day": "2026-09-26",
+   "all_events": 167,
+   "kept_events": 167,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 167,
+    "closed_events": 158,
+    "never_closed_events": 9,
+    "used": {
+     "events_with_results": 167,
+     "rank1_used_events": 23,
+     "top3_used_events": 57,
+     "delivered_nodes": 905,
+     "used_delivered_nodes": 164,
+     "rank1_used": 0.1377,
+     "top3_used": 0.3413,
+     "useful_node_share": 0.1812
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 167,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 905,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 167,
+      "rank1_used_events": 23,
+      "top3_used_events": 42,
+      "delivered_nodes": 905,
+      "used_delivered_nodes": 64,
+      "rank1_used": 0.1377,
+      "top3_used": 0.2515,
+      "useful_node_share": 0.0707
+     },
+     "lookup": {
+      "events_with_results": 167,
+      "rank1_used_events": 0,
+      "top3_used_events": 19,
+      "delivered_nodes": 905,
+      "used_delivered_nodes": 100,
+      "rank1_used": 0.0,
+      "top3_used": 0.1138,
+      "useful_node_share": 0.1105
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 167,
+     "rank1_used_events": 23,
+     "top3_used_events": 57,
+     "delivered_nodes": 905,
+     "used_delivered_nodes": 164,
+     "rank1_used": 0.1377,
+     "top3_used": 0.3413,
+     "useful_node_share": 0.1812
+    }
+   },
+   "closed": {
+    "events": 158,
+    "closed_events": 158,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 158,
+     "rank1_used_events": 23,
+     "top3_used_events": 55,
+     "delivered_nodes": 860,
+     "used_delivered_nodes": 158,
+     "rank1_used": 0.1456,
+     "top3_used": 0.3481,
+     "useful_node_share": 0.1837
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 158,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 860,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 158,
+      "rank1_used_events": 23,
+      "top3_used_events": 42,
+      "delivered_nodes": 860,
+      "used_delivered_nodes": 64,
+      "rank1_used": 0.1456,
+      "top3_used": 0.2658,
+      "useful_node_share": 0.0744
+     },
+     "lookup": {
+      "events_with_results": 158,
+      "rank1_used_events": 0,
+      "top3_used_events": 17,
+      "delivered_nodes": 860,
+      "used_delivered_nodes": 94,
+      "rank1_used": 0.0,
+      "top3_used": 0.1076,
+      "useful_node_share": 0.1093
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 158,
+     "rank1_used_events": 23,
+     "top3_used_events": 55,
+     "delivered_nodes": 860,
+     "used_delivered_nodes": 158,
+     "rank1_used": 0.1456,
+     "top3_used": 0.3481,
+     "useful_node_share": 0.1837
+    }
+   },
+   "never_closed": {
+    "events": 9,
+    "closed_events": 0,
+    "never_closed_events": 9,
+    "used": {
+     "events_with_results": 9,
+     "rank1_used_events": 0,
+     "top3_used_events": 2,
+     "delivered_nodes": 45,
+     "used_delivered_nodes": 6,
+     "rank1_used": 0.0,
+     "top3_used": 0.2222,
+     "useful_node_share": 0.1333
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 9,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 45,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 9,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 45,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 9,
+      "rank1_used_events": 0,
+      "top3_used_events": 2,
+      "delivered_nodes": 45,
+      "used_delivered_nodes": 6,
+      "rank1_used": 0.0,
+      "top3_used": 0.2222,
+      "useful_node_share": 0.1333
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 9,
+     "rank1_used_events": 0,
+     "top3_used_events": 2,
+     "delivered_nodes": 45,
+     "used_delivered_nodes": 6,
+     "rank1_used": 0.0,
+     "top3_used": 0.2222,
+     "useful_node_share": 0.1333
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 167,
+    "used": {
+     "events_with_results": 167,
+     "rank1_used_events": 23,
+     "top3_used_events": 57,
+     "delivered_nodes": 905,
+     "used_delivered_nodes": 164,
+     "rank1_used": 0.1377,
+     "top3_used": 0.3413,
+     "useful_node_share": 0.1812
+    }
+   }
+  },
+  {
+   "day": "2026-09-27",
+   "all_events": 125,
+   "kept_events": 125,
+   "excluded_events": 0,
+   "metrics": {
+    "events": 125,
+    "closed_events": 118,
+    "never_closed_events": 7,
+    "used": {
+     "events_with_results": 125,
+     "rank1_used_events": 15,
+     "top3_used_events": 29,
+     "delivered_nodes": 614,
+     "used_delivered_nodes": 59,
+     "rank1_used": 0.12,
+     "top3_used": 0.232,
+     "useful_node_share": 0.0961
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 125,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 614,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 125,
+      "rank1_used_events": 15,
+      "top3_used_events": 21,
+      "delivered_nodes": 614,
+      "used_delivered_nodes": 29,
+      "rank1_used": 0.12,
+      "top3_used": 0.168,
+      "useful_node_share": 0.0472
+     },
+     "lookup": {
+      "events_with_results": 125,
+      "rank1_used_events": 0,
+      "top3_used_events": 9,
+      "delivered_nodes": 614,
+      "used_delivered_nodes": 30,
+      "rank1_used": 0.0,
+      "top3_used": 0.072,
+      "useful_node_share": 0.0489
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 125,
+     "rank1_used_events": 15,
+     "top3_used_events": 29,
+     "delivered_nodes": 614,
+     "used_delivered_nodes": 59,
+     "rank1_used": 0.12,
+     "top3_used": 0.232,
+     "useful_node_share": 0.0961
+    }
+   },
+   "closed": {
+    "events": 118,
+    "closed_events": 118,
+    "never_closed_events": 0,
+    "used": {
+     "events_with_results": 118,
+     "rank1_used_events": 15,
+     "top3_used_events": 29,
+     "delivered_nodes": 597,
+     "used_delivered_nodes": 59,
+     "rank1_used": 0.1271,
+     "top3_used": 0.2458,
+     "useful_node_share": 0.0988
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 118,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 597,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 118,
+      "rank1_used_events": 15,
+      "top3_used_events": 21,
+      "delivered_nodes": 597,
+      "used_delivered_nodes": 29,
+      "rank1_used": 0.1271,
+      "top3_used": 0.178,
+      "useful_node_share": 0.0486
+     },
+     "lookup": {
+      "events_with_results": 118,
+      "rank1_used_events": 0,
+      "top3_used_events": 9,
+      "delivered_nodes": 597,
+      "used_delivered_nodes": 30,
+      "rank1_used": 0.0,
+      "top3_used": 0.0763,
+      "useful_node_share": 0.0503
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 118,
+     "rank1_used_events": 15,
+     "top3_used_events": 29,
+     "delivered_nodes": 597,
+     "used_delivered_nodes": 59,
+     "rank1_used": 0.1271,
+     "top3_used": 0.2458,
+     "useful_node_share": 0.0988
+    }
+   },
+   "never_closed": {
+    "events": 7,
+    "closed_events": 0,
+    "never_closed_events": 7,
+    "used": {
+     "events_with_results": 7,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 17,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    },
+    "per_basis": {
+     "explicit": {
+      "events_with_results": 7,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 17,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "grounded": {
+      "events_with_results": 7,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 17,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     },
+     "lookup": {
+      "events_with_results": 7,
+      "rank1_used_events": 0,
+      "top3_used_events": 0,
+      "delivered_nodes": 17,
+      "used_delivered_nodes": 0,
+      "rank1_used": 0.0,
+      "top3_used": 0.0,
+      "useful_node_share": 0.0
+     }
+    },
+    "used_with_explicit": {
+     "events_with_results": 7,
+     "rank1_used_events": 0,
+     "top3_used_events": 0,
+     "delivered_nodes": 17,
+     "used_delivered_nodes": 0,
+     "rank1_used": 0.0,
+     "top3_used": 0.0,
+     "useful_node_share": 0.0
+    }
+   },
+   "legacy_filter": {
+    "kept_events": 121,
+    "used": {
+     "events_with_results": 121,
+     "rank1_used_events": 14,
+     "top3_used_events": 28,
+     "delivered_nodes": 602,
+     "used_delivered_nodes": 58,
+     "rank1_used": 0.1157,
+     "top3_used": 0.2314,
+     "useful_node_share": 0.0963
+    }
+   }
+  }
+ ],
+ "exclusion": [
+  {
+   "day": "2026-09-07",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 52,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 52,
+   "legacy_overexclude_sample": [
+    {
+     "session": "33af79b539f14337b180711038dc6080",
+     "scope": "project:game",
+     "query": "nectomite terminal nautilex receipt predecessor committed ledger terminal digest binding"
+    },
+    {
+     "session": "a0ec1735bd504c3d8536ea3accc22c07",
+     "scope": "project:game",
+     "query": "grand-world entry-result binding aliases selfZeroedField canonical proto validation testing fixtures"
+    },
+    {
+     "session": "530d3e9f579c4c79a8281c94e3cdf8d6",
+     "scope": "project:game",
+     "query": "strict-runner-and-entry-cli runner tests real lineage synthetic git fixture acceptedBaseCommit alter"
+    },
+    {
+     "session": "b9062e7dcd5e45a290909be13c3960ae",
+     "scope": "project:game",
+     "query": "strict runner fixtures pinned descriptor acceptedBaseCommit git object alternates entry-result measu"
+    },
+    {
+     "session": "3cdb9d1aadc54a19b3c835bb160f06a1",
+     "scope": "project:game",
+     "query": "independent regression fixtures strict runner check-entry source proof exactOrigin repair contract 5"
+    }
+   ],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-08",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 158,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 158,
+   "legacy_overexclude_sample": [
+    {
+     "session": "deb75a5dc2d34cdeaf1b2360ca5f887d",
+     "scope": "project:game",
+     "query": "biome-successors parent tests read-only scope server fixtures physics beast-runs operator authorizat"
+    },
+    {
+     "session": "018a8a8dd9e44f14be64289f38a8fe79",
+     "scope": "project:game",
+     "query": "server fixture activity ACT_CAP BEAST_WINDOW quiet water movement test scouting physics discoverFigh"
+    },
+    {
+     "session": "4faed3ce1fbe44e8a4ec0a7b97df43dc",
+     "scope": "project:game",
+     "query": "independent-regression-controls fixture proof GLB immutable origin launcher eight suites final verif"
+    },
+    {
+     "session": "d634db1542174bf8ba881ad4427bc6aa",
+     "scope": "project:game",
+     "query": "slot11 foreign descendant dirty foreign JSON key reorder self-test private clone read-only fixture c"
+    },
+    {
+     "session": "904ba853ba2042efad8720c6873a7b73",
+     "scope": "project:game",
+     "query": "slot01 admission repair immutable producer source L4 harness lineage fixture private refs 6592d420"
+    }
+   ],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-09",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 122,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 122,
+   "legacy_overexclude_sample": [
+    {
+     "session": "819f8603d4494274819aa2681d38911c",
+     "scope": "project:game",
+     "query": "biome phase5 additional actor fixtures world-aquatic-motion-scene-repair 38ce2b33 parent native repl"
+    },
+    {
+     "session": "c4e21d28b23f4e4f8c6b81f2786cd90a",
+     "scope": "global",
+     "query": "grand-world successor slot08 admission-instrument-repair-v2 failure phase5 actor fixtures delivery i"
+    },
+    {
+     "session": "bcb232d024c74f4b97a4e07874304bcc",
+     "scope": "project:game",
+     "query": "native ae_artifact_provenance_verify private fixture npm install exact candidate no shell extractors"
+    },
+    {
+     "session": "46fa85be2ec646fca8207be2f4e4015d",
+     "scope": "project:ae",
+     "query": "accepted-origin-transfer full files_owned delivery fixtures bootstrap tools/provenance node acceptan"
+    },
+    {
+     "session": "c4e21d28b23f4e4f8c6b81f2786cd90a",
+     "scope": "project:game",
+     "query": "phase5 additional actor fixtures native same ID world-aquatic-motion-scene-repair 62000 A080 origina"
+    }
+   ],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-10",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-11",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-12",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-13",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-14",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-15",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-16",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-17",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-18",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-19",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-20",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-21",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-22",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-23",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-24",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 24,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 24,
+   "legacy_overexclude_sample": [
+    {
+     "session": "b6c6b3e3195e4d709cb1ad3ec384e08b",
+     "scope": "project:game",
+     "query": "steamkite runtime-invariants-v3 contract field immutable changed baseline published ledger fresh nod"
+    },
+    {
+     "session": "e448a11e77a243f8b05a2a1790cbfb1c",
+     "scope": "global",
+     "query": "physical bounds sulfur namespace controls private full history fixture master branch lineage four pr"
+    },
+    {
+     "session": "09b1bcbae055431faf39b63cdbbe22a7",
+     "scope": "project:game",
+     "query": "private full history fixture clone refs snapshot no hardlinks grand-world self-test"
+    },
+    {
+     "session": "33ce0f2eb126465698aa42afe24125c4",
+     "scope": "project:game",
+     "query": "full-history private repository fixtures sparse checkout source refs unchanged negative protected ta"
+    },
+    {
+     "session": "94595920ed6a4458a024660224353f8f",
+     "scope": "project:game",
+     "query": "slot02 provenance concurrency transient discovery fixtures capture after process controls"
+    }
+   ],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-25",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 4,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 4,
+   "legacy_overexclude_sample": [
+    {
+     "session": "2ff76c4c019a4277809d1085d94ddaa8",
+     "scope": "project:game",
+     "query": "full-history disposable fixtures runVerifier timeout malformed JSON lod semantic measurements protec"
+    },
+    {
+     "session": "4523e0915f2c470b92c6c7f094e297c9",
+     "scope": "project:game",
+     "query": "slot07 common adapter canonical FIRST original legacy strict result source.common historical pins se"
+    },
+    {
+     "session": "0afb44f44ff344aca94d0025c5383301",
+     "scope": "project:game",
+     "query": "scoped relinearization private fixture read-tree skip-worktree ENOBUFS diff"
+    },
+    {
+     "session": "83017fddfa3e44a7be70c4c5de1db215",
+     "scope": "project:game",
+     "query": "wrong FIRST fixture git show ENOBUFS record scoped patch parent rewiring full tree"
+    }
+   ],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-26",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 0,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 0,
+   "legacy_overexclude_sample": [],
+   "sessions": []
+  },
+  {
+   "day": "2026-09-27",
+   "excluded_events": 0,
+   "excluded_sessions": 0,
+   "events_by_reason": {},
+   "events_by_strongest_reason": {},
+   "legacy_would_exclude": 4,
+   "legacy_leak_events": 0,
+   "legacy_overexclude_events": 4,
+   "legacy_overexclude_sample": [
+    {
+     "session": "e6ce38fcf68a4ea19610501439cebd19",
+     "scope": "project:game",
+     "query": "one-sided reachability instrument transitive imports symlink byte-alias sweep self-test disposable f"
+    },
+    {
+     "session": "a4ef33b4187348669b1c83f75aaf9f5c",
+     "scope": "project:game",
+     "query": "full history isolation directory sweep fixture unresolved foreign evidence use own namespace"
+    },
+    {
+     "session": "f88453cf0e1b419aa1e76363b4816151",
+     "scope": "project:game",
+     "query": "pace-player fixture selection root authority sole authorized sampling change biome registry other te"
+    },
+    {
+     "session": "f4d624b83b3d4e43820ec534866616b1",
+     "scope": "project:game",
+     "query": "descriptor regression malformed duplicate resealed private fixture test entry-result closure"
+    }
+   ],
+   "sessions": []
+  }
+ ]
+}

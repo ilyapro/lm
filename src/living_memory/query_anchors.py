@@ -338,6 +338,46 @@ def _normalize_target(raw: Any, default_weight: float) -> tuple[str, float]:
     return str(raw), float(default_weight)
 
 
+def resolve_query_anchor(
+    store: MemoryStore,
+    query: str,
+    scope: str,
+    embedding: Sequence[float],
+    now: str | datetime | None = None,
+    *,
+    dedup_threshold: float = ANCHOR_DEDUP_COSINE_THRESHOLD,
+) -> QueryAnchor:
+    """The anchor ``query`` in ``scope`` belongs to, created if absent.
+
+    The same two-stage identity :func:`upsert_anchor` uses — fingerprint, then
+    in-scope cosine at or above ``dedup_threshold`` — so a caller keying data
+    on the returned id lands on exactly the anchor a grounded consumption of
+    the same question reinforces. Unlike :func:`upsert_anchor` it neither
+    reinforces an existing anchor nor writes an edge: a negative signal
+    (``living_memory.irrelevance``) must not count as a use of the anchor.
+    A new anchor is born with no edges, so it seeds nothing.
+    """
+
+    anchor_scope = normalize_scope(scope)
+    vector = [float(value) for value in embedding]
+    if not vector:
+        raise ValueError("anchor embedding must not be empty")
+    fingerprint = recall_fingerprint(query, anchor_scope)
+    anchor = store.find_query_anchor(anchor_scope, fingerprint)
+    if anchor is not None:
+        return anchor
+    near = _nearest_anchor(store, vector, anchor_scope, dedup_threshold)
+    if near is not None:
+        return near[0]
+    return store.insert_query_anchor(
+        scope=anchor_scope,
+        query=query,
+        fingerprint=fingerprint,
+        embedding=vector,
+        now=_timestamp(now),
+    )
+
+
 def _live_target(store: MemoryStore, node_id: str) -> str | None:
     """The live node an edge to ``node_id`` should actually point at."""
 

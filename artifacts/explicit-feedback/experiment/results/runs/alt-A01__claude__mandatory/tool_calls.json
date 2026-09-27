@@ -1,0 +1,34 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "gate-dependencies-published successor gate-dependency-preparation 4311caaf baseline generated_create_only publisher sidecar",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21BSQ8NF2ZCBFNG4HM0RKN0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M20SYZ9M4943WQKHYAPXGN1M",
+        "01M21F7E5QK17JTKBX49B8XC01",
+        "01M21ACG0FXZ9973M3CMW9TP0H"
+      ],
+      "query": "gate-dependency-preparation retry 4311caaf tests/test_gate_dependency_preparation.sh.src.sha256 sidecar blocker",
+      "scope": "project:ae",
+      "used": [
+        "01M21H3A1YKXAHJP2ZH9MHHH9N",
+        "01M21BSQ8NF2ZCBFNG4HM0RKN0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

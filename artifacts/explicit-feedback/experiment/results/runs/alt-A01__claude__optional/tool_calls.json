@@ -1,0 +1,49 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "gate-dependencies-published successor gate-dependency-preparation 4311caaf baseline generated_create_only publisher sidecar",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21BSQ8NF2ZCBFNG4HM0RKN0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "query": "gate-dependency-preparation 4311caaf tests/test_gate_dependency_preparation.sh.src.sha256 sidecar blocker",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21B1WVA12REJ82FYQ424JF8",
+        "01M21BAFW447Y34JP8ZV9E1VKJ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 3,
+      "query": "817e224e sidecar automatic creation refresh artifact ownership policy gate-dependencies-published",
+      "scope": "project:ae",
+      "used": [
+        "01M21BSQ8NF2ZCBFNG4HM0RKN0",
+        "01M21B1WVA12REJ82FYQ424JF8",
+        "01M21BAFW447Y34JP8ZV9E1VKJ",
+        "01M21H3A1YKXAHJP2ZH9MHHH9N",
+        "01M21C1ZXG3S006PRQ1W0A8KVJ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

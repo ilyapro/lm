@@ -1,0 +1,49 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 43.2,
+  "ended_at": "2026-09-27T12:25:06Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 2,
+    "recall_events": 4,
+    "recall_feedback_marks": 26,
+    "recall_lookup_events": 2
+  },
+  "final_text": "I found the overall state, but some identifiers from your query are **not found**: `799b780e`, `6e0a68d8` and `deriveProductionIsolation` don't appear in any memory entry.\n\n- **Stuck state (2026-09-26):** `missing-parent-final-20260926-heq5_7pg/summary.json` is pinned to `d887aae3…`. Check-entry passes for slot02 (rc0 twice) and fails for slot06, slot07, slot08 and root-arch (rc1 twice), even though all five show real lineage 4/4. All five coordinators are DONE. Augment can't add to DONE nodes, and a fallback would add a sixth child, which breaks the exact-five-live-children contract. The fix is a deliberate lifecycle or re-decomposition decision, not a blind retry. `proposed-continuation.json` is proposed but not applied (node 01M3ECQC…).\n- **Continuation design:** each child lands as one single-parent squash. The lineage check L3 in `lib/lineage.mjs` (`impureCommits` at `git-history.mjs:211`) fails if a commit mixes namespaces. So each entry needs its own sibling continuation root, not one shared coordinator. Before replanning, fast-forward object-successors from `7f48fbeb` to `d887aae3`, which carries the 13 per-entry commits (01M3EH1Y…).\n- **slot06 plan** (`missing-continuation-slot06-91237eb60b`): first an admission-discovery-v2 producer. Then `geometry-binding-v2` and `runtime-v2` run in parallel. Last, a root consumer owns only `verify.mjs` and `entry-result.json`, and must inline its own assembly. The stored v1 catalog `ENOENT` is only a historical record; the live catalog is readable.\n- **slot08:** the old receipt stays rejected and can't be changed. Shared `evaluateLineage` returning 4/4 picks the historical discovery producer `a92f7087…`, so the admission producer needs its own proof.\n- **root-arch `stagePlan`:** `acquire2.mjs commandSeal()` hardcodes `chargeableSubmissions: 1`. It can't pin L2 because L2 needs the SHA-256 of L1's output, which doesn't exist at seal time.",
+  "first_input_tokens": 8884,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:24:22Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 6,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18800,
+  "provider_error": false,
+  "ready_s": 12.6,
+  "run_id": "alt-B11__claude__mandatory",
+  "scoring": {
+    "marks": 26,
+    "observations": 31
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:24:10Z",
+  "stderr_foreign_urls": null,
+  "store": "alt",
+  "task_id": "alt-B11",
+  "timed_out": false,
+  "tokens_in": 115001,
+  "tokens_out": 2423,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

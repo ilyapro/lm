@@ -1,0 +1,155 @@
+{
+  "host": "alt",
+  "db": "/tmp/lm-alt-agreement-20260927.sqlite3",
+  "since": "2026-09-07",
+  "generated_at": "2026-09-27T11:13:54Z",
+  "method": {
+    "min_containment": 0.22,
+    "twin_band": 0.01,
+    "memory": "01M3H76JBHEZKJMBPWFVN70SB2",
+    "ab_exclusion": "whole transport sessions with an A/B marker (scope project:target|repo|x, tree-context-ab/fixture/project=target in node context, or A/B-like recall query)"
+  },
+  "counts": {
+    "events": 3170,
+    "closed_events": 2754,
+    "closed_scored": 2752,
+    "delivered_without_twin": 359,
+    "closed_without_trace_vector": 2,
+    "excluded_ab_events": 1505,
+    "ab_sessions": 1027,
+    "delivered_pairs": 13344
+  },
+  "reference": {
+    "r1": {
+      "n": 2593,
+      "grounded_rate": 0.1392209795603548,
+      "twin_rate": 0.025838796760509063,
+      "excess": 0.11338218279984574,
+      "excess_ci95": [
+        0.10065561126108755,
+        0.12726571538758197
+      ],
+      "grounded_rate_query_stripped": 0.05360586193598149,
+      "twin_rate_query_stripped": 0.016583108368684922,
+      "excess_query_stripped": 0.03702275356729657,
+      "excess_query_stripped_ci95": [
+        0.028152718858465098,
+        0.04550713459313536
+      ]
+    },
+    "top3": {
+      "n": 7151,
+      "grounded_rate": 0.11117326248077192,
+      "twin_rate": 0.022094811914417565,
+      "excess": 0.08907845056635436,
+      "excess_ci95": [
+        0.08161122878553381,
+        0.0971276199563605
+      ],
+      "grounded_rate_query_stripped": 0.04502866731925605,
+      "twin_rate_query_stripped": 0.013145014683261083,
+      "excess_query_stripped": 0.03188365263599496,
+      "excess_query_stripped_ci95": [
+        0.027110168628669707,
+        0.03719402764322637
+      ]
+    },
+    "r1_lookup_rate": 0.029337539432176655,
+    "top3_lookup_rate": 0.0465419232591189,
+    "r1_by_cos_trace": {
+      "<0.5": {
+        "n": 391,
+        "grounded_rate": 0.005115089514066497,
+        "twin_rate": 0.0,
+        "excess": 0.005115089514066497
+      },
+      "0.5-0.7": {
+        "n": 1621,
+        "grounded_rate": 0.08143121529919803,
+        "twin_rate": 0.0030845157310302285,
+        "excess": 0.0783466995681678
+      },
+      ">=0.7": {
+        "n": 581,
+        "grounded_rate": 0.39070567986230637,
+        "twin_rate": 0.10671256454388985,
+        "excess": 0.28399311531841653
+      }
+    }
+  },
+  "reference_by_agent": {
+    "claude": {
+      "events": 34,
+      "r1": {
+        "n": 34,
+        "grounded_rate": 0.3235294117647059,
+        "twin_rate": 0.0,
+        "excess": 0.3235294117647059
+      },
+      "top3": {
+        "n": 101,
+        "grounded_rate": 0.18811881188118812,
+        "twin_rate": 0.009900990099009901,
+        "excess": 0.1782178217821782
+      },
+      "r1_lookup_rate": 0.08823529411764706
+    },
+    "codex": {
+      "events": 144,
+      "r1": {
+        "n": 126,
+        "grounded_rate": 0.047619047619047616,
+        "twin_rate": 0.0,
+        "excess": 0.047619047619047616
+      },
+      "top3": {
+        "n": 347,
+        "grounded_rate": 0.04899135446685879,
+        "twin_rate": 0.008645533141210375,
+        "excess": 0.040345821325648415
+      },
+      "r1_lookup_rate": 0.1736111111111111
+    },
+    "other": {
+      "events": 2729,
+      "r1": {
+        "n": 2372,
+        "grounded_rate": 0.14249578414839797,
+        "twin_rate": 0.02782462057335582,
+        "excess": 0.11467116357504216
+      },
+      "top3": {
+        "n": 6524,
+        "grounded_rate": 0.11419374616799509,
+        "twin_rate": 0.02299202942979767,
+        "excess": 0.09120171673819742
+      },
+      "r1_lookup_rate": 0.021253206302674972
+    },
+    "unknown": {
+      "events": 263,
+      "r1": {
+        "n": 61,
+        "grounded_rate": 0.09836065573770492,
+        "twin_rate": 0.01639344262295082,
+        "excess": 0.08196721311475409
+      },
+      "top3": {
+        "n": 179,
+        "grounded_rate": 0.0782122905027933,
+        "twin_rate": 0.0223463687150838,
+        "excess": 0.055865921787709494
+      },
+      "r1_lookup_rate": 0.026615969581749048
+    }
+  },
+  "marks": {
+    "status": "no marks",
+    "reason": "table recall_feedback_marks is absent"
+  },
+  "falsifier": {
+    "test": "better_than_random: explicit `used` marks agree with the independent check better than random iff ALL hold: (a) at least 30 accepted `used` marks on at least 10 in-window recall events; (b) within-event permutation test: the number of `used`-marked nodes that carry evidence (grounded in the closing trace at containment >= 0.22 OR looked up on the same transport after delivery) is compared with 2000 draws in which each event's `used` marks are re-assigned uniformly at random to the same number of that event's delivered nodes; one-sided p = (1 + #draws >= observed) / (1 + 2000) must be < 0.05; (c) placebo-subtracted evidence excess of `used` marks, mean over marks of [evidence(n) - grounded(twin(n))], has an event-cluster bootstrap 95% CI (1000 rounds) whose lower bound is > 0. If (a) fails the verdict is `insufficient`; otherwise failing (b) or (c) is `fail` - the falsifier fires and marks are not connected to reinforcement.",
+    "better_than_random": "insufficient",
+    "used_marks": 0
+  }
+}

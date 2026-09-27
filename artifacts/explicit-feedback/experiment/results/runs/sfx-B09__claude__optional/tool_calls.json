@@ -1,0 +1,72 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "gigacode raw model endpoint ai-llm-proxy api auth DeepSeek thinking protocol"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KRV5XXNNFK38D17WFM1RN1A2",
+        "01KRV5XGVDVSK4E10S7JC282HB",
+        "01KZZ8PKS1CF0K70153MG7XSW7"
+      ],
+      "max_results": 8,
+      "query": "gigacode LLM proxy DeepSeek reasoning_content"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "ai-llm-proxy"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "GigaCode GigaChat Sber API key model LLM judge endpoint"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 6,
+      "query": "OpenAI-compatible chat completions base_url bearer token thinking mode reasoning model call"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M11HWJG0RKK79PA13QGG5PCD"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 6,
+      "query": "gigacode ai-llm-proxy DeepSeek raw model thinking",
+      "scope": "global",
+      "used": [
+        "01M11HWJG0RKK79PA13QGG5PCD",
+        "01KZ9Y5N4E8RBD2FZAV9STAT51"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 6,
+      "query": "ai-dev-proxy auth OPK key thinking reasoning_content deepseek chat completions protocol",
+      "scope": "global",
+      "used": [
+        "01M3FP1Q7GPH2F7DMRJV0KPDXZ",
+        "01M34SWFBDKTKEP4SRWBS6ZW7B"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

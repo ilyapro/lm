@@ -1,0 +1,189 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "GigaCode bun CONNECT frozen interface runtime runner installed OpenCode baseline ERR_INVALID_URL isolated source closure",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M302YG9Z4XPEN7TYM3XR92F7",
+        "01M2B36KA1V963E2T7RX5T9RR0",
+        "01M2TAA4EA4HA1XQK59VM7592Y",
+        "01M22WYD559G6E1VF3DAPHYMXM",
+        "01M218Q87NM6WQ4E9ZPAA360J0",
+        "01M21FKYP3CZGXVM879ACKPEWR",
+        "01M2X9C7Y29RC6RQZQQE5C3GSA"
+      ],
+      "max_results": 5,
+      "query": "GigaCode \"frozen\" \"runtime\" \"runner\" \"closure\" bun CONNECT",
+      "scope": "project:ae",
+      "used": [
+        "01M2FPH5XQJ4JK7SAFE7XNKB9T"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M21AWKPS7MCQ21WK6C565HME",
+        "01M2QNGF88CBZ0FW538HP8BSM2",
+        "01M2E6G7P7TTXR9S6BS7BRZAHY",
+        "01M2P92E9R5FXTJ302EYRZMCME"
+      ],
+      "max_results": 5,
+      "query": "gigacode bun-connect",
+      "scope": "project:ae",
+      "used": [
+        "01M2G8YJ2KBDEZSX4QD98M6SM6"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M218Q87NM6WQ4E9ZPAA360J0",
+        "01M22WYD370NGJR170N0KA50WH",
+        "01M2G0Z01G47CA9AZT2GDZBC0V",
+        "01M2Q0SM1XDK0CDGTB5T50E6Q2"
+      ],
+      "max_results": 4,
+      "query": "frozen interface runtime runner installed baseline isolated source closure",
+      "scope": "project:ae",
+      "used": [
+        "01M2Q09CHTMEHP9X6ADSDA2WQE"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:ae",
+      "task_pattern": "gigacode-bun-connect"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M22V5JZPKHWZKXE6JASCDX5V",
+        "01M2FR9ECC3926BPS30X5MPFW6",
+        "01M2XQ3CVBS0PTWWP1R9P7G142"
+      ],
+      "max_results": 3,
+      "query": "GigaCode CONNECT frozen interface",
+      "used": [
+        "01M2G8YJ2KBDEZSX4QD98M6SM6"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M28TEYGFJTNGDCNXKBBXENKD",
+        "01M215Q9NDP65TW1DC1QP4AEQ9",
+        "01M34SWFBDKTKEP4SRWBS6ZW7B"
+      ],
+      "max_results": 3,
+      "query": "bun CONNECT",
+      "scope": "project:ae",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [],
+      "max_results": 3,
+      "query": "bun-connect runtime runner installed isolated",
+      "scope": "project:ae",
+      "used": [
+        "01M2G5NA3EN1CSBWXCVTCJYEB1",
+        "01M2G1E3F1CCBBECH07CPHZ8FY",
+        "01M2G1XGB58CFAHBW3BNFS6X8T"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M2SJ1CFRYW3BKAHCYWSHRPB9",
+        "01M2XBQQMSKNV24YEK9R3FPQ5B"
+      ],
+      "max_results": 8,
+      "query": "bun CONNECT",
+      "scope": "project:ae",
+      "used": [
+        "01M2G8YJ2KBDEZSX4QD98M6SM6"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M2FRVGG12TKRCEJFFS38Q6TP",
+        "01M22WYD370NGJR170N0KA50WH",
+        "01M2G0NABMTFSY7WJ7V9CNR27Y"
+      ],
+      "max_results": 3,
+      "query": "tools/gigacode/repairs/bun-connect/contract.json runtime",
+      "scope": "project:ae",
+      "used": [
+        "01M2G5NA3EN1CSBWXCVTCJYEB1",
+        "01M2G1E3F1CCBBECH07CPHZ8FY",
+        "01M2G1XGB58CFAHBW3BNFS6X8T",
+        "01M2G2V6QFC8YMG2BV21ZV2FPF",
+        "01M2G1WCHR18APD3B756DHX3PR"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "content": "Bun CONNECT historical evidence must distinguish installed baseline from repair acceptance: f096a4ef3 service_counts.connect=3 includes Node setup traffic; installed Bun baseline emitted ERR_INVALID_URL with zero CONNECT. Raw CONNECT plus target HTTP 200 also cannot prove routing because Bun 1.3.14 ignored Agent.createConnection; require observed tunneled target bytes. These are isolated transport findings, not live-provider admission.",
+      "context": {
+        "agent": "/root",
+        "scope": "project:ae",
+        "session_id": "recall-20260927",
+        "task": "recall GigaCode Bun CONNECT earlier-session findings"
+      },
+      "irrelevant": [
+        "01M300ZPAYKERJZTVY878VTSXK",
+        "01M2PH0T4ECV85KT17SV9CR9E0",
+        "01M2GB9C38V974W9P9AHD8P50V"
+      ],
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_remember",
+    "status": "completed"
+  }
+]

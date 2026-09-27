@@ -1,0 +1,27 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "biome-successors R1 supervisor 265 species-content-repair infeasible fulgurax migrationDrive scope replan_required",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M3EPFQM01YKM9JTAF614ZA6A",
+        "01M3EP17XSN01J6VVYN2QM0FF4"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 6,
+      "query": "species-content-repair infeasible fulgurax migrationDrive replan_required",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

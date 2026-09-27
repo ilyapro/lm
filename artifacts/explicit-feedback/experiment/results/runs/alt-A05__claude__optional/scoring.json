@@ -1,0 +1,21 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:02:14.000000Z",
+      "id": "01M3HBX3C55GDKDE1P5K4AVFKF",
+      "n_results": 10,
+      "query": "Noctifer acquisition final receipt normalize quarantine publication null performed false Nimbara final receipt location",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:02:17.000000Z",
+    "2026-09-27T12:02:17.000000Z",
+    "2026-09-27T12:02:17.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 1
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:02:29.000000Z",
+      "id": "01M3HBXJA837FZF7DXJ7H8AG3M",
+      "n_results": 12,
+      "query": "generation 6 renderer fresh source proof failure pitfalls sealed cue worklib exact anchors null holdout boreal route merge",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:35.000000Z",
+      "id": "01M3HBXR7MGY0ZXZJMG7B876G8",
+      "n_results": 6,
+      "query": "gen6 renderer fresh source proof sealed cue worklib",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:36.000000Z",
+      "id": "01M3HBXSDKWV6T6JT51S7QTZA3",
+      "n_results": 6,
+      "query": "boreal-route-merge",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:37.000000Z",
+      "id": "01M3HBXT1ZXXPXZVCDFAT9JYA4",
+      "n_results": 6,
+      "query": "generation 6 exact anchors",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:42.000000Z",
+      "id": "01M3HBXZDDPP1YTNMSD548RGAA",
+      "n_results": 8,
+      "query": "\"sealed\" \"cue\" \"fresh\" renderer",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:47.000000Z",
+      "id": "01M3HBY4D59FD0058QCAMQ9QVA",
+      "n_results": 5,
+      "query": "\"sealed\" \"cue\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:48.000000Z",
+      "id": "01M3HBY4TH2Q8V7NQ6437DVV70",
+      "n_results": 5,
+      "query": "\"worklib\" \"anchors\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:48.000000Z",
+      "id": "01M3HBY56V32XV2HNH87Q9BHT7",
+      "n_results": 5,
+      "query": "\"boreal\" \"proof\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:54.000000Z",
+      "id": "01M3HBYAEKD62YR5VZ9R7FEDSX",
+      "n_results": 5,
+      "query": "generation-6 renderer fresh-source proof failure sealed cue",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:54.000000Z",
+      "id": "01M3HBYB0SR5DCAQZNJ8WMKVV4",
+      "n_results": 5,
+      "query": "boreal-holdout null sealed",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:02:55.000000Z",
+      "id": "01M3HBYBKS145Y99Y9F9G77AV8",
+      "n_results": 5,
+      "query": "cue_levels sealed source proof",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:02:42.000000Z",
+    "2026-09-27T12:02:42.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 11
+  }
+}

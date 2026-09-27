@@ -1,0 +1,51 @@
+{
+  "agent": "codex",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 114.4,
+  "ended_at": "2026-09-27T12:10:19Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 5,
+    "recall_events": 4,
+    "recall_feedback_marks": 19,
+    "recall_lookup_events": 5
+  },
+  "final_text": "Living Memory records for `project:ae` (2026-09-08–09) establish:\n- Bug: `queue.sh::worktree_safe_npm_install` created `package-lock.json` after candidate capture; installer rc0 became provenance rc1 (“accepted candidate bytes differ(repository)”).\n- Ownership: `npm-candidate-published` → `queue.sh`; `gate-dependencies-published` → `gate.sh` + `tests/test_gate_dependency_preparation.sh`; `dependency-lifecycle-regression` → `test.sh` + `tests/test_merge_dependency_candidate_preservation.sh`.\n- Sidecar fix: declare `tests/test_worktree_safe_npm_install.sh.src.sha256` in both `files_owned` and `generated_create_only` **before baseline**; retroactive grants failed. This contract correction was subsequently recorded as applied.\n- At `e26cf1c452d4a94560fe5050928d4c926f0353df`, SWC preparation used scratch space and copied only `node_modules`; preparation/native retry failures returned non-downgradable 70/71.\n- npm `11.16.0`: both real `with_lock`/without-lock installer paths and all 26 gate-preparation cases passed.\n- Preserve candidate source/lockfile presence and bytes; never whitelist or recapture installer writes. Removing `_gate_node_transfer`’s final provenance check demonstrably allowed `UNACCEPTED_PROMOTION`.\n- Full lifecycle PASS was not established by those checks: require both `timeout 540 bash tests/test_merge_dependency_candidate_preservation.sh` and `timeout 540 bash test.sh merge-dependency-candidate-preservation`, plus checksums; `acceptance.json` listed only artifacts.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:08:24Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18805,
+  "provider_error": false,
+  "ready_s": 12.9,
+  "run_id": "alt-A02__codex__mandatory",
+  "scoring": {
+    "marks": 19,
+    "observations": 22
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:08:11Z",
+  "stderr_foreign_urls": [],
+  "store": "alt",
+  "task_id": "alt-A02",
+  "timed_out": false,
+  "tokens_in": 160286,
+  "tokens_out": 1294,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

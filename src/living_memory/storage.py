@@ -54,6 +54,14 @@ RECALL_DELIVERY_HISTORY_STATE_TABLE = "recall_delivery_history_state"
 RECALL_LOOKUP_EVENT_TABLE = "recall_lookup_events"
 TRANSCRIPT_GROUNDING_TABLE = "transcript_grounding_verdicts"
 RECALL_CREDIT_LEDGER_TABLE = "recall_credit_ledger"
+RECALL_EXPLICIT_CREDIT_TABLE = "recall_explicit_credit"
+RECALL_FEEDBACK_MARKS_TABLE = "recall_feedback_marks"
+#: Every basis a (recall event, node) credit can be claimed under. The first
+#: two live in ``recall_credit_ledger``, whose CHECK cannot be widened without
+#: a table rebuild; ``explicit`` lives in ``recall_explicit_credit`` and the
+#: once-per-pair rule is enforced across both tables. See the note on
+#: ``_RECALL_EXPLICIT_CREDIT_SCHEMA_SQL``.
+RECALL_CREDIT_BASES: tuple[str, ...] = ("grounded", "lookup", "explicit")
 
 # Frozen by artifacts/recall-map/prereg.json and
 # artifacts/recall-map/relevance/policy.json.  Keep these literals local to
@@ -488,6 +496,67 @@ _RECALL_CREDIT_LEDGER_SCHEMA_SQL = f"""
         credited_at TEXT NOT NULL,
         UNIQUE(recall_event_id, node_id)
     );
+"""
+
+#: Explicit credit: a ``used`` mark an agent passed on memory_recall,
+#: memory_remember or memory_teach (goal explicit-recall-feedback). A third
+#: basis for the same once-per-(event, node) credit the ledger above guards.
+#:
+#: A side table rather than a rebuild of ``recall_credit_ledger``: that
+#: table's ``CHECK (basis IN ('grounded', 'lookup'))`` cannot be altered in
+#: place, and a copy/drop/rename rebuild would rewrite the live ledger on the
+#: first open after deploy — not additive, and not reversible by rolling the
+#: code back. The side table keeps every existing DDL string byte-identical
+#: and is created like the ledger, ``CREATE TABLE IF NOT EXISTS`` on every
+#: open. The price is that the dedup spans two tables:
+#: :meth:`MemoryStore.claim_recall_credit` inserts into either one with a
+#: single ``INSERT ... SELECT ... WHERE NOT EXISTS`` against the other, so
+#: the check and the claim are one statement, one transaction, and at most
+#: one of the two tables ever holds a given pair whichever basis arrives
+#: first. Readers that only know the ledger (grounded|lookup) see explicit
+#: credit as absent, which is what they measured before it existed.
+_RECALL_EXPLICIT_CREDIT_SCHEMA_SQL = f"""
+    -- No foreign keys, for the recall_credit_ledger reason: the row records
+    -- that a pair's credit was spent, never gates the write that earned it.
+    CREATE TABLE IF NOT EXISTS {RECALL_EXPLICIT_CREDIT_TABLE} (
+        recall_event_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        credited_at TEXT NOT NULL,
+        UNIQUE(recall_event_id, node_id)
+    );
+"""
+
+#: Audit of every explicit ``used``/``irrelevant`` mark an agent passed,
+#: accepted or not. ``accepted = 1`` only for an id a recall event on the
+#: same transport session delivered (the newest such event within the
+#: lookup-credit window); a dropped mark keeps its ``reject_reason``
+#: (``not_delivered``, ``no_transport``, ``empty``, ``duplicate``,
+#: ``conflict``) and ``recall_event_id = ''``. ``source_id`` is the trace id
+#: for memory_remember/memory_teach and the new recall event id for
+#: memory_recall; ``rank`` is the 0-based rank in the delivering event.
+#: Recording happens under ``LM_EXPLICIT_FEEDBACK_POLICY`` ``audit`` and
+#: ``credit``; ``off`` writes nothing. Additive, created on every open, no
+#: foreign keys, no SCHEMA_VERSION bump — the ledger's rules. The one index
+#: serves the per-event read the implicit-feedback link hygiene does on
+#: every closing remember.
+_RECALL_FEEDBACK_MARKS_SCHEMA_SQL = f"""
+    CREATE TABLE IF NOT EXISTS {RECALL_FEEDBACK_MARKS_TABLE} (
+        id INTEGER PRIMARY KEY,
+        recall_event_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        mark TEXT NOT NULL CHECK (mark IN ('used', 'irrelevant')),
+        accepted INTEGER NOT NULL,
+        reject_reason TEXT,
+        via_tool TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        transport_session_id TEXT,
+        agent TEXT,
+        rank INTEGER,
+        marked_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_recall_feedback_marks_event
+        ON {RECALL_FEEDBACK_MARKS_TABLE}(recall_event_id, mark, accepted);
 """
 
 #: Scratch tokenizer behind :meth:`MemoryStore.term_document_frequencies`. It
@@ -2077,13 +2146,18 @@ class MemoryStore:
         """Take the (event, node) credit for ``basis``; True only when new.
 
         One ``INSERT OR IGNORE``, committed: a pair already credited — by an
-        earlier grounding or an earlier lookup — leaves the row as it was and
-        returns False, and the caller must then apply nothing. ``basis`` is
-        ``'grounded'`` (``source_id`` is the consuming trace id) or
-        ``'lookup'`` (``source_id`` is the lookup event id).
+        earlier grounding, lookup or explicit mark — leaves the rows as they
+        were and returns False, and the caller must then apply nothing.
+        ``basis`` is ``'grounded'`` (``source_id`` is the consuming trace id),
+        ``'lookup'`` (the lookup event id) or ``'explicit'`` (the id of the
+        call that carried the ``used`` mark). The first two land in
+        ``recall_credit_ledger``, ``explicit`` in ``recall_explicit_credit``;
+        each insert carries a ``NOT EXISTS`` probe of the other table in the
+        same statement, so the pair is claimed at most once across all three
+        bases in either arrival order.
         """
 
-        if basis not in ("grounded", "lookup"):
+        if basis not in RECALL_CREDIT_BASES:
             raise ValueError(f"unknown credit basis: {basis!r}")
         if credited_at is None:
             instant = _utc_now()
@@ -2091,24 +2165,123 @@ class MemoryStore:
             instant = _normalize_recall_history_instant(credited_at)
             if instant is None:
                 raise ValueError(f"unparsable credit instant: {credited_at!r}")
+        event_id, target = str(recall_event_id), str(node_id)
         with self._conn:
-            cursor = self._conn.execute(
-                f"""
-                INSERT OR IGNORE INTO {RECALL_CREDIT_LEDGER_TABLE} (
-                    recall_event_id, node_id, basis, source_id, credited_at
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (str(recall_event_id), str(node_id), basis, str(source_id), instant),
-            )
+            if basis == "explicit":
+                cursor = self._conn.execute(
+                    f"""
+                    INSERT OR IGNORE INTO {RECALL_EXPLICIT_CREDIT_TABLE} (
+                        recall_event_id, node_id, source_id, credited_at
+                    )
+                    SELECT ?, ?, ?, ?
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM {RECALL_CREDIT_LEDGER_TABLE}
+                        WHERE recall_event_id = ? AND node_id = ?
+                    )
+                    """,
+                    (event_id, target, str(source_id), instant, event_id, target),
+                )
+            else:
+                cursor = self._conn.execute(
+                    f"""
+                    INSERT OR IGNORE INTO {RECALL_CREDIT_LEDGER_TABLE} (
+                        recall_event_id, node_id, basis, source_id, credited_at
+                    )
+                    SELECT ?, ?, ?, ?, ?
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM {RECALL_EXPLICIT_CREDIT_TABLE}
+                        WHERE recall_event_id = ? AND node_id = ?
+                    )
+                    """,
+                    (event_id, target, basis, str(source_id), instant, event_id, target),
+                )
         return cursor.rowcount == 1
 
     def credited_node_ids(self, recall_event_id: str) -> set[str]:
-        """Node ids whose credit for one recall event has already been spent."""
+        """Node ids whose credit for one recall event has already been spent,
+        under any basis (ledger and explicit side table)."""
 
         rows = self._conn.execute(
             f"""
             SELECT node_id FROM {RECALL_CREDIT_LEDGER_TABLE}
             WHERE recall_event_id = ?
+            UNION
+            SELECT node_id FROM {RECALL_EXPLICIT_CREDIT_TABLE}
+            WHERE recall_event_id = ?
+            """,
+            (str(recall_event_id), str(recall_event_id)),
+        ).fetchall()
+        return {str(row["node_id"]) for row in rows}
+
+    # ------------------------------------------------------------------
+    # Explicit feedback marks (audit). See _RECALL_FEEDBACK_MARKS_SCHEMA_SQL.
+    # ------------------------------------------------------------------
+
+    def record_feedback_marks(self, marks: Sequence[Mapping[str, Any]]) -> list[int]:
+        """Append audit rows, one per mark, in one transaction; returns row ids.
+
+        Each mapping carries the table's columns except ``id``; ``marked_at``
+        defaults to the storage clock and ``recall_event_id``/``source_id`` to
+        ``''``.
+        """
+
+        ids: list[int] = []
+        if not marks:
+            return ids
+        now = _utc_now()
+        with self._conn:
+            for mark in marks:
+                rank = mark.get("rank")
+                cursor = self._conn.execute(
+                    f"""
+                    INSERT INTO {RECALL_FEEDBACK_MARKS_TABLE} (
+                        recall_event_id, node_id, mark, accepted, reject_reason,
+                        via_tool, source_id, transport_session_id, agent, rank,
+                        marked_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(mark.get("recall_event_id") or ""),
+                        str(mark.get("node_id") or ""),
+                        str(mark["mark"]),
+                        1 if mark.get("accepted") else 0,
+                        _optional_str(mark.get("reject_reason")),
+                        str(mark.get("via_tool") or ""),
+                        str(mark.get("source_id") or ""),
+                        _optional_str(mark.get("transport_session_id")),
+                        _optional_str(mark.get("agent")),
+                        None if rank is None else int(rank),
+                        str(mark.get("marked_at") or now),
+                    ),
+                )
+                ids.append(int(cursor.lastrowid))
+        return ids
+
+    def set_feedback_marks_source(self, mark_ids: Iterable[int], source_id: str) -> None:
+        """Fill ``source_id`` on marks recorded before their carrier existed.
+
+        memory_recall and memory_teach record marks before the recall event /
+        corrective trace that carried them is written (a mark must be
+        resolved against *earlier* deliveries and must precede implicit
+        feedback), then stamp the id here.
+        """
+
+        ids = [int(mark_id) for mark_id in mark_ids]
+        if not ids or not source_id:
+            return
+        with self._conn:
+            self._conn.executemany(
+                f"UPDATE {RECALL_FEEDBACK_MARKS_TABLE} SET source_id = ? WHERE id = ?",
+                [(str(source_id), mark_id) for mark_id in ids],
+            )
+
+    def irrelevant_marked_node_ids(self, recall_event_id: str) -> set[str]:
+        """Nodes an accepted ``irrelevant`` mark names for one recall event."""
+
+        rows = self._conn.execute(
+            f"""
+            SELECT DISTINCT node_id FROM {RECALL_FEEDBACK_MARKS_TABLE}
+            WHERE recall_event_id = ? AND mark = 'irrelevant' AND accepted = 1
             """,
             (str(recall_event_id),),
         ).fetchall()
@@ -4728,6 +4901,10 @@ class MemoryStore:
             # Recall credit ledger. Additive and created the same way, on
             # every open; see the note on _RECALL_CREDIT_LEDGER_SCHEMA_SQL.
             self._conn.executescript(_RECALL_CREDIT_LEDGER_SCHEMA_SQL)
+            # Explicit credit and the explicit-mark audit: additive and
+            # created the same way; see the notes on the two DDL strings.
+            self._conn.executescript(_RECALL_EXPLICIT_CREDIT_SCHEMA_SQL)
+            self._conn.executescript(_RECALL_FEEDBACK_MARKS_SCHEMA_SQL)
             # Frozen relevance history. The schema is additive; the
             # idempotent reconstruction below is what populates it for a live
             # database whose recall_events predate this release.

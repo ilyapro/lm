@@ -1,0 +1,139 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:10:49.000000Z",
+      "id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "n_results": 8,
+      "query": "shared-hunt e2e.js Торн/Каэль failure dmgBy first frame root replan object-successors",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:04.000000Z",
+      "id": "01M3HCD9GHXPF36S06QR1GW459",
+      "n_results": 3,
+      "query": "shared-hunt-e2e-prerequisite 6d9a5cb9 object-successors depend root replan",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:10:52.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:11:04.000000Z",
+      "node_id": "01M3EYQCR1QWPCGWVN2AMDCWK8",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HCD9GHXPF36S06QR1GW459",
+      "transport": "f426abd6f548487aa7300fbaeced9595",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "id": "2",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:11:04.000000Z",
+      "node_id": "01M3F3GDTJKM3ZDAPGP5Z9ZZ43",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HCD9GHXPF36S06QR1GW459",
+      "transport": "f426abd6f548487aa7300fbaeced9595",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "id": "3",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:11:04.000000Z",
+      "node_id": "01M3EYQN280WEDWNJ0DP4YJ0EW",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HCD9GHXPF36S06QR1GW459",
+      "transport": "f426abd6f548487aa7300fbaeced9595",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "id": "4",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:11:04.000000Z",
+      "node_id": "01M3F0XA9AQ7SWDMP78MSXTY79",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HCD9GHXPF36S06QR1GW459",
+      "transport": "f426abd6f548487aa7300fbaeced9595",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "id": "5",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:04.000000Z",
+      "node_id": "01M3BKPHBS07DPJ7VFZE43A8G6",
+      "rank": 4,
+      "reject_reason": null,
+      "source_id": "01M3HCD9GHXPF36S06QR1GW459",
+      "transport": "f426abd6f548487aa7300fbaeced9595",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "id": "6",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:04.000000Z",
+      "node_id": "01M3AM7E0PH9BT4XCMNX4C56P2",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HCD9GHXPF36S06QR1GW459",
+      "transport": "f426abd6f548487aa7300fbaeced9595",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "id": "7",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:04.000000Z",
+      "node_id": "01M204GM9YE8KKCZBBEVT88QTD",
+      "rank": 6,
+      "reject_reason": null,
+      "source_id": "01M3HCD9GHXPF36S06QR1GW459",
+      "transport": "f426abd6f548487aa7300fbaeced9595",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCCV3DTJG6QRHPXQD34R8X",
+      "id": "8",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:04.000000Z",
+      "node_id": "01M16S6ND23T91M7BFF82CM1RT",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HCD9GHXPF36S06QR1GW459",
+      "transport": "f426abd6f548487aa7300fbaeced9595",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 2
+  }
+}

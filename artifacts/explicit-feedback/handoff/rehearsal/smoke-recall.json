@@ -1,0 +1,25 @@
+{
+  "url": "http://127.0.0.1:18899/mcp/",
+  "checks": {
+    "four_tools": true,
+    "optional_used_irrelevant_fields": true,
+    "recall_returned_results": true,
+    "used_mark_accepted": true,
+    "foreign_id_dropped": true
+  },
+  "optional_fields": {
+    "memory_recall": true,
+    "memory_remember": true,
+    "memory_teach": true
+  },
+  "recall_event_id": "01M3HE81M2M67JZZHDFB6GT7JS",
+  "marked_used": "01M3H92VSK039WXQBY99GEK8MB",
+  "feedback_marks": {
+    "accepted": 1,
+    "dropped": 1,
+    "by_reason": {
+      "not_delivered": 1
+    }
+  },
+  "ok": true
+}

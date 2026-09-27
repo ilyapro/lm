@@ -1,0 +1,55 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:27:01.000000Z",
+      "id": "01M3HDAFKMTK35ZKN62TM0V13B",
+      "n_results": 8,
+      "query": "slot03 isolation-result tree-decision 20260924 installer capture cc68c15 admission common provenance",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:27:06.000000Z",
+      "id": "01M3HDAMWRZQWARFR0KZEZE5Q9",
+      "n_results": 5,
+      "query": "slot03 admission common provenance isolation-result cc68c15 acceptance native landing",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:27:03.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAFKMTK35ZKN62TM0V13B",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:27:06.000000Z",
+      "node_id": "01M399RDEXD0AQ7QAEZQVYHE4F",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HDAMWRZQWARFR0KZEZE5Q9",
+      "transport": "ca381af417a84638bcf69a2180788f91",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAFKMTK35ZKN62TM0V13B",
+      "id": "2",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:27:06.000000Z",
+      "node_id": "01M39A76VYS47G2BNPN5212GA8",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HDAMWRZQWARFR0KZEZE5Q9",
+      "transport": "ca381af417a84638bcf69a2180788f91",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 2
+  }
+}

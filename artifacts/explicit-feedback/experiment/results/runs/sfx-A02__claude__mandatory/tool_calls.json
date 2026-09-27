@@ -1,0 +1,66 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "lm_instance.py seeded_clusters compose_seeded_tail Memory nearby tail",
+      "scope": "project:lm"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KZZP1SX23K3R98WAC74A4M74",
+        "01KZZ8GAD9KCQQA3WWX3VGRVVB",
+        "01M0FCG21BDV1CQQ64AXB9SNBP",
+        "01KS7994YXH7W2CS67PCKH32SX",
+        "01KRV5ZNWH2SC475CSJYVDAA5D",
+        "01KRV5YJAJV34HPTTZV2C5FRZW",
+        "01KTTTQE0QN5E8RA6PSM3RMZD1",
+        "01KS2P69NR1NWTQF16BRKMXHM2"
+      ],
+      "max_results": 8,
+      "query": "seeded clusters \"Memory nearby\" tail hook lm_instance"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M0DM7796NKYJTRZWQX7W9VWB",
+        "01KRXCXKTB9HH5EJWYDBSNKPYA",
+        "01M0FCG22MM48QG5D2GNDCDKGP",
+        "01KZZ8GAC3DWRS2CA0ZJYP1AGX"
+      ],
+      "max_results": 8,
+      "query": "compose_seeded_tail hook prompt injection nearby memory seeded recall_map clusters",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M23Z9SJ6YWAK3WW9GAW96R2G"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KRXD205FDK4NBPWC53C648VD",
+        "01M36YFQY01RA97WZXY2XYFR2G",
+        "01M36W0Q0AK1HRTPBZ5KXP1WY6",
+        "01KS1NFG37P1EQ4V8J4R2M91MA",
+        "01M0NPMQMJGP44HQJE0MWXZTXC",
+        "01M2QZMP9K25RQ3Q44ZPV2D4C7",
+        "01M378EKYDKHC0DWJ9N6Y5M17M"
+      ],
+      "max_results": 6,
+      "query": "midwork_bench harness-v6 lm_instance seeded_clusters recall history seed store",
+      "used": [
+        "01M23Z9SJ6YWAK3WW9GAW96R2G"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

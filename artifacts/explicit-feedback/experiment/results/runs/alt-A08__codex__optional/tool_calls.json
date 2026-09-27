@@ -1,0 +1,62 @@
+[
+  {
+    "error": null,
+    "input": {
+      "depth": "causal",
+      "max_results": 8,
+      "query": "slot13 causal-history-reachability causal-role verify historical membership pause continuation",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M21KA1MKQQDNEFQY0HC517CM",
+        "01M1ZG96PF8P791YA6JC1HEZGC"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "slot13 \"causal-history-reachability\" pause continuation",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:game",
+      "task_pattern": "causal-history-reachability"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "slot13 causal pause continuation verify.mjs",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:game",
+      "task_pattern": "slot13"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

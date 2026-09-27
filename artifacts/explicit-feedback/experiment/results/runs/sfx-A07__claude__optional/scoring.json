@@ -1,0 +1,26 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:28:24.000000Z",
+      "id": "01M3HDD19QXMJKMEBNGYMHHKFH",
+      "n_results": 8,
+      "query": "Online inventory §10.10 featureAgents agents2020 49b396b local experiments published configuration ba/processes.yaml ai_agents",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:28.000000Z",
+      "id": "01M3HDD4SB7EADYWS120J76B9M",
+      "n_results": 8,
+      "query": "featureAgents agents2020 inventory ai_agents processes.yaml chat conditions",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:28:30.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 2
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:15:41.000000Z",
+      "id": "01M3HCNQTHT9WC13ABCRZ56Z4P",
+      "n_results": 10,
+      "query": "WebAPI region/list geocoder документация 504012804 627113888 проверка endpoint_uri responses backup HA DR Scala",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:17:51.000000Z",
+      "id": "01M3HCSPEKXJ2D4NPADKH4R4CT",
+      "n_results": 10,
+      "query": "SEAF WebAPI region/list geocoder endpoint_uri responses backup HA DR",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:18:00.000000Z",
+      "id": "01M3HCSZKCM4AMZ4HX7BC108T1",
+      "n_results": 8,
+      "query": "627113888 region/list geocoder Scala endpoint_uri responses",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:17:53.000000Z",
+    "2026-09-27T12:18:03.000000Z",
+    "2026-09-27T12:18:03.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 3
+  }
+}

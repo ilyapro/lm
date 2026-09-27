@@ -1,0 +1,24 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:20:39.000000Z",
+      "id": "01M3HCYTZ094R9RH7KY1PH94S0",
+      "n_results": 8,
+      "query": "simplify-rating-consumers",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:20:43.000000Z",
+      "id": "01M3HCYYFAMF1JKTXVJWEDTZ2W",
+      "n_results": 6,
+      "query": "simplify-rating-consumers useCachedConfirmedRating bd8d59ed44",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 2
+  }
+}

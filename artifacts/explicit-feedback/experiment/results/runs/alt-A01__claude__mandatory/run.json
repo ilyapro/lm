@@ -1,0 +1,47 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 19.0,
+  "ended_at": "2026-09-27T12:19:42Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 2,
+    "recall_feedback_marks": 5,
+    "recall_lookup_events": 1
+  },
+  "final_text": "Memory has an answer. Everything below comes from `project:ae` traces dated 2026-09-08 and 2026-09-09.\n\n- **The problem at 4311caaf:** the `gate-dependency-preparation` retry at this commit hit the same sidecar publication blocker as `npm-candidate-preservation`. The required `tests/test_gate_dependency_preparation.sh` generates `tests/test_gate_dependency_preparation.sh.src.sha256`, and that file was outside both leaf ownership and the `generated_create_only` grants (consolidated node 01M21H3A1YKXAHJP2ZH9MHHH9N).\n- **The successor `gate-dependencies-published` passes that check:** the unchanged native publisher accepted the new node's exact frozen baseline and authority. They were copied, with the acceptance, typed contract and ancestry, into disposable metadata. Against the execution worktree it created only that `.src.sha256` sidecar. Publish → capture → 23 caller scenarios → verify kept the candidate digest the same, and the original baseline, evidence and contract files were byte-identical afterwards (trace 01M21BSQ8NF2ZCBFNG4HM0RKN0).\n- **Limits of that check:** it used installer doubles, so it does not cover the real npm lifecycle and is not a native completion receipt. The runtime still has to do its own publication, acceptance and binding.\n- **Ownership:** `gate-dependencies-published` owns the dependency preparation in `gate.sh` plus `tests/test_gate_dependency_preparation.sh`. `npm-candidate-published` owns `queue.sh`, and `dependency-lifecycle-regression` owns the `test.sh` registration. Don't add cross-root `depends_on` links between them (01M21C1ZXG3S006PRQ1W0A8KVJ).\n- **Later, 2026-09-09:** at HEAD e26cf1c4, all 26 `test_gate_dependency_preparation` cases passed with npm 11.16.0. That is still separate from the full provenance lifecycle acceptance (01M238F1FERJV1VTP565A1HN82).",
+  "first_input_tokens": 8845,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:19:22Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 4,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18800,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "alt-A01__claude__mandatory",
+  "scoring": {
+    "marks": 5,
+    "observations": 13
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:19:16Z",
+  "stderr_foreign_urls": null,
+  "store": "alt",
+  "task_id": "alt-A01",
+  "timed_out": false,
+  "tokens_in": 44460,
+  "tokens_out": 1339,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

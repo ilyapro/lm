@@ -1,0 +1,69 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "goal tree node decompose SUBGOALS pitfalls acceptance checks worktree evidence roots artifacts manifest",
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M2QZMP9K25RQ3Q44ZPV2D4C7",
+        "01M2ZGZWS56JKYDHPGE1EBR5YF",
+        "01M2RJ1B4JP7WNAGCEXNTT905D",
+        "01M2ZGXXD3H7X422YC4JERCMZJ",
+        "01KSDFXJ2TKCP3NB3KTKRD4S3X",
+        "01M36VGK6RGKB7PWC7AQ2VVV00",
+        "01M377RMKW6A5KQM2DATW7VYFM"
+      ],
+      "max_results": 10,
+      "query": "decompose node into SUBGOALS: acceptance checks, evidence roots, artifacts manifest, worktree",
+      "used": [
+        "01M24JKYXPSXKXWH230SK9TEYP",
+        "01KS8AK8YZ197HHF837G1NQDF9",
+        "01M0R91PV9PX4WABQZGQB2HDYB"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01KRYE0FN5DBXA7AWEM36Z6ER5",
+        "01KS19VRJHJN46ZSPZ01VFY0YH",
+        "01KS8AK8YZ197HHF837G1NQDF9",
+        "01KS1F65QGM77HDR3XNKZ9N0F4"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KZ9PG1JX7W2JXF6PDYJ638M0",
+        "01KS11Q1ZASTFGJ3MFZ7THP1Z2",
+        "01KS1F65QGM77HDR3XNKZ9N0F4",
+        "01M2RHGP1VXCWQFN1XEPGPMHQK",
+        "01M36VZXETV8HGBG20Y5WG418H",
+        "01KS1VAHKBM0SFJVNA1XPVTH38"
+      ],
+      "max_results": 8,
+      "query": "SUBGOALS block evidence_roots artifacts manifest decomposition validator pitfall",
+      "used": [
+        "01M370KSSJESX0HS6WPKKQG6V0",
+        "01KRYE0FN5DBXA7AWEM36Z6ER5",
+        "01KS19VRJHJN46ZSPZ01VFY0YH",
+        "01KS8AK8YZ197HHF837G1NQDF9"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

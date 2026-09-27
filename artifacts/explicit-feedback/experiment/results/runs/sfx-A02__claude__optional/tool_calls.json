@@ -1,0 +1,37 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "lm_instance.py seeded_clusters compose_seeded_tail Memory nearby tail",
+      "scope": "project:lm"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "seeded clusters \"Memory nearby\" tail appended to recall output, compose tail"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "lm_instance.py experiment harness seeded memory instance"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M23Z9SJ6YWAK3WW9GAW96R2G"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "midwork_bench harness-v6 _seed_store recall history seeded_clusters Memory nearby tail non-empty"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

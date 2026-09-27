@@ -1,0 +1,56 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "gigacode.ru connect timeout proxy VPN required reachability ai-llm-proxy provider proxy setting"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "gigacode.ru unreachable without VPN connect timeout provider proxy"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M28TF2Z879QBJ3BZSEF6CZ1Y"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "depth": "causal",
+      "max_results": 8,
+      "query": "ai-llm-proxy gigacode provider proxy setting timeout"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "gigacode недоступен без VPN прокси провайдера таймаут подключения",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M218Q87NM6WQ4E9ZPAA360J0",
+        "01M2G1XGB58CFAHBW3BNFS6X8T",
+        "01KZS666YJBWHEH5FPDPWTTQ1T"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "gigacode.ru connect timeout from sfx host requires proxy; provider proxy URL setting dashboard",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

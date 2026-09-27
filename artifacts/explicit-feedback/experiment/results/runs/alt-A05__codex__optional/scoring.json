@@ -1,0 +1,68 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:03:02.000000Z",
+      "id": "01M3HBYJZSZD7XAEKJGAEBB2MW",
+      "n_results": 8,
+      "query": "Noctifer acquisition final receipt normalize quarantine publication null performed false Nimbara final receipt location",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:03:11.000000Z",
+      "id": "01M3HBYVDBC03K1NCXPZGEVAKA",
+      "n_results": 6,
+      "query": "Noctifer",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:03:17.000000Z",
+      "id": "01M3HBZ0XRGKDPZSZ51BJT4F7Z",
+      "n_results": 6,
+      "query": "Nimbara",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:03:27.000000Z",
+      "id": "01M3HBZAWXK1HZ8Z2KCC26SSS0",
+      "n_results": 5,
+      "query": "Noctifer Nimbara acquisition final receipt",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:03:31.000000Z",
+      "id": "01M3HBZFC48VT4Q1TX6BX6TJWH",
+      "n_results": 5,
+      "query": "\"publication\" \"performed\" \"normalize\" receipt quarantine",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:03:42.000000Z",
+      "id": "01M3HBZSRSTGVT1Q4M2E8KVXGJ",
+      "n_results": 8,
+      "query": "Noctifer acquisition final receipt normalize quarantine publication null performed false Nimbara final receipt location",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:03:55.000000Z",
+      "id": "01M3HC06Q1K39CG5ARTDBVV32P",
+      "n_results": 6,
+      "query": "Noctifer normalize publication null performed false final receipt rebind",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:04:04.000000Z",
+      "id": "01M3HC0FD166TKC702XFXQVWDE",
+      "n_results": 4,
+      "query": "Noctifer publication performed normalization acquisition",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:03:42.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 8
+  }
+}

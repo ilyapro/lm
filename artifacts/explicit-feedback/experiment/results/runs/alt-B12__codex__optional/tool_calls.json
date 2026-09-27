@@ -1,0 +1,117 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 10,
+      "query": "slot07 bounds-lod-measurements-v3 lifecycle_snapshot_changed c01fd4bd verify self-test origin-v5"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "slot07",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "bounds-lod-measurements-v3",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "c01fd4bd lifecycle_snapshot_changed origin-v5",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 4,
+      "query": "\"c01fd4bd\""
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 4,
+      "query": "\"lifecycle_snapshot_changed\""
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 4,
+      "query": "slot07 bounds-lod-measurements-v3 verify self-test"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:game",
+      "task_pattern": "bounds-lod"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "slot07 lifecycle_snapshot_changed bounds",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 3,
+      "query": "c01fd4bd",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 3,
+      "query": "slot07 bounds lod measurements retry",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 3,
+      "query": "bounds-lod-measurements-v3 origin-v5",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

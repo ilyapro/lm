@@ -1,0 +1,47 @@
+{
+  "agent": "codex",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 42.6,
+  "ended_at": "2026-09-27T12:21:08Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 0,
+    "recall_events": 2,
+    "recall_feedback_marks": 11,
+    "recall_lookup_events": 0
+  },
+  "final_text": "Found in Living Memory, scope `project:online`, under `EZ-14287-fix-branch-review/simplify-rating-consumers`.\n- At `bd8d59ed44`, `{is_rating_confirmed:true,rating:null}` hid MiniBranch’s badge but still showed confirmation in Header and ReviewsTab.\n- Relevant tests: `header/index.spec.tsx:240`, `defaultBranchReviews.spec.tsx:206,301`; three strengthened Header/App checks exposed the mismatch.\n- Required invariant: use the presence of `confirmedRating` for visual confirmation; preserve Catalog fallback and the feature hook’s public `isRatingConfirmed` semantics. No new shared wrapper needed.\n- Simplification must remove independent mechanisms, assessed against `master` and `99b0108b`, with fresh functional/browser checks.\n- Keep `confirmedRating` explicit in `useFormatter` inputs: shallow memoization otherwise misses updates when entity/item/marker identity stays unchanged.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:20:26Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18801,
+  "provider_error": false,
+  "ready_s": 8.1,
+  "run_id": "sfx-B12__codex__mandatory",
+  "scoring": {
+    "marks": 11,
+    "observations": 11
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:20:17Z",
+  "stderr_foreign_urls": [],
+  "store": "sfx",
+  "task_id": "sfx-B12",
+  "timed_out": false,
+  "tokens_in": 109872,
+  "tokens_out": 673,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

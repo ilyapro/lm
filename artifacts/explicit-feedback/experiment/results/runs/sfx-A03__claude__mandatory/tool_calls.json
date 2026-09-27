@@ -1,0 +1,30 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "миграции схемы живой базы при рестарте сервера памяти",
+      "scope": "project:living-memory"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KZK1V6KVRAFPXKG3XVYEV2EH",
+        "01M0FYE479BMNCTVXDZRXG1SGD",
+        "01M0BG3KBETWQC01ASW44EV2S9",
+        "01M1XAK64FVTSSYSEMZ4GX4RPX",
+        "01M0WDHPYHCZVESG5E9J4XC687",
+        "01M1W9YQWMTF2ES8N03RGJCA9E",
+        "01M0WDPXQAA7QRQBCS2BTAJM7Q"
+      ],
+      "max_results": 6,
+      "query": "schema_version migration storage.py transport_session_id column startup additive DDL backup",
+      "scope": "project:living-memory",
+      "used": [
+        "01M1XB259YR4MJB3C690V0DN0R"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

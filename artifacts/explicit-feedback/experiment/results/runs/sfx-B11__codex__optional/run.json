@@ -1,0 +1,48 @@
+{
+  "agent": "codex",
+  "arm": "optional",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 139.6,
+  "ended_at": "2026-09-27T12:24:36Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 3,
+    "recall_feedback_marks": 0,
+    "recall_lookup_events": 1
+  },
+  "final_text": "`public/docs/auth2_api_v2_1.yml` and its auth2 OpenAPI contents: **not found** in Living Memory.\nRelated facts recovered from `project:online`:\n- As of 2026-09-08, the SEAF target was `archascode/2gis-seaf/2gis-seaf-web`, GitLab project **14280**.\n- Online, ID and satellites belong under `architecture/online`; shared dependencies under `architecture/externals`.\n- ID is linked to source repository `webdev/id.2gis.com`.\n- Online’s external API URL configuration is `packages/desktop/src/shared/config/api/index.ts`, overridden by `DESKTOP_*` / `SEO_*` variables.\nThese records do not establish the source repository, version or endpoints of the requested auth2 specification.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:22:16Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "8afc5d057efb8374f46b75e93f9191f821d490e4b6b32e646cd0af6ad61d6cbe",
+  "port": 18801,
+  "provider_error": false,
+  "ready_s": 12.4,
+  "run_id": "sfx-B11__codex__optional",
+  "scoring": {
+    "marks": 0,
+    "observations": 16
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:22:04Z",
+  "stderr_foreign_urls": [],
+  "store": "sfx",
+  "task_id": "sfx-B11",
+  "timed_out": false,
+  "tokens_in": 171053,
+  "tokens_out": 619,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

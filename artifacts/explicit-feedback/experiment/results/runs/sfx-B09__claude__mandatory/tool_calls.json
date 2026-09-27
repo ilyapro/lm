@@ -1,0 +1,98 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "gigacode raw model endpoint ai-llm-proxy api auth DeepSeek thinking protocol"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KRV5XXNNFK38D17WFM1RN1A2",
+        "01KRV5XGVDVSK4E10S7JC282HB",
+        "01KRWY22N3VBG5FA2AC3DE7S4T",
+        "01KZZ8PKS1CF0K70153MG7XSW7",
+        "01KRX1PCY1AACJVPF7ANR5TMA5",
+        "01KRV5ZNWH2SC475CSJYVDAA5D",
+        "01KZYRW9S80TGC4A7V31ZWR842",
+        "01KS787AWG159K8N2V8FGG503V"
+      ],
+      "max_results": 8,
+      "query": "gigacode ai-llm-proxy DeepSeek reasoning_content thinking"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "LLM proxy endpoint API key authentication model name gigacode"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KZK0KHKAF78VP85VY808TB06",
+        "01KZYWBDKC3V2KJ9P437Y4EKRC",
+        "01KS2P69NR1NWTQF16BRKMXHM2",
+        "01KS7994YXH7W2CS67PCKH32SX",
+        "01KZYTQD6HC9KQ1NVTPQYQ2EB3",
+        "01KZYTJ1D4R3Y4JNP13YWS6W8D",
+        "01KZYTQD5FW9Y7GT59RK0EGQTF",
+        "01KY701BTNF59N5W9JW3HT57M0",
+        "01KRX0XDFHQH4YEB3E83QNEWF1",
+        "01KZYJR03Q60SZHV92FADQBCCJ",
+        "01M0009V4YHDMX5GQBVN35E722"
+      ],
+      "max_results": 8,
+      "query": "GigaCode DeepSeek модель прокси OpenAI-compatible chat completions"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M11HWJG0RKK79PA13QGG5PCD",
+        "01M3FP1Q7GPH2F7DMRJV0KPDXZ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KZKD57AW8HFQZ6ZPK7RGRBPR",
+        "01KZJWN73H8Q6V22GHC5784PH8",
+        "01M2KPNHTW8VJNGR9YRYG08WTY",
+        "01M1PRYXB9HET8PFGNC7DCKVW3"
+      ],
+      "max_results": 6,
+      "query": "ai-llm-proxy DeepSeek thinking protocol reasoning raw endpoint",
+      "used": [
+        "01KZ9Y5N4E8RBD2FZAV9STAT51",
+        "01M11HWJG0RKK79PA13QGG5PCD",
+        "01M3FP1Q7GPH2F7DMRJV0KPDXZ",
+        "01M26KYPWXNS8AHM8YJM423RY4"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01KZ8RJEMR7CQ22E75Q5K0VW89"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01KZYTQD7JSH5Q2G6HVTKFA34R",
+        "01KZZ8GAC3DWRS2CA0ZJYP1AGX"
+      ],
+      "max_results": 6,
+      "query": "DeepSeek thinking mode reasoning_content must be passed back tool calls 400 error"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

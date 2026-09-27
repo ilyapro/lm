@@ -1,0 +1,160 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "slot07 bounds-lod-measurements-v3 lifecycle_snapshot_changed c01fd4bd verify self-test origin-v5"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1QKKGXZEF0RTAGP2XMPQ8JS",
+        "01M1QM03VMKMAKD0CSVZ3E7RSV",
+        "01M1VA80TNA8YPEWG76BS06JRR",
+        "01M1QMBAJQG45A3E9X814H23JT",
+        "01M1KX377FFB0KDT865J8S81T1",
+        "01M1P0J0Y9KRN8QGT4SZYK1D80",
+        "01M1J60R344NE0XVV927T2QJ0H",
+        "01M1Q2D7XCN7DJC8G66QY16N08"
+      ],
+      "max_results": 6,
+      "query": "\"slot07\" \"bounds-lod-measurements-v3\" \"c01fd4bd\"",
+      "scope": "project:game",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1JWNZCAD4ATB2XBT7QYXZDT",
+        "01M11SFRMWH77GWFDS8HRJVKHD",
+        "01M1JBJ2N5W46K6D93XY1JVDR5",
+        "01M11T5HREXJFEN6EBHKV4R8RM",
+        "01KZDZ2RFMH2FFPYDT6YJDK2NA",
+        "01M3A276C7GAB81BMJ290QM9E0"
+      ],
+      "max_results": 5,
+      "query": "lifecycle_snapshot_changed",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M23ZZ0G0EQDR6AYRD84FWRXE",
+        "01M24F43FM0VHV0CWM95R88Q89",
+        "01M24A8YKJR43K96Z02JHA0Y1T",
+        "01M24CW0MWBAH3JK15ZJ56S7C0",
+        "01M249PV0KZ2EBWWVQJF1ESSEA"
+      ],
+      "max_results": 10,
+      "query": "slot07 bounds-lod-measurements-v3 origin-v5",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:game",
+      "task_pattern": "bounds-lod"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M3A276C7GAB81BMJ290QM9E0"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1QM03VMKMAKD0CSVZ3E7RSV",
+        "01M1QKKGXZEF0RTAGP2XMPQ8JS",
+        "01M1JWM8HD32M5H0QPK35YMT9J",
+        "01M1Q2D7XCN7DJC8G66QY16N08",
+        "01M1P0J0Y9KRN8QGT4SZYK1D80",
+        "01M1H5457M3B3BMDER403KBCGW",
+        "01M1P42AKC8RMA4FDS517ES0MW",
+        "01KYT0KYJEWA7KE8Q9GB1WC91Z",
+        "01KYSSXDXXFPV3Y7B6WXVR04HD",
+        "01M1HE5GAM1Z3HPAZ6Y236HWF3"
+      ],
+      "max_results": 3,
+      "query": "c01fd4bd",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:game",
+      "task_pattern": "%slot07%"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M15B66YA0BC631B6MKG04D2S",
+        "01M1H2BBAHSSGDF1HBK1VBY8KE",
+        "01M1H5457M3B3BMDER403KBCGW"
+      ],
+      "max_results": 3,
+      "query": "bounds-lod-measurements-v3",
+      "scope": "project:game",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M11SFRMWH77GWFDS8HRJVKHD",
+        "01KZS0S0ZMWY1C866040R4GH7G"
+      ],
+      "max_results": 12,
+      "query": "slot07",
+      "scope": "project:game",
+      "used": [
+        "01M3BQ96K0J634HMVTTRBR54G9"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M39YTQ6WDMNT80F1XDSNQKC9",
+        "01M39KRGB63H0PYZWQDBZNAWW6",
+        "01M3BQ96K0J634HMVTTRBR54G9"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

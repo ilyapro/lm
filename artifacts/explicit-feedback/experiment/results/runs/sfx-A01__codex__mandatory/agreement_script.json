@@ -1,0 +1,342 @@
+{
+  "host": "sfx-A01__codex__mandatory",
+  "db": "/home/sfx/.cache/efx_exp/runs/sfx-A01__codex__mandatory/store.sqlite3",
+  "since": "2026-09-27T12:27:59Z",
+  "generated_at": "2026-09-27T12:29:48Z",
+  "method": {
+    "min_containment": 0.22,
+    "twin_band": 0.01,
+    "memory": "01M3H76JBHEZKJMBPWFVN70SB2",
+    "ab_exclusion": "whole transport sessions with an A/B marker (scope project:target|repo|x, tree-context-ab/fixture/project=target in node context, or A/B-like recall query)"
+  },
+  "counts": {
+    "events": 6,
+    "excluded_ab_events": 0,
+    "ab_sessions": 2818,
+    "delivered_pairs": 31
+  },
+  "reference": {
+    "r1": {
+      "n": 0,
+      "grounded_rate": null,
+      "twin_rate": null,
+      "excess": null,
+      "excess_ci95": [
+        null,
+        null
+      ],
+      "grounded_rate_query_stripped": null,
+      "twin_rate_query_stripped": null,
+      "excess_query_stripped": null,
+      "excess_query_stripped_ci95": [
+        null,
+        null
+      ]
+    },
+    "top3": {
+      "n": 0,
+      "grounded_rate": null,
+      "twin_rate": null,
+      "excess": null,
+      "excess_ci95": [
+        null,
+        null
+      ],
+      "grounded_rate_query_stripped": null,
+      "twin_rate_query_stripped": null,
+      "excess_query_stripped": null,
+      "excess_query_stripped_ci95": [
+        null,
+        null
+      ]
+    },
+    "r1_lookup_rate": 0.0,
+    "top3_lookup_rate": 0.05555555555555555,
+    "r1_by_cos_trace": {
+      "<0.5": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null
+      },
+      "0.5-0.7": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null
+      },
+      ">=0.7": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null
+      }
+    }
+  },
+  "reference_by_agent": {
+    "unknown": {
+      "events": 6,
+      "r1": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null
+      },
+      "top3": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null
+      },
+      "r1_lookup_rate": 0.0
+    }
+  },
+  "marks": {
+    "status": "marks",
+    "total": 28,
+    "accepted": 28,
+    "rejected": 0,
+    "reject_reasons": {},
+    "scored_in_window": 28,
+    "outside_window_or_ab": 0,
+    "by_mark": {
+      "used": 4,
+      "irrelevant": 24
+    }
+  },
+  "classes": {
+    "used": {
+      "n": 4,
+      "events": 2,
+      "lookup_rate": 0.25,
+      "evidence_rate": 0.25,
+      "placebo_subtracted_evidence_excess": 0.25,
+      "placebo_subtracted_evidence_excess_ci95": [
+        0.0,
+        1.0
+      ],
+      "grounded": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null,
+        "excess_ci95": [
+          null,
+          null
+        ],
+        "grounded_rate_query_stripped": null,
+        "twin_rate_query_stripped": null,
+        "excess_query_stripped": null,
+        "excess_query_stripped_ci95": [
+          null,
+          null
+        ]
+      }
+    },
+    "irrelevant": {
+      "n": 24,
+      "events": 5,
+      "lookup_rate": 0.0,
+      "evidence_rate": 0.0,
+      "placebo_subtracted_evidence_excess": 0.0,
+      "placebo_subtracted_evidence_excess_ci95": [
+        0.0,
+        0.0
+      ],
+      "grounded": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null,
+        "excess_ci95": [
+          null,
+          null
+        ],
+        "grounded_rate_query_stripped": null,
+        "twin_rate_query_stripped": null,
+        "excess_query_stripped": null,
+        "excess_query_stripped_ci95": [
+          null,
+          null
+        ]
+      }
+    },
+    "unmarked": {
+      "n": 3,
+      "events": 1,
+      "lookup_rate": 0.0,
+      "evidence_rate": 0.0,
+      "placebo_subtracted_evidence_excess": 0.0,
+      "placebo_subtracted_evidence_excess_ci95": [
+        0.0,
+        0.0
+      ],
+      "grounded": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null,
+        "excess_ci95": [
+          null,
+          null
+        ],
+        "grounded_rate_query_stripped": null,
+        "twin_rate_query_stripped": null,
+        "excess_query_stripped": null,
+        "excess_query_stripped_ci95": [
+          null,
+          null
+        ]
+      }
+    },
+    "unmarked_in_marked_events": {
+      "n": 0,
+      "events": 0,
+      "lookup_rate": null,
+      "evidence_rate": null,
+      "placebo_subtracted_evidence_excess": null,
+      "placebo_subtracted_evidence_excess_ci95": [
+        null,
+        null
+      ],
+      "grounded": {
+        "n": 0,
+        "grounded_rate": null,
+        "twin_rate": null,
+        "excess": null,
+        "excess_ci95": [
+          null,
+          null
+        ],
+        "grounded_rate_query_stripped": null,
+        "twin_rate_query_stripped": null,
+        "excess_query_stripped": null,
+        "excess_query_stripped_ci95": [
+          null,
+          null
+        ]
+      }
+    }
+  },
+  "agreement": {
+    "used_minus_irrelevant_excess": 0.25,
+    "used_minus_irrelevant_excess_ci95": [
+      0.0,
+      1.0
+    ],
+    "auc_used_vs_irrelevant": 0.625,
+    "auc_used_vs_unmarked": 0.625,
+    "auc_score": "containment in closing trace (0 when unclosed) + 1.0 if looked up"
+  },
+  "falsifier": {
+    "test": "better_than_random: explicit `used` marks agree with the independent check better than random iff ALL hold: (a) at least 30 accepted `used` marks on at least 10 in-window recall events; (b) within-event permutation test: the number of `used`-marked nodes that carry evidence (grounded in the closing trace at containment >= 0.22 OR looked up on the same transport after delivery) is compared with 2000 draws in which each event's `used` marks are re-assigned uniformly at random to the same number of that event's delivered nodes; one-sided p = (1 + #draws >= observed) / (1 + 2000) must be < 0.05; (c) placebo-subtracted evidence excess of `used` marks, mean over marks of [evidence(n) - grounded(twin(n))], has an event-cluster bootstrap 95% CI (1000 rounds) whose lower bound is > 0. If (a) fails the verdict is `insufficient`; otherwise failing (b) or (c) is `fail` - the falsifier fires and marks are not connected to reinforcement.",
+    "used_marks": 4,
+    "used_events": 2,
+    "permutation": {
+      "events": 2,
+      "observed": 1,
+      "expected": 0.125,
+      "p_value": 0.12143928035982009
+    },
+    "placebo_subtracted_evidence_excess": 0.25,
+    "placebo_subtracted_evidence_excess_ci95": [
+      0.0,
+      1.0
+    ],
+    "better_than_random": "insufficient"
+  },
+  "ritual": {
+    "all_delivered_marked_used": {
+      "events": 5,
+      "hits": 0,
+      "share": 0.0,
+      "flagged": false
+    },
+    "rank1_only_marking": {
+      "events": 2,
+      "hits": 0,
+      "share": 0.0,
+      "flagged": false
+    },
+    "no_closing_work": {
+      "marks": 28,
+      "hits": 24,
+      "share": 0.8571428571428571,
+      "flagged": true
+    },
+    "session_duplicate_marked": {
+      "marks": 28,
+      "hits": 4,
+      "share": 0.14285714285714285,
+      "flagged": false
+    }
+  },
+  "marks_by_agent": {
+    "unknown": {
+      "marks": 28,
+      "used": {
+        "n": 4,
+        "events": 2,
+        "lookup_rate": 0.25,
+        "evidence_rate": 0.25,
+        "placebo_subtracted_evidence_excess": 0.25,
+        "placebo_subtracted_evidence_excess_ci95": [
+          0.0,
+          1.0
+        ],
+        "grounded": {
+          "n": 0,
+          "grounded_rate": null,
+          "twin_rate": null,
+          "excess": null,
+          "excess_ci95": [
+            null,
+            null
+          ],
+          "grounded_rate_query_stripped": null,
+          "twin_rate_query_stripped": null,
+          "excess_query_stripped": null,
+          "excess_query_stripped_ci95": [
+            null,
+            null
+          ]
+        }
+      },
+      "irrelevant": {
+        "n": 24,
+        "events": 5,
+        "lookup_rate": 0.0,
+        "evidence_rate": 0.0,
+        "placebo_subtracted_evidence_excess": 0.0,
+        "placebo_subtracted_evidence_excess_ci95": [
+          0.0,
+          0.0
+        ],
+        "grounded": {
+          "n": 0,
+          "grounded_rate": null,
+          "twin_rate": null,
+          "excess": null,
+          "excess_ci95": [
+            null,
+            null
+          ],
+          "grounded_rate_query_stripped": null,
+          "twin_rate_query_stripped": null,
+          "excess_query_stripped": null,
+          "excess_query_stripped_ci95": [
+            null,
+            null
+          ]
+        }
+      },
+      "falsifier": "insufficient",
+      "ritual": {
+        "all_delivered_marked_used": 0.0,
+        "rank1_only_marking": 0.0,
+        "no_closing_work": 0.8571428571428571,
+        "session_duplicate_marked": 0.14285714285714285
+      }
+    }
+  }
+}

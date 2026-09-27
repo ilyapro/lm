@@ -1,0 +1,42 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "Noctifer acquisition final receipt normalize quarantine publication null performed false Nimbara final receipt location",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M1XF606NMVFY0X1PHRQ6BA6V",
+        "01M1XHN8N1G5Y2GTFE210A2GTK",
+        "01M1XGPJ0ZYATVY5EZD8KBYCV0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1Y0JHZ2050Z82CJX48BFZYS",
+        "01M1FCQV0H1WQ74DP5RQH7ZGA5",
+        "01M1XZHNB61YHSG07FFAJWEMWN",
+        "01M1G1RSY7Z210JP761WTNJCSP"
+      ],
+      "max_results": 3,
+      "query": "Noctifer receipt publication null performed false normalize quarantine",
+      "scope": "project:game",
+      "used": [
+        "01M1XF606NMVFY0X1PHRQ6BA6V",
+        "01M1XF8RM3T7JWEZFVSJNW7JNT",
+        "01M1XHN8N1G5Y2GTFE210A2GTK",
+        "01M1XGPJ0ZYATVY5EZD8KBYCV0",
+        "01M1XE5EX41RNFSS3RGDREHTYN",
+        "01M1XEHDECWCAWDCKR6SJ7HRH3"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

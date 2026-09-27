@@ -1,0 +1,74 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "SEAF auth2 OpenAPI public/docs/auth2_api_v2_1.yml Online ID API source specs"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M0GAHEXDCW91TGCBP7CH2CGS",
+        "01M20WB1H4KDV1QKFN97H4PAXH",
+        "01M0G9YEWDBVGMXMRP6FA6E8F1",
+        "01KT9N1N1J24DNX7Q2MGAT8FTT",
+        "01KZV08ZZEQ111AXR2V4293AWY",
+        "01M2092QV2SSZTMSPTN0Z49YPX",
+        "01KZV00CK3D0D207R93YH3FK97"
+      ],
+      "max_results": 8,
+      "query": "auth2_api_v2_1.yml ID OpenAPI spec id.2gis.com public/docs",
+      "used": [
+        "01M208QJY4CAG9HPVXJRZZSR8T"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M1C77ST4VEJ5A4NDT2M64891",
+        "01M14DA5DH9H24AE98AJ1E3D6M",
+        "01M1E5RBDYEDJAJBTNQY0QPSH7"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M2JQX8S3JQ28EXWKYMKA1G46",
+        "01M20JA74H5WR70WS95QEBSJDE",
+        "01M1BK024002TGPHBNY2B91F5Z",
+        "01M0YPX5VVE0H7TZ85HMJ4Y6J0"
+      ],
+      "max_results": 6,
+      "query": "OpenAPI yml спецификация auth2 API источник для SEAF интеграций ID",
+      "used": [
+        "01M1C77ST4VEJ5A4NDT2M64891",
+        "01M14DA5DH9H24AE98AJ1E3D6M",
+        "01M1E5RBDYEDJAJBTNQY0QPSH7",
+        "01M20HZE4879Q74YQB67YY0NRJ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M34SWFBDKTKEP4SRWBS6ZW7B",
+        "01M215Q9NDP65TW1DC1QP4AEQ9",
+        "01M2KPNHTW8VJNGR9YRYG08WTY",
+        "01M3C8N1K53V0Q0WFMYPJWT5BJ",
+        "01M1C3E1EAQD4V9QDJ67F8PWDW",
+        "01M3795CF6X050YA25P1W6Q932"
+      ],
+      "max_results": 5,
+      "query": "auth2 api v2.1 yml swagger endpoints Online ID source",
+      "scope": "project:online",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

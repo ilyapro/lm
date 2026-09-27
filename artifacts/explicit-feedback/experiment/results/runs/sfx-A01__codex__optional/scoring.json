@@ -1,0 +1,92 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:28:16.000000Z",
+      "id": "01M3HDCS1FAFXG2ECTEEC9NQ4J",
+      "n_results": 8,
+      "query": "gigacode.ru connect timeout proxy VPN required reachability ai-llm-proxy provider proxy setting",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:20.000000Z",
+      "id": "01M3HDCX7X2C0J27ZQY8FJP8N2",
+      "n_results": 6,
+      "query": "gigacode timeout VPN proxy",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:23.000000Z",
+      "id": "01M3HDD0DF6XM9WYZBNW5X1M03",
+      "n_results": 5,
+      "query": "\"gigacode.ru\" \"timeout\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:30.000000Z",
+      "id": "01M3HDD6WZWK3P14T6CD4D1C55",
+      "n_results": 5,
+      "query": "ai-llm-proxy gigacode reachability connect timeout proxy setting",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:34.000000Z",
+      "id": "01M3HDDB8CTSDH0JQBH2RK9JA4",
+      "n_results": 8,
+      "query": "\"gigacode\" \"proxy\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:28:48.000000Z",
+      "id": "01M3HDDRSQQCVQY939RGSNBMCZ",
+      "n_results": 5,
+      "query": "gigacode.ru connect timeout VPN provider proxy",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:29:03.000000Z",
+      "id": "01M3HDE7118ZKNFBYBECKQPC4V",
+      "n_results": 3,
+      "query": "gigacode VPN required AE_PROVIDER_HTTP_PROXY",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:28:20.000000Z",
+    "2026-09-27T12:28:30.000000Z",
+    "2026-09-27T12:29:03.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDDRSQQCVQY939RGSNBMCZ",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:29:03.000000Z",
+      "node_id": "01M2FRVGG12TKRCEJFFS38Q6TP",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HDE7118ZKNFBYBECKQPC4V",
+      "transport": "9707843c1acf4200839dade6b92cf0fe",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDDRSQQCVQY939RGSNBMCZ",
+      "id": "2",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:29:03.000000Z",
+      "node_id": "01M2E6YT9YJ4XNWM52GECH75HM",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HDE7118ZKNFBYBECKQPC4V",
+      "transport": "9707843c1acf4200839dade6b92cf0fe",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 7
+  }
+}

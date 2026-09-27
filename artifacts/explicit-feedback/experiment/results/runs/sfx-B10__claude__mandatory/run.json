@@ -1,0 +1,53 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 71.6,
+  "ended_at": "2026-09-27T12:03:20Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 2,
+    "recall_events": 7,
+    "recall_feedback_marks": 59,
+    "recall_lookup_events": 2
+  },
+  "final_text": "I couldn't find the specific failure pitfalls. Nothing in memory mentions the generation-6 renderer, the \"fresh source proof\", worklib, exact anchors or a boreal route merge, and I searched both scope `project:ae` and global. What I did find is the surrounding midwork-bench generation-6 (tasks-v6) context:\n- **Design** (`tools/midwork_bench/tasks_v6/CONTRACT.md`, commit f75c202f5, trace 01M246SYC7T9WTH709HB7MAFWW): null packages become solvable through a second XOR-sealed DOSSIER in `checks/notice.py`, released at step `cue.step_index0+1`. `SEAL_HEX` and `DOSSIER_SEAL_HEX` must be padded to the same length, otherwise the blob length gives away whether a package is null or trap.\n- **Work floor**: 6 necessary edits + 12 chain steps = 18. The floor is raised by adding templated chain steps, not new edits, and a step that consumes nothing fails the depth_chain check. Target is about 38.875 tool calls, from a v5 realized/floor ratio of 2.13 (trace 01M23Y62EC1GHZSFQ58G6A69E3).\n- **Null/holdout rule**: sort the package ids within a split and mark index % 3 == 1 as null, so the blind holdout never has to be opened. In the train split that makes kestrel and pyrite null. The pyrite row must be `solvable_from_visible`, not `oracle_passes`.\n- **Seed store** (trace 01M23Z9SJ6YWAK3WW9GAW96R2G): `lm_instance.py::_seed_store` silently drops recall-history fields. That file belongs to harness-v6, so tasks-v6 must import `seeded_clusters` and `compose_seeded_tail` instead of editing it, and needs enough label diversity or `InstanceError` is raised.\n- **v5 cue pitfall** (trace 01M1VSTNEW3RQN36Y9YN4VXA5B): a pristine tree walks the whole chain and opens the cue seal once the gate is removed. A fault injection must never leave a literal in the workspace; store it base64-encoded.",
+  "first_input_tokens": 8848,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:02:08Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 10,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18803,
+  "provider_error": false,
+  "ready_s": 8.1,
+  "run_id": "sfx-B10__claude__mandatory",
+  "scoring": {
+    "marks": 59,
+    "observations": 70
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:02:00Z",
+  "stderr_foreign_urls": null,
+  "store": "sfx",
+  "task_id": "sfx-B10",
+  "timed_out": false,
+  "tokens_in": 356009,
+  "tokens_out": 3823,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

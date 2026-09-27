@@ -1,0 +1,33 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:23:59.000000Z",
+      "id": "01M3HD4YQWNFBTNBCMW6J62KRT",
+      "n_results": 8,
+      "query": "SEAF auth2 OpenAPI public/docs/auth2_api_v2_1.yml Online ID API source specs",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:24:13.000000Z",
+      "id": "01M3HD5C2072MNB9687ZDTTA0B",
+      "n_results": 5,
+      "query": "\"auth2\" \"auth2_api_v2_1.yml\" OpenAPI",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:24:26.000000Z",
+      "id": "01M3HD5RN7BSSJM61S97TW9S2Z",
+      "n_results": 3,
+      "query": "auth2_api_v2_1",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:24:13.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 3
+  }
+}

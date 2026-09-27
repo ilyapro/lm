@@ -1,0 +1,49 @@
+{
+  "agent": "codex",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 52.0,
+  "ended_at": "2026-09-27T12:13:28Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 4,
+    "recall_feedback_marks": 18,
+    "recall_lookup_events": 1
+  },
+  "final_text": "Found in Living Memory, scope `project:ae`:\n- `/dashboard-static-build` depended on DONE `provider-product`, `/chat-integration/chat-routes-store-ui`, and `/chat-integration/chat-live-harness`; reuse `launchDashboard.extraEnv`.\n- Producer completed at `2e6a42c38`; root `de3a012db` carried it, and chat parent `b433255da` inherited byte-identical producer files.\n- `AE_DASHBOARD_REACT_BUILD_DIR` lives in `dashboard/lib/react_build_root.js`; `dashboard/server.js` calls `resolveReactBuildRoot`.\n- Deliverables include `tools/opencode/ui-build/**`, `artifacts/opencode/ui-build/{manifest.json,src.sha256}`, `docs/opencode-ui-build.md`, and `tests/test_opencode_ui_build_serving.js`.\n- Unset override preserves missing `dashboard/react/dist` → `BUILD_MISSING_HTML`; explicit invalid roots must fail before listening.\n- Startup tests preload an observer of `net.Server.prototype.listen`: invalid configurations make **0** attempts; valid copies report **2** ephemeral listeners. Port polling alone is insufficient.\n- Handoff decision: integrate through parent branches; never self-merge in the child. Existing `static_serve` coverage handles roots, auth, HEAD/cache/MIME/SPA, and API forwarding.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:12:36Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18810,
+  "provider_error": false,
+  "ready_s": 8.1,
+  "run_id": "sfx-A04__codex__mandatory",
+  "scoring": {
+    "marks": 18,
+    "observations": 21
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:12:28Z",
+  "stderr_foreign_urls": [],
+  "store": "sfx",
+  "task_id": "sfx-A04",
+  "timed_out": false,
+  "tokens_in": 181891,
+  "tokens_out": 1003,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

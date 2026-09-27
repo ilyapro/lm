@@ -1,0 +1,19 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot06 geometry-binding-v2 admission-discovery-v2 verify measure v1 geometry",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M3ES755Y2SY764SMS6ASXJTK",
+        "01M3EKTSBQDZKFJYJNCQ84P53H"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  }
+]

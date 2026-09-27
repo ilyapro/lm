@@ -1,0 +1,18 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot13 causal-history-reachability causal-role verify historical membership pause continuation",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 6,
+      "query": "slot13 causal-isolation-v2 reachability historical report pause resume continuation",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

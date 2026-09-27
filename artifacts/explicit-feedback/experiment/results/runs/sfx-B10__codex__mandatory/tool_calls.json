@@ -1,0 +1,112 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "generation 6 renderer fresh source proof failure pitfalls sealed cue worklib exact anchors null holdout boreal route merge",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M2G075X8QEX31M0QVK7PDT4Y",
+        "01M2G08MXAMBXGZK996JG44X5D",
+        "01M2FRRW9W1KPKVQH2AAFTJ4VE",
+        "01M2XHANBJ74G7SV1BAY19T7K6",
+        "01M2XQ3CVBS0PTWWP1R9P7G142",
+        "01M2FR9ECC3926BPS30X5MPFW6",
+        "01M22ZGTE7FY3WA7J60Q5XG0EC",
+        "01M2G1WCHR18APD3B756DHX3PR"
+      ],
+      "max_results": 5,
+      "query": "\"boreal\" \"worklib\" \"generation 6\"",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KRY25E7NVFJHWA0HHQ77XB6A",
+        "01M35GA1W7PD9HBTBGZK25DV8M",
+        "01M1PXAVSGCJ107TQQPN9K0QMA",
+        "01M1PEZF9VV7EQ1VKAMBEWRWFG"
+      ],
+      "max_results": 6,
+      "query": "midwork-bench renderer sealed cue worklib boreal",
+      "scope": "project:ae",
+      "used": [
+        "01M247TE4FN2VPYCSK1YQSZS2Z"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:ae",
+      "task_pattern": "midwork"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M21AWKPS7MCQ21WK6C565HME",
+        "01M0T8QJCGDSM62S5C7PE3YDVY",
+        "01M3FY7YQXJAKNBYWWEZYQ27E2",
+        "01M0WMH2VG4S66N1FPGKZVP0B7",
+        "01M23EPZX1XJAS7VWT60DHPYTZ",
+        "01M1VJV5185C35PZW4RV7B7BCH"
+      ],
+      "max_results": 3,
+      "query": "boreal",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M0ZZJDN1NYX3M18V4R8YQVXP",
+        "01M1PEZF9VV7EQ1VKAMBEWRWFG",
+        "01M0J4FZ81V3M99CNGC5R5CGEC"
+      ],
+      "max_results": 5,
+      "query": "generation 6",
+      "scope": "project:ae",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M2FX2DT40T7BDCV8R3A9NQCR",
+        "01M1YZZY7M6MJJ0WPXH9KS40RR",
+        "01M3AB2Y856054G5RJSX95C6VZ",
+        "01M39GDDB84GQ05C38YFC4F9GN",
+        "01M2CFJBQKANDPN689Z67CXTF5"
+      ],
+      "max_results": 3,
+      "query": "worklib sealed cue boreal",
+      "scope": "project:ae",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

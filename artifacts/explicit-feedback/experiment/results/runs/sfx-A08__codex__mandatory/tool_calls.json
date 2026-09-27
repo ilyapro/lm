@@ -1,0 +1,103 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "project:2gis-seaf-web WebAPI region/list geocoder документация 504012804 627113888 проверка endpoint_uri responses backup HA DR Scala"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M2FZCJM40MKMWJVJKP0BZHPX",
+        "01M1Y18MR9Y5WDPSHBP3Y9KAQ8",
+        "01M1Y1GATE684E4AJDXWWF7E3P",
+        "01M1Y1134HAX8SBGMXDTQ9E7ZE",
+        "01M1Y1F1QV083ED9F24Q423Y80",
+        "01M1Y29AF8R8X7N2MS27QNZ5ZV",
+        "01M1Y2FJEKHS5A84S999A5K60M"
+      ],
+      "max_results": 6,
+      "query": "\"WebAPI\" \"627113888\" \"region/list\" \"endpoint_uri\"",
+      "scope": "project:2gis-seaf-web",
+      "used": [
+        "01M1Y1Z3294KW5DFWEDK0JDJF0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1Y1F1QV083ED9F24Q423Y80",
+        "01M1NZJRH726AQ8MC5RARPDBHV",
+        "01M1Y1GATE684E4AJDXWWF7E3P",
+        "01M1Y19YX2J4MMAY5VH8S4TBPE"
+      ],
+      "max_results": 4,
+      "query": "504012804 627113888 geocoder Scala responses",
+      "used": [
+        "01M1Y1YQ5HX78N6BE17R0ZQ6CZ",
+        "01M2FXPXX5582A32PA20331Z4N"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M36WJ1GD2BQNA8E0JMJJP4R9",
+        "01M36YYS7DD7XP8DAC245DM4KF",
+        "01M2ZJ3BC1F9G8N2GZMXMCB19V",
+        "01M374VSRSKQ9RKD62MAJCW12E"
+      ],
+      "max_results": 3,
+      "query": "WebAPI документация проверка endpoint_uri responses backup HA DR Scala",
+      "scope": "project:2gis-seaf-web",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:2gis-seaf-web",
+      "task_pattern": "description-improvement/template-systems/webapi"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:2gis-seaf-web"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1Y1GY7EY2A7Z5P0945FE5Y2",
+        "01M1Y1GATE684E4AJDXWWF7E3P"
+      ],
+      "max_results": 2,
+      "query": "627113888",
+      "scope": "project:2gis-seaf-web",
+      "used": [
+        "01M1Y1Z3294KW5DFWEDK0JDJF0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

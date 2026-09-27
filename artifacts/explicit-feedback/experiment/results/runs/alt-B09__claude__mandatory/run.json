@@ -1,0 +1,49 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 53.2,
+  "ended_at": "2026-09-27T12:30:12Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 4,
+    "recall_events": 4,
+    "recall_feedback_marks": 13,
+    "recall_lookup_events": 4
+  },
+  "final_text": "**Answer:** Memory covers most of this, but I found no trace that names \"P1–P5\" or a specific parent contract file path.\n\n- **Eight acceptance commands** (trace `01M230XDQEM7AF95WQ3BCPYQ86`, 2026-09-09T12:04Z): the parent goal `transaction-attachment-scope-preservation` includes native merges `f0ad3506` (isolated runtime) and `370af30a` (route integration). All four child `node_status` files are done and `acceptance_results.json` passed. The parent ran all eight child acceptance commands itself on the combined code. Only the old augment test fixture failed, because it needed a `goal.md`; commit `b9da0bdb` fixed that. No child baseline, receipt, archive or live state was changed. The kept `gate_result.md` still names old failed task 520709, which alone does not mean a current failure.\n- **Model:** the `attachment-scope-model` retry was blocked only by a check: `GOAL_SCOPE_CONTRACT` flagged a literal `/srv/ae` example in `docs/goal-attachment-scope.md`. To re-check, run `source ./goal_scope_contract.sh; goal_scope_contract_check_changed_files` over the three files that node owns. Use placeholders in the example; don't weaken the gate.\n- **API:** `PUT /api/goals/:id?project=` with `description` plus the full `goalContextAttachments` selection, sent to `AE_CHAT_WAKE_URL` (usually `http://127.0.0.1:3737`). It keeps stored evidence. Warning: `keepAttachments=[]` calls `_deleteRemovedAttachments` and deletes the original evidence.\n- **UI:** `DashboardShell.tsx` GoalModal and `GoalsPanel.tsx` GoalAttachmentsEditor/View had to be changed together with the server's preservation rules.\n- **Browser isolation:** use a dedicated goal-attachment-scope spec with its own fixtures and `DASHBOARD_API_PORT=0`, not the broad `tests/e2e/dashboard.spec.ts`. Serve download bytes through the suite's own Vite middleware plus `route.continue`, because `route.fulfill` alone made Chromium cancel the download. The suite passed 9/9.",
+  "first_input_tokens": 8841,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:29:19Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 6,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18803,
+  "provider_error": false,
+  "ready_s": 12.4,
+  "run_id": "alt-B09__claude__mandatory",
+  "scoring": {
+    "marks": 13,
+    "observations": 30
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:29:06Z",
+  "stderr_foreign_urls": null,
+  "store": "alt",
+  "task_id": "alt-B09",
+  "timed_out": false,
+  "tokens_in": 103148,
+  "tokens_out": 2219,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

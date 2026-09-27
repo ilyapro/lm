@@ -1,0 +1,39 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 7,
+      "query": "lm_instance.py seeded_clusters compose_seeded_tail Memory nearby tail",
+      "scope": "project:lm"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "compose_seeded_tail"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "seeded_clusters"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "lm_instance.py Memory nearby"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

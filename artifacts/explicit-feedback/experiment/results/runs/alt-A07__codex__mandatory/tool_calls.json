@@ -1,0 +1,64 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "biome-successors R1 supervisor 265 species-content-repair infeasible fulgurax migrationDrive scope replan_required",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M3GP4E5G7CHGBVGSFWCQH6NJ",
+        "01M1C60SC4XD94P74D7Z65JNA5",
+        "01M3AV8G1AQ97R52ZG0Q93S3TB",
+        "01M1C206875ZCYBAXHNYNVKX52",
+        "01M3GRRJF1Z95W2XWDEAATXVCR"
+      ],
+      "max_results": 5,
+      "query": "species-content-repair infeasible fulgurax migrationDrive R1 replan_required",
+      "scope": "project:game",
+      "used": [
+        "01M3EJ7WQ85XVE17GQT0WPE0KA",
+        "01M3EPFQM01YKM9JTAF614ZA6A",
+        "01M3EP17XSN01J6VVYN2QM0FF4"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M3EPFQM01YKM9JTAF614ZA6A",
+        "01M3EP17XSN01J6VVYN2QM0FF4"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1C60SC4XD94P74D7Z65JNA5",
+        "01M3AV8G1AQ97R52ZG0Q93S3TB",
+        "01M1XTHT8DX2CX5FE6QGNBGX5E"
+      ],
+      "max_results": 2,
+      "query": "R1 K1 K2 K3 K4 809 species-content-repair",
+      "scope": "project:game",
+      "used": [
+        "01M3EKYSV88CP2YCPGY9A9BST1",
+        "01M3EPEZEANP6PVNSD5D5STKB8"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

@@ -1,0 +1,75 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:29:28.000000Z",
+      "id": "01M3HDEZEZ2S5ZGY9BGZR8M45R",
+      "n_results": 10,
+      "query": "attachment-scope eight acceptance commands goal attachment model API UI browser isolation P1 P5 parent contract path",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:29:36.000000Z",
+      "id": "01M3HDF7T8ZE08FEHR8VEY0G08",
+      "n_results": 10,
+      "query": "attachment scope decomposition P1..P5 parent goal acceptance commands eight",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:29:51.000000Z",
+      "id": "01M3HDFP8G37VRYWH3DQKDA528",
+      "n_results": 8,
+      "query": "attachment scope parent verification acceptance commands postcondition targets P1 P2 P3 P4 P5 children model api ui browser",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:30:01.000000Z",
+      "id": "01M3HDG07SJYR4KZ8ESNEK9H84",
+      "n_results": 5,
+      "query": "For attachment parent scope verification eight acceptance commands contract path",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:29:37.000000Z",
+    "2026-09-27T12:29:37.000000Z",
+    "2026-09-27T12:29:37.000000Z",
+    "2026-09-27T12:29:46.000000Z",
+    "2026-09-27T12:29:46.000000Z",
+    "2026-09-27T12:29:46.000000Z",
+    "2026-09-27T12:29:46.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDEZEZ2S5ZGY9BGZR8M45R",
+      "id": "1",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:29:51.000000Z",
+      "node_id": "01M22ZE6WWQJWDVW6TMCYMADG9",
+      "rank": 8,
+      "reject_reason": null,
+      "source_id": "01M3HDFP8G37VRYWH3DQKDA528",
+      "transport": "a87eabc70a6a4643b3e12178ba5998c5",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDEZEZ2S5ZGY9BGZR8M45R",
+      "id": "2",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:29:51.000000Z",
+      "node_id": "01M20SYZ9M4943WQKHYAPXGN1M",
+      "rank": 9,
+      "reject_reason": null,
+      "source_id": "01M3HDFP8G37VRYWH3DQKDA528",
+      "transport": "a87eabc70a6a4643b3e12178ba5998c5",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 4
+  }
+}

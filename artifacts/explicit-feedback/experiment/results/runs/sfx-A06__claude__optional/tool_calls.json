@@ -1,0 +1,46 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "goal tree node decompose SUBGOALS pitfalls acceptance checks worktree evidence roots artifacts manifest",
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 10,
+      "query": "decompose node into SUBGOALS evidence_roots artifacts manifest acceptance checks worktree"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "lesson_kind": "pitfall",
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "depth": "causal",
+      "query": "goal-tree harness SUBGOALS decomposition pitfall evidence roots artifact manifest",
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M0R91PV9PX4WABQZGQB2HDYB"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  }
+]

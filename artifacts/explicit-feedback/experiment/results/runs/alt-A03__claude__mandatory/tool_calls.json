@@ -1,0 +1,116 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot08 package-lock native provenance reproduction npm install owned namespace avoid metadata frozenReferences audit JSON L4",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1YAKFBZPY8ZWR336ZX85KH3",
+        "01M3AM1QT04H49YBWD1V5ZFPMD",
+        "01M1XGNB5RJ1KT98YG6A83W9JC",
+        "01M21P5SAHCWEHHYQ06ZEDSFC9",
+        "01M20TSCXDZFXZWFDVPVP7Q3BD"
+      ],
+      "max_results": 8,
+      "query": "slot08 package-lock provenance owned namespace frozenReferences",
+      "used": [
+        "01M21PW8ARE78XZJREB38RAPC9",
+        "01M390TPK55P83R74KQ9EP2KSY",
+        "01M3A4V9SH29EQ23PCMRC60R9W"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21PW8ARE78XZJREB38RAPC9",
+        "01M390TPK55P83R74KQ9EP2KSY",
+        "01M3A4V9SH29EQ23PCMRC60R9W"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21N63GJYZN2JYSFEBMDQK2A",
+        "01M21GAKG7E1HZPDBVVNM0887G",
+        "01M1ZEZVK8A29PKDWGXKC30G6G",
+        "01M21HMTHR3K40VPF0N0584J76"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M3DNCZ414Q48CFWS876FRVRS",
+        "01M01ZAMQPEA5WGF1SP5JB4A9E",
+        "01M1V3FN781D2TQ4XRQ02J0NV9",
+        "01M15B66YA0BC631B6MKG04D2S",
+        "01KYSQQCC1T9PKT4SMCJ7CFTK8",
+        "01KZJW2MZ0PCSVP38P6PY3T03R",
+        "01M1VA80TNA8YPEWG76BS06JRR"
+      ],
+      "max_results": 8,
+      "query": "slot08 native provenance reproduction package-lock candidate_changed audit JSON",
+      "scope": "project:game",
+      "used": [
+        "01M1J60R344NE0XVV927T2QJ0H"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1ZE1V0XJ4H1B09TBRDP1KPR",
+        "01M39AN7HAQE0XPB8FVMB8T86S",
+        "01M3ATX8NJTHSVAZJAVH7BRP50",
+        "01M1ZFZDSC6SPXA5A4S0RA7HQ2",
+        "01M20V9SW4B9F06BJ33N01P82J"
+      ],
+      "max_results": 8,
+      "query": "slot08 lock reproduction must not write inside owned namespace; frozenReferences metadata avoid; L4 lineage",
+      "scope": "project:game",
+      "used": [
+        "01M1ZD4SFM5N9E910Q2F438QC5",
+        "01M21N63GJYZN2JYSFEBMDQK2A",
+        "01M21HMTHR3K40VPF0N0584J76"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M1ZD4SFM5N9E910Q2F438QC5"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M3AM1QT04H49YBWD1V5ZFPMD",
+        "01M1YAKFBZPY8ZWR336ZX85KH3",
+        "01M1ZERRFC6CC8VEDGT9KM4XXE",
+        "01M1XGNB5RJ1KT98YG6A83W9JC",
+        "01M1YFH06FZK8GQWTMKNVNTNQB",
+        "01M1FEYZ08KBR4GBWFC9MFQJ80"
+      ],
+      "max_results": 5,
+      "query": "slot08 discovery-interface-repair-v2 package-lock provenance reproduction evidence path outcome",
+      "scope": "project:game",
+      "used": [
+        "01M21PWF7NG92HG7MV11WRE6Y3",
+        "01M399GRYNJFJJBGN0RXRMG6N5"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

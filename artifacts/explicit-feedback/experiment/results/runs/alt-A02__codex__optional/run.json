@@ -1,0 +1,48 @@
+{
+  "agent": "codex",
+  "arm": "optional",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 76.0,
+  "ended_at": "2026-09-27T12:09:36Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 4,
+    "recall_events": 3,
+    "recall_feedback_marks": 0,
+    "recall_lookup_events": 4
+  },
+  "final_text": "Found in Living Memory, scope `project:ae` (2026-09-08–09):\n- Root cause: `queue.sh::worktree_safe_npm_install` ran bare `npm install`, creating `package-lock.json` after capture; provenance changed from rc0 to rc1. Preserve source/lockfile presence and bytes; never whitelist or recapture installer writes.\n- Ownership: `npm-candidate-published` → `queue.sh`; `gate-dependencies-published` → `gate.sh` + `tests/test_gate_dependency_preparation.sh`; `dependency-lifecycle-regression` → `test.sh` + `tests/test_merge_dependency_candidate_preservation.sh`.\n- At `e26cf1c452d4a94560fe5050928d4c926f0353df`, SWC preparation uses scratch space and copies only `node_modules`; preparation/native retry failures remain non-downgradable `70/71`.\n- Verification: npm `11.16.0`, real offline installer with/without `with_lock`, and all `26` gate preparation cases passed; these alone do not establish full lifecycle acceptance.\n- Sidecar policy changed at `817e224e`: artifact ownership across ancestors automatically covers `.src.sha256` creation/refresh; separate grants describe older runtimes. Immutable and publication-binding checks remain.\n- npm publication inputs are `queue.sh` and `state.sh`; only the standard publisher updates `tests/test_worktree_safe_npm_install.sh.src.sha256`, preserving baseline and cumulative ledger.\n- Lifecycle checks cover before/after commit hooks and before destination promotion; an obsolete mutant with a missing anchor is not a killed mutant. Parent `d6b460f2` also exposed stale sidecars despite “done” children.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:08:20Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "8afc5d057efb8374f46b75e93f9191f821d490e4b6b32e646cd0af6ad61d6cbe",
+  "port": 18804,
+  "provider_error": false,
+  "ready_s": 10.8,
+  "run_id": "alt-A02__codex__optional",
+  "scoring": {
+    "marks": 0,
+    "observations": 18
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:08:09Z",
+  "stderr_foreign_urls": [],
+  "store": "alt",
+  "task_id": "alt-A02",
+  "timed_out": false,
+  "tokens_in": 130858,
+  "tokens_out": 762,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

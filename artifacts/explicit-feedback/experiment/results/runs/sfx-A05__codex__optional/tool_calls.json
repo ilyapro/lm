@@ -1,0 +1,42 @@
+[
+  {
+    "error": null,
+    "input": {
+      "depth": "causal",
+      "max_results": 8,
+      "query": "GigaCode bun CONNECT frozen interface runtime runner installed OpenCode baseline ERR_INVALID_URL isolated source closure",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M2G213V8RFQ2XM9YEFA4P5JA"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "GigaCode bun-connect frozen interface runtime-runner isolated source closure",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M2G1EN3JVAQD4MJX001K0E1N",
+        "01M2G1E3F1CCBBECH07CPHZ8FY"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

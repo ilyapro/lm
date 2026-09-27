@@ -56,7 +56,16 @@ LEDGER_INDEX = "idx_transcript_grounding_node_graded"
 #: (feedback-usage-signal), which is created the same way — on every open,
 #: additive, no SCHEMA_VERSION bump — and whose UNIQUE constraint leaves no
 #: named index in sqlite_master (autoindexes carry NULL sql).
-NEW_OBJECTS = {TRANSCRIPT_GROUNDING_TABLE, LEDGER_INDEX, RECALL_CREDIT_LEDGER_TABLE}
+#: The explicit-feedback tables (goal explicit-recall-feedback) join them on
+#: the same terms: explicit credit side table, mark audit and its index.
+NEW_OBJECTS = {
+    TRANSCRIPT_GROUNDING_TABLE,
+    LEDGER_INDEX,
+    RECALL_CREDIT_LEDGER_TABLE,
+    "recall_explicit_credit",
+    "recall_feedback_marks",
+    "idx_recall_feedback_marks_event",
+}
 
 SCOPE = "project:ledger"
 AMBIENT = {"agent": "seeder", "task": "ledger-fixture", "session_id": "seed-session"}

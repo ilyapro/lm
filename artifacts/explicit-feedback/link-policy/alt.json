@@ -1,0 +1,119 @@
+{
+  "arms": {
+    "all": {
+      "credited_node_recall": 0.5147540983606558,
+      "events": 1039,
+      "graph_hits_credited": 20,
+      "graph_hits_uncredited": 435,
+      "graph_only_uncredited": 0,
+      "graph_share_of_credited_hits": 0.06369426751592357,
+      "graph_share_of_uncredited_hits": 0.1476077366813709,
+      "hit@1": 0.30547550432276654,
+      "hit@3": 0.5331412103746398,
+      "labelled_events": 347,
+      "latency_p50_ms": 193.64402900100686,
+      "latency_p95_ms": 512.5216300075408,
+      "mrr": 0.43023878139151916,
+      "uncredited_graph_hits_per_event": 0.41867179980750724
+    },
+    "credited": {
+      "credited_node_recall": 0.5114754098360655,
+      "events": 1039,
+      "graph_hits_credited": 19,
+      "graph_hits_uncredited": 275,
+      "graph_only_uncredited": 0,
+      "graph_share_of_credited_hits": 0.060897435897435896,
+      "graph_share_of_uncredited_hits": 0.0932519498134961,
+      "hit@1": 0.30835734870317005,
+      "hit@3": 0.5389048991354467,
+      "labelled_events": 347,
+      "latency_p50_ms": 178.76535397954285,
+      "latency_p95_ms": 498.8214710028842,
+      "mrr": 0.43167970358172086,
+      "uncredited_graph_hits_per_event": 0.2646775745909528
+    }
+  },
+  "bootstrap": {
+    "hit@3": {
+      "delta": 0.005763688760806916,
+      "hi": 0.01440922190201729,
+      "lo": 0.0
+    },
+    "mrr": {
+      "delta": 0.001440922190201729,
+      "hi": 0.005043227665706052,
+      "lo": -0.0009606147934678195
+    },
+    "uncredited_graph_hits_per_event": {
+      "delta": -0.15399422521655437,
+      "hi": -0.12993262752646775,
+      "lo": -0.17805582290664101
+    }
+  },
+  "cutoff": "2026-09-20T00:00:00Z",
+  "decision": {
+    "checks": {
+      "R0_labelled>=100": true,
+      "R1_quality": true,
+      "R2_uncredited_graph_drop>=5%": true,
+      "R3_latency": true
+    },
+    "delta_hit@3": 0.0057636887608069065,
+    "delta_mrr": 0.0014409221902016989,
+    "latency_ratio": 0.923164813817282,
+    "recommendation": "credited",
+    "uncredited_graph_relative_drop": 0.3678160919540231,
+    "verdict": "pass"
+  },
+  "edge_counts": {
+    "all": {
+      "connections": 106449,
+      "implicit": 45296,
+      "related": 104426
+    },
+    "credited": {
+      "connections": 65570,
+      "implicit": 4417,
+      "related": 63547
+    }
+  },
+  "edge_plan": {
+    "cutoff": "2026-09-20T00:00:00Z",
+    "dropped_ledger_era": 9999,
+    "dropped_pre_ledger": 30880,
+    "dropped_total": 40879,
+    "implicit_pre_cutoff": 45296,
+    "kept_ledger_era": 1328,
+    "kept_pre_ledger_grounded": 3089,
+    "ledger_credit_only_after_link": 25,
+    "ledger_start": "2026-09-07T07:07:46Z"
+  },
+  "host": "alt",
+  "snapshot": {
+    "captured_at": "2026-09-27T11:08:03Z",
+    "path": "/tmp/lp/alt.sqlite3",
+    "recall_events_created_at": {
+      "max": "2026-09-27T11:04:51Z",
+      "min": "2026-07-26T20:06:24Z"
+    },
+    "row_counts": {
+      "active_nodes": 9146,
+      "connections": 124105,
+      "nodes": 10192,
+      "recall_events": 43519
+    },
+    "sha256": "99995e505bc50aff10aadd6687b99363c631a64a8ef5921be0ccae4c9f467891"
+  },
+  "traffic": {
+    "empty_results": 0,
+    "excluded_ab": 137,
+    "kept": 1039,
+    "labelled": 347,
+    "post_cutoff": 1176
+  },
+  "truncated_at_cutoff": {
+    "connections": 17656,
+    "query_anchor_edges": 636,
+    "query_anchors": 367
+  }
+}

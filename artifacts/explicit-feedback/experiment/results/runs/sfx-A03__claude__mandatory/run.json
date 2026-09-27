@@ -1,0 +1,46 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 33.1,
+  "ended_at": "2026-09-27T12:04:41Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 0,
+    "recall_events": 2,
+    "recall_feedback_marks": 8,
+    "recall_lookup_events": 0
+  },
+  "final_text": "Here is what memory holds about migrating the live database's schema when the memory server restarts.\n\n- **How migrations work:** DDL changes are applied when the server starts, so any schema change needs a restart, which is the operator's call. Example: deploying lm `180e186` on 2026-09-07 to both hosts (sfx and alt) with `systemctl --user restart living-memory.service`. On startup it created `recall_credit_ledger`. The change only added things, so `schema_version` stayed at **8**.\n- **Backup first:** before the restart, a copy of the live database was saved as `global.pre-credit-ledger-20260907.sqlite3` using the SQLite backup API (sfx 690 MB in about 1 s, alt 415 MB). A test copy of the database opened with the migration in 0.035 s.\n- **Checker script and a known false alarm:** `scripts/verify_live_db_migration.py` reports `ok=false` only because of the `no_legacy_row_stamped` check. That check expects 0 rows in `recall_events` where `transport_session_id IS NOT NULL`, which only made sense for the first migration of that column on 24.08. On any live database since then it fails wrongly. The other 11 checks passed (additive-only, counts, integrity, closure metric).\n- **Plan rule from 2026-08-25:** even an added table counts as a migration and therefore a restart. No deploys, restarts or schema migrations until the 28.08 21:18Z window was reviewed.\n- **Pitfall from 2026-09-27:** in `src/living_memory/storage.py`, `_RECALL_CREDIT_LEDGER_SCHEMA_SQL` has `CHECK (basis IN ('grounded','lookup'))`, and SQLite can't alter a CHECK. Adding a new basis such as `'explicit'` means either rebuilding the table (not additive, touches the live ledger) or adding a side table with `CREATE TABLE IF NOT EXISTS` and cross-table dedup. Either way it ships with a restart and needs the operator's decision.",
+  "first_input_tokens": 8827,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:04:08Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 3,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18800,
+  "provider_error": false,
+  "ready_s": 14.5,
+  "run_id": "sfx-A03__claude__mandatory",
+  "scoring": {
+    "marks": 8,
+    "observations": 14
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:03:53Z",
+  "stderr_foreign_urls": null,
+  "store": "sfx",
+  "task_id": "sfx-A03",
+  "timed_out": false,
+  "tokens_in": 43102,
+  "tokens_out": 1268,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

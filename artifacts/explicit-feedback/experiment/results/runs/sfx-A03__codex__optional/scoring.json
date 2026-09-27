@@ -1,0 +1,33 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:05:36.000000Z",
+      "id": "01M3HC38V0AS8BEXMB02QKV89D",
+      "n_results": 8,
+      "query": "миграции схемы живой базы при рестарте сервера памяти",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:05:48.000000Z",
+      "id": "01M3HC3N607WE1AD15RR4NNBFE",
+      "n_results": 8,
+      "query": "schema migrations database startup restart",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:06:00.000000Z",
+      "id": "01M3HC40SJ63G739B5VRPY42JG",
+      "n_results": 5,
+      "query": "verify_live_db_migration миграции схемы startup",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:06:01.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 3
+  }
+}

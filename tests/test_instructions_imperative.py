@@ -53,6 +53,7 @@ from living_memory.server import (
     _CONSOLIDATE_DESCRIPTION,
     _OPERATOR_TOOL_NAMES,
     _RECALL_DESCRIPTION,
+    _RECALL_DESCRIPTION_MANDATORY,
     _REMEMBER_DESCRIPTION,
     _TEACH_DESCRIPTION,
     _instructions_with_map,
@@ -71,6 +72,13 @@ DESCRIPTIONS = {
     "memory_consolidate": _CONSOLIDATE_DESCRIPTION,
 }
 
+# The mandatory arm of the explicit-feedback experiment (served only under
+# LM_EXPLICIT_FEEDBACK_PROMPT=mandatory) replaces the recall description with a
+# reworded variant. It is a protocol channel too, so the budget and every
+# register scan run over it; tests/test_explicit_feedback.py pins its law
+# phrases.
+ARM_DESCRIPTIONS = {"memory_recall[mandatory]": _RECALL_DESCRIPTION_MANDATORY}
+
 
 @pytest.fixture(scope="module")
 def instructions() -> str:
@@ -86,7 +94,7 @@ def union(instructions: str) -> str:
 def channels(instructions: str) -> dict[str, str]:
     """Every protocol-bearing text, by the channel that delivers it."""
 
-    return {"instructions": instructions, **DESCRIPTIONS}
+    return {"instructions": instructions, **DESCRIPTIONS, **ARM_DESCRIPTIONS}
 
 
 # ── Channel budgets ─────────────────────────────────────────────────────────
@@ -104,7 +112,7 @@ def test_instructions_within_client_budget(instructions: str) -> None:
 def test_each_description_within_client_budget() -> None:
     oversize = {
         name: len(text)
-        for name, text in DESCRIPTIONS.items()
+        for name, text in {**DESCRIPTIONS, **ARM_DESCRIPTIONS}.items()
         if len(text) > MAX_DESCRIPTION_CHARS
     }
     assert not oversize, (

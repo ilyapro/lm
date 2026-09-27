@@ -1,0 +1,89 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 10,
+      "query": "goal tree node decompose SUBGOALS pitfalls acceptance checks worktree evidence roots artifacts manifest"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "goal tree node decompose SUBGOALS pitfalls acceptance checks worktree evidence roots artifacts manifest",
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 20,
+      "query": "SUBGOALS decompose evidence roots manifest",
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "lesson_kind": "pitfall",
+      "scope": "project:goal-tree"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "\"SUBGOALS\" \"acceptance\" \"evidence roots\""
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "project:goal-tree SUBGOALS acceptance checks"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "worktree evidence roots artifacts manifest pitfalls"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01KS11Q1ZASTFGJ3MFZ7THP1Z2",
+        "01KS125EJMB3XMH422KAV5T37A",
+        "01KS1AJE1TW1XCTR24AEG4EDDX",
+        "01KRY9XWFT4KYC8J652TS7CX50",
+        "01M2G1K4J233HBS5EC14QN02BC"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

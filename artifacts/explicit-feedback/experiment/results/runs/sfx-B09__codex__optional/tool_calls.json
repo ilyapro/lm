@@ -1,0 +1,121 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 10,
+      "query": "gigacode raw model endpoint ai-llm-proxy api auth DeepSeek thinking protocol"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "gigacode",
+      "scope": "project:lm"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "ai-llm-proxy",
+      "scope": "project:lm"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "DeepSeek thinking",
+      "scope": "project:lm"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "gigacode ai-llm-proxy"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01KZ8PCNF10GH1Q9KH7HE39WBX"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "gigacode raw model endpoint ai-llm-proxy api auth DeepSeek thinking protocol",
+      "scope": "global"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "gigacode",
+      "scope": "global"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01KZ8RJEMR7CQ22E75Q5K0VW89",
+        "01M0NN81D9WBC30ZPRYQE1656R"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 3,
+      "query": "ai-llm-proxy",
+      "scope": "global"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M11HWJG0RKK79PA13QGG5PCD",
+        "01M214MENFRRDK5K4D7P6X4H8J"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M11J46J2QSPVHWZ4MR1PFN40",
+        "01KZ9Y5N4E8RBD2FZAV9STAT51"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

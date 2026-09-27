@@ -1,0 +1,47 @@
+{
+  "agent": "codex",
+  "arm": "optional",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 107.4,
+  "ended_at": "2026-09-27T12:31:52Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 2,
+    "recall_feedback_marks": 0,
+    "recall_lookup_events": 3
+  },
+  "final_text": "Found in Living Memory, based on checks dated 2026-09-07:\n- `architecture/online/_inventory.md §10.10` incorrectly treated `featureAgents=false` as an AI-chat restriction.\n- In Online `49b396b`, `featureAgents` controls profile `agents2020` in `modules/userProfile/containers/tabs/formatter.ts` and `modules/userAvatarTooltip/index.tsx`.\n- Chat entry uses `aiRecoveryAgentEntryPoint`, `aiDiscoveryAgentEntryPoint`, and `signals.openAiChat`; `featureSberChat` selects SDK versus iframe.\n- Published `/prod/experiment.json`: recovery `[0,0.99]` RU/KZ; services `[0,1]` RU; discovery `[0,0.01]` RU. Last-Modified: `2026-09-01 14:01:16 GMT`.\n- These findings were recorded under `architecture/online/ba/processes.yaml` → `ai_agents`; local experiments at 0% do not establish production unavailability.\n- Decision: correct §10.10; published ranges establish configuration, not successful conversations or actual user coverage.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:30:05Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "8afc5d057efb8374f46b75e93f9191f821d490e4b6b32e646cd0af6ad61d6cbe",
+  "port": 18805,
+  "provider_error": false,
+  "ready_s": 12.4,
+  "run_id": "sfx-A07__codex__optional",
+  "scoring": {
+    "marks": 0,
+    "observations": 15
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:29:52Z",
+  "stderr_foreign_urls": [],
+  "store": "sfx",
+  "task_id": "sfx-A07",
+  "timed_out": false,
+  "tokens_in": 204243,
+  "tokens_out": 778,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

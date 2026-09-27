@@ -1,0 +1,216 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:31:34.000000Z",
+      "id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "n_results": 8,
+      "query": "project:2gis-seaf-web inventory-chat-conditions Online inventory §10.10 featureAgents agents2020 49b396b local experiments published configuration ba/processes.yaml ai_agents",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:31:47.000000Z",
+      "id": "01M3HDK7566YY7779X273HMCNM",
+      "n_results": 5,
+      "query": "49b396b inventory-chat-conditions featureAgents agents2020",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:31:56.000000Z",
+      "id": "01M3HDKFV9C0S6TVQAV96KJSJ2",
+      "n_results": 1,
+      "query": "inventory-chat-conditions",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:31:47.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:31:47.000000Z",
+      "node_id": "01M1Y59N7V6V27HAEFXH7C8WDG",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HDK7566YY7779X273HMCNM",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "id": "2",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:31:47.000000Z",
+      "node_id": "01M1Y5T4N23G9VH8A8XHWZ2SYV",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HDK7566YY7779X273HMCNM",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "id": "3",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:31:47.000000Z",
+      "node_id": "01M1Y0PGFTKNTFHDHFWSQ8DYDY",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HDK7566YY7779X273HMCNM",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "id": "4",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:31:47.000000Z",
+      "node_id": "01M1Y1134HAX8SBGMXDTQ9E7ZE",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HDK7566YY7779X273HMCNM",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "id": "5",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:31:47.000000Z",
+      "node_id": "01M1Y11HJT9P73ZDE5NBT3VPEM",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HDK7566YY7779X273HMCNM",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "id": "6",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:31:47.000000Z",
+      "node_id": "01M1NZJRH726AQ8MC5RARPDBHV",
+      "rank": 4,
+      "reject_reason": null,
+      "source_id": "01M3HDK7566YY7779X273HMCNM",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "id": "7",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:31:47.000000Z",
+      "node_id": "01M1Y10YMZAD34CD1GK8M8PEGS",
+      "rank": 6,
+      "reject_reason": null,
+      "source_id": "01M3HDK7566YY7779X273HMCNM",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDJTA198EC1Q208RAG66DJ",
+      "id": "8",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:31:47.000000Z",
+      "node_id": "01M2G2D8ZD597APJNBQ8NFG1V7",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HDK7566YY7779X273HMCNM",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDK7566YY7779X273HMCNM",
+      "id": "9",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:31:56.000000Z",
+      "node_id": "01M1Y1SRH19JVD57698QY7D63C",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HDKFV9C0S6TVQAV96KJSJ2",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDK7566YY7779X273HMCNM",
+      "id": "10",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:31:56.000000Z",
+      "node_id": "01M1Y59N7V6V27HAEFXH7C8WDG",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HDKFV9C0S6TVQAV96KJSJ2",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDK7566YY7779X273HMCNM",
+      "id": "11",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:31:56.000000Z",
+      "node_id": "01M1Y1GY7EY2A7Z5P0945FE5Y2",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HDKFV9C0S6TVQAV96KJSJ2",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDK7566YY7779X273HMCNM",
+      "id": "12",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:31:56.000000Z",
+      "node_id": "01M1Y1BTAA64DBFC4YYC4VAQAB",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HDKFV9C0S6TVQAV96KJSJ2",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDK7566YY7779X273HMCNM",
+      "id": "13",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:31:56.000000Z",
+      "node_id": "01M1Y2FJEKHS5A84S999A5K60M",
+      "rank": 4,
+      "reject_reason": null,
+      "source_id": "01M3HDKFV9C0S6TVQAV96KJSJ2",
+      "transport": "edade2ef337f45359fbb3baaa7499018",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 3
+  }
+}

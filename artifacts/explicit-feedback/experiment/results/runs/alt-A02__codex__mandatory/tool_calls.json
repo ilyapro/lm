@@ -1,0 +1,100 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "merge-dependency-candidate-preservation npm-candidate-published gate-dependencies-published dependency-lifecycle-regression worktree_safe_npm_install candidate mutation scope sidecar ownership"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M24F43FM0VHV0CWM95R88Q89",
+        "01M24C7BTZ5J2Q3WK7JVKXA76W",
+        "01M24CW0MWBAH3JK15ZJ56S7C0",
+        "01M1YX4KYJ1ZJHC7KMQ90RE6SJ",
+        "01M23ZYC33VXMB9BAJ3CAXQVMR",
+        "01M1H2BBAHSSGDF1HBK1VBY8KE",
+        "01M249PV0KZ2EBWWVQJF1ESSEA"
+      ],
+      "max_results": 6,
+      "query": "worktree_safe_npm_install merge-dependency-candidate-preservation",
+      "scope": "project:ae",
+      "used": [
+        "01M24CGF0ZFZ6SFAA950Z3NQXJ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M24CGF0ZFZ6SFAA950Z3NQXJ"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M24EBN8NE95NSZ9838RGZT5B"
+      ],
+      "max_results": 5,
+      "query": "merge-dependency-candidate-preservation npm-candidate-published gate-dependencies-published dependency-lifecycle-regression",
+      "scope": "project:ae",
+      "used": [
+        "01M238F1FERJV1VTP565A1HN82",
+        "01M21HC61MERMK1QVYGRDCG3JJ",
+        "01M219ASNCBW0VEX9TP53H86CJ",
+        "01M21AMQNYPTBFM5XZWWRSKYT0",
+        "01M22XMP0D6YFSZWXBBV0015V3"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M21AMQNYPTBFM5XZWWRSKYT0",
+        "01M22XMP0D6YFSZWXBBV0015V3",
+        "01M219ASNCBW0VEX9TP53H86CJ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M22YY4F87CVC9360QRCT603A",
+        "01M21H3A1YKXAHJP2ZH9MHHH9N"
+      ],
+      "max_results": 3,
+      "query": "dependency-lifecycle-regression merge-dependency-candidate-preservation final PASS candidate mutation scope",
+      "scope": "project:ae",
+      "used": [
+        "01M21C1ZXG3S006PRQ1W0A8KVJ",
+        "01M22XK97VRQZN1JZMAXTYMG5N",
+        "01M238F1FERJV1VTP565A1HN82"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M22XK97VRQZN1JZMAXTYMG5N"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

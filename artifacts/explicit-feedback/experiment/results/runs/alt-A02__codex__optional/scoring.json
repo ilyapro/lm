@@ -1,0 +1,36 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:08:46.000000Z",
+      "id": "01M3HC92YSY57CRDBX33YWMG7N",
+      "n_results": 8,
+      "query": "merge-dependency-candidate-preservation npm-candidate-published gate-dependencies-published dependency-lifecycle-regression worktree_safe_npm_install candidate mutation scope sidecar ownership",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:09:06.000000Z",
+      "id": "01M3HC9PBN5M1H7PJ7B2WM6A8S",
+      "n_results": 6,
+      "query": "merge-dependency-candidate-preservation worktree_safe_npm_install candidate mutation scope resolved publication",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:09:19.000000Z",
+      "id": "01M3HCA2RTZMYSNWZ3XJE9ANKF",
+      "n_results": 4,
+      "query": "worktree_safe_npm_install mutation scope 70 71 package-lock candidate preservation scratch snapshot",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:08:54.000000Z",
+    "2026-09-27T12:08:54.000000Z",
+    "2026-09-27T12:08:54.000000Z",
+    "2026-09-27T12:08:54.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 3
+  }
+}

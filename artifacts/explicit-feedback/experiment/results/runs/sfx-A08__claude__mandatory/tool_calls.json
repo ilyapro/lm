@@ -1,0 +1,68 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "WebAPI region/list geocoder документация 504012804 627113888 проверка endpoint_uri responses backup HA DR Scala",
+      "scope": "project:2gis-seaf-web"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1Y18MR9Y5WDPSHBP3Y9KAQ8",
+        "01M1Y1GATE684E4AJDXWWF7E3P",
+        "01M2GDX0J5KYPJD48STB85FKQW",
+        "01M1Y2FJEKHS5A84S999A5K60M",
+        "01M1Y21MAAQVRAP792BZ13703F",
+        "01M1Y1BTAA64DBFC4YYC4VAQAB",
+        "01M2GWYJTAWE608M3SAS1HB99Z",
+        "01M1Y1SRH19JVD57698QY7D63C",
+        "01M1Y1F1QV083ED9F24Q423Y80"
+      ],
+      "max_results": 8,
+      "query": "627113888 паспорт geocoder region/list endpoint_uri Scala WebAPI",
+      "used": [
+        "01M1Y1Z3294KW5DFWEDK0JDJF0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1CE94XZB639H3N0X1JZEY9R",
+        "01M0W576MRRKJWFR8PN9GTYFP7",
+        "01M2ZJ0FP8GM392V7YAMJC34VB",
+        "01M374VSRSKQ9RKD62MAJCW12E",
+        "01M0J4FZ81V3M99CNGC5R5CGEC",
+        "01KZ3G4DG80922JAETFZGYJAWK",
+        "01M112S12CX2S8WWQPE76PVKYM",
+        "01M28719FST51Z3R6HVCC56MM1"
+      ],
+      "max_results": 8,
+      "query": "WebAPI geocoder паспорт 627113888 region/list endpoint_uri",
+      "scope": "project:2gis-seaf-web"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1Y1R19RWBRK6ZMDXG57RKWX",
+        "01M1NZJRH726AQ8MC5RARPDBHV",
+        "01M1Y18MR9Y5WDPSHBP3Y9KAQ8",
+        "01M239F2AV9XG2FGQSJYTMMPCC",
+        "01M1Y1WR1WEDPDPZG49J5VM7NM",
+        "01M1Y1F1QV083ED9F24Q423Y80"
+      ],
+      "max_results": 5,
+      "query": "Confluence 627113888 Scala geocoder",
+      "used": [
+        "01M2FZCJM40MKMWJVJKP0BZHPX",
+        "01M1Y1YQ5HX78N6BE17R0ZQ6CZ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

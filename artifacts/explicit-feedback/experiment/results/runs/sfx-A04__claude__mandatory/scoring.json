@@ -1,0 +1,142 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:11:36.000000Z",
+      "id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "n_results": 8,
+      "query": "AE dashboard-static-build server-static-root dependency integration provider-product chat-routes-store-ui AE_DASHBOARD_REACT_BUILD_DIR static_serve tests isolated processes",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:45.000000Z",
+      "id": "01M3HCEHKG268D6KX9N336GTXX",
+      "n_results": 5,
+      "query": "dashboard-static-build tests isolated processes AE_DASHBOARD_REACT_BUILD_DIR test_opencode_ui_build_serving",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:11:39.000000Z",
+    "2026-09-27T12:11:39.000000Z",
+    "2026-09-27T12:11:39.000000Z",
+    "2026-09-27T12:11:39.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:11:45.000000Z",
+      "node_id": "01M2MSFCF1F43D78P9HYK5GC6R",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HCEHKG268D6KX9N336GTXX",
+      "transport": "2f8e7970681a406689b21530c7c9307e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "id": "2",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:11:45.000000Z",
+      "node_id": "01M3FDSR66BENE6J2RPAHWYA68",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HCEHKG268D6KX9N336GTXX",
+      "transport": "2f8e7970681a406689b21530c7c9307e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "id": "3",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:45.000000Z",
+      "node_id": "01M21EW43N9ZQ4CNYPENX62X3J",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HCEHKG268D6KX9N336GTXX",
+      "transport": "2f8e7970681a406689b21530c7c9307e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "id": "4",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:45.000000Z",
+      "node_id": "01KWQ5YJC24QT34EZ89D1V6VA8",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HCEHKG268D6KX9N336GTXX",
+      "transport": "2f8e7970681a406689b21530c7c9307e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "id": "5",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:45.000000Z",
+      "node_id": "01M22WYD370NGJR170N0KA50WH",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HCEHKG268D6KX9N336GTXX",
+      "transport": "2f8e7970681a406689b21530c7c9307e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "id": "6",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:45.000000Z",
+      "node_id": "01M1MGAGN6A93KAZKMCW912NRZ",
+      "rank": 4,
+      "reject_reason": null,
+      "source_id": "01M3HCEHKG268D6KX9N336GTXX",
+      "transport": "2f8e7970681a406689b21530c7c9307e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "id": "7",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:45.000000Z",
+      "node_id": "01M2QPRYCJPVECTB5GFQNTMGZ3",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HCEHKG268D6KX9N336GTXX",
+      "transport": "2f8e7970681a406689b21530c7c9307e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HCE87A4JFGYDS4MAZ2PH8X",
+      "id": "8",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:11:45.000000Z",
+      "node_id": "01M235N0J6ZWA0JAVBJMP4Q4JY",
+      "rank": 6,
+      "reject_reason": null,
+      "source_id": "01M3HCEHKG268D6KX9N336GTXX",
+      "transport": "2f8e7970681a406689b21530c7c9307e",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 2
+  }
+}

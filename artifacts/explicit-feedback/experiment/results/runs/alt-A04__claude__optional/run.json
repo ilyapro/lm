@@ -1,0 +1,46 @@
+{
+  "agent": "claude",
+  "arm": "optional",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 22.3,
+  "ended_at": "2026-09-27T12:11:08Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 1,
+    "recall_feedback_marks": 0,
+    "recall_lookup_events": 1
+  },
+  "final_text": "Here's what memory holds on this (scope `project:game`, traces from 2026-09-26):\n\n- **Symptom:** the shared-hunt e2e fails 248/3 (Торн/Каэль) on object parent `d887aae3`. It's intermittent, not deterministic: 1/3 red in one batch, 6/6 in another, and with the object dirs stripped 0/3; root `26b38741` 0/2.\n- **Not the object files:** no server or test code reads `mmo/content/world-object-successors` or `public/assets/candidates`. The earlier \"intact red / stripped green\" split was a small-sample artifact (correction `01M3EYQN…`, root-replan session).\n- **Cause:** scene setup in `mmo/test/e2e.js` (blob `82cce7d4`). The joiner was staged only `COOP_JOIN_MARGIN=TS/4=8px` outside reach and was already inside its bite reach when `target` was sent, so both bites land in the same or next tick. On top of that, 10 Hz sends (`SEND_MS=100`) versus 15 Hz ticks (`TICK_MS=66.7`) skip the one-tick leader-only phase. As a result, the first recorded frame already has both players in `dmgBy`.\n- **Fix:** root node `/shared-hunt-e2e-prerequisite`, branch `grand-world-successor-20260901-1900--shared-hunt-e2e-prerequisite`, commits `ae4a8b65` and `6d9a5cb9` (`e2e.js` blob becomes `21d21f17`). The object-successors work is to depend on it.\n- **What to do in children:** if a child whose own diff doesn't touch `e2e.js` (e.g. runtime-v5) hits this, escalate and ask the parent to inherit the fix before re-gating. Don't resubmit blindly or edit `e2e.js`. If the red comes back, first check that the parent contains blob `21d21f17`.\n- Raw red traces: `/home/user/p/ae/artifacts/grand-world/release-train-20260831/shared-hunt-e2e-prerequisite-v1/red-traces/`",
+  "first_input_tokens": 8797,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:10:46Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 3,
+  "payload_sha256": "8afc5d057efb8374f46b75e93f9191f821d490e4b6b32e646cd0af6ad61d6cbe",
+  "port": 18801,
+  "provider_error": false,
+  "ready_s": 10.4,
+  "run_id": "alt-A04__claude__optional",
+  "scoring": {
+    "marks": 0,
+    "observations": 8
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:10:35Z",
+  "stderr_foreign_urls": null,
+  "store": "alt",
+  "task_id": "alt-A04",
+  "timed_out": false,
+  "tokens_in": 38942,
+  "tokens_out": 957,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

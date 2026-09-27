@@ -1,0 +1,16 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "shared-hunt e2e.js Торн/Каэль failure dmgBy first frame root replan object-successors",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M3F0XA9AQ7SWDMP78MSXTY79"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  }
+]

@@ -1,0 +1,48 @@
+{
+  "agent": "codex",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 76.5,
+  "ended_at": "2026-09-27T12:06:38Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 2,
+    "recall_events": 3,
+    "recall_feedback_marks": 13,
+    "recall_lookup_events": 2
+  },
+  "final_text": "Found in Living Memory, `project:game` (2026-09-26):\n- Supervisor **#265 / R1** allowed only population/herd/byBiome changes in `mmo/content/species.json` and matching `mmo/BESTIARY.md`; runtime, oracle/tests and README remained unchanged.\n- `biome-ecosim-species-content-repair` had to be a child of `biome-successors`, based on **849139ac**, not root **26b38741**, which lacked the biome content.\n- `migrationDrive = 0.08 + 0.38*habitatBreadth + 0.2*(1-homeShare) + 0.22*activity`; population influences it only through `homeShare`.\n- The **809-distribution** analysis forced fulgurax as migration argmax: minimum **0.638668**, versus glimmerfin maximum **0.612562**; fulgurax herd **≤1**, highland population **2**.\n- This proved inability to switch argmax under README constraints, **not** universal population-repair infeasibility; K2 had sourceOccupancy **0 in both arms across five holdouts**, while unlawful K3 still scored **77/80**.\n- Decision: **REPLAN_REQUIRED**; README/subject-eligibility widening required an operator amendment, not another identical R1 producer or delivery/scene rerun.\n- Evidence recorded at `children/biome-successors/result.md`, `children/biome-successors/typed_contract.json`, and root `children.json`.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:05:21Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18804,
+  "provider_error": false,
+  "ready_s": 10.3,
+  "run_id": "alt-A07__codex__mandatory",
+  "scoring": {
+    "marks": 13,
+    "observations": 15
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:05:11Z",
+  "stderr_foreign_urls": [],
+  "store": "alt",
+  "task_id": "alt-A07",
+  "timed_out": false,
+  "tokens_in": 116368,
+  "tokens_out": 899,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

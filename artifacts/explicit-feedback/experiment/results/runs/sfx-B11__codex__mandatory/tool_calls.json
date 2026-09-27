@@ -1,0 +1,103 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "SEAF auth2 OpenAPI public/docs/auth2_api_v2_1.yml Online ID API source specs"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M0GAHEXDCW91TGCBP7CH2CGS",
+        "01M20WB1H4KDV1QKFN97H4PAXH",
+        "01KT9N1N1J24DNX7Q2MGAT8FTT",
+        "01KZV08ZZEQ111AXR2V4293AWY",
+        "01M2092QV2SSZTMSPTN0Z49YPX",
+        "01KZV00CK3D0D207R93YH3FK97"
+      ],
+      "max_results": 5,
+      "query": "auth2_api_v2_1.yml",
+      "scope": "project:online",
+      "used": [
+        "01M208QJY4CAG9HPVXJRZZSR8T",
+        "01M0G9YEWDBVGMXMRP6FA6E8F1"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KZV00CK3D0D207R93YH3FK97",
+        "01KZV08ZZEQ111AXR2V4293AWY",
+        "01KZBFNPXEKYJTS947RM8FFCB8",
+        "01M2ZQCJ7V22C8346JR0DZ087K",
+        "01M1P6F44B830GX40HTG7SRDS4"
+      ],
+      "max_results": 3,
+      "query": "auth2 OpenAPI",
+      "scope": "project:online",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M0G9YEWDBVGMXMRP6FA6E8F1"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:online"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "depth": 3,
+      "irrelevant": [
+        "01M2ZT34E7BPC29821PC3FEMKR"
+      ],
+      "max_results": 5,
+      "query": "SEAF API спецификации auth2 public/docs",
+      "scope": "project:online",
+      "used": [
+        "01M208QJY4CAG9HPVXJRZZSR8T",
+        "01KWHQ1G3CW74793W5TK8F7QYM"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M0G9S6TH21H7SAZFCDA8NMMR",
+        "01M0GAHEXDCW91TGCBP7CH2CGS",
+        "01M2ZT34E7BPC29821PC3FEMKR",
+        "01KZXDCTZA125DKMGXEGTZ906Z"
+      ],
+      "max_results": 0,
+      "query": "public/docs/auth2_api_v2_1.yml",
+      "used": [
+        "01M208QJY4CAG9HPVXJRZZSR8T"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

@@ -1,0 +1,134 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:24:33.000000Z",
+      "id": "01M3HD5ZNKSAX2P5MX6CCV9VT6",
+      "n_results": 10,
+      "query": "object-missing-entry-completion five children slot02 799b780e slot06 6e0a68d8 slot07 deriveProductionIsolation slot08 discovery root-arch stagePlan sealed intent ENTRY-CONTRACT producer proof",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:24:39.000000Z",
+      "id": "01M3HD655EBJJNSH74KDP043XE",
+      "n_results": 10,
+      "query": "missing-entry-completion slot02 799b780e slot06 6e0a68d8 deriveProductionIsolation stagePlan sealed intent ENTRY-CONTRACT producer proof",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:24:45.000000Z",
+      "id": "01M3HD6B95N9JRNYXZRASA2REF",
+      "n_results": 10,
+      "query": "missing entry completion children slot06 slot07 deriveProductionIsolation discovery root-arch producer proof entry contract",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:24:57.000000Z",
+      "id": "01M3HD6PHJ7MHEX2EQPQY3MZP5",
+      "n_results": 10,
+      "query": "object-missing-entry-completion verification 2026-09-27 slot02 799b780e slot06 6e0a68d8 five entries check-entry",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:24:57.000000Z",
+      "id": "01M3HD6Q96TR33T61MJVYMW9P8",
+      "n_results": 8,
+      "query": "slot07 deriveProductionIsolation fix; root-arch stagePlan sealed intent mismatch",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:04.000000Z",
+      "id": "01M3HD6XE74H0YS2WQCABC36J3",
+      "n_results": 8,
+      "query": "missing-continuation-tidal-root-arch-b28a054ec8 result; object-missing-entry-completion final verification outcome",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:12.000000Z",
+      "id": "01M3HD75DP4SW8YKF5FC64RDXV",
+      "n_results": 6,
+      "query": "799b780e 6e0a68d8 deriveProductionIsolation",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:24:45.000000Z",
+    "2026-09-27T12:25:03.000000Z",
+    "2026-09-27T12:25:03.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD5ZNKSAX2P5MX6CCV9VT6",
+      "id": "1",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:24:45.000000Z",
+      "node_id": "01M1FKWE3R46XZKMPXGH5Z0ART",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HD6B95N9JRNYXZRASA2REF",
+      "transport": "1e43a6ac43c145fa890f80a36f6b8ae1",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD5ZNKSAX2P5MX6CCV9VT6",
+      "id": "2",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:24:45.000000Z",
+      "node_id": "01M1F3YEF7HQTB1W94KAQ2H3XM",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HD6B95N9JRNYXZRASA2REF",
+      "transport": "1e43a6ac43c145fa890f80a36f6b8ae1",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD5ZNKSAX2P5MX6CCV9VT6",
+      "id": "3",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:24:45.000000Z",
+      "node_id": "01M3AVGHFQSVCY0ABQ59YDVZX9",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HD6B95N9JRNYXZRASA2REF",
+      "transport": "1e43a6ac43c145fa890f80a36f6b8ae1",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD6B95N9JRNYXZRASA2REF",
+      "id": "4",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:24:57.000000Z",
+      "node_id": "01M3EHBKHK7DRYFWANGD4HHH23",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HD6PHJ7MHEX2EQPQY3MZP5",
+      "transport": "1e43a6ac43c145fa890f80a36f6b8ae1",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD5ZNKSAX2P5MX6CCV9VT6",
+      "id": "5",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:24:57.000000Z",
+      "node_id": "01M3ECQC4DW75KTNVDCW9VYTME",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HD6PHJ7MHEX2EQPQY3MZP5",
+      "transport": "1e43a6ac43c145fa890f80a36f6b8ae1",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 7
+  }
+}

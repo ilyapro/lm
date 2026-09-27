@@ -1,0 +1,203 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:25:43.000000Z",
+      "id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "n_results": 8,
+      "query": "gigacode.ru connect timeout proxy VPN required reachability ai-llm-proxy provider proxy setting",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:48.000000Z",
+      "id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "n_results": 8,
+      "query": "gigacode.ru unreachable without VPN, connect timeout, ai-llm-proxy",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:51.000000Z",
+      "id": "01M3HD8C3A7E7X30BKNQHVJXHY",
+      "n_results": 8,
+      "query": "provider proxy setting HTTPS_PROXY NO_PROXY gigacode VPN off timeout ai-llm-proxy host",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:25:48.000000Z",
+    "2026-09-27T12:25:54.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:25:48.000000Z",
+      "node_id": "01M28TF2Z879QBJ3BZSEF6CZ1Y",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "id": "2",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:48.000000Z",
+      "node_id": "01M1HJ6007QMRKRJTV6YRCQT17",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "id": "3",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:48.000000Z",
+      "node_id": "01KRV5XXNNFK38D17WFM1RN1A2",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "id": "4",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:48.000000Z",
+      "node_id": "01KZYTQD8M54H2QQWYGV8PDFXB",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "id": "5",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:48.000000Z",
+      "node_id": "01KZYTQD5FW9Y7GT59RK0EGQTF",
+      "rank": 4,
+      "reject_reason": null,
+      "source_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "id": "6",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:48.000000Z",
+      "node_id": "01M0R0JDYTWC0J7HNFMNT4VSX0",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "id": "7",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:48.000000Z",
+      "node_id": "01KZYVFVGWZQC8JDDBQJ9Y4WD0",
+      "rank": 6,
+      "reject_reason": null,
+      "source_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD83WN3TEGVCH27S2HJ7WB",
+      "id": "8",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:48.000000Z",
+      "node_id": "01M0CW4PJNRY7W02211AAQG2E9",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "id": "9",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:25:51.000000Z",
+      "node_id": "01M1TZ7Y37BG8RA3ERDEWEDW0X",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HD8C3A7E7X30BKNQHVJXHY",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "id": "10",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:51.000000Z",
+      "node_id": "01M1J281ZK7WVV9Z4K8CQ0A86A",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HD8C3A7E7X30BKNQHVJXHY",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "id": "11",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:51.000000Z",
+      "node_id": "01M0NQAMYC3PRV2499GZGDMNTQ",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HD8C3A7E7X30BKNQHVJXHY",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HD88E897GEZVJN2K7K6YE8",
+      "id": "12",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:25:51.000000Z",
+      "node_id": "01KZZTC0BQPAW5Q3ZGPW2JJCDK",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HD8C3A7E7X30BKNQHVJXHY",
+      "transport": "dd5e3201fd2c424baaceba282212e56e",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 3
+  }
+}

@@ -1,0 +1,81 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "slot06 geometry-binding-v2 admission-discovery-v2 verify measure v1 geometry"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "slot06 geometry-binding-v2"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "slot-06 admission-discovery-v2"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "slot06",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 4,
+      "query": "\"geometry-binding-v2\" \"admission-discovery-v2\""
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "slot06 geometry-binding-v2 admission-discovery-v2 verify measure v1 geometry",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M3F7PSQ6TSSHWGCGDE46XZKH",
+        "01M3EKECF9MB08D3J05XFR2MV4",
+        "01M3ADJBQXYBP1FSN9JEB83SWN"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M3ES755Y2SY764SMS6ASXJTK",
+        "01M3EKTSBQDZKFJYJNCQ84P53H"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

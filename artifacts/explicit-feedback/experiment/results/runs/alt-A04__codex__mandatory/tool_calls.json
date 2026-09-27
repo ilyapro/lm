@@ -1,0 +1,80 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "shared-hunt e2e.js Торн/Каэль failure dmgBy first frame root replan object-successors"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1QKKGXZEF0RTAGP2XMPQ8JS",
+        "01M1J7ERWW9SG17A2DW9GEBA15",
+        "01M39KQ0FGGAYEGZSSQBRTZTNH",
+        "01M1H5457M3B3BMDER403KBCGW",
+        "01M1KX377FFB0KDT865J8S81T1",
+        "01M1Q2D7XCN7DJC8G66QY16N08",
+        "01M1F7H1TW7VSSMGRFZ12QJAE3",
+        "01M1MMDQMHJS0K4W4FK1ZZAF2F"
+      ],
+      "max_results": 6,
+      "query": "\"shared-hunt\" \"dmgBy\" \"e2e.js\"",
+      "scope": "project:game",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [],
+      "max_results": 4,
+      "query": "shared-hunt dmgBy first frame",
+      "scope": "project:game",
+      "used": [
+        "01M3EXQKFT69P7A0RBPC82MF0C",
+        "01M3F3GDTJKM3ZDAPGP5Z9ZZ43",
+        "01M3F0XA9AQ7SWDMP78MSXTY79",
+        "01M3FA1QPBK6YV9X3SGTRHYGE0",
+        "01M3EYQN280WEDWNJ0DP4YJ0EW",
+        "01M3F0X54J9E43PZDFKSYA4QCY"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M3F0X54J9E43PZDFKSYA4QCY",
+        "01M3EYQN280WEDWNJ0DP4YJ0EW",
+        "01M3FA1QPBK6YV9X3SGTRHYGE0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [],
+      "max_results": 0,
+      "query": "shared-hunt",
+      "scope": "project:game",
+      "used": [
+        "01M3EYQCR1QWPCGWVN2AMDCWK8",
+        "01M3EVFRHE6EPN6AQ0K7AJKNDC",
+        "01M3F0XA9AQ7SWDMP78MSXTY79",
+        "01M1ABN61X1B9YSXCF8G3MMRJP"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

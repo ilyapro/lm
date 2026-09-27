@@ -1,0 +1,38 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:11:16.000000Z",
+      "id": "01M3HCDN23MVPKM9Z6BG6WR11J",
+      "n_results": 7,
+      "query": "lm_instance.py seeded_clusters compose_seeded_tail Memory nearby tail",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:20.000000Z",
+      "id": "01M3HCDRKPNX3ZVCPHA3RWVRDG",
+      "n_results": 5,
+      "query": "compose_seeded_tail",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:20.000000Z",
+      "id": "01M3HCDRYFEHTT7AHXFZ9CPG3Z",
+      "n_results": 5,
+      "query": "seeded_clusters",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:11:20.000000Z",
+      "id": "01M3HCDS9X17C3EJ8A64E5783M",
+      "n_results": 5,
+      "query": "lm_instance.py Memory nearby",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 4
+  }
+}

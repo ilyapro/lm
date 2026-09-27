@@ -1,0 +1,686 @@
+{
+  "abort": null,
+  "finished_at": "2026-09-27T12:32:14Z",
+  "first_launch_at": "2026-09-27T12:01:57Z",
+  "head": "f5b667ef68ab64a7aaf52fc479d59e99bae4b2a5",
+  "output_tokens": 126694,
+  "pairs": [
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:02:37Z",
+      "runs": [
+        "alt-A05__claude__optional",
+        "alt-A05__claude__mandatory"
+      ],
+      "task_id": "alt-A05",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:03:50Z",
+      "runs": [
+        "sfx-B10__claude__optional",
+        "sfx-B10__claude__mandatory"
+      ],
+      "task_id": "sfx-B10",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:03:56Z",
+      "runs": [
+        "sfx-B10__codex__optional",
+        "sfx-B10__codex__mandatory"
+      ],
+      "task_id": "sfx-B10",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:05:00Z",
+      "runs": [
+        "alt-A05__codex__optional",
+        "alt-A05__codex__mandatory"
+      ],
+      "task_id": "alt-A05",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:05:08Z",
+      "runs": [
+        "alt-A07__claude__mandatory",
+        "alt-A07__claude__optional"
+      ],
+      "task_id": "alt-A07",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:05:10Z",
+      "runs": [
+        "sfx-A03__claude__mandatory",
+        "sfx-A03__claude__optional"
+      ],
+      "task_id": "sfx-A03",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:07:53Z",
+      "runs": [
+        "sfx-B09__claude__optional",
+        "sfx-B09__claude__mandatory"
+      ],
+      "task_id": "sfx-B09",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:07:58Z",
+      "runs": [
+        "alt-A07__codex__mandatory",
+        "alt-A07__codex__optional"
+      ],
+      "task_id": "alt-A07",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:08:06Z",
+      "runs": [
+        "sfx-A03__codex__mandatory",
+        "sfx-A03__codex__optional"
+      ],
+      "task_id": "sfx-A03",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:09:10Z",
+      "runs": [
+        "alt-A02__claude__optional",
+        "alt-A02__claude__mandatory"
+      ],
+      "task_id": "alt-A02",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:10:32Z",
+      "runs": [
+        "alt-A02__codex__optional",
+        "alt-A02__codex__mandatory"
+      ],
+      "task_id": "alt-A02",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:10:48Z",
+      "runs": [
+        "sfx-B09__codex__optional",
+        "sfx-B09__codex__mandatory"
+      ],
+      "task_id": "sfx-B09",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:10:48Z",
+      "runs": [
+        "sfx-A02__claude__mandatory",
+        "sfx-A02__claude__optional"
+      ],
+      "task_id": "sfx-A02",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:11:19Z",
+      "runs": [
+        "alt-A04__claude__mandatory",
+        "alt-A04__claude__optional"
+      ],
+      "task_id": "alt-A04",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:12:13Z",
+      "runs": [
+        "alt-A04__codex__mandatory",
+        "alt-A04__codex__optional"
+      ],
+      "task_id": "alt-A04",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:12:24Z",
+      "runs": [
+        "sfx-A04__claude__optional",
+        "sfx-A04__claude__mandatory"
+      ],
+      "task_id": "sfx-A04",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:12:24Z",
+      "runs": [
+        "sfx-A02__codex__mandatory",
+        "sfx-A02__codex__optional"
+      ],
+      "task_id": "sfx-A02",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:12:51Z",
+      "runs": [
+        "alt-A06__claude__optional",
+        "alt-A06__claude__mandatory"
+      ],
+      "task_id": "alt-A06",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:14:40Z",
+      "runs": [
+        "alt-A06__codex__optional",
+        "alt-A06__codex__mandatory"
+      ],
+      "task_id": "alt-A06",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:14:49Z",
+      "runs": [
+        "sfx-A05__claude__mandatory",
+        "sfx-A05__claude__optional"
+      ],
+      "task_id": "sfx-A05",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:14:50Z",
+      "runs": [
+        "sfx-A04__codex__optional",
+        "sfx-A04__codex__mandatory"
+      ],
+      "task_id": "sfx-A04",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:15:16Z",
+      "runs": [
+        "alt-B12__claude__mandatory",
+        "alt-B12__claude__optional"
+      ],
+      "task_id": "alt-B12",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:17:21Z",
+      "runs": [
+        "alt-B12__codex__mandatory",
+        "alt-B12__codex__optional"
+      ],
+      "task_id": "alt-B12",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:17:55Z",
+      "runs": [
+        "sfx-A05__codex__mandatory",
+        "sfx-A05__codex__optional"
+      ],
+      "task_id": "sfx-A05",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:18:32Z",
+      "runs": [
+        "alt-A08__claude__optional",
+        "alt-A08__claude__mandatory"
+      ],
+      "task_id": "alt-A08",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:18:32Z",
+      "runs": [
+        "sfx-A08__claude__optional",
+        "sfx-A08__claude__mandatory"
+      ],
+      "task_id": "sfx-A08",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:19:16Z",
+      "runs": [
+        "sfx-B12__claude__mandatory",
+        "sfx-B12__claude__optional"
+      ],
+      "task_id": "sfx-B12",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:20:15Z",
+      "runs": [
+        "alt-A01__claude__mandatory",
+        "alt-A01__claude__optional"
+      ],
+      "task_id": "alt-A01",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:20:17Z",
+      "runs": [
+        "alt-A08__codex__optional",
+        "alt-A08__codex__mandatory"
+      ],
+      "task_id": "alt-A08",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:20:17Z",
+      "runs": [
+        "sfx-A08__codex__optional",
+        "sfx-A08__codex__mandatory"
+      ],
+      "task_id": "sfx-A08",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:21:53Z",
+      "runs": [
+        "sfx-B11__claude__optional",
+        "sfx-B11__claude__mandatory"
+      ],
+      "task_id": "sfx-B11",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:22:01Z",
+      "runs": [
+        "alt-A01__codex__mandatory",
+        "alt-A01__codex__optional"
+      ],
+      "task_id": "alt-A01",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:22:03Z",
+      "runs": [
+        "sfx-B12__codex__mandatory",
+        "sfx-B12__codex__optional"
+      ],
+      "task_id": "sfx-B12",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:23:43Z",
+      "runs": [
+        "alt-A03__claude__optional",
+        "alt-A03__claude__mandatory"
+      ],
+      "task_id": "alt-A03",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:24:07Z",
+      "runs": [
+        "alt-A03__codex__optional",
+        "alt-A03__codex__mandatory"
+      ],
+      "task_id": "alt-A03",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:25:01Z",
+      "runs": [
+        "sfx-A06__claude__mandatory",
+        "sfx-A06__claude__optional"
+      ],
+      "task_id": "sfx-A06",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:25:20Z",
+      "runs": [
+        "sfx-B11__codex__optional",
+        "sfx-B11__codex__mandatory"
+      ],
+      "task_id": "sfx-B11",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:25:28Z",
+      "runs": [
+        "alt-B11__claude__mandatory",
+        "alt-B11__claude__optional"
+      ],
+      "task_id": "alt-B11",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:26:49Z",
+      "runs": [
+        "sfx-A01__claude__optional",
+        "sfx-A01__claude__mandatory"
+      ],
+      "task_id": "sfx-A01",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:27:54Z",
+      "runs": [
+        "sfx-A06__codex__mandatory",
+        "sfx-A06__codex__optional"
+      ],
+      "task_id": "sfx-A06",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:28:07Z",
+      "runs": [
+        "alt-B11__codex__mandatory",
+        "alt-B11__codex__optional"
+      ],
+      "task_id": "alt-B11",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:28:08Z",
+      "runs": [
+        "alt-B10__claude__optional",
+        "alt-B10__claude__mandatory"
+      ],
+      "task_id": "alt-B10",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:29:06Z",
+      "runs": [
+        "sfx-A07__claude__mandatory",
+        "sfx-A07__claude__optional"
+      ],
+      "task_id": "sfx-A07",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:29:48Z",
+      "runs": [
+        "sfx-A01__codex__optional",
+        "sfx-A01__codex__mandatory"
+      ],
+      "task_id": "sfx-A01",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:29:56Z",
+      "runs": [
+        "alt-B10__codex__optional",
+        "alt-B10__codex__mandatory"
+      ],
+      "task_id": "alt-B10",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "claude",
+      "ended_at": "2026-09-27T12:30:27Z",
+      "runs": [
+        "alt-B09__claude__mandatory",
+        "alt-B09__claude__optional"
+      ],
+      "task_id": "alt-B09",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:32:10Z",
+      "runs": [
+        "alt-B09__codex__mandatory",
+        "alt-B09__codex__optional"
+      ],
+      "task_id": "alt-B09",
+      "valid": [
+        true,
+        true
+      ]
+    },
+    {
+      "agent": "codex",
+      "ended_at": "2026-09-27T12:32:14Z",
+      "runs": [
+        "sfx-A07__codex__mandatory",
+        "sfx-A07__codex__optional"
+      ],
+      "task_id": "sfx-A07",
+      "valid": [
+        true,
+        true
+      ]
+    }
+  ],
+  "queue": [
+    "sfx-B10/claude",
+    "alt-A05/claude",
+    "sfx-B10/codex",
+    "alt-A05/codex",
+    "sfx-A03/claude",
+    "alt-A07/claude",
+    "sfx-A03/codex",
+    "alt-A07/codex",
+    "sfx-B09/claude",
+    "alt-A02/claude",
+    "sfx-B09/codex",
+    "alt-A02/codex",
+    "sfx-A02/claude",
+    "alt-A04/claude",
+    "sfx-A02/codex",
+    "alt-A04/codex",
+    "sfx-A04/claude",
+    "alt-A06/claude",
+    "sfx-A04/codex",
+    "alt-A06/codex",
+    "sfx-A05/claude",
+    "alt-B12/claude",
+    "sfx-A05/codex",
+    "alt-B12/codex",
+    "sfx-A08/claude",
+    "alt-A08/claude",
+    "sfx-A08/codex",
+    "alt-A08/codex",
+    "sfx-B12/claude",
+    "alt-A01/claude",
+    "sfx-B12/codex",
+    "alt-A01/codex",
+    "sfx-B11/claude",
+    "alt-A03/claude",
+    "sfx-B11/codex",
+    "alt-A03/codex",
+    "sfx-A06/claude",
+    "alt-B11/claude",
+    "sfx-A06/codex",
+    "alt-B11/codex",
+    "sfx-A01/claude",
+    "alt-B10/claude",
+    "sfx-A01/codex",
+    "alt-B10/codex",
+    "sfx-A07/claude",
+    "alt-B09/claude",
+    "sfx-A07/codex",
+    "alt-B09/codex"
+  ],
+  "stop_reason": null,
+  "stopped_agents": [],
+  "tokens": 16096521
+}

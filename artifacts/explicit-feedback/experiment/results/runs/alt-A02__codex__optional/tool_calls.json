@@ -1,0 +1,46 @@
+[
+  {
+    "error": null,
+    "input": {
+      "depth": "causal",
+      "max_results": 8,
+      "query": "merge-dependency-candidate-preservation npm-candidate-published gate-dependencies-published dependency-lifecycle-regression worktree_safe_npm_install candidate mutation scope sidecar ownership",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M238F1FERJV1VTP565A1HN82",
+        "01M23206V84ETF2DZYET7TRFVJ",
+        "01M21EASPX3K5J6V4MWV6XRKAZ",
+        "01M238HRB96QHH45YWR1CR7FC8"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "merge-dependency-candidate-preservation worktree_safe_npm_install candidate mutation scope resolved publication",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 4,
+      "query": "worktree_safe_npm_install mutation scope 70 71 package-lock candidate preservation scratch snapshot",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

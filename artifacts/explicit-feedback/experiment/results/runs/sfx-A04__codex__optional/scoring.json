@@ -1,0 +1,49 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:12:45.000000Z",
+      "id": "01M3HCGCB326B7X5VCBJ3D6J2F",
+      "n_results": 8,
+      "query": "AE dashboard-static-build server-static-root dependency integration provider-product chat-routes-store-ui AE_DASHBOARD_REACT_BUILD_DIR static_serve tests isolated processes",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:12:53.000000Z",
+      "id": "01M3HCGKP97A2NKEK84GKRGZF5",
+      "n_results": 5,
+      "query": "\"AE_DASHBOARD_REACT_BUILD_DIR\" \"static_serve\" isolated processes",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:12:57.000000Z",
+      "id": "01M3HCGQNA0S6G2546M1Z9RDBV",
+      "n_results": 5,
+      "query": "dashboard-static-build server-static-root provider-product chat-routes-store-ui",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:13:01.000000Z",
+      "id": "01M3HCGVTKX8017JHYVJ50F1CK",
+      "n_results": 5,
+      "query": "server-static-root static_serve tests isolated",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:13:09.000000Z",
+      "id": "01M3HCH35VBXD31KGK7FABYQ9J",
+      "n_results": 4,
+      "query": "AE_DASHBOARD_REACT_BUILD_DIR",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:12:53.000000Z",
+    "2026-09-27T12:12:53.000000Z",
+    "2026-09-27T12:12:53.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 5
+  }
+}

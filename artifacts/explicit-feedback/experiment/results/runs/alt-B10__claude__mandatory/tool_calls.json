@@ -1,0 +1,35 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot03 isolation-result tree-decision 20260924 installer capture cc68c15 admission common provenance",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M39A76VYS47G2BNPN5212GA8"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M39JJR23ZKFFQZ1SZMQHAV5E",
+        "01M3AW26GBVFJZQ700BZGP7YHC",
+        "01M39JWAVDTW7J0W2Y0R8BHXM5",
+        "01M21HMRFH5172PVEEPK4KNPH1",
+        "01M21J5C6T5AZ27FAENXE4TH5D",
+        "01M399X146VRZXFKCXP2AD7WK7"
+      ],
+      "query": "slot03 cc68c15 admission common provenance capture",
+      "scope": "project:game",
+      "used": [
+        "01M399RDEXD0AQ7QAEZQVYHE4F",
+        "01M39A76VYS47G2BNPN5212GA8"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

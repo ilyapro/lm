@@ -1,0 +1,52 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 87.8,
+  "ended_at": "2026-09-27T12:23:34Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 4,
+    "recall_events": 5,
+    "recall_feedback_marks": 32,
+    "recall_lookup_events": 8
+  },
+  "final_text": "Here is what memory has on this. There is no single note that answers the whole question, so the answer is pieced together from several.\n\n- **Why the audit JSON must stay out of the owned namespace (trace `01M21PWF7NG92HG7MV11WRE6Y3`, task `discovery-interface-repair-v2`, 2026-09-08):** in the slot08 discovery interface repair, commit `deb28888` added `positive-incomplete-index.stdout`, which was raw JSON stdout from an intentionally incomplete L4 fixture. `frozenReferences` parses every historical blob whatever its extension, so that commit froze canonical `verify.mjs` after the fact. Lineage went from 4/4 to explicit-frozen-membership/L4 = false, and `observations.protectedEvidence.violations` listed the verifier path. The fix is to keep diagnostic output as reversible raw bytes (for example base64), never as parseable JSON inside the entry, and not to weaken the policy or drop the original bindings.\n- **The reproduction pattern itself:** siblings on 2026-09-08/09 (slot03, sinterhorn provider f5cb5f1b, root-arch, tidal-deadwood) all used a private full-history refs/index clone of the exact tree. Native `ae_artifact_provenance_verify` returned rc0, then rc1 with `package-lock.json` candidate_changed after a bare offline `npm install`, then rc0 again once only that lock was removed. Source HEAD, index and native metadata stayed untouched. The JSON reports were written outside the repo, under `/tmp/<task>-*/native-provenance-reproduction.json`.\n- **That npm diagnosis is out of date (slot03 `01M21GAKG7E1HZPDBVVNM0887G` was formally corrected; `01M390TPK55P83R74KQ9EP2KSY` and `01M3A4V9SH29EQ23PCMRC60R9W` say the same):** as of 2026-09-24, `/home/user/p/ae/queue.sh` `worktree_safe_npm_install` runs `npm ci` only when a lock exists, otherwise `npm install --no-save --package-lock=false`, and guards the source bytes. Test the installer again on the actual parent rather than relying on the old failures.\n- **Slot08 background:** the historical receipt stays rejected and must be kept. Fresh discovery belongs in a separate child entry.\n- **Not found:** memory has no slot08-specific run of the package-lock reproduction and no stored result for one.",
+  "first_input_tokens": 8844,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:22:06Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 9,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18802,
+  "provider_error": false,
+  "ready_s": 10.6,
+  "run_id": "alt-A03__claude__mandatory",
+  "scoring": {
+    "marks": 32,
+    "observations": 37
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:21:56Z",
+  "stderr_foreign_urls": null,
+  "store": "alt",
+  "task_id": "alt-A03",
+  "timed_out": false,
+  "tokens_in": 179596,
+  "tokens_out": 3144,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

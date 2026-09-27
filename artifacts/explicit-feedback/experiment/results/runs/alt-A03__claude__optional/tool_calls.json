@@ -1,0 +1,63 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot08 package-lock native provenance reproduction npm install owned namespace avoid metadata frozenReferences audit JSON L4",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot08 package-lock provenance npm install owned namespace frozenReferences"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21PW8ARE78XZJREB38RAPC9",
+        "01M21P5SAHCWEHHYQ06ZEDSFC9",
+        "01M390TPK55P83R74KQ9EP2KSY",
+        "01M3A4V9SH29EQ23PCMRC60R9W"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1YAKFBZPY8ZWR336ZX85KH3",
+        "01M20TSCXDZFXZWFDVPVP7Q3BD"
+      ],
+      "max_results": 8,
+      "query": "slot08 native provenance reproduction package-lock candidate_changed owned namespace audit JSON metadata",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21N63GJYZN2JYSFEBMDQK2A",
+        "01M21GAKG7E1HZPDBVVNM0887G",
+        "01M21HMRFH5172PVEEPK4KNPH1",
+        "01M21HMTHR3K40VPF0N0584J76"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot-08 legacy-family package-lock provenance retry avoid metadata frozenReferences audit",
+      "used": [
+        "01M21PW8ARE78XZJREB38RAPC9",
+        "01M390TPK55P83R74KQ9EP2KSY",
+        "01M3A4V9SH29EQ23PCMRC60R9W"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

@@ -1,0 +1,82 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:25:44.000000Z",
+      "id": "01M3HD84BPEPPVPJCG3Y6ZDDE8",
+      "n_results": 10,
+      "query": "object-missing-entry-completion five children slot02 799b780e slot06 6e0a68d8 slot07 deriveProductionIsolation slot08 discovery root-arch stagePlan sealed intent ENTRY-CONTRACT producer proof",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:49.000000Z",
+      "id": "01M3HD89WP3CX4W06W2R0F1N1V",
+      "n_results": 6,
+      "query": "object-missing-entry-completion",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:50.000000Z",
+      "id": "01M3HD8A7AVQJJ930BMEY2K0P6",
+      "n_results": 6,
+      "query": "799b780e 6e0a68d8",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:25:50.000000Z",
+      "id": "01M3HD8AQBT0EJ2VZS7YGCYR91",
+      "n_results": 6,
+      "query": "deriveProductionIsolation stagePlan sealed intent ENTRY-CONTRACT producer proof",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:26:01.000000Z",
+      "id": "01M3HD8N9JN6YSQVDDRE3RNFMD",
+      "n_results": 4,
+      "query": "slot02 799b780e",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:26:01.000000Z",
+      "id": "01M3HD8NVE3RNXV0G9PD1TGMHB",
+      "n_results": 4,
+      "query": "slot06 6e0a68d8",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:26:02.000000Z",
+      "id": "01M3HD8P6RJB6TGDQ3TN0WFFXC",
+      "n_results": 4,
+      "query": "slot07 deriveProductionIsolation",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:26:04.000000Z",
+      "id": "01M3HD8RK350XYJH7HKGX6QAW7",
+      "n_results": 4,
+      "query": "slot08 discovery object-missing-entry-completion five",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:26:09.000000Z",
+      "id": "01M3HD8XC4KMGKY8GP22AKQQFD",
+      "n_results": 5,
+      "query": "\"6e0a68d8\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:26:09.000000Z",
+      "id": "01M3HD8XPD39TFV8EH2DGZV6YB",
+      "n_results": 5,
+      "query": "object-missing-entry-completion five children producer proof",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:26:05.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 10
+  }
+}

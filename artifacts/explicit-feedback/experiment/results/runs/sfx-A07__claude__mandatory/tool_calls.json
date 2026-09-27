@@ -1,0 +1,56 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "Online inventory §10.10 featureAgents agents2020 49b396b local experiments published configuration ba/processes.yaml ai_agents"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1XV0Y9G2RR6H8H5KENA6Z28",
+        "01M208QJY4CAG9HPVXJRZZSR8T",
+        "01KTCDMB4MXQHX4TY2EA77W9S6",
+        "01M1Z14AD9ESBZE62Q4DEY49J8",
+        "01M0GAQ74WHSQX7Y21PDGCMPZR",
+        "01M2ZQDSQ8SZ3TPRX5KHNHTSVR",
+        "01KVAXNSA4GHQ8DCW2RKQ8N4S5",
+        "01KZXNF3B6WS8DX7Q4M625FXYN",
+        "01M1YZX8CS4ETAAS70ZMTCG8MY",
+        "01KZXFJYTXT919KVMC1289SAXW"
+      ],
+      "max_results": 10,
+      "query": "featureAgents ai_agents chat conditions inventory",
+      "scope": "project:2gis-seaf-web"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M1Y59N7V6V27HAEFXH7C8WDG"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1Y0PGFTKNTFHDHFWSQ8DYDY",
+        "01M1NZJRH726AQ8MC5RARPDBHV",
+        "01M1Y1SRH19JVD57698QY7D63C",
+        "01M1Y31BNKNGRJSR5PFTQG1B4G",
+        "01M2FXAXCFTGAZXNC2WP9AQJTE",
+        "01M1Y1CP35F38GVCANVVKGRK01",
+        "01M1Y11HJT9P73ZDE5NBT3VPEM",
+        "01M1Y2A96AFVD0RKPZB6P93HVY"
+      ],
+      "query": "_inventory.md §10.10 featureAgents agents2020 profile chat restrictions correction",
+      "scope": "project:2gis-seaf-web",
+      "used": [
+        "01M1Y5T4N23G9VH8A8XHWZ2SYV",
+        "01M1Y59N7V6V27HAEFXH7C8WDG"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

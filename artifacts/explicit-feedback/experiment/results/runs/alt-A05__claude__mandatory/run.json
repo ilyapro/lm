@@ -1,0 +1,47 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 24.0,
+  "ended_at": "2026-09-27T12:02:33Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 3,
+    "recall_events": 2,
+    "recall_feedback_marks": 10,
+    "recall_lookup_events": 3
+  },
+  "final_text": "Here's what memory has on this, all recorded 2026-09-07:\n\n- **Nimbara final receipt location:** `mmo/tools/grand-world-receipts/species-successors/gw2-species-repair-nimbara-ecdfa739d6.json`, checked with `git show 5d38ef1e…`. Its test is `mmo/test/grand-world-species-successors/gw2-species-repair-nimbara-ecdfa739d6.js`. Schema is `aether/grand-world-species-successor-provider-receipt@1` and the digest is `d1716e6e1a79…fb11f1`.\n- **Its terminal verdict:** `verdict='quarantine'`, `publication.decision='quarantined'`, mode `none`, `changedPaths []`. Independent candidate validation passed, but `production-manifest-disk-bijection` failed.\n- **Decision:** a quarantined Nimbara counts as finishing Noctifer's ordering dependency. It never means the asset was accepted or that a manifest transaction ran.\n- **Noctifer verifier (at HEAD 0bc7e817):** `validateAcquisitionReceipt` passes a made-up `publication:null` to `verifyProductionState`. It also only checks the 11 acquisition blockers against `outcome.exactBlockers`, even though it finds 19 failures, and it ignores the finalization/publication fields.\n- **Fix (4b2ad7d7, selftest 77/77):** pin input commit `0bc7e817…` (receipt blob `99a99fa2…`). Then run `--measure-final`, replace the terminal fields with `terminalProjection` (finalization schema @2) and reseal `receiptDigest`. This gives 20 quarantine reasons, including `exact-base-execution-not-proved`.\n- **Not found:** memory has nothing specific about a `performed:false` field or an exact normalization rule for it.",
+  "first_input_tokens": 8837,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:02:08Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 4,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18805,
+  "provider_error": false,
+  "ready_s": 8.1,
+  "run_id": "alt-A05__claude__mandatory",
+  "scoring": {
+    "marks": 10,
+    "observations": 13
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:02:00Z",
+  "stderr_foreign_urls": null,
+  "store": "alt",
+  "task_id": "alt-A05",
+  "timed_out": false,
+  "tokens_in": 69071,
+  "tokens_out": 1427,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

@@ -1,0 +1,19 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:10:54.000000Z",
+      "id": "01M3HCCZA1N8ZGQQR3533FFXDB",
+      "n_results": 8,
+      "query": "shared-hunt e2e.js Торн/Каэль failure dmgBy first frame root replan object-successors",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:10:56.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 1
+  }
+}

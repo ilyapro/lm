@@ -1,0 +1,57 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "gigacode.ru connect timeout proxy VPN required reachability ai-llm-proxy provider proxy setting"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1HJ6007QMRKRJTV6YRCQT17",
+        "01KRV5XXNNFK38D17WFM1RN1A2",
+        "01KZYTQD8M54H2QQWYGV8PDFXB",
+        "01KZYTQD5FW9Y7GT59RK0EGQTF",
+        "01M0R0JDYTWC0J7HNFMNT4VSX0",
+        "01KZYVFVGWZQC8JDDBQJ9Y4WD0",
+        "01M0CW4PJNRY7W02211AAQG2E9"
+      ],
+      "max_results": 8,
+      "query": "gigacode.ru unreachable without VPN, connect timeout, ai-llm-proxy",
+      "used": [
+        "01M28TF2Z879QBJ3BZSEF6CZ1Y"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_id": "01M28TF2Z879QBJ3BZSEF6CZ1Y"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M1J281ZK7WVV9Z4K8CQ0A86A",
+        "01M0NQAMYC3PRV2499GZGDMNTQ",
+        "01KZZTC0BQPAW5Q3ZGPW2JJCDK"
+      ],
+      "max_results": 8,
+      "query": "provider proxy setting HTTPS_PROXY NO_PROXY gigacode VPN off timeout ai-llm-proxy host",
+      "used": [
+        "01M1TZ7Y37BG8RA3ERDEWEDW0X"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M1TZ7Y37BG8RA3ERDEWEDW0X"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  }
+]

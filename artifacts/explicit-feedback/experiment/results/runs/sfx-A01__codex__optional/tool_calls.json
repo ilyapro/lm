@@ -1,0 +1,98 @@
+[
+  {
+    "error": null,
+    "input": {
+      "depth": "causal",
+      "max_results": 8,
+      "query": "gigacode.ru connect timeout proxy VPN required reachability ai-llm-proxy provider proxy setting"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "gigacode timeout VPN proxy",
+      "scope": "project:lm"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M28TF2Z879QBJ3BZSEF6CZ1Y"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "\"gigacode.ru\" \"timeout\""
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "ai-llm-proxy gigacode reachability connect timeout proxy setting"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M11HWJG0RKK79PA13QGG5PCD"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "\"gigacode\" \"proxy\"",
+      "scope": "global"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "gigacode.ru connect timeout VPN provider proxy",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 3,
+      "query": "gigacode VPN required AE_PROVIDER_HTTP_PROXY",
+      "scope": "project:ae",
+      "used": [
+        "01M2FRVGG12TKRCEJFFS38Q6TP",
+        "01M2E6YT9YJ4XNWM52GECH75HM"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M218Q87NM6WQ4E9ZPAA360J0"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

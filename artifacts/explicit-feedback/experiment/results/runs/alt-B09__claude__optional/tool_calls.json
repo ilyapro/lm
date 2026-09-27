@@ -1,0 +1,58 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "attachment-scope eight acceptance commands goal attachment model API UI browser isolation P1 P5 parent contract path",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 10,
+      "query": "attachment scope decomposition P1..P5 parent goal acceptance commands eight"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21BAMMZR7X1R56EG1NQ7V50",
+        "01M21EZFKYA71XMT4GRJF5CGVS",
+        "01M21B7Y0RX5NWC2G04P6BJWYK"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M21BAY0GQW4TRSEY9MNPFV7N",
+        "01M21CDD506DSCN8JNX6PDJ04Q",
+        "01M21BP4HT09ASQ885V2ASZ6AG",
+        "01M219WM5VT2DKC3F6KFSHKPQ4"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M22ZE6WWQJWDVW6TMCYMADG9",
+        "01M20SYZ9M4943WQKHYAPXGN1M"
+      ],
+      "max_results": 8,
+      "query": "attachment scope parent verification acceptance commands postcondition targets P1 P2 P3 P4 P5 children model api ui browser",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 5,
+      "query": "For attachment parent scope verification eight acceptance commands contract path",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

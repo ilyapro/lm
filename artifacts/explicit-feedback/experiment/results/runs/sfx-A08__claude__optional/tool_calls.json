@@ -1,0 +1,48 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "WebAPI region/list geocoder документация 504012804 627113888 проверка endpoint_uri responses backup HA DR Scala"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 10,
+      "query": "SEAF WebAPI region/list geocoder endpoint_uri responses backup HA DR",
+      "scope": "project:2gis-seaf-web"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "scope": "project:2gis-seaf-web"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M1Y1Z3294KW5DFWEDK0JDJF0"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "627113888 region/list geocoder Scala endpoint_uri responses",
+      "scope": "project:2gis-seaf-web"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M1Y1ETXYB0VD8VBGKKHG7XJN",
+        "01M1Y1QA2JXFMJWFEYCFTGG8B9"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  }
+]

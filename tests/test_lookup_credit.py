@@ -884,7 +884,14 @@ def test_ledger_is_created_on_a_master_built_database_on_reopen(tmp_path: Path) 
         assert after[name] == sql, f"{name} DDL changed:\n{sql!r}\n->\n{after[name]!r}"
     # Subset, not equality: once this lands on master, master's build creates
     # the ledger too and the difference legitimately collapses to nothing.
-    assert set(after) - set(before) <= {RECALL_CREDIT_LEDGER_TABLE}
+    # The explicit-feedback tables (recall_explicit_credit, the mark audit and
+    # its index) are created the same additive way on the same open.
+    assert set(after) - set(before) <= {
+        RECALL_CREDIT_LEDGER_TABLE,
+        "recall_explicit_credit",
+        "recall_feedback_marks",
+        "idx_recall_feedback_marks_event",
+    }
     assert RECALL_CREDIT_LEDGER_TABLE in after
     assert _schema_version(db) == "8"
 

@@ -1,0 +1,39 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "миграции схемы живой базы при рестарте сервера памяти"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "schema migrations database startup restart",
+      "scope": "project:living-memory"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "verify_live_db_migration миграции схемы startup",
+      "scope": "project:living-memory"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_id": "01M1XB259YR4MJB3C690V0DN0R"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

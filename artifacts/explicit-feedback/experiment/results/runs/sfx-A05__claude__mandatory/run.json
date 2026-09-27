@@ -1,0 +1,47 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 24.9,
+  "ended_at": "2026-09-27T12:13:23Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 0,
+    "recall_events": 3,
+    "recall_feedback_marks": 12,
+    "recall_lookup_events": 0
+  },
+  "final_text": "Here is what memory holds (project:ae, 2026-09-14). I found no later trace saying the issue was fixed.\n\n- **The failure:** the installed OpenCode 1.18.23 embeds Bun 1.3.14. Bun's `node:http` rejects a CONNECT request whose path is authority-form. `http.request(new URL('http://127.0.0.1:<port>'), {method:'CONNECT', path:'gigacode.ru:443', agent:false})` throws `TypeError ERR_INVALID_URL` (\"fetch() URL is invalid\") straight away, and the proxy sees zero CONNECTs. The same code works under Node 23 and Node 22.23.2.\n- **What it breaks:** the CONNECT code in `tools/gigacode/auth/credentials/http.cjs` and `tools/gigacode/client/transport/index.cjs` can't go through a proxy inside installed Bun. The backend config logs `network_error` before discovery. Memory lists this as a separate blocker from the SDK raw-catalog `streamingTools` one (trace 01M2FPH5XQJ4JK7SAFE7XNKB9T).\n- **The runtime-runner repro (01M2G213V8RFQ2XM9YEFA4P5JA):** it re-ran `createTransport` from frozen commit `5902696248d6120cb01822d5daa48caf7baa390a` at its original path, in a throwaway copy of the complete five-file production source closure. It used a local proxy that answers 407 and a local target. Node recorded `proxy_error`, one CONNECT and zero target submissions. Bun recorded `network_error`, zero CONNECTs and zero bytes at the proxy. Copying the exact historical source closure makes sure the test runs the old transport, not a replacement.\n- **Pitfall 1 (01M2G1XGB58CFAHBW3BNFS6X8T):** Bun 1.3.14 ignores a custom `Agent.createConnection` and sends the request directly with fetch. A \"GET 200\" result can therefore be a proxy bypass. Fixing CONNECT alone isn't enough: the target's HTTP traffic must stay on the owned tunnel socket inside `http.cjs`.\n- **Pitfall 2 (01M2G1WCHR18APD3B756DHX3PR):** before calling it fixed, check that bytes actually went through the tunnel, or use a target that can't be reached directly. Passing the Node baseline doesn't prove Bun routes through the proxy. Under Node, a paused plain tunnel still needs `resume`.",
+  "first_input_tokens": 8853,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:12:58Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 4,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18802,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "sfx-A05__claude__mandatory",
+  "scoring": {
+    "marks": 12,
+    "observations": 14
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:12:52Z",
+  "stderr_foreign_urls": null,
+  "store": "sfx",
+  "task_id": "sfx-A05",
+  "timed_out": false,
+  "tokens_in": 63686,
+  "tokens_out": 1686,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

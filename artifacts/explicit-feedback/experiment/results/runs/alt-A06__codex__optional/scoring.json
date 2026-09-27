@@ -1,0 +1,58 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:12:44.000000Z",
+      "id": "01M3HCGB2JNXVFX7MDZ488AP7T",
+      "n_results": 8,
+      "query": "slot06 geometry-binding-v2 admission-discovery-v2 verify measure v1 geometry",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:12:49.000000Z",
+      "id": "01M3HCGGDKT98QRH52Q30D47DK",
+      "n_results": 5,
+      "query": "slot06 geometry-binding-v2",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:12:50.000000Z",
+      "id": "01M3HCGGKRQ9WD3Q09JH7HXEVP",
+      "n_results": 5,
+      "query": "slot-06 admission-discovery-v2",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:12:55.000000Z",
+      "id": "01M3HCGNBMYG2D2YW9GMJNZBPA",
+      "n_results": 8,
+      "query": "slot06",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:12:55.000000Z",
+      "id": "01M3HCGNKRA8F22ARXCPYAJ03V",
+      "n_results": 4,
+      "query": "\"geometry-binding-v2\" \"admission-discovery-v2\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:13:01.000000Z",
+      "id": "01M3HCGVVNZ2QXZ57CBHB7TH9X",
+      "n_results": 6,
+      "query": "slot06 geometry-binding-v2 admission-discovery-v2 verify measure v1 geometry",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:13:01.000000Z",
+    "2026-09-27T12:13:01.000000Z",
+    "2026-09-27T12:13:01.000000Z",
+    "2026-09-27T12:13:05.000000Z",
+    "2026-09-27T12:13:05.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 6
+  }
+}

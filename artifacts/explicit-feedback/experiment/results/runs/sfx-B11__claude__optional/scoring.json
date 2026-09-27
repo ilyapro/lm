@@ -1,0 +1,34 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:20:33.000000Z",
+      "id": "01M3HCYMZYYMCP5HYN7Q3A6NKA",
+      "n_results": 8,
+      "query": "SEAF auth2 OpenAPI public/docs/auth2_api_v2_1.yml Online ID API source specs",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:20:35.000000Z",
+      "id": "01M3HCYQ8S0CVNNZWAAFDGBZBR",
+      "n_results": 8,
+      "query": "auth2_api_v2_1.yml ID API OpenAPI spec id.2gis.com SEAF interfaces",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:20:41.000000Z",
+      "id": "01M3HCYWDQJTCJPAXC2XA03N4G",
+      "n_results": 6,
+      "query": "public/docs auth2 api yaml OpenAPI specification id-2gis-com repo api contract swagger",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:20:38.000000Z",
+    "2026-09-27T12:20:38.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 3
+  }
+}

@@ -1,0 +1,39 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "merge-dependency-candidate-preservation npm-candidate-published gate-dependencies-published dependency-lifecycle-regression worktree_safe_npm_install candidate mutation scope sidecar ownership",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "node_ids": [
+        "01M238F1FERJV1VTP565A1HN82",
+        "01M23206V84ETF2DZYET7TRFVJ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M21H3A1YKXAHJP2ZH9MHHH9N",
+        "01M2100FMRANQG9GQQ7VW23SNF",
+        "01M218H5SP9SJ5P7WJ9KWFF96M",
+        "01M238HRB96QHH45YWR1CR7FC8",
+        "01M22YY4F87CVC9360QRCT603A"
+      ],
+      "max_results": 3,
+      "query": "merge-dependency-candidate-preservation sidecar freshness re-verification after d6b460f2",
+      "scope": "project:ae",
+      "used": [
+        "01M21C1ZXG3S006PRQ1W0A8KVJ",
+        "01M238F1FERJV1VTP565A1HN82",
+        "01M23206V84ETF2DZYET7TRFVJ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

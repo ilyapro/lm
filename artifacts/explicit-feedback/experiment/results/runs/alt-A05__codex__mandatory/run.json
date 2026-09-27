@@ -1,0 +1,52 @@
+{
+  "agent": "codex",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 114.0,
+  "ended_at": "2026-09-27T12:04:42Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 2,
+    "recall_events": 7,
+    "recall_feedback_marks": 32,
+    "recall_lookup_events": 2
+  },
+  "final_text": "Found in `project:game` memory (2026-09-07):\n- Noctifer `gw2-species-repair-noctifer-7d94fff544`: immutable acquisition commit `0bc7e8179aa80f967f077ac1ffd68b2815a7251a`, receipt blob `99a99fa2a9dbf652e2e71a9b1fc7ca7bda4ef541`.\n- Old harness synthesized `publication:null`, checked 11 acquisition blockers, and recomputed 19 failures; it did not validate added terminal fields.\n- Repair `4b2ad7d7`: run `--measure-final`, replace terminal fields with `terminalProjection` (finalization `@2`), preserve acquisition, reseal `receiptDigest`. Selftest: **77/77**; projection: **20 quarantine reasons**, including `exact-base-execution-not-proved`.\n- Nimbara final receipt: `5d38ef1eeef829b8f0861179df05edae723cc8dc:mmo/tools/grand-world-receipts/species-successors/gw2-species-repair-nimbara-ecdfa739d6.json`.\n- Nimbara verdict=`quarantine`, publication decision=`quarantined`, mode=`none`, changedPaths=`[]`; candidate validation accepted, `production-manifest-disk-bijection` failed.\n- This completes Noctifer’s ordering dependency without asset acceptance or an executed manifest transaction. Exact `performed:false` normalization rule: **not found**.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:02:47Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18807,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "alt-A05__codex__mandatory",
+  "scoring": {
+    "marks": 32,
+    "observations": 34
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:02:41Z",
+  "stderr_foreign_urls": [],
+  "store": "alt",
+  "task_id": "alt-A05",
+  "timed_out": false,
+  "tokens_in": 298066,
+  "tokens_out": 1507,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

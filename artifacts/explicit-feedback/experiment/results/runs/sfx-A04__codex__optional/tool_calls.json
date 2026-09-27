@@ -1,0 +1,72 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "AE dashboard-static-build server-static-root dependency integration provider-product chat-routes-store-ui AE_DASHBOARD_REACT_BUILD_DIR static_serve tests isolated processes"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M2MSFCF1F43D78P9HYK5GC6R",
+        "01M2MRDTWKMHTA0QFM5QBPRF2Z",
+        "01M2MR34QTCA0ZQ73PV8KFW3QX"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "\"AE_DASHBOARD_REACT_BUILD_DIR\" \"static_serve\" isolated processes",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "dashboard-static-build server-static-root provider-product chat-routes-store-ui",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "server-static-root static_serve tests isolated",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "scope": "project:ae",
+      "task_pattern": "server-static-root"
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 4,
+      "query": "AE_DASHBOARD_REACT_BUILD_DIR",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

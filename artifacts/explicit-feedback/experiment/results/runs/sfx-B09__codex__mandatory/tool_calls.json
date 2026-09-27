@@ -1,0 +1,161 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "gigacode raw model endpoint ai-llm-proxy api auth DeepSeek thinking protocol"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KRV5XXNNFK38D17WFM1RN1A2",
+        "01KRV5XGVDVSK4E10S7JC282HB",
+        "01KRWY22N3VBG5FA2AC3DE7S4T",
+        "01KZZ8PKS1CF0K70153MG7XSW7",
+        "01KRX1PCY1AACJVPF7ANR5TMA5",
+        "01KRV5ZNWH2SC475CSJYVDAA5D",
+        "01KZYRW9S80TGC4A7V31ZWR842",
+        "01KS787AWG159K8N2V8FGG503V"
+      ],
+      "max_results": 5,
+      "query": "gigacode",
+      "scope": "project:lm",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M00C8P1HPSFCYT676QRM3MRE",
+        "01M09YV65QDHAVQRVP75S5SNR3",
+        "01KRV5XGVDVSK4E10S7JC282HB"
+      ],
+      "max_results": 4,
+      "query": "\"ai-llm-proxy\" DeepSeek",
+      "used": [
+        "01M1TZ7Y37BG8RA3ERDEWEDW0X",
+        "01M0NQAMYC3PRV2499GZGDMNTQ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01KZ8PCNF10GH1Q9KH7HE39WBX",
+        "01M0NQAMYC3PRV2499GZGDMNTQ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KZYWBDKC3V2KJ9P437Y4EKRC",
+        "01KZK0KHKAF78VP85VY808TB06",
+        "01KZYTQD7JSH5Q2G6HVTKFA34R",
+        "01KZYTQD9M76CT717SEBWD0SAJ"
+      ],
+      "max_results": 3,
+      "query": "gigacode raw",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01KZ8RJEMR7CQ22E75Q5K0VW89",
+        "01KZ9PFV34VREPBKMJS8EB9WGP",
+        "01M0NPMQMJGP44HQJE0MWXZTXC"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M11HWJG0RKK79PA13QGG5PCD",
+        "01M214MENFRRDK5K4D7P6X4H8J"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1TZ7Y37BG8RA3ERDEWEDW0X"
+      ],
+      "max_results": 3,
+      "query": "DeepSeek thinking",
+      "used": [
+        "01M0NQAMYC3PRV2499GZGDMNTQ",
+        "01KZ8PCNF10GH1Q9KH7HE39WBX"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M1291T0QC509N0B974G9P0X9",
+        "01KZ9Y5N4E8RBD2FZAV9STAT51"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M1PRYXB9HET8PFGNC7DCKVW3",
+        "01M1W6B35K3Z1KVWQF368Q2VCB",
+        "01M2SZ5TB7E10JGX2WK2X33DFT"
+      ],
+      "max_results": 2,
+      "query": "reasoning_content thinking protocol",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "content": "For recovery of the project:lm query 'gigacode raw model endpoint ai-llm-proxy api auth DeepSeek thinking protocol', direct GigaCode HTTP evidence is in 01M11HWJG0RKK79PA13QGG5PCD and 01M214MENFRRDK5K4D7P6X4H8J; the older gateway trace 01KZ8RJEMR7CQ22E75Q5K0VW89 is superseded specifically on GigaCode/GigaChat identity. DeepSeek persistent thinking protocol live evidence is 01M1MHX4GNNA20F53DK23PF9PQ.",
+      "context": {
+        "agent": "/root",
+        "scope": "project:lm",
+        "task": "recover raw model endpoint knowledge"
+      },
+      "irrelevant": [
+        "01KS5YF0P8P9NDZNE3RTEJ6Z1B"
+      ],
+      "used": [
+        "01M1MHX4GNNA20F53DK23PF9PQ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_remember",
+    "status": "completed"
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {
+    "input": {
+      "max_results": 10,
+      "query": "simplify-rating-consumers",
+      "scope": "project:online"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

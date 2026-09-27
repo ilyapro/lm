@@ -1,0 +1,47 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 23.4,
+  "ended_at": "2026-09-27T12:11:55Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 2,
+    "recall_feedback_marks": 8,
+    "recall_lookup_events": 4
+  },
+  "final_text": "Here is what memory holds for `project:ae`. I found nothing specific about \"tests in isolated processes\".\n\n- **Decomposition (root decision, 2026-09-14):** the root owns `dashboard-static-build`. That covers the server's explicit static-root seam, `tools/opencode/ui-build/**` and `artifacts/opencode/ui-build/**`. It depends on three nodes that were already done: `provider-product`, `/chat-integration/chat-routes-store-ui` and `/chat-integration/chat-live-harness`, which avoids a failed-parent cycle. The harness is not expanded; `launchDashboard` `extraEnv` is reused. Only synthetic-v2 may add the `/dashboard-static-build` dependency, and if the dependency integration is refused, it must emit a typed Option C escalation.\n- **Seam:** the env var `AE_DASHBOARD_REACT_BUILD_DIR` is defined in `dashboard/lib/react_build_root.js`. It does not appear in `server.js`, so grep there for `resolveReactBuildRoot` instead. The producer test is `tests/test_opencode_ui_build_serving.js`, and the doc is `docs/opencode-ui-build.md`.\n- **Handoff (2026-09-16):** the producer tip is `2e6a42c38`, and the root `opencode-full-provider-support@de3a012db` carries its files byte-identical. The chat parent was re-based to `b433255da` on top of `de3a012db`, so the blocker is resolved at branch level. Children must never merge the producer into their own branch. The new plan is `artifacts/opencode/chats/planning/producer-replan-20260916.yaml`, committed as `725a427e5`.\n- **Static serving (since `2696b0557`):** there is no dedicated static route; requests fall through to `serveStatic` in `dashboard/lib/static_serve.js`. `/assets/*` is served from the React dist with an immutable cache. `/` and extensionless routes return `dist/index.html` with no-cache. Any other file is served only from `dashboard/public/`, and a running dashboard needs a restart to pick up changes.",
+  "first_input_tokens": 8872,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:11:31Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 4,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18807,
+  "provider_error": false,
+  "ready_s": 8.1,
+  "run_id": "sfx-A04__claude__mandatory",
+  "scoring": {
+    "marks": 8,
+    "observations": 13
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:11:23Z",
+  "stderr_foreign_urls": null,
+  "store": "sfx",
+  "task_id": "sfx-A04",
+  "timed_out": false,
+  "tokens_in": 82791,
+  "tokens_out": 1512,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

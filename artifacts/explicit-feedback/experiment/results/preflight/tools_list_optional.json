@@ -1,0 +1,346 @@
+[
+  {
+    "description": "memory_remember is ONLY for what is expensive to re-derive from code or git history: recipes, pitfalls, refutations, external contracts, measurement findings, a contract smeared across thousands of lines. The gate: cost, not possibility. You MUST remember at the moment of insight, before your next action — deferred remembers are usually lost; 'I wish I had known this earlier' means store it now. Triggers: non-obvious discovery, resolved failure and fix, a user correction or preference. One concrete fact per trace — paths, identifiers, the WHY; verified facts only — never routine actions, copies of code, speculation, unverified plans. An execution journal ('did X', 'node N done') re-derives trivially from git history — DO NOT store it: its noise drowns the rare real lesson in recall (done-journal-dump). A finished task earns ONE short closure note carrying only what the diff and git history cannot show (e.g. the invariant to preserve, the pitfall that cost time). Corrections NEVER go here — use memory_teach.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "alternatives_considered": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rejected options behind this decision. Each item is an object {\"approach\": \"<what you did not do>\", \"rejected_because\": \"<why>\"}; both fields are non-empty strings."
+        },
+        "content": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "feedback": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "irrelevant": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: ids of earlier recall results that did not fit their query."
+        },
+        "used": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: ids of results from your earlier recalls this session that you used."
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "name": "memory_remember"
+  },
+  {
+    "description": "Store a corrective trace and connect it to the original via a supersedes edge. You MUST teach the moment a belief changes: a recalled fact proved wrong, or your understanding shifted and a prior trace reflects the old belief. Pass the original trace_id plus the corrected fact. Only memory_teach creates the supersedes edge — a memory_remember trace with UPDATE/CORRECTION wording does NOT count, and the stale node keeps outranking the correction in every future recall. Fixing a wrong assumption without teach (anti-pattern: silent-correction) leaves stale memory active: the system cannot self-correct silently.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "context": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "correction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": true,
+              "type": "object"
+            }
+          ]
+        },
+        "irrelevant": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: ids of earlier recall results that did not fit their query."
+        },
+        "trace_id": {
+          "type": "string"
+        },
+        "used": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: ids of results from your earlier recalls this session that you used."
+        }
+      },
+      "required": [
+        "trace_id",
+        "correction"
+      ],
+      "type": "object"
+    },
+    "name": "memory_teach"
+  },
+  {
+    "description": "Recall before acting and at every new turn of thought. You MUST recall BEFORE acting: changing any artifact (conventions, rejected approaches); creating or mutating state (recall the concept before inventing one); irreversible or outward-facing steps (recall action plus target); pulling knowledge from the world — searching, measuring (memory first: the world only after recall returns nothing — anti-pattern: world-before-memory); choosing a design or approach (recall cross-project); entering anything new — task, message. You MUST recall MID-WORK, at every new turn of thought: ask what memory holds nearby so nothing related is missed; stuck or surprised means overdue, 'if only I knew' means recall NOW. Query: identifiers and what you need; re-ask as it moves. Default: when uncertain, recall. Read broad: omit scope to transfer across scopes. Depth 'causal' when debugging. A level:schema result is a binding procedure — follow it literally. Non-full results carry a content_ref — refetch via memory_lookup.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "ambient_context": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "depth": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 1
+        },
+        "irrelevant": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: ids of earlier recall results that did not fit their query."
+        },
+        "max_results": {
+          "default": 5,
+          "type": "integer"
+        },
+        "query": {
+          "type": "string"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "used": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: ids of results from your earlier recalls this session that you used."
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "memory_recall"
+  },
+  {
+    "description": "Return memory nodes by exact context-field match, or full nodes by id.\n\n``node_id``/``node_ids`` fetch complete nodes directly — the re-fetch\npath for snippet/duplicate recall stubs. Missing ids are skipped and\nlisted under ``missing``; decayed nodes are returned with their\n``decayed`` flag set; ``level`` is ignored for id fetches. A ``scope``\npassed alongside ids verifies instead of filtering: mismatching nodes\nstay in ``results`` and are reported in ``scope_mismatches``.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "lesson_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "level": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "trace"
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "node_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "procedure_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "task_pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "name": "memory_lookup"
+  }
+]

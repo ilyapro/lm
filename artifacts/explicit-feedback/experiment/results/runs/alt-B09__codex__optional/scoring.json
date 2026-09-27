@@ -1,0 +1,70 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:30:34.000000Z",
+      "id": "01M3HDGZW0YS5ZPABEWFY1BQ41",
+      "n_results": 8,
+      "query": "attachment-scope eight acceptance commands goal attachment model API UI browser isolation P1 P5 parent contract path",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:30:47.000000Z",
+      "id": "01M3HDHCJ2CMPCTG6SBGDPCCVK",
+      "n_results": 6,
+      "query": "attachment-scope \"eight\" \"acceptance\" \"P1\" \"P5\" parent contract",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:31:03.000000Z",
+      "id": "01M3HDHVVZW66S5FE6CCGEBXWC",
+      "n_results": 12,
+      "query": "attachment-scope acceptance commands",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:31:14.000000Z",
+      "id": "01M3HDJ7ASME8R7D0Z1SJ29AEQ",
+      "n_results": 5,
+      "query": "goal attachment P1 P5 eight model API UI",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:31:32.000000Z",
+      "id": "01M3HDJRJVD2V082CX318R0FF6",
+      "n_results": 5,
+      "query": "\"test_goal_attachment_scope\" \"P1\" \"P5\"",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:31:42.000000Z",
+      "id": "01M3HDK2BM6GRKTNYPT23VZF9E",
+      "n_results": 4,
+      "query": "attachment eight commands parent integration",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:31:48.000000Z",
+      "id": "01M3HDK8AND7J2YGF6J81185Q4",
+      "n_results": 3,
+      "query": "attachment-scope parent contract P1 P2 P3 P4 P5",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:30:47.000000Z",
+    "2026-09-27T12:30:47.000000Z",
+    "2026-09-27T12:31:09.000000Z",
+    "2026-09-27T12:31:09.000000Z",
+    "2026-09-27T12:31:09.000000Z",
+    "2026-09-27T12:31:32.000000Z",
+    "2026-09-27T12:31:32.000000Z",
+    "2026-09-27T12:31:48.000000Z",
+    "2026-09-27T12:31:54.000000Z",
+    "2026-09-27T12:31:54.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 7
+  }
+}

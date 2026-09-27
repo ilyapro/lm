@@ -1,0 +1,139 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:27:02.000000Z",
+      "id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "n_results": 8,
+      "query": "slot03 isolation-result tree-decision 20260924 installer capture cc68c15 admission common provenance",
+      "trace_id": null
+    },
+    {
+      "created_at": "2026-09-27T12:27:07.000000Z",
+      "id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "n_results": 5,
+      "query": "slot03 cc68c15 admission common provenance capture",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:27:05.000000Z"
+  ],
+  "marks": [
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "id": "1",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:27:07.000000Z",
+      "node_id": "01M399RDEXD0AQ7QAEZQVYHE4F",
+      "rank": 0,
+      "reject_reason": null,
+      "source_id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "transport": "cd45ca79bf96482eabb45059d5e87075",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "id": "2",
+      "mark": "used",
+      "marked_at": "2026-09-27T12:27:07.000000Z",
+      "node_id": "01M39A76VYS47G2BNPN5212GA8",
+      "rank": 3,
+      "reject_reason": null,
+      "source_id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "transport": "cd45ca79bf96482eabb45059d5e87075",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "id": "3",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:27:07.000000Z",
+      "node_id": "01M39JJR23ZKFFQZ1SZMQHAV5E",
+      "rank": 1,
+      "reject_reason": null,
+      "source_id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "transport": "cd45ca79bf96482eabb45059d5e87075",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "id": "4",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:27:07.000000Z",
+      "node_id": "01M3AW26GBVFJZQ700BZGP7YHC",
+      "rank": 2,
+      "reject_reason": null,
+      "source_id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "transport": "cd45ca79bf96482eabb45059d5e87075",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "id": "5",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:27:07.000000Z",
+      "node_id": "01M39JWAVDTW7J0W2Y0R8BHXM5",
+      "rank": 4,
+      "reject_reason": null,
+      "source_id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "transport": "cd45ca79bf96482eabb45059d5e87075",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "id": "6",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:27:07.000000Z",
+      "node_id": "01M21HMRFH5172PVEEPK4KNPH1",
+      "rank": 5,
+      "reject_reason": null,
+      "source_id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "transport": "cd45ca79bf96482eabb45059d5e87075",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "id": "7",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:27:07.000000Z",
+      "node_id": "01M21J5C6T5AZ27FAENXE4TH5D",
+      "rank": 6,
+      "reject_reason": null,
+      "source_id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "transport": "cd45ca79bf96482eabb45059d5e87075",
+      "via_tool": "memory_recall"
+    },
+    {
+      "accepted": true,
+      "agent": null,
+      "event_id": "01M3HDAH0DZ5YEY9HAND09KV08",
+      "id": "8",
+      "mark": "irrelevant",
+      "marked_at": "2026-09-27T12:27:07.000000Z",
+      "node_id": "01M399X146VRZXFKCXP2AD7WK7",
+      "rank": 7,
+      "reject_reason": null,
+      "source_id": "01M3HDAP579GXKJYYKFGWEXZWS",
+      "transport": "cd45ca79bf96482eabb45059d5e87075",
+      "via_tool": "memory_recall"
+    }
+  ],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 2
+  }
+}

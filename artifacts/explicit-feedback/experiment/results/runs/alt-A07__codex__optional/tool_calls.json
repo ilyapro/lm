@@ -1,0 +1,54 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "biome-successors R1 supervisor 265 species-content-repair infeasible fulgurax migrationDrive scope replan_required"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "biome-successors R1 supervisor 265",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "fulgurax migrationDrive",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "species-content-repair infeasible replan_required",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "node_ids": [
+        "01M3EJ7WQ85XVE17GQT0WPE0KA",
+        "01M3EPEZEANP6PVNSD5D5STKB8",
+        "01M3EP17XSN01J6VVYN2QM0FF4",
+        "01M3EP9ZHMWEZNMECPAEESS4VZ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_lookup",
+    "status": "completed"
+  }
+]

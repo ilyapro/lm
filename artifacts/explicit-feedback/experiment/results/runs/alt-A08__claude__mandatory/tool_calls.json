@@ -1,0 +1,65 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "slot13 causal-history-reachability causal-role verify historical membership pause continuation",
+      "scope": "project:game"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M211CR5TY0ZJJ4T95WJX8PWA",
+        "01M3ANGQGJMVG63NMZ965B6EN4",
+        "01M1XY4Y1KNF3HM7H8PCQ1TAZE",
+        "01M15RV4KPW1S3XMABQVWRH7J4",
+        "01M0Y7S6Y81TVWGJ1T1PG9DGA2",
+        "01M132J2W0KPWF2P942HDKCN49"
+      ],
+      "max_results": 8,
+      "query": "slot13 causal-role reachability pause continuation historical HEAD replay",
+      "scope": "project:game",
+      "used": [
+        "01M21KA1MKQQDNEFQY0HC517CM",
+        "01M20T59NBT3DFP725EJB5SGDA"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "scope": "project:game",
+      "task_pattern": "slot13 causal"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "task_pattern": "slot13 causal-isolation-v2"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "scope": "project:game",
+      "task_pattern": "slot13 causal-isolation-v2"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "irrelevant": [
+        "01M3H53PKDYRW896JY62P4HW3G",
+        "01M1ZAAFDEFWEXDGV70835WDT2"
+      ],
+      "max_results": 8,
+      "query": "causal-role verify.mjs historical-executable-verifier membership audit acceptedBase",
+      "used": [
+        "01M21KA1MKQQDNEFQY0HC517CM",
+        "01M21CMNF7KTWFVTY6T4HPNT79"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall"
+  }
+]

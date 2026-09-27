@@ -1,0 +1,22 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "simplify-rating-consumers",
+      "scope": "project:online"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "simplify-rating-consumers useCachedConfirmedRating bd8d59ed44",
+      "scope": "project:online"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

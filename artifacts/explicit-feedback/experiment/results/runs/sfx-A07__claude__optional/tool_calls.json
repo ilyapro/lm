@@ -1,0 +1,30 @@
+[
+  {
+    "input": {
+      "max_results": 8,
+      "query": "Online inventory §10.10 featureAgents agents2020 49b396b local experiments published configuration ba/processes.yaml ai_agents"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "max_results": 8,
+      "query": "featureAgents agents2020 inventory ai_agents processes.yaml chat conditions",
+      "scope": "project:2gis-seaf-web"
+    },
+    "name": "mcp__living-memory__memory_recall"
+  },
+  {
+    "input": {
+      "scope": "project:2gis-seaf-web",
+      "task_pattern": "inventory-chat-conditions"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  },
+  {
+    "input": {
+      "node_id": "01M1Y1SRH19JVD57698QY7D63C"
+    },
+    "name": "mcp__living-memory__memory_lookup"
+  }
+]

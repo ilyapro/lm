@@ -1,0 +1,48 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 25.5,
+  "ended_at": "2026-09-27T12:15:12Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 2,
+    "recall_events": 3,
+    "recall_feedback_marks": 16,
+    "recall_lookup_events": 2
+  },
+  "final_text": "I couldn't find a memory that names **bounds-lod-measurements-v3** or commit **c01fd4bd**, so the direct answer is not found. Three searches turned up these related `project:game` notes:\n\n- **lifecycle_snapshot_changed:** in slot08 runtime-binding-v3 (2026-09-26), `Artifact provenance producer failure rc=3 lifecycle_snapshot_changed (slot06 children.json)` was an external harness race, not a missing piece of code. Re-verifying commit 779a8193 unchanged passed (selftest rc0, lineage 4/4), so the right reply was `RESULT: DONE` with no edits.\n- **slot07 origin-v5 re-issue (2026-09-27, HEAD bbfacd01):** `candidate/origin-v5` passed unchanged. `verify` gave rc0 in 39 s (proofDigest 2baa7c1f…) and `--self-test` gave rc0 in 139 s over 17 cases (4 positive, 11 labelled negative). No new code was needed.\n- **slot07 runtime-v5 re-issue (HEAD f1fa4021):** `verify.mjs` rc0 in 45 s with realRuns=3. `--self-test` rc0 in 216 s over 36 controls, SOURCE_REFS_CHANGED=false. Outcome: DONE with no code change.\n- **Bounds (HEAD d887aae3):** the old `bounds-v3/verify` path fails with SUCCESSOR_DELIVERY_MISSING. Re-running the measurement through `verify-measure.mjs` (`loadInputs`, `buildReport`, `validateReport`) reproduces the stored `result.json .measurement`.",
+  "first_input_tokens": 8849,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:14:47Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 5,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18800,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "alt-B12__claude__mandatory",
+  "scoring": {
+    "marks": 16,
+    "observations": 26
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:14:41Z",
+  "stderr_foreign_urls": null,
+  "store": "alt",
+  "task_id": "alt-B12",
+  "timed_out": false,
+  "tokens_in": 82732,
+  "tokens_out": 1735,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

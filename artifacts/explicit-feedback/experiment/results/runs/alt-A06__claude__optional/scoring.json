@@ -1,0 +1,20 @@
+{
+  "events": [
+    {
+      "created_at": "2026-09-27T12:12:30.000000Z",
+      "id": "01M3HCFXTW7W07TXG97AWAKSEY",
+      "n_results": 10,
+      "query": "slot06 geometry-binding-v2 admission-discovery-v2 verify measure v1 geometry",
+      "trace_id": null
+    }
+  ],
+  "lookup_times": [
+    "2026-09-27T12:12:33.000000Z",
+    "2026-09-27T12:12:33.000000Z"
+  ],
+  "marks": [],
+  "new_node_times": [],
+  "observe_stats": {
+    "events": 1
+  }
+}

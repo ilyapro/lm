@@ -1,0 +1,47 @@
+{
+  "agent": "claude",
+  "arm": "mandatory",
+  "attempt": 0,
+  "class": "answer_not_in_memory",
+  "duration_s": 18.4,
+  "ended_at": "2026-09-27T12:27:17Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 1,
+    "recall_events": 2,
+    "recall_feedback_marks": 8,
+    "recall_lookup_events": 1
+  },
+  "final_text": "Memory has two slot03 records from 2026-09-24 that cover this. Neither says anything specific about \"admission common\".\n\n- **Tree decision** (node `01M399RDEXD0AQ7QAEZQVYHE4F`): the delivered `installer.py` (sha256 `558ad841…`, bytes checked inside the live `queue.sh` sha256 `77ef81e8…`) was run in a private `--shared` clone of slot03 HEAD `9ba1c8aae3a5…` / tree `a2d0eb68…`. It returned rc0, created no lockfile, and left HEAD, tree, refs, index and status unchanged. Receipt: `/home/user/p/ae/artifacts/grand-world/unblock-20260907/slot03-decision-20260924-evx6s1z5/installer-reproduction.json`.\n- **Decision from that run:** the old `df828957` package-lock `candidate_changed` finding is still valid diagnostics, but it no longer blocks the installer. The run is prerequisite evidence only. A fresh isolation-result capture, acceptance and native landing are still needed. The bound policy `immutable=[]` and the required artifacts `verify.mjs` and `entry-result.json` at the root must stay unchanged so the same id can be reopened.\n- **Installer and provenance capture on isolation-result `cc68c15f6ee0e25b1604a036a833da1aef18c8b7`** (node `01M39A76VYS47G2BNPN5212GA8`): native `worktree_safe_npm_install` on a private full-history clone returned rc0, with no lockfile and HEAD, tree, refs, index and status preserved. Native provenance capture and the post-install verify both returned rc0 against the unchanged copied baseline and the full ancestor contracts. Evidence: `.../slot03-fresh-20260924-wnwx816v/current-installer.json`. Final product acceptance and native landing are still separate open steps.\n- **Older admission context** (2026-09-08, node `01M20QQ1PQ0QAKVBVZHQ8GYV1T`): commit `c882a21f` showed lineage 4/4, with `acceptedBaseIsStrictAncestorOfHead=false`. There was also `node_status` byte drift and a missing capture-worktree manifest.",
+  "first_input_tokens": 8836,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:26:58Z",
+  "model": "claude-opus-5-5",
+  "num_turns": 4,
+  "payload_sha256": "3722e0e937c5414124998bc03ab72b4fd897635ad8c130692395e194324d292c",
+  "port": 18803,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "alt-B10__claude__mandatory",
+  "scoring": {
+    "marks": 8,
+    "observations": 13
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:26:52Z",
+  "stderr_foreign_urls": null,
+  "store": "alt",
+  "task_id": "alt-B10",
+  "timed_out": false,
+  "tokens_in": 42678,
+  "tokens_out": 1359,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_recall"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

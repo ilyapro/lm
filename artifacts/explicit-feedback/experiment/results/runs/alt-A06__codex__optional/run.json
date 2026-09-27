@@ -1,0 +1,52 @@
+{
+  "agent": "codex",
+  "arm": "optional",
+  "attempt": 0,
+  "class": "answer_in_memory",
+  "duration_s": 47.4,
+  "ended_at": "2026-09-27T12:13:20Z",
+  "exit": 0,
+  "export_counts": {
+    "connections": 0,
+    "nodes": 0,
+    "recall_credit_ledger": 3,
+    "recall_events": 6,
+    "recall_feedback_marks": 0,
+    "recall_lookup_events": 5
+  },
+  "final_text": "Found in `project:game` memory, recorded 2026-09-26:\n- v1 geometry `verify()` was blocked by its call to v1 `verifyAdmission`; recovery uses `recovery/geometry-binding-v2/verify.mjs`, exporting `measure`, `verify`, `verifyProducer`, `OWN`.\n- Geometry v2 completed in `7c7be4af` / `e6c47257`; raw producer `16d47eda`, parent `19d41c0b`; v1 geometry producer `e4e07c99`.\n- Admission v2: `recovery/admission-discovery-v2/verify.mjs`; raw producer `d081d7b7`; selected `rock-jungle-a`, rank `6`.\n- `discovery.selected` omits `nearBytes`, `biome`, `featureVector`: recover full selection from stored v1 admission `measurement.json`, checking projection equality and `discoveryCanonicalSha256`.\n- Live catalog is readable, contains `4` families, but selected-family membership and registration prerequisite are `false`; geometry gate `closed-welded-topology-and-contact` fails.\n- Final continuation `03f2bfd2`: `check-entry --repeat 2` VERIFIED `2/2`, `strictOk`, `canonicalStable`; `17` gates, `5` failures → quarantine, `candidateReady=false`.",
+  "first_input_tokens": null,
+  "invalid": null,
+  "launched_at": "2026-09-27T12:12:32Z",
+  "model": null,
+  "num_turns": null,
+  "payload_sha256": "8afc5d057efb8374f46b75e93f9191f821d490e4b6b32e646cd0af6ad61d6cbe",
+  "port": 18809,
+  "provider_error": false,
+  "ready_s": 6.1,
+  "run_id": "alt-A06__codex__optional",
+  "scoring": {
+    "marks": 0,
+    "observations": 36
+  },
+  "server_alive_after": true,
+  "server_started_at": "2026-09-27T12:12:26Z",
+  "stderr_foreign_urls": [],
+  "store": "alt",
+  "task_id": "alt-A06",
+  "timed_out": false,
+  "tokens_in": 206436,
+  "tokens_out": 777,
+  "tool_calls": [
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_recall",
+    "mcp__living-memory__memory_lookup",
+    "mcp__living-memory__memory_lookup"
+  ],
+  "v2_ok": true,
+  "valid": true
+}

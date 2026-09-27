@@ -1,0 +1,65 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 8,
+      "query": "gate-dependencies-published successor gate-dependency-preparation 4311caaf baseline generated_create_only publisher sidecar"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "gate-dependencies-published gate-dependency-preparation 4311caaf",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "generated_create_only publisher sidecar",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 5,
+      "query": "\"gate-dependencies-published\" successor baseline publisher",
+      "scope": "project:ae",
+      "used": [
+        "01M21H3A1YKXAHJP2ZH9MHHH9N",
+        "01M21EASPX3K5J6V4MWV6XRKAZ"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 3,
+      "query": "4311caaf gate-dependency-preparation successor",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "max_results": 3,
+      "query": "gate-dependencies-published generated_create_only baseline successor",
+      "scope": "project:ae"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]

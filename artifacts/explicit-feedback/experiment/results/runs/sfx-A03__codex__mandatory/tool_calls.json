@@ -1,0 +1,69 @@
+[
+  {
+    "error": null,
+    "input": {
+      "max_results": 6,
+      "query": "миграции схемы живой базы при рестарте сервера памяти"
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01KZK1V6KVRAFPXKG3XVYEV2EH",
+        "01KZK1SW8TFR8EKQBM7Q5BG1V3",
+        "01M36Z2X31TF13XYJRXVM6SDXF",
+        "01KZK1MWXJ88HFPNGTDKW5E6XJ",
+        "01M2ZJ3BC1F9G8N2GZMXMCB19V",
+        "01M36WEHN3DFAP3BMXDZ9XG0S2"
+      ],
+      "max_results": 6,
+      "query": "миграции schema migration database startup restart",
+      "scope": "project:living-memory",
+      "used": []
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M0WDPXQAA7QRQBCS2BTAJM7Q",
+        "01M1W9YQWMTF2ES8N03RGJCA9E",
+        "01M1XAK64FVTSSYSEMZ4GX4RPX",
+        "01M0BG3KBETWQC01ASW44EV2S9"
+      ],
+      "max_results": 5,
+      "query": "storage.py schema_version миграции verify_live_db_migration transport_session_id",
+      "scope": "project:living-memory",
+      "used": [
+        "01M1XB259YR4MJB3C690V0DN0R",
+        "01M3H8BR0GHPTMTPYECRB0WAT8"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  },
+  {
+    "error": null,
+    "input": {
+      "irrelevant": [
+        "01M0WDPXQAA7QRQBCS2BTAJM7Q",
+        "01M1W9YQWMTF2ES8N03RGJCA9E",
+        "01M1W9P8AD7NPG1ANE5SWNCV22",
+        "01M0BG3KBETWQC01ASW44EV2S9"
+      ],
+      "max_results": 0,
+      "query": "миграции схемы живой базы",
+      "scope": "project:living-memory",
+      "used": [
+        "01M1XB259YR4MJB3C690V0DN0R"
+      ]
+    },
+    "name": "mcp__living-memory__memory_recall",
+    "status": "completed"
+  }
+]
