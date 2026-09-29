@@ -284,34 +284,31 @@ def test_session_plan_with_only_global_candidates_serves_them_all(tmp_path: Path
     assert set(ids) == {"g1", "g2"}
 
 
-# A scope-less call on a deployment with a configured default project scope:
-# the resolver keeps the request global but widens the search to the declared
-# project. Both scopes entered the plan deliberately, so neither side gates
-# the other.
-GLOBAL_WIDENED_PLAN = ScopePlan(
-    requested_scope="global", scopes=(PROJECT_SCOPE, "global")
+# A scope-less call searches the whole store; the configured default project
+# only ranks first. Nothing in such a plan was asked to be narrower, so no
+# scope in it gates another -- named or not.
+SCOPELESS_PLAN = ScopePlan(
+    requested_scope="global", scopes=(PROJECT_SCOPE, "global", "*")
 )
 
 
-def test_global_requested_plan_never_gates_declared_default_project(
-    tmp_path: Path,
-) -> None:
-    # The project candidate is weak by every gate criterion (bm25-only); with
-    # strong global candidates present it must still be served — the project
-    # scope is the operator's declaration, not a similarity guess.
+def test_scopeless_plan_never_gates_a_weak_project_candidate(tmp_path: Path) -> None:
+    # The project candidates are weak by every gate criterion (bm25-only); with
+    # strong global candidates present they must still be served.
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         ids = _rank_ids(
             store,
             {
                 "p_weak": _candidate("p_weak", PROJECT_SCOPE, bm25_score=1.0),
+                "o_weak": _candidate("o_weak", "project:other", bm25_score=1.0),
                 "g_strong": _candidate("g_strong", "global", vector_score=0.9),
             },
-            GLOBAL_WIDENED_PLAN,
+            SCOPELESS_PLAN,
         )
-    assert set(ids) == {"p_weak", "g_strong"}
+    assert set(ids) == {"p_weak", "o_weak", "g_strong"}
 
 
-def test_global_requested_plan_never_gates_weak_global_either(tmp_path: Path) -> None:
+def test_scopeless_plan_never_gates_weak_global_either(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         ids = _rank_ids(
             store,
@@ -319,7 +316,7 @@ def test_global_requested_plan_never_gates_weak_global_either(tmp_path: Path) ->
                 "p_strong": _candidate("p_strong", PROJECT_SCOPE, vector_score=0.9),
                 "g_weak": _candidate("g_weak", "global", bm25_score=1.0, vector_score=0.1),
             },
-            GLOBAL_WIDENED_PLAN,
+            SCOPELESS_PLAN,
         )
     assert set(ids) == {"p_strong", "g_weak"}
 

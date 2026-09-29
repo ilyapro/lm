@@ -718,12 +718,11 @@ def load_goldset(path: Path, connection: sqlite3.Connection) -> list[GoldsetItem
 
 
 class ScopeShim:
-    """Just enough of ``MemoryStore`` for ``resolve_scope`` to infer projects.
+    """Just enough of ``MemoryStore`` for ``resolve_scope``.
 
-    ``infer_project_scope`` reads ``store.connection`` for the known project
-    scopes and ``store.config.default_scope`` for the deployment default. A
-    read-only connection satisfies both without ``MemoryStore.__init__`` and
-    its migrations.
+    The resolver reads ``store.config.default_scope`` for the deployment
+    default; this satisfies it without ``MemoryStore.__init__`` and its
+    migrations.
     """
 
     class _Config:
@@ -768,14 +767,13 @@ def reachability(
             item.recorded_created_at is None or item.recorded_created_at >= cutoff
         )
         plan = resolve_scope(
-            query=item.query,
             scope=item.scope,
             ambient_context=item.ambient_context,
             store=shim,
         )
         eligible: list[int] = []
         seen: set[int] = set()
-        for scope in plan.scopes:
+        for scope in plan.scopes if plan.restricted else sorted(by_scope):
             # A plan lists each scope once today; deduplicate anyway, because a
             # repeated scope would silently give one anchor two top-k slots.
             for index in by_scope.get(scope, ()):

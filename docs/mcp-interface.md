@@ -92,7 +92,7 @@ stdio, SSE, and in-memory transports).
 * Pending-recall matching uses identity precedence: explicit
   `session_id`/`task` matches and mismatches always decide first; equal
   transport ids link strongly — including across the divergence between
-  scope-less recalls (which plan the `global` scope) and scope-less traces
+  scope-less recalls (whose requested scope is `global`) and scope-less traces
   (which land on the configured default scope); differing transport ids
   reject; with a stamp on only one side, the legacy text-similarity fallback
   applies, and only within the exact scope.
@@ -275,7 +275,12 @@ Input:
 tighter default keeps responses lean — pass a larger value when the task
 needs more breadth.
 
-Retrieval searches `session -> project -> global` when applicable, combines
+Scope: an explicit `scope` (the argument or `ambient_context.scope`)
+restricts the search to it — a `session:<id>` scope also sees the ambient
+project — and `global`. Without one the whole store is searched, and the
+ambient `session_id`, project (`project`/`workspace`/`cwd`) or the configured
+default project only rank first; the plan records this as a trailing `*`
+(`global > *`). Nothing is inferred from the query text. Retrieval combines
 BM25, local vector, and graph scores, reranks by feedback/confidence/access,
 logs access for returned nodes, and persists a recall event containing the
 query, scope plan, result IDs, and component scores. Causal queries such as

@@ -61,7 +61,7 @@ from living_memory.query_anchors import (
     ANCHOR_MATCH_COSINE_THRESHOLD,
     ANCHOR_MATCH_LIMIT,
 )
-from living_memory.scope import normalize_scope
+from living_memory.scope import ALL_SCOPES, normalize_scope
 
 #: Settings reported when none are given: the default and the candidates the
 #: docs table carries.
@@ -266,13 +266,15 @@ def census(
         query_norm = float(np.linalg.norm(vector))
         if query_norm <= 0.0:
             continue
+        resolved = [str(s) for s in json.loads(event["resolved_scopes"] or "[]")]
         try:
-            scopes = [normalize_scope(str(s)) for s in json.loads(event["resolved_scopes"] or "[]")]
+            scopes = [normalize_scope(s) for s in resolved if s != ALL_SCOPES]
         except ValueError:
             scopes = []
         scopes = scopes or [normalize_scope(str(event["scope"]))]
         moment = str(event["created_at"])
-        eligible = np.isin(scope_arr, scopes) & (created_arr < moment)
+        in_plan = True if ALL_SCOPES in resolved else np.isin(scope_arr, scopes)
+        eligible = in_plan & (created_arr < moment)
         scores = np.where(norms > 0.0, (matrix @ vector) / (safe * query_norm), 0.0)
         surviving = np.flatnonzero(eligible & (scores >= ANCHOR_MATCH_COSINE_THRESHOLD))
         if surviving.size == 0:

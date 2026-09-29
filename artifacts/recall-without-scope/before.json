@@ -1,0 +1,55 @@
+{
+  "project": {
+    "explicit_target_scope": {
+      "cases": 40,
+      "latency_ms_p50": 245.1,
+      "latency_ms_p95": 411.5,
+      "response_chars_mean": 9884,
+      "results_delivered": 175,
+      "results_outside_target_scope_and_global": 0,
+      "target_reached": 26
+    },
+    "negative": {
+      "cases": 10,
+      "results_delivered": 10
+    },
+    "no_ambient": {
+      "cases": 40,
+      "latency_ms_p50": 225.4,
+      "latency_ms_p95": 401.3,
+      "response_chars_mean": 5924,
+      "results_delivered": 109,
+      "results_outside_target_scope_and_global": 19,
+      "target_reached": 11
+    },
+    "session_id_only": {
+      "cases": 40,
+      "latency_ms_p50": 212.3,
+      "latency_ms_p95": 377.0,
+      "response_chars_mean": 5461,
+      "results_delivered": 91,
+      "results_outside_target_scope_and_global": 0,
+      "target_reached": 0
+    }
+  },
+  "reported": {
+    "explicit_target_scope": {
+      "cases": 3,
+      "latency_ms_p50": 241.0,
+      "latency_ms_p95": 241.0,
+      "response_chars_mean": 8001,
+      "results_delivered": 15,
+      "results_outside_target_scope_and_global": 0,
+      "target_reached": 1
+    },
+    "no_ambient": {
+      "cases": 3,
+      "latency_ms_p50": 167.3,
+      "latency_ms_p95": 167.3,
+      "response_chars_mean": 4103,
+      "results_delivered": 4,
+      "results_outside_target_scope_and_global": 0,
+      "target_reached": 0
+    }
+  }
+}

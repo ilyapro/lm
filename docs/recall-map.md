@@ -676,7 +676,7 @@ Every field below travels in `memory_recall.ambient_context` (and in
 | --- | --- | --- |
 | `task` | `recall_events.task` **column** (`storage.py:1376`) | Map cache key (fallback); `recent_recall_map_history(task=…)`; feedback closure |
 | `task_pattern` | `recall_events.task_pattern` **column** — and the ambient JSON, unchanged | Map cache key (**preferred**, `recall_map.py:1657`); `recent_recall_map_history(task_pattern=…)` and the curtail rule; `memory_lookup(task_pattern=…)`; consolidation grouping (`consolidation.py:662-669`) |
-| `session_id` | `recall_events.session_id` column (`:1377`) — **and scope resolution** | Pending-recall matching; `_ambient_scope` (see §9.4) |
+| `session_id` | `recall_events.session_id` column (`:1377`) — **and scope resolution** | Pending-recall matching; `_ambient_session` (see §9.4) |
 | `agent` | `recall_events.agent` column (`:1375`) | Attribution, closure precedence |
 | `scope` | `recall_events.scope` / `requested_scope` | Everything |
 | `transport_session_id` | `recall_events.transport_session_id` column | Session dedup, closure — **server-stamped; clients MUST NOT set it** |
@@ -803,11 +803,11 @@ delivery history. A client that sends only `task` is unchanged in every respect.
 
 ### 9.4 The `session_id` trap
 
-Scope resolution derives an ambient scope from `session_id` when no explicit
-scope is given: `_ambient_scope` (`scope.py:233-252`) returns `session:<id>`, and
+Scope resolution derives the requested scope from `session_id` when no explicit
+scope is given: `_ambient_session` (`scope.py`) returns `session:<id>`, and
 `recall_events.scope` stores the *requested* scope (`retrieval.py:622`). The
-search still widens — `session:<id>` → project (if the ambient context names one)
-→ `global` — so results are not lost. What is lost is every downstream filter:
+search itself covers the whole store — the session and ambient project only rank
+first — so results are not lost. What is lost is every downstream filter:
 each session writes its events under a scope value no other session shares.
 
 Measured: the live database holds **53 recall events across 18 distinct
@@ -816,7 +816,7 @@ invisible to `recent_recall_map_history(scope='project:lm')`.
 
 **Therefore: whenever AE sets `session_id`, it must also set an explicit `scope`
 (the `scope` tool argument, or `ambient_context.scope`).** An explicit scope
-always wins over the ambient derivation (`scope.py:54-61`).
+always wins over the ambient derivation (`ScopeResolver.resolve`).
 
 ### 9.5 What AE gains
 
@@ -916,7 +916,7 @@ avoids the `session_id` trap, and fails both remaining clauses — no
 | Delivery persistence + history | `src/living_memory/storage.py:1416`, `:1436`, DDL `:3484-3517`, migration `:3803` |
 | Ambient → column lift (`agent`, `task`, `task_pattern`, `session_id`) | `src/living_memory/storage.py:1374-1378` |
 | FTS document frequencies | `src/living_memory/storage.py:1970`, `:2015`; vocab DDL `:3443` |
-| Scope resolution | `src/living_memory/scope.py:194-277` |
+| Scope resolution | `src/living_memory/scope.py` (`ScopeResolver`) |
 | Tests | `tests/test_recall_map.py`, `tests/test_recall_map_delivery.py`, `tests/test_recall_map_pool.py`, `tests/test_recall_map_curtail.py`, `tests/test_fts_vocab.py`, `tests/test_instructions_map.py`, `tests/test_instructions_refresh.py`, `tests/test_instructions_imperative.py` |
 | Latency artifact | `artifacts/recall-map/latency-before-after.json` |
 | Bench script | `scripts/recall_map_latency_bench.py` |

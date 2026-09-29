@@ -247,7 +247,6 @@ from living_memory.query_anchors import (
 )
 from living_memory.schema_dedup import collapse_schema_duplicates
 from living_memory.scope import (
-    GLOBAL_SCOPE,
     ScopePlan,
     ScopeResolver,
     normalize_scope,
@@ -625,7 +624,7 @@ class MemoryRecallService:
         # can hold one snapshot, one goldset, and one code path fixed and vary
         # nothing but the graph channel's entry from query space.
         self.anchor_seeding = bool(anchor_seeding)
-        self._chunk_index: dict[str, _ScopeChunkIndex] = {}
+        self._chunk_index: dict[str | None, _ScopeChunkIndex] = {}
         self._write_probe: tuple[int, int] | None = None
         self._chunk_revision: tuple[Any, ...] | None = None
         self._anchor_vectors: _AnchorVectorCache | None = None
@@ -652,7 +651,6 @@ class MemoryRecallService:
             return []
 
         plan = self.scope_resolver.resolve(
-            query=query,
             scope=scope,
             ambient_context=ambient_context,
             store=self.store,
@@ -807,7 +805,7 @@ class MemoryRecallService:
 
             weights = self.store.get_retrieval_weights(node.scope).normalized()
             graph_score = candidate.combined_graph_score
-            ungated = node.scope in ungated_scopes
+            ungated = not plan.restricted or node.scope in ungated_scopes
             admissible = (
                 ungated
                 or not narrow_present
@@ -929,7 +927,12 @@ class MemoryRecallService:
     ) -> None:
         per_scope_limit = max(25, max_results * 8)
         expanded_query = _expanded_query(query)
-        for scope in plan.scopes:
+        # A bm25 score is a rank within one query. The named scopes keep their
+        # own ranking, as a restricted plan ranks them; a whole-store plan adds
+        # one pass over everything, where an unnamed scope competes on the
+        # corpus-wide ranking instead of getting a rank 1 of its own.
+        scopes = plan.search_scopes if plan.restricted else (*plan.named_scopes, None)
+        for scope in scopes:
             rows = self.store.search_content(expanded_query, scope=scope, limit=per_scope_limit)
             for rank, (node, _raw_score) in enumerate(rows):
                 if node.decayed or not plan.allows(node.scope):
@@ -1001,7 +1004,7 @@ class MemoryRecallService:
         # feeder that reaches a new trace first.
         collapse_near_dups = drain_near_dup_supersedes_enabled()
         freshly_chunked: dict[str, dict[str, Node]] = {}
-        for scope in plan.scopes:
+        for scope in plan.search_scopes:
             drained = 0
             while True:
                 unembedded = self.store.list_unembedded_nodes(scope=scope, limit=500)
@@ -1010,9 +1013,8 @@ class MemoryRecallService:
                 for node in unembedded:
                     self._ensure_embedding(node)
                 if collapse_near_dups:
-                    freshly_chunked.setdefault(scope, {}).update(
-                        (node.id, node) for node in unembedded
-                    )
+                    for node in unembedded:
+                        freshly_chunked.setdefault(node.scope, {})[node.id] = node
                 drained += len(unembedded)
             attempted: set[str] = set()
             while True:
@@ -1027,9 +1029,8 @@ class MemoryRecallService:
                     attempted.add(node.id)
                     self._rechunk_node(node)
                 if collapse_near_dups:
-                    freshly_chunked.setdefault(scope, {}).update(
-                        (node.id, node) for node in unchunked
-                    )
+                    for node in unchunked:
+                        freshly_chunked.setdefault(node.scope, {})[node.id] = node
             if drained or attempted:
                 # The revision probe cannot be trusted across this drain's own
                 # writes. Tier two is (COUNT(*), MAX(id)), and its safety
@@ -1040,10 +1041,11 @@ class MemoryRecallService:
                 # cached value, the new ULID's random bits may sort below the
                 # cached MAX, and the stale matrix -- built from the deleted
                 # vector -- would be served as current. The drain knows it
-                # wrote, so it drops the scope's index outright instead of
-                # betting on the tie-break; steady state (nothing drained)
+                # wrote, so it drops the cached indexes outright -- the
+                # whole-store one and every scope's share one corpus -- instead
+                # of betting on the tie-break; steady state (nothing drained)
                 # keeps the cache.
-                self._chunk_index.pop(scope, None)
+                self._chunk_index.clear()
 
         q_arr = _as_query_array(query_embedding)
         # After the drain, never before it: the drain writes chunks.
@@ -1057,11 +1059,13 @@ class MemoryRecallService:
         # the loop would cost a second full scan of the chunk table (146 ms on
         # the live corpus) to answer the same question. So the pass asks for the
         # index by the same key the scorer will, and the scorer gets a cache hit.
+        # A whole-store search has no such key -- the pass compares a node only
+        # with its own scope -- so there it builds the drained scopes' matrices.
         #
-        # This is downstream of the ``self._chunk_index.pop(scope, None)`` above
-        # and stays correct there: the pass writes ``connections`` rows and
+        # This is downstream of the ``self._chunk_index.clear()`` above and
+        # stays correct there: the pass writes ``connections`` rows and
         # nothing else. No chunk row is inserted, deleted or edited, no node is
-        # decayed, so the matrix the pop just rebuilt still describes the chunk
+        # decayed, so the matrix the clear just rebuilt still describes the chunk
         # corpus exactly. What the write does move is ``total_changes``, which
         # only costs the *next* recall the cheap tier-one probe before
         # ``_chunk_table_revision`` confirms the corpus is unchanged.
@@ -1073,7 +1077,7 @@ class MemoryRecallService:
             )
 
         scoped_scores: list[tuple[float, str]] = []
-        for scope in plan.scopes:
+        for scope in plan.search_scopes:
             index = self._scope_chunk_index(scope, revision)
             for block in index.blocks:
                 if block.dimension != len(query_embedding):
@@ -1153,7 +1157,7 @@ class MemoryRecallService:
         self._chunk_revision = revision
         return revision
 
-    def _scope_chunk_index(self, scope: str, revision: tuple[Any, ...]) -> _ScopeChunkIndex:
+    def _scope_chunk_index(self, scope: str | None, revision: tuple[Any, ...]) -> _ScopeChunkIndex:
         cached = self._chunk_index.get(scope)
         if cached is not None and cached.revision == revision:
             return cached
@@ -1161,7 +1165,7 @@ class MemoryRecallService:
         self._chunk_index[scope] = index
         return index
 
-    def _build_chunk_index(self, scope: str, revision: tuple[Any, ...]) -> _ScopeChunkIndex:
+    def _build_chunk_index(self, scope: str | None, revision: tuple[Any, ...]) -> _ScopeChunkIndex:
         """Read one scope's chunk BLOBs into reusable matrices.
 
         The whole point of the cache. Measured over the whole corpus of a
@@ -1582,26 +1586,19 @@ class MemoryRecallService:
         query_tokens = set(tokenize(query))
         if not query_tokens:
             return
-        for scope in plan.scopes:
-            schemas = self.store.list_nodes(
-                level="schema",
-                scope=scope,
-                include_decayed=False,
-                limit=1_000,
-            )
-            for schema in schemas:
-                trigger = str(schema.context.get("trigger") or "")
-                if not trigger:
-                    continue
+        scores: dict[str, float] = {}
+        for scope in plan.search_scopes:
+            for schema_id, trigger in self.store.schema_triggers(scope):
                 trigger_tokens = set(tokenize(trigger))
                 if not trigger_tokens:
                     continue
                 overlap = len(query_tokens & trigger_tokens) / len(trigger_tokens)
                 if overlap < SCHEMA_TRIGGER_OVERLAP_THRESHOLD:
                     continue
-                score = SCHEMA_TRIGGER_BASE_SCORE + 0.05 * overlap
-                candidate = candidates.setdefault(schema.id, _Candidate(node=schema))
-                candidate.trigger_score = max(candidate.trigger_score, score)
+                scores[schema_id] = SCHEMA_TRIGGER_BASE_SCORE + 0.05 * overlap
+        for schema in self.store.get_nodes(scores).values():
+            candidate = candidates.setdefault(schema.id, _Candidate(node=schema))
+            candidate.trigger_score = max(candidate.trigger_score, scores[schema.id])
 
     def _named_schemas_first(
         self,
@@ -1629,7 +1626,7 @@ class MemoryRecallService:
         ranked_ids = {result.node.id for result in ranked}
         named_ids = {
             node_id
-            for scope in plan.scopes
+            for scope in plan.search_scopes
             for node_id, trigger in self.store.schema_triggers(scope)
             if node_id in ranked_ids and frozenset(tokenize(trigger)) == query_tokens
         }
@@ -2256,15 +2253,10 @@ def _ungated_scopes(plan: ScopePlan) -> tuple[str, ...]:
     deliberate association — and a session's few notes must not gate the
     project's knowledge behind similarity to themselves.
 
-    A global-requested plan shields every scope it carries for the same
-    reason: the resolver widens a global request only with the deployment's
-    configured default project scope — a deliberate operator declaration,
-    never a similarity inference — so such a plan holds no cross-scope guess
-    to gate.
+    Only a restricted plan gates at all: a whole-store plan asked for no
+    narrower scope, so every scope in it is a peer ranked on its evidence.
     """
 
-    if plan.requested_scope == GLOBAL_SCOPE:
-        return plan.scopes
     if scope_family(plan.requested_scope) != "session":
         return (plan.requested_scope,)
     return (plan.requested_scope,) + tuple(
@@ -2340,7 +2332,7 @@ def _blend_candidate_score(
         return 0.0
 
     scope_boost = (
-        1.0 + max(0, len(plan.scopes) - plan.rank(node.scope) - 1) * SCOPE_RANK_BOOST_STEP
+        1.0 + plan.boost_steps(node.scope) * SCOPE_RANK_BOOST_STEP
     )
     adjusted = feedback_weighted_score(
         node,

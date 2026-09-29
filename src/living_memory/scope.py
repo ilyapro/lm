@@ -3,104 +3,111 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
-import re
 
 
 GLOBAL_SCOPE = "global"
+# Trailing entry of a plan that admits every scope it does not name.
+ALL_SCOPES = "*"
 
 
 @dataclass(frozen=True, slots=True)
 class ScopePlan:
-    """Resolved search plan ordered from narrowest to broadest scope."""
+    """Search plan: ``scopes`` ordered from narrowest to broadest.
+
+    A plan ending in :data:`ALL_SCOPES` searches the whole store; the scopes
+    it names before that only rank first. Any other plan is a restriction.
+    """
 
     requested_scope: str
     scopes: tuple[str, ...]
-    explicit: bool = False
-    ambient_scope: str | None = None
-    implicit_scope: str | None = None
 
     @property
     def family(self) -> str:
         return scope_family(self.requested_scope)
 
+    @property
+    def restricted(self) -> bool:
+        return ALL_SCOPES not in self.scopes
+
+    @property
+    def named_scopes(self) -> tuple[str, ...]:
+        return tuple(scope for scope in self.scopes if scope != ALL_SCOPES)
+
+    @property
+    def search_scopes(self) -> tuple[str | None, ...]:
+        """What each channel queries in turn; ``None`` is the whole store."""
+
+        return self.scopes if self.restricted else (None,)
+
+    @property
+    def recall_scope(self) -> str | None:
+        """The ``scope`` argument that re-resolves to this plan (with its ambient context)."""
+
+        return self.requested_scope if self.restricted else None
+
     def allows(self, scope: str) -> bool:
-        return scope in self.scopes
+        return not self.restricted or scope in self.scopes
 
     def rank(self, scope: str) -> int:
-        try:
-            return self.scopes.index(scope)
-        except ValueError:
-            return len(self.scopes)
+        """Position among the named scopes; an unnamed admitted scope ranks broadest."""
+
+        named = self.named_scopes
+        if scope in named:
+            return named.index(scope)
+        return len(named) - (0 if self.restricted else 1)
+
+    def boost_steps(self, scope: str) -> int:
+        """How many named scopes rank below ``scope`` (0 for the broadest)."""
+
+        return max(0, len(self.named_scopes) - self.rank(scope) - 1)
 
 
 class ScopeResolver:
-    """Resolve explicit, ambient, and query-implied scope into a safe search plan."""
+    """Resolve the recall scope into a search plan.
+
+    An explicit scope -- the argument or ``ambient_context.scope`` -- restricts
+    the search to it (a session also sees its ambient project) and ``global``.
+    Without one the whole store is searched: the ambient session and project,
+    or the configured default project, only rank first.
+    """
 
     def resolve(
         self,
         *,
-        query: str = "",
         scope: str | None = None,
         ambient_context: Mapping[str, Any] | None = None,
         store: Any | None = None,
     ) -> ScopePlan:
         ambient = dict(ambient_context or {})
-        ambient_scope = _ambient_scope(ambient)
-        ambient_project = _ambient_project(ambient, ambient_scope)
-
-        if scope:
-            requested = normalize_scope(scope)
-            return _plan_for_scope(
-                requested,
-                explicit=True,
-                ambient_scope=ambient_scope,
-                project_scope=ambient_project,
-            )
-
-        if ambient_scope:
-            return _plan_for_scope(
-                ambient_scope,
-                explicit=False,
-                ambient_scope=ambient_scope,
-                project_scope=ambient_project,
-            )
-
-        implicit_scope = infer_project_scope(query, store)
-        if implicit_scope:
-            return ScopePlan(
-                requested_scope=implicit_scope,
-                scopes=(implicit_scope, GLOBAL_SCOPE),
-                implicit_scope=implicit_scope,
-            )
-
-        default_project = _configured_default_project(store)
-        if default_project:
-            # Scope-less call on a deployment whose writes default to a project
-            # scope (storage honours config.default_scope on every remember).
-            # The request stays global — the caller asked for nothing narrower,
-            # and feedback closure relies on that divergence — but the search
-            # widens to the declared project so the deployment's own memory
-            # stays reachable without a deliberate query mention.
-            return ScopePlan(
+        project = _ambient_project(ambient)
+        declared = scope or ambient.get("scope")
+        if declared:
+            return _plan_for_scope(normalize_scope(str(declared)), project)
+        preferred = _ambient_session(ambient) or project
+        if preferred:
+            plan = _plan_for_scope(preferred, project)
+        else:
+            # The request stays global -- feedback closure relies on that
+            # divergence from the configured default write scope -- while the
+            # deployment's own project still ranks first.
+            default_project = _configured_default_project(store)
+            plan = ScopePlan(
                 requested_scope=GLOBAL_SCOPE,
-                scopes=(default_project, GLOBAL_SCOPE),
+                scopes=tuple(dict.fromkeys((default_project or GLOBAL_SCOPE, GLOBAL_SCOPE))),
             )
-
-        return ScopePlan(requested_scope=GLOBAL_SCOPE, scopes=(GLOBAL_SCOPE,))
+        return replace(plan, scopes=(*plan.scopes, ALL_SCOPES))
 
 
 def resolve_scope(
     *,
-    query: str = "",
     scope: str | None = None,
     ambient_context: Mapping[str, Any] | None = None,
     store: Any | None = None,
 ) -> ScopePlan:
     return ScopeResolver().resolve(
-        query=query,
         scope=scope,
         ambient_context=ambient_context,
         store=store,
@@ -132,44 +139,6 @@ def scope_family(scope: str) -> str:
     return scope
 
 
-def infer_project_scope(query: str, store: Any | None = None) -> str | None:
-    direct = re.search(r"\bproject:([A-Za-z0-9_.-]+)\b", query)
-    if direct:
-        return f"project:{direct.group(1)}"
-
-    if store is None:
-        return None
-
-    query_tokens = set(_tokens(query))
-    if not query_tokens:
-        return None
-
-    rows = store.connection.execute(
-        "SELECT DISTINCT scope FROM nodes WHERE scope LIKE 'project:%' ORDER BY scope"
-    ).fetchall()
-    for row in rows:
-        candidate = str(row["scope"])
-        project_name = candidate.split(":", 1)[1]
-        if _query_mentions_project(query, query_tokens, project_name):
-            return candidate
-    return None
-
-
-def _query_mentions_project(query: str, query_tokens: set[str], project_name: str) -> bool:
-    """True only for a deliberate mention of the project.
-
-    Either the whole name appears as a substring, or every token of the name
-    appears among the query tokens. A single shared token is not a mention:
-    it silently narrowed broad queries into an unrelated project's scope
-    (query "pipeline docs" is not a request for project:data-pipeline).
-    """
-
-    if project_name.lower() in query.lower():
-        return True
-    project_tokens = set(_tokens(project_name))
-    return bool(project_tokens) and project_tokens <= query_tokens
-
-
 def _configured_default_project(store: Any | None) -> str | None:
     """The store's configured default write scope, when it names a project.
 
@@ -191,91 +160,28 @@ def _configured_default_project(store: Any | None) -> str | None:
     return normalized
 
 
-def _plan_for_scope(
-    requested: str,
-    *,
-    explicit: bool,
-    ambient_scope: str | None,
-    project_scope: str | None,
-) -> ScopePlan:
-    if requested == GLOBAL_SCOPE:
-        return ScopePlan(
-            requested_scope=GLOBAL_SCOPE,
-            scopes=(GLOBAL_SCOPE,),
-            explicit=explicit,
-            ambient_scope=ambient_scope,
-        )
-
-    family = scope_family(requested)
-    if family == "project":
-        return ScopePlan(
-            requested_scope=requested,
-            scopes=(requested, GLOBAL_SCOPE),
-            explicit=explicit,
-            ambient_scope=ambient_scope,
-        )
-
-    if family == "session":
-        scopes = [requested]
-        if project_scope and project_scope != requested:
-            scopes.append(project_scope)
-        scopes.append(GLOBAL_SCOPE)
-        return ScopePlan(
-            requested_scope=requested,
-            scopes=tuple(dict.fromkeys(scopes)),
-            explicit=explicit,
-            ambient_scope=ambient_scope,
-        )
-
-    raise ValueError(f"unsupported scope family: {family}")
+def _plan_for_scope(requested: str, project_scope: str | None) -> ScopePlan:
+    scopes = [requested]
+    if scope_family(requested) == "session" and project_scope:
+        scopes.append(project_scope)
+    scopes.append(GLOBAL_SCOPE)
+    return ScopePlan(requested_scope=requested, scopes=tuple(dict.fromkeys(scopes)))
 
 
-def _ambient_scope(ambient: Mapping[str, Any]) -> str | None:
-    raw_scope = ambient.get("scope")
-    if raw_scope:
-        return normalize_scope(str(raw_scope))
-
+def _ambient_session(ambient: Mapping[str, Any]) -> str | None:
     session_id = ambient.get("session_id") or ambient.get("session")
-    if session_id:
-        return normalize_scope(f"session:{session_id}")
+    return normalize_scope(f"session:{session_id}") if session_id else None
 
-    project = ambient.get("project") or ambient.get("project_name") or ambient.get("workspace")
-    if project:
-        return normalize_scope(str(project))
 
+def _ambient_project(ambient: Mapping[str, Any]) -> str | None:
     workspace_path = ambient.get("workspace_path") or ambient.get("cwd")
-    if workspace_path:
-        name = Path(str(workspace_path)).name
-        if name:
-            return normalize_scope(name)
-
+    for raw in (
+        ambient.get("project_scope"),
+        ambient.get("project") or ambient.get("project_name") or ambient.get("workspace"),
+        Path(str(workspace_path)).name if workspace_path else None,
+    ):
+        if raw:
+            normalized = normalize_scope(str(raw))
+            if scope_family(normalized) == "project":
+                return normalized
     return None
-
-
-def _ambient_project(ambient: Mapping[str, Any], ambient_scope: str | None) -> str | None:
-    if ambient_scope and scope_family(ambient_scope) == "project":
-        return ambient_scope
-
-    project_scope = ambient.get("project_scope")
-    if project_scope:
-        normalized = normalize_scope(str(project_scope))
-        if scope_family(normalized) == "project":
-            return normalized
-
-    project = ambient.get("project") or ambient.get("project_name") or ambient.get("workspace")
-    if project:
-        normalized = normalize_scope(str(project))
-        if scope_family(normalized) == "project":
-            return normalized
-
-    workspace_path = ambient.get("workspace_path") or ambient.get("cwd")
-    if workspace_path:
-        name = Path(str(workspace_path)).name
-        if name:
-            return normalize_scope(name)
-
-    return None
-
-
-def _tokens(value: str) -> list[str]:
-    return re.findall(r"\w+", value.lower())

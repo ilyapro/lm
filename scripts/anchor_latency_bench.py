@@ -226,7 +226,7 @@ def _match_rate(
     source = service._anchor_vector_source() or service.store
     for event in events:
         plan = service.scope_resolver.resolve(
-            query=event["query"], scope=event["scope"], store=service.store
+            scope=event["scope"], store=service.store
         )
         embedding = service.embedder.embed(event["query"])
         if not embedding:

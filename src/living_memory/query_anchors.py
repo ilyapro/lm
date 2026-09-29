@@ -552,7 +552,7 @@ def _scope_list(
     if scope_plan is None:
         return None
     if isinstance(scope_plan, ScopePlan):
-        return [normalize_scope(scope) for scope in scope_plan.scopes]
+        return list(scope_plan.scopes) if scope_plan.restricted else None
     if isinstance(scope_plan, str):
         return [normalize_scope(scope_plan)]
     return [normalize_scope(str(scope)) for scope in scope_plan]

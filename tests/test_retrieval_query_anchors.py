@@ -168,6 +168,7 @@ payload = json.load(sys.stdin)
 from living_memory import query_anchors as qa
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.retrieval import MemoryRecallService
+from living_memory.scope import ScopeResolver
 from living_memory.storage import MemoryStore
 
 SCOPE = payload["scope"]
@@ -236,7 +237,16 @@ def module_at(commit, name):
     module = types.ModuleType(name)
     sys.modules[name] = module
     exec(compile(source, "<retrieval@" + commit + ">", "exec"), module.__dict__)
+    # The frozen file still passes ``query`` to the resolver, which no longer
+    # reads it. Every comparison names its scope, so the plans it gets are the
+    # restricted ones it was written against.
+    module.ScopeResolver = QueryTolerantResolver
     return module
+
+
+class QueryTolerantResolver(ScopeResolver):
+    def resolve(self, *, query="", **kwargs):
+        return super().resolve(**kwargs)
 
 
 _reference_module = module_at(payload["reference_commit"], "living_memory._retrieval_pre_anchor")

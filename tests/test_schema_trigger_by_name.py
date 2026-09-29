@@ -134,7 +134,7 @@ def test_a_named_schema_must_pass_the_gate_to_go_first(
         other = store.append_trace("vault key rotation note", {"scope": SCOPE})
         service = MemoryRecallService(store)
         plan = service.scope_resolver.resolve(
-            query="rotate vault keys", scope=SCOPE, ambient_context=None, store=store
+            scope=SCOPE, ambient_context=None, store=store
         )
         strong = RecallResult(node=other, score=0.9, bm25_score=1.0, methods=("bm25",))
         weak = RecallResult(node=schema, score=0.1, bm25_score=0.1, methods=("bm25",))

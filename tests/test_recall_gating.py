@@ -207,7 +207,6 @@ def test_gate_fingerprint_matches_recorded_event_for_scoped_and_scopeless(
     # with any stored project name, plans requested_scope 'global'. The
     # reserved transport stamp must never perturb that plan.
     plan = resolve_scope(
-        query=GATE_QUERY,
         scope=None,
         ambient_context={"transport_session_id": "any-connection"},
         store=store,

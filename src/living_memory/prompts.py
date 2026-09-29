@@ -54,7 +54,7 @@ def retrieval_context_prompt(
     ambient = dict(ambient_context or {})
     if agent:
         ambient["agent"] = agent
-    plan = resolve_scope(query=query, scope=scope, ambient_context=ambient, store=store)
+    plan = resolve_scope(scope=scope, ambient_context=ambient, store=store)
     concepts = select_context_concepts(
         store,
         task=query,
@@ -113,7 +113,7 @@ def select_context_concepts(
         service = MemoryRecallService(store)
         recall_results = service.memory_recall(
             task,
-            scope=plan.requested_scope,
+            scope=plan.recall_scope,
             ambient_context=ambient_context,
             max_results=max(limit * 6, 20),
             log_access=False,
@@ -131,7 +131,7 @@ def select_context_concepts(
             )
 
     task_tokens = _tokens(task)
-    for item_scope in plan.scopes:
+    for item_scope in plan.named_scopes:
         weights = store.get_retrieval_weights(item_scope).normalized()
         for node in store.list_nodes(
             level="concept",
@@ -187,7 +187,7 @@ def select_context_schemas(
     service = MemoryRecallService(store)
     recall_results = service.memory_recall(
         task,
-        scope=plan.requested_scope,
+        scope=plan.recall_scope,
         ambient_context=ambient_context,
         max_results=max(limit * 4, 12),
         log_access=False,
@@ -231,7 +231,7 @@ def select_decision_history(
     service = MemoryRecallService(store)
     recall_results = service.memory_recall(
         task,
-        scope=plan.requested_scope,
+        scope=plan.recall_scope,
         ambient_context=ambient_context,
         depth="decision",
         max_results=max(limit * 6, 20),
@@ -346,7 +346,7 @@ def _policy_score(
     # Same per-rank scope preference as retrieval.rank_candidates — keep the
     # context-prompt scorer from drowning requested-scope concepts in
     # broader-scope ones (shared constant, single tuning point).
-    scope_boost = 1.0 + max(0, len(plan.scopes) - plan.rank(node.scope) - 1) * SCOPE_RANK_BOOST_STEP
+    scope_boost = 1.0 + plan.boost_steps(node.scope) * SCOPE_RANK_BOOST_STEP
     confidence_boost = 0.5 + node.confidence
     usefulness_boost = 1.0 + max(-0.5, min(0.5, node.usefulness_score))
     policy_name = str(policy or "balanced").lower()

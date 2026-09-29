@@ -972,12 +972,11 @@ def annotate_anchors(
     annotations: dict[str, AnchorAnnotation] = {}
     for item in sorted(items, key=lambda item: item.query_id):
         plan = service.scope_resolver.resolve(
-            query=item.query,
             scope=item.scope,
             ambient_context=item.ambient_context,
             store=store,
         )
-        plan_scopes = [normalize_scope(scope) for scope in plan.scopes]
+        plan_scopes = [normalize_scope(scope) for scope in plan.named_scopes]
         own_scope = normalize_scope(item.scope) if item.scope else (
             plan_scopes[0] if plan_scopes else "global"
         )

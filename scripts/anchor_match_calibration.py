@@ -825,7 +825,6 @@ def _rank_all(service: MemoryRecallService, items: Sequence[GoldsetItem]) -> dic
             ranked[item.query_id] = []
             continue
         plan = service.scope_resolver.resolve(
-            query=item.query,
             scope=item.scope,
             ambient_context=item.ambient_context,
             store=service.store,

@@ -124,7 +124,7 @@ def test_scopeless_recall_scope_resolution_unchanged_by_stamping(tmp_path: Path)
         assert stamped_event.resolved_scopes == direct_event.resolved_scopes
         assert not stamped_event.requested_scope.startswith("session:")
 
-        # Implicit project inference must be equally unperturbed.
+        # A project named in the query narrows neither path: nothing is inferred.
         store.append_trace("seeded project fact", {"scope": "project:transportia"})
         project_query = "transportia scope probe"
         async with Client(mcp) as client:
@@ -132,9 +132,9 @@ def test_scopeless_recall_scope_resolution_unchanged_by_stamping(tmp_path: Path)
         stamped_project = store.list_recall_events()[0]
         MemoryRecallService(store).memory_recall(project_query)
         direct_project = store.list_recall_events()[0]
-        assert stamped_project.requested_scope == direct_project.requested_scope
-        assert stamped_project.requested_scope == "project:transportia"
+        assert stamped_project.requested_scope == direct_project.requested_scope == "global"
         assert stamped_project.resolved_scopes == direct_project.resolved_scopes
+        assert stamped_project.resolved_scopes[-1] == "*"
 
     asyncio.run(scenario())
 

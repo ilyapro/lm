@@ -231,9 +231,7 @@ def _demotion(result: Any, demotions: Mapping[str, float] | None) -> float:
 class _NoPlan:
     """Stand-in plan for offline scoring: no scope list, so no scope boost."""
 
-    scopes: tuple[str, ...] = ()
-
-    def rank(self, scope: str) -> int:
+    def boost_steps(self, scope: str) -> int:
         return 0
 
 

@@ -106,14 +106,14 @@ def measure(
     result_counts: list[int] = []
     for _ in range(rounds):
         for query, scope in queries:
-            plan = resolver.resolve(query=query, scope=scope, store=store)
+            plan = resolver.resolve(scope=scope, store=store)
             expanded = _expanded_query(query)
             fts = _fts_query(expanded)
             prefix_counts.append(len(cyrillic_prefix_terms(query)))
             term_counts.append(fts.count(" OR ") + 1 if fts else 0)
             started = time.perf_counter()
             hits = 0
-            for plan_scope in plan.scopes:
+            for plan_scope in plan.search_scopes:
                 call_started = time.perf_counter()
                 rows = store.search_content(expanded, scope=plan_scope, limit=per_scope_limit)
                 per_call.append(time.perf_counter() - call_started)

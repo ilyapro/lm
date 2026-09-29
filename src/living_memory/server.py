@@ -1332,7 +1332,6 @@ def _register_tools(
             gated = False
             if gate_policy.enabled:
                 plan = resolve_scope(
-                    query=query,
                     scope=scope,
                     ambient_context=ambient_context,
                     store=store,

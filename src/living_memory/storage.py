@@ -1406,8 +1406,8 @@ class MemoryStore:
         ).fetchall()
         return [_node_from_row(row) for row in rows]
 
-    def schema_triggers(self, scope: str) -> list[tuple[str, str]]:
-        """``(id, trigger)`` of the live schemas in ``scope`` that carry a trigger.
+    def schema_triggers(self, scope: str | None) -> list[tuple[str, str]]:
+        """``(id, trigger)`` of the live schemas in ``scope`` (``None``: all) that carry a trigger.
 
         Reads two columns instead of whole nodes: a recall compares every
         trigger in its scopes and fetches only the schemas it matched.
@@ -1417,10 +1417,10 @@ class MemoryStore:
             """
             SELECT id, JSON_EXTRACT(context, '$.trigger')
             FROM nodes
-            WHERE level = 'schema' AND scope = ? AND decayed = 0
+            WHERE level = 'schema' AND (? IS NULL OR scope = ?) AND decayed = 0
               AND JSON_EXTRACT(context, '$.trigger') IS NOT NULL
             """,
-            (scope,),
+            (scope, scope),
         ).fetchall()
         return [(str(row[0]), str(row[1])) for row in rows if row[1]]
 
