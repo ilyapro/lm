@@ -252,7 +252,7 @@ from living_memory.scope import (
     normalize_scope,
     scope_family,
 )
-from living_memory.score_gate import apply_score_gate, min_score_from_env, passes_gate
+from living_memory.score_gate import REFERENCE_WEIGHTS, apply_score_gate, min_score_from_env, passes_gate
 from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
     CHUNK_EMBEDDING_ITEMSIZE,
@@ -313,12 +313,12 @@ SCHEMA_TRIGGER_BOOST = 1.8
 #: Valve of goal schema-ranks-by-meaning (docs/recall-schema-trigger.md).
 #: Unset: the legacy trigger channel above -- half the trigger's words in the
 #: query give a schema a near-constant score, a 1.8x boost and a gate scale of
-#: its own, whatever the query means. ``name``: a schema is found and scored
-#: only by bm25/vector/graph like every other node; its trigger counts only
-#: when the query *is* the procedure's name (the same token set): then it is its
-#: best lexical match (bm25 1.0), first if it passes the quality gate on that
-#: score (:meth:`MemoryRecallService._named_schemas_first`). The legacy
-#: constants and branches go when the valve does.
+#: its own, whatever the query means. ``name``: every node, schema or not, is
+#: ranked on the gate's own score (``score_gate.gate_score``: REFERENCE_WEIGHTS, no
+#: per-scope weights, no 1.2x correction prior), so order and gate agree; a schema's
+#: trigger counts only when the query *is* the procedure's name (same token set):
+#: then bm25 1.0, first if it passes the gate (:meth:`MemoryRecallService._named_schemas_first`).
+#: The legacy constants and branches go when the valve does.
 SCHEMA_TRIGGER_ENV = "LM_RECALL_SCHEMA_TRIGGER"
 SCHEMA_TRIGGER_BY_NAME = "name"
 #: ``trigger_score`` of a schema the query names in ``name`` mode.
@@ -789,6 +789,7 @@ class MemoryRecallService:
         anchor_seeded = any(
             candidate.anchor_score > 0.0 for candidate in candidates.values()
         )
+        reference = REFERENCE_WEIGHTS if schema_trigger_by_name() else None
         anchor_free_narrow_present = (
             _ungated_scope_profile(
                 candidates, ungated_scopes, decision_mode=decision_mode, anchor_free=True
@@ -803,7 +804,7 @@ class MemoryRecallService:
             if _is_rejected_alternative_node(node) and not decision_mode:
                 continue
 
-            weights = self.store.get_retrieval_weights(node.scope).normalized()
+            weights = (reference or self.store.get_retrieval_weights(node.scope)).normalized()
             graph_score = candidate.combined_graph_score
             ungated = not plan.restricted or node.scope in ungated_scopes
             admissible = (
@@ -821,7 +822,7 @@ class MemoryRecallService:
                     plan=plan,
                     causal_mode=causal_mode,
                     superseded=node.id in corrections_by_superseded,
-                    superseding=node.id in superseding_ids,
+                    superseding=reference is None and node.id in superseding_ids,
                 )
                 if admissible
                 else 0.0
@@ -863,7 +864,7 @@ class MemoryRecallService:
                         plan=plan,
                         causal_mode=causal_mode,
                         superseded=node.id in corrections_by_superseded,
-                        superseding=node.id in superseding_ids,
+                        superseding=reference is None and node.id in superseding_ids,
                     )
                     if anchor_free_score > adjusted:
                         adjusted = anchor_free_score
@@ -1629,8 +1630,6 @@ class MemoryRecallService:
             for node_id, trigger in self.store.schema_triggers(scope)
             if frozenset(tokenize(trigger)) == query_tokens
         }
-        if not named_ids:
-            return ranked
         threshold = min_score_from_env()
         first: list[RecallResult] = []
         rest: list[RecallResult] = []

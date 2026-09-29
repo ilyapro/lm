@@ -59,6 +59,9 @@ HOLDOUT_END = "2026-09-29T07:00:00Z"
 #: Exclusive end of the ``new`` holdout of goal useful-schema-survives-ranking
 #: (``prereg-2.md``); it starts at :data:`HOLDOUT_END`, which is also its cutoff.
 NEW_HOLDOUT_END = "2026-09-29T15:00:00Z"
+#: Exclusive end of the ``fresh`` holdout of the reopened goal (``prereg-3.md``);
+#: it starts at :data:`NEW_HOLDOUT_END`, which is also its cutoff.
+FRESH_HOLDOUT_END = "2026-09-29T16:26:00Z"
 #: The valve env lines each host runs with (``~/.config/living-memory/env``,
 #: 2026-09-29), plus the explicit-feedback policy demotion is read under.
 FIELD_ENV: dict[str, dict[str, str]] = {
@@ -100,6 +103,8 @@ def segment_bounds(host_split: Mapping[str, Any], segment: str) -> tuple[tuple[s
         return hold, (HOLDOUT_END, ""), host_split["holdout_start"]["created_at"]
     if segment == "new":
         return (HOLDOUT_END, ""), (NEW_HOLDOUT_END, ""), HOLDOUT_END
+    if segment == "fresh":
+        return (NEW_HOLDOUT_END, ""), (FRESH_HOLDOUT_END, ""), NEW_HOLDOUT_END
     raise ValueError(segment)
 
 
@@ -453,7 +458,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     cmd = sub.add_parser("run")
     cmd.add_argument("--host", choices=rpr.HOSTS, required=True)
-    cmd.add_argument("--segment", choices=("dev", "holdout", "new"), required=True)
+    cmd.add_argument("--segment", choices=("dev", "holdout", "new", "fresh"), required=True)
     cmd.add_argument("--snapshot", type=Path, required=True)
     cmd.add_argument("--split", type=Path, default=rpr.SPLIT_PATH)
     cmd.add_argument("--workdir", type=Path, default=Path(os.environ.get("TMPDIR", "/tmp")) / "schema-trigger")

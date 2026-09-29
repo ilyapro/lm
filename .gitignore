@@ -63,3 +63,12 @@ build/
 # `index_sha256` over exactly these bytes, so a rebuilt index still has to
 # prove it is the one the manifest sealed.
 artifacts/post-session/corpus-index.jsonl
+
+# Schema-trigger replay outputs of the sfx field store (event and node ids of
+# private memory). `scripts/schema_trigger_replay.py run` regenerates them
+# locally from a snapshot; the numbers are reported in
+# artifacts/schema-trigger/report-3.md. They are never committed, so they
+# reach neither alt nor the external repository.
+artifacts/schema-trigger/v2/original-sfx.json
+artifacts/schema-trigger/v2/new-sfx.json
+artifacts/schema-trigger/v3/

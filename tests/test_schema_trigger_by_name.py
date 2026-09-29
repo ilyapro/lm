@@ -19,6 +19,7 @@ from living_memory.retrieval import (
     SCHEMA_TRIGGER_ENV,
     MemoryRecallService,
     RecallResult,
+    _Candidate,
     schema_trigger_by_name,
 )
 from living_memory.score_gate import GATE_FORM_ENV, MIN_SCORE_ENV, passes_gate, trigger_gate_score
@@ -176,3 +177,31 @@ def test_no_trigger_scale_in_name_mode(monkeypatch: pytest.MonkeyPatch, tmp_path
     monkeypatch.setenv(SCHEMA_TRIGGER_ENV, "name")
     assert trigger_gate_score(hit) is None
     assert not passes_gate(hit, 0.3)
+
+
+def test_name_mode_orders_on_the_gate_blend_not_scope_weights(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Order and gate read one score: learned per-scope weights do not reorder under the valve."""
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        vector_only = store.append_trace("vector only evidence", {"scope": SCOPE, "agent": "a"})
+        procedure = store.create_node(
+            level="schema",
+            content="Procedure: mixed evidence\n1. Step.",
+            context={"scope": SCOPE, "trigger": "mixed evidence"},
+        )
+        store.set_retrieval_weights(SCOPE, bm25=0.05, vector=0.9, graph=0.05)
+        service = MemoryRecallService(store)
+        plan = service.scope_resolver.resolve(scope=SCOPE, ambient_context=None, store=store)
+
+        def order() -> list[str]:
+            candidates = {
+                vector_only.id: _Candidate(node=vector_only, vector_score=0.57),
+                procedure.id: _Candidate(node=procedure, bm25_score=0.5, vector_score=0.52, graph_score=0.3),
+            }
+            return [result.node.id for result in service.rank_candidates(candidates, plan)]
+
+        assert order()[0] == vector_only.id
+        monkeypatch.setenv(SCHEMA_TRIGGER_ENV, "name")
+        assert order()[0] == procedure.id

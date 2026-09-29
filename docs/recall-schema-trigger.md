@@ -32,6 +32,15 @@ Under `name`:
   only through bm25/vector/graph, is scored by the same blend as every other
   node, and passes the quality gate (`LM_RECALL_MIN_SCORE`) on that score.
   There is no trigger scale in the gate.
+- Every node, schema or not, is ranked on the gate's own score
+  (`score_gate.gate_score`). The weights are the fixed `REFERENCE_WEIGHTS`,
+  not the store's learned per-scope weights, and there is no 1.2x prior for
+  corrections. Order and gate therefore read one score, the same for every
+  node whatever its origin or project. A result that passes the gate is no
+  longer outranked by one that the gate scores lower. Before this, a useful
+  procedure at gate 0.46 lost its slot to traces at gate 0.38 that
+  `project:lm`'s vector-heavy weights lifted. Corrections still outrank what
+  they correct (`_enforce_correction_dominance`).
 - A query that **is** the procedure's name (its token set equals the trigger's
   token set, so `lm recall map curtail`, `lm_recall_map_curtail` and
   `LM recall-map curtail` all name the same schema) is that schema's best
@@ -58,7 +67,8 @@ multiplier and the gate scale are gone.
 `useful-schema-survives-ranking`: `prereg-2.md` (committed before the change),
 `report-2.md`, `v2/` — counts per procedure (duplicates of one procedure
 counted once), a new holdout, names holdout, and where each lost useful
-procedure is lost.
+procedure is lost. Reopened: `prereg-3.md` (committed before the change),
+`report-3.md` — one score for order and gate, a fresh holdout.
 
 ## Rollout
 
@@ -71,8 +81,11 @@ recommend it; alt's holdout is too small to judge. After the bm25-by-name
 change (report-2): every agreeing name query is at rank 1 on sfx (dev 80/80,
 holdout 219/219) and alt (47/47); per procedure the original corpus keeps 61%
 of used, but the new sfx holdout keeps 10 of 21 (47.6%), one short of the
-line, so the rule still does not recommend it. The recommended value, if
-the operator accepts that trade-off, is the only one measured:
+line. After order and gate were put on one score (report-3), every judged
+line passes on sfx, on both data sets: used procedures 20/31 and 12/21,
+irrelevant 93 → 24 and 32 → 5, schema text −78% / −86%, latency not higher,
+names 80/80 and 218/218. On alt, names 47/47 pass, and the field sets are too
+small to judge. The value, for the operator to switch on per host:
 
 ```
 LM_RECALL_SCHEMA_TRIGGER=name
