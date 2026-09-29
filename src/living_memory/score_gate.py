@@ -31,7 +31,9 @@ too, and then the per-node multiplier from ``demotions``.
 Schema results found by a trigger live on another scale (trigger score
 0.95 + 0.05 * overlap, then a 1.8x boost) and are gated on their own
 constant: :func:`trigger_gate_score` against :data:`SCHEMA_TRIGGER_GATE_MIN`.
-Such a result passes when either scale passes.
+Such a result passes when either scale passes. Under
+``LM_RECALL_SCHEMA_TRIGGER=name`` (``retrieval.SCHEMA_TRIGGER_ENV``) there is
+no trigger scale: every result, schema or not, is gated on :func:`gate_score`.
 """
 
 from __future__ import annotations
@@ -146,8 +148,15 @@ def trigger_gate_score(
     causal boosts are left out: a trigger match does not depend on either.
     """
 
+    # Imported lazily: retrieval imports this module at load time.
+    from living_memory.retrieval import schema_trigger_by_name
+
     node = result.node
     if node.level != "schema" or result.trigger_score <= 0.0:
+        return None
+    if schema_trigger_by_name():
+        # ``name`` mode: a named schema earns its slot on the channel scale
+        # like any other result; there is no trigger scale.
         return None
     return (
         feedback_weighted_score(

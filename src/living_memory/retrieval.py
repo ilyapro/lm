@@ -253,7 +253,7 @@ from living_memory.scope import (
     normalize_scope,
     scope_family,
 )
-from living_memory.score_gate import apply_score_gate
+from living_memory.score_gate import apply_score_gate, min_score_from_env, passes_gate
 from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
     CHUNK_EMBEDDING_ITEMSIZE,
@@ -311,6 +311,26 @@ CROSS_SCOPE_RELATIVE_VECTOR = 0.9
 SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5
 SCHEMA_TRIGGER_BASE_SCORE = 0.95
 SCHEMA_TRIGGER_BOOST = 1.8
+#: Valve of goal schema-ranks-by-meaning (docs/recall-schema-trigger.md).
+#: Unset: the legacy trigger channel above -- half the trigger's words in the
+#: query give a schema a near-constant score, a 1.8x boost and a gate scale of
+#: its own, whatever the query means. ``name``: a schema is found and scored
+#: only by bm25/vector/graph like every other node; its trigger counts only
+#: when the query *is* the procedure's name (the same token set), and then it
+#: moves the schema to the front if the schema passes the quality gate on its
+#: own score (:meth:`MemoryRecallService._named_schemas_first`). The legacy
+#: constants and branches go when the valve does.
+SCHEMA_TRIGGER_ENV = "LM_RECALL_SCHEMA_TRIGGER"
+SCHEMA_TRIGGER_BY_NAME = "name"
+#: ``trigger_score`` of a schema the query names in ``name`` mode.
+SCHEMA_NAME_TRIGGER_SCORE = 1.0
+
+
+def schema_trigger_by_name() -> bool:
+    """Read ``LM_RECALL_SCHEMA_TRIGGER``; True means ``name`` mode."""
+
+    return os.environ.get(SCHEMA_TRIGGER_ENV, "").strip().lower() == SCHEMA_TRIGGER_BY_NAME
+
 VECTOR_MATCH_THRESHOLD = 0.08
 GRAPH_SEED_LIMIT = 50
 MAX_NEIGHBORS_PER_NODE = 200
@@ -643,7 +663,9 @@ class MemoryRecallService:
         query_embedding = self._collect_vector(
             query, plan, candidates, max_results=max_results
         )
-        self._collect_schema_triggers(query, plan, candidates)
+        by_name = schema_trigger_by_name()
+        if not by_name:
+            self._collect_schema_triggers(query, plan, candidates)
 
         graph_depth, causal_mode = _parse_depth(depth, query)
         decision_mode = _is_decision_depth(depth)
@@ -684,6 +706,14 @@ class MemoryRecallService:
         # valve and the identity while it is off: same-procedure schema
         # duplicates give up their slot, then the quality gate decides what is
         # delivered and what stays in the residual the recall map describes.
+        if by_name:
+            ranked = self._named_schemas_first(
+                query,
+                plan,
+                ranked,
+                demotions=demotions,
+                causal_mode=causal_mode,
+            )
         ranked, _collapsed = collapse_schema_duplicates(ranked)
         limited, self.last_residual = apply_score_gate(
             ranked,
@@ -1572,6 +1602,58 @@ class MemoryRecallService:
                 score = SCHEMA_TRIGGER_BASE_SCORE + 0.05 * overlap
                 candidate = candidates.setdefault(schema.id, _Candidate(node=schema))
                 candidate.trigger_score = max(candidate.trigger_score, score)
+
+    def _named_schemas_first(
+        self,
+        query: str,
+        plan: ScopePlan,
+        ranked: list[RecallResult],
+        *,
+        demotions: Mapping[str, float] | None,
+        causal_mode: bool,
+    ) -> list[RecallResult]:
+        """``name`` mode: the schemas this query names, if they earned a slot, go first.
+
+        A schema is named when the query's token set equals its trigger's.
+        Only schemas the meaning channels already ranked can be named -- the
+        trigger finds nothing and adds no score -- and a named schema moves
+        to the front only if :func:`score_gate.passes_gate` passes it on its
+        own score (with the gate off, always). Named schemas keep their
+        ranked order among themselves and are marked with
+        ``trigger_score``/``"trigger"`` for the wire.
+        """
+
+        query_tokens = frozenset(tokenize(query))
+        if not query_tokens or not ranked:
+            return ranked
+        ranked_ids = {result.node.id for result in ranked}
+        named_ids = {
+            node_id
+            for scope in plan.scopes
+            for node_id, trigger in self.store.schema_triggers(scope)
+            if node_id in ranked_ids and frozenset(tokenize(trigger)) == query_tokens
+        }
+        if not named_ids:
+            return ranked
+        threshold = min_score_from_env()
+        first: list[RecallResult] = []
+        rest: list[RecallResult] = []
+        for result in ranked:
+            if result.node.id not in named_ids:
+                rest.append(result)
+                continue
+            result = replace(
+                result,
+                trigger_score=SCHEMA_NAME_TRIGGER_SCORE,
+                methods=(*result.methods, "trigger"),
+            )
+            if threshold is None or passes_gate(
+                result, threshold, demotions, plan=plan, causal_mode=causal_mode
+            ):
+                first.append(result)
+            else:
+                rest.append(result)
+        return first + rest
 
     def _collect_graph(
         self,
