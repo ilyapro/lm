@@ -45,6 +45,7 @@ import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -55,6 +56,9 @@ import recall_precision_replay as rpr  # noqa: E402
 
 #: Exclusive end of the holdout: this goal's own recalls start after it.
 HOLDOUT_END = "2026-09-29T07:00:00Z"
+#: Exclusive end of the ``new`` holdout of goal useful-schema-survives-ranking
+#: (``prereg-2.md``); it starts at :data:`HOLDOUT_END`, which is also its cutoff.
+NEW_HOLDOUT_END = "2026-09-29T15:00:00Z"
 #: The valve env lines each host runs with (``~/.config/living-memory/env``,
 #: 2026-09-29), plus the explicit-feedback policy demotion is read under.
 FIELD_ENV: dict[str, dict[str, str]] = {
@@ -94,6 +98,8 @@ def segment_bounds(host_split: Mapping[str, Any], segment: str) -> tuple[tuple[s
         return None, hold, host_split["eval_start"]["created_at"]
     if segment == "holdout":
         return hold, (HOLDOUT_END, ""), host_split["holdout_start"]["created_at"]
+    if segment == "new":
+        return (HOLDOUT_END, ""), (NEW_HOLDOUT_END, ""), HOLDOUT_END
     raise ValueError(segment)
 
 
@@ -120,6 +126,20 @@ def node_levels(snapshot: str | Path) -> dict[str, str]:
     connection = rpr.open_readonly(snapshot)
     try:
         return {str(row[0]): str(row[1]) for row in connection.execute("SELECT id, level FROM nodes")}
+    finally:
+        connection.close()
+
+
+def schema_titles(snapshot: str | Path) -> dict[str, str]:
+    """Schema id -> procedure title (``schema_dedup.schema_title``); copies share it."""
+
+    from living_memory.schema_dedup import schema_title
+
+    connection = rpr.open_readonly(snapshot)
+    try:
+        rows = connection.execute("SELECT id, substr(content, 1, 400) FROM nodes WHERE level = 'schema'")
+        titles = {str(row[0]): schema_title(SimpleNamespace(level="schema", content=row[1])) for row in rows}
+        return {node_id: title or node_id for node_id, title in titles.items()}
     finally:
         connection.close()
 
@@ -184,6 +204,7 @@ def replay_arms(
                             "chars": len(str(entry.get("content") or entry.get("node", {}).get("content") or "")),
                             "full_chars": len(result.node.content or ""),
                             "trigger": result.trigger_score > 0.0,
+                            "bm25": round(result.bm25_score, 4),
                         }
                         for result, entry in zip(results, shaped, strict=True)
                     ]
@@ -202,7 +223,16 @@ def score_arm(
     trigger_nodes: Mapping[str, set[str]],
     node_created: Mapping[str, str],
     cutoff: str,
+    titles: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
+    """Node-level counts as in ``report.md``, plus ``proc_*`` per ``prereg-2.md``.
+
+    A procedure-event is a distinct ``(event, title)`` among the marked
+    schemas of one mark; it is delivered when any schema of that title is
+    delivered in full, whichever copy was marked.
+    """
+
+    titles = titles or {}
     stamp = rpr.stamp_prefix(cutoff)
     total: Counter[str] = Counter()
     rank1: list[str | None] = []
@@ -212,6 +242,8 @@ def score_arm(
         full_ids = {item["node_id"] for item in full}
         rank1.append(full[0]["node_id"] if full else None)
         schemas = [item for item in full if item["level"] == "schema"]
+        full_titles = {titles.get(item["node_id"], item["node_id"]) for item in schemas}
+        procedures: dict[str, set[str]] = {"irr": set(), "used": set()}
         total["events"] += 1
         total["slots"] += len(full)
         total["chars"] += sum(item["chars"] for item in full)
@@ -234,11 +266,15 @@ def score_arm(
                     continue
                 total[f"{prefix}{mark}_marked"] += 1
                 total[f"{prefix}{mark}_full"] += node_id in full_ids
+            procedures[mark].add(titles.get(node_id, node_id))
+        for mark, marked in procedures.items():
+            total[f"proc_{mark}_marked"] += len(marked)
+            total[f"proc_{mark}_full"] += len(marked & full_titles)
     summary: dict[str, Any] = {key: int(value) for key, value in sorted(total.items())}
-    for prefix in ("", "trig_"):
+    for prefix in ("", "trig_", "proc_"):
         irr, used = total[f"{prefix}irr_full"], total[f"{prefix}used_full"]
         summary[f"{prefix}irrelevant_share"] = round(irr / (irr + used), 4) if irr + used else None
-    return {"summary": summary, "rank1": rank1}
+    return {"summary": summary, "rank1": rank1, "delivered": [[item["node_id"] for item in items] for items in delivered]}
 
 
 def run(host: str, segment: str, snapshot: Path, split_path: Path, workdir: Path, sample: int | None) -> dict[str, Any]:
@@ -261,11 +297,12 @@ def run(host: str, segment: str, snapshot: Path, split_path: Path, workdir: Path
     events = rpr.load_replay_events(snapshot, chosen)
     labels = rpr.event_labels(store)
     levels = node_levels(snapshot)
+    titles = schema_titles(snapshot)
     trigger_nodes = recorded_trigger_nodes(snapshot, [event.event_id for event in events])
     arms = arms_for(host)
     delivered, latency = replay_arms(counterfactual["path"], arms, events)
     scored = {
-        name: score_arm(events, delivered[name], labels, levels, trigger_nodes, store.node_created, cutoff)
+        name: score_arm(events, delivered[name], labels, levels, trigger_nodes, store.node_created, cutoff, titles)
         for name in arms
     }
     summaries: dict[str, Any] = {}
@@ -279,7 +316,7 @@ def run(host: str, segment: str, snapshot: Path, split_path: Path, workdir: Path
         }
         summaries[name] = summary
     base, new = summaries["legacy"], summaries["name"]
-    for prefix in ("", "trig_"):
+    for prefix in ("", "trig_", "proc_"):
         kept = new.get(f"{prefix}used_full", 0)
         was = base.get(f"{prefix}used_full", 0)
         new[f"{prefix}used_kept_vs_legacy"] = round(kept / was, 4) if was else None
@@ -297,13 +334,22 @@ def run(host: str, segment: str, snapshot: Path, split_path: Path, workdir: Path
         "arms": arms,
         "counterfactual": counterfactual,
         "summary": summaries,
+        "delivered": {name: scored[name]["delivered"] for name in arms},
+        "event_ids": [event.event_id for event in events],
         "runtime_s": round(time.perf_counter() - started, 1),
         "generated_at": rpr.utc_now(),
     }
 
 
-def names(host: str, snapshot: Path, workdir: Path, sample: int) -> dict[str, Any]:
+def names(
+    host: str, snapshot: Path, workdir: Path, sample: int, split: str | None = None, dev_file: Path | None = None
+) -> dict[str, Any]:
     """L5: each sampled schema queried by its own trigger, in its own scope, per arm.
+
+    With ``split`` the sample is fixed by ``prereg-2.md`` instead of the
+    seed: ``dev`` is the schemas of ``dev_file`` (a committed
+    ``names-<host>.json``) still active, ``holdout`` every other active schema
+    with a trigger; ``sample`` is ignored.
 
     Runs on a backup copy (recall may backfill embeddings). A same-title
     schema counts as the hit (``LM_RECALL_SCHEMA_DEDUP`` keeps one of them).
@@ -335,6 +381,10 @@ def names(host: str, snapshot: Path, workdir: Path, sample: int) -> dict[str, An
         ]
         schemas.sort(key=lambda node: node.id)
         random.Random(7).shuffle(schemas)
+        if split is not None and dev_file is not None:
+            dev_ids = {row["schema"] for row in json.loads(dev_file.read_text(encoding="utf-8"))["queries"]}
+            schemas = [node for node in schemas if (node.id in dev_ids) == (split == "dev")]
+            sample = len(schemas)
         for index, schema in enumerate(schemas[:sample]):
             query = str(schema.context["trigger"])
             title = rpr.schema_title(schema.content)
@@ -403,7 +453,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     cmd = sub.add_parser("run")
     cmd.add_argument("--host", choices=rpr.HOSTS, required=True)
-    cmd.add_argument("--segment", choices=("dev", "holdout"), required=True)
+    cmd.add_argument("--segment", choices=("dev", "holdout", "new"), required=True)
     cmd.add_argument("--snapshot", type=Path, required=True)
     cmd.add_argument("--split", type=Path, default=rpr.SPLIT_PATH)
     cmd.add_argument("--workdir", type=Path, default=Path(os.environ.get("TMPDIR", "/tmp")) / "schema-trigger")
@@ -414,10 +464,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     cmd_names.add_argument("--snapshot", type=Path, required=True)
     cmd_names.add_argument("--workdir", type=Path, default=Path(os.environ.get("TMPDIR", "/tmp")) / "schema-trigger")
     cmd_names.add_argument("--sample", type=int, default=150)
+    cmd_names.add_argument("--split", choices=("dev", "holdout"), help="prereg-2 split by --dev-file")
+    cmd_names.add_argument("--dev-file", type=Path, help="committed names-<host>.json of prereg.md")
     cmd_names.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "names":
-        result = names(args.host, args.snapshot, args.workdir, args.sample)
+        result = names(args.host, args.snapshot, args.workdir, args.sample, args.split, args.dev_file)
+        # Procedure names are query texts: not committed (the repo is bundled to alt).
+        for row in result["queries"]:
+            row.pop("query", None)
+        for summary in result["summary"].values():
+            summary.pop("not_rank1_queries", None)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(json.dumps({name: {k: v for k, v in s.items() if k != "not_rank1_queries"}

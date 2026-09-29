@@ -34,8 +34,12 @@ Under `name`:
   There is no trigger scale in the gate.
 - A query that **is** the procedure's name (its token set equals the trigger's
   token set, so `lm recall map curtail`, `lm_recall_map_curtail` and
-  `LM recall-map curtail` all name the same schema) moves that schema to rank 1
-  if it passes the quality gate on its own score. Rank 1 always ships in full.
+  `LM recall-map curtail` all name the same schema) is that schema's best
+  lexical match: the whole query is its title, so its bm25 is 1.0 (the
+  channel's rank 1) instead of wherever word frequencies over longer texts put
+  it. It moves to rank 1 if it passes the quality gate on that score; the
+  query's demotion, feedback and the threshold still apply. Rank 1 always
+  ships in full.
   With the gate off it moves to rank 1 unconditionally. Only schemas the
   meaning channels already ranked can be named; a named schema is marked with
   `trigger_score = 1.0` and `"trigger"` in `methods` for the wire.
@@ -50,7 +54,11 @@ multiplier and the gate scale are gone.
 
 `artifacts/schema-trigger/prereg.md` (lines, committed before the holdout run),
 `artifacts/schema-trigger/report.md` (numbers and verdicts per host),
-`holdout-{sfx,alt}.json`, `names-{sfx,alt}.json`.
+`holdout-{sfx,alt}.json`, `names-{sfx,alt}.json`. Goal
+`useful-schema-survives-ranking`: `prereg-2.md` (committed before the change),
+`report-2.md`, `v2/` — counts per procedure (duplicates of one procedure
+counted once), a new holdout, names holdout, and where each lost useful
+procedure is lost.
 
 ## Rollout
 
@@ -59,7 +67,11 @@ change); the operator adds the line to the host's `EnvironmentFile` and
 restarts. Holdout verdict (report): on sfx the irrelevant, text and latency
 lines pass but the pre-registered "keep ≥ 50% of used schemas" line fails at
 46% (and one of 109 agreeing name queries fails the gate), so the rule does not
-recommend it; alt's holdout is too small to judge. The recommended value, if
+recommend it; alt's holdout is too small to judge. After the bm25-by-name
+change (report-2): every agreeing name query is at rank 1 on sfx (dev 80/80,
+holdout 219/219) and alt (47/47); per procedure the original corpus keeps 61%
+of used, but the new sfx holdout keeps 10 of 21 (47.6%), one short of the
+line, so the rule still does not recommend it. The recommended value, if
 the operator accepts that trade-off, is the only one measured:
 
 ```

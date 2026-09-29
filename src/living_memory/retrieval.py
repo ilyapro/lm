@@ -315,9 +315,9 @@ SCHEMA_TRIGGER_BOOST = 1.8
 #: query give a schema a near-constant score, a 1.8x boost and a gate scale of
 #: its own, whatever the query means. ``name``: a schema is found and scored
 #: only by bm25/vector/graph like every other node; its trigger counts only
-#: when the query *is* the procedure's name (the same token set), and then it
-#: moves the schema to the front if the schema passes the quality gate on its
-#: own score (:meth:`MemoryRecallService._named_schemas_first`). The legacy
+#: when the query *is* the procedure's name (the same token set): then it is its
+#: best lexical match (bm25 1.0), first if it passes the quality gate on that
+#: score (:meth:`MemoryRecallService._named_schemas_first`). The legacy
 #: constants and branches go when the valve does.
 SCHEMA_TRIGGER_ENV = "LM_RECALL_SCHEMA_TRIGGER"
 SCHEMA_TRIGGER_BY_NAME = "name"
@@ -1611,24 +1611,23 @@ class MemoryRecallService:
     ) -> list[RecallResult]:
         """``name`` mode: the schemas this query names, if they earned a slot, go first.
 
-        A schema is named when the query's token set equals its trigger's.
-        Only schemas the meaning channels already ranked can be named -- the
-        trigger finds nothing and adds no score -- and a named schema moves
-        to the front only if :func:`score_gate.passes_gate` passes it on its
-        own score (with the gate off, always). Named schemas keep their
-        ranked order among themselves and are marked with
-        ``trigger_score``/``"trigger"`` for the wire.
+        A schema is named when the query's token set equals its trigger's:
+        the whole query is its title, the lexical channel's best match (bm25
+        1.0). Only schemas the meaning channels already ranked can be named,
+        and a named schema moves to the front only if
+        :func:`score_gate.passes_gate` passes it on that score (with the gate
+        off, always). Named schemas keep their ranked order among themselves
+        and are marked with ``trigger_score``/``"trigger"`` for the wire.
         """
 
         query_tokens = frozenset(tokenize(query))
         if not query_tokens or not ranked:
             return ranked
-        ranked_ids = {result.node.id for result in ranked}
         named_ids = {
             node_id
             for scope in plan.search_scopes
             for node_id, trigger in self.store.schema_triggers(scope)
-            if node_id in ranked_ids and frozenset(tokenize(trigger)) == query_tokens
+            if frozenset(tokenize(trigger)) == query_tokens
         }
         if not named_ids:
             return ranked
@@ -1641,6 +1640,7 @@ class MemoryRecallService:
                 continue
             result = replace(
                 result,
+                bm25_score=1.0,
                 trigger_score=SCHEMA_NAME_TRIGGER_SCORE,
                 methods=(*result.methods, "trigger"),
             )

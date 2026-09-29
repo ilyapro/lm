@@ -1,0 +1,252 @@
+{
+ "new": {
+  "by_stage": {
+   "admission": 2,
+   "dedup": 1,
+   "gate": 5,
+   "slot": 3
+  },
+  "lost_used_procedure_events": [
+   {
+    "bm25": 0.0,
+    "event_id": "01M3NZWN4NQ4E4EH0PZF7JHANM",
+    "gate_no_demotion": 0.457,
+    "graph": 0.322,
+    "procedure": "lm recall map curtail",
+    "rank": 23,
+    "stage": "slot",
+    "vector": 0.524
+   },
+   {
+    "bm25": 0.0,
+    "event_id": "01M3P2VMBDRKHBH39HMPVAW4T0",
+    "gate_no_demotion": null,
+    "graph": 0.0,
+    "procedure": "dashboard goal api supervision",
+    "rank": 11,
+    "stage": "dedup",
+    "vector": 0.635
+   },
+   {
+    "bm25": 0.333,
+    "event_id": "01M3P3QQ8VEH9MZY058DBYXHC7",
+    "gate_no_demotion": null,
+    "graph": 0.0,
+    "procedure": "ae goal create or reopen generic",
+    "rank": null,
+    "stage": "admission",
+    "vector": 0.598
+   },
+   {
+    "bm25": 0.059,
+    "event_id": "01M3P3QQ8VEH9MZY058DBYXHC7",
+    "gate_no_demotion": null,
+    "graph": 0.0,
+    "procedure": "ae goal creation style",
+    "rank": null,
+    "stage": "admission",
+    "vector": 0.571
+   },
+   {
+    "bm25": 0.04,
+    "event_id": "01M3P4K4EWYBRQT2W403HDK31F",
+    "gate_no_demotion": 0.1243,
+    "graph": 0.284,
+    "procedure": "ae stream agents thinking map",
+    "rank": 112,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.143,
+    "event_id": "01M3P7TT95KMVP0JBR9ZE1BN25",
+    "gate_no_demotion": 0.3918,
+    "graph": 0.0,
+    "procedure": "online remote config mechanics",
+    "rank": 11,
+    "stage": "slot",
+    "vector": 0.503
+   },
+   {
+    "bm25": 0.1,
+    "event_id": "01M3PCEWB7M3B7NV92TA1M3PF4",
+    "gate_no_demotion": 0.056,
+    "graph": 0.0,
+    "procedure": "ae goal creation style",
+    "rank": 76,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.0,
+    "event_id": "01M3PMPBGTTPGZAAZ72AV7ZJNJ",
+    "gate_no_demotion": 0.0275,
+    "graph": 0.079,
+    "procedure": "ae goal creation style",
+    "rank": 192,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.021,
+    "event_id": "01M3PRG3064ERNRXG3A65QRD43",
+    "gate_no_demotion": 0.0476,
+    "graph": 0.105,
+    "procedure": "ae goal creation style",
+    "rank": 154,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.03,
+    "event_id": "01M3PRJ2GXWRVKKGFYNBW7VTC5",
+    "gate_no_demotion": 0.0573,
+    "graph": 0.118,
+    "procedure": "ae goal creation style",
+    "rank": 108,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.167,
+    "event_id": "01M3PRN40CVZW80K15P227ETZH",
+    "gate_no_demotion": 0.4033,
+    "graph": 0.0,
+    "procedure": "ae goal creation style",
+    "rank": 4,
+    "stage": "slot",
+    "vector": 0.541
+   }
+  ]
+ },
+ "original": {
+  "by_stage": {
+   "dedup": 1,
+   "gate": 8,
+   "retrieval": 2,
+   "slot": 1
+  },
+  "lost_used_procedure_events": [
+   {
+    "bm25": null,
+    "event_id": "01M3M9Y9T38Y2RXFB4NAXC4GBC",
+    "gate_no_demotion": null,
+    "graph": null,
+    "procedure": "dashboard goal api supervision",
+    "rank": null,
+    "stage": "retrieval",
+    "vector": null
+   },
+   {
+    "bm25": 0.0,
+    "event_id": "01M3MK11SQ0CQSYEF78HHWGFZV",
+    "gate_no_demotion": 0.367,
+    "graph": 0.0,
+    "procedure": "dashboard goal api",
+    "rank": 28,
+    "stage": "slot",
+    "vector": 0.546
+   },
+   {
+    "bm25": 0.1,
+    "event_id": "01M3MK11SQ0CQSYEF78HHWGFZV",
+    "gate_no_demotion": null,
+    "graph": 0.0,
+    "procedure": "dashboard goal api supervision",
+    "rank": 22,
+    "stage": "dedup",
+    "vector": 0.549
+   },
+   {
+    "bm25": 0.025,
+    "event_id": "01M3MMFRRK1KJSEDYD30WCWRJ4",
+    "gate_no_demotion": 0.0688,
+    "graph": 0.133,
+    "procedure": "chats message audio playback",
+    "rank": 298,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.071,
+    "event_id": "01M3MMG0JQPYZEH9YED6V90TCH",
+    "gate_no_demotion": 0.1583,
+    "graph": 0.27,
+    "procedure": "dashboard agent chats",
+    "rank": 104,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.143,
+    "event_id": "01M3MPZS5P3T1TF13A24F30A4J",
+    "gate_no_demotion": 0.2194,
+    "graph": 0.326,
+    "procedure": "gate bug lesson",
+    "rank": 113,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.143,
+    "event_id": "01M3MXXM0NCVCKM9MF5N7E2MNS",
+    "gate_no_demotion": 0.096,
+    "graph": 0.0,
+    "procedure": "augment repair transaction",
+    "rank": 181,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.045,
+    "event_id": "01M3MY0QDA1K34TC58QZ0RETDS",
+    "gate_no_demotion": 0.1462,
+    "graph": 0.292,
+    "procedure": "gate bug lesson",
+    "rank": 108,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.056,
+    "event_id": "01M3N3M8AXTEE92BNSWT981ZRF",
+    "gate_no_demotion": 0.1478,
+    "graph": 0.269,
+    "procedure": "dashboard agent chats",
+    "rank": 111,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": null,
+    "event_id": "01M3N3MY73274Q4R30RQKX9M4N",
+    "gate_no_demotion": null,
+    "graph": null,
+    "procedure": "augment repair transaction",
+    "rank": null,
+    "stage": "retrieval",
+    "vector": null
+   },
+   {
+    "bm25": 0.067,
+    "event_id": "01M3NFRD1KA4NNW639ZKE67ZR4",
+    "gate_no_demotion": 0.1468,
+    "graph": 0.261,
+    "procedure": "gate bug lesson",
+    "rank": 101,
+    "stage": "gate",
+    "vector": 0.0
+   },
+   {
+    "bm25": 0.038,
+    "event_id": "01M3NYGFS1S23H69YD8T2B1XTM",
+    "gate_no_demotion": 0.1478,
+    "graph": 0.306,
+    "procedure": "gate bug lesson",
+    "rank": 106,
+    "stage": "gate",
+    "vector": 0.0
+   }
+  ]
+ }
+}

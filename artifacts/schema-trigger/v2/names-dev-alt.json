@@ -1,0 +1,447 @@
+{
+  "arms": {
+    "legacy": {
+      "LM_EXPLICIT_FEEDBACK_POLICY": "credit",
+      "LM_HUB_SUPPRESSION_FACTOR": "0.1",
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "0.80",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": "1.0",
+      "LM_RECALL_GATE_FORM": "drop",
+      "LM_RECALL_MIN_SCORE": "0.30",
+      "LM_RECALL_NEAR_DUP_COSINE": "0.97",
+      "LM_RECALL_SCHEMA_DEDUP": "1"
+    },
+    "name": {
+      "LM_EXPLICIT_FEEDBACK_POLICY": "credit",
+      "LM_HUB_SUPPRESSION_FACTOR": "0.1",
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "0.80",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": "1.0",
+      "LM_RECALL_GATE_FORM": "drop",
+      "LM_RECALL_MIN_SCORE": "0.30",
+      "LM_RECALL_NEAR_DUP_COSINE": "0.97",
+      "LM_RECALL_SCHEMA_DEDUP": "1",
+      "LM_RECALL_SCHEMA_TRIGGER": "name"
+    }
+  },
+  "generated_at": "2026-09-29T15:40:42Z",
+  "host": "alt",
+  "queries": [
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1G1RST6BW6T6TY1FG68ZVTE",
+      "vector": 0.7651
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1GV8GWJ04WYP71VHGW01DNA",
+      "vector": 0.6122
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M01ZAMPWJVAG7PYQ5RR1YQNY",
+      "vector": 0.7783
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1GDW8MYR4VPQ838K3A85DH5",
+      "vector": 0.6985
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KZ07DDAQ4NJ2TBYVMX1KPCHA",
+      "vector": 0.4912
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M22YY4F87CVC9360QRCT603A",
+      "vector": 0.5414
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KZ07DDAZCX4DAJBQ5CV0MDGD",
+      "vector": 0.7666
+    },
+    {
+      "agree": true,
+      "bm25": 0.3333,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M0GE3NGNDD7CC2HTQPEJ3NZH",
+      "vector": 0.5568
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1G81KTS072BYZV76ZSQDNAT",
+      "vector": 0.6409
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1G81KTVXS1D57M28TD6AHP2",
+      "vector": 0.7273
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1Z3BYVFP5DKK4XAVS3S9Y2W",
+      "vector": 0.7095
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 1,
+      "name_rank": 0,
+      "schema": "01M1JSRFADMVNTTVHC3WPBFFBT",
+      "vector": 0.6395
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1G81KTY9C97JMF1CVKJ1QDD",
+      "vector": 0.7168
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYZF2HVYRBT9TZ1Q7VMJQYFN",
+      "vector": 0.7805
+    },
+    {
+      "agree": true,
+      "bm25": 0.3333,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYG1Z8AWTVMJ3ZFKCN3TWTXZ",
+      "vector": 0.5366
+    },
+    {
+      "agree": true,
+      "bm25": 0.5,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M20SPWSA0BG6HCT224DYZ09M",
+      "vector": 0.7125
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M19N5HM2RF7YKSAX6JBCW8D4",
+      "vector": 0.4754
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KZVHNCK2D0AJW2ZS19SVCBJM",
+      "vector": 0.429
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1FMQQXHFPTQEFBDFK9HA71A",
+      "vector": 0.5128
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M20SAXD4YMYA7V1S1NY8V1PM",
+      "vector": 0.6985
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M21EXD3FG55WJ5APNHKHXF0R",
+      "vector": 0.4613
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1FMQQXMMDFW3A81EWJST92S",
+      "vector": 0.512
+    },
+    {
+      "agree": true,
+      "bm25": 0.3333,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M3AW267SP4XE7ABW0NJ5ZDZ3",
+      "vector": 0.7128
+    },
+    {
+      "agree": true,
+      "bm25": 0.5,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYZF2HVQ3V8SW5842WGQZ66D",
+      "vector": 0.6092
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1JSRFAV4SDR226XQ92NQ68E",
+      "vector": 0.6754
+    },
+    {
+      "agree": true,
+      "bm25": 0.25,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M18158QBM2MVMM3NX6R4KT2E",
+      "vector": 0.4277
+    },
+    {
+      "agree": true,
+      "bm25": 0.5,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1GKTBEBN5Y0K4D0YXGXSHRC",
+      "vector": 0.4999
+    },
+    {
+      "agree": true,
+      "bm25": 0.25,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYG3T5056GPBGJMJ8C3JRQGP",
+      "vector": 0.5891
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1JSRFB78GRZ678J16Z9E8RQ",
+      "vector": 0.6538
+    },
+    {
+      "agree": true,
+      "bm25": 0.3333,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M11GC0GMMCJBPWTVBH7ZXS80",
+      "vector": 0.5568
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1JSRFA4T9T6FMAVNTBG8JV5",
+      "vector": 0.5895
+    },
+    {
+      "agree": true,
+      "bm25": 0.3333,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M0F6RP1GMS5W31JHN9TC9KHN",
+      "vector": 0.5568
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M20SAXD7QXET06N5VP78ES7T",
+      "vector": 0.8166
+    },
+    {
+      "agree": false,
+      "legacy_rank": null,
+      "name_gate_score": 0.8013,
+      "name_rank": null,
+      "schema": "01M1G1RSTBQ23EQ0J7MT7ZC25E"
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1G1RSTHK945Z9JJ1MK17EYY",
+      "vector": 0.6921
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYZF2HR3R5MXHSZDMP9PHJBX",
+      "vector": 0.7134
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYH9E7ET9PSS1CMYGZVEG5Q3",
+      "vector": 0.5462
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KZVHNCK67HXJDN8C2G3CZPVJ",
+      "vector": 0.6394
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1GDW8N49HVVQ95Y1NXWNSE8",
+      "vector": 0.6482
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M20SAXDYS37DN6V8X3ZGCVPF",
+      "vector": 0.7414
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1JSRFA9RZFXVMMA11BWW872",
+      "vector": 0.6431
+    },
+    {
+      "agree": true,
+      "bm25": 0.5,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1FMQQXP57RYHDHXVCGPQNC6",
+      "vector": 0.4999
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYZF2HR8GYBQBAXEJ4YVAVCZ",
+      "vector": 0.6212
+    },
+    {
+      "agree": true,
+      "bm25": 1.0,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1GKTBEE78WW1TJQB5MSH0YD",
+      "vector": 0.6269
+    },
+    {
+      "agree": true,
+      "bm25": 0.0833,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYY6E16T36VH660FZ72CJKDQ",
+      "vector": 0.5703
+    },
+    {
+      "agree": true,
+      "bm25": 0.5,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KYWZEC3GC90Q020DR04FY8ZM",
+      "vector": 0.6569
+    },
+    {
+      "agree": true,
+      "bm25": 0.1429,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M1SQG7CP8D1VM0CCTVN37D1Z",
+      "vector": 0.6953
+    },
+    {
+      "agree": false,
+      "legacy_rank": null,
+      "name_gate_score": 0.7902,
+      "name_rank": null,
+      "schema": "01M1G1RST8ZK5P3RN6D5XKFFNZ"
+    },
+    {
+      "agree": true,
+      "bm25": 0.2,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01KZ07DDA9ZWEVDPDNTSHJW5T2",
+      "vector": 0.6605
+    },
+    {
+      "agree": false,
+      "bm25": 0.0526,
+      "legacy_rank": 0,
+      "name_rank": 0,
+      "schema": "01M19V3DC7E8E9XDDQHBH6MMC8",
+      "vector": 0.461
+    }
+  ],
+  "sample": 50,
+  "snapshot_sha256": "3ddc48678fc2ba64c318b0bfd08c683726682b24f24a515997c700006a7c58b3",
+  "summary": {
+    "legacy": {
+      "agree": 47,
+      "agree_rank1": 46,
+      "latency_mean_s": 4.57,
+      "missing": 2,
+      "queries": 50,
+      "rank1": 47
+    },
+    "name": {
+      "agree": 47,
+      "agree_rank1": 47,
+      "latency_mean_s": 4.2457,
+      "missing": 2,
+      "queries": 50,
+      "rank1": 48
+    }
+  }
+}

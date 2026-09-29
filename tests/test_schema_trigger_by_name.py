@@ -2,9 +2,9 @@
 
 Pins docs/recall-schema-trigger.md: under the valve the trigger finds nothing
 and scores nothing; words shared with a trigger neither raise a schema nor
-carry it past the quality gate; a query that *is* the procedure's name puts
-that schema first (so it ships in full) when it passes the gate on its own
-score. Unset, the legacy channel is untouched (tests/test_recall_score_gate.py).
+carry it past the quality gate; a query that *is* the procedure's name is
+that schema's best lexical match (bm25 1.0) and puts it first (so it ships in
+full) when it passes the gate on that score. Unset, the legacy channel is untouched (tests/test_recall_score_gate.py).
 """
 
 from __future__ import annotations
@@ -139,20 +139,27 @@ def test_a_named_schema_must_pass_the_gate_to_go_first(
         strong = RecallResult(node=other, score=0.9, bm25_score=1.0, methods=("bm25",))
         weak = RecallResult(node=schema, score=0.1, bm25_score=0.1, methods=("bm25",))
 
-        def reorder(threshold: str | None) -> list[RecallResult]:
+        def reorder(threshold: str | None, demotion: float = 1.0) -> list[RecallResult]:
             if threshold is None:
                 monkeypatch.delenv(MIN_SCORE_ENV, raising=False)
             else:
                 monkeypatch.setenv(MIN_SCORE_ENV, threshold)
             return service._named_schemas_first(
-                "rotate vault keys", plan, [strong, weak], demotions=None, causal_mode=False
+                "rotate vault keys", plan, [strong, weak], demotions={schema.id: demotion}, causal_mode=False
             )
 
-        # Gate at 0.3: the schema's own score (0.4 * 0.1) fails -- it stays put.
+        # The name is the best lexical match: bm25 1.0 on the reference blend
+        # is 0.4, so a 0.3 gate passes it on the same scale as everyone.
         gated = reorder("0.3")
-        assert [r.node.id for r in gated] == [other.id, schema.id]
-        assert gated[1].trigger_score == SCHEMA_NAME_TRIGGER_SCORE
-        assert not passes_gate(gated[1], 0.3)
+        assert [r.node.id for r in gated] == [schema.id, other.id]
+        assert gated[0].bm25_score == 1.0
+        assert gated[0].trigger_score == SCHEMA_NAME_TRIGGER_SCORE
+        # Negative evidence still takes it out: the query's own demotion, or
+        # a gate the lexical match alone does not reach. It stays put.
+        for threshold, demotion in (("0.3", 0.5), ("0.9", 1.0)):
+            gated = reorder(threshold, demotion)
+            assert [r.node.id for r in gated] == [other.id, schema.id]
+            assert not passes_gate(gated[1], float(threshold), {schema.id: demotion})
         # Gate off: nothing to fail, the named schema goes first.
         assert [r.node.id for r in reorder(None)] == [schema.id, other.id]
         # A query that is not the name reorders nothing.
