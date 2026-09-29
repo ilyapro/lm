@@ -25,10 +25,12 @@ and stays validated as positive.
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from math import log1p
-from typing import Any, Collection, Iterable, Mapping, Sequence
+from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
+import logging
 import os
 import re
 
@@ -40,7 +42,16 @@ from living_memory.models import Connection, Node, string_list
 from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
+_LOG = logging.getLogger(__name__)
+
+try:
+    import numpy as _np  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - numpy is a normal runtime dep
+    _np = None  # type: ignore[assignment]
+
 DEFAULT_MIN_CLUSTER_SIZE = 100
+_ENCODE_BATCH = 8
+_CACHE_READ_BATCH = 500
 MERGE_FLOOR_ENV = "LM_CONSOLIDATE_MERGE_FLOOR"
 # (active traces below, floor to apply). Falls through to
 # DEFAULT_MIN_CLUSTER_SIZE once the corpus is mature.
@@ -481,6 +492,7 @@ class ConsolidationService:
         scope: str | None = None,
         force: bool = False,
         min_cluster_size: int | None = None,
+        guard: Callable[[], AbstractContextManager[Any]] | None = None,
     ) -> ConsolidationResult:
         return memory_consolidate(
             self.store,
@@ -490,6 +502,7 @@ class ConsolidationService:
                 self.min_cluster_size if min_cluster_size is None else min_cluster_size
             ),
             recent_limit=self.recent_limit,
+            guard=guard,
         )
 
     def memory_teach(
@@ -519,6 +532,7 @@ def memory_consolidate(
     force: bool = False,
     min_cluster_size: int | None = None,
     recent_limit: int = DEFAULT_RECENT_LIMIT,
+    guard: Callable[[], AbstractContextManager[Any]] | None = None,
 ) -> ConsolidationResult:
     """Cluster similar active traces, promote stable clusters, and run decay.
 
@@ -526,41 +540,50 @@ def memory_consolidate(
     the module docstring, sized from the active traces this pass loaded — the
     scope's own trace count when ``scope`` is given, the whole corpus when it
     is not.
+
+    ``guard`` lets a caller that shares ``store`` across threads run the pass
+    beside other work: every step that touches the store runs inside
+    ``guard()``, one short step at a time (one cluster, one encode), and the
+    clustering itself — pure computation on the snapshot the pass loaded —
+    runs outside it. Without a guard the pass runs exactly as one block.
     """
 
     if min_cluster_size is not None and min_cluster_size < 1:
         raise ValueError("min_cluster_size must be positive")
+    step = guard if guard is not None else nullcontext
 
-    _refresh_promoted_global_concepts(store)
-    trace_limit = max(recent_limit, min_cluster_size or 0) if force else recent_limit
-    traces = store.list_nodes(
-        level="trace",
-        scope=scope,
-        include_decayed=False,
-        limit=trace_limit,
-    )
-    merge_floor = resolve_min_cluster_size(min_cluster_size, trace_count=len(traces))
-    phase = store.detect_phase()
-    embedder = (
-        LocalEmbeddingModel(model_name=store.config.embedding_model)
-        if force or phase.number >= 2
-        else None
-    )
-    if embedder is not None:
-        # Hand the loaded encoder to the store. Every concept written below goes
-        # through create_node/update_node with an embedding, and those chunk the
-        # content — without this the store would load a second copy of the same
-        # model to do it.
-        model = embedder
-        store.set_chunk_embedder(lambda texts: [model.embed(text) for text in texts])
-    clusters = _cluster_traces(traces, embedder=embedder)
+    with step():
+        _refresh_promoted_global_concepts(store)
+        trace_limit = max(recent_limit, min_cluster_size or 0) if force else recent_limit
+        traces = store.list_nodes(
+            level="trace",
+            scope=scope,
+            include_decayed=False,
+            limit=trace_limit,
+        )
+        merge_floor = resolve_min_cluster_size(min_cluster_size, trace_count=len(traces))
+        phase = store.detect_phase()
+        embedder = (
+            LocalEmbeddingModel(model_name=store.config.embedding_model)
+            if force or phase.number >= 2
+            else None
+        )
+        if embedder is not None:
+            # Hand the loaded encoder to the store. Every concept written below goes
+            # through create_node/update_node with an embedding, and those chunk the
+            # content — without this the store would load a second copy of the same
+            # model to do it.
+            model = embedder
+            store.set_chunk_embedder(lambda texts: [model.embed(text) for text in texts])
+    embeddings = _trace_embeddings(store, traces, embedder, step)
+    clusters = _cluster_traces(traces, embedder=embedder, embeddings=embeddings)
     result = ConsolidationResult(
         clusters_considered=len(clusters),
         traces_considered=len(traces),
     )
 
     for schema, created in _materialize_procedural_schemas(
-        store, traces, min_cluster_size=PROCEDURAL_MIN_CLUSTER_SIZE
+        store, traces, min_cluster_size=PROCEDURAL_MIN_CLUSTER_SIZE, step=step
     ):
         if created:
             result.schemas_created.append(schema)
@@ -570,14 +593,17 @@ def memory_consolidate(
     for cluster in clusters:
         if len(cluster.traces) < merge_floor:
             continue
-        assessment = _assess_cluster_eras(store, cluster.traces)
-        if not assessment.live:
-            # Every member is superseded or era-displaced: there is no current
-            # era to speak for, so nothing may be promoted from this cluster.
-            continue
-        concept, created = _merge_cluster_into_concept(store, cluster, assessment)
-        _update_edge_weights_from_co_access(store, concept, assessment.live)
-        promoted = _cross_scope_promotion(store, concept, phase_number=phase.number)
+        with step():
+            assessment = _assess_cluster_eras(store, cluster.traces)
+            if not assessment.live:
+                # Every member is superseded or era-displaced: there is no current
+                # era to speak for, so nothing may be promoted from this cluster.
+                continue
+            concept, created = _merge_cluster_into_concept(store, cluster, assessment)
+        with step():
+            _update_edge_weights_from_co_access(store, concept, assessment.live)
+        with step():
+            promoted = _cross_scope_promotion(store, concept, phase_number=phase.number)
         if promoted is not None:
             result.concepts_promoted.append(promoted)
         if created:
@@ -585,7 +611,8 @@ def memory_consolidate(
         else:
             result.concepts_updated.append(concept)
 
-    decay_result: DecayResult = apply_decay(store, scope=scope)
+    with step():
+        decay_result: DecayResult = apply_decay(store, scope=scope)
     result.decayed.extend(decay_result.nodes)
     return result
 
@@ -668,6 +695,7 @@ def _materialize_procedural_schemas(
     traces: Iterable[Node],
     *,
     min_cluster_size: int,
+    step: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> list[tuple[Node, bool]]:
     """Group procedural traces by their stable group key and emit schema nodes.
 
@@ -690,24 +718,25 @@ def _materialize_procedural_schemas(
     for (scope, _group_id), group_traces in groups.items():
         if len(group_traces) < min_cluster_size:
             continue
-        assessment = _assess_cluster_eras(store, group_traces)
-        if not assessment.live:
-            # Every member is superseded or era-displaced: no current era to
-            # distill, so no schema may be emitted for this group.
-            continue
-        live_ids = {member.id for member in assessment.live}
-        live_keys = [
-            key
-            for trace, key in zip(group_traces, keys_by_group[(scope, _group_id)])
-            if trace.id in live_ids
-        ]
-        procedure_key = _select_group_procedure_key(
-            live_keys or keys_by_group[(scope, _group_id)]
-        )
-        schema, created = _create_or_update_schema(
-            store, scope, procedure_key, assessment.live, era=assessment
-        )
-        _connect_schema_to_traces(store, schema, assessment.live)
+        with step():
+            assessment = _assess_cluster_eras(store, group_traces)
+            if not assessment.live:
+                # Every member is superseded or era-displaced: no current era to
+                # distill, so no schema may be emitted for this group.
+                continue
+            live_ids = {member.id for member in assessment.live}
+            live_keys = [
+                key
+                for trace, key in zip(group_traces, keys_by_group[(scope, _group_id)])
+                if trace.id in live_ids
+            ]
+            procedure_key = _select_group_procedure_key(
+                live_keys or keys_by_group[(scope, _group_id)]
+            )
+            schema, created = _create_or_update_schema(
+                store, scope, procedure_key, assessment.live, era=assessment
+            )
+            _connect_schema_to_traces(store, schema, assessment.live)
         schemas.append((schema, created))
     return schemas
 
@@ -988,17 +1017,95 @@ def _connect_schema_to_traces(
         )
 
 
+def _trace_embeddings(
+    store: MemoryStore,
+    traces: Sequence[Node],
+    embedder: LocalEmbeddingModel | None,
+    step: Callable[[], AbstractContextManager[Any]],
+) -> dict[str, list[float]]:
+    """Whole-content vector per trace, encoding only what the cache lacks.
+
+    Traces are append-only, so a trace encoded by an earlier pass keeps its
+    vector: a pass pays the model for the traces written since, not for the
+    whole scope. Each encode batch runs inside ``step`` — the encoder is
+    shared with the recall path — and the fresh vectors are cached for the
+    next pass, unless the encoder changed under the pass (a model that fell
+    back to the hashed encoder mid-pass must not poison the cache).
+    """
+
+    if embedder is None:
+        return {}
+    vectors = {trace.id: trace.embedding for trace in traces if trace.embedding is not None}
+    missing = [trace for trace in traces if trace.embedding is None]
+    if not missing:
+        return vectors
+    # Resolving the encoder may load the model: seconds, and no store access,
+    # so not under the guard (a server has usually warmed it already).
+    encoder = embedder.encoder_id()
+    for start in range(0, len(missing), _CACHE_READ_BATCH):
+        with step():
+            vectors.update(
+                store.get_consolidation_embeddings(
+                    missing[start : start + _CACHE_READ_BATCH], encoder
+                )
+            )
+    to_encode = [trace for trace in missing if trace.id not in vectors]
+    fresh: list[tuple[Node, list[float]]] = []
+    for start in range(0, len(to_encode), _ENCODE_BATCH):
+        with step():
+            for trace in to_encode[start : start + _ENCODE_BATCH]:
+                vector = embedder.embed(trace.content)
+                vectors[trace.id] = vector
+                fresh.append((trace, vector))
+    if fresh:
+        with step():
+            if embedder.encoder_id() == encoder:
+                try:
+                    store.put_consolidation_embeddings(fresh, encoder)
+                except Exception:
+                    # A cache write is an optimization; the pass has its vectors.
+                    _LOG.warning("could not cache consolidation embeddings", exc_info=True)
+    return vectors
+
+
 def _cluster_traces(
     traces: Iterable[Node],
     *,
     embedder: LocalEmbeddingModel | None = None,
+    embeddings: Mapping[str, list[float]] | None = None,
 ) -> list[_TraceCluster]:
-    clusters: list[_TraceCluster] = []
+    """Greedy single-pass clustering in trace order.
+
+    Each trace joins the first same-scope cluster with the highest
+    ``_cluster_similarity`` if that score clears its strategy's threshold,
+    else starts a cluster. ``_cluster_traces_indexed`` computes exactly this
+    with array arithmetic and a token index; the loop below is the reference
+    it is checked against and the fallback without numpy or with ragged
+    vectors.
+    """
+
+    prepared: list[tuple[Node, set[str], list[float] | None]] = []
     for trace in traces:
         tokens = _significant_tokens(trace.content)
-        embedding = _trace_embedding(trace, embedder)
+        if embeddings is not None and trace.id in embeddings:
+            embedding = embeddings[trace.id]
+        else:
+            embedding = _trace_embedding(trace, embedder)
         if not tokens and embedding is None:
             continue
+        prepared.append((trace, tokens, embedding))
+    if _np is not None:
+        dimensions = {len(embedding) for _, _, embedding in prepared if embedding is not None}
+        if len(dimensions) <= 1:
+            return _cluster_traces_indexed(prepared, next(iter(dimensions), 0))
+    return _cluster_prepared_reference(prepared)
+
+
+def _cluster_prepared_reference(
+    prepared: Iterable[tuple[Node, set[str], list[float] | None]],
+) -> list[_TraceCluster]:
+    clusters: list[_TraceCluster] = []
+    for trace, tokens, embedding in prepared:
 
         best_cluster: _TraceCluster | None = None
         best_score = 0.0
@@ -1029,6 +1136,126 @@ def _cluster_traces(
                     strategy="embedding-cosine" if embedding is not None else "token-jaccard",
                 )
             )
+    return clusters
+
+
+class _ScopeIndex:
+    """Per-scope clustering state for ``_cluster_traces_indexed``."""
+
+    __slots__ = ("clusters", "sums", "reps", "rep_norms", "has_rep", "rep_tokens", "postings")
+
+    def __init__(self, capacity: int, dimensions: int) -> None:
+        self.clusters: list[_TraceCluster] = []
+        self.sums = _np.zeros((capacity, dimensions), dtype=_np.float64)
+        self.reps = _np.zeros((capacity, dimensions), dtype=_np.float64)
+        self.rep_norms = _np.zeros(capacity, dtype=_np.float64)
+        self.has_rep = _np.zeros(capacity, dtype=bool)
+        self.rep_tokens: list[set[str]] = []
+        self.postings: dict[str, set[int]] = {}
+
+    def set_rep_tokens(self, index: int, tokens: set[str]) -> None:
+        old = self.rep_tokens[index]
+        for token in old - tokens:
+            self.postings[token].discard(index)
+        for token in tokens - old:
+            self.postings.setdefault(token, set()).add(index)
+        self.rep_tokens[index] = tokens
+
+    def set_rep(self, index: int, count: int) -> None:
+        rep = self.sums[index] / count
+        self.reps[index] = rep
+        self.rep_norms[index] = float(rep @ rep)
+        self.has_rep[index] = True
+
+
+def _cluster_traces_indexed(
+    prepared: Sequence[tuple[Node, set[str], list[float] | None]],
+    dimensions: int,
+) -> list[_TraceCluster]:
+    """``_cluster_prepared_reference`` without the per-cluster Python loop.
+
+    The reference scores every trace against every same-scope cluster, one
+    384-wide pure-Python cosine and one representative-token rebuild per pair:
+    O(traces x clusters) interpreted work, minutes on a 6600-trace scope. Here
+    the cosines of one trace against all clusters are one matrix-vector
+    product, Jaccard is computed only for clusters sharing a token (every
+    other cluster scores 0 on it, as ``_jaccard`` would), and each cluster's
+    representative vector and token set are rebuilt only when it grows.
+    Selection keeps the reference's rule: the first cluster holding the
+    maximum score, only if that score is positive.
+    """
+
+    clusters: list[_TraceCluster] = []
+    capacity = max(1, len(prepared))
+    width = max(1, dimensions)
+    scopes: dict[str, _ScopeIndex] = {}
+    for trace, tokens, embedding in prepared:
+        state = scopes.get(trace.scope)
+        if state is None:
+            state = scopes[trace.scope] = _ScopeIndex(capacity, width)
+        size = len(state.clusters)
+        best = -1
+        if size:
+            cosine = _np.zeros(size, dtype=_np.float64)
+            if embedding is not None:
+                vector = _np.asarray(embedding, dtype=_np.float64)
+                norm = float(vector @ vector)
+                if norm > 0.0:
+                    dots = state.reps[:size] @ vector
+                    products = state.rep_norms[:size] * norm
+                    valid = state.has_rep[:size] & (products > 0.0)
+                    _np.divide(dots, _np.sqrt(products), out=cosine, where=valid)
+            jaccard = _np.zeros(size, dtype=_np.float64)
+            if tokens:
+                shared: Counter[int] = Counter()
+                for token in tokens:
+                    posting = state.postings.get(token)
+                    if posting:
+                        shared.update(posting)
+                for index, inter in shared.items():
+                    union = len(tokens) + len(state.rep_tokens[index]) - inter
+                    jaccard[index] = inter / union
+            scores = _np.maximum(cosine, jaccard)
+            candidate = int(_np.argmax(scores))
+            if scores[candidate] > 0.0:
+                best = candidate
+        if best >= 0:
+            if cosine[best] >= jaccard[best]:
+                strategy, score = "embedding-cosine", float(cosine[best])
+            else:
+                strategy, score = "token-jaccard", float(jaccard[best])
+            if _accept_cluster_match(score, strategy):
+                cluster = state.clusters[best]
+                cluster.strategy = strategy
+                cluster.traces.append(trace)
+                cluster.token_counts.update(tokens)
+                if embedding is not None:
+                    cluster.embeddings_by_trace_id[trace.id] = list(embedding)
+                    state.sums[best] += vector
+                    cluster.embedding_count += 1
+                    state.set_rep(best, cluster.embedding_count)
+                state.set_rep_tokens(best, cluster.representative_tokens)
+                continue
+        cluster = _TraceCluster(
+            trace.scope,
+            [trace],
+            Counter(tokens),
+            embedding_count=1 if embedding is not None else 0,
+            embeddings_by_trace_id={trace.id: list(embedding)} if embedding is not None else {},
+            strategy="embedding-cosine" if embedding is not None else "token-jaccard",
+        )
+        index = len(state.clusters)
+        state.clusters.append(cluster)
+        state.rep_tokens.append(set())
+        if embedding is not None:
+            state.sums[index] = _np.asarray(embedding, dtype=_np.float64)
+            state.set_rep(index, 1)
+        state.set_rep_tokens(index, cluster.representative_tokens)
+        clusters.append(cluster)
+    for state in scopes.values():
+        for index, cluster in enumerate(state.clusters):
+            if cluster.embedding_count:
+                cluster.embedding_sum = state.sums[index].tolist()
     return clusters
 
 

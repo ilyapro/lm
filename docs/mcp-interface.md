@@ -177,11 +177,24 @@ holds the content it just stored, so nothing bulky is echoed back:
 `node` carries identity and counters instead of the full
 [node payload](#node-payload-contract); fetch the complete node — content,
 context, provenance bodies — with `memory_lookup(node_id=...)`. When the
-scope reaches a consolidation boundary, `auto_consolidation` reports the
-pass as id lists plus counters (`concepts_created`, `concepts_updated`,
+scope reaches a consolidation boundary, the pass is *scheduled*, not run:
+the write answers at write time and `auto_consolidation` reports
+`{"status": "scheduled", "scope": ..., "trace_count": N, "coalesced": bool}`
+(`coalesced` when the request joined a pass already queued or running for
+that scope). `memory_teach` reports the same key for its corrective trace.
+One background worker per server runs the passes, one scope at a time; a
+pass takes the runtime lock one short step at a time (one encode batch, one
+cluster merge), so recall, lookup and other clients' writes are served while
+it runs. Due requests arriving during a scope's pass merge into a single
+follow-up pass. A failed pass is retried after a back-off, and the set of
+scopes whose pass has not completed is kept in kv
+(`auto_consolidation_pending`), so a pass that failed or was cut short by a
+restart is resumed on the next server start. The finished pass's summary —
+id lists plus counters (`concepts_created`, `concepts_updated`,
 `concepts_promoted`, `schemas_created`, `schemas_updated`, `decayed`,
-`clusters_considered`, `traces_considered`); only a direct
-`memory_consolidate` call returns full node dicts. If a compatible prior
+`clusters_considered`, `traces_considered`) — is kept by the scheduler; only
+a direct `memory_consolidate` call, which stays synchronous, returns the
+full result with node dicts. If a compatible prior
 `memory_recall` is pending, the new trace records that recall under
 `provenance.prior_recalls`, links to recalled nodes, and `implicit_feedback`
 lists the consumed event and node ids. Requests arriving over an MCP
@@ -681,8 +694,10 @@ plus the most distinctive sentence from each remaining source, capped at
 1200 chars — not a verbatim copy of one trace: whenever the cluster holds
 two or more distinct contents, the digest is byte-distinct from every source
 trace. The direct `memory_consolidate` response reports created/updated
-nodes as full node dicts (unlike the id-only `auto_consolidation` summary in
-`memory_remember`). Procedural traces
+nodes as full node dicts (the automatic pass a write schedules keeps only an
+id-only summary). A pass encodes through the model only traces it has not
+seen: whole-content trace vectors are cached in `consolidation_embeddings`
+keyed by content fingerprint and encoder. Procedural traces
 (those tagged with `context.procedure_id` or `context.task_pattern`) are
 grouped by normalized trigger and materialized as `level='schema'` nodes once
 three traces share the pattern. The schema's `context` stores `procedure_key`,

@@ -442,8 +442,15 @@ def test_memory_remember_confirmation_stays_small_under_auto_consolidation(
     assert node["linked_node_count"] == len(feedback["linked_node_ids"]) == 4
     assert node["source_trace_count"] == len(stored.source_traces) == 4
 
-    auto = response["auto_consolidation"]
-    assert auto is not None
+    # The write only schedules the pass; its summary lands on the scheduler.
+    scheduled = response["auto_consolidation"]
+    assert scheduled is not None
+    assert scheduled["status"] == "scheduled"
+    assert scheduled["scope"] == scope
+    assert mcp.auto_consolidation.wait_idle(timeout=120)
+    finished = mcp.auto_consolidation.last_result(scope)
+    assert finished is not None and finished["status"] == "completed"
+    auto = finished["summary"]
     assert auto["traces_considered"] >= 5
     assert auto["clusters_considered"] >= 1
     for key in CONSOLIDATION_ID_KEYS:

@@ -620,6 +620,17 @@ class LocalEmbeddingModel:
         """Pre-load the underlying model to avoid latency on the first query."""
         self._sentence_transformer()
 
+    def encoder_id(self) -> str:
+        """Name the encoder ``embed`` uses right now, for keying cached vectors.
+
+        The model name alone is not enough: an unavailable model silently
+        falls back to the hashed encoder, whose vectors mean something else.
+        """
+
+        if self._sentence_transformer() is None:
+            return f"hash:{self.dimensions}"
+        return f"st:{self.model_name}:{self.dimensions}"
+
     def _sentence_transformer(self) -> Any | None:
         if self._backend in _HASH_BACKENDS:
             return None

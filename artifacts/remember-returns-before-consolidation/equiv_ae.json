@@ -1,0 +1,13 @@
+{
+ "traces": 6603,
+ "embed_first": 1599.972733800998,
+ "embed_warm": 0.1262847880134359,
+ "indexed_s": 2.189529181981925,
+ "indexed_clusters": 919,
+ "reference_s": 514.1986108090496,
+ "reference_clusters": 919,
+ "identical_membership": true,
+ "identical_strategy": true,
+ "identical_keys": true,
+ "max_sum_diff": 0.0
+}

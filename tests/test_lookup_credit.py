@@ -53,6 +53,7 @@ from living_memory.feedback import (
 from living_memory.query_anchors import ANCHOR_EDGE_WEIGHT
 from living_memory.server import create_mcp_server
 from living_memory.storage import (
+    CONSOLIDATION_EMBEDDING_TABLE,
     RECALL_CREDIT_LEDGER_TABLE,
     RECALL_LOOKUP_EVENT_TABLE,
     MemoryStore,
@@ -885,12 +886,14 @@ def test_ledger_is_created_on_a_master_built_database_on_reopen(tmp_path: Path) 
     # Subset, not equality: once this lands on master, master's build creates
     # the ledger too and the difference legitimately collapses to nothing.
     # The explicit-feedback tables (recall_explicit_credit, the mark audit and
-    # its index) are created the same additive way on the same open.
+    # its index) and the consolidation vector cache are created the same
+    # additive way on the same open.
     assert set(after) - set(before) <= {
         RECALL_CREDIT_LEDGER_TABLE,
         "recall_explicit_credit",
         "recall_feedback_marks",
         "idx_recall_feedback_marks_event",
+        CONSOLIDATION_EMBEDDING_TABLE,
     }
     assert RECALL_CREDIT_LEDGER_TABLE in after
     assert _schema_version(db) == "8"

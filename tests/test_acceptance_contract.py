@@ -105,8 +105,10 @@ def test_mcp_remember_automatically_creates_concept_with_temporal_consensus_and_
         )
 
     assert final_remember is not None
-    auto = final_remember["auto_consolidation"]
-    assert auto is not None
+    scheduled = final_remember["auto_consolidation"]
+    assert scheduled is not None and scheduled["status"] == "scheduled"
+    assert mcp.auto_consolidation.wait_idle(timeout=120)
+    auto = mcp.auto_consolidation.last_result("project:alpha")["summary"]
     assert len(auto["concepts_created"]) == 1
     concept = mcp.memory_store.get_node(auto["concepts_created"][0])
     assert concept.level == "concept"
@@ -138,6 +140,7 @@ def test_adaptive_policy_consolidates_young_scope_at_low_thresholds(
 
     triggers: list[int] = []
     last_with_concept: dict[str, Any] | None = None
+    scheduler = mcp.auto_consolidation
     for index in range(15):
         result = mcp.tools["memory_remember"](
             f"weekly monday deploy rollback requires migration guard before release {index}",
@@ -149,16 +152,18 @@ def test_adaptive_policy_consolidates_young_scope_at_low_thresholds(
             {"confidence": 0.5, "usefulness_score": 0.3},
         )
         if result["auto_consolidation"] is not None:
+            assert result["auto_consolidation"]["status"] == "scheduled"
             triggers.append(index + 1)
-            if result["auto_consolidation"]["concepts_created"]:
-                last_with_concept = result
+            # Drain each scheduled pass so every trigger is observed on its own.
+            assert scheduler.wait_idle(timeout=120)
+            finished = scheduler.last_result("project:young")["summary"]
+            if finished["concepts_created"]:
+                last_with_concept = finished
 
     # Adaptive ladder: trigger at count = 5, 10, 15 (step=5 while count<50).
     assert triggers == [5, 10, 15]
     assert last_with_concept is not None
-    concept = mcp.memory_store.get_node(
-        last_with_concept["auto_consolidation"]["concepts_created"][0]
-    )
+    concept = mcp.memory_store.get_node(last_with_concept["concepts_created"][0])
     # Merge floor for trace_count<25 is 3; cluster of similar traces meets it.
     assert concept.level == "concept"
     assert concept.scope == "project:young"

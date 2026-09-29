@@ -1,0 +1,26 @@
+{
+ "before": {
+  "clusters_considered": 921,
+  "traces_considered": 6700,
+  "created": 1,
+  "updated": 13,
+  "schemas_created": 3,
+  "schemas_updated": 105,
+  "decayed": 73
+ },
+ "after": {
+  "clusters_considered": 921,
+  "traces_considered": 6700,
+  "created": 1,
+  "updated": 13,
+  "schemas_created": 3,
+  "schemas_updated": 105,
+  "decayed": 73
+ },
+ "touched_matched": 14,
+ "only_before": 0,
+ "only_after": 0,
+ "content_identical": 14,
+ "sources_identical": 14,
+ "confidence_identical": 14
+}

@@ -56,6 +56,7 @@ TRANSCRIPT_GROUNDING_TABLE = "transcript_grounding_verdicts"
 RECALL_CREDIT_LEDGER_TABLE = "recall_credit_ledger"
 RECALL_EXPLICIT_CREDIT_TABLE = "recall_explicit_credit"
 RECALL_FEEDBACK_MARKS_TABLE = "recall_feedback_marks"
+CONSOLIDATION_EMBEDDING_TABLE = "consolidation_embeddings"
 #: Every basis a (recall event, node) credit can be claimed under. The first
 #: two live in ``recall_credit_ledger``, whose CHECK cannot be widened without
 #: a table rebuild; ``explicit`` lives in ``recall_explicit_credit`` and the
@@ -540,6 +541,28 @@ _RECALL_EXPLICIT_CREDIT_SCHEMA_SQL = f"""
 #: foreign keys, no SCHEMA_VERSION bump — the ledger's rules. The one index
 #: serves the per-event read the implicit-feedback link hygiene does on
 #: every closing remember.
+#: Whole-content vectors the consolidation pass clusters traces by. Nodes no
+#: longer carry a vector column (``node_chunk_embeddings`` holds per-window
+#: vectors, and a multi-window node's whole-content vector is not any of its
+#: chunks), so without this table every pass re-encoded every active trace of
+#: the scope through the model — the pass's dominant cost, paid for the whole
+#: corpus each time. Rows are keyed by the content fingerprint and the encoder
+#: that produced them, so an edited node or a changed model is a miss, never a
+#: stale hit. Values are float64 (``array('d')``) so a cached vector is
+#: bit-identical to a fresh encode and clustering does not drift. Additive,
+#: created on every open, no foreign keys, no SCHEMA_VERSION bump — the
+#: ledger's rules.
+_CONSOLIDATION_EMBEDDING_SCHEMA_SQL = f"""
+    CREATE TABLE IF NOT EXISTS {CONSOLIDATION_EMBEDDING_TABLE} (
+        node_id TEXT PRIMARY KEY,
+        content_fingerprint TEXT NOT NULL,
+        encoder TEXT NOT NULL,
+        dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+        embedding BLOB NOT NULL,
+        created_at TEXT NOT NULL
+    );
+"""
+
 _RECALL_FEEDBACK_MARKS_SCHEMA_SQL = f"""
     CREATE TABLE IF NOT EXISTS {RECALL_FEEDBACK_MARKS_TABLE} (
         id INTEGER PRIMARY KEY,
@@ -4905,6 +4928,7 @@ class MemoryStore:
             # created the same way; see the notes on the two DDL strings.
             self._conn.executescript(_RECALL_EXPLICIT_CREDIT_SCHEMA_SQL)
             self._conn.executescript(_RECALL_FEEDBACK_MARKS_SCHEMA_SQL)
+            self._conn.executescript(_CONSOLIDATION_EMBEDDING_SCHEMA_SQL)
             # Frozen relevance history. The schema is additive; the
             # idempotent reconstruction below is what populates it for a live
             # database whose recall_events predate this release.
@@ -5456,6 +5480,81 @@ class MemoryStore:
                 for fingerprint, state in aggregates.items()
             ],
         )
+
+    def get_consolidation_embeddings(
+        self, nodes: Sequence[Node], encoder: str
+    ) -> dict[str, list[float]]:
+        """Cached whole-content vectors for ``nodes`` under ``encoder``.
+
+        A row counts only when its fingerprint matches the node's current
+        content; anything else is a miss for the caller to encode.
+        """
+
+        wanted = {node.id: _content_fingerprint(node.content) for node in nodes}
+        found: dict[str, list[float]] = {}
+        ids = list(wanted)
+        for start in range(0, len(ids), 500):
+            batch = ids[start : start + 500]
+            rows = self._conn.execute(
+                f"""
+                SELECT node_id, content_fingerprint, dimensions, embedding
+                FROM {CONSOLIDATION_EMBEDDING_TABLE}
+                WHERE encoder = ? AND node_id IN ({",".join("?" * len(batch))})
+                """,
+                (encoder, *batch),
+            ).fetchall()
+            for row in rows:
+                node_id = str(row["node_id"])
+                if row["content_fingerprint"] != wanted.get(node_id):
+                    continue
+                values = array("d")
+                values.frombytes(bytes(row["embedding"]))
+                if sys.byteorder != "little":  # pragma: no cover - little-endian CI
+                    values.byteswap()
+                if len(values) == int(row["dimensions"]):
+                    found[node_id] = values.tolist()
+        return found
+
+    def put_consolidation_embeddings(
+        self, entries: Sequence[tuple[Node, Sequence[float]]], encoder: str
+    ) -> None:
+        """Upsert whole-content vectors computed by a consolidation pass."""
+
+        rows = []
+        now = _utc_now()
+        for node, vector in entries:
+            if not vector:
+                continue
+            values = array("d", (float(value) for value in vector))
+            if sys.byteorder != "little":  # pragma: no cover - little-endian CI
+                values.byteswap()
+            rows.append(
+                (
+                    node.id,
+                    _content_fingerprint(node.content),
+                    encoder,
+                    len(values),
+                    values.tobytes(),
+                    now,
+                )
+            )
+        if not rows:
+            return
+        with self._conn:
+            self._conn.executemany(
+                f"""
+                INSERT INTO {CONSOLIDATION_EMBEDDING_TABLE}
+                    (node_id, content_fingerprint, encoder, dimensions, embedding, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(node_id) DO UPDATE SET
+                    content_fingerprint = excluded.content_fingerprint,
+                    encoder = excluded.encoder,
+                    dimensions = excluded.dimensions,
+                    embedding = excluded.embedding,
+                    created_at = excluded.created_at
+                """,
+                rows,
+            )
 
     def get_kv(self, key: str) -> str | None:
         """Read a server-wide kv entry, or None if unset."""

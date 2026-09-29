@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
 from functools import wraps
@@ -20,6 +21,10 @@ import time as _time
 
 from pydantic import Field
 
+from living_memory.auto_consolidation import (
+    PENDING_KV_KEY as AUTO_CONSOLIDATION_PENDING_KV_KEY,
+    AutoConsolidationScheduler,
+)
 from living_memory.config import MemoryConfig, load_config
 from living_memory.consolidation import (
     _correction_text,
@@ -1089,6 +1094,8 @@ def _register_tools(
     # holds one sqlite connection shared across threads, and the refresh reads
     # it. One bounded indexed query, after the response is already built.
     refresh_instructions = _InstructionsRefresh(mcp, store)
+    auto_consolidation = _build_auto_consolidation(store, runtime_lock, consolidation_service)
+    _attach(mcp, "auto_consolidation", auto_consolidation)
     # Read once per server, like every description: the experiment switches
     # arms by restarting a sandbox server with LM_EXPLICIT_FEEDBACK_PROMPT.
     feedback_texts = _explicit_feedback_texts()
@@ -1110,8 +1117,10 @@ def _register_tools(
     ) -> dict[str, Any]:
         """Store a new append-only trace.
 
-        Returns a compact confirmation — node id/level/scope plus feedback and
-        consolidation counters. Fetch full nodes via memory_lookup(node_id=...).
+        Returns a compact confirmation — node id/level/scope plus feedback
+        counters, and a ``scheduled`` report when the write made a
+        consolidation pass due (the pass runs in the background). Fetch full
+        nodes via memory_lookup(node_id=...).
         """
 
         context = _with_transport_identity(context)
@@ -1154,15 +1163,12 @@ def _register_tools(
                 derive_edges_for_new_trace(store, node)
             except Exception:
                 pass
-            auto_consolidation = _auto_consolidate_if_due(
-                store,
-                consolidation_service,
-                node.scope,
-            )
             response = {
                 "node": _remember_node_confirmation(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
-                "auto_consolidation": auto_consolidation,
+                "auto_consolidation": _schedule_auto_consolidation_if_due(
+                    store, auto_consolidation, node.scope
+                ),
                 "auto_decay": auto_decay,
             }
             if rejected_alternatives is not None:
@@ -1213,6 +1219,11 @@ def _register_tools(
                 context=context,
             )
             response = _teach_result_to_dict(taught)
+            # The corrective trace counts toward the scope's cadence like any
+            # write; the pass it makes due is scheduled, never run here.
+            response["auto_consolidation"] = _schedule_auto_consolidation_if_due(
+                store, auto_consolidation, taught.corrective_trace.scope
+            )
             if marks is not None:
                 try:
                     store.set_feedback_marks_source(
@@ -1890,11 +1901,12 @@ def _maybe_decay_sweep(store: MemoryStore) -> dict[str, Any] | None:
         return None
 
 
-def _auto_consolidate_if_due(
-    store: MemoryStore,
-    consolidation_service: ConsolidationService,
-    scope: str,
-) -> dict[str, Any] | None:
+_AUTO_CONSOLIDATION_STEP_HANDOFF_SECONDS = 0.005
+
+
+def _auto_consolidation_due(store: MemoryStore, scope: str) -> int | None:
+    """Active trace count of ``scope`` when its write made a pass due, else None."""
+
     row = store.connection.execute(
         """
         SELECT COUNT(*) AS count
@@ -1906,22 +1918,100 @@ def _auto_consolidate_if_due(
     trace_count = int(row["count"])
 
     if _auto_consolidate_policy() == "adaptive":
-        step = _adaptive_trigger_step(trace_count)
-        if step is None or trace_count % step != 0:
-            return None
         # The merge floor itself is no longer decided here: consolidation.py
         # owns the ladder and the LM_CONSOLIDATE_MERGE_FLOOR valve, and sizes
         # it from this same scope's active traces. This branch only picks the
         # trigger cadence.
-        return _compact_consolidation_summary(
-            consolidation_service.memory_consolidate(scope=scope, force=False)
-        )
+        step = _adaptive_trigger_step(trace_count)
+        if step is None or trace_count % step != 0:
+            return None
+        return trace_count
 
     if trace_count < DEFAULT_MIN_CLUSTER_SIZE or trace_count % DEFAULT_MIN_CLUSTER_SIZE != 0:
+        return None
+    return trace_count
+
+
+def _auto_consolidate_if_due(
+    store: MemoryStore,
+    consolidation_service: ConsolidationService,
+    scope: str,
+) -> dict[str, Any] | None:
+    """Run the due pass inline and return its summary (no scheduler)."""
+
+    if _auto_consolidation_due(store, scope) is None:
         return None
     return _compact_consolidation_summary(
         consolidation_service.memory_consolidate(scope=scope, force=False)
     )
+
+
+def _schedule_auto_consolidation_if_due(
+    store: MemoryStore,
+    scheduler: AutoConsolidationScheduler,
+    scope: str,
+) -> dict[str, Any] | None:
+    """Schedule the pass this write made due; report, never run it.
+
+    The write path answers at write time: the report says the pass is
+    ``scheduled`` (``coalesced`` when it joins one already queued or
+    running), and the pass's own summary lands in the scheduler's
+    ``last_result(scope)`` when the worker finishes it.
+    """
+
+    trace_count = _auto_consolidation_due(store, scope)
+    if trace_count is None:
+        return None
+    return scheduler.request(scope, trace_count=trace_count)
+
+
+def _build_auto_consolidation(
+    store: MemoryStore,
+    runtime_lock: Any,
+    consolidation_service: ConsolidationService,
+) -> AutoConsolidationScheduler:
+    """One background worker per server, stepping under ``runtime_lock``.
+
+    The pass takes the lock one short step at a time (see ``guard`` on
+    ``memory_consolidate``), so recall, lookup and other clients' writes are
+    served between its steps instead of after it. A scope a previous process
+    left pending is resumed here.
+    """
+
+    @contextmanager
+    def step() -> Iterator[None]:
+        with runtime_lock:
+            yield
+        # Python locks are not fair: released and re-taken at once, the lock
+        # goes back to this thread before a request thread woken by the
+        # release gets to run, and recall starves behind a pass made of many
+        # short steps. Pausing after each step hands the lock over.
+        _time.sleep(_AUTO_CONSOLIDATION_STEP_HANDOFF_SECONDS)
+
+    def run_pass(scope: str) -> dict[str, Any]:
+        return _compact_consolidation_summary(
+            consolidation_service.memory_consolidate(
+                scope=scope,
+                force=False,
+                guard=step,
+            )
+        )
+
+    def load_pending() -> str | None:
+        with runtime_lock:
+            return store.get_kv(AUTO_CONSOLIDATION_PENDING_KV_KEY)
+
+    def save_pending(raw: str) -> None:
+        store.set_kv(AUTO_CONSOLIDATION_PENDING_KV_KEY, raw)
+
+    scheduler = AutoConsolidationScheduler(
+        run_pass,
+        load_pending=load_pending,
+        save_pending=save_pending,
+        persist_guard=runtime_lock,
+    )
+    scheduler.resume()
+    return scheduler
 
 
 def _resolve_config(

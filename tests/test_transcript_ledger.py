@@ -37,6 +37,7 @@ import pytest
 
 from living_memory.server import create_mcp_server
 from living_memory.storage import (
+    CONSOLIDATION_EMBEDDING_TABLE,
     MemoryStore,
     RECALL_CREDIT_LEDGER_TABLE,
     TRANSCRIPT_GROUNDING_TABLE,
@@ -58,6 +59,8 @@ LEDGER_INDEX = "idx_transcript_grounding_node_graded"
 #: named index in sqlite_master (autoindexes carry NULL sql).
 #: The explicit-feedback tables (goal explicit-recall-feedback) join them on
 #: the same terms: explicit credit side table, mark audit and its index.
+#: The consolidation vector cache (goal remember-returns-before-consolidation)
+#: is created on every open too, additive, no SCHEMA_VERSION bump.
 NEW_OBJECTS = {
     TRANSCRIPT_GROUNDING_TABLE,
     LEDGER_INDEX,
@@ -65,6 +68,7 @@ NEW_OBJECTS = {
     "recall_explicit_credit",
     "recall_feedback_marks",
     "idx_recall_feedback_marks_event",
+    CONSOLIDATION_EMBEDDING_TABLE,
 }
 
 SCOPE = "project:ledger"
