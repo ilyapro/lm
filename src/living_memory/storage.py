@@ -1188,21 +1188,19 @@ class MemoryStore:
         new_id = node_id or new_ulid()
         fingerprint = _content_fingerprint(content)
 
-        duplicate_ids: list[str] = []
-        if level == "trace":
-            duplicate_ids = [
-                str(row["id"])
-                for row in self._conn.execute(
-                    """
-                    SELECT id FROM nodes
-                    WHERE level = 'trace'
-                      AND scope = ?
-                      AND content_fingerprint = ?
-                      AND decayed = 0
-                    """,
-                    (scope, fingerprint),
-                ).fetchall()
-            ]
+        duplicate_ids = [
+            str(row["id"])
+            for row in self._conn.execute(
+                """
+                SELECT id FROM nodes
+                WHERE level = ?
+                  AND scope = ?
+                  AND content_fingerprint = ?
+                  AND decayed = 0
+                """,
+                (level, scope, fingerprint),
+            ).fetchall()
+        ]
 
         vector = None if embedding is None else list(embedding)
         legacy_embedding = self._node_embedding_column_present()

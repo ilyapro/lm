@@ -892,7 +892,13 @@ def _create_or_update_schema(
 def _find_existing_schema(
     store: MemoryStore, scope: str, procedure_key: _ProcedureKey
 ) -> Node | None:
-    """Locate a schema for the same group key, tolerating legacy provenance shape."""
+    """Locate the schema of the same group: its group key, never its labels.
+
+    Groups share labels: a group keyed by one task_pattern may carry, as its
+    trigger or procedure_id, the key of another group. Matching on any label
+    let each group take over another group's schema and leave its own group to
+    create a fresh one, so every pass added schemas.
+    """
 
     schemas = store.list_nodes(
         level="schema",
@@ -901,22 +907,7 @@ def _find_existing_schema(
         limit=100_000,
     )
     for schema in schemas:
-        candidates = (
-            schema.context.get("procedure_key"),
-            schema.context.get("task_pattern"),
-            schema.context.get("procedure_id"),
-            schema.context.get("trigger"),
-            schema.provenance.get("procedure_key"),
-            schema.provenance.get("group_pattern"),
-            schema.provenance.get("procedure_pattern"),
-            schema.provenance.get("procedure_id"),
-        )
-        normalized = {
-            _normalize_trigger(str(value))
-            for value in candidates
-            if value is not None and str(value).strip()
-        }
-        if procedure_key.group_id not in normalized:
+        if _schema_group_id(schema) != procedure_key.group_id:
             continue
         if schema.corrections or _is_superseded(store, schema.id):
             # A taught/superseded schema belongs to a dead era; updating it
@@ -924,6 +915,16 @@ def _find_existing_schema(
             continue
         return schema
     return None
+
+
+def _schema_group_id(schema: Node) -> str:
+    group = schema.context.get("procedure_key") or schema.provenance.get("procedure_key")
+    if group is not None and str(group).strip():
+        return _normalize_trigger(str(group))
+    # A schema written before procedure_key was recorded carries its group
+    # the way its source traces did.
+    key = _procedure_key(schema)
+    return key.group_id if key else ""
 
 
 def _normalize_trigger(procedure_id: str) -> str:
