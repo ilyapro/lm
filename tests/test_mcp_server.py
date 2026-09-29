@@ -114,7 +114,10 @@ def test_mcp_tools_delegate_to_memory_services(tmp_path: Path) -> None:
         context={"agent": "agent-c"},
     )
     assert taught["supersedes"]["type"] == "supersedes"
-    assert taught["corrective_trace"]["content"] == "deploy incident caused by migration 43 missing"
+    assert (
+        mcp.memory_store.get_node(taught["corrective_trace"]["id"]).content
+        == "deploy incident caused by migration 43 missing"
+    )
 
     consolidated = mcp.tools["memory_consolidate"](scope="project:alpha", force=True)
     assert "concepts_created" in consolidated

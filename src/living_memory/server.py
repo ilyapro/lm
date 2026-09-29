@@ -2111,7 +2111,7 @@ def _compact_consolidation_summary(result: ConsolidationResult) -> dict[str, Any
 
 
 def _remember_node_confirmation(node: Any) -> dict[str, Any]:
-    """Compact write confirmation: identity and counters, no content echo.
+    """Compact write receipt for remember and teach: no content echo.
 
     The writer already holds the content it just stored; provenance bodies
     (prior recall query texts) stay retrievable via memory_lookup(node_id=...).
@@ -2131,9 +2131,9 @@ def _remember_node_confirmation(node: Any) -> dict[str, Any]:
 
 def _teach_result_to_dict(result: TeachResult) -> dict[str, Any]:
     return {
-        "corrective_trace": node_to_dict(result.corrective_trace),
-        "supersedes": connection_to_dict(result.supersedes),
-        "original": node_to_dict(result.original),
+        "corrective_trace": _remember_node_confirmation(result.corrective_trace),
+        "supersedes": {"id": result.supersedes.id, "type": result.supersedes.type},
+        "original": {"id": result.original.id},
         "implicit_feedback": _implicit_feedback_to_dict(result.implicit_feedback),
     }
 

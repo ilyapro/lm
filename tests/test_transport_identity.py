@@ -156,7 +156,8 @@ def test_teach_without_context_stamps_corrective_trace(tmp_path: Path) -> None:
                 )
             )
         assert session_stamp
-        assert taught["corrective_trace"]["context"]["transport_session_id"] == session_stamp
+        corrective = store.get_node(taught["corrective_trace"]["id"])
+        assert corrective.context["transport_session_id"] == session_stamp
 
     asyncio.run(scenario())
 
@@ -210,7 +211,8 @@ def test_fake_factory_direct_calls_stay_unstamped(tmp_path: Path) -> None:
     assert "transport_session_id" not in store.list_recall_events()[0].ambient_context
 
     taught = mcp.tools["memory_teach"](remembered["node"]["id"], "degradation corrected")
-    assert "transport_session_id" not in taught["corrective_trace"]["context"]
+    corrective = store.get_node(taught["corrective_trace"]["id"])
+    assert "transport_session_id" not in corrective.context
 
 
 def test_with_transport_identity_outside_request_returns_input_unchanged() -> None:
