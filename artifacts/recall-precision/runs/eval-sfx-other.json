@@ -1,0 +1,1015 @@
+{
+  "arms": {
+    "baseline": {
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": ""
+    },
+    "dedup": {
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": "",
+      "LM_RECALL_SCHEMA_DEDUP": "1"
+    },
+    "demote_fc070": {
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "0.70",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": ""
+    },
+    "demote_fc075_mw1": {
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "0.75",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": "1.0"
+    },
+    "demote_fc080_mw1": {
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "0.80",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": "1.0"
+    },
+    "hub_003": {
+      "LM_HUB_SUPPRESSION_FACTOR": "0.03",
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": ""
+    },
+    "hub_01": {
+      "LM_HUB_SUPPRESSION_FACTOR": "0.1",
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": ""
+    },
+    "hub_03": {
+      "LM_HUB_SUPPRESSION_FACTOR": "0.3",
+      "LM_QUERY_IRRELEVANCE_FULL_COSINE": "",
+      "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": ""
+    }
+  },
+  "counterfactual_stripped": null,
+  "cutoff": "2026-09-28T09:21:40.000000Z",
+  "events": 166,
+  "generated_at": "2026-09-29T02:07:06Z",
+  "host": "sfx",
+  "hubs_train_defined": 115,
+  "replay_s": 948.9,
+  "runtime_s": 950.6,
+  "segment": "eval",
+  "snapshot_sha256": "074ee970243d0d7ec2416f09f3b3df430a24b06c264e5b7f4bd41ef525750525",
+  "summary": {
+    "baseline": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 51,
+          "irr_marked": 52,
+          "irr_removed_share": 0.0192,
+          "used_full": 46,
+          "used_lost_share": 0.0612,
+          "used_marked": 49
+        },
+        "2": {
+          "irr_full": 64,
+          "irr_marked": 66,
+          "irr_removed_share": 0.0303,
+          "used_full": 26,
+          "used_lost_share": 0.0714,
+          "used_marked": 28
+        },
+        "3": {
+          "irr_full": 58,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1212,
+          "used_full": 13,
+          "used_lost_share": 0.0714,
+          "used_marked": 14
+        },
+        "4-5": {
+          "irr_full": 99,
+          "irr_marked": 114,
+          "irr_removed_share": 0.1316,
+          "used_full": 14,
+          "used_lost_share": 0.1765,
+          "used_marked": 17
+        },
+        "6-10": {
+          "irr_full": 42,
+          "irr_marked": 62,
+          "irr_removed_share": 0.3226,
+          "used_full": 4,
+          "used_lost_share": 0.5,
+          "used_marked": 8
+        }
+      },
+      "chars_per_event": 11188.1024,
+      "delivered_set_quality": {
+        "excess": 0.0254,
+        "graded": 354,
+        "grounded_rate": 0.0339,
+        "twin_grounded_rate": 0.0085
+      },
+      "dup_schema_slots": 41,
+      "entrants": {
+        "excess": null,
+        "graded": 0,
+        "grounded_rate": null,
+        "per_event": 0.6325,
+        "total": 105,
+        "twin_grounded_rate": null
+      },
+      "events": 166,
+      "full_slots_per_event": 4.8494,
+      "future_candidates_hidden": 711,
+      "future_filtered": 0,
+      "hub_top3_share": 0.1419,
+      "hub_top3_slots": 66,
+      "irrelevant": {
+        "delivered_full": 314,
+        "delivered_top3": 171,
+        "marked": 360
+      },
+      "labelled_created_after_cutoff_excluded": 3,
+      "latency_s_total": 142.56,
+      "rank1_kept_vs_recorded": 0.8494,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 103,
+        "lost": 13,
+        "lost_share": 0.1121,
+        "marked": 116
+      }
+    },
+    "dedup": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 51,
+          "irr_marked": 52,
+          "irr_removed_share": 0.0192,
+          "used_full": 46,
+          "used_lost_share": 0.0612,
+          "used_marked": 49
+        },
+        "2": {
+          "irr_full": 61,
+          "irr_marked": 66,
+          "irr_removed_share": 0.0758,
+          "used_full": 26,
+          "used_lost_share": 0.0714,
+          "used_marked": 28
+        },
+        "3": {
+          "irr_full": 55,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1667,
+          "used_full": 13,
+          "used_lost_share": 0.0714,
+          "used_marked": 14
+        },
+        "4-5": {
+          "irr_full": 85,
+          "irr_marked": 114,
+          "irr_removed_share": 0.2544,
+          "used_full": 14,
+          "used_lost_share": 0.1765,
+          "used_marked": 17
+        },
+        "6-10": {
+          "irr_full": 35,
+          "irr_marked": 62,
+          "irr_removed_share": 0.4355,
+          "used_full": 4,
+          "used_lost_share": 0.5,
+          "used_marked": 8
+        }
+      },
+      "chars_per_event": 11160.741,
+      "chars_saved_per_event": 27.3614,
+      "chars_saved_share": 0.0024,
+      "dup_schema_slots": 0,
+      "entrants": {
+        "excess": null,
+        "graded": 0,
+        "grounded_rate": null,
+        "per_event": 0.8313,
+        "total": 138,
+        "twin_grounded_rate": null
+      },
+      "events": 166,
+      "full_slots_per_event": 4.8494,
+      "future_candidates_hidden": 711,
+      "future_filtered": 0,
+      "hub_top3_share": 0.1419,
+      "hub_top3_slots": 66,
+      "irrelevant": {
+        "delivered_full": 287,
+        "delivered_top3": 167,
+        "marked": 360
+      },
+      "labelled_created_after_cutoff_excluded": 3,
+      "latency_s_total": 101.67,
+      "new_entrant_quality": {
+        "excess": 0.05,
+        "graded": 20,
+        "grounded_rate": 0.05,
+        "twin_grounded_rate": 0.0
+      },
+      "rank1_kept_vs_recorded": 0.8494,
+      "rank1_removed": 0,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 103,
+        "lost": 13,
+        "lost_share": 0.1121,
+        "marked": 116
+      },
+      "vs_baseline": {
+        "dup_schema_slots_cut": 1.0,
+        "full_slots_cut": 0.0,
+        "hub_top3_cut": 0.0,
+        "irrelevant_full_cut": 0.086,
+        "irrelevant_top3_cut": 0.0234,
+        "new_vs_baseline_per_event": 0.247,
+        "rank1_kept": 1.0,
+        "used_full_lost": 0.0
+      },
+      "vs_baseline_by_rank": {
+        "1": {
+          "base_irr_full": 51,
+          "base_used_full": 46,
+          "irr_full_cut": 0.0,
+          "used_full_lost": 0.0
+        },
+        "2": {
+          "base_irr_full": 64,
+          "base_used_full": 26,
+          "irr_full_cut": 0.0469,
+          "used_full_lost": 0.0
+        },
+        "3": {
+          "base_irr_full": 58,
+          "base_used_full": 13,
+          "irr_full_cut": 0.0517,
+          "used_full_lost": 0.0
+        },
+        "4-5": {
+          "base_irr_full": 99,
+          "base_used_full": 14,
+          "irr_full_cut": 0.1414,
+          "used_full_lost": 0.0
+        },
+        "6-10": {
+          "base_irr_full": 42,
+          "base_used_full": 4,
+          "irr_full_cut": 0.1667,
+          "used_full_lost": 0.0
+        }
+      }
+    },
+    "demote_fc070": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 51,
+          "irr_marked": 52,
+          "irr_removed_share": 0.0192,
+          "used_full": 46,
+          "used_lost_share": 0.0612,
+          "used_marked": 49
+        },
+        "2": {
+          "irr_full": 60,
+          "irr_marked": 66,
+          "irr_removed_share": 0.0909,
+          "used_full": 26,
+          "used_lost_share": 0.0714,
+          "used_marked": 28
+        },
+        "3": {
+          "irr_full": 55,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1667,
+          "used_full": 13,
+          "used_lost_share": 0.0714,
+          "used_marked": 14
+        },
+        "4-5": {
+          "irr_full": 91,
+          "irr_marked": 114,
+          "irr_removed_share": 0.2018,
+          "used_full": 14,
+          "used_lost_share": 0.1765,
+          "used_marked": 17
+        },
+        "6-10": {
+          "irr_full": 37,
+          "irr_marked": 62,
+          "irr_removed_share": 0.4032,
+          "used_full": 4,
+          "used_lost_share": 0.5,
+          "used_marked": 8
+        }
+      },
+      "chars_per_event": 11183.4036,
+      "chars_saved_per_event": 4.6988,
+      "chars_saved_share": 0.0004,
+      "dup_schema_slots": 45,
+      "entrants": {
+        "excess": null,
+        "graded": 0,
+        "grounded_rate": null,
+        "per_event": 0.753,
+        "total": 125,
+        "twin_grounded_rate": null
+      },
+      "events": 166,
+      "full_slots_per_event": 4.8494,
+      "future_candidates_hidden": 711,
+      "future_filtered": 0,
+      "hub_top3_share": 0.1419,
+      "hub_top3_slots": 66,
+      "irrelevant": {
+        "delivered_full": 294,
+        "delivered_top3": 166,
+        "marked": 360
+      },
+      "labelled_created_after_cutoff_excluded": 3,
+      "latency_s_total": 103.59,
+      "new_entrant_quality": {
+        "excess": 0.0,
+        "graded": 7,
+        "grounded_rate": 0.0,
+        "twin_grounded_rate": 0.0
+      },
+      "rank1_kept_vs_recorded": 0.8494,
+      "rank1_removed": 0,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 103,
+        "lost": 13,
+        "lost_share": 0.1121,
+        "marked": 116
+      },
+      "vs_baseline": {
+        "dup_schema_slots_cut": -0.0976,
+        "full_slots_cut": 0.0,
+        "hub_top3_cut": 0.0,
+        "irrelevant_full_cut": 0.0637,
+        "irrelevant_top3_cut": 0.0292,
+        "new_vs_baseline_per_event": 0.1205,
+        "rank1_kept": 1.0,
+        "used_full_lost": 0.0
+      },
+      "vs_baseline_by_rank": {
+        "1": {
+          "base_irr_full": 51,
+          "base_used_full": 46,
+          "irr_full_cut": 0.0,
+          "used_full_lost": 0.0
+        },
+        "2": {
+          "base_irr_full": 64,
+          "base_used_full": 26,
+          "irr_full_cut": 0.0625,
+          "used_full_lost": 0.0
+        },
+        "3": {
+          "base_irr_full": 58,
+          "base_used_full": 13,
+          "irr_full_cut": 0.0517,
+          "used_full_lost": 0.0
+        },
+        "4-5": {
+          "base_irr_full": 99,
+          "base_used_full": 14,
+          "irr_full_cut": 0.0808,
+          "used_full_lost": 0.0
+        },
+        "6-10": {
+          "base_irr_full": 42,
+          "base_used_full": 4,
+          "irr_full_cut": 0.119,
+          "used_full_lost": 0.0
+        }
+      }
+    },
+    "demote_fc075_mw1": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 51,
+          "irr_marked": 52,
+          "irr_removed_share": 0.0192,
+          "used_full": 46,
+          "used_lost_share": 0.0612,
+          "used_marked": 49
+        },
+        "2": {
+          "irr_full": 59,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1061,
+          "used_full": 26,
+          "used_lost_share": 0.0714,
+          "used_marked": 28
+        },
+        "3": {
+          "irr_full": 55,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1667,
+          "used_full": 13,
+          "used_lost_share": 0.0714,
+          "used_marked": 14
+        },
+        "4-5": {
+          "irr_full": 90,
+          "irr_marked": 114,
+          "irr_removed_share": 0.2105,
+          "used_full": 14,
+          "used_lost_share": 0.1765,
+          "used_marked": 17
+        },
+        "6-10": {
+          "irr_full": 37,
+          "irr_marked": 62,
+          "irr_removed_share": 0.4032,
+          "used_full": 4,
+          "used_lost_share": 0.5,
+          "used_marked": 8
+        }
+      },
+      "chars_per_event": 11188.1687,
+      "chars_saved_per_event": -0.0663,
+      "chars_saved_share": -0.0,
+      "dup_schema_slots": 45,
+      "entrants": {
+        "excess": null,
+        "graded": 0,
+        "grounded_rate": null,
+        "per_event": 0.7651,
+        "total": 127,
+        "twin_grounded_rate": null
+      },
+      "events": 166,
+      "full_slots_per_event": 4.8494,
+      "future_candidates_hidden": 711,
+      "future_filtered": 0,
+      "hub_top3_share": 0.1398,
+      "hub_top3_slots": 65,
+      "irrelevant": {
+        "delivered_full": 292,
+        "delivered_top3": 165,
+        "marked": 360
+      },
+      "labelled_created_after_cutoff_excluded": 3,
+      "latency_s_total": 102.07,
+      "new_entrant_quality": {
+        "excess": 0.0,
+        "graded": 10,
+        "grounded_rate": 0.0,
+        "twin_grounded_rate": 0.0
+      },
+      "rank1_kept_vs_recorded": 0.8434,
+      "rank1_removed": 1,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 103,
+        "lost": 13,
+        "lost_share": 0.1121,
+        "marked": 116
+      },
+      "vs_baseline": {
+        "dup_schema_slots_cut": -0.0976,
+        "full_slots_cut": 0.0,
+        "hub_top3_cut": 0.0152,
+        "irrelevant_full_cut": 0.0701,
+        "irrelevant_top3_cut": 0.0351,
+        "new_vs_baseline_per_event": 0.1386,
+        "rank1_kept": 0.994,
+        "used_full_lost": 0.0
+      },
+      "vs_baseline_by_rank": {
+        "1": {
+          "base_irr_full": 51,
+          "base_used_full": 46,
+          "irr_full_cut": 0.0,
+          "used_full_lost": 0.0
+        },
+        "2": {
+          "base_irr_full": 64,
+          "base_used_full": 26,
+          "irr_full_cut": 0.0781,
+          "used_full_lost": 0.0
+        },
+        "3": {
+          "base_irr_full": 58,
+          "base_used_full": 13,
+          "irr_full_cut": 0.0517,
+          "used_full_lost": 0.0
+        },
+        "4-5": {
+          "base_irr_full": 99,
+          "base_used_full": 14,
+          "irr_full_cut": 0.0909,
+          "used_full_lost": 0.0
+        },
+        "6-10": {
+          "base_irr_full": 42,
+          "base_used_full": 4,
+          "irr_full_cut": 0.119,
+          "used_full_lost": 0.0
+        }
+      }
+    },
+    "demote_fc080_mw1": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 51,
+          "irr_marked": 52,
+          "irr_removed_share": 0.0192,
+          "used_full": 46,
+          "used_lost_share": 0.0612,
+          "used_marked": 49
+        },
+        "2": {
+          "irr_full": 59,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1061,
+          "used_full": 26,
+          "used_lost_share": 0.0714,
+          "used_marked": 28
+        },
+        "3": {
+          "irr_full": 55,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1667,
+          "used_full": 13,
+          "used_lost_share": 0.0714,
+          "used_marked": 14
+        },
+        "4-5": {
+          "irr_full": 90,
+          "irr_marked": 114,
+          "irr_removed_share": 0.2105,
+          "used_full": 14,
+          "used_lost_share": 0.1765,
+          "used_marked": 17
+        },
+        "6-10": {
+          "irr_full": 37,
+          "irr_marked": 62,
+          "irr_removed_share": 0.4032,
+          "used_full": 4,
+          "used_lost_share": 0.5,
+          "used_marked": 8
+        }
+      },
+      "chars_per_event": 11188.1867,
+      "chars_saved_per_event": -0.0843,
+      "chars_saved_share": -0.0,
+      "dup_schema_slots": 45,
+      "entrants": {
+        "excess": null,
+        "graded": 0,
+        "grounded_rate": null,
+        "per_event": 0.7651,
+        "total": 127,
+        "twin_grounded_rate": null
+      },
+      "events": 166,
+      "full_slots_per_event": 4.8494,
+      "future_candidates_hidden": 711,
+      "future_filtered": 0,
+      "hub_top3_share": 0.1398,
+      "hub_top3_slots": 65,
+      "irrelevant": {
+        "delivered_full": 292,
+        "delivered_top3": 165,
+        "marked": 360
+      },
+      "labelled_created_after_cutoff_excluded": 3,
+      "latency_s_total": 134.98,
+      "new_entrant_quality": {
+        "excess": 0.0,
+        "graded": 10,
+        "grounded_rate": 0.0,
+        "twin_grounded_rate": 0.0
+      },
+      "rank1_kept_vs_recorded": 0.8434,
+      "rank1_removed": 1,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 103,
+        "lost": 13,
+        "lost_share": 0.1121,
+        "marked": 116
+      },
+      "vs_baseline": {
+        "dup_schema_slots_cut": -0.0976,
+        "full_slots_cut": 0.0,
+        "hub_top3_cut": 0.0152,
+        "irrelevant_full_cut": 0.0701,
+        "irrelevant_top3_cut": 0.0351,
+        "new_vs_baseline_per_event": 0.1386,
+        "rank1_kept": 0.994,
+        "used_full_lost": 0.0
+      },
+      "vs_baseline_by_rank": {
+        "1": {
+          "base_irr_full": 51,
+          "base_used_full": 46,
+          "irr_full_cut": 0.0,
+          "used_full_lost": 0.0
+        },
+        "2": {
+          "base_irr_full": 64,
+          "base_used_full": 26,
+          "irr_full_cut": 0.0781,
+          "used_full_lost": 0.0
+        },
+        "3": {
+          "base_irr_full": 58,
+          "base_used_full": 13,
+          "irr_full_cut": 0.0517,
+          "used_full_lost": 0.0
+        },
+        "4-5": {
+          "base_irr_full": 99,
+          "base_used_full": 14,
+          "irr_full_cut": 0.0909,
+          "used_full_lost": 0.0
+        },
+        "6-10": {
+          "base_irr_full": 42,
+          "base_used_full": 4,
+          "irr_full_cut": 0.119,
+          "used_full_lost": 0.0
+        }
+      }
+    },
+    "hub_003": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 41,
+          "irr_marked": 52,
+          "irr_removed_share": 0.2115,
+          "used_full": 46,
+          "used_lost_share": 0.0612,
+          "used_marked": 49
+        },
+        "2": {
+          "irr_full": 56,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1515,
+          "used_full": 26,
+          "used_lost_share": 0.0714,
+          "used_marked": 28
+        },
+        "3": {
+          "irr_full": 51,
+          "irr_marked": 66,
+          "irr_removed_share": 0.2273,
+          "used_full": 13,
+          "used_lost_share": 0.0714,
+          "used_marked": 14
+        },
+        "4-5": {
+          "irr_full": 87,
+          "irr_marked": 114,
+          "irr_removed_share": 0.2368,
+          "used_full": 14,
+          "used_lost_share": 0.1765,
+          "used_marked": 17
+        },
+        "6-10": {
+          "irr_full": 43,
+          "irr_marked": 62,
+          "irr_removed_share": 0.3065,
+          "used_full": 4,
+          "used_lost_share": 0.5,
+          "used_marked": 8
+        }
+      },
+      "chars_per_event": 11216.5723,
+      "chars_saved_per_event": -28.4699,
+      "chars_saved_share": -0.0025,
+      "dup_schema_slots": 41,
+      "entrants": {
+        "excess": null,
+        "graded": 0,
+        "grounded_rate": null,
+        "per_event": 0.9277,
+        "total": 154,
+        "twin_grounded_rate": null
+      },
+      "events": 166,
+      "full_slots_per_event": 4.8494,
+      "future_candidates_hidden": 711,
+      "future_filtered": 0,
+      "hub_top3_share": 0.0989,
+      "hub_top3_slots": 46,
+      "irrelevant": {
+        "delivered_full": 278,
+        "delivered_top3": 155,
+        "marked": 360
+      },
+      "labelled_created_after_cutoff_excluded": 3,
+      "latency_s_total": 105.21,
+      "new_entrant_quality": {
+        "excess": 0.0294,
+        "graded": 34,
+        "grounded_rate": 0.0294,
+        "twin_grounded_rate": 0.0
+      },
+      "rank1_kept_vs_recorded": 0.7892,
+      "rank1_removed": 10,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 103,
+        "lost": 13,
+        "lost_share": 0.1121,
+        "marked": 116
+      },
+      "vs_baseline": {
+        "dup_schema_slots_cut": 0.0,
+        "full_slots_cut": 0.0,
+        "hub_top3_cut": 0.303,
+        "irrelevant_full_cut": 0.1146,
+        "irrelevant_top3_cut": 0.0936,
+        "new_vs_baseline_per_event": 0.4036,
+        "rank1_kept": 0.9398,
+        "used_full_lost": 0.0
+      },
+      "vs_baseline_by_rank": {
+        "1": {
+          "base_irr_full": 51,
+          "base_used_full": 46,
+          "irr_full_cut": 0.1961,
+          "used_full_lost": 0.0
+        },
+        "2": {
+          "base_irr_full": 64,
+          "base_used_full": 26,
+          "irr_full_cut": 0.125,
+          "used_full_lost": 0.0
+        },
+        "3": {
+          "base_irr_full": 58,
+          "base_used_full": 13,
+          "irr_full_cut": 0.1207,
+          "used_full_lost": 0.0
+        },
+        "4-5": {
+          "base_irr_full": 99,
+          "base_used_full": 14,
+          "irr_full_cut": 0.1212,
+          "used_full_lost": 0.0
+        },
+        "6-10": {
+          "base_irr_full": 42,
+          "base_used_full": 4,
+          "irr_full_cut": -0.0238,
+          "used_full_lost": 0.0
+        }
+      }
+    },
+    "hub_01": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 41,
+          "irr_marked": 52,
+          "irr_removed_share": 0.2115,
+          "used_full": 46,
+          "used_lost_share": 0.0612,
+          "used_marked": 49
+        },
+        "2": {
+          "irr_full": 56,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1515,
+          "used_full": 26,
+          "used_lost_share": 0.0714,
+          "used_marked": 28
+        },
+        "3": {
+          "irr_full": 51,
+          "irr_marked": 66,
+          "irr_removed_share": 0.2273,
+          "used_full": 13,
+          "used_lost_share": 0.0714,
+          "used_marked": 14
+        },
+        "4-5": {
+          "irr_full": 87,
+          "irr_marked": 114,
+          "irr_removed_share": 0.2368,
+          "used_full": 14,
+          "used_lost_share": 0.1765,
+          "used_marked": 17
+        },
+        "6-10": {
+          "irr_full": 43,
+          "irr_marked": 62,
+          "irr_removed_share": 0.3065,
+          "used_full": 4,
+          "used_lost_share": 0.5,
+          "used_marked": 8
+        }
+      },
+      "chars_per_event": 11216.5723,
+      "chars_saved_per_event": -28.4699,
+      "chars_saved_share": -0.0025,
+      "dup_schema_slots": 41,
+      "entrants": {
+        "excess": null,
+        "graded": 0,
+        "grounded_rate": null,
+        "per_event": 0.9277,
+        "total": 154,
+        "twin_grounded_rate": null
+      },
+      "events": 166,
+      "full_slots_per_event": 4.8494,
+      "future_candidates_hidden": 711,
+      "future_filtered": 0,
+      "hub_top3_share": 0.0989,
+      "hub_top3_slots": 46,
+      "irrelevant": {
+        "delivered_full": 278,
+        "delivered_top3": 155,
+        "marked": 360
+      },
+      "labelled_created_after_cutoff_excluded": 3,
+      "latency_s_total": 114.76,
+      "new_entrant_quality": {
+        "excess": 0.0294,
+        "graded": 34,
+        "grounded_rate": 0.0294,
+        "twin_grounded_rate": 0.0
+      },
+      "rank1_kept_vs_recorded": 0.7892,
+      "rank1_removed": 10,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 103,
+        "lost": 13,
+        "lost_share": 0.1121,
+        "marked": 116
+      },
+      "vs_baseline": {
+        "dup_schema_slots_cut": 0.0,
+        "full_slots_cut": 0.0,
+        "hub_top3_cut": 0.303,
+        "irrelevant_full_cut": 0.1146,
+        "irrelevant_top3_cut": 0.0936,
+        "new_vs_baseline_per_event": 0.4036,
+        "rank1_kept": 0.9398,
+        "used_full_lost": 0.0
+      },
+      "vs_baseline_by_rank": {
+        "1": {
+          "base_irr_full": 51,
+          "base_used_full": 46,
+          "irr_full_cut": 0.1961,
+          "used_full_lost": 0.0
+        },
+        "2": {
+          "base_irr_full": 64,
+          "base_used_full": 26,
+          "irr_full_cut": 0.125,
+          "used_full_lost": 0.0
+        },
+        "3": {
+          "base_irr_full": 58,
+          "base_used_full": 13,
+          "irr_full_cut": 0.1207,
+          "used_full_lost": 0.0
+        },
+        "4-5": {
+          "base_irr_full": 99,
+          "base_used_full": 14,
+          "irr_full_cut": 0.1212,
+          "used_full_lost": 0.0
+        },
+        "6-10": {
+          "base_irr_full": 42,
+          "base_used_full": 4,
+          "irr_full_cut": -0.0238,
+          "used_full_lost": 0.0
+        }
+      }
+    },
+    "hub_03": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 47,
+          "irr_marked": 52,
+          "irr_removed_share": 0.0962,
+          "used_full": 46,
+          "used_lost_share": 0.0612,
+          "used_marked": 49
+        },
+        "2": {
+          "irr_full": 57,
+          "irr_marked": 66,
+          "irr_removed_share": 0.1364,
+          "used_full": 26,
+          "used_lost_share": 0.0714,
+          "used_marked": 28
+        },
+        "3": {
+          "irr_full": 51,
+          "irr_marked": 66,
+          "irr_removed_share": 0.2273,
+          "used_full": 13,
+          "used_lost_share": 0.0714,
+          "used_marked": 14
+        },
+        "4-5": {
+          "irr_full": 87,
+          "irr_marked": 114,
+          "irr_removed_share": 0.2368,
+          "used_full": 14,
+          "used_lost_share": 0.1765,
+          "used_marked": 17
+        },
+        "6-10": {
+          "irr_full": 43,
+          "irr_marked": 62,
+          "irr_removed_share": 0.3065,
+          "used_full": 4,
+          "used_lost_share": 0.5,
+          "used_marked": 8
+        }
+      },
+      "chars_per_event": 11207.4337,
+      "chars_saved_per_event": -19.3313,
+      "chars_saved_share": -0.0017,
+      "dup_schema_slots": 41,
+      "entrants": {
+        "excess": null,
+        "graded": 0,
+        "grounded_rate": null,
+        "per_event": 0.8735,
+        "total": 145,
+        "twin_grounded_rate": null
+      },
+      "events": 166,
+      "full_slots_per_event": 4.8494,
+      "future_candidates_hidden": 711,
+      "future_filtered": 0,
+      "hub_top3_share": 0.1032,
+      "hub_top3_slots": 48,
+      "irrelevant": {
+        "delivered_full": 285,
+        "delivered_top3": 159,
+        "marked": 360
+      },
+      "labelled_created_after_cutoff_excluded": 3,
+      "latency_s_total": 121.66,
+      "new_entrant_quality": {
+        "excess": 0.0,
+        "graded": 29,
+        "grounded_rate": 0.0,
+        "twin_grounded_rate": 0.0
+      },
+      "rank1_kept_vs_recorded": 0.7952,
+      "rank1_removed": 9,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 103,
+        "lost": 13,
+        "lost_share": 0.1121,
+        "marked": 116
+      },
+      "vs_baseline": {
+        "dup_schema_slots_cut": 0.0,
+        "full_slots_cut": 0.0,
+        "hub_top3_cut": 0.2727,
+        "irrelevant_full_cut": 0.0924,
+        "irrelevant_top3_cut": 0.0702,
+        "new_vs_baseline_per_event": 0.3494,
+        "rank1_kept": 0.9458,
+        "used_full_lost": 0.0
+      },
+      "vs_baseline_by_rank": {
+        "1": {
+          "base_irr_full": 51,
+          "base_used_full": 46,
+          "irr_full_cut": 0.0784,
+          "used_full_lost": 0.0
+        },
+        "2": {
+          "base_irr_full": 64,
+          "base_used_full": 26,
+          "irr_full_cut": 0.1094,
+          "used_full_lost": 0.0
+        },
+        "3": {
+          "base_irr_full": 58,
+          "base_used_full": 13,
+          "irr_full_cut": 0.1207,
+          "used_full_lost": 0.0
+        },
+        "4-5": {
+          "base_irr_full": 99,
+          "base_used_full": 14,
+          "irr_full_cut": 0.1212,
+          "used_full_lost": 0.0
+        },
+        "6-10": {
+          "base_irr_full": 42,
+          "base_used_full": 4,
+          "irr_full_cut": -0.0238,
+          "used_full_lost": 0.0
+        }
+      }
+    }
+  }
+}

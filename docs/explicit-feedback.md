@@ -202,10 +202,17 @@ restarting its sandbox server with this env var.
   rewording, not appending:
   - the mid-work law no longer repeats the opener's "at every new turn of
     thought";
-  - "searching," and "Depth 'causal' when debugging." were dropped;
+  - "searching," and "— measuring" were dropped from the world trigger,
+    whose class "pulling knowledge from the world" and the world-before-memory
+    clause still cover both;
+  - "choosing a design or approach" became "choosing an approach";
   - "Query: identifiers and what you need; re-ask as it moves." became
     "Query by identifiers; re-ask.";
   - the content_ref sentence was shortened.
+
+  "Depth 'causal' when debugging." stays in the mandatory arm too: it was
+  dropped in the first fit and restored by the two world-trigger and design
+  cuts above (tests/test_recall_description_causal.py).
 
   Every pinned law phrase stays (tests/test_explicit_feedback.py,
   tests/test_instructions_imperative.py). The field schemas on all three
@@ -220,7 +227,7 @@ Character cost (measured on the real FastMCP `list_tools`):
 |---|---|---|---|---|---|
 | pre-feature | 1015 | 1022 | 614 | 0 | 0 |
 | optional | 1015 (+0) | 1022 (+0) | 614 (+0) | +399 | +1197 (schema only) |
-| mandatory | 1010 (−5) | 1022 (+0) | 614 (+0) | +419 | +1252 (−5 desc, +1257 schema) |
+| mandatory | 1020 (+5) | 1022 (+0) | 614 (+0) | +419 | +1262 (+5 desc, +1257 schema) |
 
 The mandatory binding sentence costs 101 description characters, funded by
 the rewording. The field schemas are paid in both arms. The mandatory arm

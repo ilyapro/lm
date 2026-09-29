@@ -51,6 +51,17 @@ Strength, accumulation, cancellation
   node for this question beats an earlier claim that it did not belong; a
   fresh ``irrelevant`` mark starts accumulating again from zero.
 
+Two read-side valves steepen the curve without touching stored rows (goal
+recall-precision, P3); unset, each keeps the arithmetic above exactly:
+
+* ``LM_QUERY_IRRELEVANCE_FULL_COSINE`` -- the cosine at which closeness
+  reaches 1.0, so ``closeness = (cos - floor) / (full - floor)``, clipped to
+  [0, 1]. Unset keeps ``full = 1.0`` (the ``/0.40`` span).
+* ``LM_QUERY_IRRELEVANCE_MARK_WEIGHT`` -- what one stored mark is worth when
+  read. A stored weight ``w`` counts as ``w / IRRELEVANCE_MARK_WEIGHT`` marks
+  and reads as ``min(1, marks * mark_weight)``. Unset keeps the stored weight.
+  The write side still adds ``IRRELEVANCE_MARK_WEIGHT``; no row is rewritten.
+
 Rows do not follow ``supersedes``: a correction is new content and gets a
 fresh hearing. A decayed anchor stops matching, so its demotions lapse with it.
 Docs and the reasoning behind the default: docs/query-irrelevance.md.
@@ -118,6 +129,68 @@ def query_irrelevance_factor() -> float:
     if not math.isfinite(value) or value < 0.0 or value > 1.0:
         return DEFAULT_QUERY_IRRELEVANCE_FACTOR
     return value
+
+
+def _env_float(name: str) -> float | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def query_irrelevance_full_cosine(
+    min_similarity: float = ANCHOR_MATCH_COSINE_THRESHOLD,
+) -> float | None:
+    """``LM_QUERY_IRRELEVANCE_FULL_COSINE``: cosine where closeness reaches 1.0.
+
+    ``None`` (unset, unparsable, or not in ``(min_similarity, 1]``) keeps the
+    original span ``1 - min_similarity``.
+    """
+
+    value = _env_float("LM_QUERY_IRRELEVANCE_FULL_COSINE")
+    if value is None or value <= min_similarity or value > 1.0:
+        return None
+    return value
+
+
+def query_irrelevance_mark_weight() -> float | None:
+    """``LM_QUERY_IRRELEVANCE_MARK_WEIGHT``: read-side worth of one stored mark.
+
+    ``None`` (unset, unparsable, or not in ``(0, 1]``) reads stored weights
+    as they are.
+    """
+
+    value = _env_float("LM_QUERY_IRRELEVANCE_MARK_WEIGHT")
+    if value is None or value <= 0.0 or value > 1.0:
+        return None
+    return value
+
+
+def demotion_closeness(
+    similarity: float,
+    min_similarity: float = ANCHOR_MATCH_COSINE_THRESHOLD,
+    full_cosine: float | None = None,
+) -> float:
+    """Closeness in [0, 1] of a matched anchor; ``full_cosine=None`` is the default span."""
+
+    if full_cosine is None:
+        span = max(1e-9, 1.0 - min_similarity)
+    else:
+        span = max(1e-9, full_cosine - min_similarity)
+    return min(1.0, max(0.0, (similarity - min_similarity) / span))
+
+
+def effective_row_weight(weight: float, mark_weight: float | None = None) -> float:
+    """Read-side weight of a stored row; ``mark_weight=None`` keeps it as stored."""
+
+    stored = min(1.0, max(0.0, float(weight)))
+    if mark_weight is None:
+        return stored
+    return min(1.0, (stored / IRRELEVANCE_MARK_WEIGHT) * mark_weight)
 
 
 def _table_present(conn: sqlite3.Connection) -> bool:
@@ -272,9 +345,10 @@ def query_demotions(
     )
     if not matches:
         return {}
-    span = max(1e-9, 1.0 - min_similarity)
+    full_cosine = query_irrelevance_full_cosine(min_similarity)
+    mark_weight = query_irrelevance_mark_weight()
     closeness = {
-        match.anchor.id: min(1.0, max(0.0, (match.similarity - min_similarity) / span))
+        match.anchor.id: demotion_closeness(match.similarity, min_similarity, full_cosine)
         for match in matches
     }
     placeholders = ", ".join("?" for _ in closeness)
@@ -287,7 +361,7 @@ def query_demotions(
     ).fetchall()
     strongest: dict[str, float] = {}
     for anchor_id, node_id, weight in rows:
-        strength = min(1.0, max(0.0, float(weight))) * closeness[str(anchor_id)]
+        strength = effective_row_weight(weight, mark_weight) * closeness[str(anchor_id)]
         if strength > strongest.get(str(node_id), 0.0):
             strongest[str(node_id)] = strength
     return {

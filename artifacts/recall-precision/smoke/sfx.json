@@ -1,0 +1,1961 @@
+{
+  "arms": {
+    "baseline": {}
+  },
+  "counterfactual": {
+    "cutoff": "2026-09-28T09:21:40.000000Z",
+    "path": "/tmp/ae-scratch/aac6a51f7cdc/wds/sfx-eval.sqlite3",
+    "removed": {
+      "connections": 4465,
+      "query_anchor_edges": 2,
+      "query_anchor_edges_of_late_anchors": 461,
+      "query_anchors": 329,
+      "query_irrelevance": 10,
+      "query_irrelevance_of_late_anchors": 1129,
+      "recall_credit_ledger": 158,
+      "recall_explicit_credit": 318,
+      "recall_feedback_marks": 1579,
+      "recall_lookup_events": 250
+    },
+    "updated_after_cutoff_kept": {
+      "connections": 6389,
+      "query_anchor_edges": 23,
+      "query_anchors": 3,
+      "query_irrelevance": 5
+    }
+  },
+  "cutoff": "2026-09-28T09:21:40.000000Z",
+  "embedding_backend": "auto",
+  "events": {
+    "baseline": [
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 0,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M3JD8PN528KRDFP9X8RWRVQJ",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M3JD8PN528KRDFP9X8RWRVQJ"
+        ],
+        "event_id": "01M3KP4HZ6P5P703EKTPXPHX5D",
+        "full": 3,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 1,
+        "irr_marked": 2,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3HG266TXDECFJ2A788C3RW7",
+        "recorded_rank1": "01M3HG266TXDECFJ2A788C3RW7",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KP68N2E5MJ6FRRJTFS1D95",
+        "full": 1,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3K981D2WEE38ZGVKY9SNJ4S",
+        "recorded_rank1": "01M3K981D2WEE38ZGVKY9SNJ4S",
+        "stub": 0,
+        "top3_full": 1,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 0,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 2
+          },
+          "6-10": {
+            "irr_full": 2,
+            "irr_marked": 3
+          }
+        },
+        "dup_schema_slots": 4,
+        "entrant_grades": [],
+        "entrants": [
+          "01KT7QN1JE39SKQND00KX1FY7H",
+          "01M24JKYXPSXKXWH230SK9TEYP",
+          "01KT7QN1GT8Z67J85FPY1AFD72"
+        ],
+        "event_id": "01M3KPTCVRW1B448B2FFFTT79F",
+        "full": 8,
+        "future_filtered": 0,
+        "hub_top3": 2,
+        "irr_full": 4,
+        "irr_marked": 7,
+        "irr_top3": 2,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3H01DNG0EHK6ZK1PW5ARJQ8",
+        "recorded_rank1": "01M3H01DNG0EHK6ZK1PW5ARJQ8",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KPVPNDGZBDJWG6KHXGP430",
+        "full": 3,
+        "future_filtered": 0,
+        "hub_top3": 2,
+        "irr_full": 3,
+        "irr_marked": 3,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KWV1CVBQ9EJDCEBYAY72S252",
+        "recorded_rank1": "01KWV1CVBQ9EJDCEBYAY72S252",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KPXY461N9NNNM3FN5MGVSR",
+        "full": 3,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 3,
+        "irr_marked": 3,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3796JB72K5JQEEYF7R75DPP",
+        "recorded_rank1": "01M3796JB72K5JQEEYF7R75DPP",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KPZTWSNDKJZ3WVN59VW19B",
+        "full": 1,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3JNK2XTTGE3F1HYD51GGEQQ",
+        "recorded_rank1": "01M3JNK2XTTGE3F1HYD51GGEQQ",
+        "stub": 0,
+        "top3_full": 1,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KQ17M3FQJPCJ3C5CJWVCPQ",
+        "full": 2,
+        "future_filtered": 0,
+        "hub_top3": 1,
+        "irr_full": 1,
+        "irr_marked": 1,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3JNK2XTTGE3F1HYD51GGEQQ",
+        "recorded_rank1": "01M3JNK2XTTGE3F1HYD51GGEQQ",
+        "stub": 0,
+        "top3_full": 2,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "3": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "4-5": {
+            "irr_full": 2,
+            "irr_marked": 2
+          },
+          "6-10": {
+            "irr_full": 1,
+            "irr_marked": 1,
+            "used_full": 0,
+            "used_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M2FR9ECC3926BPS30X5MPFW6",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M2FR9ECC3926BPS30X5MPFW6"
+        ],
+        "event_id": "01M3KQNYAG6SMEVQRE2XQVH97J",
+        "full": 7,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 3,
+        "irr_marked": 3,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3K981D2WEE38ZGVKY9SNJ4S",
+        "recorded_rank1": "01M3K981D2WEE38ZGVKY9SNJ4S",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 3,
+        "used_lost": 1,
+        "used_marked": 4
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 1,
+            "used_full": 1,
+            "used_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KQQ0X4N1M201XYCMNRQGWT",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 3,
+        "irr_marked": 3,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3JNK2XTTGE3F1HYD51GGEQQ",
+        "recorded_rank1": "01M3JNK2XTTGE3F1HYD51GGEQQ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 2,
+        "used_lost": 0,
+        "used_marked": 2
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KQVKBJNZEFAX74P8PCMRJA",
+        "full": 2,
+        "future_filtered": 0,
+        "hub_top3": 2,
+        "irr_full": 2,
+        "irr_marked": 2,
+        "irr_top3": 2,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KVG8B5WXVX02A8RPTRBP15FE",
+        "recorded_rank1": "01KVG8B5WXVX02A8RPTRBP15FE",
+        "stub": 0,
+        "top3_full": 2,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KQXRZYV502H7RNCC4M01ZK",
+        "full": 1,
+        "future_filtered": 0,
+        "hub_top3": 1,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KS57467A0N75QXYVPXA9WCN5",
+        "recorded_rank1": "01KS57467A0N75QXYVPXA9WCN5",
+        "stub": 0,
+        "top3_full": 1,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 2,
+            "irr_marked": 2
+          },
+          "6-10": {
+            "irr_full": 2,
+            "irr_marked": 3
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M1P0VH87VAY34G4426B3XKPD"
+        ],
+        "event_id": "01M3KRF7874QGK96TY1S6ZTBH2",
+        "full": 8,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 7,
+        "irr_marked": 8,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M14DM121Y2NF8ZEW8BADZ5KT",
+        "recorded_rank1": "01M14DM121Y2NF8ZEW8BADZ5KT",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 2,
+            "irr_marked": 2
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KRX1AK8C4Y7TZYV2TJBR8Q",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 4,
+        "irr_marked": 4,
+        "irr_top3": 2,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3JNK2XTTGE3F1HYD51GGEQQ",
+        "recorded_rank1": "01M3JNK2XTTGE3F1HYD51GGEQQ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KS1MAYFBC2K5AQMADQ2J22",
+        "full": 1,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3JJVWC05RNCY8MJD7H2J5SV",
+        "recorded_rank1": "01M3JJVWC05RNCY8MJD7H2J5SV",
+        "stub": 0,
+        "top3_full": 1,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 2,
+            "irr_marked": 2
+          },
+          "6-10": {
+            "irr_full": 2,
+            "irr_marked": 3
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01KZ8S6B956AVDQJNPGQY3H6A4"
+        ],
+        "event_id": "01M3KSTG8G6H56YFQTD37XTQFG",
+        "full": 8,
+        "future_filtered": 0,
+        "hub_top3": 2,
+        "irr_full": 7,
+        "irr_marked": 8,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M34SWFBDKTKEP4SRWBS6ZW7B",
+        "recorded_rank1": "01M34SWFBDKTKEP4SRWBS6ZW7B",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KT0M2XRRHPJ5839RFF4WEH",
+        "full": 3,
+        "future_filtered": 0,
+        "hub_top3": 1,
+        "irr_full": 3,
+        "irr_marked": 3,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KSNGXYRJADEJRWW0DQS1K9RH",
+        "recorded_rank1": "01KSNGXYRJADEJRWW0DQS1K9RH",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KT4JJK2F8E5B5D4F4G8SAY",
+        "full": 2,
+        "future_filtered": 0,
+        "hub_top3": 2,
+        "irr_full": 2,
+        "irr_marked": 2,
+        "irr_top3": 2,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KXN3P5KT22RPWTBTW4SAM64Z",
+        "recorded_rank1": "01KXN3P5KT22RPWTBTW4SAM64Z",
+        "stub": 0,
+        "top3_full": 2,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "3": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "4-5": {
+            "used_full": 1,
+            "used_marked": 2
+          },
+          "6-10": {
+            "used_full": 1,
+            "used_marked": 3
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M230AP9FFK5A9W5XWJRMVPG2",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M3H01DNG0EHK6ZK1PW5ARJQ8",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M21FNJ3SFRTPY63W4G0SBEXT",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M230AP9FFK5A9W5XWJRMVPG2",
+          "01M3H01DNG0EHK6ZK1PW5ARJQ8",
+          "01M21FNJ3SFRTPY63W4G0SBEXT"
+        ],
+        "event_id": "01M3KVF8GR95KT8VSWPT55MRR1",
+        "full": 8,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3KBJXQ63AT5DG53E7QSZCWW",
+        "recorded_rank1": "01M3K981D2WEE38ZGVKY9SNJ4S",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 5,
+        "used_lost": 3,
+        "used_marked": 8
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 0,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M3EBTAD78NXV9DGKVNGAJMRB",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M3EBTAD78NXV9DGKVNGAJMRB"
+        ],
+        "event_id": "01M3KWEXX81QNPY1E5C5BJPEEM",
+        "full": 3,
+        "future_filtered": 0,
+        "hub_top3": 2,
+        "irr_full": 2,
+        "irr_marked": 3,
+        "irr_top3": 2,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M22T2GZ34169FPJMM36GCHQB",
+        "recorded_rank1": "01M22T2GZ34169FPJMM36GCHQB",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KWJYHYYVNC86M673GT81KA",
+        "full": 2,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 2,
+        "irr_marked": 2,
+        "irr_top3": 2,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KW96B1Z35ZTMSW9B07X6NWT3",
+        "recorded_rank1": "01KW96B1Z35ZTMSW9B07X6NWT3",
+        "stub": 0,
+        "top3_full": 2,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 2,
+            "irr_marked": 2
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3KX5F19E11QVJ9NBV5YP0S2",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 3,
+        "irr_full": 5,
+        "irr_marked": 5,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KXN8AMB5MNVFH44HANNA5452",
+        "recorded_rank1": "01KXN8AMB5MNVFH44HANNA5452",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 2,
+            "irr_marked": 2
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M09YKK3H4W4WDX52915CK2",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 2,
+        "irr_full": 5,
+        "irr_marked": 5,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M37FV7XKVAVD093583DG11BH",
+        "recorded_rank1": "01M37FV7XKVAVD093583DG11BH",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 2,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M0VKNA48HCDJ9DC7WR2HP2",
+        "full": 4,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KTSKWMRG1BKBVJPNHVPGKS8E",
+        "recorded_rank1": "01KTSKWMRG1BKBVJPNHVPGKS8E",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 2,
+            "irr_marked": 2
+          },
+          "6-10": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M1CN11R6ZVFVGK9CQVJNTR",
+        "full": 6,
+        "future_filtered": 0,
+        "hub_top3": 2,
+        "irr_full": 6,
+        "irr_marked": 6,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3HHM71CPV373Z67N6KYG35F",
+        "recorded_rank1": "01M3HHM71CPV373Z67N6KYG35F",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M3GE3R60J0NFK3YB6NYA1JFK",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M3706QC7SVMXC5QZJVXVSGKE",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M3GE3R60J0NFK3YB6NYA1JFK",
+          "01M3706QC7SVMXC5QZJVXVSGKE"
+        ],
+        "event_id": "01M3M1HAA953HJNW0HY72ZWJ40",
+        "full": 6,
+        "future_filtered": 0,
+        "hub_top3": 1,
+        "irr_full": 1,
+        "irr_marked": 1,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 1,
+        "rank1": "01M3FM006TCT9WD0AMEJYB21X6",
+        "recorded_rank1": "01M3HHM71CPV373Z67N6KYG35F",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "4-5": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "6-10": {
+            "irr_full": 0,
+            "irr_marked": 2
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M38057H776QXBHQRHB6A5EZJ",
+          "01M39CQQP65WS7DD4ZTV07VA84"
+        ],
+        "event_id": "01M3M2FHWJC86TPS5TWF0PJGDD",
+        "full": 8,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 2,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3CDY6B49GWQ4R69RSFES74G",
+        "recorded_rank1": "01M3CDY6B49GWQ4R69RSFES74G",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 3,
+        "used_lost": 0,
+        "used_marked": 3
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 3,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M2GCFZEB2JHK5MRJ5N1KY7",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 2,
+        "irr_marked": 2,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KTSKWMRG1BKBVJPNHVPGKS8E",
+        "recorded_rank1": "01KTSKWMRG1BKBVJPNHVPGKS8E",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 0,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 2
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M2WGGC1Z37QS64RWQAFJF2Z9",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M2QPRYYZGCJ4SWHYCVEWFBDX",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M2WGGC1Z37QS64RWQAFJF2Z9",
+          "01M2QPRYYZGCJ4SWHYCVEWFBDX"
+        ],
+        "event_id": "01M3M2JJVHQKZ528TS9YNMMXWY",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 2,
+        "irr_marked": 4,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M21M584ZTXMZVCEPS7CCM41A",
+        "recorded_rank1": "01M2QV3MT82YS1WS5GXE46Z7JM",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 2
+          },
+          "6-10": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M0TM2VCT0038H07JYNG585TH",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M0TM2VCT0038H07JYNG585TH"
+        ],
+        "event_id": "01M3M2Z8PRJJ10YWBA6DYR1A6Z",
+        "full": 6,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 3,
+        "irr_marked": 4,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3KBJXQ63AT5DG53E7QSZCWW",
+        "recorded_rank1": "01M3KBJXQ63AT5DG53E7QSZCWW",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 2
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M0Q6S1AX0Y61EHPNH3JTK7V1",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M0Q6S1AX0Y61EHPNH3JTK7V1"
+        ],
+        "event_id": "01M3M542CQ4AZYM2Y3T63ZN7VC",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 3,
+        "irr_marked": 4,
+        "irr_top3": 2,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3JBHYH08C53MXBPG3GX6A3F",
+        "recorded_rank1": "01M3JBHYH08C53MXBPG3GX6A3F",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 0,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 0,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 0,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 0,
+            "irr_marked": 2
+          }
+        },
+        "dup_schema_slots": 3,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01KTSKWMRG1BKBVJPNHVPGKS8E",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M39HWE5NV8WMSX4K9GH4XNRA",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M3ANHFA0EJYV43PPCQ3MWY66",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M3AM8MXHNC36A5AX7QCZ77VX",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M3D67K8GWATGG4A3PW08D5ZS",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01KTSKWMRG1BKBVJPNHVPGKS8E",
+          "01M39HWE5NV8WMSX4K9GH4XNRA",
+          "01M3ANHFA0EJYV43PPCQ3MWY66",
+          "01M3AM8MXHNC36A5AX7QCZ77VX",
+          "01M3D67K8GWATGG4A3PW08D5ZS"
+        ],
+        "event_id": "01M3M5ZDP4PGCW6FS9JSKVCJBV",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 4,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KTSKWMRG1BKBVJPNHVPGKS8E",
+        "recorded_rank1": "01M3D4X0BG4484Z7WXRJEYQ84A",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 1,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 1,
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "6-10": {
+            "irr_full": 2,
+            "irr_marked": 3
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": true,
+            "has_twin": true,
+            "node_id": "01M3M60TSQGWYWYGQ49T9QB08A",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M3M60TSQGWYWYGQ49T9QB08A"
+        ],
+        "event_id": "01M3M6107J7B6841YQXP5R59C0",
+        "full": 8,
+        "future_filtered": 0,
+        "hub_top3": 1,
+        "irr_full": 4,
+        "irr_marked": 5,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M21EW43N9ZQ4CNYPENX62X3J",
+        "recorded_rank1": "01M21EW43N9ZQ4CNYPENX62X3J",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 3,
+        "used_lost": 0,
+        "used_marked": 3
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "used_full": 0,
+            "used_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M26QG0F4B12NH9A44XR9BN4E",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M26QG0F4B12NH9A44XR9BN4E"
+        ],
+        "event_id": "01M3M7GHYBT0RMDDVSXEEPEJSV",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 1,
+        "irr_full": 2,
+        "irr_marked": 2,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M21EW43N9ZQ4CNYPENX62X3J",
+        "recorded_rank1": "01M21EW43N9ZQ4CNYPENX62X3J",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 1,
+        "used_marked": 2
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 0,
+            "irr_marked": 1
+          },
+          "6-10": {
+            "irr_full": 0,
+            "irr_marked": 1
+          }
+        },
+        "dup_schema_slots": 3,
+        "entrant_grades": [],
+        "entrants": [
+          "01KTSKWMRG1BKBVJPNHVPGKS8E",
+          "01M3D67K8GWATGG4A3PW08D5ZS"
+        ],
+        "event_id": "01M3M7ZH57DF4RN7REXVAJMHNA",
+        "full": 6,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 2,
+        "irr_marked": 4,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KTSKWMRG1BKBVJPNHVPGKS8E",
+        "recorded_rank1": "01M39HWE5NV8WMSX4K9GH4XNRA",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 1,
+        "used_lost": 0,
+        "used_marked": 1
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 2
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M2E84RQRJ6DMMMCBDXKR9NWG"
+        ],
+        "event_id": "01M3M82NR3FDS93MWVD48PKDHS",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 1,
+        "irr_full": 4,
+        "irr_marked": 5,
+        "irr_top3": 3,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M2G08RNNN6T0EGXZBSJ7C69H",
+        "recorded_rank1": "01M2G08RNNN6T0EGXZBSJ7C69H",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {
+          "1": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "2": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "3": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 1,
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "6-10": {
+            "irr_full": 1,
+            "irr_marked": 3
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M2K7T28YZ96X0PJHT02AJDJ9",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M30GC51V7JDGMYQ0AZ0B7VTD",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M2K7T28YZ96X0PJHT02AJDJ9",
+          "01M30GC51V7JDGMYQ0AZ0B7VTD"
+        ],
+        "event_id": "01M3M87J380ZGXCNFCVGFKK7D1",
+        "full": 8,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 2,
+        "irr_marked": 4,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M1SCN1C1BZ6GBTF7N959EF1X",
+        "recorded_rank1": "01M2XQ8W0AK2MA0V3QT2C4MBNF",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 4,
+        "used_lost": 0,
+        "used_marked": 4
+      },
+      {
+        "by_rank": {
+          "1": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "2": {
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "3": {
+            "irr_full": 1,
+            "irr_marked": 1
+          },
+          "4-5": {
+            "irr_full": 1,
+            "irr_marked": 1,
+            "used_full": 1,
+            "used_marked": 1
+          },
+          "6-10": {
+            "irr_full": 1,
+            "irr_marked": 2,
+            "used_full": 0,
+            "used_marked": 1
+          }
+        },
+        "dup_schema_slots": 0,
+        "entrant_grades": [
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M38057H776QXBHQRHB6A5EZJ",
+            "twin_grounded": false
+          },
+          {
+            "graded": true,
+            "grounded": false,
+            "has_twin": true,
+            "node_id": "01M21YFSTRRN194VJ4Y68TTQ0X",
+            "twin_grounded": false
+          }
+        ],
+        "entrants": [
+          "01M38057H776QXBHQRHB6A5EZJ",
+          "01M21YFSTRRN194VJ4Y68TTQ0X"
+        ],
+        "event_id": "01M3M9B8HNCEK7J4V0MS6QCPD0",
+        "full": 8,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 4,
+        "irr_marked": 5,
+        "irr_top3": 1,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M24JKYXPSXKXWH230SK9TEYP",
+        "recorded_rank1": "01M24JKYXPSXKXWH230SK9TEYP",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 2,
+        "used_lost": 1,
+        "used_marked": 3
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M34EEH4PMBW0PSJR8072WYZE"
+        ],
+        "event_id": "01M3M9C6KCK6V7XMNMTZD6DKKQ",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "recorded_rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M23EXY4FSJXKEQ4GEWYSX10M"
+        ],
+        "event_id": "01M3M9CAMH0Z5MC7DKWYY6JGT7",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ15364Q9P2C8XBBYZ1PD94N",
+        "recorded_rank1": "01M2RCXD0Q6GTFYB6BPB32ATK1",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M37ZYJ408AH9CNY12HS0K8R7"
+        ],
+        "event_id": "01M3M9CNYVH6Y948ZVZZCE285N",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M19V4K1507NXV2GRCK6YW8G2",
+        "recorded_rank1": "01M3EH55NB15S8DCMTAJNXNMBH",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M9F7G3K4ETMABJG5MZCVBA",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ11J9FDHB96JB0APRH36SMR",
+        "recorded_rank1": "01KZ11J9FDHB96JB0APRH36SMR",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M9HA22G3AT2204EGD56AJ7",
+        "full": 10,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3M9GK1XACJ8PA1GQHBZJSQA",
+        "recorded_rank1": "01M3M9GK1XACJ8PA1GQHBZJSQA",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M9JQA52HF535HTW26V7GA2",
+        "full": 3,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M3M9GK1XACJ8PA1GQHBZJSQA",
+        "recorded_rank1": "01M3M9GK1XACJ8PA1GQHBZJSQA",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M1PMJK0J82SB2R6TN9DDZ2BM"
+        ],
+        "event_id": "01M3M9QT6NF8VWJA37HYR093Q3",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 1,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "recorded_rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M1YNVY3ABTNP3P4XVNZ03PJ9"
+        ],
+        "event_id": "01M3M9R478PNDDTYCFZ7NHG0DZ",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "recorded_rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [
+          "01M37ZYJ408AH9CNY12HS0K8R7"
+        ],
+        "event_id": "01M3M9RREWMZKPWWEVT4QM3MVT",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01M19V4K1507NXV2GRCK6YW8G2",
+        "recorded_rank1": "01M3EH55NB15S8DCMTAJNXNMBH",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M9RV5JSKZR1G294PF4G958",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "recorded_rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M9S8MMAEZME0Z0APCYWMKF",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "recorded_rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M9SRBWQWJ4KB6J29R1G3Z8",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "recorded_rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      },
+      {
+        "by_rank": {},
+        "dup_schema_slots": 0,
+        "entrant_grades": [],
+        "entrants": [],
+        "event_id": "01M3M9ST84JQTAVNWTCNTCNHQE",
+        "full": 5,
+        "future_filtered": 0,
+        "hub_top3": 0,
+        "irr_full": 0,
+        "irr_marked": 0,
+        "irr_top3": 0,
+        "labels_excluded_created_after_cutoff": 0,
+        "rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "recorded_rank1": "01KZ10VC4MD61C5PVKDEFAJWFJ",
+        "stub": 0,
+        "top3_full": 3,
+        "used_full": 0,
+        "used_lost": 0,
+        "used_marked": 0
+      }
+    ]
+  },
+  "generated_at": "2026-09-28T21:52:36Z",
+  "host": "sfx",
+  "hubs_train_defined": 115,
+  "replayed_events": 50,
+  "runtime_s": {
+    "prepare": 4.36,
+    "replay": 25.37,
+    "replay_per_event_arm": 0.5073,
+    "score": 0.67,
+    "total": 30.4
+  },
+  "sample": 50,
+  "seed": 7,
+  "segment": "eval",
+  "segment_events": 166,
+  "snapshot": "/home/sfx/p/ae/artifacts/recall-precision/snapshots/sfx.sqlite3",
+  "snapshot_sha256": "074ee970243d0d7ec2416f09f3b3df430a24b06c264e5b7f4bd41ef525750525",
+  "summary": {
+    "baseline": {
+      "by_recorded_rank": {
+        "1": {
+          "irr_full": 15,
+          "irr_marked": 15,
+          "irr_removed_share": 0.0,
+          "used_full": 18,
+          "used_lost_share": 0.0526,
+          "used_marked": 19
+        },
+        "2": {
+          "irr_full": 23,
+          "irr_marked": 24,
+          "irr_removed_share": 0.0417,
+          "used_full": 6,
+          "used_lost_share": 0.0,
+          "used_marked": 6
+        },
+        "3": {
+          "irr_full": 15,
+          "irr_marked": 20,
+          "irr_removed_share": 0.25,
+          "used_full": 4,
+          "used_lost_share": 0.2,
+          "used_marked": 5
+        },
+        "4-5": {
+          "irr_full": 26,
+          "irr_marked": 34,
+          "irr_removed_share": 0.2353,
+          "used_full": 6,
+          "used_lost_share": 0.1429,
+          "used_marked": 7
+        },
+        "6-10": {
+          "irr_full": 13,
+          "irr_marked": 23,
+          "irr_removed_share": 0.4348,
+          "used_full": 1,
+          "used_lost_share": 0.8,
+          "used_marked": 5
+        }
+      },
+      "dup_schema_slots": 15,
+      "entrants": {
+        "excess": 0.0435,
+        "graded": 23,
+        "grounded_rate": 0.0435,
+        "per_event": 0.78,
+        "total": 39,
+        "twin_grounded_rate": 0.0
+      },
+      "events": 50,
+      "full_slots_per_event": 4.88,
+      "future_candidates_hidden": 222,
+      "future_filtered": 0,
+      "hub_top3_share": 0.1957,
+      "hub_top3_slots": 27,
+      "irrelevant": {
+        "delivered_full": 92,
+        "delivered_top3": 54,
+        "marked": 116
+      },
+      "labelled_created_after_cutoff_excluded": 1,
+      "latency_s": {
+        "p50": 0.2554,
+        "p90": 0.6151,
+        "total": 25.28
+      },
+      "rank1_kept_vs_recorded": 0.82,
+      "stub_slots_per_event": 0.0,
+      "used": {
+        "delivered_full": 35,
+        "lost": 7,
+        "lost_share": 0.1667,
+        "marked": 42
+      }
+    }
+  }
+}

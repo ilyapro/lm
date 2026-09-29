@@ -114,6 +114,79 @@ Writes are no-ops without anchor tables.
   `F` towards 1.0 if demoted nodes later get grounded or lookup credit for the
   same anchor (visible as `cancels` > 0 in `query_irrelevance`).
 
+## Strength valves (goal recall-precision, P3)
+
+Measured on live traffic, the default curve rarely acts: typical anchor
+cosines are 0.65–0.70, so `closeness = (cos - 0.60) / 0.40` is about
+0.15–0.25, and one mark (weight 0.5) at F = 0.5 gives m of about 0.92–0.96.
+Two read-side valves, both read in `irrelevance.py`, steepen the curve. When
+unset, or set to an invalid value, `query_demotions` gives byte-identical
+output (pinned by `tests/test_query_irrelevance_strength.py` against the
+original arithmetic):
+
+| Valve | Meaning | Unset |
+|---|---|---|
+| `LM_QUERY_IRRELEVANCE_FULL_COSINE` | cosine at which closeness reaches 1.0: `closeness = (cos - 0.60) / (full - 0.60)`, clipped to [0, 1]. Valid in (0.60, 1]. | `full = 1.0` (the /0.40 span) |
+| `LM_QUERY_IRRELEVANCE_MARK_WEIGHT` | read-side worth of one mark. A stored weight `w` counts as `w / 0.5` marks and reads as `min(1, marks * mark_weight)`. Valid in (0, 1]. | stored weight as is |
+
+The write side is unchanged. A mark still stores +0.5, and no row is
+rewritten or migrated, so unsetting a valve is an instant rollback (a restart
+is needed, because env values are read by the running process). The bound
+`F <= m` and the match floor 0.60 stay the same. The valves move how much of
+the range between 1 and `F` a match uses. They do not change which
+(query, node) pairs are demoted.
+
+### Census: sfx, 2026-09-29
+
+Script: `scripts/query_demotion_strength_census.py` (read-only: `mode=ro`, or
+`--snapshot` via the SQLite backup API). It is run on a backup-API copy of the
+sfx store, with data up to 2026-09-28T21:42Z. Events run from the first
+irrelevance row (2026-09-27T14:55Z). Applicable case, following the definition
+in LM 01M3MXJWTPZ2H2HJ3ZSPKZXGTE: event × node, where the node has a
+`query_irrelevance` row created before the event, on an anchor that existed
+at the event, is in the event's resolved scopes, and is among the top-5
+matches at cos > 0.60. The query vector is the production encoder
+(paraphrase-multilingual-MiniLM-L12-v2), and F = 0.5 throughout. Row weight
+at event time is rebuilt from `created_at`/`updated_at`/`marks`. That is exact
+except for 28 of 2,559 rows (23 cancelled, 3 with more than two marks, 2
+cancelled and then marked again), and those are handled conservatively.
+
+1,047 events, 3,843 applicable cases, 434 of them on a delivered node:
+
+| Setting | FULL_COSINE | MARK_WEIGHT | m > 0.9 | m <= 0.75 | median m | delivered: m > 0.9 | delivered: m <= 0.75 |
+|---|---|---|---|---|---|---|---|
+| default | — | — | 72.3% | 3.8% | 0.942 | 59.7% | 4.2% |
+| fc080 | 0.80 | — | 43.9% | 16.7% | 0.884 | 33.6% | 25.4% |
+| fc075 | 0.75 | — | 33.7% | 30.2% | 0.845 | 25.4% | 42.6% |
+| fc070 | 0.70 | — | 24.0% | 47.2% | 0.768 | 18.4% | 61.1% |
+| mw1 | — | 1.0 | 44.3% | 16.4% | 0.885 | 34.1% | 25.1% |
+| fc080_mw1 | 0.80 | 1.0 | 24.1% | 46.8% | 0.770 | 18.4% | 60.4% |
+| fc075_mw1 | 0.75 | 1.0 | 18.9% | 58.5% | 0.693 | 13.4% | 69.1% |
+| fc070_mw1 | 0.70 | 1.0 | 12.8% | 70.6% | 0.540 | 9.0% | 77.9% |
+
+The default row reproduces the earlier measurement (69% above 0.9 on the
+window up to 2026-09-28). A cosine span alone needs `full <= 0.70` to bring
+the share above 0.9 under the 30% line (P3). Combining it with
+`MARK_WEIGHT=1.0` gets there at 0.80, because one mark then counts at full
+strength. Candidates that meet the line: **fc080_mw1** (the mildest, median
+m 0.77), fc070, and fc075_mw1. These are strength numbers only. Whether a
+stronger demotion improves the delivered list (and what replaces the demoted
+node) is for the live-path replay of the measurement sibling
+(`artifacts/recall-precision/`), which makes the final choice. alt was not
+censused here: its snapshot is taken by the replay harness sibling and stored
+on sfx. Run the same script on it with `--host alt` (the earlier measurement
+put 91% of alt cases above 0.9).
+
+Reproduce:
+
+```
+PYTHONPATH=src python3 scripts/query_demotion_strength_census.py \
+    --db ~/.local/share/living-memory/global.sqlite3 --snapshot "$TMPDIR/sfx.sqlite3" \
+    --host sfx --setting default: --setting fc080:full=0.80 --setting fc075:full=0.75 \
+    --setting fc070:full=0.70 --setting mw1:mw=1.0 --setting fc080_mw1:full=0.80,mw=1.0 \
+    --setting fc075_mw1:full=0.75,mw=1.0 --setting fc070_mw1:full=0.70,mw=1.0
+```
+
 ## Cancellation: positive credit cancels (not weakens)
 
 Grounded, lookup and explicit `used` credit all reinforce the query anchor

@@ -1,0 +1,124 @@
+{
+  "applicable": 2630,
+  "events": 741,
+  "events_with_case": 407,
+  "host": "sfx",
+  "row_approximations": {
+    "cancelled_then_remarked": 2,
+    "cancelled_window": 23,
+    "second_mark_late": 3
+  },
+  "rows": 2567,
+  "settings": {
+    "default": {
+      "all": {
+        "cases": 2630,
+        "mean": 0.923,
+        "p10": 0.8359,
+        "p25": 0.8924,
+        "p50": 0.9416,
+        "p75": 0.9746,
+        "p90": 0.9925,
+        "share_gt_0_9": 0.7015,
+        "share_le_0_75": 0.0452
+      },
+      "delivered": {
+        "cases": 318,
+        "mean": 0.9066,
+        "p10": 0.833,
+        "p25": 0.8736,
+        "p50": 0.9105,
+        "p75": 0.9592,
+        "p90": 0.9855,
+        "share_gt_0_9": 0.5629,
+        "share_le_0_75": 0.0503
+      },
+      "factor": 0.5,
+      "full_cosine": null,
+      "mark_weight": null
+    },
+    "fc070": {
+      "all": {
+        "cases": 2630,
+        "mean": 0.8185,
+        "p10": 0.75,
+        "p25": 0.75,
+        "p50": 0.7664,
+        "p75": 0.8985,
+        "p90": 0.9699,
+        "share_gt_0_9": 0.2452,
+        "share_le_0_75": 0.4791
+      },
+      "delivered": {
+        "cases": 318,
+        "mean": 0.7938,
+        "p10": 0.75,
+        "p25": 0.75,
+        "p50": 0.75,
+        "p75": 0.8368,
+        "p90": 0.942,
+        "share_gt_0_9": 0.1635,
+        "share_le_0_75": 0.6258
+      },
+      "factor": 0.5,
+      "full_cosine": 0.7,
+      "mark_weight": null
+    },
+    "fc075_mw1": {
+      "all": {
+        "cases": 2630,
+        "mean": 0.6975,
+        "p10": 0.5,
+        "p25": 0.5,
+        "p50": 0.6907,
+        "p75": 0.8648,
+        "p90": 0.96,
+        "share_gt_0_9": 0.2,
+        "share_le_0_75": 0.589
+      },
+      "delivered": {
+        "cases": 318,
+        "mean": 0.6442,
+        "p10": 0.5,
+        "p25": 0.5,
+        "p50": 0.5305,
+        "p75": 0.7874,
+        "p90": 0.9227,
+        "share_gt_0_9": 0.1195,
+        "share_le_0_75": 0.7138
+      },
+      "factor": 0.5,
+      "full_cosine": 0.75,
+      "mark_weight": 1.0
+    },
+    "fc080_mw1": {
+      "all": {
+        "cases": 2630,
+        "mean": 0.7427,
+        "p10": 0.5,
+        "p25": 0.5703,
+        "p50": 0.768,
+        "p75": 0.8986,
+        "p90": 0.97,
+        "share_gt_0_9": 0.2456,
+        "share_le_0_75": 0.4753
+      },
+      "delivered": {
+        "cases": 318,
+        "mean": 0.6893,
+        "p10": 0.5,
+        "p25": 0.5,
+        "p50": 0.6478,
+        "p75": 0.8405,
+        "p90": 0.942,
+        "share_gt_0_9": 0.1635,
+        "share_le_0_75": 0.6164
+      },
+      "factor": 0.5,
+      "full_cosine": 0.8,
+      "mark_weight": 1.0
+    }
+  },
+  "since": "2026-09-27T14:55:22Z",
+  "until": "2026-09-28T15:23:18Z"
+}

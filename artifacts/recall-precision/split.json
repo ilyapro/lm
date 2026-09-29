@@ -1,0 +1,66 @@
+{
+  "hosts": {
+    "alt": {
+      "counts": {
+        "eval": 110,
+        "holdout": 111,
+        "train": 220
+      },
+      "eval_start": {
+        "created_at": "2026-09-28T07:13:51.000000Z",
+        "event_id": "01M3KDSSK3FGTQP4F4NCRKCX72",
+        "index": 220
+      },
+      "events": 441,
+      "excluded_ab": 122,
+      "first": {
+        "created_at": "2026-09-27T14:45:37.000000Z",
+        "event_id": "01M3HN89AEQSXZG022JBWNN5NR",
+        "index": 0
+      },
+      "holdout_start": {
+        "created_at": "2026-09-28T14:00:58.000000Z",
+        "event_id": "01M3M538A106K9RTKNW12118MG",
+        "index": 330
+      },
+      "last": {
+        "created_at": "2026-09-28T21:47:32.000000Z",
+        "event_id": "01M3MZSHSWCWT2FS805QMQ8QK7",
+        "index": 440
+      },
+      "snapshot_sha256": "a887efc397efa1bd9ce7ad949c3f7b020eea15dfb412bf47e58515488ec0cfd4"
+    },
+    "sfx": {
+      "counts": {
+        "eval": 166,
+        "holdout": 167,
+        "train": 332
+      },
+      "eval_start": {
+        "created_at": "2026-09-28T09:21:40.000000Z",
+        "event_id": "01M3KN3T5Y01MBWS728EXXNEM6",
+        "index": 332
+      },
+      "events": 665,
+      "excluded_ab": 389,
+      "first": {
+        "created_at": "2026-09-27T14:45:10.000000Z",
+        "event_id": "01M3HN7F2FBSDHD6V9KS9J5Z4Y",
+        "index": 0
+      },
+      "holdout_start": {
+        "created_at": "2026-09-28T15:23:18.000000Z",
+        "event_id": "01M3M9SZT5FFFKJT48T77VYNQV",
+        "index": 498
+      },
+      "last": {
+        "created_at": "2026-09-28T21:42:01.000000Z",
+        "event_id": "01M3MZFEWEE71YMAE62NED2MCS",
+        "index": 664
+      },
+      "snapshot_sha256": "074ee970243d0d7ec2416f09f3b3df430a24b06c264e5b7f4bd41ef525750525"
+    }
+  },
+  "marks_era_start": "2026-09-27T14:45:00Z",
+  "rule": "per host: recall events with created_at >= marks_era_start, non-empty recorded results, non-blank query, not A/B (explicit_feedback_agreement.load_store window), ordered by (created_at, id); first 50% train, next 25% eval, last 25% holdout. Membership is by (created_at, id) against the boundary events; events captured after the snapshot belong to holdout."
+}

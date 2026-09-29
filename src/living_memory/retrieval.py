@@ -224,6 +224,7 @@ from living_memory.feedback import (
     _explicit_feedback_policy,
     feedback_weighted_score,
 )
+from living_memory.hubs import hub_demotions
 from living_memory.irrelevance import query_demotions
 from living_memory.models import (
     REJECTED_ALTERNATIVE_KIND,
@@ -244,6 +245,7 @@ from living_memory.query_anchors import (
     ANCHOR_MATCH_LIMIT,
     match_anchors,
 )
+from living_memory.schema_dedup import collapse_schema_duplicates
 from living_memory.scope import (
     GLOBAL_SCOPE,
     ScopePlan,
@@ -251,6 +253,7 @@ from living_memory.scope import (
     normalize_scope,
     scope_family,
 )
+from living_memory.score_gate import apply_score_gate
 from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
     CHUNK_EMBEDDING_ITEMSIZE,
@@ -370,6 +373,9 @@ class RecallResult:
     # whether or not it qualified for this recall. Consumers get the staleness
     # signal even when the correction itself is decayed or absent.
     superseded: bool = False
+    # Set by ``score_gate`` when a result is delivered as a stub instead of a
+    # full slot (e.g. ``"below_threshold"``); ``None`` for a regular result.
+    withheld: str | None = None
 
     @property
     def node_id(self) -> str:
@@ -387,6 +393,7 @@ class RecallResult:
             "path": list(self.path),
             "recall_event_id": self.recall_event_id,
             "superseded": self.superseded,
+            **({"withheld": self.withheld} if self.withheld else {}),
         }
 
 
@@ -662,15 +669,29 @@ class MemoryRecallService:
                 anchor_seeds=anchor_seeds,
             )
 
+        demotions = _merge_demotions(
+            self._collect_query_demotions(plan, query_embedding),
+            self._collect_hub_demotions(),
+        )
         ranked = self.rank_candidates(
             candidates,
             plan,
             causal_mode=causal_mode,
             decision_mode=decision_mode,
-            demotions=self._collect_query_demotions(plan, query_embedding),
+            demotions=demotions,
         )
-        limited = ranked[:max_results]
-        self.last_residual = ranked[max_results:]
+        # Precision stages (goal recall-precision), each behind its own env
+        # valve and the identity while it is off: same-procedure schema
+        # duplicates give up their slot, then the quality gate decides what is
+        # delivered and what stays in the residual the recall map describes.
+        ranked, _collapsed = collapse_schema_duplicates(ranked)
+        limited, self.last_residual = apply_score_gate(
+            ranked,
+            max_results,
+            plan=plan,
+            demotions=demotions,
+            causal_mode=causal_mode,
+        )
         if log_access:
             limited = [self._record_result_access(result) for result in limited]
         if log_event is None:
@@ -1446,6 +1467,14 @@ class MemoryRecallService:
         except Exception:  # pragma: no cover - derived signal, never fatal
             return {}
 
+    def _collect_hub_demotions(self) -> dict[str, float]:
+        """Global hub multipliers (``living_memory.hubs``). Never raises."""
+
+        try:
+            return hub_demotions(self.store)
+        except Exception:  # pragma: no cover - derived signal, never fatal
+            return {}
+
     def _anchor_vector_source(self) -> _CachedAnchorVectors | None:
         """The live anchor vectors, cached until ``query_anchor_revision`` moves.
 
@@ -1975,7 +2004,25 @@ def _enforce_correction_dominance(
     )
 
 
+def _merge_demotions(*sources: Mapping[str, float]) -> dict[str, float]:
+    """Per-node multipliers from several sources; the strongest (smallest) wins."""
+
+    merged: dict[str, float] = {}
+    for source in sources:
+        for node_id, multiplier in source.items():
+            if multiplier < merged.get(node_id, 1.0):
+                merged[node_id] = multiplier
+    return merged
+
+
 def _recall_result_summary(index: int, result: RecallResult) -> dict[str, Any]:
+    summary = _recall_result_summary_fields(index, result)
+    if result.withheld:
+        summary["withheld"] = result.withheld
+    return summary
+
+
+def _recall_result_summary_fields(index: int, result: RecallResult) -> dict[str, Any]:
     return {
         "rank": index + 1,
         "node_id": result.node.id,

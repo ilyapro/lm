@@ -787,8 +787,10 @@ _TEACH_DESCRIPTION = (
 # field schemas. ``mandatory`` swaps in a reworded memory_recall description
 # that carries one binding sentence — fitted into the 1024-char budget by
 # rewording (the mid-work law no longer repeats the opener's "at every new
-# turn of thought", "searching," and the depth hint are dropped, the query
-# and content_ref hints are shortened), never by appending — and binding
+# turn of thought", "searching," and "— measuring" are dropped from the
+# world trigger, "a design or approach" is "an approach", the query and
+# content_ref hints are shortened; the depth 'causal' hint stays), never by
+# appending — and binding
 # field descriptions on all three tools. An unknown value is ``optional``.
 # Character costs per arm: docs/explicit-feedback.md.
 EXPLICIT_FEEDBACK_PROMPT_ARMS: tuple[str, ...] = ("optional", "mandatory")
@@ -799,15 +801,15 @@ _RECALL_DESCRIPTION_MANDATORY = (
     "recall BEFORE acting: changing any artifact (conventions, rejected "
     "approaches); creating or mutating state (recall the concept before "
     "inventing one); irreversible or outward-facing steps (recall action "
-    "plus target); pulling knowledge from the world — measuring (memory "
-    "first: the world only after recall returns nothing — anti-pattern: "
-    "world-before-memory); choosing a design or approach (recall "
-    "cross-project); entering anything new — task, message. You MUST "
-    "recall MID-WORK: ask what memory holds nearby so nothing related is "
-    "missed; stuck or surprised means overdue, 'if only I knew' means "
-    "recall NOW. Query by identifiers; re-ask. Default: when uncertain, "
-    "recall. Read broad: omit scope to transfer across scopes. A "
-    "level:schema result is a binding procedure — follow it literally. "
+    "plus target); pulling knowledge from the world (memory first: the "
+    "world only after recall returns nothing — anti-pattern: "
+    "world-before-memory); choosing an approach (recall cross-project); "
+    "entering anything new — task, message. You MUST recall MID-WORK: ask "
+    "what memory holds nearby so nothing related is missed; stuck or "
+    "surprised means overdue, 'if only I knew' means recall NOW. Query by "
+    "identifiers; re-ask. Default: when uncertain, recall. Read broad: "
+    "omit scope to transfer across scopes. Depth 'causal' when debugging. "
+    "A level:schema result is a binding procedure — follow it literally. "
     "Refetch a non-full result's content_ref via memory_lookup. You MUST "
     "mark each recall's results on your next call: used ids as used, "
     "off-topic ids as irrelevant."

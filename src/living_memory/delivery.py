@@ -37,6 +37,14 @@ Rules, applied in this order per ranked result:
    legacy contract.
 5. Otherwise ``delivery: "full"`` with complete ``content``.
 
+Before all five, a result the score gate marked ``withheld="below_threshold"``
+(``score_gate``, ``LM_RECALL_GATE_FORM=stub``) becomes a
+``delivery: "below_threshold"`` stub: empty ``content`` (the key stays), a
+``content_ref`` naming the node for ``memory_lookup``, no ladder slot, and it
+never becomes a twin bearer -- its text was not delivered, so a later twin
+must not point at it. Without the gate no result carries ``withheld`` and
+nothing below changes.
+
 ``near_duplicate`` joins ``session_duplicate``/``twin_duplicate`` in the
 trailing stub run a gated recall may drop (``server.py``). It belongs there
 for a stronger reason than either: a near-duplicate's text ships in full
@@ -132,6 +140,8 @@ DELIVERY_SNIPPET = "snippet"
 DELIVERY_SESSION_DUPLICATE = "session_duplicate"
 DELIVERY_TWIN_DUPLICATE = "twin_duplicate"
 DELIVERY_NEAR_DUPLICATE = "near_duplicate"
+# Same string as score_gate.WITHHELD_BELOW_THRESHOLD, the withheld reason.
+DELIVERY_BELOW_THRESHOLD = "below_threshold"
 
 SNIPPET_CHARS_ENV = "LM_DELIVERY_SNIPPET_CHARS"
 SESSION_DEDUP_ENV = "LM_DELIVERY_SESSION_DEDUP"
@@ -342,6 +352,10 @@ def shape_recall_results(
     """
 
     bearer_by_content: dict[str, str] = {}
+    # A withheld result's text is not delivered, so it bears nothing.
+    withheld_ids = {
+        result.node.id for result in results if getattr(result, "withheld", None)
+    }
     shaped: list[dict[str, Any]] = []
     bearer_position = 0
     for result in results:
@@ -350,18 +364,26 @@ def shape_recall_results(
         content = node_dict["content"]
         full_chars = len(content)
 
+        withheld = getattr(result, "withheld", None)
         twin_of: str | None = None
-        if content:  # empty content carries nothing worth deduplicating
+        if withheld:
+            pass  # content not delivered: neither a twin nor a bearer
+        elif content:  # empty content carries nothing worth deduplicating
             bearer_id = bearer_by_content.get(content)
             if bearer_id is None:
                 bearer_by_content[content] = node_id
             else:
                 twin_of = bearer_id
         near_dup_of = duplicate_of.get(node_id) if duplicate_of else None
+        if near_dup_of in withheld_ids:
+            near_dup_of = None
 
         # The bearer named on a stub's content_ref, if this result is one.
         stub_bearer: str | None = None
-        if twin_of is not None:
+        if withheld:
+            delivery = DELIVERY_BELOW_THRESHOLD
+            node_dict["content"] = ""
+        elif twin_of is not None:
             delivery = DELIVERY_TWIN_DUPLICATE
             stub_bearer = twin_of
             node_dict["content"] = _one_line_preview(content)

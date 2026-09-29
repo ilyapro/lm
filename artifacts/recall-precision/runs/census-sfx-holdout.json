@@ -1,0 +1,70 @@
+{
+  "applicable": 1213,
+  "events": 305,
+  "events_with_case": 153,
+  "host": "sfx",
+  "row_approximations": {
+    "cancelled_then_remarked": 2,
+    "cancelled_window": 23,
+    "second_mark_late": 3
+  },
+  "rows": 2567,
+  "settings": {
+    "default": {
+      "all": {
+        "cases": 1213,
+        "mean": 0.9261,
+        "p10": 0.8499,
+        "p25": 0.9059,
+        "p50": 0.9421,
+        "p75": 0.9709,
+        "p90": 0.9871,
+        "share_gt_0_9": 0.7692,
+        "share_le_0_75": 0.0486
+      },
+      "delivered": {
+        "cases": 116,
+        "mean": 0.9155,
+        "p10": 0.8115,
+        "p25": 0.878,
+        "p50": 0.9298,
+        "p75": 0.9698,
+        "p90": 0.9865,
+        "share_gt_0_9": 0.6897,
+        "share_le_0_75": 0.0517
+      },
+      "factor": 0.5,
+      "full_cosine": null,
+      "mark_weight": null
+    },
+    "fc080_mw1": {
+      "all": {
+        "cases": 1213,
+        "mean": 0.7499,
+        "p10": 0.5,
+        "p25": 0.6234,
+        "p50": 0.7713,
+        "p75": 0.8838,
+        "p90": 0.9496,
+        "share_gt_0_9": 0.2308,
+        "share_le_0_75": 0.4534
+      },
+      "delivered": {
+        "cases": 116,
+        "mean": 0.7189,
+        "p10": 0.5,
+        "p25": 0.528,
+        "p50": 0.7191,
+        "p75": 0.879,
+        "p90": 0.9461,
+        "share_gt_0_9": 0.2414,
+        "share_le_0_75": 0.569
+      },
+      "factor": 0.5,
+      "full_cosine": 0.8,
+      "mark_weight": 1.0
+    }
+  },
+  "since": "2026-09-28T15:23:18Z",
+  "until": null
+}
