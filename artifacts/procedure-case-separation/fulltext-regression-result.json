@@ -1,0 +1,238 @@
+{
+ "protocol": "fulltext-regression-protocol.md (frozen 09c92c5, amended 325f8a7)",
+ "final": {
+  "candidate": "c25a6cd",
+  "baseline": "24e9009",
+  "reader": "query-only: re-fetch cut deliveries, nothing else (same for both)",
+  "column_order": "pairs are [original 24e9009, candidate]",
+  "passes": [
+   {
+    "scopes": 15,
+    "seconds": 7.04,
+    "created": 9,
+    "updated": 981,
+    "retired": 481
+   },
+   {
+    "scopes": 15,
+    "seconds": 3.8,
+    "created": 0,
+    "updated": 519,
+    "retired": 0
+   }
+  ],
+  "census_after": {
+   "active_schemas": 2,
+   "active_group_carriers": 489,
+   "carrier_chars": 2416126,
+   "max_carrier_chars": 97713,
+   "schema_chars": 3449,
+   "max_schema_chars": 3339,
+   "steps": 4,
+   "unconfirmed_steps": 0,
+   "unconfirmed_steps_in_visited_groups": 0,
+   "unconfirmed_share": 0.0,
+   "schemas_with_unconfirmed_steps": 0,
+   "max_active_nodes_per_group": 1,
+   "triggers_shared_by_groups": 0
+  },
+  "warm_drain_seconds": 515.8,
+  "design": {
+   "prose_recipes": {
+    "queries": [
+     23,
+     23
+    ],
+    "delivered_chars_total": [
+     303926,
+     589295
+    ],
+    "forced_lookup_chars_total": [
+     656458,
+     692984
+    ],
+    "delivered_plus_lookup_median": [
+     42346,
+     46722
+    ],
+    "delivered_plus_lookup_total": [
+     960384,
+     1282279
+    ],
+    "recall_ms_median": [
+     1447.4,
+     566.6
+    ],
+    "schemas_delivered": [
+     34,
+     1
+    ],
+    "unconfirmed_steps_delivered": [
+     0,
+     0
+    ],
+    "unconfirmed_steps_delivered_from_visited_groups": [
+     0,
+     0
+    ],
+    "recipe_obtained_whole": [
+     14,
+     17
+    ],
+    "recipe_in_lookup_by_procedure_name": [
+     23,
+     23
+    ],
+    "recipe_obtained_from_own_trace": [
+     12,
+     12
+    ]
+   },
+   "schema_topics": {
+    "queries": [
+     40,
+     40
+    ],
+    "delivered_chars_total": [
+     1006353,
+     1281481
+    ],
+    "forced_lookup_chars_total": [
+     1077816,
+     1100353
+    ],
+    "delivered_plus_lookup_median": [
+     42660.0,
+     48419.0
+    ],
+    "delivered_plus_lookup_total": [
+     2084169,
+     2381834
+    ],
+    "recall_ms_median": [
+     1540.7,
+     410.4
+    ],
+    "schemas_delivered": [
+     133,
+     1
+    ],
+    "unconfirmed_steps_delivered": [
+     0,
+     0
+    ],
+    "unconfirmed_steps_delivered_from_visited_groups": [
+     0,
+     0
+    ],
+    "recipe_obtained_whole": [
+     0,
+     0
+    ],
+    "recipe_in_lookup_by_procedure_name": [
+     0,
+     0
+    ],
+    "recipe_obtained_from_own_trace": [
+     0,
+     0
+    ]
+   },
+   "recipes_itemwise": {
+    "kept": 14,
+    "gained": 3,
+    "baseline_miss": 6
+   }
+  },
+  "h2": {
+   "items": {
+    "case_baseline_miss": 77,
+    "case_kept": 139,
+    "instruction_baseline_miss": 10,
+    "instruction_kept": 42
+   },
+   "chars": [
+    1771029,
+    1820820
+   ],
+   "forced": [
+    1067096,
+    982136
+   ],
+   "unconfirmed_delivered_after": 0
+  },
+  "h3": {
+   "items": {
+    "baseline_miss": 24,
+    "kept": 15
+   },
+   "chars": [
+    1325887,
+    1344877
+   ],
+   "schemas_delivered": [
+    28,
+    1
+   ],
+   "collateral_same_set": 47,
+   "collateral_same_order": 42,
+   "collateral_queries": 60
+  },
+  "stored_procedural": {
+   "original": {
+    "nodes": 483,
+    "content_chars": 1816902,
+    "chunk_rows": 7080,
+    "chunk_bytes": 10874880
+   },
+   "candidate": {
+    "nodes": 491,
+    "content_chars": 2419575,
+    "chunk_rows": 9757,
+    "chunk_bytes": 14986752
+   }
+  }
+ },
+ "first_run_7cb9436": {
+  "design_recipes_itemwise": {
+   "kept": 14,
+   "gained": 3,
+   "baseline_miss": 6
+  },
+  "h2_items": {
+   "case_baseline_miss": 77,
+   "case_kept": 130,
+   "case_lost": 9,
+   "instruction_baseline_miss": 10,
+   "instruction_kept": 40,
+   "instruction_lost": 2
+  },
+  "h3_items": {
+   "baseline_miss": 24,
+   "kept": 15
+  },
+  "diagnosis": "both H2 losses in one group: the pass relabeled its legacy schema turned carrier; fixed in c25a6cd"
+ },
+ "original_old_reader_vs_new_reader": {
+  "design_recipes_obtained": [
+   14,
+   14
+  ],
+  "h2_items_obtained": [
+   181,
+   181
+  ],
+  "note": "same items obtained; only forced-lookup volume differs"
+ },
+ "production_lines_vs_24e9009": {
+  "added": 111,
+  "removed": 105,
+  "net": 6
+ },
+ "independent_holdout": "none: holdout6 has 1 eligible item of 10 required (holdout6-result.json); not re-sampled",
+ "verdict": "0 new instruction/correction losses on design, H2, H3 (regression data); census clean; production net +6 exceeds the <=0 budget; no independent holdout",
+ "reading_all_sets_delivered_plus_forced": [
+  6141469,
+  6829810
+ ]
+}

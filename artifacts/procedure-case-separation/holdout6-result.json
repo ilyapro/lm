@@ -1,0 +1,12 @@
+{
+  "candidate_production": "e3cb245",
+  "selector": "b6a44ca holdout6.py (holdout4.items + own-goal exclusion)",
+  "snapshots": "sfx and alt read-only online backups taken 2026-09-30T11:27Z, alt copied alt->sfx; examined-snapshot exclusion: sfx design snapshot, alt holdout-4 snapshot and items copy, alt holdout-5 snapshot",
+  "sfx": {"excluded_overlap_items": 3057, "excluded_own_goal_items": 0, "schema_topic_items": 0, "own_name_instruction_items": 1},
+  "alt": {"excluded_overlap_items": 248, "excluded_own_goal_items": 0, "schema_topic_items": 0, "own_name_instruction_items": 0},
+  "eligible_instruction_items": 1,
+  "required_minimum": 10,
+  "deficit": 9,
+  "measured": false,
+  "independent_generalization_claim": false
+}

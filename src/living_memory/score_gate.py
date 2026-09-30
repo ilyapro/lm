@@ -152,7 +152,7 @@ def trigger_gate_score(
     from living_memory.retrieval import schema_trigger_by_name
 
     node = result.node
-    if node.level != "schema" or result.trigger_score <= 0.0:
+    if node.level == "trace" or result.trigger_score <= 0.0:
         return None
     if schema_trigger_by_name():
         # ``name`` mode: a named schema earns its slot on the channel scale

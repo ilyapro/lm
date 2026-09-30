@@ -15,7 +15,7 @@ whitespace-collapsed and casefolded. On the sfx store every such title maps to
 one procedure_id, and the title reproduces the measured duplicate share; the
 numbers are in docs/recall-schema-dedup.md. A schema with no trigger (bare
 ``Procedure``) or an empty first line has no title and is never collapsed.
-Non-schema nodes are never collapsed.
+Nodes other than schemas and group carriers are never collapsed.
 """
 
 from __future__ import annotations
@@ -35,9 +35,10 @@ def schema_dedup_enabled(env: Mapping[str, str] | None = None) -> bool:
 
 
 def schema_title(node: Any) -> str | None:
-    """Return the normalized procedure title of a schema node, else ``None``."""
+    """Return the normalized title of a schema or group carrier, else ``None``."""
 
-    if getattr(node, "level", None) != "schema":
+    level = getattr(node, "level", None)
+    if level != "schema" and not (level == "concept" and node.context.get("trigger")):
         return None
     content = getattr(node, "content", None) or ""
     first_line = content.strip().split("\n", 1)[0]

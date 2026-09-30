@@ -1407,7 +1407,7 @@ class MemoryStore:
         return [_node_from_row(row) for row in rows]
 
     def schema_triggers(self, scope: str | None) -> list[tuple[str, str]]:
-        """``(id, trigger)`` of the live schemas in ``scope`` (``None``: all) that carry a trigger.
+        """``(id, trigger)`` of live triggered schemas and group carriers in ``scope`` (``None``: all).
 
         Reads two columns instead of whole nodes: a recall compares every
         trigger in its scopes and fetches only the schemas it matched.
@@ -1417,7 +1417,7 @@ class MemoryStore:
             """
             SELECT id, JSON_EXTRACT(context, '$.trigger')
             FROM nodes
-            WHERE level = 'schema' AND (? IS NULL OR scope = ?) AND decayed = 0
+            WHERE level IN ('schema', 'concept') AND (? IS NULL OR scope = ?) AND decayed = 0
               AND JSON_EXTRACT(context, '$.trigger') IS NOT NULL
             """,
             (scope, scope),
@@ -1470,6 +1470,7 @@ class MemoryStore:
         embedding: Iterable[float] | None = None,
         stats: Mapping[str, Any] | None = None,
         provenance: Mapping[str, Any] | None = None,
+        level: NodeLevel | None = None,  # moves the node, same id and history, to a level
     ) -> Node:
         existing = self.get_node(node_id)
         if existing is None:
@@ -1512,7 +1513,7 @@ class MemoryStore:
             self._conn.execute(
                 f"""
                 UPDATE nodes
-                SET content = ?, content_fingerprint = ?, {embedding_assignment}scope = ?,
+                SET level = ?, content = ?, content_fingerprint = ?, {embedding_assignment}scope = ?,
                     agent = ?, task = ?, context = ?,
                     access_count = ?, last_accessed = ?, usefulness_score = ?,
                     confidence = ?, unique_agents = ?, temporal_hint = ?,
@@ -1520,6 +1521,7 @@ class MemoryStore:
                 WHERE id = ?
                 """,
                 (
+                    level or existing.level,
                     new_content,
                     new_fingerprint,
                     *embedding_value,

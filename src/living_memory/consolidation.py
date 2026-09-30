@@ -67,6 +67,7 @@ CROSS_SCOPE_PROMOTION_PHASE = 4
 CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
 GLOBAL_PROMOTION_DEDUP_THRESHOLD = 0.8
 PROCEDURAL_MIN_CLUSTER_SIZE = 3
+_STEP_TEXT_KEYS = ("step_description", "step_content")
 DIGEST_MAX_CHARS = 1200
 DIGEST_LEAD_MAX_CHARS = 600
 DIGEST_FACT_MAX_CHARS = 280
@@ -638,7 +639,8 @@ def memory_teach(
     if not correction_text:
         raise ValueError("correction must be non-empty")
 
-    context_data = dict(original.context)
+    # The correction replaces the step text, not its place.
+    context_data = {key: value for key, value in original.context.items() if key not in _STEP_TEXT_KEYS}
     context_data.update(dict(context or {}))
     context_data.setdefault("scope", original.scope)
     context_data["timestamp"] = _utc_now()
@@ -697,57 +699,80 @@ def _materialize_procedural_schemas(
     min_cluster_size: int,
     step: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> list[tuple[Node, bool]]:
-    """Group procedural traces by their stable group key and emit schema nodes.
+    """Group procedural traces by their stable group key; one node per group.
 
     Each trace's stable group key is its `task_pattern` if present, otherwise
     its `procedure_id`. Traces sharing a `task_pattern` cluster together even
     when their `procedure_id` labels differ between instances.
+
+    Only writer-declared steps make a binding schema. A group without them gets
+    a nonbinding carrier instead: a concept that the group's trigger finds and
+    that holds its current records whole as evidence, never as steps. A schema
+    the replaced mechanism built from such a group, visited or not, becomes
+    that carrier in place.
     """
 
-    groups: dict[tuple[str, str], list[Node]] = {}
-    keys_by_group: dict[tuple[str, str], list[_ProcedureKey]] = {}
-    for trace in traces:
+    # A node belongs to its scope and recorded group key, never to a label:
+    # groups share labels, and matching on one let a group take over another's
+    # node (recall's dedup reads the title instead). The oldest node of
+    # a group is its node, a later one a duplicate. A taught or superseded node
+    # belongs to a dead era; updating it would resurrect corrected content.
+    nodes: dict[tuple[str, str], list[Node]] = {}
+    triggered = store.get_nodes([node_id for node_id, _trigger in store.schema_triggers(None)])
+    for node in sorted(triggered.values(), key=lambda node: (node.created_at, node.id)):
+        dead = node.corrections or _is_superseded(store, node.id)
+        if node.provenance.get("strategy") == "procedural" and not dead:
+            nodes.setdefault((node.scope, _schema_group_id(node)), []).append(node)
+    # A legacy node is repaired from its own records even when no visited trace
+    # reaches its group; a record it cites from another group joins that group.
+    legacy = {group: owned[0] for group, owned in nodes.items() if owned[0].level == "schema"}
+    cited = store.get_nodes([source for node in legacy.values() for source in node.source_traces])
+    groups: dict[tuple[str, str], dict[str, Node]] = {group: {} for group in legacy}
+    for trace in [*traces, *cited.values()]:
         key = _procedure_key(trace)
-        if not key:
-            continue
-        group_tuple = (trace.scope, key.group_id)
-        groups.setdefault(group_tuple, []).append(trace)
-        keys_by_group.setdefault(group_tuple, []).append(key)
-
+        if key and not trace.decayed:
+            groups.setdefault((trace.scope, key.group_id), {})[trace.id] = trace
     schemas: list[tuple[Node, bool]] = []
-    for (scope, _group_id), group_traces in groups.items():
-        if len(group_traces) < min_cluster_size:
+    for (group_scope, group_id), by_id in groups.items():
+        group_traces = list(by_id.values())
+        existing, *duplicates = nodes.get((group_scope, group_id)) or [None]
+        if len(group_traces) < min_cluster_size and existing is None:
             continue
+        declared = [trace for trace in group_traces if _declares_step(trace)]
+        binding = len(declared) >= min_cluster_size
         with step():
-            assessment = _assess_cluster_eras(store, group_traces)
+            assessment = _assess_cluster_eras(store, declared if binding else group_traces)
             if not assessment.live:
                 # Every member is superseded or era-displaced: no current era to
-                # distill, so no schema may be emitted for this group.
+                # distill, so nothing may be emitted for this group.
+                if existing is not None and existing.level == "schema":
+                    store.soft_delete_node(existing.id, "procedural: no current records")
                 continue
-            live_ids = {member.id for member in assessment.live}
-            live_keys = [
-                key
-                for trace, key in zip(group_traces, keys_by_group[(scope, _group_id)])
-                if trace.id in live_ids
-            ]
-            procedure_key = _select_group_procedure_key(
-                live_keys or keys_by_group[(scope, _group_id)]
-            )
+            label = existing.context.get("trigger") if existing else None
+            procedure_key = _select_group_procedure_key(assessment.live, label)
+            # A schema speaks for the current era; evidence keeps every record
+            # nothing superseded.
+            members, era = (assessment.live, assessment) if binding else (group_traces, None)
             schema, created = _create_or_update_schema(
-                store, scope, procedure_key, assessment.live, era=assessment
+                store, group_scope, procedure_key, members, existing, era=era
             )
             _connect_schema_to_traces(store, schema, assessment.live)
+            for duplicate in duplicates:
+                store.soft_delete_node(duplicate.id, "procedural: duplicate group")
         schemas.append((schema, created))
     return schemas
 
 
-def _select_group_procedure_key(keys: list[_ProcedureKey]) -> _ProcedureKey:
+def _select_group_procedure_key(traces: list[Node], label: str | None = None) -> _ProcedureKey:
     """Pick the best trigger label for a group of traces sharing one group_id."""
 
+    keys = [key for trace in traces if (key := _procedure_key(trace))]
     procedure_id_keys = [key for key in keys if key.field == "procedure_id"]
     pool = procedure_id_keys or keys
     counts = Counter((key.field, key.raw, key.trigger) for key in pool)
-    (trigger_field, trigger_raw, trigger), _frequency = counts.most_common(1)[0]
+    # A node keeps the trigger it is found by while a current record carries it.
+    kept = [entry for entry in counts if entry[2] == label]
+    trigger_field, trigger_raw, trigger = kept[0] if kept else counts.most_common(1)[0][0]
     representative = keys[0]
     return _ProcedureKey(
         field=trigger_field,
@@ -809,15 +834,14 @@ def _create_or_update_schema(
     scope: str,
     procedure_key: _ProcedureKey,
     traces: list[Node],
+    existing: Node | None,
     *,
     era: _EraAssessment | None = None,
 ) -> tuple[Node, bool]:
     trigger = procedure_key.trigger
     group_id = procedure_key.group_id
     steps = _procedure_steps(traces)
-    content = _format_schema_content(trigger, steps)
 
-    sorted_trace_ids = sorted({trace.id for trace in traces})
     unique_agents = _unique_agent_count(traces)
     confidence = _consensus_confidence(traces, unique_agents)
     temporal_hint = detect_temporal_hint(traces)
@@ -851,70 +875,44 @@ def _create_or_update_schema(
         procedure_key.group_field: procedure_key.group_raw,
         procedure_key.field: procedure_key.raw,
         "trigger": trigger,
-        "procedure": steps,
     }
+    if era is not None:  # a binding schema speaks for its era; a carrier has none
+        context["procedure"] = steps
     if era_block is not None:
         context["era_status"] = "current"
 
-    existing = _find_existing_schema(store, scope, procedure_key)
+    cited = existing.source_traces if existing else []
+    sources = sorted({*cited, *(trace.id for trace in traces)} - excluded_ids)
+    content = (
+        _format_schema_content(trigger, steps)
+        if era is not None
+        else _format_evidence_content(store, trigger, store.get_nodes(sources).values())
+    )
+    provenance = {
+        **(existing.provenance if existing else {}),
+        **base_provenance,
+        "source_traces": sources,
+        "cluster_size": len(sources),
+    }
+    level = "schema" if era is not None else "concept"
     if existing is None:
-        provenance = {
-            **base_provenance,
-            "source_traces": sorted_trace_ids,
-            "cluster_size": len(sorted_trace_ids),
-        }
         schema = store.create_node(
-            level="schema",
+            level=level,
             content=content,
             context=context,
             stats=stats,
             provenance=provenance,
         )
         return schema, True
-
-    merged_sources = sorted({*existing.source_traces, *sorted_trace_ids} - excluded_ids)
-    provenance = {
-        **existing.provenance,
-        **base_provenance,
-        "source_traces": merged_sources,
-        "cluster_size": len(merged_sources),
-    }
     schema = store.update_node(
         existing.id,
         content=content,
         context=context,
         stats=stats,
         provenance=provenance,
+        level=level,
     )
     return schema, False
-
-
-def _find_existing_schema(
-    store: MemoryStore, scope: str, procedure_key: _ProcedureKey
-) -> Node | None:
-    """Locate the schema of the same group: its group key, never its labels.
-
-    Groups share labels: a group keyed by one task_pattern may carry, as its
-    trigger or procedure_id, the key of another group. Matching on any label
-    let each group take over another group's schema and leave its own group to
-    create a fresh one, so every pass added schemas.
-    """
-
-    schemas = store.list_nodes(
-        level="schema",
-        scope=scope,
-        include_decayed=False,
-        limit=100_000,
-    )
-    for schema in schemas:
-        if _schema_group_id(schema) != procedure_key.group_id:
-            continue
-        if schema.corrections or _is_superseded(store, schema.id):
-            # A taught/superseded schema belongs to a dead era; updating it
-            # would resurrect corrected content. Emit a fresh one instead.
-            continue
-        return schema
-    return None
 
 
 def _schema_group_id(schema: Node) -> str:
@@ -933,27 +931,28 @@ def _normalize_trigger(procedure_id: str) -> str:
 
 
 def _procedure_steps(traces: Iterable[Node]) -> list[str]:
-    ordered = sorted(
-        traces,
-        key=lambda trace: (
-            _step_order(trace),
-            trace.timestamp or "",
-            trace.created_at or "",
-            trace.id,
-        ),
+    """One step per declared position, restated by its latest record, then
+    the steps declared by text alone, in write order."""
+
+    written = sorted(
+        traces, key=lambda trace: (trace.timestamp or "", trace.created_at or "", trace.id)
     )
-    steps: list[str] = []
-    seen: set[str] = set()
-    for trace in ordered:
+    slots: dict[tuple[int, int], str] = {}
+    for index, trace in enumerate(written):
         step = _step_description(trace)
-        if not step or step in seen:
+        if not step:
             continue
-        seen.add(step)
-        steps.append(step)
-    return steps
+        position = _step_order(trace)
+        slots[(0, position) if position is not None else (1, index)] = step
+    return list(dict.fromkeys(slots[slot] for slot in sorted(slots)))
 
 
-def _step_order(trace: Node) -> int:
+def _declares_step(trace: Node) -> bool:
+    context = trace.context or {}
+    return _step_order(trace) is not None or any(context.get(key) for key in _STEP_TEXT_KEYS)
+
+
+def _step_order(trace: Node) -> int | None:
     context = trace.context or {}
     for key in ("step_order", "step"):
         value = context.get(key)
@@ -965,26 +964,30 @@ def _step_order(trace: Node) -> int:
             return int(value)
         if isinstance(value, str) and value.strip().lstrip("-").isdigit():
             return int(value.strip())
-    return 10_000_000
+    return None
 
 
 def _step_description(trace: Node) -> str:
     context = trace.context or {}
-    for key in ("step_description", "step_content"):
+    for key in _STEP_TEXT_KEYS:
         value = context.get(key)
         if value:
             return str(value).strip()
-    task = trace.task or context.get("task")
-    content = (trace.content or "").strip()
-    if task and content and str(task).strip() not in content:
-        return f"{str(task).strip()}: {content}"
-    return content
+    return (trace.content or "").strip()
 
 
 def _format_schema_content(trigger: str, steps: Iterable[str]) -> str:
     lines = [f"Procedure: {trigger}" if trigger else "Procedure"]
     for index, step in enumerate(steps, start=1):
         lines.append(f"{index}. {step}")
+    return "\n".join(lines)
+
+
+def _format_evidence_content(store: MemoryStore, trigger: str, records: Iterable[Node]) -> str:
+    lines = [f"Evidence: {trigger} (case records, not steps)"]
+    for record in sorted(records, key=lambda node: (node.timestamp or "", node.id), reverse=True):
+        if not record.decayed and not _is_superseded(store, record.id):
+            lines.append(f"- {record.id}: {record.content.strip()}")
     return "\n".join(lines)
 
 

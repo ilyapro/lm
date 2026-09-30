@@ -2325,7 +2325,7 @@ def _blend_candidate_score(
     )
     if candidate.vector_score >= STRONG_VECTOR_MATCH:
         base_score = max(base_score, candidate.vector_score)
-    if node.level == "schema" and candidate.trigger_score > 0.0:
+    if node.level != "trace" and candidate.trigger_score > 0.0:
         base_score = max(base_score, candidate.trigger_score)
     if base_score <= 0.0:
         return 0.0
@@ -2341,7 +2341,7 @@ def _blend_candidate_score(
     )
     if causal_mode and graph_score > 0.0:
         adjusted *= 1.5
-    if node.level == "schema" and candidate.trigger_score > 0.0:
+    if node.level != "trace" and candidate.trigger_score > 0.0:
         adjusted *= SCHEMA_TRIGGER_BOOST
     return adjusted
 

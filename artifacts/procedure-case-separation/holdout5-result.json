@@ -1,0 +1,10 @@
+{
+  "candidate": "47ec513",
+  "snapshot": "alt read-only backup after the frozen protocol",
+  "excluded_overlap_items": 248,
+  "schema_topic_queries": 0,
+  "schema_topic_items": 0,
+  "own_name_queries": 0,
+  "own_name_items": 0,
+  "independent_generalization_claim": false
+}

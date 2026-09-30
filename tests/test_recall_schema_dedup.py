@@ -64,6 +64,23 @@ def test_schema_title_definition() -> None:
     node = Node(id="x", level="schema", content="  Procedure: Reopen  lesson \n1. step")
     assert schema_title(node) == "procedure: reopen lesson"
     assert schema_title(Node(id="y", level="concept", content="Procedure: reopen lesson")) is None
+    carrier = Node(id="z", level="concept", content="Evidence: Reopen  lesson\n- a", context={"trigger": "reopen lesson"})
+    assert schema_title(carrier) == "evidence: reopen lesson"
+
+
+def test_group_carriers_sharing_a_title_keep_one_slot() -> None:
+    """A group carrier holds its records whole, so the best-matching carrier
+    of a title wins its slot as the legacy schema it replaced did; the
+    others give up theirs instead of crowding out records."""
+
+    def carrier(node_id: str, score: float) -> RecallResult:
+        node = Node(id=node_id, level="concept", content="Evidence: verify pass\n- x", context={"trigger": "verify pass"})
+        return RecallResult(node=node, score=score)
+
+    ranked = [carrier("c1", 0.9), _result("t1", "trace", "x", 0.8), carrier("c2", 0.7)]
+    kept, collapsed = collapse_schema_duplicates(ranked, env=ON)
+    assert [r.node_id for r in kept] == ["c1", "t1"]
+    assert [r.node_id for r in collapsed] == ["c2"]
 
 
 def _seed(store: MemoryStore) -> list[str]:

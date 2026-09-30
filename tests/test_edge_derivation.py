@@ -443,12 +443,12 @@ def test_consolidation_annotates_existing_schema_edges_without_new_rows(
     tmp_path: Path,
 ) -> None:
     with _store(tmp_path) as store:
-        for index in range(3):
+        for index, step in enumerate(("drain", "flip", "verify")):
             _remember(
                 store,
-                f"Deploy rollback run {index}: drain, flip, verify",
+                f"Deploy rollback step {index + 1}: {step}",
                 procedure_id="deploy_rollback",
-                task=f"deploy run {index}",
+                step_order=index + 1,
             )
         memory_consolidate(store, scope=SCOPE)
 

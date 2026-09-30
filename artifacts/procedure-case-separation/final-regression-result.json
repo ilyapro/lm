@@ -1,0 +1,155 @@
+{
+  "candidate": "47ec513",
+  "baseline": "24e9009",
+  "design": {
+    "prose_recipes": {
+      "queries": [
+        23,
+        23
+      ],
+      "delivered_chars_total": [
+        303924,
+        382946
+      ],
+      "forced_lookup_chars_total": [
+        241367,
+        2906184
+      ],
+      "delivered_plus_lookup_total": [
+        545291,
+        3289130
+      ],
+      "delivered_plus_lookup_median": [
+        21317,
+        57858
+      ],
+      "recall_ms_median": [
+        3212.5,
+        702.2
+      ],
+      "schemas_delivered": [
+        34,
+        1
+      ],
+      "unconfirmed_steps_delivered": [
+        0,
+        0
+      ],
+      "recipe_obtained_whole": [
+        14,
+        17
+      ]
+    },
+    "schema_topics": {
+      "queries": [
+        40,
+        40
+      ],
+      "delivered_chars_total": [
+        1006353,
+        1105909
+      ],
+      "forced_lookup_chars_total": [
+        574625,
+        24493186
+      ],
+      "delivered_plus_lookup_total": [
+        1580978,
+        25599095
+      ],
+      "delivered_plus_lookup_median": [
+        31911.5,
+        145576.0
+      ],
+      "recall_ms_median": [
+        2836.1,
+        316.5
+      ],
+      "schemas_delivered": [
+        133,
+        1
+      ],
+      "unconfirmed_steps_delivered": [
+        0,
+        0
+      ],
+      "recipe_obtained_whole": [
+        0,
+        0
+      ]
+    },
+    "recipe_items": {
+      "baseline_miss": 6,
+      "gained": 3,
+      "kept": 14
+    }
+  },
+  "h2": {
+    "items": {
+      "case_baseline_miss": 21,
+      "case_gained": 56,
+      "case_kept": 139,
+      "instruction_baseline_miss": 4,
+      "instruction_gained": 6,
+      "instruction_kept": 42
+    },
+    "chars_before_after": [
+      1353066,
+      7641948
+    ],
+    "forced_before_after": [
+      649133,
+      7039871
+    ],
+    "unconfirmed_delivered_after": 0
+  },
+  "h3": {
+    "items": {
+      "baseline_miss": 23,
+      "gained": 1,
+      "kept": 15
+    },
+    "chars_before_after": [
+      866570,
+      5952622
+    ],
+    "schemas_delivered_before_after": [
+      28,
+      1
+    ],
+    "collateral_same_set": 42,
+    "collateral_same_order": 34,
+    "collateral_queries": 60
+  },
+  "census_after": {
+    "active_schemas": 2,
+    "active_group_carriers": 489,
+    "carrier_chars": 1673593,
+    "max_carrier_chars": 81058,
+    "schema_chars": 3449,
+    "max_schema_chars": 3339,
+    "steps": 4,
+    "unconfirmed_steps": 0,
+    "unconfirmed_steps_in_visited_groups": 0,
+    "unconfirmed_share": 0.0,
+    "schemas_with_unconfirmed_steps": 0,
+    "max_active_nodes_per_group": 1,
+    "triggers_shared_by_groups": 0
+  },
+  "passes": [
+    {
+      "scopes": 15,
+      "seconds": 8.15,
+      "created": 9,
+      "updated": 980,
+      "retired": 481
+    },
+    {
+      "scopes": 15,
+      "seconds": 5.88,
+      "created": 0,
+      "updated": 519,
+      "retired": 0
+    }
+  ]
+}

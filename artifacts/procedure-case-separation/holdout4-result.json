@@ -1,0 +1,69 @@
+{
+ "overlap": {},
+ "code": {
+  "before": "24e9009",
+  "after": "e8913bb"
+ },
+ "schema_topics": {
+  "cases": 50,
+  "items": {
+   "case_baseline_miss": 15,
+   "case_gained": 5,
+   "case_kept": 165,
+   "instruction_baseline_miss": 1,
+   "instruction_kept": 20
+  },
+  "H1_new_instruction_losses": 0,
+  "chars_before_after": [
+   962242,
+   1570283
+  ],
+  "forced_lookup_chars_before_after": [
+   179583,
+   838098
+  ],
+  "unconfirmed_steps_delivered_before_after": [
+   318,
+   0
+  ]
+ },
+ "own_name": {
+  "cases": 42,
+  "items": {
+   "instruction_baseline_miss": 11,
+   "instruction_kept": 31
+  },
+  "H1_new_instruction_losses": 0,
+  "chars_before_after": [
+   789870,
+   1299389
+  ],
+  "forced_lookup_chars_before_after": [
+   173880,
+   721096
+  ],
+  "unconfirmed_steps_delivered_before_after": [
+   181,
+   0
+  ]
+ },
+ "H2_census_unconfirmed_before_after": [
+  206,
+  0
+ ],
+ "census_after": {
+  "active_schemas": 0,
+  "active_group_carriers": 51,
+  "carrier_chars": 85800,
+  "max_carrier_chars": 7126,
+  "schema_chars": 0,
+  "max_schema_chars": 0,
+  "steps": 0,
+  "unconfirmed_steps": 0,
+  "unconfirmed_steps_in_visited_groups": 0,
+  "unconfirmed_share": 0.0,
+  "schemas_with_unconfirmed_steps": 0,
+  "max_active_nodes_per_group": 1,
+  "triggers_shared_by_groups": 0
+ }
+}

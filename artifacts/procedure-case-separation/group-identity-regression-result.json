@@ -1,0 +1,224 @@
+{
+ "candidate": "e3cb245",
+ "baseline": "24e9009",
+ "comparison": "47ec513 (title dedup + peer carrier ids, exhaustive reader)",
+ "column_order": "numeric triples are [original 24e9009, candidate e3cb245, 47ec513]; pairs are [original, candidate] unless named",
+ "production_lines_vs_24e9009": {
+  "added": 122,
+  "removed": 122,
+  "net": 0
+ },
+ "new_instruction_losses": {
+  "design_recipes": 1,
+  "holdout2": 2,
+  "holdout3": 1
+ },
+ "verdict": "fails the zero-new-loss acceptance; census, unconfirmed steps and line budget pass",
+ "independent_holdout": "none (holdout6: 1 eligible of 10 required)",
+ "design": {
+  "prose_recipes": {
+   "queries": [
+    23,
+    23,
+    23
+   ],
+   "delivered_chars_total": [
+    303924,
+    401186,
+    382946
+   ],
+   "forced_lookup_chars_total": [
+    241367,
+    1929640,
+    2906184
+   ],
+   "delivered_plus_lookup_median": [
+    21317,
+    55344,
+    57858
+   ],
+   "delivered_plus_lookup_total": [
+    545291,
+    2330826,
+    3289130
+   ],
+   "recall_ms_median": [
+    3212.5,
+    610.4,
+    702.2
+   ],
+   "schemas_delivered": [
+    34,
+    0,
+    1
+   ],
+   "unconfirmed_steps_delivered": [
+    0,
+    0,
+    0
+   ],
+   "unconfirmed_steps_delivered_from_visited_groups": [
+    0,
+    0,
+    0
+   ],
+   "recipe_obtained_whole": [
+    14,
+    16,
+    17
+   ],
+   "recipe_in_lookup_by_procedure_name": [
+    23,
+    23,
+    23
+   ],
+   "recipe_obtained_from_own_trace": [
+    12,
+    10,
+    12
+   ]
+  },
+  "schema_topics": {
+   "queries": [
+    40,
+    40,
+    40
+   ],
+   "delivered_chars_total": [
+    1006353,
+    1149349,
+    1105909
+   ],
+   "forced_lookup_chars_total": [
+    574625,
+    14214286,
+    24493186
+   ],
+   "delivered_plus_lookup_median": [
+    31911.5,
+    124114.5,
+    145576.0
+   ],
+   "delivered_plus_lookup_total": [
+    1580978,
+    15363635,
+    25599095
+   ],
+   "recall_ms_median": [
+    2836.1,
+    403.4,
+    316.5
+   ],
+   "schemas_delivered": [
+    133,
+    0,
+    1
+   ],
+   "unconfirmed_steps_delivered": [
+    0,
+    0,
+    0
+   ],
+   "unconfirmed_steps_delivered_from_visited_groups": [
+    0,
+    0,
+    0
+   ],
+   "recipe_obtained_whole": [
+    0,
+    0,
+    0
+   ],
+   "recipe_in_lookup_by_procedure_name": [
+    0,
+    0,
+    0
+   ],
+   "recipe_obtained_from_own_trace": [
+    0,
+    0,
+    0
+   ]
+  },
+  "recipes_itemwise": {
+   "kept": 13,
+   "gained": 3,
+   "baseline_miss": 6,
+   "lost": 1
+  },
+  "census_after": {
+   "active_schemas": 2,
+   "active_group_carriers": 489,
+   "carrier_chars": 1515641,
+   "max_carrier_chars": 79327,
+   "schema_chars": 3449,
+   "max_schema_chars": 3339,
+   "steps": 4,
+   "unconfirmed_steps": 0,
+   "unconfirmed_steps_in_visited_groups": 0,
+   "unconfirmed_share": 0.0,
+   "schemas_with_unconfirmed_steps": 0,
+   "max_active_nodes_per_group": 1,
+   "triggers_shared_by_groups": 0
+  },
+  "passes": [
+   {
+    "scopes": 15,
+    "seconds": 4.36,
+    "created": 9,
+    "updated": 981,
+    "retired": 481
+   },
+   {
+    "scopes": 15,
+    "seconds": 1.67,
+    "created": 0,
+    "updated": 519,
+    "retired": 0
+   }
+  ]
+ },
+ "h2": {
+  "items": {
+   "case_baseline_miss": 21,
+   "case_gained": 56,
+   "case_kept": 130,
+   "case_lost": 9,
+   "instruction_baseline_miss": 4,
+   "instruction_gained": 6,
+   "instruction_kept": 40,
+   "instruction_lost": 2
+  },
+  "chars_before_after_47ec513": [
+   1353066,
+   3904033,
+   7641948
+  ],
+  "forced_before_after_47ec513": [
+   649133,
+   3280302,
+   7039871
+  ],
+  "unconfirmed_delivered_after": 0
+ },
+ "h3": {
+  "items": {
+   "gained": 1,
+   "baseline_miss": 23,
+   "kept": 14,
+   "lost": 1
+  },
+  "chars_before_after_47ec513": [
+   866570,
+   3581253,
+   5952622
+  ],
+  "schemas_delivered_before_after": [
+   28,
+   1
+  ],
+  "collateral_same_set": 41,
+  "collateral_same_order": 33,
+  "collateral_queries": 60
+ }
+}
