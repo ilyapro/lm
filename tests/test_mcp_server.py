@@ -490,7 +490,7 @@ def test_memory_remember_signature_unchanged_and_consolidate_report_stays_full(
     for index in range(3):
         mcp.tools["memory_remember"](
             f"procedural rehearsal for the diet ritual number {index}",
-            {"scope": "project:diet-direct", "task_pattern": "diet-ritual", "step": index + 1},
+            {"scope": "project:diet-direct", "task_pattern": "diet-ritual"},
         )
 
     direct = mcp.tools["memory_consolidate"](scope="project:diet-direct", force=True)

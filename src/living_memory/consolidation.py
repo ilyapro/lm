@@ -67,7 +67,6 @@ CROSS_SCOPE_PROMOTION_PHASE = 4
 CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
 GLOBAL_PROMOTION_DEDUP_THRESHOLD = 0.8
 PROCEDURAL_MIN_CLUSTER_SIZE = 3
-_STEP_TEXT_KEYS = ("step_description", "step_content")
 DIGEST_MAX_CHARS = 1200
 DIGEST_LEAD_MAX_CHARS = 600
 DIGEST_FACT_MAX_CHARS = 280
@@ -640,8 +639,6 @@ def memory_teach(
         raise ValueError("correction must be non-empty")
 
     context_data = dict(original.context)
-    for key in _STEP_TEXT_KEYS:  # the correction replaces the step text, not its place
-        context_data.pop(key, None)
     context_data.update(dict(context or {}))
     context_data.setdefault("scope", original.scope)
     context_data["timestamp"] = _utc_now()
@@ -705,36 +702,36 @@ def _materialize_procedural_schemas(
     Each trace's stable group key is its `task_pattern` if present, otherwise
     its `procedure_id`. Traces sharing a `task_pattern` cluster together even
     when their `procedure_id` labels differ between instances.
-
-    Only traces whose writer declared them steps make a procedure; the rest
-    of a group are case records that stay evidence, and a group left without
-    a procedure retires the schema earlier passes built from its records.
     """
 
     groups: dict[tuple[str, str], list[Node]] = {}
+    keys_by_group: dict[tuple[str, str], list[_ProcedureKey]] = {}
     for trace in traces:
         key = _procedure_key(trace)
         if not key:
             continue
-        groups.setdefault((trace.scope, key.group_id), []).append(trace)
+        group_tuple = (trace.scope, key.group_id)
+        groups.setdefault(group_tuple, []).append(trace)
+        keys_by_group.setdefault(group_tuple, []).append(key)
 
     schemas: list[tuple[Node, bool]] = []
-    for (scope, group_id), group_traces in groups.items():
+    for (scope, _group_id), group_traces in groups.items():
         if len(group_traces) < min_cluster_size:
             continue
-        declared = [trace for trace in group_traces if _declares_step(trace)]
         with step():
-            if len(declared) < min_cluster_size:
-                if (existing := _find_existing_schema(store, scope, group_id)) is not None:
-                    store.soft_delete_node(existing.id, "procedural: no declared steps")
-                continue
-            assessment = _assess_cluster_eras(store, declared)
+            assessment = _assess_cluster_eras(store, group_traces)
             if not assessment.live:
                 # Every member is superseded or era-displaced: no current era to
                 # distill, so no schema may be emitted for this group.
                 continue
+            live_ids = {member.id for member in assessment.live}
+            live_keys = [
+                key
+                for trace, key in zip(group_traces, keys_by_group[(scope, _group_id)])
+                if trace.id in live_ids
+            ]
             procedure_key = _select_group_procedure_key(
-                [key for member in assessment.live if (key := _procedure_key(member))]
+                live_keys or keys_by_group[(scope, _group_id)]
             )
             schema, created = _create_or_update_schema(
                 store, scope, procedure_key, assessment.live, era=assessment
@@ -859,7 +856,7 @@ def _create_or_update_schema(
     if era_block is not None:
         context["era_status"] = "current"
 
-    existing = _find_existing_schema(store, scope, procedure_key.group_id)
+    existing = _find_existing_schema(store, scope, procedure_key)
     if existing is None:
         provenance = {
             **base_provenance,
@@ -892,7 +889,9 @@ def _create_or_update_schema(
     return schema, False
 
 
-def _find_existing_schema(store: MemoryStore, scope: str, group_id: str) -> Node | None:
+def _find_existing_schema(
+    store: MemoryStore, scope: str, procedure_key: _ProcedureKey
+) -> Node | None:
     """Locate the schema of the same group: its group key, never its labels.
 
     Groups share labels: a group keyed by one task_pattern may carry, as its
@@ -908,7 +907,7 @@ def _find_existing_schema(store: MemoryStore, scope: str, group_id: str) -> Node
         limit=100_000,
     )
     for schema in schemas:
-        if _schema_group_id(schema) != group_id:
+        if _schema_group_id(schema) != procedure_key.group_id:
             continue
         if schema.corrections or _is_superseded(store, schema.id):
             # A taught/superseded schema belongs to a dead era; updating it
@@ -934,28 +933,27 @@ def _normalize_trigger(procedure_id: str) -> str:
 
 
 def _procedure_steps(traces: Iterable[Node]) -> list[str]:
-    """One step per declared position, restated by its latest record, then
-    the steps declared by text alone, in write order."""
-
-    written = sorted(
-        traces, key=lambda trace: (trace.timestamp or "", trace.created_at or "", trace.id)
+    ordered = sorted(
+        traces,
+        key=lambda trace: (
+            _step_order(trace),
+            trace.timestamp or "",
+            trace.created_at or "",
+            trace.id,
+        ),
     )
-    slots: dict[tuple[int, int], str] = {}
-    for index, trace in enumerate(written):
+    steps: list[str] = []
+    seen: set[str] = set()
+    for trace in ordered:
         step = _step_description(trace)
-        if not step:
+        if not step or step in seen:
             continue
-        position = _step_order(trace)
-        slots[(0, position) if position is not None else (1, index)] = step
-    return list(dict.fromkeys(slots[slot] for slot in sorted(slots)))
+        seen.add(step)
+        steps.append(step)
+    return steps
 
 
-def _declares_step(trace: Node) -> bool:
-    context = trace.context or {}
-    return _step_order(trace) is not None or any(context.get(key) for key in _STEP_TEXT_KEYS)
-
-
-def _step_order(trace: Node) -> int | None:
+def _step_order(trace: Node) -> int:
     context = trace.context or {}
     for key in ("step_order", "step"):
         value = context.get(key)
@@ -967,16 +965,20 @@ def _step_order(trace: Node) -> int | None:
             return int(value)
         if isinstance(value, str) and value.strip().lstrip("-").isdigit():
             return int(value.strip())
-    return None
+    return 10_000_000
 
 
 def _step_description(trace: Node) -> str:
     context = trace.context or {}
-    for key in _STEP_TEXT_KEYS:
+    for key in ("step_description", "step_content"):
         value = context.get(key)
         if value:
             return str(value).strip()
-    return (trace.content or "").strip()
+    task = trace.task or context.get("task")
+    content = (trace.content or "").strip()
+    if task and content and str(task).strip() not in content:
+        return f"{str(task).strip()}: {content}"
+    return content
 
 
 def _format_schema_content(trigger: str, steps: Iterable[str]) -> str:
