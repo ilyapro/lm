@@ -336,8 +336,7 @@ def test_recall_snippets_long_content_with_content_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _clear_delivery_env(monkeypatch)
-    # Uniform legacy mode: the default ladder ships the top bearer complete,
-    # so budgeting the top result takes the documented uniform-budget valve.
+    # Uniform legacy mode: an explicit snippet budget replaces the ladder.
     monkeypatch.setenv("LM_DELIVERY_SNIPPET_CHARS", "1200")
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     long_content = "meridian telescope alignment procedure. " + " ".join(

@@ -711,10 +711,9 @@ def test_inputs_not_mutated_and_output_deterministic() -> None:
     assert long_node.content == "z" * 4000
     assert long_node.provenance == provenance_before
     assert twin_a.provenance == provenance
-    # Production defaults: the ladder ships the first bearer complete, and the
-    # diet ran (summarized provenance in the output, inputs untouched above).
-    assert deliveries(first) == [DELIVERY_FULL, DELIVERY_SESSION_DUPLICATE, DELIVERY_TWIN_DUPLICATE]
-    assert first[0]["node"]["content"] == "z" * 4000
+    # Production defaults bound the first bearer without mutating its node.
+    assert deliveries(first) == [DELIVERY_SNIPPET, DELIVERY_SESSION_DUPLICATE, DELIVERY_TWIN_DUPLICATE]
+    assert len(first[0]["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[0]
     assert first[0]["node"]["provenance"]["prior_recalls"] == {"count": len(PRIOR_RECALLS)}
 
 
@@ -794,14 +793,79 @@ def test_session_dedup_env_default_and_rollback_valve(monkeypatch: pytest.Monkey
 # --- snippet ladder (default mode) ----------------------------------------
 
 
-def test_ladder_first_bearer_ships_complete_content_even_when_huge() -> None:
+def test_ladder_first_bearer_bounds_oversized_content() -> None:
     huge = "top ranked dossier\n" + "x" * 20_000
 
     shaped = shape_default([make_result(make_node("top", huge))])
 
-    assert deliveries(shaped) == [DELIVERY_FULL]
-    assert shaped[0]["node"]["content"] == huge
-    assert "content_ref" not in shaped[0]  # nothing was cut from this entry
+    assert deliveries(shaped) == [DELIVERY_SNIPPET]
+    assert len(shaped[0]["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[0]
+    assert shaped[0]["content_ref"]["node_id"] == "top"
+    assert shaped[0]["content_ref"]["full_content_chars"] == len(huge)
+
+
+def test_query_selects_buried_evidence_with_exact_source_and_keeps_case_label() -> None:
+    sources = [f"01M{index:023d}" for index in range(10)]
+    records = [f"- {source}: Routine archive {index}. " + "padding " * 350 for index, source in enumerate(sources)]
+    records[7] = f"- {sources[7]}: The cobalt flange needs 42 Nm. " + "detail " * 350
+    content = "Evidence: workshop (case records, not steps)\n" + "\n".join(records)
+    node = make_node("carrier", content, level="concept", source_traces=sources)
+
+    shaped = shape_default([make_result(node)], query="What torque does the cobalt flange need?")
+
+    entry = shaped[0]
+    excerpt = entry["node"]["content"]
+    assert entry["delivery"] == DELIVERY_SNIPPET
+    assert len(excerpt) <= DEFAULT_SNIPPET_LADDER[0]
+    assert excerpt.startswith("Evidence: workshop (case records, not steps)\n")
+    assert f"- {sources[7]}: The cobalt flange needs 42 Nm." in excerpt
+    assert entry["content_ref"]["node_id"] == "carrier"
+    assert entry["content_ref"]["full_content_chars"] == len(content)
+    assert node.content == content
+    assert [item["node"]["id"] for item in shaped] == ["carrier"]
+
+
+def test_query_finds_relevant_passage_inside_one_long_record() -> None:
+    source = "01M" + "7" * 23
+    content = (
+        "Evidence: fixtures (case records, not steps)\n"
+        f"- {source}: " + "ordinary notes\n" * 150
+        + "A buried xenon gasket correction says use the blue seal.\n"
+        + "ordinary notes\n" * 150
+    )
+
+    entry = shape_default([make_result(make_node("carrier", content))], query="xenon gasket seal")[0]
+
+    assert entry["delivery"] == DELIVERY_SNIPPET
+    assert f"- {source}: A buried xenon gasket correction says use the blue seal." in entry["node"]["content"]
+
+
+def test_binding_schema_and_short_result_remain_complete_with_query() -> None:
+    procedure = "Procedure: calibrated press\n" + "1. Retain every binding step.\n" * 200
+    results = [
+        make_result(make_node("schema", procedure, level="schema")),
+        make_result(make_node("short", "Short finding: 42 Nm.")),
+    ]
+
+    shaped = shape_default(results, query="calibrated press torque")
+
+    assert [entry["node"]["id"] for entry in shaped] == ["schema", "short"]
+    assert shaped[0]["delivery"] == DELIVERY_FULL
+    assert shaped[0]["node"]["content"] == procedure
+    assert shaped[1]["delivery"] == DELIVERY_FULL
+    assert shaped[1]["node"]["content"] == "Short finding: 42 Nm."
+
+
+def test_oversized_corrected_rule_keeps_correction_signal() -> None:
+    correction = {"by": "reviewer", "supersedes": "01OLDNODE", "text": "Use 42 Nm instead"}
+    node = make_node("old-rule", "Old rule: 20 Nm. " + "history " * 500,
+                     corrections=[correction])
+
+    entry = shape_default([make_result(node)], query="flange torque rule")[0]
+
+    assert entry["delivery"] == DELIVERY_SNIPPET
+    assert entry["node"]["provenance"]["corrections"] == [correction]
+    assert entry["content_ref"]["node_id"] == "old-rule"
 
 
 def test_ladder_descending_budgets_by_bearer_position() -> None:
@@ -835,7 +899,7 @@ def test_ladder_positions_past_end_reuse_last_budget() -> None:
 
 
 def test_stubs_do_not_consume_ladder_slots() -> None:
-    twin_content = "twinned charter body " + "y" * 1500
+    twin_content = "twinned charter body " + "y" * 3000
     results = [
         make_result(make_node("seen", "already delivered body"), score=0.9),
         make_result(make_node("bearer-a", twin_content), score=0.8),
@@ -847,13 +911,12 @@ def test_stubs_do_not_consume_ladder_slots() -> None:
 
     assert deliveries(shaped) == [
         DELIVERY_SESSION_DUPLICATE,
-        DELIVERY_FULL,
+        DELIVERY_SNIPPET,
         DELIVERY_TWIN_DUPLICATE,
         DELIVERY_SNIPPET,
     ]
-    # "seen" and the twin are stubs: bearer-a takes ladder position 0 (complete
-    # despite exceeding every finite budget), bearer-b position 1.
-    assert shaped[1]["node"]["content"] == twin_content
+    # "seen" and the twin are stubs: bearer-a takes ladder position 0.
+    assert len(shaped[1]["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[0]
     assert len(shaped[3]["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[1]
 
 
@@ -1118,7 +1181,7 @@ def test_snippet_ladder_env_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(SNIPPET_LADDER_ENV, raising=False)
     monkeypatch.delenv(SNIPPET_CHARS_ENV, raising=False)
     assert snippet_ladder_from_env() == DEFAULT_SNIPPET_LADDER
-    assert DEFAULT_SNIPPET_LADDER[0] == LADDER_COMPLETE  # the top-result guarantee
+    assert DEFAULT_SNIPPET_LADDER[0] > 0
 
     # Explicit uniform budget with no ladder set: the legacy contract survives,
     # including "0 disables snippeting".

@@ -730,8 +730,8 @@ class _InstructionsRefresh:
 
 _RECALL_DESCRIPTION = (
     "Recall before acting and at every new turn of thought. You MUST "
-    "recall BEFORE acting: changing any artifact (conventions, rejected "
-    "approaches); creating or mutating state (recall the concept before "
+    "recall BEFORE acting: changing any artifact (conventions); creating or mutating "
+    "state (recall the concept before "
     "inventing one); irreversible or outward-facing steps (recall action "
     "plus target); pulling knowledge from the world — searching, "
     "measuring (memory first: the world only after recall returns nothing "
@@ -739,12 +739,12 @@ _RECALL_DESCRIPTION = (
     "(recall cross-project); entering anything new — task, message. You "
     "MUST recall MID-WORK, at every new turn of thought: ask what memory "
     "holds nearby so nothing related is missed; stuck or surprised means "
-    "overdue, 'if only I knew' means recall NOW. Query: identifiers and "
-    "what you need; re-ask as it moves. Default: when uncertain, recall. "
+    "overdue, 'if only I knew' means recall NOW. Query by identifiers; "
+    "re-ask. Default: when uncertain, recall. "
     "Read broad: omit scope to transfer across scopes. Depth 'causal' "
     "when debugging. A level:schema result is a binding procedure — "
-    "follow it literally. Non-full results carry a content_ref — refetch "
-    "via memory_lookup."
+    "follow it literally. If delivered knowledge is insufficient, use a "
+    "non-full result's content_ref via memory_lookup for the full node."
 )
 
 _REMEMBER_DESCRIPTION = (
@@ -803,19 +803,20 @@ DEFAULT_EXPLICIT_FEEDBACK_PROMPT_ARM = "optional"
 
 _RECALL_DESCRIPTION_MANDATORY = (
     "Recall before acting and at every new turn of thought. You MUST "
-    "recall BEFORE acting: changing any artifact (conventions, rejected "
-    "approaches); creating or mutating state (recall the concept before "
+    "recall BEFORE acting: changing any artifact (conventions); creating or mutating "
+    "state (recall the concept before "
     "inventing one); irreversible or outward-facing steps (recall action "
     "plus target); pulling knowledge from the world (memory first: the "
-    "world only after recall returns nothing — anti-pattern: "
+    "world only after recall returns nothing — "
     "world-before-memory); choosing an approach (recall cross-project); "
-    "entering anything new — task, message. You MUST recall MID-WORK: ask "
+    "entering new tasks, messages. You MUST recall MID-WORK: ask "
     "what memory holds nearby so nothing related is missed; stuck or "
     "surprised means overdue, 'if only I knew' means recall NOW. Query by "
-    "identifiers; re-ask. Default: when uncertain, recall. Read broad: "
+    "identifiers. Default: when uncertain, recall. Read broad: "
     "omit scope to transfer across scopes. Depth 'causal' when debugging. "
     "A level:schema result is a binding procedure — follow it literally. "
-    "Refetch a non-full result's content_ref via memory_lookup. You MUST "
+    "If delivered knowledge is insufficient, use a non-full result's "
+    "content_ref via memory_lookup for the full node. You MUST "
     "mark each recall's results on your next call: used ids as used, "
     "off-topic ids as irrelevant."
 )
@@ -1277,8 +1278,10 @@ def _register_tools(
         default: twin and near-dup collapse unconditionally, the session class
         whenever a transport session id is stamped. The near-dup threshold is
         ``LM_RECALL_NEAR_DUP_COSINE`` (0 restores byte-only dedup).
-        The top-ranked content-bearer ships complete content;
-        lower-ranked bearers get descending snippet budgets.
+        The top-ranked content-bearer has a bounded default budget;
+        lower-ranked bearers get descending budgets. Oversized content is
+        selected for the query, while short content and binding schemas stay
+        complete.
         Non-full results add a ``content_ref`` whose ``node_id`` fed to
         ``memory_lookup`` returns the complete stored node. Every delivery is
         dieted on the wire — oversized context/provenance values compacted to
@@ -1358,6 +1361,7 @@ def _register_tools(
                 store.mark_recall_event_gated(recall_service.last_recall_event_id)
             shaped = shape_recall_results(
                 results,
+                query=query,
                 already_delivered_ids=already_delivered,
                 snippet_max_chars=snippet_max_chars_from_env(),
                 context_value_max_chars=context_value_max_chars_from_env(),

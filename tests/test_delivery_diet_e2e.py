@@ -14,9 +14,8 @@ them on the wire:
   direct store writes exactly as pre-digest consolidation used to persist
   them, yields exactly one content-bearer per response; the twin stub points
   at it via ``content_ref.duplicate_of``.
-* Snippet ladder — the top-ranked content-bearer ships complete content by
-  default even when huge; a configured ``LM_DELIVERY_SNIPPET_LADDER`` budget
-  truncates it inline with a ``content_ref``, and
+* Snippet ladder — the top-ranked content-bearer has a finite default budget;
+  a configured ``LM_DELIVERY_SNIPPET_LADDER`` can tighten it further, and
   ``memory_lookup(node_id=...)`` returns the stored bytes unchanged (the
   re-fetch path).
 * Context diet — a procedural schema node whose ``context.procedure``
@@ -251,10 +250,10 @@ def test_twin_dedup_delivers_exactly_one_content_bearer(tmp_path: Path) -> None:
     assert ref["full_content_chars"] == len(body)
 
 
-# --- Snippet ladder: top complete by default, budgeted inline + refetch -----
+# --- Snippet ladder: bounded default, tighter budget + refetch --------------
 
 
-def test_long_content_top_full_by_default_then_ladder_snippet_and_refetch(
+def test_long_content_top_bounded_by_default_then_tighter_snippet_and_refetch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     scope = "project:dietlong"
@@ -284,11 +283,11 @@ def test_long_content_top_full_by_default_then_ladder_snippet_and_refetch(
     node_id, default_recall, ladder_recall, looked_up = asyncio.run(scenario())
     assert len(long_content) > SNIPPET_LIMIT
 
-    # Default ladder: the top-ranked bearer ships complete content, however long.
+    # Default ladder bounds oversized content while retaining a lookup path.
     top_entry = _by_id(default_recall)[node_id]
-    assert top_entry["delivery"] == "full"
-    assert top_entry["node"]["content"] == long_content
-    assert "content_ref" not in top_entry
+    assert top_entry["delivery"] == "snippet"
+    assert len(top_entry["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[0]
+    assert top_entry["content_ref"]["node_id"] == node_id
 
     entry = _by_id(ladder_recall)[node_id]
     assert entry["delivery"] == "snippet"
@@ -296,7 +295,7 @@ def test_long_content_top_full_by_default_then_ladder_snippet_and_refetch(
     assert snippet != long_content
     assert len(snippet) <= SNIPPET_LIMIT
     assert snippet.endswith("…")
-    assert long_content.startswith(snippet[:-1])  # truncation, not paraphrase
+    assert "glacier archive manifest" in snippet
     assert entry["content_ref"] == {
         "node_id": node_id,
         "full_content_chars": len(long_content),
@@ -421,8 +420,9 @@ def test_remember_response_bounded_while_write_durable_and_recallable(
     assert stored.content == body  # durably stored, byte-equal
 
     entry = _by_id(recalled)[confirmation["id"]]  # and recallable over the wire
-    assert entry["delivery"] == "full"  # top-ranked bearer: complete content
-    assert entry["node"]["content"] == body
+    assert entry["delivery"] == "snippet"
+    assert len(entry["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[0]
+    assert entry["content_ref"]["node_id"] == confirmation["id"]
 
 
 # --- Feedback closure: stub deliveries never break pending-recall matching --

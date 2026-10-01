@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "description": "Public synthetic corpus and paired case contract; no private memory text or queries.",
+  "nodes": [
+    {
+      "key": "large",
+      "id": "01SYNT00000000000000000001",
+      "level": "concept",
+      "scope": "project:synthetic",
+      "content": "Evidence: relay migration history.\nArchived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Archived relay telemetry and unrelated chronology. Current relay migration requires a signed manifest before promotion.\n"
+    },
+    {
+      "key": "short_a",
+      "id": "01SYNT00000000000000000002",
+      "level": "trace",
+      "scope": "project:synthetic",
+      "content": "The copper relay retry budget is seven attempts."
+    },
+    {
+      "key": "short_b",
+      "id": "01SYNT00000000000000000003",
+      "level": "trace",
+      "scope": "project:synthetic",
+      "content": "The blue relay status endpoint is /status/blue."
+    },
+    {
+      "key": "buried",
+      "id": "01SYNT00000000000000000004",
+      "level": "concept",
+      "scope": "project:synthetic",
+      "content": "Evidence: archive rebuild cases.\nOld archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. Old archive logs with no current instructions. When rebuilding the archive index, preserve the sealed manifest and write a fresh index.\n"
+    },
+    {
+      "key": "old",
+      "id": "01SYNT00000000000000000005",
+      "level": "trace",
+      "scope": "project:synthetic",
+      "content": "Old rule: all amber exports use an unsigned manifest."
+    },
+    {
+      "key": "new",
+      "id": "01SYNT00000000000000000006",
+      "level": "trace",
+      "scope": "project:synthetic",
+      "content": "Correction: amber exports now require a signed manifest; the unsigned rule is obsolete."
+    },
+    {
+      "key": "hold_long",
+      "id": "01SYNT00000000000000000007",
+      "level": "concept",
+      "scope": "project:synthetic",
+      "content": "Evidence: violet queue history.\nHistorical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. Historical violet queue data without current steps. For violet queue recovery, drain the pending lease before restarting consumers.\n"
+    },
+    {
+      "key": "hold_short",
+      "id": "01SYNT00000000000000000008",
+      "level": "trace",
+      "scope": "project:synthetic",
+      "content": "The orchid relay heartbeat interval is eleven seconds."
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "01SYNT00000000000000000006",
+      "target_id": "01SYNT00000000000000000005",
+      "type": "supersedes"
+    }
+  ],
+  "cases": [
+    {
+      "id": "synthetic-large",
+      "split": "development",
+      "family": "known_large_carrier",
+      "query": "What does current relay migration require?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [
+          "01SYNT00000000000000000001"
+        ],
+        "must_contain": [
+          "signed manifest before promotion"
+        ],
+        "must_not_assert": [],
+        "absence_expected": false
+      }
+    },
+    {
+      "id": "synthetic-short-a",
+      "split": "development",
+      "family": "ordinary_short_fact",
+      "query": "What is the copper relay retry budget?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [
+          "01SYNT00000000000000000002"
+        ],
+        "must_contain": [
+          "seven attempts"
+        ],
+        "must_not_assert": [],
+        "absence_expected": false
+      }
+    },
+    {
+      "id": "synthetic-short-b",
+      "split": "development",
+      "family": "ordinary_short_fact",
+      "query": "Where is the blue relay status endpoint?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [
+          "01SYNT00000000000000000003"
+        ],
+        "must_contain": [
+          "/status/blue"
+        ],
+        "must_not_assert": [],
+        "absence_expected": false
+      }
+    },
+    {
+      "id": "synthetic-buried",
+      "split": "development",
+      "family": "buried_applicable_instruction",
+      "query": "How should the archive index be rebuilt?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [
+          "01SYNT00000000000000000004"
+        ],
+        "must_contain": [
+          "preserve the sealed manifest",
+          "write a fresh index"
+        ],
+        "must_not_assert": [],
+        "absence_expected": false
+      }
+    },
+    {
+      "id": "synthetic-correction",
+      "split": "development",
+      "family": "obsolete_rule_with_correction",
+      "query": "What manifest does an amber export require now?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [
+          "01SYNT00000000000000000006"
+        ],
+        "must_contain": [
+          "signed manifest",
+          "unsigned rule is obsolete"
+        ],
+        "must_not_assert": [
+          "all amber exports use an unsigned manifest"
+        ],
+        "absence_expected": false
+      }
+    },
+    {
+      "id": "synthetic-missing",
+      "split": "development",
+      "family": "missing_knowledge",
+      "query": "What is the quartz comet payout multiplier?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [],
+        "must_contain": [],
+        "must_not_assert": [],
+        "absence_expected": true
+      }
+    },
+    {
+      "id": "synthetic-hold-long",
+      "split": "holdout",
+      "family": "buried_applicable_instruction",
+      "query": "How are violet queue consumers recovered?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [
+          "01SYNT00000000000000000007"
+        ],
+        "must_contain": [
+          "drain the pending lease before restarting consumers"
+        ],
+        "must_not_assert": [],
+        "absence_expected": false
+      }
+    },
+    {
+      "id": "synthetic-hold-short",
+      "split": "holdout",
+      "family": "ordinary_short_fact",
+      "query": "What is the orchid relay heartbeat interval?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [
+          "01SYNT00000000000000000008"
+        ],
+        "must_contain": [
+          "eleven seconds"
+        ],
+        "must_not_assert": [],
+        "absence_expected": false
+      }
+    },
+    {
+      "id": "synthetic-hold-missing",
+      "split": "holdout",
+      "family": "missing_knowledge",
+      "query": "Who owns the nebula saffron seal?",
+      "scope": "project:synthetic",
+      "max_results": 6,
+      "oracle": {
+        "required_source_ids": [],
+        "must_contain": [],
+        "must_not_assert": [],
+        "absence_expected": true
+      }
+    }
+  ]
+}

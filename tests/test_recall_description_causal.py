@@ -1,9 +1,9 @@
 """The mandatory memory_recall description carries the depth 'causal' hint.
 
 The first fit of the mandatory arm into the 1024-char budget dropped
-"Depth 'causal' when debugging."; it is back by rewording. The optional arm
-must not move by a byte: its texts are pinned by sha256 of the pre-change
-constants (docs/explicit-feedback.md).
+"Depth 'causal' when debugging."; it is back by rewording. The optional arm's
+current texts are pinned by sha256; its recall description now makes lookup
+conditional on insufficient delivered knowledge.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from living_memory.server import (
 MAX_DESCRIPTION_CHARS = 1024
 
 OPTIONAL_SHA256 = {
-    "recall": "0106129c28bd6153525f40780dbfbe71dcb56c6723e615651976372b4e58cf2b",
+    "recall": "10d3843d1348e83b1b85051ab8e08a7a8c7ac6ea3391808d4cc51433e0f6e5be",
     "used": "4f999afcd41803aa54c9df439f4bca2301ef1f620b5804b5fc2efa1b4f8b8dd1",
     "irrelevant": "9996b53a921be8d0b205633827ef299acf6a08316e1d4472ac5b489c63b9ccae",
 }
@@ -51,7 +51,7 @@ def test_mandatory_recall_keeps_the_binding_sentences() -> None:
         assert sentence in text, sentence
 
 
-def test_optional_arm_texts_are_unchanged() -> None:
+def test_optional_arm_texts_match_current_pins() -> None:
     optional = _explicit_feedback_texts("optional")
     assert optional["recall"] is _RECALL_DESCRIPTION
     assert optional["used"] == _USED_FIELD_DESCRIPTION

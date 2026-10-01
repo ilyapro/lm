@@ -1,0 +1,545 @@
+{
+  "acceptance": {
+    "aggregate_chars_reduced": true,
+    "all_required_knowledge_preserved": true,
+    "measured_cost_claim_passes": true,
+    "no_forced_lookup_cost_increase": true,
+    "no_mandatory_calls_added_on_sufficient_cases": true,
+    "ranking_identical": true
+  },
+  "by_split": {
+    "development": {
+      "baseline": {
+        "calls": 6,
+        "latency_ms": 28167.714,
+        "lookup_calls": 0,
+        "oracle_pass": 6,
+        "recall_calls": 6,
+        "response_chars": 138029
+      },
+      "candidate": {
+        "calls": 6,
+        "latency_ms": 17720.178,
+        "lookup_calls": 0,
+        "oracle_pass": 6,
+        "recall_calls": 6,
+        "response_chars": 63387
+      }
+    },
+    "holdout": {
+      "baseline": {
+        "calls": 4,
+        "latency_ms": 5523.313,
+        "lookup_calls": 1,
+        "oracle_pass": 3,
+        "recall_calls": 3,
+        "response_chars": 56248
+      },
+      "candidate": {
+        "calls": 3,
+        "latency_ms": 5549.159,
+        "lookup_calls": 0,
+        "oracle_pass": 3,
+        "recall_calls": 3,
+        "response_chars": 32653
+      }
+    }
+  },
+  "cases": [
+    {
+      "baseline": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 14373.363,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 14373.363,
+        "remaining_requirements": 0,
+        "response_chars": 67007,
+        "responses": [
+          {
+            "chars": 67007,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 7015.466,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 7015.466,
+        "remaining_requirements": 0,
+        "response_chars": 12745,
+        "responses": [
+          {
+            "chars": 12745,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "delta_calls": 0,
+      "delta_chars": -54262,
+      "family": "known_large_carrier",
+      "number": 1,
+      "ranking_identical": true,
+      "split": "development"
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 3598.927,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 3598.927,
+        "remaining_requirements": 0,
+        "response_chars": 8390,
+        "responses": [
+          {
+            "chars": 8390,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 2142.796,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 2142.796,
+        "remaining_requirements": 0,
+        "response_chars": 8390,
+        "responses": [
+          {
+            "chars": 8390,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "delta_calls": 0,
+      "delta_chars": 0,
+      "family": "ordinary_short_fact",
+      "number": 2,
+      "ranking_identical": true,
+      "split": "development"
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 4091.588,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 4091.588,
+        "remaining_requirements": 0,
+        "response_chars": 8297,
+        "responses": [
+          {
+            "chars": 8297,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 2001.978,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 2001.978,
+        "remaining_requirements": 0,
+        "response_chars": 8528,
+        "responses": [
+          {
+            "chars": 8528,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "delta_calls": 0,
+      "delta_chars": 231,
+      "family": "ordinary_short_fact",
+      "number": 3,
+      "ranking_identical": true,
+      "split": "development"
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 2082.368,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 2082.368,
+        "remaining_requirements": 0,
+        "response_chars": 28101,
+        "responses": [
+          {
+            "chars": 28101,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 1940.289,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 1940.289,
+        "remaining_requirements": 0,
+        "response_chars": 12522,
+        "responses": [
+          {
+            "chars": 12522,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "delta_calls": 0,
+      "delta_chars": -15579,
+      "family": "buried_applicable_instruction",
+      "number": 4,
+      "ranking_identical": true,
+      "split": "development"
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 1896.849,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 1896.849,
+        "remaining_requirements": 0,
+        "response_chars": 16319,
+        "responses": [
+          {
+            "chars": 16319,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 2238.229,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 2238.229,
+        "remaining_requirements": 0,
+        "response_chars": 11138,
+        "responses": [
+          {
+            "chars": 11138,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "delta_calls": 0,
+      "delta_chars": -5181,
+      "family": "obsolete_rule_with_correction",
+      "number": 5,
+      "ranking_identical": true,
+      "split": "development"
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "expected": "missing",
+        "latency_ms": 2124.619,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 2124.619,
+        "remaining_requirements": 0,
+        "response_chars": 9915,
+        "responses": [
+          {
+            "chars": 9915,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": false
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "missing",
+        "latency_ms": 2381.42,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 2381.42,
+        "remaining_requirements": 0,
+        "response_chars": 10064,
+        "responses": [
+          {
+            "chars": 10064,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": false
+      },
+      "delta_calls": 0,
+      "delta_chars": 149,
+      "family": "missing_knowledge",
+      "number": 6,
+      "ranking_identical": true,
+      "split": "development"
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 1905.253,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 1905.253,
+        "remaining_requirements": 0,
+        "response_chars": 16274,
+        "responses": [
+          {
+            "chars": 16274,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 2105.281,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 2105.281,
+        "remaining_requirements": 0,
+        "response_chars": 10807,
+        "responses": [
+          {
+            "chars": 10807,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "delta_calls": 0,
+      "delta_chars": -5467,
+      "family": "ordinary_short_fact",
+      "number": 7,
+      "ranking_identical": true,
+      "split": "holdout"
+    },
+    {
+      "baseline": {
+        "calls": 2,
+        "expected": "sufficient",
+        "latency_ms": 1933.475,
+        "lookup_calls": 1,
+        "lookup_ms": 0.361,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 1933.115,
+        "remaining_requirements": 0,
+        "response_chars": 29931,
+        "responses": [
+          {
+            "chars": 15854,
+            "tool": "memory_recall"
+          },
+          {
+            "chars": 14077,
+            "tool": "memory_lookup"
+          }
+        ],
+        "sufficient": true
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "sufficient",
+        "latency_ms": 1698.222,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 1698.222,
+        "remaining_requirements": 0,
+        "response_chars": 11563,
+        "responses": [
+          {
+            "chars": 11563,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": true
+      },
+      "delta_calls": -1,
+      "delta_chars": -18368,
+      "family": "buried_applicable_instruction",
+      "number": 8,
+      "ranking_identical": true,
+      "split": "holdout"
+    },
+    {
+      "baseline": {
+        "calls": 1,
+        "expected": "missing",
+        "latency_ms": 1684.585,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 1684.585,
+        "remaining_requirements": 0,
+        "response_chars": 10043,
+        "responses": [
+          {
+            "chars": 10043,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": false
+      },
+      "candidate": {
+        "calls": 1,
+        "expected": "missing",
+        "latency_ms": 1745.656,
+        "lookup_calls": 0,
+        "lookup_ms": 0.0,
+        "oracle_pass": true,
+        "recall_calls": 1,
+        "recall_ms": 1745.656,
+        "remaining_requirements": 0,
+        "response_chars": 10283,
+        "responses": [
+          {
+            "chars": 10283,
+            "tool": "memory_recall"
+          }
+        ],
+        "sufficient": false
+      },
+      "delta_calls": 0,
+      "delta_chars": 240,
+      "family": "missing_knowledge",
+      "number": 9,
+      "ranking_identical": true,
+      "split": "holdout"
+    }
+  ],
+  "independent_oracle": {
+    "all_cases_pass": true,
+    "all_positive_sufficient": true,
+    "loss_probe": "Synthetic oracle tests deliberately remove a buried instruction or explicit correction; both are rejected.",
+    "targeted_suite_status": "Clean combined targeted suite: 195 passed, exit 0.",
+    "targeted_tests_passed": 195
+  },
+  "inputs": {
+    "private_packet_sha256": "a54df4594910edb62d421fe7eec1add260022a6779809cdf710eef5619fd5d64",
+    "snapshot_sha256": "2891a098b23c7ad0ef2a1c64a8bdfdd9dadccdccf4e2693afd31b09e55f09e69",
+    "synthetic_fixtures_sha256": "972bd2e0e33baba2d2a03d2c0238deb46eae92bf303582943bbaf042f285b293"
+  },
+  "limitations": [
+    "The known large-carrier development case was used to diagnose the carrier-omission repair; it is not independent holdout evidence.",
+    "Holdout consists of three frozen, disjoint cases and is reported separately; it does not establish population-wide field benefit.",
+    "Latency is one sequential replay per arm and is descriptive, not a controlled performance estimate.",
+    "Private packet and detailed retrieval IDs remain local; no query, content, or node ID is committed."
+  ],
+  "method": "Hash-verified frozen private packet and same SQLite snapshot; fresh copy per case, separate archived code revisions per arm; independent literal source-clause oracle; every recall and necessary lookup JSON response counted once.",
+  "population": {
+    "cases": 9,
+    "development": 6,
+    "holdout": 3,
+    "missing_knowledge": 2,
+    "positive": 7
+  },
+  "production_complexity": {
+    "baseline": {
+      "ast_branch_nodes": 283,
+      "functions": 111,
+      "lines": 2816
+    },
+    "candidate": {
+      "ast_branch_nodes": 308,
+      "functions": 114,
+      "lines": 2918
+    },
+    "delta": {
+      "ast_branch_nodes": 25,
+      "functions": 3,
+      "lines": 102
+    },
+    "files": [
+      "src/living_memory/delivery.py",
+      "src/living_memory/server.py"
+    ],
+    "git_diff": {
+      "deletions": 21,
+      "insertions": 123
+    },
+    "merge_base": "cd4ad6c3984c41badc55199299532199ed4579b1"
+  },
+  "ranking_changed_cases": 0,
+  "revisions": {
+    "baseline": "cd4ad6c3984c41badc55199299532199ed4579b1",
+    "candidate": "0e6866cc8acb7f7f0b49e9aad87f3a9711192d39"
+  },
+  "schema_version": 1,
+  "totals": {
+    "baseline": {
+      "calls": 10,
+      "latency_ms": 33691.027,
+      "lookup_calls": 1,
+      "oracle_pass": 9,
+      "recall_calls": 9,
+      "response_chars": 194277
+    },
+    "candidate": {
+      "calls": 9,
+      "latency_ms": 23269.337,
+      "lookup_calls": 0,
+      "oracle_pass": 9,
+      "recall_calls": 9,
+      "response_chars": 96040
+    }
+  },
+  "verdict": "PASS: aggregate full-chain characters decrease across multiple cases; no positive case adds a mandatory call or costly forced lookup; all required knowledge survives."
+}

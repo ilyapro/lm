@@ -160,7 +160,7 @@ LEGITIMATE_PROTOCOL_WORDING = (
     "Recall before acting and at every new turn of thought.",
     "Read broad: omit scope to transfer across scopes.",
     "A level:schema result is a binding procedure — follow it literally.",
-    "Non-full results carry a content_ref — refetch via memory_lookup.",
+    "If delivered knowledge is insufficient, use a non-full result's content_ref via memory_lookup.",
     "recipes, pitfalls, refutations, external contracts, measurement findings",
     "You and Living Memory form ONE cognitive system; LM supplies durable memory.",
     "entering anything new — a session, task, message, thought, or direction",

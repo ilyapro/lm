@@ -29,9 +29,9 @@ Rules, applied in this order per ranked result:
    ``session_duplicate``.
 4. Snippeting — the content budget of a would-be-full result comes from the
    snippet ladder indexed by its content-bearer position (stubs of every
-   class don't consume ladder slots): the first bearer ships complete content
-   (the top-result guarantee), lower-ranked bearers get descending budgets and
-   become ``delivery: "snippet"`` when their content exceeds the budget. With
+   class don't consume ladder slots): the first bearer has a finite 2400-char
+   budget, lower-ranked bearers get descending budgets, and oversized content
+   is selected in task-relevant passages. Binding schemas ship complete. With
    the ladder disabled (``snippet_ladder=None``) every bearer shares the
    uniform ``snippet_max_chars`` budget (``0`` disables snippeting) — the
    legacy contract.
@@ -90,7 +90,7 @@ is wire-only and reversible per entry via the advertised lookup.
 Env knobs (read by the server wiring, not by the pure function):
 
 - ``LM_DELIVERY_SNIPPET_LADDER`` — per-bearer-position content budgets,
-  comma-separated ``full`` or char counts (default ``full,1000,700,500,300,200``;
+  comma-separated ``full`` or char counts (default ``2400,1000,700,500,300,200``;
   positions past the end reuse the last entry; ``off`` falls back to the
   uniform legacy budget below).
 - ``LM_DELIVERY_SNIPPET_CHARS`` — uniform max chars delivered inline
@@ -127,6 +127,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -164,7 +165,7 @@ DEFAULT_CONTEXT_VALUE_MAX_CHARS = 160
 DEFAULT_PROVENANCE_VALUE_MAX_CHARS = 160
 # Budget 0 delivers complete content at that ladder position.
 LADDER_COMPLETE = 0
-DEFAULT_SNIPPET_LADDER = (LADDER_COMPLETE, 1000, 700, 500, 300, 200)
+DEFAULT_SNIPPET_LADDER = (2400, 1000, 700, 500, 300, 200)
 PREVIEW_MAX_CHARS = 160
 # 0.95 is where the live corpus stops holding distinct facts: the 0.85-0.95
 # band is different facts said in similar words (median max-cosine between
@@ -181,6 +182,8 @@ _LADDER_OFF_FLAGS = frozenset({"off", "false", "no", "none", "uniform"})
 _CLEAN_BOUNDARIES = ("\n\n", "\n", ". ", " ")
 _SPARSE_SCORE_KEYS = ("score", "bm25_score", "vector_score", "graph_score", "trigger_score")
 _SPARSE_NULL_NODE_KEYS = ("agent", "task", "decay_reason")
+_WORD = re.compile(r"[^\W_]+", re.UNICODE)
+_EVIDENCE_RECORD = re.compile(r"(?m)^- ([A-Za-z0-9]{12,}): ")
 
 
 def snippet_max_chars_from_env() -> int:
@@ -327,6 +330,7 @@ def shape_recall_results(
     stats_compaction: bool = True,
     sparse_entries: bool = True,
     duplicate_of: Mapping[str, str] | None = None,
+    query: str | None = None,
 ) -> list[dict[str, Any]]:
     """Render ranked recall results, deduplicating, snippeting, and dieting.
 
@@ -397,9 +401,11 @@ def shape_recall_results(
         else:
             budget = _bearer_budget(bearer_position, snippet_ladder, snippet_max_chars)
             bearer_position += 1
-            if LADDER_COMPLETE < budget < full_chars:
+            # A schema is binding in its entirety. Evidence carriers are only
+            # records of cases, so their long bodies can be selected by task.
+            if result.node.level != "schema" and LADDER_COMPLETE < budget < full_chars:
                 delivery = DELIVERY_SNIPPET
-                node_dict["content"] = _truncate_at_boundary(content, budget)
+                node_dict["content"] = _relevant_excerpt(content, budget, query)
             else:
                 delivery = DELIVERY_FULL
 
@@ -443,6 +449,98 @@ def shape_recall_results(
             _sparsify_entry(entry)
         shaped.append(entry)
     return shaped
+
+
+def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
+    """Select bounded source-labelled passages without changing the stored node.
+
+    Case carriers use consolidation's ``- <source id>: <record>`` format. A
+    selected passage retains both its source id and the evidence-only heading.
+    Other long text uses paragraphs. Ties retain original order; no match
+    falls back to the beginning and the content_ref exposes the full text.
+    """
+
+    if not query:
+        return _truncate_at_boundary(content, budget)
+    record_scores: list[tuple[int, int]] = []
+    if content.startswith("Evidence: ") and (matches := list(_EVIDENCE_RECORD.finditer(content))):
+        heading = content[: matches[0].start()].strip()
+        units = []
+        for index, match in enumerate(matches):
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+            source_id = match.group(1)
+            body = content[match.end() : end].strip()
+            for passage in _passages(body):
+                units.append((f"- {source_id}: ", passage, index))
+    else:
+        heading = ""
+        units = [("", passage, index) for index, passage in enumerate(_passages(content))]
+    if not units:
+        return _truncate_at_boundary(content, budget)
+
+    query_words = [word.casefold() for word in _WORD.findall(query or "") if len(word) >= 3]
+    words = set(query_words)
+    query_pairs = set(zip(query_words, query_words[1:]))
+
+    if heading:
+        for index, match in enumerate(matches):
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+            record_words = [word.casefold() for word in _WORD.findall(content[match.end() : end])]
+            record_scores.append((
+                len(words.intersection(record_words)),
+                len(query_pairs.intersection(zip(record_words, record_words[1:]))),
+            ))
+
+    def relevance(index: int) -> tuple[int, int, int, int, int]:
+        passage_words = [word.casefold() for word in _WORD.findall(units[index][1])]
+        matched = words.intersection(passage_words)
+        pairs = set(zip(passage_words, passage_words[1:]))
+        # A source record may establish the topic in one passage and state its
+        # applicable constraint in the next. Rank by the record's relationship
+        # to the task before ranking fragments of that same record.
+        record_score = record_scores[units[index][2]] if record_scores else (0, 0)
+        return (
+            *record_score,
+            len(matched),
+            len(query_pairs & pairs),
+            -index,
+        )
+
+    scored = sorted(
+        range(len(units)),
+        key=relevance,
+        reverse=True,
+    )
+    remaining = budget - len(heading) - (1 if heading else 0)
+    picked: dict[int, str] = {}
+    for index in scored:
+        prefix, passage, _ = units[index]
+        allowance = remaining - len(prefix) - (1 if picked else 0)
+        if allowance < 80:
+            break
+        excerpt = passage if len(passage) <= allowance else _truncate_at_boundary(passage, allowance)
+        picked[index] = prefix + excerpt
+        remaining -= len(picked[index]) + (1 if len(picked) > 1 else 0)
+        if remaining < 80:
+            break
+    selected = "\n".join(picked[index] for index in sorted(picked))
+    return f"{heading}\n{selected}" if heading else selected
+
+
+def _passages(text: str) -> list[str]:
+    """Split long records at readable boundaries, keeping short records whole."""
+
+    chunks = re.split(r"\n\s*\n", text)
+    passages: list[str] = []
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if len(chunk) > 900:
+            for line in chunk.splitlines():
+                line = line.strip()
+                passages.extend(line[start : start + 700] for start in range(0, len(line), 700))
+        elif chunk:
+            passages.append(chunk)
+    return passages
 
 
 def _bearer_budget(
