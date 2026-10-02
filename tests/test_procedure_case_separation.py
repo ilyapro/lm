@@ -961,6 +961,21 @@ def test_same_trigger_carriers_do_not_crowd_out_a_record_recall_delivers_directl
         mcp.memory_store.close()
 
 
+def test_compound_recipe_query_stays_ahead_of_source_backed_same_trigger_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mcp, recipe = _crowded_server(tmp_path, monkeypatch)
+    try:
+        obtained = obtained_texts(
+            mcp, "how to reopen lesson and name the failed approach before the next attempt",
+            max_results=4,
+        )
+        assert ("trace", recipe) in obtained
+        assert sum(level == "concept" for level, _text in obtained) <= 1
+    finally:
+        mcp.memory_store.close()
+
+
 def test_crowding_oracle_detects_the_group_identity_mutant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -974,7 +989,13 @@ def test_crowding_oracle_detects_the_group_identity_mutant(
     )
     mcp, recipe = _crowded_server(tmp_path, monkeypatch)
     try:
-        assert ("trace", recipe) not in obtained_texts(mcp, "how to reopen lesson", max_results=10)
+        obtained = obtained_texts(mcp, "how to reopen lesson", max_results=10)
+        assert ("trace", recipe) in obtained
+        # With group identity, each historical carrier consumes a distinct
+        # slot. The useful direct recipe must still remain reachable.
+        carriers = [text for level, text in obtained if level == "concept"]
+        assert len(carriers) == 9
+        assert len(set(carriers)) == 9
     finally:
         mcp.memory_store.close()
 

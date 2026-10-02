@@ -1,0 +1,734 @@
+{
+  "development": {
+    "baseline_missed_facts": {
+      "compound": 0,
+      "concrete": 0,
+      "correction": 1,
+      "reported-failure": 2
+    },
+    "new_fact_losses": {
+      "compound": 0,
+      "concrete": 0,
+      "correction": 0,
+      "reported-failure": 0
+    }
+  },
+  "evidence": {
+    "baseline_commit": "b9769d84e3188ee1e646627ebe1b4d454f69d6f9",
+    "candidate_commit": "4d76ba10bf262b45e8c6bfc5715e128353755cec",
+    "candidate_receipt": {
+      "path": "/home/sfx/p/lm/.worktrees/_parent-0gd838l4/artifacts/recall-applicability/candidate-v3.json",
+      "sha256": "7deb5839f4a8c2c7be3e5b7e9b9fd333d2f2dbe5f27aaf1eef27ffad68d1fb39"
+    },
+    "consumption_identity": "32dcfd16a47d44ebaa6a0345f32d91bf",
+    "historical_failed_report_sha256": "fcd16e6e2e556f0bdeaa04f83ea111eac95bb40f6c97192439f77728b6de8942",
+    "historical_v2_report_sha256": "d6bc3d9af1a3a313737e08238332f27bb1485422b89b69083413b910fdcac3d5",
+    "prior_seal_sha256": "58c6d33dd929775cf53c84cd99dc8c503e8994267adf1b5ef444df48fc1a7181",
+    "prior_v3_seal_sha256": "f27268596fe4dc4a0f7c8a98dcf735eb01df9d235ed4ef8b6dcd0a8e2a932cca",
+    "raw": {
+      "path": "/home/sfx/p/ae/artifacts/recall-applicability/v4-run/paired-raw.json",
+      "sha256": "95e7abbfbb29084951197c12ae6449c41da637a629624b9d4764057c356bc7e6"
+    },
+    "run_receipt": {
+      "path": "/home/sfx/p/ae/artifacts/recall-applicability/v4-run/run-receipt.json",
+      "sha256": "e4c009e985feecb05ce534602b1545eb4eb8cc8687cf015d1f48f609f1f03a33"
+    },
+    "runner_sha256": "9978c398db70fce5e8c82b8b867fe1cef36687697142a2d4ff28b49865e062dd",
+    "seal": {
+      "path": "/home/sfx/p/ae/artifacts/recall-applicability/v4/seal.json",
+      "sha256": "f7a3d2a0152e62c15f38fc225d37d648239fc62d1c02e15d1398d3ab77f2cc4c"
+    },
+    "snapshot_sha256": "3817f4c26f725f4a11f0237316f4a58656b646ea8402e160258143ddce241cef",
+    "src_tree": "1acf7e843243a19cc93e88e3afd1d128fd2d20e0"
+  },
+  "holdout": {
+    "baseline_missed_facts": {
+      "absent-knowledge": 0,
+      "compound": 0,
+      "concrete": 2,
+      "correction": 2,
+      "cross-project": 3,
+      "instruction": 3,
+      "large-group": 5
+    },
+    "baseline_reached_protected_facts": {
+      "correction": 3,
+      "cross-project": 3,
+      "instruction": 3
+    },
+    "case_count": 14,
+    "improved_topic_group_count": 2,
+    "loss_cases": {},
+    "new_fact_losses": {
+      "absent-knowledge": 0,
+      "compound": 0,
+      "concrete": 0,
+      "correction": 0,
+      "cross-project": 0,
+      "instruction": 0,
+      "large-group": 0
+    },
+    "topic_group_count": 14
+  },
+  "production_code_delta": {
+    "src/living_memory/retrieval.py": {
+      "added_lines": 45,
+      "baseline_lines": 2809,
+      "candidate_lines": 2844,
+      "removed_lines": 10
+    },
+    "src/living_memory/score_gate.py": {
+      "added_lines": 20,
+      "baseline_lines": 238,
+      "candidate_lines": 248,
+      "removed_lines": 10
+    }
+  },
+  "results": {
+    "development": {
+      "categories": {
+        "compound": {
+          "baseline": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 5,
+            "necessary_response_bytes_reached_cases": 31750,
+            "necessary_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 2,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 31750,
+            "warm_latency_ms_median": 2032.548,
+            "warm_latency_ms_sum": 2032.548
+          },
+          "candidate": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 3,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 6284,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 2,
+            "sufficient_cases": 1,
+            "total_calls": 4,
+            "total_response_bytes": 14853,
+            "warm_latency_ms_median": 1970.554,
+            "warm_latency_ms_sum": 1970.554
+          }
+        },
+        "concrete": {
+          "baseline": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7366,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 1,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 18612,
+            "warm_latency_ms_median": 1832.248,
+            "warm_latency_ms_sum": 1832.248
+          },
+          "candidate": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7366,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 1,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 18612,
+            "warm_latency_ms_median": 1888.327,
+            "warm_latency_ms_sum": 1888.327
+          }
+        },
+        "correction": {
+          "baseline": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 5,
+            "exhausted_response_bytes_unreached_cases": 27132,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 4,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 1,
+            "sufficient_cases": 0,
+            "total_calls": 5,
+            "total_response_bytes": 27132,
+            "warm_latency_ms_median": 2080.274,
+            "warm_latency_ms_sum": 2080.274
+          },
+          "candidate": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 5,
+            "exhausted_response_bytes_unreached_cases": 23262,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 4,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 1,
+            "sufficient_cases": 0,
+            "total_calls": 5,
+            "total_response_bytes": 23262,
+            "warm_latency_ms_median": 1682.51,
+            "warm_latency_ms_sum": 1682.51
+          }
+        },
+        "reported-failure": {
+          "baseline": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 4,
+            "exhausted_response_bytes_unreached_cases": 16213,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 4,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 2,
+            "sufficient_cases": 0,
+            "total_calls": 4,
+            "total_response_bytes": 16213,
+            "warm_latency_ms_median": 1784.935,
+            "warm_latency_ms_sum": 1784.935
+          },
+          "candidate": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 4,
+            "exhausted_response_bytes_unreached_cases": 14702,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 4,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 2,
+            "sufficient_cases": 0,
+            "total_calls": 4,
+            "total_response_bytes": 14702,
+            "warm_latency_ms_median": 1634.375,
+            "warm_latency_ms_sum": 1634.375
+          }
+        }
+      },
+      "overall": {
+        "baseline": {
+          "cases": 4,
+          "exhausted_calls_unreached_cases": 9,
+          "exhausted_response_bytes_unreached_cases": 43345,
+          "exhausted_sequences": {
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "irrelevant_top_four": 14,
+          "lookup_calls": 15,
+          "necessary_calls_reached_cases": 6,
+          "necessary_response_bytes_reached_cases": 39116,
+          "necessary_sequences": {
+            "memory_recall": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "reached_facts": 3,
+          "recall_calls": 4,
+          "relevant_top_four": 2,
+          "required_facts": 6,
+          "sufficient_cases": 2,
+          "total_calls": 19,
+          "total_response_bytes": 93707,
+          "warm_latency_ms_median": 1932.398,
+          "warm_latency_ms_sum": 7730.005
+        },
+        "candidate": {
+          "cases": 4,
+          "exhausted_calls_unreached_cases": 9,
+          "exhausted_response_bytes_unreached_cases": 37964,
+          "exhausted_sequences": {
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "irrelevant_top_four": 14,
+          "lookup_calls": 14,
+          "necessary_calls_reached_cases": 2,
+          "necessary_response_bytes_reached_cases": 13650,
+          "necessary_sequences": {
+            "memory_recall": 2
+          },
+          "reached_facts": 3,
+          "recall_calls": 4,
+          "relevant_top_four": 2,
+          "required_facts": 6,
+          "sufficient_cases": 2,
+          "total_calls": 18,
+          "total_response_bytes": 71429,
+          "warm_latency_ms_median": 1785.418,
+          "warm_latency_ms_sum": 7175.766
+        }
+      }
+    },
+    "holdout": {
+      "categories": {
+        "absent-knowledge": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 8,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 0,
+            "sufficient_cases": 0,
+            "total_calls": 8,
+            "total_response_bytes": 50829,
+            "warm_latency_ms_median": 2024.249,
+            "warm_latency_ms_sum": 4048.498
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 8,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 0,
+            "sufficient_cases": 0,
+            "total_calls": 8,
+            "total_response_bytes": 42481,
+            "warm_latency_ms_median": 2135.798,
+            "warm_latency_ms_sum": 4271.596
+          }
+        },
+        "compound": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 16585,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 6,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 6,
+            "sufficient_cases": 2,
+            "total_calls": 10,
+            "total_response_bytes": 58241,
+            "warm_latency_ms_median": 1966.789,
+            "warm_latency_ms_sum": 3933.577
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 14016,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 6,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 6,
+            "sufficient_cases": 2,
+            "total_calls": 10,
+            "total_response_bytes": 31194,
+            "warm_latency_ms_median": 2015.054,
+            "warm_latency_ms_sum": 4030.108
+          }
+        },
+        "concrete": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 3,
+            "exhausted_response_bytes_unreached_cases": 14236,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7581,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 4,
+            "sufficient_cases": 1,
+            "total_calls": 8,
+            "total_response_bytes": 32903,
+            "warm_latency_ms_median": 1961.936,
+            "warm_latency_ms_sum": 3923.871
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 3,
+            "exhausted_response_bytes_unreached_cases": 14236,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7581,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 4,
+            "sufficient_cases": 1,
+            "total_calls": 8,
+            "total_response_bytes": 32903,
+            "warm_latency_ms_median": 2041.576,
+            "warm_latency_ms_sum": 4083.153
+          }
+        },
+        "correction": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 5,
+            "exhausted_response_bytes_unreached_cases": 37246,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7024,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 3,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 5,
+            "sufficient_cases": 1,
+            "total_calls": 10,
+            "total_response_bytes": 52692,
+            "warm_latency_ms_median": 2041.943,
+            "warm_latency_ms_sum": 4083.886
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 12634,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 5,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 5,
+            "sufficient_cases": 2,
+            "total_calls": 6,
+            "total_response_bytes": 21056,
+            "warm_latency_ms_median": 1912.38,
+            "warm_latency_ms_sum": 3824.76
+          }
+        },
+        "cross-project": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 5,
+            "exhausted_response_bytes_unreached_cases": 32686,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 3,
+            "necessary_response_bytes_reached_cases": 14025,
+            "necessary_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup": 1
+            },
+            "reached_facts": 3,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 6,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 51086,
+            "warm_latency_ms_median": 1893.421,
+            "warm_latency_ms_sum": 3786.842
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 4,
+            "exhausted_response_bytes_unreached_cases": 21137,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7881,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 3,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 6,
+            "sufficient_cases": 1,
+            "total_calls": 8,
+            "total_response_bytes": 39356,
+            "warm_latency_ms_median": 2195.646,
+            "warm_latency_ms_sum": 4391.293
+          }
+        },
+        "instruction": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 4,
+            "exhausted_response_bytes_unreached_cases": 102266,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 8538,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 3,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 6,
+            "sufficient_cases": 1,
+            "total_calls": 8,
+            "total_response_bytes": 119142,
+            "warm_latency_ms_median": 2174.187,
+            "warm_latency_ms_sum": 4348.374
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 17581,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 6,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 6,
+            "sufficient_cases": 2,
+            "total_calls": 8,
+            "total_response_bytes": 44766,
+            "warm_latency_ms_median": 2145.593,
+            "warm_latency_ms_sum": 4291.186
+          }
+        },
+        "large-group": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 10,
+            "exhausted_response_bytes_unreached_cases": 65507,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 2
+            },
+            "irrelevant_top_four": 8,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 5,
+            "sufficient_cases": 0,
+            "total_calls": 10,
+            "total_response_bytes": 65507,
+            "warm_latency_ms_median": 2003.892,
+            "warm_latency_ms_sum": 4007.783
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 10,
+            "exhausted_response_bytes_unreached_cases": 42863,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 2
+            },
+            "irrelevant_top_four": 8,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 5,
+            "sufficient_cases": 0,
+            "total_calls": 10,
+            "total_response_bytes": 42863,
+            "warm_latency_ms_median": 1739.865,
+            "warm_latency_ms_sum": 3479.73
+          }
+        }
+      },
+      "overall": {
+        "baseline": {
+          "cases": 14,
+          "exhausted_calls_unreached_cases": 27,
+          "exhausted_response_bytes_unreached_cases": 251941,
+          "exhausted_sequences": {
+            "memory_recall -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 4
+          },
+          "irrelevant_top_four": 50,
+          "lookup_calls": 49,
+          "necessary_calls_reached_cases": 8,
+          "necessary_response_bytes_reached_cases": 53753,
+          "necessary_sequences": {
+            "memory_recall": 5,
+            "memory_recall -> memory_lookup -> memory_lookup": 1
+          },
+          "reached_facts": 17,
+          "recall_calls": 14,
+          "relevant_top_four": 6,
+          "required_facts": 32,
+          "sufficient_cases": 6,
+          "total_calls": 63,
+          "total_response_bytes": 430400,
+          "warm_latency_ms_median": 1969.591,
+          "warm_latency_ms_sum": 28132.831
+        },
+        "candidate": {
+          "cases": 14,
+          "exhausted_calls_unreached_cases": 17,
+          "exhausted_response_bytes_unreached_cases": 78236,
+          "exhausted_sequences": {
+            "memory_recall -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 2
+          },
+          "irrelevant_top_four": 48,
+          "lookup_calls": 44,
+          "necessary_calls_reached_cases": 8,
+          "necessary_response_bytes_reached_cases": 59693,
+          "necessary_sequences": {
+            "memory_recall": 8
+          },
+          "reached_facts": 22,
+          "recall_calls": 14,
+          "relevant_top_four": 8,
+          "required_facts": 32,
+          "sufficient_cases": 8,
+          "total_calls": 58,
+          "total_response_bytes": 254619,
+          "warm_latency_ms_median": 1988.138,
+          "warm_latency_ms_sum": 28371.826
+        }
+      }
+    }
+  },
+  "schema_version": 4,
+  "verdict": {
+    "P1": {
+      "pass": true,
+      "threshold": "at least two distinct improved holdout topic groups and zero baseline-reachable fact losses; non-vacuous instruction, correction and cross-project controls; zero development losses; broad-scope top-four baseline source controls"
+    },
+    "P2": {
+      "basis": "validated sealed provenance, paired parameters and aggregate arithmetic",
+      "pass": true
+    },
+    "P4": {
+      "basis": "root full-suite check is external to this report",
+      "pass": false
+    }
+  }
+}

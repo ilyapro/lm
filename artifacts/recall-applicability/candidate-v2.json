@@ -1,0 +1,9 @@
+{
+  "baseline_commit": "b9769d84e3188ee1e646627ebe1b4d454f69d6f9",
+  "candidate_commit": "73d9151891377c2e8eac1f1fe2f8d46513f4ddb5",
+  "source_sha256": {
+    "src/living_memory/retrieval.py": "60c8a75222ba0384284a1048d59a27dd14878be147418a949443f92184ba26f1",
+    "src/living_memory/score_gate.py": "ba12268ada15217bc43fc9f2a88c4ab8c4bd09c47960f0e7b953d50fa4a40f67"
+  },
+  "src_tree": "a054ce1b7e3e83a1ac543718c28d67ed442302e6"
+}

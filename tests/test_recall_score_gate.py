@@ -320,9 +320,10 @@ def _seed_corpus(store: MemoryStore) -> None:
 
 def test_trigger_found_schema_gated_on_its_own_scale() -> None:
     schema = make_node("s", level="schema")
-    hit = make_result("s", 0.0, node=schema, trigger_score=0.975, score=0.975 * 1.8, methods=("trigger",))
-    # Weak on the channel scale, clean on the trigger scale: passes.
-    assert gate_score(hit) == 0.0
+    hit = make_result("s", 0.0, node=schema, trigger_score=0.975, score=0.195, methods=("trigger",))
+    # The channel score now reflects the same small discovery floor as ranking;
+    # the separate availability gate still keeps the instruction reachable.
+    assert gate_score(hit) == pytest.approx(0.195)
     assert trigger_gate_score(hit) == pytest.approx(0.975 / 0.95)
     assert passes_gate(hit, 0.4)
     # A demotion that halves it takes it out on both scales.

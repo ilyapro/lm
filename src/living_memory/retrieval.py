@@ -281,7 +281,7 @@ STRONG_VECTOR_MATCH = 0.65
 # _collect_bm25 normalizes rank scores per scope and therefore mints
 # bm25 = 1.0 for the broadest scope's top FTS hit however weak the lexical
 # match really is — which is why bm25 evidence deliberately does NOT admit a
-# cross-scope candidate. Deliberate evidence does: a schema trigger, a strong
+# cross-scope candidate. Deliberate evidence does: an applicable schema trigger, a strong
 # graph connection, or vector similarity that is strong in absolute terms or
 # comparable to the best ungated match. Requested-scope candidates are never
 # gated (structural retention guarantee), and under a session plan neither
@@ -309,16 +309,15 @@ CROSS_SCOPE_VECTOR_ADMIT = STRONG_VECTOR_MATCH
 CROSS_SCOPE_RELATIVE_VECTOR = 0.9
 SCHEMA_TRIGGER_OVERLAP_THRESHOLD = 0.5
 SCHEMA_TRIGGER_BASE_SCORE = 0.95
-SCHEMA_TRIGGER_BOOST = 1.8
 #: Valve of goal schema-ranks-by-meaning (docs/recall-schema-trigger.md).
-#: Unset: the legacy trigger channel above -- half the trigger's words in the
-#: query give a schema a near-constant score, a 1.8x boost and a gate scale of
-#: its own, whatever the query means. ``name``: every node, schema or not, is
+#: Unset: half the trigger's words in the query make the node available;
+#: its rank then depends on content evidence, while the separate trigger gate
+#: can preserve an instruction with sparse content evidence. ``name``: every node, schema or not, is
 #: ranked on the gate's own score (``score_gate.gate_score``: REFERENCE_WEIGHTS, no
 #: per-scope weights, no 1.2x correction prior), so order and gate agree; a schema's
 #: trigger counts only when the query *is* the procedure's name (same token set):
 #: then bm25 1.0, first if it passes the gate (:meth:`MemoryRecallService._named_schemas_first`).
-#: The legacy constants and branches go when the valve does.
+#: The ordinary trigger and gate branches do not run under the valve.
 SCHEMA_TRIGGER_ENV = "LM_RECALL_SCHEMA_TRIGGER"
 SCHEMA_TRIGGER_BY_NAME = "name"
 #: ``trigger_score`` of a schema the query names in ``name`` mode.
@@ -384,6 +383,7 @@ class RecallResult:
     vector_score: float = 0.0
     graph_score: float = 0.0
     trigger_score: float = 0.0
+    trigger_coverage: float = 0.0
     scope_rank: int = 0
     methods: tuple[str, ...] = ()
     path: tuple[str, ...] = ()
@@ -426,6 +426,7 @@ class _Candidate:
     #: anchors-off counterfactual the ranker needs.
     graph_score: float = 0.0
     trigger_score: float = 0.0
+    trigger_coverage: float = 0.0
     path: tuple[str, ...] = ()
     #: Activation this candidate owes to a matched query anchor, kept apart
     #: from ``graph_score`` so the ranker can still see what the candidate was
@@ -882,6 +883,7 @@ class MemoryRecallService:
                     vector_score=candidate.vector_score,
                     graph_score=effective_graph,
                     trigger_score=candidate.trigger_score,
+                    trigger_coverage=candidate.trigger_coverage,
                     scope_rank=plan.rank(node.scope),
                     methods=candidate.methods(effective_graph),
                     # A candidate scored without its graph activation has no
@@ -1588,18 +1590,29 @@ class MemoryRecallService:
         if not query_tokens:
             return
         scores: dict[str, float] = {}
+        coverages: dict[str, float] = {}
         for scope in plan.search_scopes:
             for schema_id, trigger in self.store.schema_triggers(scope):
                 trigger_tokens = set(tokenize(trigger))
                 if not trigger_tokens:
                     continue
-                overlap = len(query_tokens & trigger_tokens) / len(trigger_tokens)
+                matching = query_tokens & trigger_tokens
+                overlap = len(matching) / len(trigger_tokens)
+                # A trigger is an applicability hint, including when a short
+                # instruction is one clause of a longer question. Ranking
+                # separately asks whether the content channels support it.
                 if overlap < SCHEMA_TRIGGER_OVERLAP_THRESHOLD:
                     continue
                 scores[schema_id] = SCHEMA_TRIGGER_BASE_SCORE + 0.05 * overlap
+                # The trigger is evidence about this question only to the
+                # extent that it covers the question's meaningful terms.
+                # tokenize() removes procedural filler such as "how to".
+                coverage = len(matching) / len(query_tokens)
+                coverages[schema_id] = max(coverages.get(schema_id, 0.0), coverage)
         for schema in self.store.get_nodes(scores).values():
             candidate = candidates.setdefault(schema.id, _Candidate(node=schema))
             candidate.trigger_score = max(candidate.trigger_score, scores[schema.id])
+            candidate.trigger_coverage = max(candidate.trigger_coverage, coverages[schema.id])
 
     def _named_schemas_first(
         self,
@@ -2326,7 +2339,31 @@ def _blend_candidate_score(
     if candidate.vector_score >= STRONG_VECTOR_MATCH:
         base_score = max(base_score, candidate.vector_score)
     if node.level != "trace" and candidate.trigger_score > 0.0:
-        base_score = max(base_score, candidate.trigger_score)
+        # Keep a trigger-only instruction available, but do not award every
+        # historical carrier a near-perfect score for a common label. Vector
+        # evidence about the content supplies the discovery floor; coverage
+        # of the meaningful query supplies a separate applicability claim.
+        base_score = max(
+            base_score,
+            candidate.trigger_score * max(candidate.vector_score, weights.graph),
+        )
+        # A saved trigger that covers the whole meaningful query is direct
+        # evidence of applicability. Extra query clauses rapidly reduce this
+        # contribution unless content/graph evidence supports the carrier.
+        # The channel weights keep it on the ordinary blend's scale. Taking
+        # the maximum avoids counting the same lexical claim twice.
+        # A binding schema has its writer-declared authority. A nonbinding
+        # procedural carrier earns this route only while it cites source
+        # records; an arbitrary concept with a matching trigger does not.
+        if node.level == "schema" or (
+            node.provenance.get("strategy") == "procedural" and node.source_traces
+        ):
+            base_score = max(
+                base_score,
+                candidate.trigger_score
+                * candidate.trigger_coverage**2
+                * (bm25_weight + vector_weight / 2),
+            )
     if base_score <= 0.0:
         return 0.0
 
@@ -2341,8 +2378,6 @@ def _blend_candidate_score(
     )
     if causal_mode and graph_score > 0.0:
         adjusted *= 1.5
-    if node.level != "trace" and candidate.trigger_score > 0.0:
-        adjusted *= SCHEMA_TRIGGER_BOOST
     return adjusted
 
 

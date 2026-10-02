@@ -4,7 +4,8 @@ Pins docs/recall-schema-trigger.md: under the valve the trigger finds nothing
 and scores nothing; words shared with a trigger neither raise a schema nor
 carry it past the quality gate; a query that *is* the procedure's name is
 that schema's best lexical match (bm25 1.0) and puts it first (so it ships in
-full) when it passes the gate on that score. Unset, the legacy channel is untouched (tests/test_recall_score_gate.py).
+full) when it passes the gate on that score. Unset, ordinary trigger recall
+uses query applicability (tests/test_recall_applicability.py).
 """
 
 from __future__ import annotations

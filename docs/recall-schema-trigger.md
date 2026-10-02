@@ -24,7 +24,15 @@ useless; agreement of the meaning channels (vector, bm25) did.
 ## Valve
 
 `LM_RECALL_SCHEMA_TRIGGER=name` (case-insensitive). Any other value, or unset,
-is the legacy channel above, byte for byte.
+uses the ordinary trigger channel. Ordinary recall keeps the half-of-trigger
+overlap requirement, including for a short instruction embedded in a compound
+question. A trigger adds a candidate and can admit it across scopes. Its rank
+contribution now follows the content's vector similarity, with the existing
+graph weight providing a small discovery floor. The unconditional 1.8x rank
+multiplier is gone. The separate trigger gate still keeps applicable instructions
+available when their content has little lexical or vector support; feedback,
+irrelevance demotion, and supersedes still apply. No scope is removed from
+search. The `name` valve remains disabled by default.
 
 Under `name`:
 
@@ -58,6 +66,28 @@ Under `name`:
 What is left of the trigger once the valve is the only path: the name match,
 ordered by the same gate as everything else. The constant score, the
 multiplier and the gate scale are gone.
+
+## Ordinary recall after the applicability repair
+
+The ordinary trigger path remains enabled. Trigger collection still requires
+half of a saved trigger's terms, including for a short instruction within a
+compound question. Ranking now also records how much of the *query* those
+matched terms cover after tokenization removes procedural filler. A carrier's
+trigger contributes through the existing blend only in proportion to the
+square of that coverage when it cites procedural source records; an arbitrary
+concept with only a trigger gets no new rank claim. Its vector, bm25, graph,
+scope, feedback and correction evidence keep their existing roles. The score gate uses the same
+coverage for nonbinding carriers. Binding schemas keep their trigger
+availability scale, so an applicable short instruction can survive a
+compound query even without a strong content vector. The `name` valve stays
+disabled by default.
+
+The square makes an unrelated single-label match weak in a compound query,
+while a preserved legacy carrier whose trigger describes the whole query can
+still reach the result slots and offer its full current group evidence through
+`content_ref`. This does not treat case records as binding steps. See
+`artifacts/recall-applicability/candidate-v3.md` for the synthetic retention
+checks and the frozen development comparison.
 
 ## Measurement
 

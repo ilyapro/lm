@@ -1,0 +1,638 @@
+{
+  "code": {
+    "baseline": "b9769d8",
+    "candidate": "e9637b64e52c816923819c7e7841b976ab0c70b8",
+    "production_code_delta": {
+      "src/living_memory/retrieval.py": {
+        "added_lines": 14,
+        "baseline_lines": 2809,
+        "candidate_lines": 2820,
+        "removed_lines": 3
+      },
+      "src/living_memory/score_gate.py": {
+        "added_lines": 0,
+        "baseline_lines": 238,
+        "candidate_lines": 238,
+        "removed_lines": 0
+      }
+    }
+  },
+  "input_sha256": {
+    "baseline_outcomes": "35dccb9896e3c99c63e1d53c38fbb812667a784a237ca87a0ef1039e236a0318",
+    "goldset": "c0b7efa1cb4337154152cee32b48e5be10c580d3aa80e065f18ad8b9af279f3c",
+    "private_raw_measurement": "45ccf975ac3a1430d01425cf7fca3a6f21b177e45667da16d008c7994cbba88c",
+    "private_runner_input": "770445b4af22220f61f7f021d0b26be481e781080e04ee938530a679ceafe238",
+    "snapshot": "3817f4c26f725f4a11f0237316f4a58656b646ea8402e160258143ddce241cef"
+  },
+  "method": {
+    "absent_knowledge": "No required facts exist. Both arms returned four top-slot nonanswers per absent case; sufficient_cases denotes an empty result, not a fact hit.",
+    "arm_order": "alternating by case index",
+    "isolation": "inherited identically; PYTHONPATH differs only by code root",
+    "latency": "Sum of timed recall and all returned-ref lookup calls; model initialization precedes timing, first-query vector/index work is timed.",
+    "oracle": "Required literal clauses attributed to preregistered acceptable source IDs in delivered recall or returned full lookup; oracle IDs never enter worker query. Every returned content_ref was looked up, and first sufficient call determines the necessary prefix.",
+    "pairs": 18,
+    "recall_depth": 1,
+    "recall_max_results": 4,
+    "warmup": "create_mcp_server warms LocalEmbeddingModel before timed calls; fresh process and DB per case and arm; first-query vector/index work remains timed"
+  },
+  "overall_pass": false,
+  "results": {
+    "development": {
+      "categories": {
+        "compound": {
+          "baseline": {
+            "cases": 1,
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 5,
+            "necessary_response_bytes_reached_cases": 31620,
+            "necessary_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 2,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 31620,
+            "warm_latency_ms_median": 4095.003,
+            "warm_latency_ms_sum": 4095.003
+          },
+          "candidate": {
+            "cases": 1,
+            "irrelevant_top_four": 3,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 8164,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 2,
+            "sufficient_cases": 1,
+            "total_calls": 4,
+            "total_response_bytes": 21060,
+            "warm_latency_ms_median": 3679.217,
+            "warm_latency_ms_sum": 3679.217
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        },
+        "concrete": {
+          "baseline": {
+            "cases": 1,
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7236,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 1,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 18482,
+            "warm_latency_ms_median": 4655.649,
+            "warm_latency_ms_sum": 4655.649
+          },
+          "candidate": {
+            "cases": 1,
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7236,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 1,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 18482,
+            "warm_latency_ms_median": 2389.675,
+            "warm_latency_ms_sum": 2389.675
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        },
+        "correction": {
+          "baseline": {
+            "cases": 1,
+            "irrelevant_top_four": 4,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 1
+            },
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 1,
+            "sufficient_cases": 0,
+            "total_calls": 5,
+            "total_response_bytes": 27002,
+            "warm_latency_ms_median": 3180.526,
+            "warm_latency_ms_sum": 3180.526
+          },
+          "candidate": {
+            "cases": 1,
+            "irrelevant_top_four": 4,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 1
+            },
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 1,
+            "sufficient_cases": 0,
+            "total_calls": 5,
+            "total_response_bytes": 27002,
+            "warm_latency_ms_median": 2244.864,
+            "warm_latency_ms_sum": 2244.864
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        },
+        "reported-failure": {
+          "baseline": {
+            "cases": 1,
+            "irrelevant_top_four": 4,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 1
+            },
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 2,
+            "sufficient_cases": 0,
+            "total_calls": 4,
+            "total_response_bytes": 16083,
+            "warm_latency_ms_median": 2232.488,
+            "warm_latency_ms_sum": 2232.488
+          },
+          "candidate": {
+            "cases": 1,
+            "irrelevant_top_four": 4,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 1
+            },
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 2,
+            "sufficient_cases": 0,
+            "total_calls": 4,
+            "total_response_bytes": 14572,
+            "warm_latency_ms_median": 1723.022,
+            "warm_latency_ms_sum": 1723.022
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        }
+      },
+      "overall": {
+        "baseline": {
+          "cases": 4,
+          "irrelevant_top_four": 14,
+          "lookup_calls": 15,
+          "necessary_calls_reached_cases": 6,
+          "necessary_response_bytes_reached_cases": 38856,
+          "necessary_sequences": {
+            "memory_recall": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "unreached": 2
+          },
+          "reached_facts": 3,
+          "recall_calls": 4,
+          "relevant_top_four": 2,
+          "required_facts": 6,
+          "sufficient_cases": 2,
+          "total_calls": 19,
+          "total_response_bytes": 93187,
+          "warm_latency_ms_median": 3637.765,
+          "warm_latency_ms_sum": 14163.666
+        },
+        "candidate": {
+          "cases": 4,
+          "irrelevant_top_four": 14,
+          "lookup_calls": 14,
+          "necessary_calls_reached_cases": 2,
+          "necessary_response_bytes_reached_cases": 15400,
+          "necessary_sequences": {
+            "memory_recall": 2,
+            "unreached": 2
+          },
+          "reached_facts": 3,
+          "recall_calls": 4,
+          "relevant_top_four": 2,
+          "required_facts": 6,
+          "sufficient_cases": 2,
+          "total_calls": 18,
+          "total_response_bytes": 81116,
+          "warm_latency_ms_median": 2317.27,
+          "warm_latency_ms_sum": 10036.778
+        },
+        "improved_topic_groups": 0,
+        "lost_baseline_reachable_facts": 0,
+        "worsened_topic_groups": 0
+      }
+    },
+    "holdout": {
+      "categories": {
+        "absent-knowledge": {
+          "baseline": {
+            "cases": 2,
+            "irrelevant_top_four": 8,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 2
+            },
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 0,
+            "sufficient_cases": 0,
+            "total_calls": 9,
+            "total_response_bytes": 39164,
+            "warm_latency_ms_median": 2032.185,
+            "warm_latency_ms_sum": 4064.37
+          },
+          "candidate": {
+            "cases": 2,
+            "irrelevant_top_four": 8,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 2
+            },
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 0,
+            "sufficient_cases": 0,
+            "total_calls": 9,
+            "total_response_bytes": 39164,
+            "warm_latency_ms_median": 1523.351,
+            "warm_latency_ms_sum": 3046.702
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        },
+        "compound": {
+          "baseline": {
+            "cases": 2,
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 8252,
+            "necessary_sequences": {
+              "memory_recall": 1,
+              "unreached": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 4,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 33016,
+            "warm_latency_ms_median": 3133.493,
+            "warm_latency_ms_sum": 6266.986
+          },
+          "candidate": {
+            "cases": 2,
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 8252,
+            "necessary_sequences": {
+              "memory_recall": 1,
+              "unreached": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 4,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 33016,
+            "warm_latency_ms_median": 2712.886,
+            "warm_latency_ms_sum": 5425.771
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        },
+        "concrete": {
+          "baseline": {
+            "cases": 2,
+            "irrelevant_top_four": 8,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 2
+            },
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 3,
+            "sufficient_cases": 0,
+            "total_calls": 10,
+            "total_response_bytes": 73752,
+            "warm_latency_ms_median": 2135.933,
+            "warm_latency_ms_sum": 4271.866
+          },
+          "candidate": {
+            "cases": 2,
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 5960,
+            "necessary_sequences": {
+              "memory_recall": 1,
+              "unreached": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 3,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 32790,
+            "warm_latency_ms_median": 2082.077,
+            "warm_latency_ms_sum": 4164.153
+          },
+          "improved_topic_groups": 1,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        },
+        "correction": {
+          "baseline": {
+            "cases": 2,
+            "irrelevant_top_four": 6,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 14817,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 4,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 4,
+            "sufficient_cases": 2,
+            "total_calls": 9,
+            "total_response_bytes": 33144,
+            "warm_latency_ms_median": 1817.534,
+            "warm_latency_ms_sum": 3635.069
+          },
+          "candidate": {
+            "cases": 2,
+            "irrelevant_top_four": 6,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 13156,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 4,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 4,
+            "sufficient_cases": 2,
+            "total_calls": 8,
+            "total_response_bytes": 27148,
+            "warm_latency_ms_median": 1982.985,
+            "warm_latency_ms_sum": 3965.969
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        },
+        "cross-project": {
+          "baseline": {
+            "cases": 2,
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 6430,
+            "necessary_sequences": {
+              "memory_recall": 1,
+              "unreached": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 3,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 45532,
+            "warm_latency_ms_median": 1658.947,
+            "warm_latency_ms_sum": 3317.895
+          },
+          "candidate": {
+            "cases": 2,
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 6430,
+            "necessary_sequences": {
+              "memory_recall": 1,
+              "unreached": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 3,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 34514,
+            "warm_latency_ms_median": 1997.492,
+            "warm_latency_ms_sum": 3994.984
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        },
+        "instruction": {
+          "baseline": {
+            "cases": 2,
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 12751,
+            "necessary_sequences": {
+              "memory_recall": 1,
+              "unreached": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 5,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 113340,
+            "warm_latency_ms_median": 5992.252,
+            "warm_latency_ms_sum": 11984.503
+          },
+          "candidate": {
+            "cases": 2,
+            "irrelevant_top_four": 8,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 2
+            },
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 5,
+            "sufficient_cases": 0,
+            "total_calls": 9,
+            "total_response_bytes": 98186,
+            "warm_latency_ms_median": 6675.922,
+            "warm_latency_ms_sum": 13351.844
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 2,
+          "worsened_topic_groups": 1
+        },
+        "large-group": {
+          "baseline": {
+            "cases": 2,
+            "irrelevant_top_four": 8,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 2
+            },
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 4,
+            "sufficient_cases": 0,
+            "total_calls": 9,
+            "total_response_bytes": 129653,
+            "warm_latency_ms_median": 1643.654,
+            "warm_latency_ms_sum": 3287.308
+          },
+          "candidate": {
+            "cases": 2,
+            "irrelevant_top_four": 8,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {
+              "unreached": 2
+            },
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 4,
+            "sufficient_cases": 0,
+            "total_calls": 9,
+            "total_response_bytes": 130938,
+            "warm_latency_ms_median": 1771.827,
+            "warm_latency_ms_sum": 3543.655
+          },
+          "improved_topic_groups": 0,
+          "lost_baseline_reachable_facts": 0,
+          "worsened_topic_groups": 0
+        }
+      },
+      "overall": {
+        "baseline": {
+          "cases": 14,
+          "irrelevant_top_four": 51,
+          "lookup_calls": 50,
+          "necessary_calls_reached_cases": 5,
+          "necessary_response_bytes_reached_cases": 42250,
+          "necessary_sequences": {
+            "memory_recall": 5,
+            "unreached": 9
+          },
+          "reached_facts": 9,
+          "recall_calls": 14,
+          "relevant_top_four": 5,
+          "required_facts": 23,
+          "sufficient_cases": 5,
+          "total_calls": 64,
+          "total_response_bytes": 467601,
+          "warm_latency_ms_median": 1831.669,
+          "warm_latency_ms_sum": 36827.997
+        },
+        "candidate": {
+          "cases": 14,
+          "irrelevant_top_four": 51,
+          "lookup_calls": 48,
+          "necessary_calls_reached_cases": 5,
+          "necessary_response_bytes_reached_cases": 33798,
+          "necessary_sequences": {
+            "memory_recall": 5,
+            "unreached": 9
+          },
+          "reached_facts": 8,
+          "recall_calls": 14,
+          "relevant_top_four": 5,
+          "required_facts": 23,
+          "sufficient_cases": 5,
+          "total_calls": 62,
+          "total_response_bytes": 395756,
+          "warm_latency_ms_median": 1969.024,
+          "warm_latency_ms_sum": 37493.078
+        },
+        "improved_topic_groups": 1,
+        "lost_baseline_reachable_facts": 2,
+        "worsened_topic_groups": 1
+      }
+    }
+  },
+  "schema_version": 1,
+  "verdict": {
+    "P1": {
+      "pass": false,
+      "reason": "Only one independent holdout topic group improved irrelevant top-four slots and one baseline-reachable instruction case lost two required clauses."
+    },
+    "P2": {
+      "pass": true,
+      "reason": "One frozen state, identical parameters, isolated arm processes/database copies, alternating order and all requested paired aggregates recorded."
+    },
+    "P3": {
+      "pass": true,
+      "reason": "Production diff adds 14 and removes 3 retrieval lines, with no score-gate change; trigger eligibility feeds existing ranking/admission/gate and no forbidden mechanism appears in diff."
+    },
+    "P4": {
+      "pass": true,
+      "reason": "Focused regressions and the declared npm run check suite passed (3369 passed, 84 skipped); the accepted large-carrier regression preserves the one-call reading gain over its rejected revision. The sealed large-group cases were unreachable in both arms and give no separate field-gain evidence."
+    }
+  }
+}

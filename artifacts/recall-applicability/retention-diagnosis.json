@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "b9769d84e3188ee1e646627ebe1b4d454f69d6f9",
+  "candidate_src_tree": "a054ce1b7e3e83a1ac543718c28d67ed442302e6",
+  "candidate_source_sha256": {
+    "src/living_memory/retrieval.py": "60c8a75222ba0384284a1048d59a27dd14878be147418a949443f92184ba26f1",
+    "src/living_memory/score_gate.py": "ba12268ada15217bc43fc9f2a88c4ab8c4bd09c47960f0e7b953d50fa4a40f67"
+  },
+  "baseline_source_sha256": {
+    "src/living_memory/retrieval.py": "a5e9ea2edde9a051b9bc2a3e696d2a264b56bde7033702adbd887528b476383b",
+    "src/living_memory/score_gate.py": "7e5bbd5d6ce0ef224b85dcff335ddaecbe2a7b55da67dac913b655408b1a0751"
+  },
+  "cases": {
+    "test_taught_recipe_arrives_whole_through_its_legacy_schema_turned_carrier": {
+      "baseline_pass": true,
+      "candidate_pass": false,
+      "failure_stage": "truncation",
+      "diagnosis": "Hash backend: the current corrected recipe is intact in the in-place concept carrier. It is collected (bm25 0.14286, vector about 0.14, trigger 1), ranked seventh of eleven at score about 0.218 versus baseline first at 2.769, and survives dedup. Trigger-gate score exceeds its threshold, but max_results=5 fills with case traces first. Its own corrected trace ranks about tenth and has gate score 0.051, so natural lookup has no delivered content_ref for either route. With installed MiniLM the candidate carrier ranks second and this test passes; the hash-backend loss remains real."
+    },
+    "test_crowding_oracle_detects_the_group_identity_mutant": {
+      "baseline_pass": true,
+      "candidate_pass": false,
+      "failure_stage": "ranking",
+      "diagnosis": "This is an obsolete negative mutation expectation, not an applicable recipe loss. The group-identity mutant stops title dedup: ten unrelated carriers all survive dedup. Baseline's unconditional trigger floor ranks those ten at 2.16 ahead of the recipe trace at about 1.07, so max_results=10 suppresses it. Candidate scores the direct recipe trace first at about 1.07 and the carriers below about 0.57, so the recipe is delivered even with mutant dedup. Installed MiniLM shows the same outcome. The mutant still changes dedup (ten carriers versus one); its old assertion requires harmful crowding."
+    },
+    "test_group_node_keeps_the_trigger_it_is_found_by": {
+      "baseline_pass": true,
+      "candidate_pass": false,
+      "failure_stage": "truncation",
+      "diagnosis": "The original carrier identity and trigger 'relay drain audit' survive two consolidation passes, and its four records remain whole. It is collected (bm25 0.07143, vector about 0.19, trigger 1), ranked fourteenth of eighteen at about 0.226 versus baseline first at 2.16, and survives dedup. Trigger-gate score is about 1.05, but twelve matching distractors fill max_results=10 first; lookup cannot recover an undelivered carrier. Installed MiniLM also ranks the candidate carrier fourteenth and the positive test fails."
+    }
+  }
+}

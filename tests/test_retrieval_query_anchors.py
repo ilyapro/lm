@@ -13,13 +13,12 @@ anchor is not a copy of the query under test and nothing in the store contains
 the evaluated query's words.
 
 *Cold start is free.* With no anchors — or on a query class no anchor
-resembles — ranking must be what it was before anchors existed. That is asserted
-against the actual pre-anchor implementation, loaded out of git at
-:data:`REFERENCE_COMMIT` and run side by side over the same store, rather than
-against the new code with a flag flipped: a flag comparison can only prove the
-flag is wired, never that the surrounding refactor left the ranking alone. The
-same reference arm is what makes the regression above a regression — it fails on
-the old code because the old code is what produced the failing arm.
+resembles — anchors cannot change ranking. The independent pre-anchor
+implementation at :data:`REFERENCE_COMMIT` checks the unchanged query matrix
+with trigger collection disabled in both arms. That isolation matters because
+the later applicability repair intentionally changed trigger ranking. A second
+comparison keeps current trigger semantics enabled and checks anchors on/off;
+an injected spurious anchor seed proves the comparison catches anchor effects.
 
 *An anchor never demotes the node it seeds.* Extra evidence must not cost a
 candidate anything. It used to: an anchor seed was a new way for an
@@ -68,7 +67,7 @@ from living_memory.query_anchors import (
 )
 from living_memory.retrieval import GRAPH_SEED_LIMIT, VECTOR_MATCH_THRESHOLD
 
-#: The commit whose ``retrieval.py`` is "today" for the byte-identity check —
+#: The commit whose ``retrieval.py`` is the independent pre-anchor reference —
 #: the anchor-store-edges merge, the last state of the file before the graph
 #: channel gained an entry from query space. Pinned rather than ``HEAD`` on
 #: purpose: once this node's work is committed, ``HEAD`` is the *new* code and
@@ -260,6 +259,24 @@ def reference_service(store):
     return _reference_module.MemoryRecallService(store, embedder=model)
 
 
+def without_schema_trigger_collection(svc):
+    # Hold one deliberate non-anchor change constant when comparing the
+    # historical and current rankers. Schema nodes remain in BM25/vector/graph;
+    # only the changed trigger evidence is absent in both arms.
+    svc._collect_schema_triggers = lambda query, plan, candidates: None
+    return svc
+
+
+class SpuriousAnchorSeedService(MemoryRecallService):
+    def __init__(self, store, target):
+        super().__init__(store, embedder=model)
+        self.target = target
+
+    def _collect_anchor_seeds(self, plan, query_embedding):
+        # A mutant: cold start or unrelated anchors spuriously seed a node.
+        return {self.target: 1.0}
+
+
 def pre_fix_service(store, anchors=True):
     return _pre_fix_module.MemoryRecallService(store, embedder=model, anchor_seeding=anchors)
 
@@ -382,21 +399,35 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-activation-") as directory:
 # --- cold start: no anchors at all ---
 with tempfile.TemporaryDirectory(prefix="lm-anchor-cold-") as directory:
     with store_at(directory) as store:
-        mixed_corpus(store)
-        reference = reference_service(store)
-        current = service(store)
+        nodes = mixed_corpus(store)
+        reference = without_schema_trigger_collection(reference_service(store))
+        current = without_schema_trigger_collection(service(store))
+        trigger_on = service(store)
+        trigger_off = service(store, anchors=False)
         warm(reference)
         divergences = []
+        trigger_divergences = []
         for query, depth in payload["cold_start_matrix"]:
             for scope in (SCOPE, "global"):
                 expected = blob(recall(reference, query, scope=scope, depth=depth))
                 actual = blob(recall(current, query, scope=scope, depth=depth))
                 if actual != expected:
                     divergences.append(f"{query!r} depth={depth!r} scope={scope}")
+                if blob(recall(trigger_on, query, scope=scope, depth=depth)) != blob(
+                    recall(trigger_off, query, scope=scope, depth=depth)
+                ):
+                    trigger_divergences.append(f"{query!r} depth={depth!r} scope={scope}")
+        mutant = without_schema_trigger_collection(
+            SpuriousAnchorSeedService(store, nodes["review"])
+        )
+        mutant_query, mutant_depth = payload["cold_start_matrix"][0]
         result["cold_start"] = {
             "anchor_count": store.count_query_anchors(),
             "divergences": divergences,
+            "trigger_divergences": trigger_divergences,
             "comparisons": len(payload["cold_start_matrix"]) * 2,
+            "mutant_differs": blob(recall(mutant, mutant_query, depth=mutant_depth))
+                != blob(recall(reference, mutant_query, depth=mutant_depth)),
         }
 
 # --- anchors present, none close enough ---
@@ -405,19 +436,33 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-unrelated-") as directory:
         nodes = mixed_corpus(store)
         for query in payload["unrelated_anchor_queries"]:
             anchor(store, query, [nodes["review"]], consumptions=4)
-        reference = reference_service(store)
-        current = service(store)
+        reference = without_schema_trigger_collection(reference_service(store))
+        current = without_schema_trigger_collection(service(store))
+        trigger_on = service(store)
+        trigger_off = service(store, anchors=False)
         warm(reference)
         divergences = []
+        trigger_divergences = []
         for query, depth in payload["cold_start_matrix"]:
             expected = blob(recall(reference, query, depth=depth))
             actual = blob(recall(current, query, depth=depth))
             if actual != expected:
                 divergences.append(f"{query!r} depth={depth!r}")
+            if blob(recall(trigger_on, query, depth=depth)) != blob(
+                recall(trigger_off, query, depth=depth)
+            ):
+                trigger_divergences.append(f"{query!r} depth={depth!r}")
+        mutant = without_schema_trigger_collection(
+            SpuriousAnchorSeedService(store, nodes["review"])
+        )
+        mutant_query, mutant_depth = payload["cold_start_matrix"][0]
         result["unresembled"] = {
             "anchor_count": store.count_query_anchors(),
             "divergences": divergences,
+            "trigger_divergences": trigger_divergences,
             "comparisons": len(payload["cold_start_matrix"]),
+            "mutant_differs": blob(recall(mutant, mutant_query, depth=mutant_depth))
+                != blob(recall(reference, mutant_query, depth=mutant_depth)),
         }
 
 # --- the scan itself: skipped when there is nothing to scan, cached when not ---
@@ -902,21 +947,23 @@ def test_a_traversal_graph_score_still_triggers_the_floor(
 # ---------------------------------------------------------------------------
 
 
-def test_cold_start_ranking_is_byte_identical_to_pre_anchor_code(
+def test_cold_start_ranking_is_anchor_neutral_against_historical_reference(
     probe: dict[str, Any]
 ) -> None:
-    """No anchors: the pre-anchor implementation and this one agree exactly."""
+    """No anchors: historical neutral-trigger and current full-trigger arms agree."""
 
     cold = probe["cold_start"]
     assert cold["anchor_count"] == 0
     assert cold["comparisons"] == len(COLD_START_MATRIX) * 2
     assert cold["divergences"] == []
+    assert cold["trigger_divergences"] == []
+    assert cold["mutant_differs"] is True
 
 
-def test_unresembled_query_class_ranks_identically_to_pre_anchor_code(
+def test_unresembled_query_class_is_anchor_neutral_against_historical_reference(
     probe: dict[str, Any]
 ) -> None:
-    """Anchors present, none close enough: still the pre-anchor ranking.
+    """Anchors present, none close enough: ranking stays anchor neutral.
 
     The steady state for most queries against a real anchor corpus, and the
     half of "cold start is free" that an empty table cannot demonstrate.
@@ -926,6 +973,8 @@ def test_unresembled_query_class_ranks_identically_to_pre_anchor_code(
     assert unresembled["anchor_count"] == len(UNRELATED_ANCHOR_QUERIES)
     assert unresembled["comparisons"] == len(COLD_START_MATRIX)
     assert unresembled["divergences"] == []
+    assert unresembled["trigger_divergences"] == []
+    assert unresembled["mutant_differs"] is True
 
 
 def test_empty_anchor_corpus_runs_no_anchor_scan(probe: dict[str, Any]) -> None:

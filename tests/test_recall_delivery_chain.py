@@ -144,6 +144,26 @@ def test_buried_applicable_instruction_is_delivered_as_evidence(
     assert "case records, not steps" in candidate.responses[0]["results"][0]["node"]["content"]
 
 
+def test_large_carrier_lookup_cost_covers_the_whole_needed_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = "project:synthetic-large-lookup"
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    fact = "The archived jade press exception uses the amber isolation lead."
+    content, _source = _case_records(important=fact, important_at=21)
+    carrier = mcp.memory_store.create_node(level="concept", content=content, context={"scope": scope})
+    candidate, baseline = _paired(
+        monkeypatch, mcp, "synthetic equipment cases archive", scope,
+        (fact,), followup_id=carrier.id,
+    )
+    assert candidate.sufficient and baseline.sufficient
+    assert candidate.calls == 2 and baseline.calls == 1
+    assert candidate.responses[1]["results"][0]["content"] == content
+    # Count the lookup's full bytes: the snippet adds only bounded overhead
+    # when the needed fact was outside the first delivery.
+    assert candidate.chars <= baseline.chars * 1.2
+
+
 def test_short_knowledge_and_binding_schema_stay_complete(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

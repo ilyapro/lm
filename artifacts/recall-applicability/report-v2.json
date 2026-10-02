@@ -1,0 +1,711 @@
+{
+  "evidence": {
+    "baseline_commit": "b9769d84e3188ee1e646627ebe1b4d454f69d6f9",
+    "candidate_commit": "73d9151891377c2e8eac1f1fe2f8d46513f4ddb5",
+    "candidate_receipt": {
+      "path": "/home/sfx/p/lm/.worktrees/_node_exec_recall-priority-follows-applicability_paired-measurement-v2/artifacts/recall-applicability/candidate-v2.json",
+      "sha256": "586c8e45a3054a4f819e10e45432e83825122b5909683801259814a718be7a08"
+    },
+    "consumption_identity": "13b8f86041dc044473d9d02d4084dde7",
+    "historical_failed_report_sha256": "fcd16e6e2e556f0bdeaa04f83ea111eac95bb40f6c97192439f77728b6de8942",
+    "raw": {
+      "path": "/home/sfx/p/ae/artifacts/recall-applicability/v2-run/paired-raw.json",
+      "sha256": "ae2b4b2d886179f64abf14e385f123702d26df645f18d33e539ed6af283a0933"
+    },
+    "run_receipt": {
+      "path": "/home/sfx/p/ae/artifacts/recall-applicability/v2-run/run-receipt.json",
+      "sha256": "23b7bc8370950a49eea84929d9de23cc0980ed60c3da8d400c115c5e1b3fc0b0"
+    },
+    "runner_sha256": "9978c398db70fce5e8c82b8b867fe1cef36687697142a2d4ff28b49865e062dd",
+    "seal": {
+      "path": "/home/sfx/p/ae/artifacts/recall-applicability/v2/seal.json",
+      "sha256": "58c6d33dd929775cf53c84cd99dc8c503e8994267adf1b5ef444df48fc1a7181"
+    },
+    "snapshot_sha256": "3817f4c26f725f4a11f0237316f4a58656b646ea8402e160258143ddce241cef",
+    "src_tree": "a054ce1b7e3e83a1ac543718c28d67ed442302e6"
+  },
+  "holdout": {
+    "baseline_missed_facts": {
+      "absent-knowledge": 0,
+      "compound": 3,
+      "concrete": 2,
+      "correction": 3,
+      "cross-project": 0,
+      "instruction": 0,
+      "large-group": 7
+    },
+    "case_count": 14,
+    "improved_topic_group_count": 3,
+    "loss_cases": {},
+    "new_fact_losses": {
+      "absent-knowledge": 0,
+      "compound": 0,
+      "concrete": 0,
+      "correction": 0,
+      "cross-project": 0,
+      "instruction": 0,
+      "large-group": 0
+    },
+    "topic_group_count": 14
+  },
+  "production_code_delta": {
+    "src/living_memory/retrieval.py": {
+      "added_lines": 18,
+      "baseline_lines": 2809,
+      "candidate_lines": 2817,
+      "removed_lines": 10
+    },
+    "src/living_memory/score_gate.py": {
+      "added_lines": 10,
+      "baseline_lines": 238,
+      "candidate_lines": 241,
+      "removed_lines": 7
+    }
+  },
+  "results": {
+    "development": {
+      "categories": {
+        "compound": {
+          "baseline": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 5,
+            "necessary_response_bytes_reached_cases": 31750,
+            "necessary_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 2,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 31750,
+            "warm_latency_ms_median": 2027.377,
+            "warm_latency_ms_sum": 2027.377
+          },
+          "candidate": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 3,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 6284,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 2,
+            "sufficient_cases": 1,
+            "total_calls": 4,
+            "total_response_bytes": 14853,
+            "warm_latency_ms_median": 2337.387,
+            "warm_latency_ms_sum": 2337.387
+          }
+        },
+        "concrete": {
+          "baseline": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7366,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 1,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 18612,
+            "warm_latency_ms_median": 1936.434,
+            "warm_latency_ms_sum": 1936.434
+          },
+          "candidate": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 3,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7366,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 1,
+            "recall_calls": 1,
+            "relevant_top_four": 1,
+            "required_facts": 1,
+            "sufficient_cases": 1,
+            "total_calls": 5,
+            "total_response_bytes": 18612,
+            "warm_latency_ms_median": 2013.678,
+            "warm_latency_ms_sum": 2013.678
+          }
+        },
+        "correction": {
+          "baseline": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 5,
+            "exhausted_response_bytes_unreached_cases": 27132,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 4,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 1,
+            "sufficient_cases": 0,
+            "total_calls": 5,
+            "total_response_bytes": 27132,
+            "warm_latency_ms_median": 1848.43,
+            "warm_latency_ms_sum": 1848.43
+          },
+          "candidate": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 5,
+            "exhausted_response_bytes_unreached_cases": 23262,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 4,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 1,
+            "sufficient_cases": 0,
+            "total_calls": 5,
+            "total_response_bytes": 23262,
+            "warm_latency_ms_median": 1743.359,
+            "warm_latency_ms_sum": 1743.359
+          }
+        },
+        "reported-failure": {
+          "baseline": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 4,
+            "exhausted_response_bytes_unreached_cases": 16213,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 4,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 2,
+            "sufficient_cases": 0,
+            "total_calls": 4,
+            "total_response_bytes": 16213,
+            "warm_latency_ms_median": 1746.239,
+            "warm_latency_ms_sum": 1746.239
+          },
+          "candidate": {
+            "cases": 1,
+            "exhausted_calls_unreached_cases": 4,
+            "exhausted_response_bytes_unreached_cases": 14702,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 4,
+            "lookup_calls": 3,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 1,
+            "relevant_top_four": 0,
+            "required_facts": 2,
+            "sufficient_cases": 0,
+            "total_calls": 4,
+            "total_response_bytes": 14702,
+            "warm_latency_ms_median": 1681.924,
+            "warm_latency_ms_sum": 1681.924
+          }
+        }
+      },
+      "overall": {
+        "baseline": {
+          "cases": 4,
+          "exhausted_calls_unreached_cases": 9,
+          "exhausted_response_bytes_unreached_cases": 43345,
+          "exhausted_sequences": {
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "irrelevant_top_four": 14,
+          "lookup_calls": 15,
+          "necessary_calls_reached_cases": 6,
+          "necessary_response_bytes_reached_cases": 39116,
+          "necessary_sequences": {
+            "memory_recall": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "reached_facts": 3,
+          "recall_calls": 4,
+          "relevant_top_four": 2,
+          "required_facts": 6,
+          "sufficient_cases": 2,
+          "total_calls": 19,
+          "total_response_bytes": 93707,
+          "warm_latency_ms_median": 1892.432,
+          "warm_latency_ms_sum": 7558.48
+        },
+        "candidate": {
+          "cases": 4,
+          "exhausted_calls_unreached_cases": 9,
+          "exhausted_response_bytes_unreached_cases": 37964,
+          "exhausted_sequences": {
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "irrelevant_top_four": 14,
+          "lookup_calls": 14,
+          "necessary_calls_reached_cases": 2,
+          "necessary_response_bytes_reached_cases": 13650,
+          "necessary_sequences": {
+            "memory_recall": 2
+          },
+          "reached_facts": 3,
+          "recall_calls": 4,
+          "relevant_top_four": 2,
+          "required_facts": 6,
+          "sufficient_cases": 2,
+          "total_calls": 18,
+          "total_response_bytes": 71429,
+          "warm_latency_ms_median": 1878.519,
+          "warm_latency_ms_sum": 7776.348
+        }
+      }
+    },
+    "holdout": {
+      "categories": {
+        "absent-knowledge": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 8,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 0,
+            "sufficient_cases": 0,
+            "total_calls": 10,
+            "total_response_bytes": 38494,
+            "warm_latency_ms_median": 2299.731,
+            "warm_latency_ms_sum": 4599.461
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 8,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 0,
+            "sufficient_cases": 0,
+            "total_calls": 10,
+            "total_response_bytes": 38495,
+            "warm_latency_ms_median": 2264.954,
+            "warm_latency_ms_sum": 4529.908
+          }
+        },
+        "compound": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 4,
+            "exhausted_response_bytes_unreached_cases": 25629,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 8440,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 5,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 49829,
+            "warm_latency_ms_median": 1924.555,
+            "warm_latency_ms_sum": 3849.11
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 4,
+            "exhausted_response_bytes_unreached_cases": 15320,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 8440,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 5,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 39520,
+            "warm_latency_ms_median": 1999.495,
+            "warm_latency_ms_sum": 3998.991
+          }
+        },
+        "concrete": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 5,
+            "exhausted_response_bytes_unreached_cases": 44901,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 1,
+            "necessary_response_bytes_reached_cases": 7447,
+            "necessary_sequences": {
+              "memory_recall": 1
+            },
+            "reached_facts": 2,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 4,
+            "sufficient_cases": 1,
+            "total_calls": 10,
+            "total_response_bytes": 66005,
+            "warm_latency_ms_median": 2069.265,
+            "warm_latency_ms_sum": 4138.529
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 6,
+            "necessary_response_bytes_reached_cases": 27946,
+            "necessary_sequences": {
+              "memory_recall": 1,
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "reached_facts": 4,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 4,
+            "sufficient_cases": 2,
+            "total_calls": 10,
+            "total_response_bytes": 41603,
+            "warm_latency_ms_median": 1994.023,
+            "warm_latency_ms_sum": 3988.046
+          }
+        },
+        "correction": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 5,
+            "exhausted_response_bytes_unreached_cases": 43181,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 7,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 4,
+            "necessary_response_bytes_reached_cases": 14507,
+            "necessary_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "reached_facts": 3,
+            "recall_calls": 2,
+            "relevant_top_four": 1,
+            "required_facts": 6,
+            "sufficient_cases": 1,
+            "total_calls": 9,
+            "total_response_bytes": 57688,
+            "warm_latency_ms_median": 2162.72,
+            "warm_latency_ms_sum": 4325.439
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 5,
+            "necessary_response_bytes_reached_cases": 21327,
+            "necessary_sequences": {
+              "memory_recall": 1,
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "reached_facts": 6,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 6,
+            "sufficient_cases": 2,
+            "total_calls": 8,
+            "total_response_bytes": 29466,
+            "warm_latency_ms_median": 2035.327,
+            "warm_latency_ms_sum": 4070.654
+          }
+        },
+        "cross-project": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 14349,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 5,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 5,
+            "sufficient_cases": 2,
+            "total_calls": 8,
+            "total_response_bytes": 33394,
+            "warm_latency_ms_median": 2195.41,
+            "warm_latency_ms_sum": 4390.82
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 6,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 14349,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 5,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 5,
+            "sufficient_cases": 2,
+            "total_calls": 8,
+            "total_response_bytes": 33394,
+            "warm_latency_ms_median": 2175.829,
+            "warm_latency_ms_sum": 4351.659
+          }
+        },
+        "instruction": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 6,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 17966,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 5,
+            "recall_calls": 2,
+            "relevant_top_four": 2,
+            "required_facts": 5,
+            "sufficient_cases": 2,
+            "total_calls": 6,
+            "total_response_bytes": 112976,
+            "warm_latency_ms_median": 2171.096,
+            "warm_latency_ms_sum": 4342.192
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 0,
+            "exhausted_response_bytes_unreached_cases": 0,
+            "exhausted_sequences": {},
+            "irrelevant_top_four": 5,
+            "lookup_calls": 4,
+            "necessary_calls_reached_cases": 2,
+            "necessary_response_bytes_reached_cases": 15801,
+            "necessary_sequences": {
+              "memory_recall": 2
+            },
+            "reached_facts": 5,
+            "recall_calls": 2,
+            "relevant_top_four": 3,
+            "required_facts": 5,
+            "sufficient_cases": 2,
+            "total_calls": 6,
+            "total_response_bytes": 56888,
+            "warm_latency_ms_median": 2509.797,
+            "warm_latency_ms_sum": 5019.594
+          }
+        },
+        "large-group": {
+          "baseline": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 10,
+            "exhausted_response_bytes_unreached_cases": 68100,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 2
+            },
+            "irrelevant_top_four": 8,
+            "lookup_calls": 8,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 7,
+            "sufficient_cases": 0,
+            "total_calls": 10,
+            "total_response_bytes": 68100,
+            "warm_latency_ms_median": 2426.582,
+            "warm_latency_ms_sum": 4853.163
+          },
+          "candidate": {
+            "cases": 2,
+            "exhausted_calls_unreached_cases": 9,
+            "exhausted_response_bytes_unreached_cases": 41502,
+            "exhausted_sequences": {
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+              "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+            },
+            "irrelevant_top_four": 8,
+            "lookup_calls": 7,
+            "necessary_calls_reached_cases": 0,
+            "necessary_response_bytes_reached_cases": 0,
+            "necessary_sequences": {},
+            "reached_facts": 0,
+            "recall_calls": 2,
+            "relevant_top_four": 0,
+            "required_facts": 7,
+            "sufficient_cases": 0,
+            "total_calls": 9,
+            "total_response_bytes": 41502,
+            "warm_latency_ms_median": 2070.522,
+            "warm_latency_ms_sum": 4141.044
+          }
+        }
+      },
+      "overall": {
+        "baseline": {
+          "cases": 14,
+          "exhausted_calls_unreached_cases": 24,
+          "exhausted_response_bytes_unreached_cases": 181811,
+          "exhausted_sequences": {
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 4
+          },
+          "irrelevant_top_four": 49,
+          "lookup_calls": 48,
+          "necessary_calls_reached_cases": 10,
+          "necessary_response_bytes_reached_cases": 62709,
+          "necessary_sequences": {
+            "memory_recall": 6,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "reached_facts": 17,
+          "recall_calls": 14,
+          "relevant_top_four": 7,
+          "required_facts": 32,
+          "sufficient_cases": 7,
+          "total_calls": 62,
+          "total_response_bytes": 426486,
+          "warm_latency_ms_median": 2160.657,
+          "warm_latency_ms_sum": 30498.714
+        },
+        "candidate": {
+          "cases": 14,
+          "exhausted_calls_unreached_cases": 13,
+          "exhausted_response_bytes_unreached_cases": 56822,
+          "exhausted_sequences": {
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 2,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "irrelevant_top_four": 46,
+          "lookup_calls": 46,
+          "necessary_calls_reached_cases": 16,
+          "necessary_response_bytes_reached_cases": 87863,
+          "necessary_sequences": {
+            "memory_recall": 7,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup": 1,
+            "memory_recall -> memory_lookup -> memory_lookup -> memory_lookup -> memory_lookup": 1
+          },
+          "reached_facts": 22,
+          "recall_calls": 14,
+          "relevant_top_four": 10,
+          "required_facts": 32,
+          "sufficient_cases": 9,
+          "total_calls": 60,
+          "total_response_bytes": 280868,
+          "warm_latency_ms_median": 2035.327,
+          "warm_latency_ms_sum": 30099.896
+        }
+      }
+    }
+  },
+  "schema_version": 2,
+  "verdict": {
+    "P1": {
+      "pass": true,
+      "threshold": "at least two distinct improved holdout topic groups and zero baseline-reachable fact losses"
+    },
+    "P2": {
+      "basis": "validated sealed provenance, paired parameters and aggregate arithmetic",
+      "pass": true
+    },
+    "P4": {
+      "basis": "root full-suite check is external to this report",
+      "pass": false
+    }
+  }
+}

@@ -28,10 +28,12 @@ multiplier the ranker applies (strong-vector floor, graph-weight floor, scope
 boost, node feedback multiplier, superseded penalty, causal boost) applies here
 too, and then the per-node multiplier from ``demotions``.
 
-Schema results found by a trigger live on another scale (trigger score
-0.95 + 0.05 * overlap, then a 1.8x boost) and are gated on their own
-constant: :func:`trigger_gate_score` against :data:`SCHEMA_TRIGGER_GATE_MIN`.
-Such a result passes when either scale passes. Under
+Trigger-found instructions retain a separate availability scale based on
+trigger overlap, query coverage, node authority and feedback:
+:func:`trigger_gate_score` against
+:data:`SCHEMA_TRIGGER_GATE_MIN`. Their channel-scale score uses the same
+content-supported trigger contribution as the ranker. A result passes when
+either scale passes. Under
 ``LM_RECALL_SCHEMA_TRIGGER=name`` (``retrieval.SCHEMA_TRIGGER_ENV``) there is
 no trigger scale: every result, schema or not, is gated on :func:`gate_score`.
 """
@@ -109,18 +111,21 @@ def gate_score(
 
     Callable offline on a stored result plus the demotions of its recall.
     Without ``plan`` the scope boost is 1.0 (the boost needs the resolved
-    scope list). The trigger channel does not enter here; see
-    :func:`trigger_gate_score`.
+    scope list). Ordinary trigger evidence receives the same content-supported
+    contribution as in ranking. See :func:`trigger_gate_score` for the
+    separate instruction-availability scale.
     """
 
     # Imported lazily: retrieval imports this module at load time.
-    from living_memory.retrieval import _Candidate, _blend_candidate_score
+    from living_memory.retrieval import _Candidate, _blend_candidate_score, schema_trigger_by_name
 
     candidate = _Candidate(
         node=result.node,
         bm25_score=result.bm25_score,
         vector_score=result.vector_score,
         graph_score=result.graph_score,
+        trigger_score=0.0 if schema_trigger_by_name() else result.trigger_score,
+        trigger_coverage=getattr(result, "trigger_coverage", 0.0),
     )
     score = _blend_candidate_score(
         candidate,
@@ -143,9 +148,10 @@ def trigger_gate_score(
 ) -> float | None:
     """Score of a trigger-found schema on the trigger scale; ``None`` otherwise.
 
-    ``trigger_score / SCHEMA_TRIGGER_SCALE`` times the node feedback
-    multiplier (superseded penalty included) and the demotion. The scope and
-    causal boosts are left out: a trigger match does not depend on either.
+    ``trigger_score / SCHEMA_TRIGGER_SCALE`` times node feedback and demotion.
+    Nonbinding carriers also need query coverage; a binding schema retains
+    its short-instruction availability when its trigger is one clause of a
+    longer question. Scope and causal boosts are left out.
     """
 
     # Imported lazily: retrieval imports this module at load time.
@@ -163,6 +169,10 @@ def trigger_gate_score(
             node,
             result.trigger_score / SCHEMA_TRIGGER_SCALE,
             superseded=bool(result.superseded),
+        )
+        * (
+            1.0 if node.level == "schema"
+            else max(0.0, getattr(result, "trigger_coverage", 0.0)) ** 2
         )
         * _demotion(result, demotions)
     )
