@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -31,10 +32,10 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _server_env() -> dict[str, str]:
+def _server_env(src_dir: Path = SRC_DIR) -> dict[str, str]:
     env = os.environ.copy()
     env["LM_AUTH_TOKEN"] = TOKEN
-    parts = [str(SRC_DIR)]
+    parts = [str(src_dir)]
     if DEPS_DIR.exists():
         parts.append(str(DEPS_DIR))
     existing = env.get("PYTHONPATH", "")
@@ -44,7 +45,9 @@ def _server_env() -> dict[str, str]:
     return env
 
 
-def _start_server(db_path: Path, port: int) -> subprocess.Popen[bytes]:
+def _start_server(
+    db_path: Path, port: int, *, src_dir: Path = SRC_DIR, cwd: Path | None = None
+) -> subprocess.Popen[bytes]:
     cmd = [
         sys.executable,
         "-m",
@@ -62,7 +65,8 @@ def _start_server(db_path: Path, port: int) -> subprocess.Popen[bytes]:
     ]
     return subprocess.Popen(
         cmd,
-        env=_server_env(),
+        env=_server_env(src_dir),
+        cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
@@ -139,6 +143,10 @@ def test_health_endpoint_is_unauthenticated(server: dict[str, Any]) -> None:
     assert body["ok"] is True
     assert body["service"] == "living-memory"
     assert isinstance(body.get("boot_id"), str) and body["boot_id"]
+    assert body["code_identity"]["status"] == "known"
+    assert body["code_identity"]["scheme"] == "python-loaded-functions-sha256-v1"
+    assert len(body["code_identity"]["digest"]) == 64
+    assert body["code_identity"]["git_revision"] is None
     assert "metrics" not in body
 
 
@@ -172,10 +180,73 @@ def test_admin_info_requires_token_and_reports_runtime(server: dict[str, Any]) -
     assert body["process_id"] == server["proc"].pid
     assert body["default_scope"] == DEFAULT_SCOPE
     assert isinstance(body.get("boot_id"), str) and body["boot_id"]
+    health = _get(server["port"], "/health", token=None).json()
+    assert body["boot_id"] == health["boot_id"]
+    assert body["code_identity"] == health["code_identity"]
     assert "started_at" in body and body["started_at"]
     assert float(body["uptime_seconds"]) >= 0.0
     argv = body.get("argv")
     assert isinstance(argv, list) and any("living_memory" in a for a in argv)
+
+
+def test_loaded_code_identity_stays_with_old_process_after_source_change(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("fastmcp")
+    src_dir = tmp_path / "src"
+    shutil.copytree(SRC_DIR / "living_memory", src_dir / "living_memory")
+    metadata = src_dir / "living_memory-0.1.0.dist-info" / "METADATA"
+    metadata.parent.mkdir()
+    metadata.write_text("Metadata-Version: 2.1\nName: living-memory\nVersion: 0.1.0\n")
+    server_file = src_dir / "living_memory" / "server.py"
+    original = "return bool(expected) and secrets.compare_digest("
+    changed = "return (bool(expected) is True) and secrets.compare_digest("
+    assert original in server_file.read_text()
+    old_port, new_port = _free_port(), _free_port()
+    old = _start_server(tmp_path / "old.sqlite3", old_port, src_dir=src_dir, cwd=tmp_path)
+    new = None
+    try:
+        _wait_for_ready(old_port, time.monotonic() + READY_TIMEOUT_SECONDS)
+        before = _get(old_port, "/health", token=None).json()
+        assert before["code_identity"]["status"] == "known"
+
+        server_file.write_text(server_file.read_text().replace(original, changed))
+        metadata.write_text("Metadata-Version: 2.1\nName: living-memory\nVersion: 999\n")
+        old_again = _get(old_port, "/health", token=None).json()
+        assert old_again["boot_id"] == before["boot_id"]
+        assert old_again["code_identity"] == before["code_identity"]
+
+        new = _start_server(tmp_path / "new.sqlite3", new_port, src_dir=src_dir, cwd=tmp_path)
+        _wait_for_ready(new_port, time.monotonic() + READY_TIMEOUT_SECONDS)
+        after = _get(new_port, "/health", token=None).json()
+        assert after["boot_id"] != before["boot_id"]
+        assert after["code_identity"]["status"] == "known"
+        assert after["code_identity"]["digest"] != before["code_identity"]["digest"]
+        assert _get(new_port, "/admin/info", token=None).status_code == 401
+        admin = _get(new_port, "/admin/info", token=TOKEN).json()
+        assert admin["boot_id"] == after["boot_id"]
+        assert admin["process_id"] == new.pid
+        assert admin["code_identity"] == after["code_identity"]
+    finally:
+        _terminate(old)
+        if new is not None:
+            _terminate(new)
+
+
+def test_loaded_code_identity_reports_unknown_when_unavailable_or_ambiguous() -> None:
+    from types import ModuleType
+
+    from living_memory.server import _loaded_code_identity
+
+    assert _loaded_code_identity({}) == {
+        "status": "unknown",
+        "scheme": "python-loaded-functions-sha256-v1",
+        "digest": None,
+        "git_revision": None,
+    }
+    assert _loaded_code_identity({"living_memory.server": ModuleType("other")})[
+        "status"
+    ] == "unknown"
 
 
 def _wait_for_boot_id_change(
@@ -216,6 +287,7 @@ def test_admin_info_boot_id_changes_after_restart(server: dict[str, Any]) -> Non
     assert after["boot_id"] == new_boot_id
     # os.execv preserves the OS PID.
     assert after["process_id"] == before["process_id"]
+    assert after["code_identity"] == before["code_identity"]
 
 
 def test_admin_restart_requires_bearer_token(server: dict[str, Any]) -> None:

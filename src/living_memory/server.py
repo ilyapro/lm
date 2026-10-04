@@ -11,9 +11,12 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from threading import RLock, Timer
+from types import CodeType, FunctionType, ModuleType
 from typing import Annotated, Any
 from uuid import uuid4
+import hashlib
 import json
+import marshal
 import os
 import secrets
 import sys
@@ -92,6 +95,102 @@ from living_memory.temporal import parse_timestamp
 _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
 _RESTART_PENDING = False
+
+
+def _loaded_code_identity(
+    modules: dict[str, ModuleType] | None = None,
+) -> dict[str, str | None]:
+    """Snapshot LM function bytecode already held by this Python process.
+
+    This deliberately does not infer a Git revision from mutable files or
+    package metadata. It covers functions in modules loaded at this instant,
+    including methods and functions behind ``functools.wraps`` decorators.
+    """
+
+    def normalized(code: CodeType) -> CodeType:
+        return code.replace(
+            co_filename="",
+            co_consts=tuple(
+                normalized(value) if isinstance(value, CodeType) else value
+                for value in code.co_consts
+            ),
+        )
+
+    entries: dict[str, bytes] = {}
+
+    def add_function(key: str, function: FunctionType) -> None:
+        seen: set[int] = set()
+        while True:
+            if key in entries or id(function) in seen:
+                raise ValueError("ambiguous function identity")
+            seen.add(id(function))
+            entries[key] = marshal.dumps(normalized(function.__code__))
+            wrapped = getattr(function, "__wrapped__", None)
+            if not isinstance(wrapped, FunctionType):
+                break
+            function = wrapped
+            key += ":wrapped"
+
+    identity: dict[str, str | None] = {
+        "status": "unknown",
+        "scheme": "python-loaded-functions-sha256-v1",
+        "digest": None,
+        "git_revision": None,
+    }
+    try:
+        loaded = dict(modules if modules is not None else sys.modules)
+        main_module = loaded.get("__main__")
+        server_from_main = getattr(getattr(main_module, "__spec__", None), "name", None) == (
+            "living_memory.server"
+        )
+        if server_from_main:
+            if "living_memory.server" in loaded:
+                raise ValueError("ambiguous server module")
+            loaded["living_memory.server"] = main_module
+        if "living_memory.server" not in loaded:
+            raise ValueError("server module unavailable")
+        for module_name, module in sorted(loaded.items()):
+            if module_name != "living_memory" and not module_name.startswith(
+                "living_memory."
+            ):
+                continue
+            if not isinstance(module, ModuleType) or (
+                module.__name__ != module_name
+                and not (
+                    server_from_main
+                    and module_name == "living_memory.server"
+                    and module is main_module
+                    and module.__name__ == "__main__"
+                )
+            ):
+                raise ValueError("ambiguous module identity")
+            for name, value in sorted(vars(module).items()):
+                if isinstance(value, FunctionType) and value.__module__ == module.__name__:
+                    add_function(f"{module_name}.{name}", value)
+                elif isinstance(value, type) and value.__module__ == module.__name__:
+                    for member_name, member in sorted(vars(value).items()):
+                        if isinstance(member, (staticmethod, classmethod)):
+                            member = member.__func__
+                        if isinstance(member, property):
+                            for accessor_name in ("fget", "fset", "fdel"):
+                                accessor = getattr(member, accessor_name)
+                                if isinstance(accessor, FunctionType):
+                                    add_function(
+                                        f"{module_name}.{name}.{member_name}.{accessor_name}",
+                                        accessor,
+                                    )
+                        elif isinstance(member, FunctionType):
+                            add_function(f"{module_name}.{name}.{member_name}", member)
+        if not entries:
+            raise ValueError("no loaded LM functions")
+        digest = hashlib.sha256()
+        for name, code in sorted(entries.items()):
+            digest.update(name.encode("utf-8") + b"\0")
+            digest.update(len(code).to_bytes(8, "big") + code)
+        identity.update(status="known", digest=digest.hexdigest())
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        pass
+    return identity
 
 #: Delivery classes a gated response may drop from its trailing run.
 #:
@@ -225,6 +324,7 @@ def create_mcp_server(
         runtime_lock=runtime_lock,
         auth_state=auth_state,
         default_scope=store.config.default_scope,
+        code_identity=_loaded_code_identity(),
     )
     return mcp
 
@@ -236,6 +336,7 @@ def _register_admin_routes(
     runtime_lock: Any,
     auth_state: "_AuthTokenState",
     default_scope: str,
+    code_identity: dict[str, str | None],
 ) -> None:
     """Register /health, /admin/info, /admin/token, /admin/restart, /admin/decay-sweep."""
 
@@ -277,6 +378,7 @@ def _register_admin_routes(
                     "status": "restarting",
                     "service": "living-memory",
                     "boot_id": _BOOT_ID,
+                    "code_identity": code_identity,
                 },
                 status_code=503,
             )
@@ -285,6 +387,7 @@ def _register_admin_routes(
                 "ok": True,
                 "service": "living-memory",
                 "boot_id": _BOOT_ID,
+                "code_identity": code_identity,
             },
             status_code=200,
         )
@@ -300,6 +403,7 @@ def _register_admin_routes(
                 "service": "living-memory",
                 "process_id": os.getpid(),
                 "boot_id": _BOOT_ID,
+                "code_identity": code_identity,
                 "started_at": _STARTED_AT.isoformat(),
                 "uptime_seconds": (now - _STARTED_AT).total_seconds(),
                 "default_scope": default_scope,

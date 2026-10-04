@@ -104,6 +104,31 @@ python3 /home/sfx/p/lm/scripts/check_deployed_protocol.py
 the restart means the restart did not happen. `/health` needs no token and
 answers `503` with no `"ok"` in the body while a restart is in flight.
 
+Both `/health` and authorized `/admin/info` include the same boot-time
+`code_identity` snapshot. For example, a `/health` response is:
+
+```json
+{"ok":true,"service":"living-memory","boot_id":"8f...","code_identity":{"status":"known","scheme":"python-loaded-functions-sha256-v1","digest":"<64 lowercase hex characters>","git_revision":null}}
+```
+
+The digest hashes in-memory Python code objects for functions and methods in
+LM modules loaded when the server is created, including wrapped functions. It
+is fixed for that server instance; changing checkout files or installed
+metadata cannot change its response. It is not a Git commit SHA or proof of
+the entire package: module-level values, function defaults, later imports,
+third-party code and runtime patches are outside this snapshot. If the code
+snapshot cannot be identified unambiguously, `status` is `"unknown"` and
+`digest` is `null`. `git_revision` is always `null` because the loaded code
+cannot be mapped honestly to a Git revision from the running process alone.
+
+The local update Service should read `boot_id` and `code_identity` together
+from one response. A changed `boot_id` establishes a new boot, even if its PID
+is unchanged after self-exec. For `status: "known"`, compare `scheme` and
+`digest` across boots or with a separately launched candidate process; a
+matching digest only establishes equality of the covered loaded function code.
+Treat `status: "unknown"` or a missing field as inconclusive, and never use
+`git_revision: null` as evidence that a desired commit is running.
+
 `scripts/check_deployed_protocol.py` is the executable answer to "is this host
 serving the code I think it is". It opens an MCP session, reads the server
 instructions and the four protocol-bearing tool descriptions (`memory_recall`,
@@ -146,9 +171,10 @@ instead of blaming stale code.
 ## How to tell a host is behind master
 
 `/admin/info` reports `ok`, `service`, `process_id`, `boot_id`, `started_at`,
-`uptime_seconds`, `default_scope` and `argv` — **no code revision**. The protocol
-texts the host serves are therefore the revision signal, and the checker is the
-way to read it:
+`uptime_seconds`, `default_scope`, `argv` and `code_identity` — **no Git code
+revision**. The checker below compares the served protocol texts with a
+checkout; `code_identity` separately identifies the covered loaded function
+code at boot:
 
 1. **Authoritative.** From a checkout at `master` (fetched and up to date), run
    `python3 scripts/check_deployed_protocol.py` against the host. Exit `1` with a
