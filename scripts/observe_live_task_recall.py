@@ -38,6 +38,8 @@ from urllib.request import Request, urlopen
 
 from check_deployed_protocol import build_url, build_verify, resolve_token
 
+CODE_IDENTITY_SCHEME = "python-loaded-functions-sha256-v2"
+
 
 class ObservationError(Exception):
     """An observation failed; details must not reach the terminal."""
@@ -80,7 +82,7 @@ def _health(
 
 
 def _validated_identity(
-    health: dict[str, Any], prior_boot_id: str, prior_digest: str
+    health: dict[str, Any], prior_boot_id: str, prior_digest: str, prior_scheme: str
 ) -> tuple[str, str]:
     identity = health.get("code_identity") or {}
     boot_id = health.get("boot_id")
@@ -89,11 +91,13 @@ def _validated_identity(
         raise ObservationError("unhealthy service")
     if (
         identity.get("status") != "known"
-        or identity.get("scheme") != "python-loaded-functions-sha256-v1"
+        or identity.get("scheme") != CODE_IDENTITY_SCHEME
         or not isinstance(digest, str)
         or len(digest) != 64
     ):
         raise ObservationError("loaded-code identity unavailable")
+    if prior_scheme != identity["scheme"]:
+        raise ObservationError("prior and current loaded-code schemes differ")
     if boot_id == prior_boot_id or digest == prior_digest:
         raise ObservationError("reader has not taken up changed loaded code")
     return boot_id, digest
@@ -199,7 +203,7 @@ def _product_sources(source: dict[str, bytes], anchors: list[str]) -> list[str]:
 
 def _candidate(
     root: Path, commit: str, loaded_paths: list[str],
-) -> tuple[str, dict[str, bytes], dict[str, str]]:
+) -> tuple[dict[str, Any], dict[str, bytes], dict[str, str]]:
     revision = _git(root, "rev-parse", "--verify", commit + "^{commit}").decode().strip()
     if revision != commit or _git(root, "rev-parse", "HEAD").decode().strip() != revision:
         raise ObservationError("installed checkout is not the published commit")
@@ -232,9 +236,9 @@ def _candidate(
             capture_output=True, text=True, check=True, timeout=60,
         )
         identity = json.loads(result.stdout)
-    if identity.get("status") != "known":
+    if identity.get("status") != "known" or identity.get("scheme") != CODE_IDENTITY_SCHEME:
         raise ObservationError("candidate function identity unavailable")
-    return identity["digest"], source, {
+    return identity, source, {
         path: hashlib.sha256(source[path]).hexdigest() for path in product_paths
     }
 
@@ -309,14 +313,14 @@ def _native_before(args: Any, health: dict[str, Any], base: str, token: str | No
     if Path(f"/proc/{process['pid']}/exe").resolve() != Path(sys.executable).resolve():
         raise ObservationError("candidate and reader use different interpreters")
     _installed_import(args.installed_root, process)
-    candidate_digest, source, loaded = _candidate(
+    candidate_identity, source, loaded = _candidate(
         args.installed_root, args.published_commit, args.loaded_path,
     )
-    if candidate_digest != health["code_identity"]["digest"]:
+    if candidate_identity != health["code_identity"]:
         raise ObservationError("loaded functions differ from published candidate")
     source_state = _installed_sources(args.installed_root, source, process)
     return dict(process=process, source=source, source_state=source_state,
-                loaded_bytes=loaded, candidate_digest=candidate_digest)
+                loaded_bytes=loaded, candidate_digest=candidate_identity["digest"])
 
 
 def _native_projection(args: Any, state: dict[str, Any], receipt: dict[str, Any],
@@ -370,6 +374,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases-file", type=Path, required=True)
     parser.add_argument("--prior-boot-id", required=True)
     parser.add_argument("--prior-digest", required=True)
+    parser.add_argument("--prior-scheme", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -393,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         base = build_url(args.host, args.port, tls=args.tls)
         health = _health(base.replace("/mcp/", "/health"), args.timeout, verify)
         boot_id, digest = _validated_identity(
-            health, args.prior_boot_id, args.prior_digest
+            health, args.prior_boot_id, args.prior_digest, args.prior_scheme
         )
         token = resolve_token(args.token, env_file=args.env_file)
         native = _native_before(args, health, base, token, verify) if args.native_completion else None
@@ -411,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
             "prior_boot_id": args.prior_boot_id,
             "prior_digest": args.prior_digest,
             "code_identity": {
-                "status": "known", "scheme": "python-loaded-functions-sha256-v1",
+                "status": "known", "scheme": CODE_IDENTITY_SCHEME,
                 "digest": digest,
                 "git_revision": health["code_identity"].get("git_revision"),
             },

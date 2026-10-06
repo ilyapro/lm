@@ -31,8 +31,9 @@ def _port() -> int:
 
 
 @pytest.fixture
-def isolated_reader(tmp_path: Path, request):
+def isolated_reader(tmp_path: Path, request, monkeypatch):
     pytest.importorskip("fastmcp")
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     database = tmp_path / "isolated.sqlite3"
     mcp = create_mcp_server(database)
     node = mcp.memory_store.append_trace(
@@ -54,8 +55,37 @@ def isolated_reader(tmp_path: Path, request):
     env["PYTHONPATH"] = str(source)
     env["LIVING_MEMORY_EMBEDDING_BACKEND"] = "hash"
     env["LM_AUTH_TOKEN"] = "isolated-delivery-fixture-token"
-    command = [sys.executable, "-m", "living_memory.server", "--db", str(database),
-               "--transport", "http", "--host", "127.0.0.1", "--port", str(port)]
+    command = [sys.executable, "-m", "living_memory.server"]
+    if getattr(request, "param", None) == "interned-functions":
+        # The candidate verifier starts its own interpreter from the same
+        # published sources. Give only the service a different, benign
+        # string representation before its loaded-code snapshot is taken.
+        bootstrap = (
+            "import marshal, sys\n"
+            "from types import CodeType\n"
+            "from living_memory import embeddings\n"
+            "from living_memory.server import main\n"
+            "def rewrite_value(item, interned):\n"
+            "    if isinstance(item, CodeType):\n"
+            "        return item.replace(co_consts=tuple(\n"
+            "            rewrite_value(value, interned) for value in item.co_consts))\n"
+            "    if isinstance(item, tuple):\n"
+            "        return tuple(rewrite_value(value, interned) for value in item)\n"
+            "    if isinstance(item, str):\n"
+            "        return sys.intern(item) if interned else item.encode().decode()\n"
+            "    return item\n"
+            "original = embeddings._looks_like_path.__code__\n"
+            "original_bytes = marshal.dumps(original)\n"
+            "interned = rewrite_value(original, True)\n"
+            "plain = rewrite_value(original, False)\n"
+            "replacement = interned if marshal.dumps(interned) != original_bytes else plain\n"
+            "assert marshal.dumps(replacement) != original_bytes\n"
+            "embeddings._looks_like_path.__code__ = replacement\n"
+            "raise SystemExit(main())\n"
+        )
+        command = [sys.executable, "-c", bootstrap]
+    command.extend(["--db", str(database), "--transport", "http",
+                    "--host", "127.0.0.1", "--port", str(port)])
     with (tmp_path / "service.log").open("wb") as log:
         process = subprocess.Popen(
             command, cwd=tmp_path, env=env, stdout=log, stderr=subprocess.STDOUT,
@@ -91,6 +121,7 @@ def _invoke(reader: dict, cases_file: Path, output: Path, *, stale: bool = False
         "--cases-file", str(cases_file), "--output", str(output),
         "--prior-boot-id", health["boot_id"] if stale else "previous-boot",
         "--prior-digest", health["code_identity"]["digest"] if stale else "0" * 64,
+        "--prior-scheme", health["code_identity"]["scheme"],
         "--env-file", str(cases_file.parent / "absent-env"),
     ]
     if native:
@@ -152,6 +183,7 @@ def test_private_case_file_inside_git_is_rejected(tmp_path: Path) -> None:
         sys.executable, str(SCRIPT), "--cases-file", str(__file__),
         "--output", str(tmp_path / "receipt.json"),
         "--prior-boot-id", "old", "--prior-digest", "0" * 64,
+        "--prior-scheme", "python-loaded-functions-sha256-v2",
     ]
     result = subprocess.run(command, text=True, capture_output=True, timeout=10)
     assert result.returncode == 2
@@ -202,6 +234,22 @@ def test_native_projection_binds_process_published_code_and_fresh_public_respons
     wrong = _invoke(isolated_reader, cases, tmp_path / "wrong.json", native=True, commit="0" * 40)
     assert wrong.returncode == 2
     assert not (tmp_path / "wrong.json").exists()
+
+
+@pytest.mark.parametrize("isolated_reader", ["interned-functions"], indirect=True)
+def test_native_projection_accepts_interned_service_and_separate_candidate(
+    isolated_reader: dict, tmp_path: Path,
+) -> None:
+    cases = tmp_path / "native-private.json"
+    cases.write_text(json.dumps({"queries": [
+        {"query": PRIVATE_QUERY, "expected_node_id": isolated_reader["node_id"]},
+    ]}))
+    output = tmp_path / "native-receipt.json"
+    result = _invoke(isolated_reader, cases, output, native=True)
+    assert result.returncode == 0, result.stderr
+    observation = json.loads(output.read_text())
+    assert observation["source_binding"]["candidate_digest"] == observation["code_identity"]["digest"]
+    assert observation["code_identity"]["scheme"] == "python-loaded-functions-sha256-v2"
 
 
 @pytest.mark.parametrize("isolated_reader", ["changed-functions"], indirect=True)

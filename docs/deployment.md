@@ -108,7 +108,7 @@ Both `/health` and authorized `/admin/info` include the same boot-time
 `code_identity` snapshot. For example, a `/health` response is:
 
 ```json
-{"ok":true,"service":"living-memory","boot_id":"8f...","code_identity":{"status":"known","scheme":"python-loaded-functions-sha256-v1","digest":"<64 lowercase hex characters>","git_revision":null}}
+{"ok":true,"service":"living-memory","boot_id":"8f...","code_identity":{"status":"known","scheme":"python-loaded-functions-sha256-v2","digest":"<64 lowercase hex characters>","git_revision":null}}
 ```
 
 The digest hashes in-memory Python code objects for functions and methods in
@@ -128,6 +128,47 @@ is unchanged after self-exec. For `status: "known"`, compare `scheme` and
 matching digest only establishes equality of the covered loaded function code.
 Treat `status: "unknown"` or a missing field as inconclusive, and never use
 `git_revision: null` as evidence that a desired commit is running.
+
+### Loaded-code serialization migration
+
+Scheme `python-loaded-functions-sha256-v2` serializes each normalized code
+object with Python marshal format 0. The earlier v1 used marshal's default
+format, whose interned-string tags can depend on benign import and bootstrap
+state. For example, recursively interning a nested string constant of the same
+function can change v1's bytes without changing its bytecode or constants.
+Format 0 removes that distinction for the existing covered function population;
+the code still includes nested code objects and still detects changed covered
+code. The snapshot remains location independent because code filenames are
+normalized before serialization.
+
+To reproduce the migration without a service, database or model, run the narrow
+checks from a source checkout:
+
+```sh
+PYTHONPATH=src python3 -m pytest -q \
+  tests/test_restart_endpoint.py::test_loaded_code_identity_ignores_nested_string_interning_but_detects_changes \
+  tests/test_live_task_delivery.py::test_native_projection_accepts_interned_service_and_separate_candidate
+```
+
+The first check compares equal code with different string-interning state and
+then changes a covered constant. The second starts an isolated service and a
+separate candidate process with different benign bootstrap state. A v1 digest
+must not be compared with a v2 digest, even when both are 64 hex characters:
+capture a prior `boot_id`, `scheme` and `digest` from the same v2 response before
+using an observer that requires prior/new loaded-code comparison. The native
+task-recall observer explicitly rejects a prior scheme mismatch; do not relabel
+an old digest as v2 or treat a cross-scheme difference as code uptake.
+
+Publication of this repair changes `src/living_memory/server.py` itself. An
+earlier exact loaded-byte receipt for that file cannot attest the newly
+published source. The existing `recall-uses-recorded-task` owner must reconcile
+its consumer authority through its supported completion lifecycle against the
+normally published repair, including fresh exact-byte evidence for its frozen
+31-file loaded-source population (which includes `server.py`). Its earlier
+receipt remains historical evidence, not delivery of the changed bytes; its
+task behavior and live-reader delivery still need the owner's own verification.
+Do not edit that owner's journal, children, input authority or frozen source
+list to perform this handoff.
 
 `scripts/check_deployed_protocol.py` is the executable answer to "is this host
 serving the code I think it is". It opens an MCP session, reads the server

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import marshal
 import os
 import shutil
 import signal
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import CodeType, FunctionType, ModuleType
 from typing import Any
 
 import httpx
@@ -35,6 +37,7 @@ def _free_port() -> int:
 def _server_env(src_dir: Path = SRC_DIR) -> dict[str, str]:
     env = os.environ.copy()
     env["LM_AUTH_TOKEN"] = TOKEN
+    env["LIVING_MEMORY_EMBEDDING_BACKEND"] = "hash"
     parts = [str(src_dir)]
     if DEPS_DIR.exists():
         parts.append(str(DEPS_DIR))
@@ -144,7 +147,7 @@ def test_health_endpoint_is_unauthenticated(server: dict[str, Any]) -> None:
     assert body["service"] == "living-memory"
     assert isinstance(body.get("boot_id"), str) and body["boot_id"]
     assert body["code_identity"]["status"] == "known"
-    assert body["code_identity"]["scheme"] == "python-loaded-functions-sha256-v1"
+    assert body["code_identity"]["scheme"] == "python-loaded-functions-sha256-v2"
     assert len(body["code_identity"]["digest"]) == 64
     assert body["code_identity"]["git_revision"] is None
     assert "metrics" not in body
@@ -234,19 +237,66 @@ def test_loaded_code_identity_stays_with_old_process_after_source_change(
 
 
 def test_loaded_code_identity_reports_unknown_when_unavailable_or_ambiguous() -> None:
-    from types import ModuleType
-
     from living_memory.server import _loaded_code_identity
 
     assert _loaded_code_identity({}) == {
         "status": "unknown",
-        "scheme": "python-loaded-functions-sha256-v1",
+        "scheme": "python-loaded-functions-sha256-v2",
         "digest": None,
         "git_revision": None,
     }
     assert _loaded_code_identity({"living_memory.server": ModuleType("other")})[
         "status"
     ] == "unknown"
+
+
+def test_loaded_code_identity_ignores_nested_string_interning_but_detects_changes() -> None:
+    from living_memory.server import _loaded_code_identity
+
+    namespace: dict[str, object] = {}
+    exec(
+        "def probe():\n"
+        "    def nested():\n"
+        "        return 'lm/identity/interning/probe'\n"
+        "    return nested()\n",
+        namespace,
+    )
+    base = namespace["probe"]
+    assert isinstance(base, FunctionType)
+
+    def with_string(code: CodeType, value: str) -> CodeType:
+        return code.replace(co_consts=tuple(
+            with_string(item, value) if isinstance(item, CodeType)
+            else value if item == "lm/identity/interning/probe" else item
+            for item in code.co_consts
+        ))
+
+    plain = with_string(base.__code__, "lm/identity/interning/probe".encode().decode())
+    interned = with_string(base.__code__, sys.intern("lm/identity/interning/probe"))
+    changed = with_string(base.__code__, "lm/identity/interning/changed")
+    assert marshal.dumps(plain) != marshal.dumps(interned)
+
+    def identity(code: CodeType) -> dict[str, str | None]:
+        server = ModuleType("living_memory.server")
+        module = ModuleType("living_memory.identity_probe")
+        function = FunctionType(code, {}, "probe")
+        function.__module__ = module.__name__
+        module.probe = function
+        return _loaded_code_identity({server.__name__: server, module.__name__: module})
+
+    original = identity(plain)
+    assert original["status"] == "known"
+    assert original == identity(interned)
+    relocated = plain.replace(
+        co_filename="/another/checkout/probe.py",
+        co_consts=tuple(
+            item.replace(co_filename="/another/checkout/nested.py")
+            if isinstance(item, CodeType) else item
+            for item in plain.co_consts
+        ),
+    )
+    assert original == identity(relocated)
+    assert original["digest"] != identity(changed)["digest"]
 
 
 def _wait_for_boot_id_change(

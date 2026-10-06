@@ -124,7 +124,10 @@ def _loaded_code_identity(
             if key in entries or id(function) in seen:
                 raise ValueError("ambiguous function identity")
             seen.add(id(function))
-            entries[key] = marshal.dumps(normalized(function.__code__))
+            # Marshal v1+ may encode a string differently depending on whether
+            # Python interned it during import. Format 0 has no interned-string
+            # tags and still serializes the complete normalized code object.
+            entries[key] = marshal.dumps(normalized(function.__code__), 0)
             wrapped = getattr(function, "__wrapped__", None)
             if not isinstance(wrapped, FunctionType):
                 break
@@ -133,7 +136,7 @@ def _loaded_code_identity(
 
     identity: dict[str, str | None] = {
         "status": "unknown",
-        "scheme": "python-loaded-functions-sha256-v1",
+        "scheme": "python-loaded-functions-sha256-v2",
         "digest": None,
         "git_revision": None,
     }
