@@ -90,7 +90,7 @@ def _seed(store: MemoryStore) -> list[str]:
             level="schema",
             content=(
                 "Procedure: deploy rollback\n"
-                f"1. rollback deploy variant {index} restore the release"
+                f"1. restore release variant {index}"
             ),
             context={"scope": "project:alpha", "procedure_id": "deploy_rollback"},
             stats={"confidence": 0.9 - index * 0.1},
@@ -98,13 +98,18 @@ def _seed(store: MemoryStore) -> list[str]:
         ids.append(node.id)
     for index in range(4):
         store.append_trace(
-            f"deploy rollback note {index} restore release checklist",
+            f"Release checklist note {index} for a deploy: record the owner, "
+            "then confirm backups before starting the rollback to restore service.",
             {"scope": "project:alpha", "agent": "agent-a"},
         )
     return ids
 
 
 def test_live_path_frees_slots_for_next_ranked(tmp_path: Path, monkeypatch) -> None:
+    # Exercise real retrieval with a deterministic local backend. The concise
+    # schemas deliberately match more closely than the supporting notes, so
+    # duplicates occupy baseline slots regardless of an installed model.
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         schema_ids = set(_seed(store))
         service = MemoryRecallService(store)
@@ -119,6 +124,11 @@ def test_live_path_frees_slots_for_next_ranked(tmp_path: Path, monkeypatch) -> N
         )
         base_schemas = [r for r in baseline if r.node_id in schema_ids]
         assert len(base_schemas) >= 2, "fixture must deliver duplicates without the valve"
+        expected_ids = [
+            r.node_id
+            for r in baseline + service.last_residual
+            if r.node_id not in schema_ids or r.node_id == base_schemas[0].node_id
+        ][:4]
 
         monkeypatch.setenv(SCHEMA_DEDUP_ENV, "1")
         deduped = service.memory_recall(
@@ -134,4 +144,6 @@ def test_live_path_frees_slots_for_next_ranked(tmp_path: Path, monkeypatch) -> N
         assert schemas[0].node_id == base_schemas[0].node_id
         # Freed slots go to the next ranked results, not left empty.
         assert len(deduped) == len(baseline) == 4
+        assert [r.node_id for r in deduped] == expected_ids
+        assert set(expected_ids) - {r.node_id for r in baseline}
         assert all(r.node.level == "trace" for r in deduped if r.node_id not in schema_ids)

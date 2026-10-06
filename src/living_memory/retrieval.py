@@ -1096,7 +1096,14 @@ class MemoryRecallService:
 
         scoped_scores.sort(key=lambda item: item[0], reverse=True)
         keep_n = per_scope_limit * max(1, len(plan.scopes))
-        kept = scoped_scores[:keep_n]
+        # The limit controls vector discovery, not evidence on a node already
+        # admitted lexically. Its content similarity was computed above too;
+        # discarding it would turn a weaker semantic match into a false zero.
+        # No additional candidate or embedding is introduced by this union.
+        kept = [
+            item for rank, item in enumerate(scoped_scores)
+            if rank < keep_n or item[1] in candidates
+        ]
         # One query for the whole kept set rather than one per node. Max-pool
         # puts more nodes over VECTOR_MATCH_THRESHOLD than a single vector did
         # -- a node now clears it if *any* window does -- so this list runs

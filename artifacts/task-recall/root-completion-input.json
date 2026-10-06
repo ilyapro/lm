@@ -1,0 +1,72 @@
+{
+  "status": "proposal_only_not_accepted_or_applied",
+  "owner": "recall-uses-recorded-task",
+  "obligation": {
+    "node": ".",
+    "id": "P3",
+    "promise_to_preserve": {
+      "statement": "Existing database rows and new or edited tasks remain readable, and the sfx reader is verified from loaded code after ordinary landing and update.",
+      "kind": "infrastructure",
+      "check_protocol": "external_review"
+    },
+    "state_required_before_amendment": "structured open predicate with met:false in the current root acceptance_results.open"
+  },
+  "proposed_delivery_declarations": {
+    "command": "python3 scripts/observe_live_task_recall.py --cases-file \"$LM_TASK_RECALL_CASES_FILE\" --prior-boot-id \"$LM_TASK_RECALL_PRIOR_BOOT_ID\" --prior-digest \"$LM_TASK_RECALL_PRIOR_DIGEST\" --output /home/sfx/p/ae/artifacts/task-recall/live-reader-observation.json",
+    "command_purpose": "Run after ordinary landing and reader update against the running sfx service; the private case file and prior health values are supplied outside Git. The command must exit successfully and write a fresh sanitized receipt.",
+    "candidate_check_selector": {
+      "type": "acceptance_command",
+      "command": "python3 scripts/observe_live_task_recall.py --cases-file \"$LM_TASK_RECALL_CASES_FILE\" --prior-boot-id \"$LM_TASK_RECALL_PRIOR_BOOT_ID\" --prior-digest \"$LM_TASK_RECALL_PRIOR_DIGEST\" --output /home/sfx/p/ae/artifacts/task-recall/live-reader-observation.json"
+    },
+    "candidate_delivery_evidence": [
+      {
+        "kind": "exec",
+        "check": "python3 scripts/observe_live_task_recall.py --cases-file \"$LM_TASK_RECALL_CASES_FILE\" --prior-boot-id \"$LM_TASK_RECALL_PRIOR_BOOT_ID\" --prior-digest \"$LM_TASK_RECALL_PRIOR_DIGEST\" --output /home/sfx/p/ae/artifacts/task-recall/live-reader-observation.json"
+      }
+    ],
+    "publication_ref": "refs/heads/recall-uses-recorded-task",
+    "authority_ref_form": "operator-request:<current-addressed-request-id>"
+  },
+  "preservation_requirements": [
+    "Keep the P3 statement, kind and check_protocol exactly as already promised.",
+    "Keep every accepted product command, required artifact, blocked pattern, command encoding, and list order; add only the accepted delivery check through the native contract path.",
+    "Keep the ordinary gate before publication; SKIPPED does not mean PASS.",
+    "Keep other open obligations and all DONE child provenance unchanged.",
+    "Split the existing mixed root evidence into product and delivery identities through an authorized native contract revision; do not classify its current mixed prose as delivery-only.",
+    "Keep global acceptance_results.passed false while P3 remains open; close P3 only after actual postpublication delivery verification."
+  ],
+  "current_journal_observation": {
+    "acceptance_results": "absent at preparation; must re-read",
+    "root_acceptance_json": "absent at preparation; must re-read",
+    "completion_contract": "absent at preparation; must re-read",
+    "existing_root_evidence": "one mixed external_review item in current typed_contract.json; not a delivery selector"
+  },
+  "read_before_addressed_amend_completion": [
+    "Current owner incarnation, obligation epoch, request identity and current answered status from the native root operator-request path.",
+    "Entire current root acceptance_results.open.P3 object, including canonical promise and complete verification; require a structured object, exact P3 promise and met:false.",
+    "Entire current root acceptance.json accepted contract: acceptance commands, command_encoding presence and value, required_artifacts, blocked_patterns and list order.",
+    "Entire current root typed_contract.json evidence_of_completion list after the authorized product/delivery split; select the complete delivery-only list exactly.",
+    "Entire current root typed_contract.json completion_contract field, including null/absent versus object, for the exact from value.",
+    "Current accepted delivery command bytes or receipt target and corresponding selector type from P3 verification; do not substitute this proposal for accepted values.",
+    "Current publication ref, explicit external-effect authority, retained product candidate, gate result, open obligations and DONE child provenance from native acceptance before product admission."
+  ],
+  "native_amendment_shape_after_acceptance": {
+    "from": "COPY_ENTIRE_CURRENT_COMPLETION_CONTRACT_OR_NULL",
+    "to": {
+      "publication_ref": "refs/heads/recall-uses-recorded-task",
+      "authority_ref": "operator-request:<current-addressed-request-id>",
+      "delivery": [
+        {
+          "node": ".",
+          "id": "P3",
+          "predicate": "COPY_ENTIRE_CURRENT_ACCEPTANCE_RESULTS_OPEN_P3_OBJECT",
+          "checks": [
+            "COPY_EXACT_ACCEPTED_DELIVERY_CHECK_SELECTOR"
+          ],
+          "evidence_of_completion": "COPY_ENTIRE_CURRENT_DELIVERY_ONLY_P3_EVIDENCE_LIST"
+        }
+      ]
+    }
+  },
+  "consumption_rule": "Only a current, addressed operator answer containing one complete AMEND_COMPLETION from/to line can apply this declaration through the native consumer. This file is neither an operator answer nor acceptance, publication, or live delivery evidence."
+}

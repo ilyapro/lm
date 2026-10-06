@@ -24,7 +24,7 @@ credit and, above all, how it is kept from double-counting:
   logged and the lookup returns as if nothing had been attempted.
 * **Additive schema.** The ledger appears on a database master's build
   created, on reopen, with ``schema_version`` still 8 and every pre-existing
-  DDL string byte-identical.
+  DDL string byte-identical outside the precisely checked task-index migration.
 """
 
 from __future__ import annotations
@@ -39,6 +39,8 @@ import sys
 import types
 
 import pytest
+
+from storage_schema_compat import assert_preserved_schema
 
 import living_memory.feedback as feedback_module
 import living_memory.server as server_module
@@ -806,7 +808,7 @@ def test_recall_events_for_transport_is_newest_first_bounded_and_scoped_to_the_s
 
 
 # ---------------------------------------------------------------------------
-# Additive schema: the ledger appears on reopen, nothing else changes
+# Additive ledger schema alongside the explicit derived task-index migration
 # ---------------------------------------------------------------------------
 
 _MASTER_STORAGE_CACHE: list[types.ModuleType] = []
@@ -880,9 +882,7 @@ def test_ledger_is_created_on_a_master_built_database_on_reopen(tmp_path: Path) 
         assert reopened.credited_node_ids(event.id) == {node.id}
 
     after = _schema_objects(db)
-    for name, sql in before.items():
-        assert name in after, f"{name} disappeared"
-        assert after[name] == sql, f"{name} DDL changed:\n{sql!r}\n->\n{after[name]!r}"
+    assert_preserved_schema(before, after)
     # Subset, not equality: once this lands on master, master's build creates
     # the ledger too and the difference legitimately collapses to nothing.
     # The explicit-feedback tables (recall_explicit_credit, the mark audit and

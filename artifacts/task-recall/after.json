@@ -1,0 +1,454 @@
+{
+  "schema": "synthetic-task-recall-v1",
+  "evidence": "development synthetic fixture; not independent holdout",
+  "source_revision": "acc9c58e15ec169aa7a93cf0bc9438e511b26f87",
+  "seed": {
+    "task_identifier": "mqr-78164-sable",
+    "similar_task_identifier": "mqr-78165-sable",
+    "scopes": [
+      "project:marble",
+      "project:quartz",
+      "global"
+    ],
+    "facts": [
+      {
+        "label": "target",
+        "task": "mqr-78164-sable",
+        "scope": "project:marble",
+        "content": "The integrated comparison found that a native revision carries its wait through landing. Supervisor review should use the landed comparison record before deciding whether the release is ready. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. The staged review observed the same result after the landing checkpoint. "
+      },
+      {
+        "label": "similar_task",
+        "task": "mqr-78165-sable",
+        "scope": "project:marble",
+        "content": "The archive export checksum was verified after staging."
+      },
+      {
+        "label": "same_task_irrelevant",
+        "task": "mqr-78164-sable",
+        "scope": "project:marble",
+        "content": "The cafeteria inventory was counted on Friday."
+      },
+      {
+        "label": "same_name_other_project",
+        "task": "mqr-78164-sable",
+        "scope": "project:quartz",
+        "content": "The quartz project measured packaging labels."
+      },
+      {
+        "label": "obsolete_instruction",
+        "task": "landing-review-note",
+        "scope": "project:marble",
+        "content": "For landing review, the old procedure said to skip the integrated wait comparison."
+      },
+      {
+        "label": "correction",
+        "task": "landing-review-note",
+        "scope": "project:marble",
+        "content": "For landing review, include the integrated wait comparison before the release decision.",
+        "supersedes": "obsolete_instruction"
+      },
+      {
+        "label": "cross_project_lesson",
+        "task": "shared-landing-lesson",
+        "scope": "global",
+        "content": "Across projects, a landing decision should compare recorded outcomes and retain the review evidence before changing a release checklist."
+      }
+    ]
+  },
+  "oracle": {
+    "short_task": [
+      "target"
+    ],
+    "contextual_task": [
+      "target"
+    ],
+    "explicit_scope": [
+      "target"
+    ],
+    "correction": [
+      "correction"
+    ],
+    "cross_project": [
+      "cross_project_lesson"
+    ],
+    "missing_knowledge": []
+  },
+  "cases": [
+    {
+      "name": "short_task",
+      "query": "mqr-78164-sable",
+      "scope": null,
+      "limit": 6,
+      "oracle_relevant": [
+        "target"
+      ],
+      "returned_facts": [
+        {
+          "rank": 1,
+          "fact": "same_name_other_project",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 2,
+          "fact": "same_task_irrelevant",
+          "delivery": "full",
+          "methods": [
+            "bm25"
+          ]
+        },
+        {
+          "rank": 3,
+          "fact": "similar_task",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 4,
+          "fact": "target",
+          "delivery": "snippet",
+          "methods": [
+            "bm25"
+          ]
+        },
+        {
+          "rank": 5,
+          "fact": "correction",
+          "delivery": "full",
+          "methods": [
+            "vector"
+          ]
+        }
+      ],
+      "reached_relevant": [
+        "target"
+      ],
+      "recall_calls": 1,
+      "lookup_calls": 1,
+      "lookups": [
+        {
+          "fact": "target",
+          "bytes": 3198,
+          "complete": true
+        }
+      ],
+      "recall_bytes": 4036,
+      "recall_plus_lookup_bytes": 7234,
+      "elapsed_ms": 509.254
+    },
+    {
+      "name": "contextual_task",
+      "query": "mqr-78164-sable supervisor landing integrated comparison",
+      "scope": null,
+      "limit": 6,
+      "oracle_relevant": [
+        "target"
+      ],
+      "returned_facts": [
+        {
+          "rank": 1,
+          "fact": "target",
+          "delivery": "snippet",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 2,
+          "fact": "correction",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 3,
+          "fact": "cross_project_lesson",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 4,
+          "fact": "same_name_other_project",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 5,
+          "fact": "similar_task",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 6,
+          "fact": "same_task_irrelevant",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        }
+      ],
+      "reached_relevant": [
+        "target"
+      ],
+      "recall_calls": 1,
+      "lookup_calls": 1,
+      "lookups": [
+        {
+          "fact": "target",
+          "bytes": 3215,
+          "complete": true
+        }
+      ],
+      "recall_bytes": 6635,
+      "recall_plus_lookup_bytes": 9850,
+      "elapsed_ms": 34.513
+    },
+    {
+      "name": "explicit_scope",
+      "query": "mqr-78164-sable supervisor landing integrated comparison",
+      "scope": "project:marble",
+      "limit": 6,
+      "oracle_relevant": [
+        "target"
+      ],
+      "returned_facts": [
+        {
+          "rank": 1,
+          "fact": "target",
+          "delivery": "snippet",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 2,
+          "fact": "correction",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 3,
+          "fact": "same_task_irrelevant",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 4,
+          "fact": "similar_task",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        }
+      ],
+      "reached_relevant": [
+        "target"
+      ],
+      "recall_calls": 1,
+      "lookup_calls": 1,
+      "lookups": [
+        {
+          "fact": "target",
+          "bytes": 3214,
+          "complete": true
+        }
+      ],
+      "recall_bytes": 5305,
+      "recall_plus_lookup_bytes": 8519,
+      "elapsed_ms": 29.68
+    },
+    {
+      "name": "correction",
+      "query": "landing review integrated wait comparison correction",
+      "scope": null,
+      "limit": 6,
+      "oracle_relevant": [
+        "correction"
+      ],
+      "returned_facts": [
+        {
+          "rank": 1,
+          "fact": "correction",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 2,
+          "fact": "cross_project_lesson",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 3,
+          "fact": "target",
+          "delivery": "snippet",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 4,
+          "fact": "similar_task",
+          "delivery": "full",
+          "methods": [
+            "vector"
+          ]
+        },
+        {
+          "rank": 5,
+          "fact": "same_name_other_project",
+          "delivery": "full",
+          "methods": [
+            "vector"
+          ]
+        }
+      ],
+      "reached_relevant": [
+        "correction"
+      ],
+      "recall_calls": 1,
+      "lookup_calls": 0,
+      "lookups": [],
+      "recall_bytes": 4294,
+      "recall_plus_lookup_bytes": 4294,
+      "elapsed_ms": 15.77
+    },
+    {
+      "name": "cross_project",
+      "query": "cross project landing decision review evidence checklist",
+      "scope": null,
+      "limit": 6,
+      "oracle_relevant": [
+        "cross_project_lesson"
+      ],
+      "returned_facts": [
+        {
+          "rank": 1,
+          "fact": "correction",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 2,
+          "fact": "cross_project_lesson",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 3,
+          "fact": "same_name_other_project",
+          "delivery": "full",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 4,
+          "fact": "target",
+          "delivery": "snippet",
+          "methods": [
+            "bm25",
+            "vector"
+          ]
+        },
+        {
+          "rank": 5,
+          "fact": "similar_task",
+          "delivery": "full",
+          "methods": [
+            "vector"
+          ]
+        }
+      ],
+      "reached_relevant": [
+        "cross_project_lesson"
+      ],
+      "recall_calls": 1,
+      "lookup_calls": 0,
+      "lookups": [],
+      "recall_bytes": 4096,
+      "recall_plus_lookup_bytes": 4096,
+      "elapsed_ms": 15.808
+    },
+    {
+      "name": "missing_knowledge",
+      "query": "violet comet submarine oxygen ledger 917",
+      "scope": null,
+      "limit": 6,
+      "oracle_relevant": [],
+      "returned_facts": [
+        {
+          "rank": 1,
+          "fact": "correction",
+          "delivery": "full",
+          "methods": [
+            "vector"
+          ]
+        },
+        {
+          "rank": 2,
+          "fact": "similar_task",
+          "delivery": "full",
+          "methods": [
+            "vector"
+          ]
+        }
+      ],
+      "reached_relevant": [],
+      "recall_calls": 1,
+      "lookup_calls": 0,
+      "lookups": [],
+      "recall_bytes": 1541,
+      "recall_plus_lookup_bytes": 1541,
+      "elapsed_ms": 13.926
+    }
+  ],
+  "totals": {
+    "recall_calls": 6,
+    "lookup_calls": 3,
+    "recall_plus_lookup_bytes": 35534,
+    "elapsed_ms": 618.951
+  }
+}

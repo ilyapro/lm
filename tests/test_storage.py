@@ -99,6 +99,73 @@ def test_storage_schema_has_uniform_nodes_fts_edges_indexes_and_weights(tmp_path
         store.close()
 
 
+def test_task_fts_rebuilds_old_index_and_tracks_new_and_edited_tasks(tmp_path: Path) -> None:
+    db = tmp_path / "old-index.sqlite3"
+    with MemoryStore(db) as store:
+        old = store.append_trace(
+            "The release comparison was recorded.",
+            {"scope": "project:alpha", "task": "prism673old", "procedure": "hidden581"},
+        )
+
+    # A committed old-format index and triggers beside current nodes emulate an
+    # existing database without rewriting its source rows.
+    raw = sqlite3.connect(db)
+    try:
+        raw.executescript(
+            """
+            DROP TRIGGER nodes_fts_insert;
+            DROP TRIGGER nodes_fts_delete;
+            DROP TRIGGER nodes_fts_update;
+            DROP TABLE nodes_fts_vocab;
+            DROP TABLE nodes_fts;
+            CREATE VIRTUAL TABLE nodes_fts USING fts5(
+                node_id UNINDEXED, content, level UNINDEXED,
+                scope UNINDEXED, tokenize = 'unicode61'
+            );
+            INSERT INTO nodes_fts(rowid, node_id, content, level, scope)
+            SELECT rowid, id, content, level, scope FROM nodes;
+            CREATE TRIGGER nodes_fts_insert AFTER INSERT ON nodes BEGIN
+                INSERT INTO nodes_fts(rowid, node_id, content, level, scope)
+                VALUES (new.rowid, new.id, new.content, new.level, new.scope);
+            END;
+            CREATE TRIGGER nodes_fts_delete AFTER DELETE ON nodes BEGIN
+                DELETE FROM nodes_fts WHERE rowid = old.rowid;
+            END;
+            CREATE TRIGGER nodes_fts_update
+            AFTER UPDATE OF content, level, scope ON nodes BEGIN
+                DELETE FROM nodes_fts WHERE rowid = old.rowid;
+                INSERT INTO nodes_fts(rowid, node_id, content, level, scope)
+                VALUES (new.rowid, new.id, new.content, new.level, new.scope);
+            END;
+            CREATE VIRTUAL TABLE nodes_fts_vocab USING fts5vocab('nodes_fts', 'row');
+            """
+        )
+        raw.commit()
+    finally:
+        raw.close()
+
+    with MemoryStore(db) as store:
+        assert [node.id for node, _ in store.search_content("prism673old")] == [old.id]
+        assert store.search_content("hidden581") == []
+        assert store.term_document_frequencies(["prism", "release"]) == {
+            "prism": 0,
+            "release": 1,
+        }
+        new = store.append_trace(
+            "A second comparison was recorded.",
+            {"scope": "project:alpha", "task": "prism674new"},
+        )
+        assert [node.id for node, _ in store.search_content("prism674new")] == [new.id]
+        store.update_node(old.id, context={"scope": "project:alpha", "task": "prism675edited"})
+        assert store.search_content("prism673old") == []
+        assert [node.id for node, _ in store.search_content("prism675edited")] == [old.id]
+        assert store.get_node(old.id).content == "The release comparison was recorded."
+
+    # Reopening a migrated database must keep the index and row identities.
+    with MemoryStore(db) as store:
+        assert [node.id for node, _ in store.search_content("prism675edited")] == [old.id]
+
+
 def test_memory_store_crud_search_connections_and_append_only_traces(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         trace = store.append_trace(

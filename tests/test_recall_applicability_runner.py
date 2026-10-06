@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -38,11 +39,20 @@ def test_oracle_scores_source_and_required_lookup() -> None:
 def test_paired_processes_on_same_synthetic_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     snapshot = tmp_path / "synthetic.sqlite3"
-    with MemoryStore(MemoryConfig(db_path=snapshot)) as store:
-        good = store.create_node(level="trace", content="Opal valve verified pressure is 31 psi.",
-                                 context={"scope": "project:synthetic"})
-        store.create_node(level="trace", content="Opal valve archive shipping note.",
-                          context={"scope": "project:synthetic"})
+    # Access in the creation second omits updated_at from sparse delivery;
+    # access a second later includes it. Keep this snapshot older than both
+    # workers, so their real response bytes cannot differ at that boundary.
+    recorded_at = (datetime.now(UTC) - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    with monkeypatch.context() as clock:
+        clock.setattr("living_memory.storage._utc_now", lambda: recorded_at)
+        with MemoryStore(MemoryConfig(db_path=snapshot)) as store:
+            good = store.create_node(level="trace", content="Opal valve verified pressure is 31 psi.",
+                                     context={"scope": "project:synthetic"})
+            store.create_node(level="trace", content="Opal valve archive shipping note.",
+                              context={"scope": "project:synthetic"})
+            # Exclude an opportunistic sweep's measured duration_ms from this
+            # equal-input check, without modifying the runner's byte accounting.
+            store.set_last_decay_sweep_at(recorded_at)
     cases = validate_cases({"cases": [
         {"case_id": "found", "query": "opal valve verified pressure", "scope": "project:synthetic",
          "depth": 1, "max_results": 2, "category": "concrete",

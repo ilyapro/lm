@@ -3197,6 +3197,8 @@ class MemoryStore:
         scope: str | None = None,
         limit: int = 10,
     ) -> list[tuple[Node, float]]:
+        """Search content and recorded task through the same lexical index."""
+
         fts_query = _fts_query(query)
         if not fts_query:
             return []
@@ -3244,10 +3246,10 @@ class MemoryStore:
         a separator-joined compound like ``recall_map`` — maps to 0; split
         such inputs into single words before calling.
 
-        Counts cover the whole FTS index, which includes soft-deleted
+        Counts use only the content column, so recorded task terms cannot
+        change content-derived labels. They include soft-deleted
         (``decayed = 1``) nodes: soft deletion touches no FTS-synced column,
-        so the row stays indexed — the same corpus ``bm25()`` ranks over in
-        :meth:`search_content`. Cost per call: one TEMP-table round trip for
+        so the row stays indexed. Cost per call: one TEMP-table round trip for
         the fold plus one term-seek SELECT per distinct token (the fts5vocab
         equality plan); no corpus scan.
         """
@@ -3263,7 +3265,7 @@ class MemoryStore:
             frequency = token_frequency.get(token)
             if frequency is None:
                 row = self._conn.execute(
-                    "SELECT doc FROM nodes_fts_vocab WHERE term = ?", (token,)
+                    "SELECT doc FROM nodes_fts_vocab WHERE term = ? AND col = 'content'", (token,)
                 ).fetchone()
                 frequency = int(row["doc"]) if row is not None else 0
                 token_frequency[token] = frequency
@@ -4620,6 +4622,7 @@ class MemoryStore:
             self._migrate_pre_v7_schema()
             self._migrate_recall_map_column()
             self._migrate_recall_events_task_pattern_column()
+            self._migrate_task_fts()
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -4662,6 +4665,7 @@ class MemoryStore:
                 CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
                     node_id UNINDEXED,
                     content,
+                    task,
                     level UNINDEXED,
                     scope UNINDEXED,
                     tokenize = 'unicode61'
@@ -4670,8 +4674,8 @@ class MemoryStore:
                 CREATE TRIGGER IF NOT EXISTS nodes_fts_insert
                 AFTER INSERT ON nodes
                 BEGIN
-                    INSERT INTO nodes_fts(rowid, node_id, content, level, scope)
-                    VALUES (new.rowid, new.id, new.content, new.level, new.scope);
+                    INSERT INTO nodes_fts(rowid, node_id, content, task, level, scope)
+                    VALUES (new.rowid, new.id, new.content, new.task, new.level, new.scope);
                 END;
 
                 CREATE TRIGGER IF NOT EXISTS nodes_fts_delete
@@ -4681,18 +4685,19 @@ class MemoryStore:
                 END;
 
                 CREATE TRIGGER IF NOT EXISTS nodes_fts_update
-                AFTER UPDATE OF content, level, scope ON nodes
+                AFTER UPDATE OF content, task, level, scope ON nodes
                 BEGIN
                     DELETE FROM nodes_fts WHERE rowid = old.rowid;
-                    INSERT INTO nodes_fts(rowid, node_id, content, level, scope)
-                    VALUES (new.rowid, new.id, new.content, new.level, new.scope);
+                    INSERT INTO nodes_fts(rowid, node_id, content, task, level, scope)
+                    VALUES (new.rowid, new.id, new.content, new.task, new.level, new.scope);
                 END;
 
                 -- Document-frequency reader over the index the triggers above
                 -- maintain, for c-TF-IDF labeling (term_document_frequencies
                 -- and fts_document_count). 'row' type: one row per term with
-                -- doc = how many indexed documents contain it; only `content`
-                -- contributes tokens, the UNINDEXED columns none. fts5vocab
+                -- doc = how many indexed documents contain a term per column.
+                -- The labeler reads content only; task is retrieval evidence.
+                -- fts5vocab
                 -- stores nothing — it is a stateless view of the FTS index —
                 -- so this CREATE on every open *is* the whole migration for
                 -- pre-existing databases (the _RECALL_ATTESTATION_SCHEMA_SQL
@@ -4700,7 +4705,7 @@ class MemoryStore:
                 -- could protect, and the statement is additive: no existing
                 -- table's DDL changes by a byte.
                 CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts_vocab
-                USING fts5vocab('nodes_fts', 'row');
+                USING fts5vocab('nodes_fts', 'col');
 
                 CREATE TABLE IF NOT EXISTS connections (
                     id TEXT PRIMARY KEY,
@@ -4969,6 +4974,55 @@ class MemoryStore:
                 """,
                 (str(SCHEMA_VERSION),),
             )
+
+    def _migrate_task_fts(self) -> None:
+        """Rebuild the derived FTS index once when opening a pre-task database.
+
+        FTS5 cannot add a column in place. The nodes table remains the source
+        of truth, so this transaction changes no stored memory or node ids.
+        """
+
+        old_fts = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'nodes_fts'"
+        ).fetchone()
+        if old_fts is None:
+            return
+        columns = {
+            row["name"] for row in self._conn.execute("PRAGMA table_info(nodes_fts)")
+        }
+        if "task" in columns:
+            return
+        self._conn.executescript(
+            """
+            BEGIN IMMEDIATE;
+            DROP TRIGGER IF EXISTS nodes_fts_insert;
+            DROP TRIGGER IF EXISTS nodes_fts_delete;
+            DROP TRIGGER IF EXISTS nodes_fts_update;
+            DROP TABLE IF EXISTS nodes_fts_vocab;
+            DROP TABLE nodes_fts;
+            CREATE VIRTUAL TABLE nodes_fts USING fts5(
+                node_id UNINDEXED, content, task, level UNINDEXED,
+                scope UNINDEXED, tokenize = 'unicode61'
+            );
+            INSERT INTO nodes_fts(rowid, node_id, content, task, level, scope)
+            SELECT rowid, id, content, task, level, scope FROM nodes;
+            CREATE TRIGGER nodes_fts_insert AFTER INSERT ON nodes BEGIN
+                INSERT INTO nodes_fts(rowid, node_id, content, task, level, scope)
+                VALUES (new.rowid, new.id, new.content, new.task, new.level, new.scope);
+            END;
+            CREATE TRIGGER nodes_fts_delete AFTER DELETE ON nodes BEGIN
+                DELETE FROM nodes_fts WHERE rowid = old.rowid;
+            END;
+            CREATE TRIGGER nodes_fts_update
+            AFTER UPDATE OF content, task, level, scope ON nodes BEGIN
+                DELETE FROM nodes_fts WHERE rowid = old.rowid;
+                INSERT INTO nodes_fts(rowid, node_id, content, task, level, scope)
+                VALUES (new.rowid, new.id, new.content, new.task, new.level, new.scope);
+            END;
+            CREATE VIRTUAL TABLE nodes_fts_vocab USING fts5vocab('nodes_fts', 'col');
+            COMMIT;
+            """
+        )
 
     def _migrate_pre_v3_schema(self) -> None:
         """Add content_fingerprint to nodes for DBs created at schema_version <= 2."""
@@ -5814,10 +5868,11 @@ def _json_loads(value: str | None, default: Any) -> Any:
 
 
 _FTS_QUERY_TERM_RE = re.compile(r"\w+\*?")
+_FTS_QUERY_IDENTIFIER_RE = re.compile(r"\w+(?:[-/.]\w+)+")
 
 
 def _fts_query(query: str) -> str:
-    """Turn free text into an FTS5 MATCH expression: quoted terms joined by OR.
+    """Turn free text into an FTS5 MATCH expression of terms and identifiers.
 
     Every ``\\w+`` run becomes an exact quoted term, as it always has. A run
     immediately followed by ``*`` becomes a prefix term (``"миграц"*``) when
@@ -5826,7 +5881,11 @@ def _fts_query(query: str) -> str:
     ``retrieval._expanded_query`` appends reach the unstemmed ``unicode61``
     index. For every other run the star is dropped, so Latin terms keep their
     exact form and ``LM_TOKENIZE_CYRILLIC_STEM=off`` yields the previous
-    expression byte for byte.
+    term expression byte for byte. Compound identifiers also supply a phrase:
+    ``harbor-914-slate`` is more specific evidence than those three words in
+    arbitrary positions. Keep the individual terms so partial content remains
+    reachable; FTS5 scores phrase specificity in both content and task, with
+    no task-equality override or extra search.
     """
 
     terms: list[str] = []
@@ -5839,6 +5898,10 @@ def _fts_query(query: str) -> str:
             terms.append(f'"{term}"')
         else:
             terms.append(f'"{match}"')
+    terms.extend(
+        f'"{identifier}"'
+        for identifier in dict.fromkeys(_FTS_QUERY_IDENTIFIER_RE.findall(query))
+    )
     return " OR ".join(terms)
 
 

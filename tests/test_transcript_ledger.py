@@ -4,16 +4,17 @@ Phase 3 of the transcript-grounding goal ships exactly one schema change — a
 CREATE-only table plus one index — and an offline importer. What a live
 500 MB database must be able to rely on is pinned here:
 
-* **Byte-identity of everything that already exists.** A fresh database
+* **Byte-identity outside the explicit task-index migration.** A fresh database
   created by this build carries, for every object master's build creates,
-  the byte-identical ``sqlite_master`` SQL. The master build is loaded from
+  the byte-identical ``sqlite_master`` SQL, except for the six precisely
+  checked derived FTS definitions needed to index recorded tasks. The master build is loaded from
   ``git show master:src/living_memory/storage.py`` and executed as a module,
   so the comparison is against the code actually deployed, not a copy that
   could drift.
 * **Reopening is the whole migration.** A database file created by master's
   build gains exactly the two new objects when the new build opens it —
-  nothing else appears, nothing changes, ``schema_version`` stays at 8, and
-  the data survives.
+  nothing else appears, unrelated DDL stays unchanged, ``schema_version``
+  stays at 8, and the data survives the task-index rebuild.
 * **Import replays instead of duplicating**, never updates an existing row,
   and reports same-key-different-numbers as the method_version discipline
   violation it is.
@@ -34,6 +35,8 @@ import sys
 import types
 
 import pytest
+
+from storage_schema_compat import assert_preserved_schema
 
 from living_memory.server import create_mcp_server
 from living_memory.storage import (
@@ -170,11 +173,9 @@ def _schema_version(db_path: Path) -> str:
 
 
 def _assert_only_ledger_added(before: dict[str, str], after: dict[str, str]) -> None:
-    """Everything shared is byte-identical; additions are at most the ledger."""
+    """Only the precise task-index delta and additive ledgers are allowed."""
 
-    for name, sql in before.items():
-        assert name in after, f"{name} disappeared"
-        assert after[name] == sql, f"{name} DDL changed:\n{sql!r}\n->\n{after[name]!r}"
+    assert_preserved_schema(before, after)
     added = set(after) - set(before)
     # Subset, not equality: once this release reaches master, master's build
     # creates the ledger too and the difference legitimately collapses to
@@ -223,11 +224,11 @@ def _ledger_rows(db_path: Path) -> list[tuple[Any, ...]]:
 
 
 # ---------------------------------------------------------------------------
-# (a) Fresh-database DDL: everything pre-existing is byte-identical to master
+# (a) Fresh-database DDL: preserve master apart from the task-index migration
 # ---------------------------------------------------------------------------
 
 
-def test_fresh_db_preexisting_ddl_byte_identical_to_master(tmp_path: Path) -> None:
+def test_fresh_db_preserves_master_ddl_except_task_index(tmp_path: Path) -> None:
     master = _master_storage()
     with master.MemoryStore(tmp_path / "master.sqlite3"):
         pass
@@ -246,7 +247,7 @@ def test_fresh_db_preexisting_ddl_byte_identical_to_master(tmp_path: Path) -> No
 # ---------------------------------------------------------------------------
 
 
-def test_reopening_master_created_db_adds_only_the_ledger(tmp_path: Path) -> None:
+def test_reopening_master_preserves_data_and_allows_only_ledger_and_task_index(tmp_path: Path) -> None:
     master = _master_storage()
     db = tmp_path / "existing.sqlite3"
     with master.MemoryStore(db) as store:
@@ -265,15 +266,37 @@ def test_reopening_master_created_db_adds_only_the_ledger(tmp_path: Path) -> Non
                 }
             ],
         )
+        node_before = dict(store.connection.execute("SELECT * FROM nodes WHERE id = ?", (node.id,)).fetchone())
+        event_before = dict(store.connection.execute("SELECT * FROM recall_events WHERE id = ?", (event.id,)).fetchone())
     before = _schema_objects(db)
     assert _schema_version(db) == "8"
 
     with MemoryStore(db) as reopened:
-        assert reopened.get_node(node.id) is not None
-        assert reopened.get_recall_event(event.id) is not None
+        assert dict(reopened.connection.execute("SELECT * FROM nodes WHERE id = ?", (node.id,)).fetchone()) == node_before
+        assert dict(reopened.connection.execute("SELECT * FROM recall_events WHERE id = ?", (event.id,)).fetchone()) == event_before
+        assert [n.id for n, _ in reopened.search_content('"ledger-fixture"')] == [node.id]
+        assert [n.id for n, _ in reopened.search_content("body")] == [node.id]
 
     _assert_only_ledger_added(before, _schema_objects(db))
     assert _schema_version(db) == "8"
+
+
+@pytest.mark.parametrize("name, replacement", [
+    ("nodes", "CREATE TABLE nodes (id TEXT)"),
+    ("nodes_fts", "CREATE VIRTUAL TABLE nodes_fts USING fts5(content)"),
+    ("nodes_fts_update", "CREATE TRIGGER nodes_fts_update AFTER UPDATE ON nodes BEGIN SELECT 1; END"),
+    ("nodes_fts_vocab", "CREATE VIRTUAL TABLE nodes_fts_vocab USING fts5vocab('nodes_fts', 'row')"),
+])
+def test_task_index_allowance_rejects_unrelated_or_incomplete_ddl(
+    tmp_path: Path, name: str, replacement: str,
+) -> None:
+    db = tmp_path / "schema.sqlite3"
+    with MemoryStore(db):
+        pass
+    before = _schema_objects(db)
+    after = {**before, name: replacement}
+    with pytest.raises(AssertionError):
+        _assert_only_ledger_added(before, after)
 
 
 def test_dropped_ledger_reappears_on_reopen(tmp_path: Path) -> None:
