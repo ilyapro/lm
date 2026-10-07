@@ -1,0 +1,108 @@
+{
+  "corpus_sha256": "64ba90bf6183751e3acd3b3d0739b7b5de96ba795a26ae0f550fb44063ab5742",
+  "corpus_count": 10,
+  "queries": {
+    "loss": {
+      "query": "quillon vantrex ballast survey",
+      "max_results": 2,
+      "keys": [
+        "survey_a",
+        "survey_b"
+      ],
+      "delivery": [
+        "full",
+        "near_duplicate"
+      ],
+      "duplicate_of": [
+        null,
+        "survey_a"
+      ],
+      "response_bytes": 2017,
+      "elapsed_ms": 15.408,
+      "event_result_count": 2
+    },
+    "reference": {
+      "query": "quillon vantrex ballast survey",
+      "max_results": 3,
+      "keys": [
+        "survey_a",
+        "survey_b",
+        "inventory"
+      ],
+      "delivery": [
+        "full",
+        "near_duplicate",
+        "full"
+      ],
+      "duplicate_of": [
+        null,
+        "survey_a",
+        null
+      ],
+      "response_bytes": 2773,
+      "elapsed_ms": 13.629,
+      "event_result_count": 3
+    },
+    "distinctions": {
+      "query": "pier register permit beacon audit corrected quay rule",
+      "max_results": 10,
+      "keys": [
+        "new_rule",
+        "positive",
+        "negative",
+        "id_alpha",
+        "id_beta"
+      ],
+      "delivery": [
+        "full",
+        "full",
+        "full",
+        "full",
+        "full"
+      ],
+      "duplicate_of": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "response_bytes": 3752,
+      "elapsed_ms": 12.759,
+      "event_result_count": 5
+    }
+  },
+  "loss_repeat_slots": 1,
+  "independent_fact_lost": "inventory",
+  "correction_edge": [
+    "new_rule",
+    "old_rule",
+    "supersedes"
+  ],
+  "material_distinctions": [
+    [
+      "survey_a",
+      "monday",
+      "day"
+    ],
+    [
+      "positive",
+      "negative",
+      "polarity"
+    ],
+    [
+      "id_alpha",
+      "id_beta",
+      "permit identifier"
+    ],
+    [
+      "old_rule",
+      "new_rule",
+      "current correction"
+    ]
+  ],
+  "necessary_mcp_calls": 2,
+  "necessary_response_bytes": 4790,
+  "necessary_lookup_calls": 0,
+  "necessary_lookup_bytes": 0
+}

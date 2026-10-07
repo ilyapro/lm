@@ -1463,6 +1463,9 @@ def _register_tools(
                 ambient_context=ambient_context,
                 depth=depth,
                 max_results=max_results,
+                select_results=lambda limited, residual, limit: _select_distinct_results(
+                    store, limited, residual, limit, already_delivered
+                ),
             )
             if gated and recall_service.last_recall_event_id is not None:
                 store.mark_recall_event_gated(recall_service.last_recall_event_id)
@@ -1912,6 +1915,49 @@ def _near_duplicate_map(
         identifier_veto=identifier_veto_enabled(),
     )
     return duplicate_of or None
+
+
+def _select_distinct_results(
+    store: MemoryStore,
+    limited: list[Any],
+    residual: list[Any],
+    max_results: int,
+    already_delivered: set[str],
+) -> tuple[list[Any], list[Any]]:
+    """Spend a bounded cut on distinct knowledge when a repeat hides a fact.
+
+    Keep the ordinary cut unless a classified repeat can actually be replaced
+    by a later independent result. Session repeats remain selectable: a caller
+    may intentionally ask again for the prior fact. The same near-duplicate
+    classifier and guards used by delivery make this decision.
+    """
+
+    if len(limited) < max_results or not residual:
+        return limited, residual
+    pool = limited + residual[:max_results]
+    duplicate_of = _near_duplicate_map(store, pool) or {}
+    seen_content: dict[str, str] = {}
+    selected: list[Any] = []
+    for result in pool:
+        node = result.node
+        prior_twin = seen_content.get(node.content) if node.content else None
+        if node.content and prior_twin is None:
+            seen_content[node.content] = node.id
+        bearer = prior_twin or duplicate_of.get(node.id)
+        if (
+            bearer in {item.node.id for item in selected}
+            and node.id not in already_delivered
+        ):
+            continue
+        selected.append(result)
+        if len(selected) == max_results:
+            break
+    if len(selected) < max_results:
+        return limited, residual
+    selected_ids = {result.node.id for result in selected}
+    if selected_ids == {result.node.id for result in limited}:
+        return limited, residual
+    return selected, [result for result in limited + residual if result.node.id not in selected_ids]
 
 
 def _context_transport(context: dict[str, Any] | None) -> str | None:

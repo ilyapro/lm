@@ -117,6 +117,7 @@ def _payload(result: Any) -> dict[str, Any]:
 async def _recall(
     url: str,
     cases: list[dict[str, str]],
+    scope: str | None,
     token: str | None,
     verify: ssl.SSLContext | bool | None,
     timeout: float,
@@ -133,9 +134,12 @@ async def _recall(
     async with Client(url, **kwargs) as client:
         for case in cases:
             started = time.monotonic()
-            result = _payload(await client.call_tool("memory_recall", {
+            request: dict[str, Any] = {
                 "query": case["query"], "max_results": max_results,
-            }))
+            }
+            if scope is not None:
+                request["scope"] = scope
+            result = _payload(await client.call_tool("memory_recall", request))
             ranked = [item["node"]["id"] for item in result["results"]]
             rank = next(
                 (index for index, node_id in enumerate(ranked, 1)
@@ -385,6 +389,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--env-file", type=Path, default=Path.home() / ".config/living-memory/env")
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--max-results", type=int, default=6)
+    parser.add_argument("--scope")
     parser.add_argument("--native-completion", action="store_true")
     parser.add_argument("--installed-root", type=Path)
     parser.add_argument("--published-commit")
@@ -402,7 +407,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         token = resolve_token(args.token, env_file=args.env_file)
         native = _native_before(args, health, base, token, verify) if args.native_completion else None
-        results = asyncio.run(_recall(base, cases, token, verify, args.timeout, args.max_results))
+        results = asyncio.run(_recall(base, cases, args.scope, token, verify, args.timeout, args.max_results))
         after = _health(base.replace("/mcp/", "/health"), args.timeout, verify)
         if (
             after.get("boot_id") != boot_id
@@ -421,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
                 "git_revision": health["code_identity"].get("git_revision"),
             },
             "max_results": args.max_results,
-            "unscoped_recall": True,
+            "unscoped_recall": args.scope is None,
             "cases": results,
         }
         if native is not None:

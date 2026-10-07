@@ -114,7 +114,8 @@ def isolated_reader(tmp_path: Path, request, monkeypatch):
 
 
 def _invoke(reader: dict, cases_file: Path, output: Path, *, stale: bool = False,
-            native: bool = False, commit: str | None = None):
+            native: bool = False, commit: str | None = None,
+            scope: str | None = None):
     health = reader["health"]
     command = [
         sys.executable, str(SCRIPT), "--port", str(reader["port"]),
@@ -124,6 +125,8 @@ def _invoke(reader: dict, cases_file: Path, output: Path, *, stale: bool = False
         "--prior-scheme", health["code_identity"]["scheme"],
         "--env-file", str(cases_file.parent / "absent-env"),
     ]
+    if scope is not None:
+        command.extend(["--scope", scope])
     if native:
         revision = commit or subprocess.check_output(
             ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True,
@@ -145,13 +148,13 @@ def test_fresh_read_only_observation_has_no_private_values(
          "expected_node_id": isolated_reader["node_id"]},
     ]}))
     output = tmp_path / "receipt.json"
-    result = _invoke(isolated_reader, cases_file, output)
+    result = _invoke(isolated_reader, cases_file, output, scope="project:test")
     assert result.returncode == 0, result.stderr
     receipt = json.loads(output.read_text())
     assert receipt["ok"] is True
     assert receipt["boot_id"] == isolated_reader["health"]["boot_id"]
     assert receipt["code_identity"] == isolated_reader["health"]["code_identity"]
-    assert receipt["unscoped_recall"] is True
+    assert receipt["unscoped_recall"] is False
     assert all(case["found"] and case["rank"] <= 6 for case in receipt["cases"])
     emitted = result.stdout + result.stderr + output.read_text()
     assert PRIVATE_QUERY not in emitted

@@ -210,7 +210,7 @@ from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from math import log2, sqrt
-from typing import Any
+from typing import Any, Callable
 
 from living_memory.edge_derivation import CONTENT_REFERENCE_KIND, DERIVED_FROM_KIND
 from living_memory.embeddings import (
@@ -641,6 +641,7 @@ class MemoryRecallService:
         max_results: int = 10,
         log_access: bool = True,
         log_event: bool | None = None,
+        select_results: Callable[[list[RecallResult], list[RecallResult], int], tuple[list[RecallResult], list[RecallResult]]] | None = None,
     ) -> list[RecallResult]:
         self.last_recall_event_id = None
         self.last_residual = []
@@ -721,6 +722,14 @@ class MemoryRecallService:
             demotions=demotions,
             causal_mode=causal_mode,
         )
+        # Selection belongs before access and event writes: their result ids
+        # must describe the answer that the caller actually delivers. A score
+        # gate may leave rejected candidates in the residual, so the delivery
+        # selector is used only with the plain, ungated cut.
+        if select_results is not None and min_score_from_env() is None:
+            limited, self.last_residual = select_results(
+                limited, self.last_residual, max_results
+            )
         if log_access:
             limited = [self._record_result_access(result) for result in limited]
         if log_event is None:
