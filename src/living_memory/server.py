@@ -38,6 +38,8 @@ from living_memory.consolidation import (
 )
 from living_memory.decay import apply_decay
 from living_memory.delivery import (
+    DEFAULT_PROVENANCE_VALUE_MAX_CHARS,
+    _compact_corrections,
     DELIVERY_NEAR_DUPLICATE,
     DELIVERY_SESSION_DUPLICATE,
     DELIVERY_TWIN_DUPLICATE,
@@ -851,7 +853,7 @@ _RECALL_DESCRIPTION = (
     "Read broad: omit scope to transfer across scopes. Depth 'causal' "
     "when debugging. A level:schema result is a binding procedure — "
     "follow it literally. If delivered knowledge is insufficient, use a "
-    "non-full result's content_ref via memory_lookup for the full node."
+    "non-full result's content_ref via memory_lookup for full content."
 )
 
 _REMEMBER_DESCRIPTION = (
@@ -923,7 +925,7 @@ _RECALL_DESCRIPTION_MANDATORY = (
     "omit scope to transfer across scopes. Depth 'causal' when debugging. "
     "A level:schema result is a binding procedure — follow it literally. "
     "If delivered knowledge is insufficient, use a non-full result's "
-    "content_ref via memory_lookup for the full node. You MUST "
+    "content_ref via memory_lookup for full content. You MUST "
     "mark each recall's results on your next call: used ids as used, "
     "off-topic ids as irrelevant."
 )
@@ -1390,10 +1392,11 @@ def _register_tools(
         selected for the query, while short content and binding schemas stay
         complete.
         Non-full results add a ``content_ref`` whose ``node_id`` fed to
-        ``memory_lookup`` returns the complete stored node. Every delivery is
+        ``memory_lookup`` returns complete content and validity. Every delivery is
         dieted on the wire — oversized context/provenance values compacted to
         counts/truncations, bookkeeping stats and zero/null fields dropped —
-        and ``memory_lookup`` restores the stored node byte-complete
+        and ``memory_lookup(node_id=...)`` restores full content and validity;
+        ``view="full"`` restores the complete stored node
         (``LM_DELIVERY_*`` env valves roll each cut back).
 
         When the ranked candidate pool holds more than the delivered results,
@@ -1591,11 +1594,16 @@ def _register_tools(
         level: str | None = "trace",
         node_id: str | None = None,
         node_ids: list[str] | None = None,
+        view: str = "knowledge",
+        context_key: str | None = None,
     ) -> dict[str, Any]:
-        """Return memory nodes by exact context-field match, or full nodes by id.
+        """Return memory nodes by exact context-field match, or knowledge by id.
 
-        ``node_id``/``node_ids`` fetch complete nodes directly — the re-fetch
-        path for snippet/duplicate recall stubs. Missing ids are skipped and
+        ``node_id``/``node_ids`` fetch full content, identity, and validity
+        without unrelated context or provenance history. Use ``context_key``
+        to include one original context field, or ``view="full"`` for the
+        complete stored node. These selectors apply only to id fetches and
+        cannot be combined. Missing ids are skipped and
         listed under ``missing``; decayed nodes are returned with their
         ``decayed`` flag set; ``level`` is ignored for id fetches. A ``scope``
         passed alongside ids verifies instead of filtering: mismatching nodes
@@ -1627,12 +1635,52 @@ def _register_tools(
                         "count": 0,
                         "results": [],
                     }
+                if view not in ("knowledge", "full") or (
+                    context_key is not None and (not context_key or view == "full")
+                ):
+                    return {
+                        "error": (
+                            "use view='knowledge' or view='full'; context_key "
+                            "requires view='knowledge' and a nonempty key"
+                        ),
+                        "scope": normalized_scope,
+                        "filters": {},
+                        "count": 0,
+                        "results": [],
+                    }
                 found = store.get_nodes(requested_ids)
-                results = [
-                    node_to_dict(found[requested])
-                    for requested in requested_ids
-                    if requested in found
-                ]
+                results = []
+                for requested in requested_ids:
+                    if requested not in found:
+                        continue
+                    node = node_to_dict(found[requested])
+                    if view == "full":
+                        results.append(node)
+                        continue
+                    provenance = node["provenance"]
+                    validity = {
+                        "corrections": _compact_corrections(
+                            provenance["corrections"], DEFAULT_PROVENANCE_VALUE_MAX_CHARS
+                        )
+                    }
+                    if "supersedes" in provenance:
+                        validity["supersedes"] = provenance["supersedes"]
+                    knowledge = {
+                        "id": node["id"],
+                        "level": node["level"],
+                        "content": node["content"],
+                        "scope": node["scope"],
+                        "provenance": validity,
+                        "decayed": node["decayed"],
+                        "decay_reason": node["decay_reason"],
+                    }
+                    if context_key is not None:
+                        knowledge["context"] = (
+                            {context_key: node["context"][context_key]}
+                            if context_key in node["context"]
+                            else {}
+                        )
+                    results.append(knowledge)
                 response: dict[str, Any] = {
                     "scope": normalized_scope,
                     "filters": {},
@@ -1692,6 +1740,14 @@ def _register_tools(
                     )
                 return response
 
+            if view != "knowledge" or context_key is not None:
+                return {
+                    "error": "view and context_key require node_id or node_ids",
+                    "scope": normalized_scope,
+                    "filters": dict(filters),
+                    "count": 0,
+                    "results": [],
+                }
             if not filters:
                 return {
                     "error": "at least one exact context filter is required",

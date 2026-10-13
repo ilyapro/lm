@@ -71,8 +71,10 @@ without changing the other surface.
    `context` values (strings truncate at a clean boundary; lists/objects —
    e.g. a procedural schema's `context.procedure`, which duplicates the whole
    content — collapse to `{"count", "chars"}`), and carry a `content_ref`
-   pointing at `memory_lookup(node_id=...)`, which restores content and
-   context complete. Shaping changes the serialized response only — the
+   pointing at `memory_lookup(node_id=...)`, which restores complete content
+   and validity. `context_key` retrieves one original context field;
+   `view="full"` restores the complete stored node. Shaping changes the
+   serialized response only — the
    recorded event keeps the unshaped result IDs, and without a transport
    session id the session-dedup stage is skipped entirely (legacy full
    delivery).

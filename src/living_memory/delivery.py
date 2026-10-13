@@ -58,7 +58,7 @@ Diet, applied per delivered entry (each lever has its own rollback valve):
 * Stubs and snippets preserve every key of the full node dict
   (``resources.node_to_dict``); ``content`` is never absent — stubs carry a
   one-line preview (~160 chars), snippets the truncated text; non-full
-  results always gain a ``content_ref`` for re-fetching the full node.
+  results always gain a ``content_ref`` for re-fetching full content and validity.
 * Provenance is summarized on every delivery class: ``prior_recalls``
   collapses to ``{"count": n}`` and any other oversized provenance value is
   compacted per key exactly like context values. ``corrections`` keep one
@@ -72,7 +72,7 @@ Diet, applied per delivered entry (each lever has its own rollback valve):
   node's whole content alongside a 31-char stub).
 * Full deliveries whose provenance or context lost anything to the diet gain
   a minimal ``content_ref`` hint (``{"node_id": ...}``) marking that
-  ``memory_lookup`` returns strictly more than was delivered.
+  ``memory_lookup`` can retrieve the omitted context by key or full view.
 * ``stats`` drop bookkeeping and default-valued fields (``last_accessed``,
   null ``temporal_hint``, default ``confidence``/``unique_agents``, zero
   counts) and round ``usefulness_score``.

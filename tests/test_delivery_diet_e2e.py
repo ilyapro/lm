@@ -22,7 +22,8 @@ them on the wire:
   duplicates its multi-KB content arrives with that value compacted to
   ``{"count", "chars"}`` on every delivery class, full included (the
   full-node diet), keeping whole responses bounded, while
-  ``memory_lookup(node_id=...)`` still returns the stored context complete.
+  ``memory_lookup(node_id=..., context_key="procedure")`` returns that one
+  original field, and ``view="full"`` returns the complete stored node.
 * Remember diet — the ``memory_remember`` wire response stays bounded while
   the trace itself is durably stored and recallable.
 * Feedback closure — recall -> stub recall -> remember on one connection
@@ -49,6 +50,7 @@ from fastmcp import Client
 
 from living_memory.delivery import DEFAULT_SNIPPET_LADDER, SNIPPET_LADDER_ENV
 from living_memory.embeddings import tokenize
+from living_memory.resources import node_to_dict
 from living_memory.server import create_mcp_server
 
 from test_transport_identity import FakeMCP, _structured
@@ -332,7 +334,7 @@ def test_bulky_context_procedure_compacted_on_all_delivery_classes(tmp_path: Pat
         "trigger": "voltaic pergola rite",
     }
 
-    async def scenario() -> tuple[str, dict[str, Any], dict[str, Any], dict[str, Any]]:
+    async def scenario() -> tuple[str, dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
         mcp, store = _server(tmp_path)
         node = store.create_node(
             level="schema",
@@ -346,15 +348,24 @@ def test_bulky_context_procedure_compacted_on_all_delivery_classes(tmp_path: Pat
             looked_up = _structured(
                 await client.call_tool("memory_lookup", {"node_id": node.id})
             )
-        return node.id, first, second, looked_up
+            procedure = _structured(await client.call_tool(
+                "memory_lookup", {"node_id": node.id, "context_key": "procedure"}
+            ))
+            full = _structured(await client.call_tool(
+                "memory_lookup", {"node_id": node.id, "view": "full"}
+            ))
+        return node.id, first, second, looked_up, procedure, full
 
-    node_id, first, second, looked_up = asyncio.run(scenario())
+    node_id, first, second, looked_up, procedure, full = asyncio.run(scenario())
 
     procedure_chars = len(json.dumps(steps, ensure_ascii=False))
     assert procedure_chars > 4096  # the leak this diet closes dwarfs the bounds below
 
-    stored_context = looked_up["results"][0]["context"]
-    assert stored_context["procedure"] == steps  # the re-fetch hatch stays complete
+    assert looked_up["results"][0]["content"] == body
+    assert "context" not in looked_up["results"][0]
+    assert procedure["results"][0]["context"] == {"procedure": steps}
+    stored_context = full["results"][0]["context"]
+    assert stored_context["procedure"] == steps
 
     first_entry = _by_id(first)[node_id]
     second_entry = _by_id(second)[node_id]
@@ -377,6 +388,67 @@ def test_bulky_context_procedure_compacted_on_all_delivery_classes(tmp_path: Pat
     # response stays small outright.
     assert _wire_bytes(first) < len(json.dumps(body)) + 2048
     assert _wire_bytes(second) < 4096
+
+
+def test_exact_ref_growth_keeps_knowledge_and_validity_but_not_history(tmp_path: Path) -> None:
+    scope = "project:exact-ref-diet"
+    body = "Procedure: copper tide ledger\n1. Keep the exact binding instruction.\n"
+    procedure = ["step α " * 800, "step β " * 800]
+    prior = ["earlier recall " * 800]
+    correction = {"by": "01CURRENTFACT", "supersedes": "01OLDFACT", "text": "Use current rule"}
+    context = {"scope": scope, "procedure": procedure, "neighbor": "leave me out"}
+    provenance = {"prior_recalls": prior, "corrections": [correction]}
+
+    async def scenario() -> tuple[Any, dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+        mcp, store = _server(tmp_path)
+        node = store.create_node(level="schema", content=body, context=context, provenance=provenance)
+        store.soft_delete_node(node.id, "superseded")
+        async with Client(mcp) as client:
+            default = _structured(await client.call_tool("memory_lookup", {"node_id": node.id}))
+            store.update_node(
+                node.id,
+                context={**context, "procedure": procedure * 6},
+                provenance={**provenance, "prior_recalls": prior * 8},
+            )
+            grown = _structured(await client.call_tool("memory_lookup", {"node_id": node.id}))
+            selected = _structured(await client.call_tool("memory_lookup", {
+                "node_id": node.id, "context_key": "procedure",
+            }))
+            full = _structured(await client.call_tool("memory_lookup", {
+                "node_id": node.id, "view": "full",
+            }))
+            missing = _structured(await client.call_tool("memory_lookup", {
+                "node_ids": ["01MISSINGEXACTREF", node.id], "scope": "project:wrong",
+            }))
+            invalid = _structured(await client.call_tool("memory_lookup", {
+                "node_id": node.id, "view": "brief",
+            }))
+            combined = _structured(await client.call_tool("memory_lookup", {
+                "node_id": node.id, "view": "full", "context_key": "procedure",
+            }))
+        return store, default, grown, selected, full, missing, invalid, combined
+
+    store, default, grown, selected, full, missing, invalid, combined = asyncio.run(scenario())
+    node = store.get_node(default["results"][0]["id"])
+    assert node is not None
+    assert default == grown
+    assert _wire_bytes(default) == _wire_bytes(grown)
+    assert _wire_bytes(grown) < _wire_bytes(full)
+    knowledge = grown["results"][0]
+    assert knowledge["content"] == body and knowledge["level"] == "schema"
+    assert knowledge["scope"] == scope
+    assert knowledge["decayed"] is True and knowledge["decay_reason"] == "superseded"
+    assert knowledge["provenance"] == {"corrections": [correction]}
+    assert "context" not in knowledge and "prior_recalls" not in knowledge["provenance"]
+    assert selected["results"][0]["context"] == {"procedure": procedure * 6}
+    assert selected["results"][0]["content"] == body
+    assert "neighbor" not in selected["results"][0]["context"]
+    assert full["results"][0] == node_to_dict(node)
+    assert missing["missing"] == ["01MISSINGEXACTREF"]
+    assert missing["scope_mismatches"] == [{"id": node.id, "scope": scope}]
+    assert missing["results"][0] == knowledge
+    assert "error" in invalid and invalid["results"] == []
+    assert "error" in combined and combined["results"] == []
 
 
 # --- Remember diet: bounded confirmation, durable and recallable write ------

@@ -287,7 +287,13 @@ def test_memory_lookup_by_id_round_trips_full_content(tmp_path: Path) -> None:
     node = fetched["results"][0]
     assert node["id"] == target_id
     assert node["content"] == long_content  # byte-identical, never snippeted
-    assert set(node) == set(node_to_dict(mcp.memory_store.get_node(target_id)))
+    assert set(node) == {
+        "id", "level", "content", "scope", "provenance", "decayed", "decay_reason"
+    }
+    assert node["provenance"] == {"corrections": []}
+    assert mcp.tools["memory_lookup"](node_id=target_id, view="full")["results"][0] == (
+        node_to_dict(mcp.memory_store.get_node(target_id))
+    )
 
     # `level` defaults to "trace" but is an exact-context concern; id fetch
     # ignores it, so a mismatching level cannot hide the node.
@@ -345,6 +351,7 @@ def test_memory_lookup_by_id_returns_decayed_nodes(tmp_path: Path) -> None:
     fetched = mcp.tools["memory_lookup"](node_id=target_id)
     assert fetched["count"] == 1
     assert fetched["results"][0]["decayed"] is True
+    assert fetched["results"][0]["decay_reason"] == "test decay"
     assert fetched["results"][0]["content"] == "decay-surviving id-fetch trace"
 
 

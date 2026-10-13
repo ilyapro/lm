@@ -175,8 +175,9 @@ holds the content it just stored, so nothing bulky is echoed back:
 ```
 
 `node` carries identity and counters instead of the full
-[node payload](#node-payload-contract); fetch the complete node — content,
-context, provenance bodies — with `memory_lookup(node_id=...)`. When the
+[node payload](#node-payload-contract); fetch complete content and validity
+with `memory_lookup(node_id=...)`, one context field with `context_key`, or
+the complete stored node with `view="full"`. When the
 scope reaches a consolidation boundary, the pass is *scheduled*, not run:
 the write answers at write time and `auto_consolidation` reports
 `{"status": "scheduled", "scope": ..., "trace_count": N, "coalesced": bool}`
@@ -355,8 +356,9 @@ Beyond content, every delivery class is dieted on the wire:
   Score fields always stay present — zeros included — with floats rounded
   to 6 decimals, so score consumers keep a predictable schema.
 
-Every removal is wire-only: `memory_lookup(node_id=...)` returns the stored
-node byte-complete. Non-full results carry a `content_ref` with the
+Every removal is wire-only: `memory_lookup(node_id=...)` returns full content
+and validity; `view="full"` returns the stored node byte-complete. Non-full
+results carry a `content_ref` with the
 `node_id` to pass to that lookup (plus `full_content_chars`, and
 `duplicate_of` on twin stubs; with `LM_DELIVERY_SPARSE=0` also the literal
 `fetch` call string):
@@ -649,7 +651,9 @@ Input:
   "procedure_id": "optional procedural pattern id",
   "task_pattern": "optional task pattern",
   "node_id": "optional node id",
-  "node_ids": ["optional", "node", "ids"]
+  "node_ids": ["optional", "node", "ids"],
+  "view": "knowledge | full (id fetch only; default knowledge)",
+  "context_key": "optional single context key (id fetch only)"
 }
 ```
 
@@ -657,10 +661,16 @@ Returns active nodes whose context fields match exactly, without ranked
 recall, and does not record a recall event.
 
 `node_id`/`node_ids` switch the tool to direct id fetch — the re-fetch path
-that recall stub and snippet `content_ref`s advertise. Id fetches return
-complete node dicts in request order under `results`, list unknown ids under
-`missing`, ignore `level`, and return decayed nodes with their `decayed`
-flag set. A `scope` passed alongside ids verifies instead of filtering:
+that recall stub and snippet `content_ref`s advertise. By default, id fetches
+return full, unchanged `content`, `id`, `level`, `scope`, `decayed`,
+`decay_reason`, and `provenance.corrections` (with correction links and bounded
+long text) in request order under `results`. They omit unrelated `context`,
+stats, and provenance history. `context_key="procedure"` adds only that
+original field under `context`; an absent key yields `{}`. `view="full"`
+returns the complete stored node, and cannot be combined with `context_key`.
+Invalid selectors return an `error` without recording a lookup event. Id
+fetches list unknown ids under `missing`, ignore `level`, and include decayed
+nodes. A `scope` passed alongside ids verifies instead of filtering:
 mismatching nodes stay in `results` and are reported under
 `scope_mismatches`. Combining ids with context filters is rejected with an
 `error`.
