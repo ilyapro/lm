@@ -14,8 +14,8 @@ Three layers:
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
-import inspect
 import os
 import signal
 import socket
@@ -23,13 +23,13 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from types import CodeType
 from typing import Any, Iterator
 
 import httpx
 import pytest
 
 from living_memory import server as lm_server
+from living_memory.storage import MemoryStore
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SRC_DIR = ROOT_DIR / "src"
@@ -55,9 +55,10 @@ checker = _load_module()
 
 @pytest.fixture
 def no_env_file(tmp_path: Path) -> Path:
-    """An --env-file that does not exist, so tests never read the real one."""
-
-    return tmp_path / "absent-env"
+    """A synthetic target env file, with no token or private service settings."""
+    path = tmp_path / "env"
+    path.write_text("LM_EXPLICIT_FEEDBACK_PROMPT=optional\n", encoding="utf-8")
+    return path
 
 
 # --- the expected texts come from the source, not from a copy ---------------
@@ -67,28 +68,18 @@ def test_expected_texts_are_imported_from_the_server_module() -> None:
     texts = checker.expected_texts("global")
 
     assert checker.PROTOCOL_TOOLS == {
-        "memory_recall": "_RECALL_DESCRIPTION",
-        "memory_remember": "_REMEMBER_DESCRIPTION",
-        "memory_teach": "_TEACH_DESCRIPTION",
-        "memory_lookup": "_LOOKUP_DESCRIPTION",
+        "memory_recall", "memory_remember", "memory_teach", "memory_lookup"
     }
+    assert texts == lm_server._effective_protocol_texts("global", "optional")
     assert texts["server instructions"] == lm_server._server_instructions("global")
     # Identity, not equality: a copy of the string would compare equal today and
     # rot the moment the protocol text changes.
     assert texts["memory_recall"] is lm_server._RECALL_DESCRIPTION
     assert texts["memory_remember"] is lm_server._REMEMBER_DESCRIPTION
     assert texts["memory_teach"] is lm_server._TEACH_DESCRIPTION
-    lookup_description = getattr(lm_server, "_LOOKUP_DESCRIPTION", None)
-    if lookup_description is not None:
-        assert texts["memory_lookup"] is lookup_description
-    else:
-        lookup_codes = [
-            constant
-            for constant in lm_server._register_tools.__code__.co_consts
-            if isinstance(constant, CodeType) and constant.co_name == "memory_lookup"
-        ]
-        assert len(lookup_codes) == 1
-        assert texts["memory_lookup"] == inspect.cleandoc(lookup_codes[0].co_consts[0])
+    assert texts["memory_lookup"] == lm_server._effective_protocol_texts(
+        "global", "mandatory"
+    )["memory_lookup"]
     assert set(texts) == {"server instructions", *checker.PROTOCOL_TOOLS}
 
 
@@ -111,9 +102,8 @@ def test_expected_texts_reject_a_renamed_protocol_constant(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delattr(lm_server, "_RECALL_DESCRIPTION")
-    with pytest.raises(checker.CheckError) as excinfo:
+    with pytest.raises(checker.CheckError, match="_RECALL_DESCRIPTION"):
         checker.expected_texts("global")
-    assert "_RECALL_DESCRIPTION" in str(excinfo.value)
 
 
 # --- verdicts (offline) -----------------------------------------------------
@@ -194,7 +184,7 @@ def test_missing_sentence_in_server_instructions_exits_non_zero(
     assert code == 1
     assert "server instructions" in out
     assert removals  # the diff shows what only the checkout has
-    assert "running older code" in out
+    assert "Measured protocol text differs" in out
 
 
 def test_missing_protocol_tool_counts_as_drift(
@@ -228,7 +218,7 @@ def test_default_scope_difference_is_reported_as_configuration(
     out = capsys.readouterr().out
     assert code == 1
     assert "--default-scope project:other" in out
-    assert "configuration, not stale code" in out
+    assert "configuration drift" in out
     assert "running older code" not in out
 
 
@@ -275,6 +265,10 @@ def test_unreachable_host_exits_two_without_claiming_drift(
             str(_free_port()),  # nothing is listening there
             "--timeout",
             "5",
+            "--prompt-arm",
+            "optional",
+            "--default-scope",
+            "global",
             "--env-file",
             str(no_env_file),
         ]
@@ -296,24 +290,164 @@ def test_token_precedence_explicit_then_environment_then_env_file(
     env_file.write_text(
         "LM_DB_PATH=/tmp/x.sqlite3\nLM_AUTH_TOKEN=from-file\n", encoding="utf-8"
     )
-
-    assert (
-        checker.resolve_token(
-            "explicit", env_file=env_file, environ={"LM_AUTH_TOKEN": "from-env"}
-        )
-        == "explicit"
-    )
-    assert (
-        checker.resolve_token(
-            None, env_file=env_file, environ={"LM_AUTH_TOKEN": "from-env"}
-        )
-        == "from-env"
-    )
+    assert checker.resolve_token(
+        "explicit", env_file=env_file, environ={"LM_AUTH_TOKEN": "from-env"}
+    ) == "explicit"
+    assert checker.resolve_token(
+        None, env_file=env_file, environ={"LM_AUTH_TOKEN": "from-env"}
+    ) == "from-env"
     assert checker.resolve_token(None, env_file=env_file, environ={}) == "from-file"
-    assert (
-        checker.resolve_token(None, env_file=tmp_path / "absent", environ={}) is None
-    )
+    assert checker.resolve_token(
+        None, env_file=tmp_path / "absent", environ={}
+    ) is None
 
+
+def test_local_env_file_selects_mandatory_without_disclosing_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "env"
+    env_file.write_text(
+        "LM_AUTH_TOKEN=private-synthetic-token\n"
+        "LM_EXPLICIT_FEEDBACK_PROMPT=mandatory\n",
+        encoding="utf-8",
+    )
+    _stub_fetch(monkeypatch, checker.expected_texts("global", "mandatory"))
+    assert checker.main(["--env-file", str(env_file)]) == 0
+    report = capsys.readouterr().out
+    assert "prompt arm=mandatory" in report
+    assert "private-synthetic-token" not in report
+
+
+def test_wrong_expected_prompt_arm_is_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_env_file: Path,
+) -> None:
+    _stub_fetch(monkeypatch, checker.expected_texts("global", "mandatory"))
+    assert checker.main(["--env-file", str(no_env_file)]) == 1
+    out = capsys.readouterr().out
+    assert "memory_recall" in out
+    assert "served recall description matches prompt arm=mandatory" in out
+
+
+def test_explicit_target_does_not_send_default_local_env_token(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    local_env = tmp_path / "local-env"
+    local_env.write_text(
+        "LM_AUTH_TOKEN=local-private-token\nLM_EXPLICIT_FEEDBACK_PROMPT=mandatory\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(checker, "DEFAULT_ENV_FILE", local_env)
+    monkeypatch.delenv("LM_AUTH_TOKEN", raising=False)
+    observed: list[str | None] = []
+
+    def fetch(url: str, *, token: str | None, **kwargs: Any) -> dict[str, str]:
+        observed.append(token)
+        return checker.expected_texts("global", "optional")
+
+    monkeypatch.setattr(checker, "fetch_served_texts", fetch)
+    assert checker.main([
+        "--host", "example.invalid", "--default-scope", "global",
+        "--prompt-arm", "optional",
+    ]) == 0
+    assert observed == [None]
+
+
+def test_unresolved_remote_expectations_are_an_error(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert checker.main(["--host", "example.invalid", "--port", "8765"]) == 2
+    assert "default scope is unknown" in capsys.readouterr().err
+    assert checker.main([
+        "--host", "example.invalid", "--port", "8765",
+        "--default-scope", "global",
+    ]) == 2
+    assert "PROMPT" in capsys.readouterr().err
+
+
+def test_invalid_tls_certificate_is_cannot_check(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert checker.main([
+        "--tls", "--port", "8766", "--prompt-arm", "optional",
+        "--ca-cert", str(tmp_path / "absent-cert.pem"),
+    ]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "CANNOT CHECK: cannot configure TLS verification" in captured.err
+
+
+@pytest.mark.parametrize("arm", ["optional", "mandatory"])
+def test_real_fastmcp_projection_with_nonempty_map_and_drift_cases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    arm: str,
+) -> None:
+    """One private synthetic history drives the actual FastMCP initialize text."""
+    from fastmcp import Client
+
+    path = tmp_path / "synthetic.sqlite3"
+    with MemoryStore(path) as store:
+        store.record_recall_event(
+            query="find a deploy recipe",
+            scope=LIVE_SCOPE,
+            ambient_context={"task": "synthetic-protocol"},
+            recall_map={
+                "clusters": [{
+                    "label": "deploy recipes", "count": 3,
+                    "medoid": {"node_id": "01AAAAAAAAAAAAAAAAAAAAAAAA", "example": "synthetic"},
+                    "ask_hint": "deploy recipes",
+                    "plan_item": "on touching deploy recipes - recall 'deploy recipes' (3)",
+                }],
+                "pool": 3, "covered": 3,
+            },
+        )
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_PROMPT", arm)
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    mcp = lm_server.create_mcp_server(path, default_scope=LIVE_SCOPE)
+
+    async def read_protocol() -> dict[str, str]:
+        async with Client(mcp) as client:
+            result = {"server instructions": client.initialize_result.instructions or ""}
+            result.update({tool.name: tool.description or "" for tool in await client.list_tools()
+                           if tool.name in checker.PROTOCOL_TOOLS})
+            return result
+
+    served = asyncio.run(read_protocol())
+    assert "## Memory nearby\nmemory also holds: deploy recipes(3)" in served["server instructions"]
+    expected = checker.expected_texts(LIVE_SCOPE, arm)
+    assert checker.compare(expected, served) == []
+    assert checker._memory_nearby_section(served["server instructions"])[1] is not None
+    other_data = dict(served)
+    other_data["server instructions"] = other_data["server instructions"].replace(
+        "deploy recipes(3)", "memory paths(4)"
+    )
+    assert checker.compare(expected, other_data) == []
+
+    wrong_arm = "mandatory" if arm == "optional" else "optional"
+    assert [item.name for item in checker.compare(
+        checker.expected_texts(LIVE_SCOPE, wrong_arm), served
+    )] == ["memory_recall"]
+
+    changed = dict(served)
+    changed["server instructions"] = changed["server instructions"].replace(
+        "You MUST recall BEFORE you act.", "Recall later.", 1
+    )
+    assert [item.name for item in checker.compare(expected, changed)] == ["server instructions"]
+    changed = dict(served)
+    changed["memory_lookup"] += " Unapproved change."
+    assert [item.name for item in checker.compare(expected, changed)] == ["memory_lookup"]
+    changed = dict(served)
+    del changed["memory_lookup"]
+    assert [item.name for item in checker.compare(expected, changed)] == ["memory_lookup"]
+    changed = dict(served)
+    changed["server instructions"] += "Unapproved trailing core text."
+    assert [item.name for item in checker.compare(expected, changed)] == ["server instructions"]
 
 # --- live smoke: a server started from THIS worktree ------------------------
 
@@ -423,6 +557,8 @@ def test_live_server_from_this_worktree_passes_the_check(live_server: int) -> No
         TOKEN,
         "--default-scope",
         LIVE_SCOPE,
+        "--prompt-arm",
+        "optional",
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -445,6 +581,8 @@ def test_live_server_serving_other_texts_fails_the_check(live_server: int) -> No
         TOKEN,
         "--default-scope",
         "global",
+        "--prompt-arm",
+        "optional",
     )
 
     assert result.returncode == 1, result.stdout + result.stderr

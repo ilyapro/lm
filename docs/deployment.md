@@ -2,8 +2,8 @@
 
 Living Memory runs as a long-lived MCP server on two hosts. This page is the
 rollout procedure: what is deployed, how to update it, how to restart it, how to
-verify the running process actually serves the new code, and how to tell that a
-host is behind `master`.
+verify the running process serves the expected protocol, and how to investigate
+code or configuration drift.
 
 | Host | Updated by | Deployed code | Endpoints |
 | --- | --- | --- | --- |
@@ -170,18 +170,21 @@ task behavior and live-reader delivery still need the owner's own verification.
 Do not edit that owner's journal, children, input authority or frozen source
 list to perform this handoff.
 
-`scripts/check_deployed_protocol.py` is the executable answer to "is this host
-serving the code I think it is". It opens an MCP session, reads the server
+`scripts/check_deployed_protocol.py` checks the protocol a host serves for a
+selected configuration. It opens an MCP session, reads the server
 instructions and the four protocol-bearing tool descriptions (`memory_recall`,
 `memory_remember`, `memory_teach`, `memory_lookup`) as the host actually
-serves them, and compares them byte-for-byte against the values imported from
-the checkout the script runs from:
+serves them. It compares the static instructions and descriptions with the
+server's effective text projection from the checkout. The bounded, canonical
+`## Memory nearby` tail is store-derived host data; the report shows its size
+and hash separately. Other instruction edits, including malformed or extra
+tail text, remain drift.
 
-* exit `0` — the host serves exactly this checkout's protocol texts;
-* exit `1` — drift: it prints a unified diff per differing text (and names any
-  protocol tool the host does not expose at all);
-* exit `2` — the check could not run (connection, auth, or usage error). This is
-  never reported as drift.
+* exit `0` — the host serves the checkout's selected static protocol;
+* exit `1` — measured text or selected configuration differs, or a protocol
+  tool is missing; the report names and diffs the differences;
+* exit `2` — transport/auth failed or the target's expected configuration is
+  unknown. This is never reported as drift or success.
 
 Those four tools are the default-visible protocol surface, so the checker does
 not require operator exposure. In particular, it does not expect hidden
@@ -190,7 +193,13 @@ verified separately.
 
 It reads the bearer token from `--token`, else `$LM_AUTH_TOKEN`, else
 `LM_AUTH_TOKEN=` in `--env-file` (default `~/.config/living-memory/env`), and
-never prints it. Useful variants:
+never prints it. The default local check also reads
+`LM_EXPLICIT_FEEDBACK_PROMPT` from that env file (absent means `optional`).
+`--prompt-arm optional|mandatory` chooses the expected variant explicitly.
+For another host or sandbox port, give `--default-scope` and either
+`--prompt-arm` or an explicit `--env-file` belonging to that target; the local
+env file is not read for that target's settings or token. Supply `--token` or
+`$LM_AUTH_TOKEN` if it needs authentication. Useful variants:
 
 ```sh
 # the TLS bridge, trusting its self-signed certificate
@@ -200,14 +209,19 @@ python3 scripts/check_deployed_protocol.py --tls --port 8766 \
 # a host started with a different --default-scope than this checkout's default
 python3 scripts/check_deployed_protocol.py --default-scope project:example
 
+# a sandbox on another port with a mandatory recall prompt
+python3 scripts/check_deployed_protocol.py --port 8799 --token "$TOKEN" \
+    --default-scope project:example --prompt-arm mandatory
+
 # machine-readable verdict (per-text equality, lengths, sha256)
 python3 scripts/check_deployed_protocol.py --json
 ```
 
-The `--default-scope` value only substitutes into the last line of the server
-instructions; the local unit runs `--default-scope global`, which is the script's
-default. When a host runs a different scope, the report says so explicitly
-instead of blaming stale code.
+The local unit runs `--default-scope global`, which is the script's default.
+A different served scope remains a nonzero configuration mismatch, with the
+observed scope shown explicitly. Neither this text comparison nor a successful
+match identifies the entire loaded package or a Git revision; `/health` and
+`/admin/info` expose separate boot and covered loaded-code identity facts.
 
 ## How to tell a host is behind master
 
@@ -217,11 +231,11 @@ revision**. The checker below compares the served protocol texts with a
 checkout; `code_identity` separately identifies the covered loaded function
 code at boot:
 
-1. **Authoritative.** From a checkout at `master` (fetched and up to date), run
-   `python3 scripts/check_deployed_protocol.py` against the host. Exit `1` with a
-   diff means the host does not serve master's protocol texts — with the
-   checkout at master, the host is behind it. Exit `0` means it is current with
-   respect to every protocol-bearing text.
+1. **Served protocol.** From a checkout at `master`, run
+   `python3 scripts/check_deployed_protocol.py` with the host's expected
+   configuration. Exit `1` identifies a measured protocol or configuration
+   mismatch; inspect its diff and configuration note before attributing a
+   cause. Exit `0` proves equality of the checked static texts only.
 2. **Checkout lag (local host).** `git -C /home/sfx/p/lm fetch origin && git -C
    /home/sfx/p/lm status -sb` prints `behind N` when the deployed checkout itself
    has not been pulled.
@@ -234,9 +248,9 @@ code at boot:
    git -C /home/sfx/p/lm log -1 --format=%cd --date=iso-local -- src/
    ```
 
-Signals 2 and 3 are cheap and catch the common cases (forgot to pull, forgot to
-restart); only signal 1 is conclusive, because it compares what the host serves
-rather than what its filesystem holds.
+Signals 2 and 3 help diagnose checkout and process lag. The protocol checker
+measures what the host serves; boot and loaded-code identity remain separate
+observations.
 
 ## Worktrees are not deployed
 
@@ -251,7 +265,8 @@ cd /home/sfx/p/lm/.worktrees/<name>
 LM_AUTH_TOKEN=worktree-check PYTHONPATH=src python3 -m living_memory.server \
     --transport http --host 127.0.0.1 --port 8799 \
     --db /tmp/lm-worktree-check.sqlite3 --default-scope global &
-python3 scripts/check_deployed_protocol.py --port 8799 --token worktree-check
+python3 scripts/check_deployed_protocol.py --port 8799 --token worktree-check \
+    --default-scope global --prompt-arm optional
 ```
 
 Never point a scratch instance at `~/.local/share/living-memory/global.sqlite3`:
@@ -284,7 +299,8 @@ as above:
 
 ```sh
 curl -fsS http://127.0.0.1:8765/health
-python3 <checkout>/scripts/check_deployed_protocol.py --default-scope <that host's scope>
+python3 <checkout>/scripts/check_deployed_protocol.py \
+    --default-scope <that host's scope> --env-file <that host's LM env file>
 ```
 
 The checker compares the host against the checkout it is run from, so run it on

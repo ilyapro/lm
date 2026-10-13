@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
 from functools import wraps
+import inspect
 from pathlib import Path
 from threading import RLock, Timer
 from types import CodeType, FunctionType, ModuleType
@@ -999,6 +1000,35 @@ def _explicit_feedback_texts(arm: str | None = None) -> dict[str, str]:
     }
 
 
+def _effective_protocol_texts(default_scope: str, prompt_arm: str) -> dict[str, str]:
+    """Static texts served for one explicitly selected prompt arm.
+
+    The lookup docstring remains its single source. Inspecting the nested code
+    object avoids constructing a store (and loading a model) just to check it.
+    The data-derived Memory nearby section is deliberately outside this static
+    projection; ``_server_instructions`` appends it at its canonical boundary.
+    """
+    if prompt_arm not in EXPLICIT_FEEDBACK_PROMPT_ARMS:
+        raise ValueError(f"unknown explicit-feedback prompt arm: {prompt_arm}")
+    lookup_description = None
+    for constant in _register_tools.__code__.co_consts:
+        if isinstance(constant, CodeType) and constant.co_name == "memory_lookup":
+            raw = constant.co_consts[0] if constant.co_consts else None
+            if isinstance(raw, str) and raw.strip():
+                lookup_description = inspect.cleandoc(raw)
+            break
+    if not lookup_description:
+        raise ValueError("memory_lookup has no usable docstring")
+    feedback = _explicit_feedback_texts(prompt_arm)
+    return {
+        "server instructions": _server_instructions(default_scope),
+        "memory_recall": feedback["recall"],
+        "memory_remember": feedback["remember"],
+        "memory_teach": feedback["teach"],
+        "memory_lookup": lookup_description,
+    }
+
+
 _CONSOLIDATE_DESCRIPTION = (
     "Run one consolidation and decay maintenance pass. Consolidation "
     "promotes repeated know-how into level:schema procedural skills. "
@@ -1208,10 +1238,12 @@ def _register_tools(
     _attach(mcp, "auto_consolidation", auto_consolidation)
     # Read once per server, like every description: the experiment switches
     # arms by restarting a sandbox server with LM_EXPLICIT_FEEDBACK_PROMPT.
-    feedback_texts = _explicit_feedback_texts()
+    prompt_arm = _explicit_feedback_prompt_arm()
+    feedback_texts = _explicit_feedback_texts(prompt_arm)
+    protocol_texts = _effective_protocol_texts(store.config.default_scope, prompt_arm)
     mark_fields = _with_mark_fields(feedback_texts)
 
-    @mcp.tool(description=feedback_texts["remember"])
+    @mcp.tool(description=protocol_texts["memory_remember"])
     @mark_fields
     @_track_latency("memory_remember")
     def memory_remember(
@@ -1288,7 +1320,7 @@ def _register_tools(
             refresh_instructions()
             return response
 
-    @mcp.tool(description=feedback_texts["teach"])
+    @mcp.tool(description=protocol_texts["memory_teach"])
     @mark_fields
     @_track_latency("memory_teach")
     def memory_teach(
@@ -1365,7 +1397,7 @@ def _register_tools(
             )
             return {"connection": connection_to_dict(connection)}
 
-    @mcp.tool(description=feedback_texts["recall"])
+    @mcp.tool(description=protocol_texts["memory_recall"])
     @mark_fields
     @_track_latency("memory_recall")
     def memory_recall(
@@ -1584,7 +1616,7 @@ def _register_tools(
                 )
 
 
-    @mcp.tool
+    @mcp.tool(description=protocol_texts["memory_lookup"])
     @_track_latency("memory_lookup")
     def memory_lookup(
         scope: str | None = None,

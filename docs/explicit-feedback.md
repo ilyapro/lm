@@ -230,10 +230,11 @@ Character cost (measured on the real FastMCP `list_tools`):
 | mandatory | 1020 (+5) | 1022 (+0) | 614 (+0) | +419 | +1262 (+5 desc, +1257 schema) |
 
 The mandatory binding sentence costs 101 description characters, funded by
-the rewording. The field schemas are paid in both arms. The mandatory arm
-diverges from the constants that `scripts/check_deployed_protocol.py`
-compares, so that check reports drift on a host running it. That is expected
-for a sandbox experiment and wrong for production.
+the rewording. The field schemas are paid in both arms. The deployed-protocol
+checker now selects the expected arm from the local unit's env file by default,
+or from `--prompt-arm` for an explicit target. A host serving the selected arm
+passes; a host serving the other arm is reported as configuration drift. See
+`docs/deployment.md` for remote and sandbox examples.
 
 ## Rollout notes
 
