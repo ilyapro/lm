@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import fcntl
+import gzip
 import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -20,8 +22,8 @@ DATABASE = Path.home() / ".local/share/living-memory/global.sqlite3"
 STATE_DIR = Path.home() / ".local/state/living-memory-backup"
 CONFIG = Path.home() / ".config/living-memory/s3cmd-backup.conf"
 BUCKET = "lm-private-backup-sfx"
-FINAL = f"s3://{BUCKET}/global.sqlite3"
-STAGING = f"s3://{BUCKET}/.incoming.sqlite3"
+FINAL = f"s3://{BUCKET}/global.sqlite3.gz"
+STAGING = f"s3://{BUCKET}/.incoming.sqlite3.gz"
 
 
 def now() -> str:
@@ -71,6 +73,30 @@ def check_sqlite(path: Path) -> None:
         connection.close()
 
 
+def compress(source: Path, destination: Path) -> None:
+    with source.open("rb") as plain, gzip.open(destination, "wb", compresslevel=1) as packed:
+        shutil.copyfileobj(plain, packed, length=8 * 1024 * 1024)
+
+
+def decompress(source: Path, destination: Path) -> None:
+    with gzip.open(source, "rb") as packed, destination.open("wb") as plain:
+        shutil.copyfileobj(packed, plain, length=8 * 1024 * 1024)
+
+
+def clean_staging() -> None:
+    s3("del", STAGING)
+    result = subprocess.run(
+        ["/usr/bin/s3cmd", "-c", str(CONFIG), "multipart", f"s3://{BUCKET}"],
+        capture_output=True, text=True,
+    )
+    if result.returncode:
+        raise RuntimeError("cannot list incomplete S3 uploads")
+    for line in result.stdout.splitlines():
+        columns = line.split("\t")
+        if len(columns) >= 3 and columns[1] == STAGING:
+            s3("abortmp", STAGING, columns[2])
+
+
 def snapshot(path: Path) -> None:
     if not DATABASE.is_file():
         raise FileNotFoundError("Living Memory live database is missing")
@@ -91,16 +117,24 @@ def run() -> None:
     with tempfile.TemporaryDirectory(prefix="work-", dir=STATE_DIR) as directory:
         work = Path(directory)
         local = work / "snapshot.sqlite3"
+        archive = work / "snapshot.sqlite3.gz"
+        restored_archive = work / "restored.sqlite3.gz"
         restored = work / "restored.sqlite3"
+        final_archive = work / "final-restored.sqlite3.gz"
         final_restored = work / "final-restored.sqlite3"
         snapshot(local)
         check_sqlite(local)
         expected = digest(local)
         size = local.stat().st_size
+        compress(local, archive)
+        archive_hash = digest(archive)
 
         try:
-            s3("put", "--acl-private", str(local), STAGING)
-            s3("get", STAGING, str(restored))
+            s3("put", "--acl-private", str(archive), STAGING)
+            s3("get", STAGING, str(restored_archive))
+            if digest(restored_archive) != archive_hash:
+                raise RuntimeError("staging archive checksum mismatch")
+            decompress(restored_archive, restored)
             if digest(restored) != expected:
                 raise RuntimeError("staging download checksum mismatch")
             check_sqlite(restored)
@@ -108,16 +142,16 @@ def run() -> None:
             # S3 copy replaces this one key only after the new object has been
             # uploaded and round-trip checked. A failed preparation leaves FINAL.
             s3("cp", "--acl-private", STAGING, FINAL)
-            s3("get", FINAL, str(final_restored))
+            s3("get", FINAL, str(final_archive))
+            if digest(final_archive) != archive_hash:
+                raise RuntimeError("final archive checksum mismatch")
+            decompress(final_archive, final_restored)
             if digest(final_restored) != expected:
                 raise RuntimeError("final download checksum mismatch")
             check_sqlite(final_restored)
         finally:
-            # A stale staging object is never a backup. Keep only the fixed key.
-            try:
-                s3("del", STAGING)
-            except RuntimeError:
-                pass
+            # Also abort incomplete multipart uploads after a failed transfer.
+            clean_staging()
 
         save_status(last_success=now(), last_error=None, sha256=expected, bytes=size)
         print(f"Living Memory backup verified: {size} bytes, sha256={expected}")
