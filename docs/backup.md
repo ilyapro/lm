@@ -11,7 +11,7 @@ The gzip archive reduces transfer time; checks run against the unpacked SQLite
 database as well as the downloaded archive.
 
 Credentials live only in `~/.config/living-memory/s3cmd-backup.conf` (mode 0600).
-The bucket and this file must be prepared before enabling the timer. The
+The bucket and this file must be prepared before running the backup. The
 script writes `~/.local/state/living-memory-backup/status.json` with the last
 successful UTC time, size, checksum, and last error. The loop goal's schedule
 is stored in `~/p/ae/projects/ae/state/goals/daily-living-memory-backup/loop_schedule`.
