@@ -1,7 +1,0 @@
-[Unit]
-Description=Back up the live Living Memory SQLite database to immers.cloud S3
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/python3 /home/sfx/p/lm/scripts/backup_living_memory_s3.py
-

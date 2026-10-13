@@ -1,6 +1,7 @@
 # Living Memory S3 backup
 
-The user timer `living-memory-backup.timer` runs at 03:00 Asia/Novosibirsk.
+The ae loop goal `daily-living-memory-backup` runs at 03:00 Asia/Novosibirsk
+and invokes `python3 /home/sfx/p/lm/scripts/backup_living_memory_s3.py`.
 Every run snapshots the active SQLite database through the SQLite backup API,
 checks its integrity, uploads a private staging object, downloads and checks
 that object, then replaces `s3://lm-private-backup-sfx/global.sqlite3.gz`. It
@@ -12,9 +13,8 @@ database as well as the downloaded archive.
 Credentials live only in `~/.config/living-memory/s3cmd-backup.conf` (mode 0600).
 The bucket and this file must be prepared before enabling the timer. The
 script writes `~/.local/state/living-memory-backup/status.json` with the last
-successful UTC time, size, checksum, and last error. Inspect timer and service
-with `systemctl --user status living-memory-backup.timer` and
-`journalctl --user -u living-memory-backup.service`.
+successful UTC time, size, checksum, and last error. The loop goal's schedule
+is stored in `~/p/ae/projects/ae/state/goals/daily-living-memory-backup/loop_schedule`.
 
 To recover after losing local data, stop the Living Memory service on the
 replacement host, download `global.sqlite3.gz` from the bucket using the private
