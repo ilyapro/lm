@@ -8,8 +8,8 @@ distinct query anchors and without positive evidence gets the
 * the threshold counts distinct questions, not marks: repeats of one query
   (whitespace variants included) count once, a shared near-duplicate anchor
   counts once;
-* an accepted ``used`` mark ever, or grounded / lookup / explicit credit at or
-  after the first irrelevant mark, lifts it (also through the cache);
+* an accepted ``used`` mark ever, or grounded / explicit credit at or after
+  the first irrelevant mark, lifts it (also through the cache); lookup does not;
 * absent tables are tolerated;
 * the hub multiplier merges with query-relative demotions, smallest wins.
 """
@@ -304,7 +304,7 @@ def test_rejected_used_mark_does_not_lift(tmp_path: Path) -> None:
         assert hub_ids(store.connection) == {ids[0]: 3}
 
 
-@pytest.mark.parametrize("basis", ["grounded", "lookup", "explicit"])
+@pytest.mark.parametrize("basis", ["grounded", "explicit"])
 def test_credit_at_or_after_first_mark_lifts(tmp_path: Path, basis: str) -> None:
     with MemoryStore(tmp_path / "m.sqlite3") as store:
         ids = _seed(store)
@@ -316,6 +316,21 @@ def test_credit_at_or_after_first_mark_lifts(tmp_path: Path, basis: str) -> None
         assert row.credits_after_first == 1 and row.hub is False
 
 
+def test_lookup_credit_does_not_lift(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "m.sqlite3") as store:
+        ids = _seed(store)
+        _mark_distinct(store, ids[0], QUERIES[:3])
+        _credit(store, ids[0], "lookup", "2026-09-28T10:00:00Z")
+        _credit(store, ids[0], "lookup", "2026-09-28T11:00:00Z")
+        [row] = hub_counts(store.connection)
+        assert row.credits_after_first == 0 and row.hub
+        assert hub_ids(store.connection) == {ids[0]: 3}
+        assert store.connection.execute(
+            "SELECT COUNT(*) FROM recall_credit_ledger WHERE node_id = ? AND basis = 'lookup'",
+            (ids[0],),
+        ).fetchone()[0] == 2
+
+
 def test_cached_hub_lifts_immediately(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.3")
     monkeypatch.setattr(hubs, "HUB_REFRESH_SECONDS", 3600.0)
@@ -324,17 +339,31 @@ def test_cached_hub_lifts_immediately(tmp_path: Path, monkeypatch: pytest.Monkey
         _mark_distinct(store, ids[0], QUERIES[:3])
         _mark_distinct(store, ids[1], QUERIES[:3])
         _mark_distinct(store, ids[2], QUERIES[:3])
-        assert hub_demotions(store) == {ids[0]: 0.3, ids[1]: 0.3, ids[2]: 0.3}
-        # Positive evidence arrives inside the refresh window: no recount, lifted anyway.
-        _credit(store, ids[0], "lookup", "2026-09-28T11:00:00Z")
-        _mark(store, _event(store, "kappa ledger yes"), ids[1], "used", at="2026-09-28T11:00:00Z")
-        assert hub_demotions(store) == {ids[2]: 0.3}
-        # A new hub waits for the refresh window ...
         _mark_distinct(store, ids[3], QUERIES[:3])
-        assert hub_demotions(store) == {ids[2]: 0.3}
+        initial = {node_id: 0.3 for node_id in ids}
+        assert hub_demotions(store) == initial
+        # A lookup advances the ledger revision without lifting its hub.
+        _credit(store, ids[0], "lookup", "2026-09-28T11:00:00Z")
+        assert hub_demotions(store) == initial
+        assert set(hub_demotions(store)) == set(hub_ids(store.connection))
+        # Genuine positive evidence arrives inside the refresh window.
+        _mark(store, _event(store, "kappa ledger yes"), ids[1], "used", at="2026-09-28T11:00:00Z")
+        _credit(store, ids[2], "grounded", "2026-09-28T11:00:00Z")
+        _credit(store, ids[3], "explicit", "2026-09-28T11:00:00Z")
+        assert hub_demotions(store) == {ids[0]: 0.3}
+        assert set(hub_demotions(store)) == set(hub_ids(store.connection))
+        # A later grounded credit lifts even a hub with earlier lookup credit.
+        _credit(store, ids[0], "grounded", "2026-09-28T12:00:00Z")
+        assert hub_demotions(store) == {}
+        assert hub_ids(store.connection) == {}
+        # A new hub waits for the refresh window ...
+        new_id = store.append_trace(BODIES[0], {"scope": SCOPE}).id
+        _mark_distinct(store, new_id, QUERIES[:3])
+        assert hub_demotions(store) == {}
         # ... and appears once it has passed.
         monkeypatch.setattr(hubs, "HUB_REFRESH_SECONDS", 0.0)
-        assert hub_demotions(store) == {ids[2]: 0.3, ids[3]: 0.3}
+        assert hub_demotions(store) == {new_id: 0.3}
+        assert set(hub_demotions(store)) == set(hub_ids(store.connection))
 
 
 def test_cache_serves_unchanged_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -31,9 +31,10 @@ Two points are left open on purpose:
    the only failure is the small-n entrant line. If more holdout data is
    wanted, a re-run after a week of marks is the natural next step
    (commands below).
-2. **Hubs.** The valve would need to lift only on `used`, explicit or
-   `grounded` credit, not on `lookup`. That is a code change for a follow-up
-   goal.
+2. **Hubs (historical follow-up).** The measurement above used the earlier
+   rule, where `lookup` lifted hubs. The subsequent hub-rule revision lifts
+   only on `used`, explicit or `grounded` credit. The historical holdout
+   verdict above has not been rerun under that revision.
 
 ## Exact env lines
 

@@ -22,6 +22,8 @@ from typing import Any
 import pytest
 
 from living_memory.storage import MemoryStore, pack_chunk_embedding
+from living_memory.hubs import hub_ids
+from living_memory.retrieval import MemoryRecallService
 
 REPO = Path(__file__).resolve().parents[1]
 SCOPE = "project:fx-precision"
@@ -206,6 +208,63 @@ def test_train_hubs_rule(synthetic: dict[str, Any]) -> None:
     hubs = rp.train_hubs(store, host)
     assert hubs == {synthetic["ids"]["hub"]}
     assert rp.train_hubs(store, host, min_queries=5) == set()
+
+
+@pytest.mark.parametrize("positive", ["grounded", "explicit", "used"])
+def test_lookup_cannot_restore_dominant_hub_slot(
+    synthetic: dict[str, Any], monkeypatch: pytest.MonkeyPatch, positive: str
+) -> None:
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    store = MemoryStore(synthetic["path"])
+    try:
+        hub = synthetic["ids"]["hub"]
+        query = "kestrel manifold hub generic text"
+        service = MemoryRecallService(store)
+
+        def top3() -> list[str]:
+            return [r.node_id for r in service.memory_recall(
+                query, scope=SCOPE, depth=0, max_results=3,
+                log_access=False, log_event=False,
+            )]
+
+        monkeypatch.delenv("LM_HUB_SUPPRESSION_FACTOR", raising=False)
+        assert top3()[0] == hub
+        monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.1")
+        assert hub_ids(store.connection)[hub] >= 3
+        assert hub not in top3()
+        with store.connection:
+            store.connection.execute(
+                "INSERT INTO recall_credit_ledger "
+                "(recall_event_id, node_id, basis, source_id, credited_at) "
+                "VALUES (?, ?, 'lookup', 'src', ?)",
+                (synthetic["events"][3], hub, _hour(3.75)),
+            )
+        assert hub in hub_ids(store.connection)
+        assert hub not in top3()
+
+        with store.connection:
+            if positive == "used":
+                store.connection.execute(
+                    "INSERT INTO recall_feedback_marks "
+                    "(recall_event_id, node_id, mark, accepted, via_tool, source_id, marked_at) "
+                    "VALUES (?, ?, 'used', 1, 'memory_recall', 'src', ?)",
+                    (synthetic["events"][3], hub, _hour(3.8)),
+                )
+            else:
+                table = "recall_explicit_credit" if positive == "explicit" else "recall_credit_ledger"
+                columns = "recall_event_id, node_id, source_id, credited_at"
+                values = "?, ?, 'src', ?"
+                if positive == "grounded":
+                    columns += ", basis"
+                    values += ", 'grounded'"
+                store.connection.execute(
+                    f"INSERT INTO {table} ({columns}) VALUES ({values})",
+                    (synthetic["events"][4], hub, _hour(4.8)),
+                )
+        assert hub not in hub_ids(store.connection)
+        assert top3()[0] == hub
+    finally:
+        store.close()
 
 
 def test_score_event_metrics() -> None:

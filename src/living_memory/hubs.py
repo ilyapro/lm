@@ -24,12 +24,12 @@ The rule
   cosine-near-duplicate anchor the write path chose); failing that, the
   whitespace-collapsed query in its scope. Repeats of one question therefore
   count once however often they are marked.
-* **Positive evidence lifts.** An accepted ``used`` mark at any time, or any
-  ``recall_credit_ledger`` row (``grounded``/``lookup``) or
+* **Positive evidence lifts.** An accepted ``used`` mark at any time, or a
+  ``recall_credit_ledger`` row with ``basis='grounded'`` or a
   ``recall_explicit_credit`` row for the node credited at or after the node's
   first accepted ``irrelevant`` mark. Credit that predates every complaint
   does not protect a node that later became noise; one credit after the first
-  complaint does.
+  complaint does. A lookup records a read, not evidence of usefulness.
 
 Every read tolerates absent tables (pre-feedback, pre-v7 or read-only
 snapshots): a missing marks table means no hubs, a missing credit or anchor
@@ -74,6 +74,9 @@ _ANCHORS = "query_anchors"
 _IRRELEVANCE = "query_irrelevance"
 _EVENTS = "recall_events"
 _REVISION_TABLES = (_MARKS, _LEDGER, _EXPLICIT, _ANCHORS)
+# Shared by the full recount and appended-row lift. Lookup ledger rows stay in
+# the history and cache revision, but do not count as positive evidence.
+_LIFTING_CREDITS = ((_LEDGER, "c.basis = 'grounded'"), (_EXPLICIT, "1 = 1"))
 
 
 def hub_suppression_factor() -> float | None:
@@ -232,7 +235,7 @@ def hub_counts(
     credits: dict[str, int] = {}
     clause, params = _before_clause("c.credited_at", before)
     first_clause, first_params = _before_clause("marked_at", before)
-    for table in (_LEDGER, _EXPLICIT):
+    for table, predicate in _LIFTING_CREDITS:
         if table not in present:
             continue
         for node_id, count in conn.execute(
@@ -244,7 +247,7 @@ def hub_counts(
             )
             SELECT c.node_id, COUNT(*) FROM {table} c
             JOIN first f ON f.node_id = c.node_id
-            WHERE c.credited_at >= f.first_at{clause}
+            WHERE c.credited_at >= f.first_at AND {predicate}{clause}
             GROUP BY c.node_id
             """,
             first_params + params,
@@ -364,11 +367,14 @@ def _lift(conn: sqlite3.Connection, cache: _HubCache, revision: tuple[Any, ...])
             (old_marks or 0,),
         ):
             lifted.add(str(node_id))
-    for table, old, new in ((_LEDGER, old_ledger, new_ledger), (_EXPLICIT, old_explicit, new_explicit)):
+    for (table, predicate), old, new in zip(
+        _LIFTING_CREDITS, (old_ledger, old_explicit), (new_ledger, new_explicit)
+    ):
         if new is None or new == old:
             continue
         for node_id, credited_at in conn.execute(
-            f"SELECT node_id, credited_at FROM {table} WHERE rowid > ?", (old or 0,)
+            f"SELECT c.node_id, c.credited_at FROM {table} c"
+            f" WHERE c.rowid > ? AND {predicate}", (old or 0,)
         ):
             first = cache.hubs.get(str(node_id))
             if first is not None and str(credited_at) >= first:

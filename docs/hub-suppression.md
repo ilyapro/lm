@@ -19,13 +19,15 @@ A node is a **hub** when both of these hold:
    from at least `LM_HUB_MIN_QUERIES` **distinct questions**.
 2. It has **no positive evidence**. Positive evidence is either of:
    - an accepted `used` mark at any time;
-   - a `recall_credit_ledger` row (`grounded` or `lookup`) or a
+   - a `recall_credit_ledger` row with `basis='grounded'` or a
      `recall_explicit_credit` row for the node with `credited_at` at or after
      the node's first accepted irrelevant mark.
 
 A single piece of positive evidence lifts the demotion. Credit that is older
 than every complaint does not protect the node. This is deliberate: a node that
 was useful once and later turned into noise still counts as a hub.
+`basis='lookup'` records a read, so it stays in the ledger without lifting a
+hub. Lookup of any node remains available.
 
 `MemoryRecallService._collect_hub_demotions` returns `{node_id: factor}`. The
 result is merged with the query-relative demotions, and when both apply to a
@@ -50,7 +52,8 @@ As a result, repeats of one question count once however many times it is
 marked, and the same text in two scopes counts as two questions. This matches
 the anchor channel's own rule.
 
-**Anchors against raw queries (sfx copy, 2026-09-29, all accepted marks
+**Historical measurement under the earlier lookup-credit rule:** Anchors
+against raw queries (sfx copy, 2026-09-29, all accepted marks
 through 2026-09-28T21:42Z):**
 
 | min distinct | hubs by anchors | hubs by raw queries |
@@ -66,11 +69,12 @@ On this data the anchor identity changes no hub verdict. Raw-query counting
 would give the same set; anchors are used only because they match the
 query-relative path's definition of "the same question".
 
-At `N = 3`, 256 nodes reach 3 distinct questions. 56 of them are lifted by a
+Under that earlier rule, at `N = 3`, 256 nodes reach 3 distinct questions. 56 of them are lifted by a
 `used` mark and 54 more only by credit after their first complaint, which
 leaves **146 hubs** on the full data. The 99 in the goal text come from the
 held-out half only. The hub set that goes into the measurement is defined on
-train with `hub_counts(conn, before=<split>)`.
+train with `hub_counts(conn, before=<split>)`. These counts are historical;
+they have not been recomputed with the revised credit rule.
 
 ## Valves
 
@@ -118,15 +122,16 @@ costs four index lookups. Marks and credit grow on almost every recall, so a
 changed key does not by itself trigger a recount:
 
 - **New rows only:** the path reads just the rows appended since the last
-  call. A `used` mark, or credit at or after the hub's first complaint, lifts
-  the hub **immediately**.
+  call. A `used` mark, or grounded or explicit credit at or after the hub's
+  first complaint, lifts the hub **immediately**. Lookup rows advance the cache
+  revision but leave the hub suppressed.
 - **Full recount:** this is the only way a node *becomes* a hub. It runs when
   new irrelevant marks arrived since the last count and that count is older
   than `HUB_REFRESH_SECONDS` (60 s). A new hub therefore appears within about
   a minute. Replays open fresh stores, so they always count in full.
 - The cache is stored on the `MemoryStore` object and dies with it.
 
-**Overhead, sfx store copy** (made with `retrieval_harness.backup_database`
+**Historical overhead under the earlier rule, sfx store copy** (made with `retrieval_harness.backup_database`
 from the live DB opened `mode=ro`; 146 hubs; WSL2 laptop):
 
 | path | p50 | p95 |
@@ -149,10 +154,11 @@ precision measurement.
   and marks the same node every time is giving query-relative evidence, and
   `query_irrelevance` already handles that. Only breadth across questions
   shows that a node is noise everywhere.
-- **`used` ever, credit only after the first complaint.** An explicit `used`
-  is a direct claim of usefulness, so it wins. Grounded and lookup credit are
-  weaker, implicit signals, and a node that was consumed months ago can still
-  have turned into noise since.
+- **`used` ever, grounded or explicit credit only after the first complaint.**
+  An explicit `used` is a direct claim of usefulness, so it wins. Grounded
+  credit indicates actual use; explicit credit is intentional positive feedback.
+  A lookup only indicates reading, which can happen while checking an irrelevant
+  result. Earlier positive credit does not protect a node that later turns noisy.
 - **Multiplier, not removal.** A demoted hub stays in the candidate pool and
   can still win on a query where it scores far above the rest. With factor
   `0` it effectively leaves the answer while staying reachable through
