@@ -8,7 +8,7 @@ demotes the node only for queries that match the marked query's anchor:
 * global ``usefulness_score``, confidence and retrieval weights unchanged;
 * ``LM_QUERY_IRRELEVANCE_FACTOR=1.0`` disables it;
 * no effect under ``audit`` or ``off``;
-* repeated marks accumulate with saturation, positive credit cancels;
+* repeated marks accumulate with saturation, confirmed use cancels;
 * a database without anchor tables (or opened read-only) is tolerated.
 """
 
@@ -315,6 +315,73 @@ def test_explicit_used_mark_cancels_demotion(
     (row,) = list_query_irrelevance(store)
     assert row["weight"] == 0.0 and row["cancels"] == 1
     assert _scores(store, QUERY) == pytest.approx(_undemoted(store, QUERY))
+
+
+@pytest.mark.parametrize("confirmation", ["used", "grounded"])
+def test_lookup_preserves_demotion_until_confirmed_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, confirmation: str
+) -> None:
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    mcp, store, node_ids = _mark_irrelevant(tmp_path, f"lookup-then-{confirmation}")
+    marked = node_ids[MARKED_INDEX]
+    event_id = _deliver(mcp)
+    before = list_query_irrelevance(store)[0]
+
+    mcp.tools["memory_lookup"](node_id=marked)
+    after_lookup = list_query_irrelevance(store)[0]
+    assert after_lookup == before
+    assert _scores(store, QUERY)[marked] < _undemoted(store, QUERY)[marked]
+    assert store.credited_node_ids(event_id) == {marked}
+    anchor = store.list_query_anchors(scope=SCOPE)[0]
+    edge = store.list_query_anchor_edges(anchor_id=anchor.id, target_id=marked)[0]
+    numeric_after_lookup = _globals(store, node_ids)
+
+    if confirmation == "used":
+        _remember(mcp, UNRELATED_TRACE, used=[marked])
+    else:
+        _remember(mcp, GROUNDING_TRACE)
+
+    row = list_query_irrelevance(store)[0]
+    assert row["weight"] == 0.0 and row["marks"] == 1 and row["cancels"] == 1
+    assert _scores(store, QUERY) == pytest.approx(_undemoted(store, QUERY))
+    assert _globals(store, node_ids) == numeric_after_lookup
+    assert store.credited_node_ids(event_id) == {marked}
+    assert store.list_query_anchors(scope=SCOPE)[0].reinforcement_count == anchor.reinforcement_count
+    assert store.list_query_anchor_edges(anchor_id=anchor.id, target_id=marked)[0].hits == edge.hits
+
+    mcp.tools["memory_lookup"](node_id=marked)
+    if confirmation == "used":
+        _remember(mcp, UNRELATED_TRACE, used=[marked])
+    assert list_query_irrelevance(store)[0]["cancels"] == 1
+    assert _globals(store, node_ids) == numeric_after_lookup
+    assert store.list_query_anchors(scope=SCOPE)[0].reinforcement_count == anchor.reinforcement_count
+    assert store.list_query_anchor_edges(anchor_id=anchor.id, target_id=marked)[0].hits == edge.hits
+
+
+def test_confirmed_use_clears_only_its_question_and_node(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    mcp, store, node_ids = _seed(tmp_path / "isolated-cancel.sqlite3")
+    marked, other = node_ids[MARKED_INDEX], node_ids[0]
+    _deliver(mcp)
+    _remember(mcp, UNRELATED_TRACE, irrelevant=[marked, other])
+    query_rows = {row["node_id"]: row for row in list_query_irrelevance(store)}
+    _deliver(mcp, UNRELATED)
+    _remember(mcp, UNRELATED_TRACE, irrelevant=[marked])
+    before = {(row["anchor_id"], row["node_id"]): row for row in list_query_irrelevance(store)}
+    assert len(before) == 3
+
+    _deliver(mcp)
+    mcp.tools["memory_lookup"](node_id=marked)
+    _remember(mcp, UNRELATED_TRACE, used=[marked])
+
+    after = {(row["anchor_id"], row["node_id"]): row for row in list_query_irrelevance(store)}
+    key = (query_rows[marked]["anchor_id"], marked)
+    assert after[key]["weight"] == 0.0 and after[key]["cancels"] == 1
+    assert {k: row for k, row in after.items() if k != key} == {
+        k: row for k, row in before.items() if k != key
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -43,13 +43,13 @@ Strength, accumulation, cancellation
   is bounded below by ``F``: a saturated mark on the exact query can at most
   scale the score by ``F``, never remove the node. Several matched anchors
   marking one node keep the strongest claim, not the product.
-* Positive evidence for the same (anchor, node) **cancels** the row: grounded,
-  lookup or explicit ``used`` credit all reinforce the anchor through
-  ``feedback._reinforce_query_anchors``, which calls
-  :func:`cancel_query_irrelevance` for the credited targets. The weight goes
-  to 0 (the row stays, with ``cancels`` counted, for audit). Observed use of a
-  node for this question beats an earlier claim that it did not belong; a
-  fresh ``irrelevant`` mark starts accumulating again from zero.
+* Confirmed usefulness for the same (anchor, node) **cancels** the row:
+  grounded consumption or an explicit ``used`` mark calls
+  :func:`cancel_query_irrelevance` through ``feedback._reinforce_query_anchors``.
+  Lookup alone earns numeric credit but does not cancel. Confirmation still
+  cancels when lookup already claimed that credit, without reinforcing twice.
+  The weight goes to 0 (the row stays, with ``cancels`` counted, for audit);
+  a fresh ``irrelevant`` mark starts accumulating again from zero.
 
 Two read-side valves steepen the curve without touching stored rows (goal
 recall-precision, P3); unset, each keeps the arithmetic above exactly:
@@ -271,9 +271,10 @@ def cancel_query_irrelevance(
 ) -> int:
     """Zero the irrelevance of ``node_ids`` on ``anchor_id``; count rows cancelled.
 
-    Called on positive credit (grounded, lookup, explicit ``used``) for the
-    same anchor. A no-op without the table, which is every store that never
-    saw a credited irrelevant mark.
+    Called on confirmed grounded consumption or an explicit ``used`` mark for
+    the same anchor, independently of the numeric credit claim. A no-op
+    without the table, which is every store that never saw a credited
+    irrelevant mark.
     """
 
     targets = list(dict.fromkeys(str(node_id) for node_id in node_ids if node_id))

@@ -1,4 +1,6 @@
-"""A same-session ``memory_lookup`` of a delivered node is a usage signal.
+"""A same-session ``memory_lookup`` of a delivered node earns numeric credit.
+
+Reading alone does not confirm the node's relevance to the delivering query.
 
 Grounding credits a delivered result only when the closing trace quotes it,
 and on the 2026-09-07 snapshots that is 19.0% of closures. An id-fetch of a
@@ -585,6 +587,11 @@ def test_grounded_closure_after_a_lookup_does_not_credit_twice(
     assert consumed["implicit_feedback"]["feedback_applied"] is False
     assert _snapshot(store, node_ids) == after_lookup
     assert _edges(store, _anchors(store)[0].id) == {used: (pytest.approx(ANCHOR_EDGE_WEIGHT), 1)}
+
+    # A later lookup is still a read of the same credited pair.
+    mcp.tools["memory_lookup"](node_id=used)
+    assert _snapshot(store, node_ids) == after_lookup
+    assert len(_lookup_events(store)) == 2
 
 
 def test_lookup_after_a_grounded_closure_credits_only_what_the_closure_left(

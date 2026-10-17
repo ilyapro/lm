@@ -111,7 +111,7 @@ Writes are no-ops without anchor tables.
 - **Retune by measurement.** This is a documented default, not a measured
   constant. After `credit` is enabled, re-run the daily effect metric
   (`scripts/recall_effect_daily.py`) and the agreement check per host. Move
-  `F` towards 1.0 if demoted nodes later get grounded or lookup credit for the
+  `F` towards 1.0 if demoted nodes later get grounded or explicit `used` evidence for the
   same anchor (visible as `cancels` > 0 in `query_irrelevance`).
 
 ## Strength valves (goal recall-precision, P3)
@@ -187,21 +187,23 @@ PYTHONPATH=src python3 scripts/query_demotion_strength_census.py \
     --setting fc075_mw1:full=0.75,mw=1.0 --setting fc070_mw1:full=0.70,mw=1.0
 ```
 
-## Cancellation: positive credit cancels (not weakens)
+## Cancellation: confirmed usefulness cancels
 
-Grounded, lookup and explicit `used` credit all reinforce the query anchor
-through `feedback._reinforce_query_anchors`. That path calls
-`irrelevance.cancel_query_irrelevance` for the credited targets on the same
-anchor: the weight goes to **0** and `cancels` is incremented (the row is kept
-for audit). A new irrelevant mark starts accumulating again from zero.
+Lookup of a delivered node earns positive numeric credit and an anchor edge,
+but reading the node leaves its query-relative irrelevance intact. Grounded
+consumption in a closing trace or an accepted explicit `used` mark confirms
+usefulness for the delivering event's question. That confirmation calls
+`irrelevance.cancel_query_irrelevance` for the node on the same anchor: the
+weight goes to **0** and `cancels` increments (the row remains for audit). A
+new irrelevant mark starts accumulating again from zero.
 
-Why cancel rather than weaken: observed use of a node for this question
-(lexical grounding in the closing trace, a lookup, or an explicit `used`) is
-stronger evidence than an earlier claim that it did not belong. A partial
-subtraction would leave a node that has demonstrably answered the query still
-demoted for it. Cancellation also works outside the explicit-feedback valve:
-grounded and lookup credit cancel under any policy. That only matters if rows
-exist, and only `credit` writes them.
+The numeric credit ledger still permits one reinforcement per event and node.
+If lookup claims that credit first, later grounded consumption or explicit
+`used` cancels the negative row without a second usefulness, retrieval-weight
+or anchor reinforcement update. Repeated confirmations do not increment
+`cancels` after the weight reaches zero. Grounded consumption cancels under
+any explicit-feedback policy; explicit `used` cancels under `credit`. Only
+`credit` writes negative rows.
 
 ## Lifetime
 

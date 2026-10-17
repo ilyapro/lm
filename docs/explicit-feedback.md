@@ -36,12 +36,11 @@ tool was added.
 - `memory_remember` / `memory_teach`: the closing writes. A mark carried here
   is processed **before** the implicit feedback of the same call, so an
   `irrelevant` mark keeps its edge out from the start.
-- `memory_lookup` does **not** get the fields. A lookup of a delivered id is
-  already a "used" signal (lookup credit, `apply_lookup_credit`), so a `used`
-  field there would duplicate it. An `irrelevant` field there would be
-  self-contradictory: the agent would be fetching the full node it calls
-  irrelevant. Keeping lookup's schema unchanged also keeps the re-fetch path,
-  which the recall description advertises, as small as possible.
+- `memory_lookup` does **not** get the fields. A lookup of a delivered id
+  already earns numeric lookup credit through `apply_lookup_credit`; it does
+  not confirm relevance for that question. The agent can mark a previously
+  fetched node `used` or `irrelevant` on a later recall or write. Keeping
+  lookup's schema unchanged keeps the re-fetch path small.
 
 ### Response
 
@@ -133,6 +132,10 @@ Explicit credit, applied only under `credit`: `source_id` is
 `scope = event.scope`, and then one anchor per event with edges to the
 marked nodes only, the same as lookup credit. With weight 0 the pair is
 claimed and nothing moves.
+An accepted `used` mark also cancels query-relative irrelevance for that
+question under `credit`, even if a prior lookup claimed the pair's numeric
+credit. Repeated marks remain in the audit table but add no numeric credit or
+repeat cancellation of an already cleared row.
 
 ## Valves
 

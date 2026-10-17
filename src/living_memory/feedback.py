@@ -15,73 +15,30 @@ from living_memory.grounding import DEFAULT_MIN_CONTAINMENT, ground_results
 from living_memory.irrelevance import cancel_query_irrelevance, record_query_irrelevance
 from living_memory.models import Node, RecallEvent, RetrievalWeights
 from living_memory import storage as storage_module
-from living_memory.query_anchors import upsert_anchor
+from living_memory.query_anchors import resolve_query_anchor, upsert_anchor
 from living_memory.storage import ChunkEmbedder, MemoryStore
 from living_memory.temporal import parse_timestamp
 
 _LOG = logging.getLogger(__name__)
 
 
-# Credit assignment for implicit consumption feedback.
+# Implicit recall feedback grades each delivered result against the closing
+# trace (living_memory.grounding). ``grounded`` reinforces only results whose
+# IDF-weighted content containment meets ``min_containment``;
+# ``grounded_negative`` also blames ungrounded results at a reduced signal;
+# ``all`` reinforces every result. Trace provenance stays exhaustive; related
+# edges follow the implicit link policy.
 #
-# When a memory_remember consumes a pending recall event, which of that
-# event's results actually earned the reinforcement? The historical answer
-# was "all of them": the loop below walked every result and handed each a
-# rank-decayed positive signal into both node usefulness and the per-scope
-# retrieval weights. That made the signal vacuous — an agent that used one
-# result of ten reinforced all ten, and nine nerfed deliveries entered the
-# learned weights as evidence *for* the channel that surfaced them.
+# A same-transport ``memory_lookup`` of a delivered id earns positive numeric
+# credit using the delivering event's scores, rank and scope, plus an anchor
+# edge. ``LM_LOOKUP_CREDIT_POLICY=off`` keeps the lookup record without credit.
+# ``LM_LOOKUP_CREDIT_WINDOW_SECONDS`` bounds the delivery join (default 24 h).
 #
-# Credit now follows content grounding (living_memory.grounding): a result is
-# reinforced only when the IDF-weighted share of its content tokens appearing
-# in the consuming trace reaches ``min_containment``. This is the same measure
-# the offline replay harness has used as its confirmed-useful label since the
-# credit-assignment work, promoted from measurement to mechanism.
-#
-# Policies (``LM_RECALL_CREDIT_POLICY``):
-#
-# * ``grounded`` — reinforce grounded results, leave ungrounded ones neutral.
-# * ``grounded_negative`` — additionally blame ungrounded results at
-#   ``UNGROUNDED_NEGATIVE_FACTOR`` of the positive signal.
-# * ``all`` — the pre-grounding rule, reinforce every delivered result. Kept
-#   reachable so the regression test can exhibit the old behaviour and so an
-#   operator can fall back without a code change.
-#
-# The default is the arm chosen by the replay A/B over the recorded history;
-# see artifacts/grounding/credit-ab.md for the numbers.
-#
-# A second usage signal, the lookup (goal feedback-usage-signal). Grounding
-# sees only what the closing trace *quotes*, and on the 2026-09-07 snapshots
-# that is 19.0% of closures (sfx 14.2%): traces grew threefold, the remember
-# protocol forbids copies, so the agent writes a new adjacent fact and the
-# delivered node it built on goes uncredited. A ``memory_lookup`` id-fetch of
-# a delivered node in the same transport session is the other honest "I used
-# this" the server can see — naming an exact ULID is something only a reader
-# who was handed it does — and it names a delivered node in 26.2% of closures,
-# overlapping the grounded set in only 58 of 395 pairs. ``apply_lookup_credit``
-# turns it into credit with the *same* assignment as a grounded result: the
-# event's recorded per-channel scores, ``signal = max(0.2, 1/(rank+1))``,
-# ``scope = event.scope``, and one anchor edge to the looked-up node only.
-#
-# The two signals share one ledger (``recall_credit_ledger`` in storage):
-# whichever arrives first for a (event, node) pair claims the row and applies
-# the credit; the other finds the row taken and applies nothing, so credit is
-# at most once per pair. Linkage — related edges, provenance, closing the
-# event — stays with the grounded path exactly as before; the ledger gates
-# reinforcement only. A lookup never touches a node that was not requested
-# and never credits an event that did not deliver the node, and with no
-# transport identity on either side there is no join and no credit.
-#
-# Policies (``LM_LOOKUP_CREDIT_POLICY``):
-#
-# * ``delivered`` — credit as above.
-# * ``off`` — record the lookup event only, exactly the pre-ledger behaviour.
-#
-# ``LM_LOOKUP_CREDIT_WINDOW_SECONDS`` bounds how far back a lookup can reach
-# for the delivering event (default 24 h, the delivery-history horizon); an
-# unknown policy or an unparsable window falls back to the default, like
-# ``LM_RECALL_CREDIT_POLICY``. See artifacts/grounding/lookup-credit.md for
-# the replay numbers.
+# Grounding, lookup and explicit ``used`` share one claim per (event, node).
+# The claim gates numeric reinforcement only. Lookup is a read and preserves
+# query-relative irrelevance; grounded consumption or explicit ``used`` can
+# cancel that row even if lookup claimed the numeric credit first. Provenance,
+# related edges and event closure follow the consuming trace independently.
 RECALL_CREDIT_POLICIES: tuple[str, ...] = ("grounded", "grounded_negative", "all")
 DEFAULT_RECALL_CREDIT_POLICY = "grounded"
 
@@ -502,7 +459,7 @@ def apply_pending_recall_feedback(
     source_traces = list(trace.source_traces)
     linked_node_ids: list[str] = []
     grounded_node_ids: list[str] = []
-    anchor_work: list[tuple[RecallEvent, tuple[str, ...]]] = []
+    anchor_work: list[tuple[RecallEvent, tuple[str, ...], tuple[str, ...]]] = []
     feedback_applied = False
     policy = _recall_credit_policy()
     link_policy = _implicit_link_policy()
@@ -513,6 +470,7 @@ def apply_pending_recall_feedback(
         # Per event, not accumulated across the batch: an anchor's edges may
         # only carry the results *its own* query earned.
         event_grounded: list[str] = []
+        event_confirmed: list[str] = []
         # Pairs already credited under any basis (a same-session lookup, an
         # explicit ``used`` mark). Read once per event, and only where it can
         # matter: under ``grounded_negative`` an ungrounded-but-credited
@@ -563,6 +521,8 @@ def apply_pending_recall_feedback(
             if reinforce_results:
                 verdict = verdicts.get(node_id)
                 content_grounded = verdict is not None and verdict.grounded
+                if content_grounded:
+                    event_confirmed.append(node_id)
                 grounded = policy == "all" or content_grounded
                 apply = True
                 if grounded:
@@ -618,8 +578,8 @@ def apply_pending_recall_feedback(
             if node_id not in linked_node_ids:
                 linked_node_ids.append(node_id)
 
-        if event_grounded:
-            anchor_work.append((event, tuple(event_grounded)))
+        if event_grounded or event_confirmed:
+            anchor_work.append((event, tuple(event_grounded), tuple(event_confirmed)))
 
         prior_recalls.append(
             {
@@ -687,7 +647,9 @@ def apply_lookup_credit(
     event's recorded per-channel scores for that result, ``useful=True``,
     ``signal = max(0.2, 1/(rank+1))`` at the result's delivered rank, in the
     event's scope; then one anchor per credited event with edges to the
-    looked-up nodes only.
+    looked-up nodes only. Lookup does not cancel query-relative irrelevance;
+    a later explicit ``used`` mark or grounded closure can do so even though
+    this claim has spent the pair's numeric credit.
 
     Policy ``off`` or a missing transport identity returns before any read.
     Any failure is logged and swallowed, as an anchor write's is: a credit is
@@ -762,7 +724,7 @@ def apply_lookup_credit(
             outcome.anchor_ids.extend(
                 _reinforce_query_anchors(
                     store,
-                    [(event, tuple(targets)) for event, targets in anchor_work.values()],
+                    [(event, tuple(targets), ()) for event, targets in anchor_work.values()],
                 )
             )
     except Exception:
@@ -932,7 +894,9 @@ def apply_explicit_marks(
     basis ``explicit`` (``source_id`` ``mark:<audit row id>``) and, when new,
     is reinforced exactly as a grounded result at its delivered rank with
     the signal scaled by ``LM_EXPLICIT_CREDIT_WEIGHT``, plus one anchor edge
-    per event to the marked nodes; accepted ``irrelevant`` marks go to
+    per event to the marked nodes. A ``used`` mark cancels query-relative
+    irrelevance even when an earlier lookup claimed its numeric credit;
+    accepted ``irrelevant`` marks go to
     ``_apply_query_irrelevance`` per event. Global usefulness never moves
     down for an irrelevant mark.
 
@@ -984,11 +948,13 @@ def apply_explicit_marks(
             return outcome
 
         weight = _explicit_credit_weight()
-        anchor_work: dict[str, tuple[RecallEvent, list[str]]] = {}
+        anchor_work: dict[str, tuple[RecallEvent, list[str], list[str]]] = {}
         for mark, mark_id in zip(marks, outcome.mark_ids, strict=True):
             if not (mark.accepted and mark.mark == "used" and mark.event is not None):
                 continue
             event = mark.event
+            entry = anchor_work.setdefault(event.id, (event, [], []))
+            entry[2].append(mark.node_id)
             if not store.claim_recall_credit(
                 event.id, mark.node_id, basis="explicit", source_id=f"mark:{mark_id}"
             ):
@@ -1009,12 +975,15 @@ def apply_explicit_marks(
                     signal=signal,
                     scope=event.scope,
                 )
-                anchor_work.setdefault(event.id, (event, []))[1].append(mark.node_id)
+                entry[1].append(mark.node_id)
         if anchor_work:
             outcome.anchor_ids.extend(
                 _reinforce_query_anchors(
                     store,
-                    [(event, tuple(targets)) for event, targets in anchor_work.values()],
+                    [
+                        (event, tuple(targets), tuple(confirmed))
+                        for event, targets, confirmed in anchor_work.values()
+                    ],
                 )
             )
         for event, node_ids in irrelevant_by_event.values():
@@ -1093,9 +1062,10 @@ def _lookup_instant(value: str | datetime | Any) -> datetime | None:
 
 
 def _reinforce_query_anchors(
-    store: MemoryStore, work: Sequence[tuple[RecallEvent, tuple[str, ...]]]
+    store: MemoryStore,
+    work: Sequence[tuple[RecallEvent, tuple[str, ...], tuple[str, ...]]],
 ) -> list[str]:
-    """Create or reinforce one anchor per grounded consumption. Never raises.
+    """Reinforce credited targets and cancel negatives for confirmed ones. Never raises.
 
     Every query is embedded in one batched call, before any anchor is written,
     so a consuming ``memory_remember`` pays one encoder round trip no matter
@@ -1104,7 +1074,11 @@ def _reinforce_query_anchors(
     scope, so it would collect edges from unrelated consumptions.
     """
 
-    items = [(event, targets) for event, targets in work if event.query.strip()]
+    items = [
+        (event, targets, confirmed)
+        for event, targets, confirmed in work
+        if event.query.strip()
+    ]
     if not items:
         return []
     anchor_ids: list[str] = []
@@ -1112,24 +1086,20 @@ def _reinforce_query_anchors(
         embedder = _anchor_embedder(store)
         if embedder is None:
             return []
-        vectors = embedder([event.query for event, _targets in items])
-        for (event, targets), vector in zip(items, vectors, strict=True):
+        vectors = embedder([event.query for event, _targets, _confirmed in items])
+        for (event, targets, confirmed), vector in zip(items, vectors, strict=True):
             if not vector:
                 continue
-            outcome = upsert_anchor(store, event.query, event.scope, vector, targets)
-            # Positive credit for this question cancels an earlier
-            # irrelevant mark on the same (anchor, node); see
-            # living_memory.irrelevance.
-            cancel_query_irrelevance(
-                store,
-                outcome.anchor.id,
-                [*targets, *(edge.target_id for edge in outcome.edges)],
-            )
-            if outcome.anchor.id not in anchor_ids:
-                anchor_ids.append(outcome.anchor.id)
+            if targets:
+                anchor = upsert_anchor(store, event.query, event.scope, vector, targets).anchor
+                if anchor.id not in anchor_ids:
+                    anchor_ids.append(anchor.id)
+            else:
+                anchor = resolve_query_anchor(store, event.query, event.scope, vector)
+            cancel_query_irrelevance(store, anchor.id, confirmed)
     except Exception:
         _LOG.warning(
-            "query anchor write failed for %d grounded consumption(s)",
+            "query anchor write failed for %d feedback event(s)",
             len(items),
             exc_info=True,
         )
