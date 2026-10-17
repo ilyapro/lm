@@ -30,7 +30,8 @@ other than `stub` (case-insensitive) reads as `drop`.
 
 `MemoryRecallService.memory_recall` ranks the results, collapses schema
 duplicates, and then calls
-`apply_score_gate(ranked, max_results, plan=, demotions=, causal_mode=)`, which
+`apply_score_gate(ranked, max_results, plan=, demotions=, causal_mode=,
+corrections_by_superseded=)`, which
 returns `(delivered, residual)`. `delivered` is what the recall returns and
 records in its event. `residual` is what `recall_map` describes.
 
@@ -50,6 +51,14 @@ therefore never empty just because the gate is on.
   `residual` is the old residual. Tail slots are not filled from below.
   `withheld` goes into the recall event summary through `RecallResult.to_dict`
   and `_recall_result_summary`.
+
+The service passes the same `supersedes` edges to ranking and final selection.
+When both endpoints remain in the ranked list and the original passes the gate,
+its correction also qualifies: matching the original establishes relevance for
+the correction that replaces it. This propagates through correction chains and
+works in both forms. A correction absent from the ranked list cannot qualify
+through an edge; unrelated results use their own gate scores. The valve-off
+plain cut is unchanged.
 
 ## Stub shape (delivery)
 
@@ -108,9 +117,9 @@ gate_score(result, demotions, *, plan=None, causal_mode=False)
 - `graph_score` is the one the ranker kept (`effective_graph`), so the
   anchors-off fallback is respected.
 - The trigger channel is left out of this blend. See the next section.
-- One multiplier is left out: the 1.2× boost for a node that *corrects*
-  another is not visible on a `RecallResult`. The gate is 1/1.2 stricter on
-  corrections, and the ranker's correction-dominance pass still orders them.
+- The 1.2× boost for a node that *corrects* another is not included in its
+  individual gate score. A present correction can also qualify through the
+  passing score of the original it supersedes.
 - Without `plan` (offline), the scope boost is 1.0.
 
 **Offline use:** `gate_score`, `trigger_gate_score` and `passes_gate` take a

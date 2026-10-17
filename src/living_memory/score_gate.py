@@ -23,10 +23,11 @@ The gate score is NOT the ranker's score. The ranker blends channels with the
 store's per-scope retrieval weights, which move with every ~100 credits; a
 threshold on that number would mean something different next week. The gate
 re-blends the result's own channel scores (bm25/vector/graph) with the fixed
-:data:`REFERENCE_WEIGHTS`, through the ranker's own blend function, so every
-multiplier the ranker applies (strong-vector floor, graph-weight floor, scope
-boost, node feedback multiplier, superseded penalty, causal boost) applies here
-too, and then the per-node multiplier from ``demotions``.
+:data:`REFERENCE_WEIGHTS`, through the ranker's own blend function. The
+strong-vector floor, graph-weight floor, scope boost, node feedback multiplier,
+superseded penalty, causal boost, and per-node ``demotions`` apply here. The
+ranker's correction boost does not enter an individual gate score; a present
+correction instead qualifies when its original passes the gate.
 
 Trigger-found instructions retain a separate availability scale based on
 trigger overlap, query coverage, node authority and feedback:
@@ -201,8 +202,9 @@ def apply_score_gate(
     plan: Any = None,
     demotions: Mapping[str, float] | None = None,
     causal_mode: bool = False,
+    corrections_by_superseded: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[list[Any], list[Any]]:
-    """Return ``(delivered, residual)``; the plain cut while the valve is off."""
+    """Select results, letting present corrections inherit their original's relevance."""
 
     threshold = min_score_from_env()
     if threshold is None or max_results <= 0 or not ranked:
@@ -212,6 +214,31 @@ def apply_score_gate(
         return passes_gate(
             result, threshold, demotions, plan=plan, causal_mode=causal_mode
         )
+
+    # Ranking has already placed each present correction before its original.
+    # Its own channels can still be weak when the query matches the original's
+    # causal evidence. In that case the original's passing score establishes
+    # relevance for the correction too. Reverse order propagates this through
+    # correction chains; absent or filtered corrections confer nothing.
+    if corrections_by_superseded:
+        positions = {result.node.id: index for index, result in enumerate(ranked)}
+        present_edges = {
+            original_id: tuple(
+                correction_id
+                for correction_id in corrections_by_superseded.get(original_id, ())
+                if correction_id in positions and positions[correction_id] < index
+            )
+            for original_id, index in positions.items()
+        }
+        if any(present_edges.values()):
+            eligible = {result.node.id for result in ranked if passes(result)}
+            for result in reversed(ranked):
+                original_id = result.node.id
+                if original_id in eligible:
+                    eligible.update(present_edges[original_id])
+
+            def passes(result: Any) -> bool:
+                return result.node.id in eligible
 
     if gate_form_from_env() == GATE_FORM_STUB:
         delivered = [

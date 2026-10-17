@@ -695,12 +695,14 @@ class MemoryRecallService:
             self._collect_query_demotions(plan, query_embedding),
             self._collect_hub_demotions(),
         )
+        supersedes = self._supersedes_sets()
         ranked = self.rank_candidates(
             candidates,
             plan,
             causal_mode=causal_mode,
             decision_mode=decision_mode,
             demotions=demotions,
+            supersedes=supersedes,
         )
         # Precision stages (goal recall-precision), each behind its own env
         # valve and the identity while it is off: same-procedure schema
@@ -721,6 +723,7 @@ class MemoryRecallService:
             plan=plan,
             demotions=demotions,
             causal_mode=causal_mode,
+            corrections_by_superseded=supersedes[0],
         )
         # Selection belongs before access and event writes: their result ids
         # must describe the answer that the caller actually delivers. A score
@@ -774,6 +777,7 @@ class MemoryRecallService:
         causal_mode: bool = False,
         decision_mode: bool = False,
         demotions: Mapping[str, float] | None = None,
+        supersedes: tuple[dict[str, tuple[str, ...]], set[str]] | None = None,
     ) -> list[RecallResult]:
         """Score and order candidates.
 
@@ -784,7 +788,9 @@ class MemoryRecallService:
         """
 
         results: list[RecallResult] = []
-        corrections_by_superseded, superseding_ids = self._supersedes_sets()
+        corrections_by_superseded, superseding_ids = (
+            supersedes if supersedes is not None else self._supersedes_sets()
+        )
         ungated_scopes = _ungated_scopes(plan)
         narrow_present, best_narrow_vector = _ungated_scope_profile(
             candidates, ungated_scopes, decision_mode=decision_mode
@@ -1939,10 +1945,10 @@ class MemoryRecallService:
     def _supersedes_sets(self) -> tuple[dict[str, tuple[str, ...]], set[str]]:
         """Supersedes edges as (superseded -> corrections, superseding ids).
 
-        One query feeds every ranking consumer: membership behind the soft
+        One query feeds ranking and final selection: membership behind the soft
         0.2x/1.2x prior and the ``RecallResult.superseded`` flag (mapping
-        keys / the superseding set), and the mapping the dominance pass
-        enforces. The SQL text is a load-bearing contract — the replay shim
+        keys / the superseding set), correction ordering, and gate eligibility.
+        The SQL text is a load-bearing contract — the replay shim
         (``replay._SchemeStore``) recognizes and serves exactly this
         statement with exactly these columns, which is how replay reranks
         recorded candidates through this same code path — so consume richer
