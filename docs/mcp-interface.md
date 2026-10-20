@@ -402,8 +402,8 @@ Every removal is wire-only: `memory_lookup(node_id=...)` returns full content
 and validity; `memory_lookup(..., view="full")` returns the complete stored
 node. Non-full content deliveries in either view carry a `content_ref` with the
 `node_id` to pass to that lookup (plus `full_content_chars`, and
-`duplicate_of` on twin stubs; with `LM_DELIVERY_SPARSE=0` also the literal
-`fetch` call string):
+`duplicate_of` on twin or near-duplicate stubs; diagnostic results with
+`LM_DELIVERY_SPARSE=0` also include the literal `fetch` call string):
 
 ```json
 {

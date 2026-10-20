@@ -378,7 +378,9 @@ def attest_recall_usage(
     # anchor: an anchor with no honest target would answer its question with
     # whatever the event happened to deliver.
     anchor_ids = (
-        feedback._reinforce_query_anchors(store, [(event, tuple(grounded_ids))])
+        feedback._reinforce_query_anchors(
+            store, [(event, tuple(grounded_ids), tuple(grounded_ids))]
+        )
         if grounded_ids
         else []
     )
