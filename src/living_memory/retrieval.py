@@ -1476,20 +1476,24 @@ class MemoryRecallService:
         One indexed revision lookup guards reuse, including an empty cache.
         The live count is checked only on rebuild, so an empty corpus never
         scans vectors. Unmigrated read-only stores use the uncached reader.
+        Uncommitted inputs must not enter the cache: rollback can restore a
+        revision that another mutation will reuse for different vectors.
         """
 
         revision = self.store.query_anchor_revision()
-        if revision is None:
+        if revision is None or self.store.connection.in_transaction:
             self._anchor_vectors = None
             return self.store
         cached = self._anchor_vectors
         if cached is None or cached.revision != revision:
-            rows = tuple(
-                (anchor_id, scope, dimensions, bytes(blob))
-                for anchor_id, scope, dimensions, blob in (
+            rows = (
+                tuple(
+                    (anchor_id, scope, dimensions, bytes(blob))
+                    for anchor_id, scope, dimensions, blob in
                     self.store.iter_query_anchor_vectors()
                 )
-            ) if self.store.count_query_anchors(include_decayed=False) else ()
+                if self.store.count_query_anchors(include_decayed=False) else ()
+            )
             grouped: dict[str, list[tuple[str, str, int, Any]]] = {}
             for row in rows:
                 grouped.setdefault(row[1], []).append(row)

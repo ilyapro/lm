@@ -5998,13 +5998,12 @@ class RecallMapBuilder:
     def _corpus_revision(self) -> tuple[Any, ...]:
         """Identity of everything the cached *structure* was derived from.
 
-        Two tiers: a free
-        ``(total_changes, PRAGMA data_version)`` probe answers "has anything
+        A ``(total_changes, PRAGMA data_version)`` probe answers "has anything
         been written at all", and only when it moves does the second tier ask
         the chunk and anchor tables themselves. Most recalls move the probe
         with their own bookkeeping — ``record_access`` writes on every call —
-        and move neither table, so the second tier is two indexed seeks that
-        return the value already held.
+        and move neither input. Missing anchor revisions and uncommitted
+        inputs use the write probe instead of a reusable anchor identity.
         """
 
         connection = self.store.connection
@@ -6020,7 +6019,9 @@ class RecallMapBuilder:
         revision = (
             RELEVANCE_POLICY_DIGEST,
             _chunk_table_revision(connection),
-            anchor_revision if anchor_revision is not None else probe,
+            anchor_revision
+            if anchor_revision is not None and not connection.in_transaction
+            else probe,
         )
         self._write_probe = probe
         self._revision = revision

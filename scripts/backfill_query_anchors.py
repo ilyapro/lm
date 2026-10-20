@@ -33,11 +33,11 @@ Safe under a live server
 ------------------------
 The backfill only ever writes rows of ``query_anchors`` and
 ``query_anchor_edges`` and the trigger-maintained anchor cache revision.
-``nodes``, ``connections`` and ``recall_events`` are
-read, never written: after the store is opened (which runs the additive v6 ->
+``nodes``, ``connections`` and ``recall_events`` are read, never written:
+after the store is opened (which runs the additive v6 ->
 v7 migration) a SQLite *authorizer* is installed that denies every write
-outside those tables and revision triggers. Protection of the node graph is enforced by
-the database rather than by review. ``PRAGMA busy_timeout`` is raised and every
+outside those tables and revision triggers. The database enforces protection
+of the node graph. ``PRAGMA busy_timeout`` is raised and every
 anchor write retries on ``SQLITE_BUSY``, because the MCP server is writing to
 the same WAL database throughout.
 
@@ -182,8 +182,8 @@ MAX_REPORTED_EXAMPLES = 20
 
 _SQLITE_BUSY_CODES = frozenset({5, 6})  # SQLITE_BUSY, SQLITE_LOCKED
 
-#: The only two tables this process may write directly. Everything else — the node
-#: graph, the connections, the recall history it reads — is read-only for the
+#: The only two tables this process may write directly. The node graph,
+#: connections and recall history it reads are read-only for the
 #: rest of the run, enforced by the authorizer below.
 WRITABLE_TABLES = frozenset({QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE})
 
@@ -603,17 +603,23 @@ def install_anchor_only_authorizer(conn: sqlite3.Connection) -> None:
     """
 
     def authorizer(
-        action: int, arg1: str | None, arg2: str | None,
-        database: str | None, source: str | None,
+        action: int,
+        arg1: str | None,
+        arg2: str | None,
+        database: str | None,
+        source: str | None,
     ) -> int:
         if action in _ALWAYS_DENIED_ACTIONS:
             return sqlite3.SQLITE_DENY
         if action in _WRITE_ACTIONS_TABLE_ARG and arg1 not in WRITABLE_TABLES:
             if (
                 action == sqlite3.SQLITE_UPDATE
-                and database == "main" and arg1 == "metadata" and arg2 == "value"
+                and database == "main"
+                and arg1 == "metadata"
+                and arg2 == "value"
                 and source in {
-                    "query_anchor_corpus_insert", "query_anchor_corpus_delete",
+                    "query_anchor_corpus_insert",
+                    "query_anchor_corpus_delete",
                     "query_anchor_corpus_update",
                 }
             ):
@@ -1835,7 +1841,7 @@ def build_parser() -> argparse.ArgumentParser:
         "backfill",
         help="Build query anchors from consumed recall history (resumable).",
         description="Build query anchors from consumed recall history. Writes "
-        "only query_anchors and query_anchor_edges — enforced by a SQLite "
+        "only query_anchors, query_anchor_edges and their cache revision — enforced by a SQLite "
         "authorizer, not by review.",
     )
     _add_db_argument(run)
