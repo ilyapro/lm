@@ -367,7 +367,8 @@ def parse_recall_payload(payload: dict[str, Any]) -> tuple[str | None, list[Deli
     for rank, item in enumerate(payload.get("results") or []):
         if not isinstance(item, dict):
             continue
-        node = item.get("node")
+        # Saved transcripts contain both knowledge and diagnostic recall views.
+        node = item.get("node", item)
         if not isinstance(node, dict):
             continue
         node_id = node.get("id")
@@ -375,6 +376,7 @@ def parse_recall_payload(payload: dict[str, Any]) -> tuple[str | None, list[Deli
             continue
         content = node.get("content")
         clipped, clipped_flag = _clip(content)
+        delivery = item.get("delivery")
         delivered.append(
             DeliveredNode(
                 node_id=str(node_id),
@@ -391,8 +393,10 @@ def parse_recall_payload(payload: dict[str, Any]) -> tuple[str | None, list[Deli
                 graph_score=_as_float(item.get("graph_score")),
                 trigger_score=_as_float(item.get("trigger_score")),
                 methods=tuple(str(m) for m in item.get("methods") or ()),
-                delivery=item.get("delivery"),
-                content_truncated=clipped_flag or bool(item.get("content_ref")),
+                delivery=delivery,
+                content_truncated=clipped_flag or (
+                    delivery != "full" if delivery is not None else bool(item.get("content_ref"))
+                ),
             )
         )
     return (str(event_id) if event_id else None), delivered
