@@ -1,4 +1,4 @@
-"""Frozen synthetic corpus for recall's max_results/delivery boundary.
+"""Frozen synthetic corpus for diagnostic recall's max_results/delivery boundary.
 
 Run ``python3 tests/fixtures/recall_distinct_slots.py --baseline`` against the
 baseline checkout or ``--candidate`` against the changed checkout. The script
@@ -130,7 +130,7 @@ def _run(*, expect_baseline: bool) -> dict[str, Any]:
         for name, query, limit in QUERIES:
             start = time.perf_counter_ns()
             response = mcp.tools["memory_recall"](query=query, scope=SCOPE,
-                                                   max_results=limit, depth=0)
+                                                   max_results=limit, depth=0, view="full")
             elapsed_ms = (time.perf_counter_ns() - start) / 1e6
             reverse = {value: key for key, value in ids.items()}
             entries = response["results"]

@@ -241,7 +241,7 @@ def test_twin_dedup_delivers_exactly_one_content_bearer(tmp_path: Path) -> None:
     bearer_id, stub_id = bearers[0], stubs[0]
 
     assert by_id[bearer_id]["content"] == body
-    assert "content_ref" not in by_id[bearer_id]
+    assert by_id[bearer_id]["content_ref"] == {"node_id": bearer_id}
 
     stub = by_id[stub_id]
     assert stub["content"] != body

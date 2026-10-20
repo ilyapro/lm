@@ -155,7 +155,7 @@ def _assert_all_full(response: dict[str, Any], contents: dict[str, str]) -> None
     for node_id, entry in by_id.items():
         assert entry["delivery"] == "full"
         assert entry["content"] == contents[node_id]
-        assert "content_ref" not in entry
+        assert entry["content_ref"] == {"node_id": entry["id"]}
 
 
 def _assert_all_stubbed(response: dict[str, Any], contents: dict[str, str]) -> None:
@@ -345,7 +345,7 @@ def test_novel_node_ships_content_bearing_while_gated(
     entry = by_id[novel.id]
     assert entry["delivery"] == "full"
     assert entry["content"] == novel.content
-    assert "content_ref" not in entry
+    assert entry["content_ref"] == {"node_id": entry["id"]}
     assert after["results"][-1]["id"] == novel.id
     for node_id, other in by_id.items():
         if node_id != novel.id:
