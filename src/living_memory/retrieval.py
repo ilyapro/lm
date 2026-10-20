@@ -205,7 +205,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -256,7 +255,6 @@ from living_memory.score_gate import REFERENCE_WEIGHTS, apply_score_gate, min_sc
 from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
     CHUNK_EMBEDDING_ITEMSIZE,
-    CHUNK_EMBEDDING_TABLE,
     MemoryStore,
     unpack_chunk_embedding,
 )
@@ -505,7 +503,7 @@ class _ChunkBlock:
 class _ScopeChunkIndex:
     """A scope's whole chunk corpus, reusable until ``revision`` moves."""
 
-    revision: tuple[Any, ...]
+    revision: int | None
     blocks: tuple[_ChunkBlock, ...]
     node_count: int
     row_count: int
@@ -626,8 +624,6 @@ class MemoryRecallService:
         # nothing but the graph channel's entry from query space.
         self.anchor_seeding = bool(anchor_seeding)
         self._chunk_index: dict[str | None, _ScopeChunkIndex] = {}
-        self._write_probe: tuple[int, int] | None = None
-        self._chunk_revision: tuple[Any, ...] | None = None
         self._anchor_vectors: _AnchorVectorCache | None = None
         self._store_embedder_shared = False
 
@@ -1023,7 +1019,6 @@ class MemoryRecallService:
         collapse_near_dups = drain_near_dup_supersedes_enabled()
         freshly_chunked: dict[str, dict[str, Node]] = {}
         for scope in plan.search_scopes:
-            drained = 0
             while True:
                 unembedded = self.store.list_unembedded_nodes(scope=scope, limit=500)
                 if not unembedded:
@@ -1033,7 +1028,6 @@ class MemoryRecallService:
                 if collapse_near_dups:
                     for node in unembedded:
                         freshly_chunked.setdefault(node.scope, {})[node.id] = node
-                drained += len(unembedded)
             attempted: set[str] = set()
             while True:
                 unchunked = [
@@ -1049,21 +1043,6 @@ class MemoryRecallService:
                 if collapse_near_dups:
                     for node in unchunked:
                         freshly_chunked.setdefault(node.scope, {})[node.id] = node
-            if drained or attempted:
-                # The revision probe cannot be trusted across this drain's own
-                # writes. Tier two is (COUNT(*), MAX(id)), and its safety
-                # argument -- a fresh ULID always outsorts every earlier one --
-                # assumes millisecond clock ticks. On a coarse-tick clock a
-                # delete (the content edit) and this drain's re-insert can land
-                # in one tick with a recall in between: COUNT returns to its
-                # cached value, the new ULID's random bits may sort below the
-                # cached MAX, and the stale matrix -- built from the deleted
-                # vector -- would be served as current. The drain knows it
-                # wrote, so it drops the cached indexes outright -- the
-                # whole-store one and every scope's share one corpus -- instead
-                # of betting on the tie-break; steady state (nothing drained)
-                # keeps the cache.
-                self._chunk_index.clear()
 
         q_arr = _as_query_array(query_embedding)
         # After the drain, never before it: the drain writes chunks.
@@ -1080,13 +1059,8 @@ class MemoryRecallService:
         # A whole-store search has no such key -- the pass compares a node only
         # with its own scope -- so there it builds the drained scopes' matrices.
         #
-        # This is downstream of the ``self._chunk_index.clear()`` above and
-        # stays correct there: the pass writes ``connections`` rows and
-        # nothing else. No chunk row is inserted, deleted or edited, no node is
-        # decayed, so the matrix the clear just rebuilt still describes the chunk
-        # corpus exactly. What the write does move is ``total_changes``, which
-        # only costs the *next* recall the cheap tier-one probe before
-        # ``_chunk_table_revision`` confirms the corpus is unchanged.
+        # The pass writes only connections, so it leaves the chunk corpus
+        # revision unchanged and the scorer can reuse the same matrices.
         for collapse_scope, drained_nodes in freshly_chunked.items():
             self._supersede_drained_near_dups(
                 collapse_scope,
@@ -1140,57 +1114,20 @@ class MemoryRecallService:
     # Chunk corpus cache
     # ------------------------------------------------------------------
 
-    def _chunk_corpus_revision(self) -> tuple[Any, ...]:
-        """Identity of the chunk corpus, cheap enough to re-ask on every recall.
+    def _chunk_corpus_revision(self) -> int | None:
+        """Read storage's transactional vector and membership revision."""
 
-        The cached matrices are only as correct as this value, so it is worth
-        being precise about why it is complete. Two tiers, because the exact
-        signal and the cheap signal are different things:
+        return self.store.chunk_corpus_revision()
 
-        * ``(Connection.total_changes, PRAGMA data_version)`` is exact and
-          costs no query. ``total_changes`` counts every row *this* connection
-          has written; ``data_version`` changes whenever *another* connection
-          commits. If neither moved, nothing anywhere has written since the
-          last check, so every cached matrix is provably current. This is the
-          path taken for the second and later scopes of one recall.
-        * When they did move it was usually this recall's own bookkeeping --
-          ``record_access`` and ``record_recall_event`` write on every recall
-          and touch no chunk -- so tier two asks the chunk table itself rather
-          than throwing away a 60k-row matrix for an access-count bump.
-
-        Tier two is ``COUNT(*)`` plus ``MAX(id)``, and it is not a heuristic.
-        Chunk rows are only ever deleted, or delete-then-inserted by
-        ``_replace_node_chunks``; nothing updates one in place. A delete-only
-        change (content edited without a new vector) moves ``COUNT(*)``. An
-        insert mints fresh ULIDs whose leading 48 bits are the current
-        millisecond, so ``MAX(id)`` rises above every id minted in an earlier
-        millisecond. For both to sit still, two chunk-writing transactions
-        would have to land in the same millisecond *with a recall between
-        them* -- and the recall that reads this value costs milliseconds, so
-        it does not fit in the gap. ``MAX(updated_at)`` would be the obvious
-        third component and is deliberately absent: ``updated_at`` is in no
-        index, so that aggregate scans the table itself, BLOB pages included.
-        """
-
-        connection = self.store.connection
-        probe = (int(connection.total_changes), _data_version(connection))
-        cached = self._chunk_revision
-        if cached is not None and probe == self._write_probe:
-            return cached
-        revision = _chunk_table_revision(connection)
-        self._write_probe = probe
-        self._chunk_revision = revision
-        return revision
-
-    def _scope_chunk_index(self, scope: str | None, revision: tuple[Any, ...]) -> _ScopeChunkIndex:
+    def _scope_chunk_index(self, scope: str | None, revision: int | None) -> _ScopeChunkIndex:
         cached = self._chunk_index.get(scope)
-        if cached is not None and cached.revision == revision:
+        if revision is not None and cached is not None and cached.revision == revision:
             return cached
         index = self._build_chunk_index(scope, revision)
         self._chunk_index[scope] = index
         return index
 
-    def _build_chunk_index(self, scope: str | None, revision: tuple[Any, ...]) -> _ScopeChunkIndex:
+    def _build_chunk_index(self, scope: str | None, revision: int | None) -> _ScopeChunkIndex:
         """Read one scope's chunk BLOBs into reusable matrices.
 
         The whole point of the cache. Measured over the whole corpus of a
@@ -2488,40 +2425,6 @@ def _as_query_array(query_embedding: list[float]) -> Any:
     if not 0.999 <= norm <= 1.001:
         arr = arr / norm
     return arr
-
-
-def _data_version(connection: sqlite3.Connection) -> int:
-    """``PRAGMA data_version``: bumped when another connection commits."""
-
-    row = connection.execute("PRAGMA data_version").fetchone()
-    return int(row[0]) if row is not None else 0
-
-
-def _chunk_table_revision(connection: sqlite3.Connection) -> tuple[Any, ...]:
-    """``(row count, greatest chunk id)``, or ``()`` on a pre-v6 database.
-
-    Two statements rather than the one they obviously fold into, because the
-    fold costs an order of magnitude: SQLite answers a bare ``COUNT(*)`` from
-    the smallest index (0.14 ms over 60,530 rows) and a bare ``MAX`` of an
-    indexed column by seeking one edge of it (0.002 ms), but asking for both in
-    one SELECT gives up both fast paths and scans (1.8 ms). This runs on every
-    recall whose predecessor wrote anything, which is most of them.
-
-    A file with no chunk table has no chunk corpus to invalidate, and an empty
-    tuple compares equal to itself, so such a store caches an empty index once
-    instead of re-probing forever.
-    """
-
-    try:
-        counted = connection.execute(
-            f"SELECT COUNT(*) FROM {CHUNK_EMBEDDING_TABLE}"
-        ).fetchone()
-        greatest = connection.execute(
-            f"SELECT MAX(id) FROM {CHUNK_EMBEDDING_TABLE}"
-        ).fetchone()
-    except sqlite3.OperationalError:
-        return ()
-    return (int(counted[0]), greatest[0])
 
 
 #: Largest deviation from unit length that still counts as "the writer already

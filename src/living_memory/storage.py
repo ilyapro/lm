@@ -89,6 +89,37 @@ CHUNK_EMBEDDING_ITEMSIZE = 4
 #: one-argument TRIM strips spaces and nothing else.
 _SQL_WHITESPACE = "' ' || CHAR(9) || CHAR(10) || CHAR(11) || CHAR(12) || CHAR(13)"
 
+# One transactional revision covers the rows and node membership used by
+# iter_chunk_embedding_rows. Triggers also cover other connections and SQL
+# maintenance; access, feedback and provenance writes leave it unchanged.
+_CHUNK_CORPUS_REVISION_SQL = """
+    INSERT OR IGNORE INTO metadata (key, value) VALUES ('chunk_corpus_revision', '0');
+
+    CREATE TRIGGER IF NOT EXISTS chunk_corpus_insert
+    AFTER INSERT ON node_chunk_embeddings BEGIN
+        UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
+    END;
+    CREATE TRIGGER IF NOT EXISTS chunk_corpus_delete
+    AFTER DELETE ON node_chunk_embeddings BEGIN
+        UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
+    END;
+    CREATE TRIGGER IF NOT EXISTS chunk_corpus_update
+    AFTER UPDATE OF node_id, chunk_index, embedding ON node_chunk_embeddings
+    WHEN OLD.node_id IS NOT NEW.node_id
+        OR OLD.chunk_index IS NOT NEW.chunk_index
+        OR OLD.embedding IS NOT NEW.embedding
+    BEGIN
+        UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
+    END;
+    CREATE TRIGGER IF NOT EXISTS chunk_corpus_membership
+    AFTER UPDATE OF scope, decayed ON nodes
+    WHEN (OLD.scope IS NOT NEW.scope OR OLD.decayed IS NOT NEW.decayed)
+        AND EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = NEW.id)
+    BEGIN
+        UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
+    END;
+"""
+
 #: Query-anchor DDL (schema v7). Held as one constant because it has two
 #: callers that must never drift apart: ``_initialize_schema`` runs it so a
 #: fresh database gets the tables, and ``_migrate_pre_v7_schema`` runs it so a
@@ -3447,6 +3478,20 @@ class MemoryStore:
             for node_id, chunk_index, blob in batch:
                 yield str(node_id), int(chunk_index), memoryview(blob)
 
+    def chunk_corpus_revision(self) -> int | None:
+        """Revision of chunk vectors and their scope/liveness membership.
+
+        The revision changes in the writing transaction, including writes from
+        other connections. It excludes bookkeeping that cannot change a chunk
+        matrix. Unmigrated read-only snapshots have no revision; callers must
+        rebuild instead of treating their missing key as a stable identity.
+        """
+
+        row = self._conn.execute(
+            "SELECT value FROM metadata WHERE key = 'chunk_corpus_revision'"
+        ).fetchone()
+        return int(row[0]) if row is not None else None
+
     def chunk_embedding_dimensions(
         self,
         *,
@@ -4570,8 +4615,7 @@ class MemoryStore:
     def query_anchor_revision(self) -> tuple[Any, ...]:
         """``(live anchor count, greatest anchor id)``, or ``()`` before v7.
 
-        The cache key for the live-anchor matrix, the anchor analogue of
-        ``retrieval._chunk_table_revision``. Measured cold, the scan behind
+        The cache key for the live-anchor matrix. Measured cold, the scan behind
         :meth:`iter_query_anchor_vectors` is ~5 ms at 4,000 anchors x 384
         dims — small against the chunk corpus, but not free enough to repeat on
         every recall when the recall's whole latency budget is single-digit
@@ -4586,8 +4630,7 @@ class MemoryStore:
         and freshness and never rewrites the stored vector, exactly so that the
         cached matrix survives the most frequent write on the anchor path.
 
-        ``MAX(updated_at)`` is absent for the same reason it is absent from the
-        chunk revision: ``updated_at`` is in no index, so that aggregate would
+        ``MAX(updated_at)`` is absent: ``updated_at`` is in no index, so that aggregate would
         scan the table, embedding BLOBs included. Two statements rather than
         one for the same reason as well — folding them gives up both index fast
         paths.
@@ -4928,6 +4971,7 @@ class MemoryStore:
                     ON recall_events(scope, task_pattern, created_at DESC);
                 """
             )
+            self._conn.executescript(_CHUNK_CORPUS_REVISION_SQL)
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
             self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)
