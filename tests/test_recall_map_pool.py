@@ -2450,7 +2450,7 @@ def test_cold_label_gate_refusal_considers_the_next_ranked_candidate(
         assert delivered == ["COLDROW1"]
 
 
-def test_curtailed_key_delivers_no_cold_and_states_it_as_c_zero_zero(
+def test_skipped_key_delivers_no_cold_or_selection_accounting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The unread-collapse defense binds cold content exactly as warm."""
@@ -2469,7 +2469,8 @@ def test_curtailed_key_delivers_no_cold_and_states_it_as_c_zero_zero(
         payload = built.to_dict()
         assert payload["curtailed"] is True
         assert payload["clusters"] == []
-        assert payload["sel"]["c"] == [0, 0]
+        assert "pool" not in payload
+        assert "sel" not in payload
 
 
 def test_empty_pool_map_gains_cold_clusters_with_the_sel_core_untouched(
@@ -2515,11 +2516,9 @@ def test_empty_pool_cold_lane_honors_a_collapsing_curtail_verdict(
         _builder, built = _build_cold(store, results)
         payload = built.to_dict()
         assert payload["clusters"] == []
-        assert payload["sel"]["c"] == [0, 0]
-        # The wire stays the valves-off empty map plus the armed marker: the
-        # collapse machinery never issued this build a curtailed verdict on
-        # the wire, and the lane must not invent one.
-        assert "curtailed" not in payload
+        assert "pool" not in payload
+        assert "sel" not in payload
+        assert payload["curtailed"] is True
 
 
 def test_empty_pool_cold_lane_reopens_on_a_decay_reprieve(
@@ -2548,7 +2547,9 @@ def test_empty_pool_cold_lane_reopens_on_a_decay_reprieve(
         )
         _arm_cold(monkeypatch)
         _builder, closed = _build_cold(store, results)
-        assert closed.to_dict()["sel"]["c"] == [0, 0]
+        assert closed.curtailed
+        assert "pool" not in closed.to_dict()
+        assert "sel" not in closed.to_dict()
 
         monkeypatch.setenv(recall_map_module.CURTAIL_DECAY_GATE_ENV, "1")
         _builder, reopened = _build_cold(store, results)
@@ -2566,8 +2567,8 @@ def test_empty_pool_cold_lane_extends_the_run_when_nothing_new_is_eligible(
     candidates match it delivers nothing, states ``c = [0, 0]`` and carries
     the digest again; inside the run nothing is looked at; a moved baseline
     lets the lane run — and a lane that then delivers nothing carries the new
-    digest. The wire on this path never carries ``curtailed``, exactly as
-    before."""
+    digest. Computed empty pools remain empty maps; skipped pools carry a
+    curtailed marker with no pool or selection measurement."""
 
     curtailment = recall_map_module._Curtailment
 
@@ -2605,7 +2606,8 @@ def test_empty_pool_cold_lane_extends_the_run_when_nothing_new_is_eligible(
         verdict(streak=streak + 2, offers=streak, lead=2, pool_digest=baseline, since_digest=1)
         _builder, inside = _build_cold(store, results)
         payload = inside.to_dict()
-        assert payload["clusters"] == [] and payload["sel"]["c"] == [0, 0]
+        assert payload["clusters"] == [] and payload["curtailed"] is True
+        assert "pool" not in payload and "sel" not in payload
         assert "pd" not in payload
 
         moved = "0" * recall_map_module.CURTAIL_POOL_DIGEST_CHARS

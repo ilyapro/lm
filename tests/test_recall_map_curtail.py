@@ -318,7 +318,10 @@ def test_the_collapsed_payload_carries_the_marker_and_the_streak(
     # through the marker rather than through a KeyError.
     assert payload["clusters"] == []
     assert payload["covered"] == 0
-    assert payload["pool"] == len(residual(store))
+    assert "pool" not in payload
+    assert "sel" not in payload
+    assert built.pool_size is None
+    assert built.selection is None
     # A collapsed delivery must be a rounding error next to the map it
     # replaces, or it has not given the channel back.
     size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
@@ -1291,15 +1294,7 @@ def test_the_baseline_survives_a_restart(
 def test_without_the_valve_the_pool_is_never_looked_at(
     store: MemoryStore, monkeypatch: pytest.MonkeyPatch, valve: str | None
 ) -> None:
-    """The frozen path neither computes nor writes a digest.
-
-    Through the collapse, the whole evidence window and the frozen reopening,
-    no build looks at its pool, no payload carries ``pd``, and every marker is
-    the frozen shape in the frozen key order. The reopening itself lands on
-    the delivery the window arithmetic puts it on. This is the pin that the
-    valve-unset behaviour is the one ``cdd29f4`` shipped: the only new code on
-    this path is a parse of a key that is never present.
-    """
+    """Skipped calls inspect no pool, and window expiry still reopens it."""
 
     if valve is None:
         monkeypatch.delenv(CURTAIL_DECAY_GATE_ENV, raising=False)
@@ -1320,11 +1315,12 @@ def test_without_the_valve_the_pool_is_never_looked_at(
         collapsed.append(built.curtailed)
         if built.curtailed:
             assert list(payload) == [
-                "clusters", "pool", "covered", "sel", "curtailed", "streak",
+                "clusters", "covered", "curtailed", "streak",
             ]
             assert payload["clusters"] == []
             assert payload["covered"] == 0
-            assert payload["pool"] == len(pool)
+            assert "pool" not in payload
+            assert "sel" not in payload
             assert payload["streak"] == CURTAIL_STREAK + index
     assert looks() == 0
     assert collapsed[:reopen] == [True] * reopen
@@ -1487,3 +1483,29 @@ def test_real_maps_are_their_own_evidence(store: MemoryStore) -> None:
     assert (revived := builder.build(pool, scope=SCOPE, task=TASK)) is not None
     assert revived.curtailed is False
     assert revived.clusters
+
+
+def test_pool_is_built_once_only_for_baseline_and_due_retry(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    unread_deliveries(store, CURTAIL_STREAK)
+    results = residual(store)
+    original = RecallMapBuilder._pool
+    counts = []
+
+    def counted(self, candidates, **kwargs):
+        counts.append(len(candidates))
+        return original(self, candidates, **kwargs)
+
+    monkeypatch.setattr(RecallMapBuilder, "_pool", counted)
+    builder = RecallMapBuilder(store)
+    run = _skip_run(CURTAIL_STREAK)
+    for index in range(run + 2):
+        before = len(counts)
+        built = _served(store, builder, results)
+        measured = index in (0, run)
+        assert len(counts) - before == int(measured)
+        assert (built.selection is not None) == measured
+        assert (built.pool_size is not None) == measured
+        assert built.curtailed

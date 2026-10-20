@@ -46,6 +46,7 @@ from living_memory.server import create_mcp_server
 from living_memory.storage import MaturedRecallHistory, SCHEMA_VERSION, MemoryStore
 
 from test_transport_identity import FakeMCP
+from test_recall_map_curtail import OPERATOR_VALVES
 
 MAP_SCOPE = "project:mapdelivery"
 MAP_QUERY = "deployment failure database migration rollback"
@@ -85,6 +86,7 @@ def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every scenario starts with the map valve and its neighbours unset."""
 
     for env in (
+        *OPERATOR_VALVES,
         "LM_RECALL_MAP",
         "LM_RECALL_REPEAT_GATING",
         "LM_DELIVERY_SESSION_DEDUP",
@@ -517,3 +519,78 @@ def test_recall_map_column_migration_is_idempotent(tmp_path: Path) -> None:
                 "SELECT value FROM metadata WHERE key = 'schema_version'"
             ).fetchone()
             assert version["value"] == str(SCHEMA_VERSION)
+
+
+@pytest.mark.parametrize("decay", [False, True])
+def test_skipped_recall_preserves_results_and_persists_unmeasured_pool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decay: bool
+) -> None:
+    from living_memory.recall_map import CURTAIL_DECAY_GATE_ENV, CURTAIL_STREAK
+
+    monkeypatch.setattr(storage_module, "_utc_now", lambda: "2026-01-01T00:00:00Z")
+    monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
+    if decay:
+        monkeypatch.setenv(CURTAIL_DECAY_GATE_ENV, "1")
+    seed = tmp_path / "seed.sqlite3"
+    task = "skip-pool"
+    with MemoryStore(seed) as store:
+        _seed(store)
+        for index in range(CURTAIL_STREAK):
+            store.record_recall_event(
+                query="unrelated housekeeping", scope=MAP_SCOPE,
+                ambient_context={"task": task},
+                recall_map={
+                    "clusters": [{"label": "untouched orchid", "count": 1,
+                                  "medoid": {"node_id": f"absent-{index}"}}],
+                    "pool": 1, "covered": 1,
+                },
+            )
+        if decay:
+            store.record_recall_event(
+                query="unrelated housekeeping", scope=MAP_SCOPE,
+                ambient_context={"task": task},
+                recall_map={"clusters": [], "pool": 10, "covered": 0,
+                            "curtailed": True, "streak": CURTAIL_STREAK,
+                            "pd": "0123456789abcdef"},
+            )
+    on, off = tmp_path / "on.sqlite3", tmp_path / "off.sqlite3"
+    shutil.copyfile(seed, on)
+    shutil.copyfile(seed, off)
+
+    calls = {"pool": 0, "history": 0}
+    original_pool = RecallMapBuilder._pool
+
+    def pool_spy(self, results, **kwargs):
+        calls["pool"] += 1
+        return original_pool(self, results, **kwargs)
+
+    def history_spy(self, ids, instant):
+        calls["history"] += 1
+        return _REAL_MATURED_RECALL_HISTORY(self, ids, instant)
+
+    monkeypatch.setattr(RecallMapBuilder, "_pool", pool_spy)
+    monkeypatch.setattr(MemoryStore, "matured_recall_history", history_spy)
+    with_map = _server(on)
+    response = _recall(with_map, max_results=3, ambient_context={"task": task})
+    assert calls == {"pool": 0, "history": 0}
+    marker = response["recall_map"]
+    assert marker == {"clusters": [], "covered": 0, "curtailed": True,
+                      "streak": CURTAIL_STREAK + int(decay)}
+    history = with_map.memory_store.recent_recall_map_history()
+    assert history[0]["recall_map"] == marker
+    assert history[0]["id"] == response["recall_event_id"]
+    with_map.memory_store.close()
+
+    restarted = _server(on)
+    again = _recall(restarted, max_results=3, ambient_context={"task": task})
+    assert again["recall_map"]["streak"] == marker["streak"] + 1
+    assert "pool" not in again["recall_map"] and "sel" not in again["recall_map"]
+    assert calls == {"pool": 0, "history": 0}
+    restarted.memory_store.close()
+
+    monkeypatch.setenv("LM_RECALL_MAP", "0")
+    without_map = _server(off)
+    control = _recall(without_map, max_results=3, ambient_context={"task": task})
+    assert response["count"] == control["count"] == 3
+    assert response["results"] == control["results"]
+    without_map.memory_store.close()
