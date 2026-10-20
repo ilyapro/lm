@@ -4631,9 +4631,8 @@ class MemoryStore:
         cached matrix survives the most frequent write on the anchor path.
 
         ``MAX(updated_at)`` is absent: ``updated_at`` is in no index, so that
-        aggregate would scan the table, embedding BLOBs included. Two statements rather than
-        one for the same reason as well — folding them gives up both index fast
-        paths.
+        aggregate would scan the table, embedding BLOBs included. Two statements
+        preserve the index fast paths that a combined aggregate would lose.
         """
 
         if not self._anchor_tables_present():

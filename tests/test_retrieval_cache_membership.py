@@ -43,8 +43,8 @@ def service(store):
     return MemoryRecallService(store, embedder=FixedEmbedder())
 
 
-def recall(retriever, scope="global"):
-    return retriever.memory_recall(QUERY, scope=scope, depth=0, max_results=1)
+def recall(retriever, scope="global", **kwargs):
+    return retriever.memory_recall(QUERY, scope=scope, depth=0, max_results=1, **kwargs)
 
 
 def assert_same_knowledge(warm, fresh, expected):
@@ -159,9 +159,13 @@ def test_existing_database_gains_revision_without_changing_memory(tmp_path):
     with ReadOnlyAuditStore.open_path(path) as reader:
         assert reader.chunk_corpus_revision() is None
         warm = service(reader)
-        assert_same_knowledge(recall(warm), recall(service(reader)), [node_id])
+        assert_same_knowledge(
+            recall(warm, log_access=False, log_event=False),
+            recall(service(reader), log_access=False, log_event=False),
+            [node_id],
+        )
         cached = warm._chunk_index["global"]
-        recall(warm)
+        recall(warm, log_access=False, log_event=False)
         assert warm._chunk_index["global"] is not cached
 
     with MemoryStore(path) as migrated:
