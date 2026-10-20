@@ -486,3 +486,30 @@ def test_the_committed_baseline_shows_no_pool_gate_was_ever_charged() -> None:
     width = baseline["windows"]["all"]["selection_vector_width"]
     assert width["payloads_with_a_pool_gate_charged"] == 0
     assert width["share_at_frozen_width"] == 1.0
+
+
+def test_skipped_and_legacy_payloads_keep_unknown_pool_separate(tmp_path: Path) -> None:
+    path = tmp_path / "mixed.sqlite3"
+    payloads = [
+        _payload((), None, 0, curtailed=True, streak=4),
+        _payload((), 0, 0, selection=_sel(5, 0, (0, 0, 0, 0, 0, 5, 0))),
+        {"clusters": [], "pool": 7, "covered": 0, "curtailed": True, "streak": 3},
+        {"clusters": [], "covered": 0},
+    ]
+    with MemoryStore(path) as store:
+        for payload in payloads:
+            store.record_recall_event(query="inspect marker", recall_map=payload)
+        counters = census.LoadCounters()
+        records = census.load_records(
+            store.connection, as_of="2100-01-01T00:00:00Z",
+            salt=census.DEFAULT_LABEL_SALT, counters=counters,
+        )
+    presence = census._cluster_presence(records)
+    assert presence["maps"] == 4
+    assert presence["empty_with_empty_pool"] == 1
+    assert presence["empty_with_non_empty_pool"] == 1
+    assert presence["empty_with_unknown_pool"] == 2
+    admission = census._selector_admission(records)
+    assert admission["sel_payloads"] == 1
+    assert admission["payloads_without_sel"] == 3
+    assert counters.sel_malformed == counters.sel_accounting_violations == 0

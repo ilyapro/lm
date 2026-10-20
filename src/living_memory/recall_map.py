@@ -2972,7 +2972,7 @@ class RecallMap:
     #: exactly the deliveries a decay-armed key uses as a baseline: the first
     #: marker after an offer, and a served skip run that rebuilt the pool and
     #: found nothing new in it. ``None`` — the valve-unset value — emits
-    #: nothing, so the frozen marker stays byte-identical.
+    #: nothing. Skips between digest baselines do not inspect the pool.
     pool_digest: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

@@ -716,3 +716,14 @@ def test_map_section_reads_what_the_store_actually_persisted(tmp_path: Path) -> 
     assert "storage" not in section
     assert_marked(section)
     assert len(section) <= MAX_SECTION_CHARS
+
+
+def test_skipped_pool_still_marks_the_history_as_incomplete() -> None:
+    from living_memory.instructions_map import _clusters_of
+
+    skipped = {"clusters": [], "covered": 0, "curtailed": True, "streak": 4}
+    assert _clusters_of(skipped) == ([], True)
+    assert _clusters_of({"clusters": [], "pool": 0, "covered": 0}) == ([], False)
+    visible = row(cluster("deployment rollback", 2))
+    assert "…" in compose_map_section([{"recall_map": skipped}, visible])
+    assert "…" not in compose_map_section([visible])

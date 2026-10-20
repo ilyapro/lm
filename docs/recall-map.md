@@ -387,7 +387,7 @@ that was stable and a history that was empty.
 
 The cache stores the cluster **structure** — stage, signature, label, ask-hint,
 member ids, and the medoid the full build chose. Counts, membership and medoid
-selection are refit against the pool in hand on every call (`_recount`, `:1017`).
+selection are refit against the pool when a full map is offered (`_recount`).
 Labels and ask-hints survive until the corpus moves.
 
 Refitting is asymmetric by necessity: stages 1 and 2 re-derive membership exactly
@@ -465,9 +465,13 @@ output verbatim and omits the key on `None`, so no `server.py` change is needed.
   accumulated at all.
 - **Curtail rule**: for a given cache key, if the last **`CURTAIL_STREAK` = 3**
   deliveries each produced zero consumed items, the builder returns a collapsed
-  form — `{"clusters": [], "pool": N, "covered": 0, "curtailed": true,
-  "streak": S}`, ~60 chars against the map's 700, rendering as the empty string
-  in the instructions channel — instead of running the label cascade at all.
+  form — `{"clusters": [], "covered": 0, "curtailed": true, "streak": S}` —
+  rendering as the empty string in the instructions channel. A fully skipped
+  build performs no pool construction, matured-history reads, relevance
+  scoring or selection accounting. Missing `pool` and `sel` mean uncomputed,
+  never an empty corpus; measured empty pools still carry `pool: 0` and `sel`.
+  The instructions history treats a curtailed marker as held back even without
+  a pool count.
   Any consumption resets the streak. The query-overlap threshold is
   `CURTAIL_QUERY_OVERLAP` = 0.5 under the grounding tokenizer
   (`grounding.token_set`); the medoid-access probe reads `nodes.last_accessed`,
@@ -492,33 +496,18 @@ output verbatim and omits the key on `None`, so no `server.py` change is needed.
   a silence, never start or lengthen one. It binds the cold lane exactly as
   the collapse it relaxes: a reprieved key delivers cold clusters on the same
   delivery a warm map would return.
-- **Pool-aware re-offer** (same valve). The first field read of the decay
-  (`~/p/ae/artifacts/injection-throttle/read-2026-09-02/READ.md`) found the
-  retry firing into nothing: a served run rebuilt the map over a pool with
-  nothing deliverable in it, the empty map read as one more offerless
-  delivery, the next build retried again, and every delivery after the run
-  became an empty *uncollapsed* map — curtailed share ≤ 0.01 with the empty
-  share at the storm level (M1 0.77–0.88). So armed, a served run looks
-  before it offers. The first marker after an offer persists a digest of the
-  key's pool — sorted admitted member ids, the `(member, anchor)` pairs stage
-  3 would partition by, the cold-lane candidates the lane would rank — as
-  `pd` on the marker it was writing anyway. A served run rebuilds the pool
-  (already done on every build) and compares: unchanged, it writes the same
-  digest into one more marker and the run starts over from that marker — not
-  an offer, so `offers` and the run's width do not move; moved, it builds the
-  full map, and if that comes back with nothing deliverable in it, the wire is
-  a marker carrying the new digest rather than an empty map. On the empty-pool
-  path (cold lane armed) the same rule runs over the lane's eligible
-  candidates, and the digest rides the empty map, which never carried
-  `curtailed` and still does not. The digest is read back by the same walk
-  that reads the streak, from the same window, so a restart or a second
-  process sees the baseline; a window written before this rule (no `pd`)
-  gets the frozen schedule up to its first look. With the valve unset the
-  digest is neither computed nor written, and the marker is byte-identical
-  (`test_without_the_valve_the_pool_is_never_looked_at`). Cost of a look: the
-  anchor lookups stage 3 would do and one cold-lane ledger probe, once per
-  run rather than a full cascade per delivery. The census reads `curtailed`,
-  so extended markers count as curtailed, never as empty uncollapsed maps.
+- **Pool-aware re-offer** (same valve). `_reoffer` decides whether to offer
+  and invokes a lazy digest only for the first baseline (`collapse` with
+  `lead == 0`) or a due retry. The pool is constructed once and reused by the
+  digest and full build. The digest covers sorted admitted member ids,
+  `(member, anchor)` pairs and eligible cold-lane candidates.
+  An unchanged pool extends the skip run with a marker carrying `pd`; a
+  changed pool permits a full map. If that rebuild offers no clusters, it
+  persists the new `pd` so the next recall does not retry immediately.
+  Computed empty pools retain their empty-map shape, with `pd` when needed.
+  Pool and selection counts are present on these measured calls; intermediate
+  skips omit both. Old payloads remain readable in the same `recall_events`
+  window without migration, and `pd` survives process restarts.
 - **Default-on, no env flag.** The protocol channels' machinery ban
   (`test_protocol_channels_advertise_no_non_default_machinery`) forbids
   default-off machinery. A curtail rule that has to be switched on is not a
@@ -1025,9 +1014,9 @@ Neither gate adds a query, and neither turns a batched read into a per-row one:
   `matured_recall_history` call `_pool` already makes (batches of
   `MAX_RECALL_HISTORY_CANDIDATES` = 200);
 - the ask-echo set is a by-product of `_read_curtailment`, computed from rows
-  and tokens already in hand. Arming gate (b) moves that read *before* the
-  pool instead of after it — same read, same `_CurtailMemo` gate, carried
-  forward so the build never asks twice.
+  and tokens already in hand. The curtail verdict precedes pool construction;
+  gate (b) requests the ask-echo set from that same read and `_CurtailMemo`,
+  so the build never asks twice.
 
 The ask-echo evidence is therefore exactly as stale as the memo curtail already
 trusts, and scoped to this cache key. Both limitations point the same way — less
@@ -1046,7 +1035,7 @@ iterations per arm, median residual 512), against the pre-registered
 
 Read the second row for what it is. That snapshot predates the lookup recorder,
 so every window in it is `NULL` and gate (b) demoted nothing — the run bounds
-the *cost of arming* the gates (the reordered curtail read, the per-candidate
+the *cost of arming* the gates (the ask-echo evidence, the per-candidate
 arithmetic), not their effect. The two paired deltas straddle each other because
 the gates remove rows the cascade would otherwise have had to label; the honest
 reading is that arming them is inside the noise of this bench, not that it is
