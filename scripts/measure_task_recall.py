@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded, synthetic, public-tool task recall measurement.
+"""Bounded, synthetic, diagnostic-view task recall measurement.
 
 Run from the repository root: python3 scripts/measure_task_recall.py --output PATH
 Each invocation creates a fresh SQLite database in a temporary directory. The
@@ -180,6 +180,7 @@ async def measure() -> dict[str, Any]:
             })
         return {
             "schema": "synthetic-task-recall-v1",
+            "recall_view": "full",
             "evidence": "development synthetic fixture; not independent holdout",
             "source_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
             "seed": {
