@@ -498,7 +498,7 @@ def test_skipped_and_legacy_payloads_keep_unknown_pool_separate(tmp_path: Path) 
     ]
     with MemoryStore(path) as store:
         for payload in payloads:
-            store.record_recall_event(query="inspect marker", recall_map=payload)
+            store.record_recall_event(query="inspect marker", scope="global", recall_map=payload)
         counters = census.LoadCounters()
         records = census.load_records(
             store.connection, as_of="2100-01-01T00:00:00Z",
