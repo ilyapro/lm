@@ -44,6 +44,20 @@ npm run server -- ./living_memory.sqlite3
 that instantiates the server, verifies the four-tool default discovery surface,
 and exercises all nine registered core tools locally.
 
+## Reading memory
+
+`memory_recall(query=...)` returns knowledge directly in `results`: identity,
+content, delivery class, re-fetch reference, and validity/corrections. Read
+`results[i].content` and use its `id` for feedback. When an excerpt or duplicate
+preview is insufficient, pass `content_ref.node_id` to `memory_lookup` for
+complete content and current validity. Binding schemas retain complete content.
+
+Request `memory_recall(..., view="full")` to inspect ranked entries with their
+`node`, scores, and compacted metadata. For original metadata, use exact-id
+`memory_lookup(..., context_key="field")` or `view="full"`. The
+[interface contract](docs/mcp-interface.md#memory_recall) describes delivery,
+feedback, and warnings.
+
 ## Tool discovery and operator access
 
 By default, FastMCP `tools/list` advertises exactly the four agent tools:

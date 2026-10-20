@@ -264,6 +264,7 @@ Input:
   "scope": "project:alpha",
   "depth": "causal | decision",
   "max_results": 5,
+  "view": "knowledge",
   "ambient_context": {
     "session_id": "s1",
     "project": "alpha",
@@ -272,9 +273,9 @@ Input:
 }
 ```
 
-`max_results` defaults to 5: first deliveries carry full content, so the
-tighter default keeps responses lean — pass a larger value when the task
-needs more breadth.
+`max_results` defaults to 5. Pass a larger value when the task needs more
+breadth. `view` accepts `"knowledge"` (default) or `"full"`; it changes
+serialization only, preserving retrieval, ranking, and feedback events.
 
 Scope: an explicit `scope` (the argument or `ambient_context.scope`)
 restricts the search to it — a `session:<id>` scope also sees the ambient
@@ -293,12 +294,52 @@ their rejected alternatives by following only `contradicts` edges with
 `metadata.kind == "rejected_alternative"`. Shallow and numeric graph depths
 filter rejected-alternative traces from results.
 
-Output includes a `recall_event_id` at the top level and on each returned
-result so later provenance can refer to the exact retrieval interaction. The
+Output includes a top-level `recall_event_id` so later provenance can refer
+to the exact retrieval interaction. The
 persisted event also stores the transport-derived `transport_session_id`
 stamped into `ambient_context` (explicit values win), which later
 remembers/teaches from the same connection use to close the event as
 feedback.
+
+#### Result views
+
+The default `view="knowledge"` returns each result directly:
+
+```json
+{
+  "id": "ulid",
+  "level": "trace",
+  "content": "The current finding or a marked excerpt.",
+  "scope": "project:alpha",
+  "provenance": {"corrections": []},
+  "decayed": false,
+  "decay_reason": null,
+  "delivery": "full",
+  "content_ref": {"node_id": "ulid"}
+}
+```
+
+`provenance` retains corrections and `supersedes` when present. Correction
+identity and links survive; oversized correction text may be shortened, with
+original details available through `memory_lookup(..., view="full")`.
+`content_ref` is present on every knowledge result, including complete
+content, so metadata remains addressable. Use `id` in the next call's `used`
+or `irrelevant` feedback. Content excerpts and duplicate previews retain
+`delivery`, `full_content_chars`, and any `duplicate_of` reference.
+
+`view="full"` returns diagnostic ranked entries: `node`, `score`,
+`bm25_score`, `vector_score`, `graph_score`, `trigger_score`, `scope_rank`,
+`methods`, and delivery information. Zero-valued score keys stay present and
+floats retain six-decimal precision under the default sparse renderer.
+This view includes compacted context, statistics, and provenance; it does
+not disable snippets or duplicate handling. For original metadata, request
+exact-id `memory_lookup(..., context_key="field")` or `view="full"`.
+Context-filter lookup continues to return complete matching nodes.
+
+Both views preserve the response envelope, including `recall_event_id`,
+`recall_map`, feedback summaries, decay summaries, warnings, and limitations
+when emitted. A content delivery class of `full` means the content is
+complete; it is independent of the selected result view.
 
 #### Delivery shaping
 
@@ -329,12 +370,13 @@ class:
 
 Content budgets come from the snippet ladder, indexed by content-bearer
 position — stubs don't consume ladder slots. The default ladder
-`full,1000,700,500,300,200` ships the **top-ranked bearer complete,
-however long** (positions past the end reuse the last budget), so the best
-match never loses content to the diet; lower-ranked bearers arrive
-progressively trimmed and re-fetchable.
+`2400,1000,700,500,300,200` bounds ordinary content at each position
+(positions past the end reuse the last budget). Task-relevant passages can
+be selected from large evidence carriers; excerpts remain re-fetchable.
+Binding `level="schema"` content is delivered complete instead of snippeted.
 
-Beyond content, every delivery class is dieted on the wire:
+In the diagnostic `view="full"`, metadata in every delivery class is
+compacted on the wire:
 
 * `provenance.prior_recalls` is summarized to `{"count": n}`, and any other
   oversized provenance value compacts per key exactly like context values.
@@ -357,8 +399,8 @@ Beyond content, every delivery class is dieted on the wire:
   to 6 decimals, so score consumers keep a predictable schema.
 
 Every removal is wire-only: `memory_lookup(node_id=...)` returns full content
-and validity; `view="full"` returns the stored node byte-complete. Non-full
-results carry a `content_ref` with the
+and validity; `memory_lookup(..., view="full")` returns the complete stored
+node. Non-full content deliveries in either view carry a `content_ref` with the
 `node_id` to pass to that lookup (plus `full_content_chars`, and
 `duplicate_of` on twin stubs; with `LM_DELIVERY_SPARSE=0` also the literal
 `fetch` call string):
@@ -367,13 +409,13 @@ results carry a `content_ref` with the
 {
   "node_id": "ulid",
   "full_content_chars": 5120,
-  "duplicate_of": "bearer ulid — twin stubs only"
+  "duplicate_of": "bearer ulid — twin or near-duplicate stubs"
 }
 ```
 
-A `full` delivery whose provenance or context lost anything to the diet
-carries a minimal `{"node_id": "ulid"}` hint marking that the lookup
-returns strictly more than was delivered.
+Knowledge results always carry at least `{"node_id": "ulid"}`. Diagnostic
+results carry that minimal reference when complete content was delivered
+but context or provenance was compacted.
 
 Session dedup is keyed by the transport-derived `transport_session_id` and
 consults the node ids recorded in that session's recent recall events (a
@@ -391,7 +433,7 @@ Env knobs — every diet lever has its own rollback valve:
 
 * `LM_DELIVERY_SNIPPET_LADDER` — per-bearer-position content budgets,
   comma-separated `full` (deliver complete content) or char counts (default
-  `full,1000,700,500,300,200`; positions past the end reuse the last entry;
+  `2400,1000,700,500,300,200`; positions past the end reuse the last entry;
   `off`/`uniform` fall back to the uniform legacy budget below; malformed
   values fall back to the default ladder).
 * `LM_DELIVERY_SNIPPET_CHARS` — uniform max content chars delivered inline
@@ -401,8 +443,7 @@ Env knobs — every diet lever has its own rollback valve:
 * `LM_DELIVERY_SESSION_DEDUP` — session-dedup rollback valve (default on;
   `0`/`false`/`no`/`off` disable).
 * `LM_DELIVERY_CONTEXT_VALUE_CHARS` — max chars a single `context` value may
-  occupy on dieted results (default 160; `0` disables context compaction;
-  the pre-ladder default was 240).
+  occupy in diagnostic results (default 160; `0` disables context compaction).
 * `LM_DELIVERY_FULL_NODE_DIET` — default on; `0` restores byte-untouched
   provenance/context on `full` deliveries (rollback valve).
 * `LM_DELIVERY_PROVENANCE_VALUE_CHARS` — max chars a single provenance value
@@ -414,14 +455,12 @@ Env knobs — every diet lever has its own rollback valve:
   fields, the `content_ref.fetch` string, and full float precision
   (rollback valve).
 
-Setting `LM_DELIVERY_SNIPPET_LADDER=off LM_DELIVERY_FULL_NODE_DIET=0
-LM_DELIVERY_PROVENANCE_VALUE_CHARS=0 LM_DELIVERY_STATS_COMPACTION=0
-LM_DELIVERY_SPARSE=0 LM_DELIVERY_CONTEXT_VALUE_CHARS=240` restores the
-pre-ladder delivery renderer byte-for-byte.
+These metadata settings govern `view="full"`; the knowledge view keeps its
+focused fields independently. Storage and exact-id full lookup are unchanged.
 
 `tests/test_delivery_diet_e2e.py` pins the wire-level behaviour — dedup,
-degradation, the top-bearer complete-content guarantee, ladder snippet
-re-fetch, full-node context compaction, and closure invariance — over a
+degradation, complete binding schemas, ladder snippet re-fetch, diagnostic
+context compaction, and closure invariance — over a
 real MCP client; `tests/test_delivery_shaping.py` pins each lever and its
 valve at the unit level.
 
