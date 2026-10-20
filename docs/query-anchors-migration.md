@@ -19,7 +19,7 @@ defaults to a database — `--db` is always explicit.
 | --- | --- | --- |
 | preflight dry run | up | opens `mode=ro` with `PRAGMA query_only`, constructs no `MemoryStore`, writes nothing |
 | backup | up | the sqlite3 backup API is consistent under a concurrent writer |
-| backfill | up | it only writes `query_anchors`/`query_anchor_edges`; a SQLite authorizer denies every other write, so nodes, connections and recall history cannot change |
+| backfill | up | it writes `query_anchors`/`query_anchor_edges` and their trigger-maintained cache revision; a SQLite authorizer denies other writes, so nodes, connections and recall history cannot change |
 | deploy + restart | restarting | the running process holds the old modules until it restarts |
 | catch-up backfill pass | up | consumptions between the backfill and the restart were handled by code that did not write anchors |
 | verify | up | read-only |
@@ -151,9 +151,10 @@ validated (`PRAGMA quick_check` plus the node-count comparison) before any write
 The command in step 1 is the backfill. It is safe to leave running while the
 server serves reads and writes:
 
-* it only ever writes rows of `query_anchors` and `query_anchor_edges`;
+* it writes rows of `query_anchors` and `query_anchor_edges` and their
+  trigger-maintained cache revision in `metadata`;
   immediately after the migration a SQLite **authorizer** is installed that
-  denies every write outside those two tables, so this process physically cannot
+  denies writes outside those tables and revision triggers, so this process cannot
   modify a node, a connection, or a recall event. It reads all three;
 * it commits **one anchor at a time**, so the write lock is held for
   milliseconds at a time instead of for the whole run, and the WAL stays

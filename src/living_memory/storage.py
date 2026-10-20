@@ -120,6 +120,33 @@ _CHUNK_CORPUS_REVISION_SQL = """
     END;
 """
 
+# Independent of chunks: anchor membership and vectors have their own revision.
+# INSERT/DELETE also cover SQL replacement, whose implicit deletion need not
+# fire a DELETE trigger when SQLite recursive_triggers is disabled.
+_QUERY_ANCHOR_REVISION_SQL = """
+    INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0');
+
+    CREATE TRIGGER IF NOT EXISTS query_anchor_corpus_insert
+    AFTER INSERT ON query_anchors BEGIN
+        UPDATE metadata SET value = value + 1 WHERE key = 'query_anchor_revision';
+    END;
+    CREATE TRIGGER IF NOT EXISTS query_anchor_corpus_delete
+    AFTER DELETE ON query_anchors BEGIN
+        UPDATE metadata SET value = value + 1 WHERE key = 'query_anchor_revision';
+    END;
+    CREATE TRIGGER IF NOT EXISTS query_anchor_corpus_update
+    AFTER UPDATE OF id, scope, dimensions, embedding, decayed ON query_anchors
+    WHEN (OLD.decayed = 0 OR NEW.decayed = 0) AND (
+        OLD.id IS NOT NEW.id OR OLD.scope IS NOT NEW.scope
+        OR OLD.dimensions IS NOT NEW.dimensions
+        OR OLD.embedding IS NOT NEW.embedding
+        OR OLD.decayed IS NOT NEW.decayed
+    )
+    BEGIN
+        UPDATE metadata SET value = value + 1 WHERE key = 'query_anchor_revision';
+    END;
+"""
+
 #: Query-anchor DDL (schema v7). Held as one constant because it has two
 #: callers that must never drift apart: ``_initialize_schema`` runs it so a
 #: fresh database gets the tables, and ``_migrate_pre_v7_schema`` runs it so a
@@ -4612,38 +4639,24 @@ class MemoryStore:
         )
         return len(rows)
 
-    def query_anchor_revision(self) -> tuple[Any, ...]:
-        """``(live anchor count, greatest anchor id)``, or ``()`` before v7.
+    def query_anchor_revision(self) -> int | None:
+        """Transactional revision of anchor ids, scopes, widths and vectors.
 
-        The cache key for the live-anchor matrix. Measured cold, the scan behind
-        :meth:`iter_query_anchor_vectors` is ~5 ms at 4,000 anchors x 384
-        dims — small against the chunk corpus, but not free enough to repeat on
-        every recall when the recall's whole latency budget is single-digit
-        milliseconds. A caller that caches the matrix re-asks this instead.
+        SQLite triggers maintain it across connections and maintenance SQL,
+        including decay and revival between reads. Reinforcement and edge or
+        feedback bookkeeping leave it unchanged unless they revive an anchor.
+        The indexed metadata lookup does not scan the anchor corpus.
 
-        Two components, and the pair is complete for what the matrix holds —
-        the id and vector of every live anchor. Only three things can change
-        that set. An insert mints a fresh ULID whose leading 48 bits are the
-        current millisecond, so it raises ``MAX(id)``. A decay and a revival
-        both move the live count. What is deliberately *not* covered is a
-        reinforcement, because it changes neither: reinforcing updates counters
-        and freshness and never rewrites the stored vector, exactly so that the
-        cached matrix survives the most frequent write on the anchor path.
-
-        ``MAX(updated_at)`` is absent: ``updated_at`` is in no index, so that
-        aggregate would scan the table, embedding BLOBs included. Two statements
-        preserve the index fast paths that a combined aggregate would lose.
+        Unmigrated read-only databases return ``None``: their vectors may be
+        read, but cannot be cached under a stable revision.
         """
 
         if not self._anchor_tables_present():
-            return ()
-        counted = self._conn.execute(
-            f"SELECT COUNT(*) FROM {QUERY_ANCHOR_TABLE} WHERE decayed = 0"
+            return None
+        row = self._conn.execute(
+            "SELECT value FROM metadata WHERE key = 'query_anchor_revision'"
         ).fetchone()
-        greatest = self._conn.execute(
-            f"SELECT MAX(id) FROM {QUERY_ANCHOR_TABLE}"
-        ).fetchone()
-        return (int(counted[0]), greatest[0])
+        return int(row[0]) if row is not None else None
 
     def list_anchor_edge_targets(self) -> list[str]:
         """Every distinct node id that some anchor edge points at."""
@@ -4974,6 +4987,7 @@ class MemoryStore:
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
             self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)
+            self._conn.executescript(_QUERY_ANCHOR_REVISION_SQL)
             self._anchor_tables_cache = None
             # Attestation ledger (v8). Runs after the main script because its
             # foreign keys name recall_events and nodes, and unconditionally on

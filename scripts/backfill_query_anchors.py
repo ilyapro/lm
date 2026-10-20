@@ -10,7 +10,7 @@ writes those on every content-grounded consumption from the moment it is
 deployed. The history that came before it — 9,105 consumed recall events on the
 2026-08-18 live database — carries exactly the same signal and no anchors. This
 script reads that history, re-labels it with the *same* grounding module the
-live loop uses, and writes the anchors it implies. It writes nothing else.
+live loop uses, and writes the anchors it implies and their cache revision.
 
 Two subcommands, deliberately separate:
 
@@ -32,10 +32,11 @@ run without it is not evidence.
 Safe under a live server
 ------------------------
 The backfill only ever writes rows of ``query_anchors`` and
-``query_anchor_edges``. ``nodes``, ``connections`` and ``recall_events`` are
+``query_anchor_edges`` and the trigger-maintained anchor cache revision.
+``nodes``, ``connections`` and ``recall_events`` are
 read, never written: after the store is opened (which runs the additive v6 ->
 v7 migration) a SQLite *authorizer* is installed that denies every write
-outside those two tables, so "it must not touch the node graph" is enforced by
+outside those tables and revision triggers. Protection of the node graph is enforced by
 the database rather than by review. ``PRAGMA busy_timeout`` is raised and every
 anchor write retries on ``SQLITE_BUSY``, because the MCP server is writing to
 the same WAL database throughout.
@@ -181,7 +182,7 @@ MAX_REPORTED_EXAMPLES = 20
 
 _SQLITE_BUSY_CODES = frozenset({5, 6})  # SQLITE_BUSY, SQLITE_LOCKED
 
-#: The only two tables this process may write. Everything else — the node
+#: The only two tables this process may write directly. Everything else — the node
 #: graph, the connections, the recall history it reads — is read-only for the
 #: rest of the run, enforced by the authorizer below.
 WRITABLE_TABLES = frozenset({QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE})
@@ -594,16 +595,29 @@ def install_anchor_only_authorizer(conn: sqlite3.Connection) -> None:
     reads into a write would be a mutation of the live memory itself, not of a
     derived table. Rather than trusting that no code path here writes outside
     the anchor tables, deny it at the connection: reads stay open, writes are
-    allowed on ``query_anchors``/``query_anchor_edges`` and nowhere else, and
-    DDL is refused outright. Install *after* ``MemoryStore.__init__`` has run
+    allowed on ``query_anchors``/``query_anchor_edges``. Only their revision
+    triggers may update ``metadata.value``; direct metadata writes and DDL
+    are refused. Install *after* ``MemoryStore.__init__`` has run
     its migrations — the v7 ``CREATE TABLE`` is a legitimate write and must not
     be blocked.
     """
 
-    def authorizer(action: int, arg1: str | None, arg2: str | None, *_rest: Any) -> int:
+    def authorizer(
+        action: int, arg1: str | None, arg2: str | None,
+        database: str | None, source: str | None,
+    ) -> int:
         if action in _ALWAYS_DENIED_ACTIONS:
             return sqlite3.SQLITE_DENY
         if action in _WRITE_ACTIONS_TABLE_ARG and arg1 not in WRITABLE_TABLES:
+            if (
+                action == sqlite3.SQLITE_UPDATE
+                and database == "main" and arg1 == "metadata" and arg2 == "value"
+                and source in {
+                    "query_anchor_corpus_insert", "query_anchor_corpus_delete",
+                    "query_anchor_corpus_update",
+                }
+            ):
+                return sqlite3.SQLITE_OK
             return sqlite3.SQLITE_DENY
         return sqlite3.SQLITE_OK
 

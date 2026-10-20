@@ -11,7 +11,7 @@ database a live server is serving:
   event's scope, with edges only to the nodes that event actually used;
 * resumable — an interrupted run plus a re-run equals an uninterrupted run, and
   the interruption is a real ``SIGKILL`` of a real subprocess, not a stand-in;
-* it writes **nothing** outside ``query_anchors``/``query_anchor_edges``, and
+* it writes only ``query_anchors``/``query_anchor_edges`` and their revision, and
   that is enforced by a SQLite authorizer rather than by review;
 * ``--until`` really is a cutoff, which is the whole basis of a leak-free
   evaluation build;

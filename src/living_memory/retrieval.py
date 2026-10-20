@@ -170,10 +170,9 @@ and instructs read-path callers to cache the vectors and re-validate with
 and :class:`_CachedAnchorVectors` below are: the policy stays in
 ``match_anchors``, only its input is cached. At 4,000 anchors x 384 dims on
 this machine the scan costs 5.9 ms p50 uncached and 0.9 ms over the cache, and
-the revision probe that guards it costs 0.04 ms. The cache is invalidated
-whole-corpus because ``query_anchor_revision`` is whole-corpus, and it is exact
-for what it holds -- a reinforcement never rewrites a stored vector, which is
-why the most frequent anchor write does not invalidate it.
+the cache is served by scope. Its transactional SQLite revision covers anchor
+membership and vectors across all writers. Reinforcement of a live anchor
+never rewrites a stored vector, so it preserves the cache.
 
 End to end, on a snapshot of the live database (12,901 active nodes, 143,285
 connections, 60,636 chunk vectors) carrying 3,760 anchors and 10,716 edges
@@ -529,7 +528,7 @@ class _AnchorVectorCache:
     each scope, so the matcher reading them is the one that reads the database.
     """
 
-    revision: tuple[Any, ...]
+    revision: int
     rows: tuple[tuple[str, str, int, Any], ...]
     by_scope: dict[str, tuple[tuple[str, str, int, Any], ...]]
 
@@ -1471,19 +1470,18 @@ class MemoryRecallService:
         except Exception:  # pragma: no cover - derived signal, never fatal
             return {}
 
-    def _anchor_vector_source(self) -> _CachedAnchorVectors | None:
+    def _anchor_vector_source(self) -> _CachedAnchorVectors | MemoryStore | None:
         """The live anchor vectors, cached until ``query_anchor_revision`` moves.
 
-        The probe costs ~0.04 ms and is asked on every recall; the scan behind
-        it costs ~5.9 ms at 4,000 anchors and is paid only when the corpus
-        actually changed. Returning ``None`` for an empty or pre-v7 corpus is
-        what makes cold start free: no scan, no matcher, no seed.
+        One indexed revision lookup guards reuse, including an empty cache.
+        The live count is checked only on rebuild, so an empty corpus never
+        scans vectors. Unmigrated read-only stores use the uncached reader.
         """
 
         revision = self.store.query_anchor_revision()
-        if not revision or not revision[0]:
+        if revision is None:
             self._anchor_vectors = None
-            return None
+            return self.store
         cached = self._anchor_vectors
         if cached is None or cached.revision != revision:
             rows = tuple(
@@ -1491,7 +1489,7 @@ class MemoryRecallService:
                 for anchor_id, scope, dimensions, blob in (
                     self.store.iter_query_anchor_vectors()
                 )
-            )
+            ) if self.store.count_query_anchors(include_decayed=False) else ()
             grouped: dict[str, list[tuple[str, str, int, Any]]] = {}
             for row in rows:
                 grouped.setdefault(row[1], []).append(row)
@@ -1501,7 +1499,7 @@ class MemoryRecallService:
                 by_scope={scope: tuple(group) for scope, group in grouped.items()},
             )
             self._anchor_vectors = cached
-        return _CachedAnchorVectors(self.store, cached)
+        return _CachedAnchorVectors(self.store, cached) if cached.rows else None
 
     def _admit_anchor_seeds(
         self,

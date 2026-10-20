@@ -419,10 +419,9 @@ def match_anchors(
     backfill paths, and it is *not* affordable once per recall against a
     single-digit-millisecond latency budget. A caller on the read path must
     cache the matrix and re-validate it with
-    :meth:`MemoryStore.query_anchor_revision` (~0.04 ms), the same shape
-    ``retrieval._ScopeChunkIndex`` already uses for the chunk corpus. That
-    revision is complete precisely because a reinforcement never rewrites a
-    stored vector.
+    :meth:`MemoryStore.query_anchor_revision`, a transactional SQLite counter
+    covering membership and vector changes. Reinforcement of a live anchor
+    preserves this revision. Stores without it must use the uncached scan.
 
     Ranked by descending similarity, ties broken by anchor id so the order is
     stable. ``targets`` holds live targets only, heaviest first; an anchor whose
@@ -447,7 +446,9 @@ def match_anchors(
     matches: list[AnchorMatch] = []
     for anchor_id, similarity in ranked:
         anchor = store.get_query_anchor(anchor_id)
-        if anchor is None:  # pragma: no cover - row vanished mid-scan
+        if anchor is None or anchor.decayed:
+            continue
+        if scopes is not None and anchor.scope not in scopes:
             continue
         targets: tuple[tuple[str, float], ...] = ()
         if include_targets:

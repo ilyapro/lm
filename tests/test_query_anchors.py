@@ -1021,7 +1021,7 @@ def test_query_anchor_revision_moves_exactly_when_the_matrix_changes(
         after_decay = store.query_anchor_revision()
         assert after_decay != after_insert
         store.reinforce_query_anchor(anchor.id)
-        assert store.query_anchor_revision() == after_insert
+        assert store.query_anchor_revision() > after_decay
 
         # A second anchor moves it again.
         qa.upsert_anchor(store, "другой запрос", SCOPE, [0.0, 1.0], [node.id])
@@ -1031,7 +1031,7 @@ def test_query_anchor_revision_moves_exactly_when_the_matrix_changes(
             f"DROP TABLE {QUERY_ANCHOR_EDGE_TABLE}; DROP TABLE {QUERY_ANCHOR_TABLE};"
         )
         store._invalidate_schema_shape_cache()
-        assert store.query_anchor_revision() == ()
+        assert store.query_anchor_revision() is None
 
 
 def test_anchor_edge_rows_are_unique_per_anchor_target_pair(tmp_path: Path) -> None:

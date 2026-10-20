@@ -5998,7 +5998,7 @@ class RecallMapBuilder:
     def _corpus_revision(self) -> tuple[Any, ...]:
         """Identity of everything the cached *structure* was derived from.
 
-        Two tiers, exactly as ``retrieval._chunk_corpus_revision``: a free
+        Two tiers: a free
         ``(total_changes, PRAGMA data_version)`` probe answers "has anything
         been written at all", and only when it moves does the second tier ask
         the chunk and anchor tables themselves. Most recalls move the probe
@@ -6016,10 +6016,11 @@ class RecallMapBuilder:
             and probe == self._write_probe
         ):
             return cached
+        anchor_revision = self.store.query_anchor_revision()
         revision = (
             RELEVANCE_POLICY_DIGEST,
             _chunk_table_revision(connection),
-            tuple(self.store.query_anchor_revision()),
+            anchor_revision if anchor_revision is not None else probe,
         )
         self._write_probe = probe
         self._revision = revision
