@@ -59,6 +59,7 @@ def _apply_public_bm25_feedback_pressure(
                 scope=scope,
                 max_results=1,
                 ambient_context=ambient,
+                view="full",
             )
             assert recalled["count"] == 1
             assert recalled["results"][0]["bm25_score"] == pytest.approx(1.0)
@@ -114,6 +115,7 @@ def test_implicit_feedback_amplification_cannot_disable_vector_recall(
         scope="project:collapse",
         max_results=1,
         ambient_context=ambient,
+                view="full",
     )
     assert lexical["count"] == 1
     assert lexical["results"][0]["bm25_score"] == pytest.approx(1.0)
@@ -174,6 +176,7 @@ def test_implicit_feedback_amplification_cannot_disable_eligible_graph_floor(
         scope="global",
         max_results=1,
         ambient_context=ambient,
+                view="full",
     )
     assert lexical["count"] == 1
     assert lexical["results"][0]["bm25_score"] == pytest.approx(1.0)

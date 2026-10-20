@@ -140,7 +140,7 @@ def _seed(db_path: Path) -> tuple[Any, MemoryStore, list[str], str]:
         depth=0,
         ambient_context=dict(AMBIENT),
     )
-    delivered = [result["node"]["id"] for result in recalled["results"]]
+    delivered = [result["id"] for result in recalled["results"]]
     assert sorted(delivered) == sorted(node_ids), "the event must deliver all eight"
     return mcp, store, node_ids, recalled["recall_event_id"]
 

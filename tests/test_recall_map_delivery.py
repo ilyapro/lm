@@ -170,7 +170,7 @@ def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
         assert cluster["plan_item"].startswith(f"on touching {cluster['label']} -")
 
     # The map describes the residual and nothing else: no delivered node is in it.
-    delivered = {entry["node"]["id"] for entry in response["results"]}
+    delivered = {entry["id"] for entry in response["results"]}
     mapped = {cluster["medoid"]["node_id"] for cluster in payload["clusters"]}
     assert delivered.isdisjoint(mapped)
     history = mcp.memory_store.recent_recall_map_history()

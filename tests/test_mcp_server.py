@@ -100,7 +100,7 @@ def test_mcp_tools_delegate_to_memory_services(tmp_path: Path) -> None:
         max_results=5,
     )
     assert recalled["count"] >= 1
-    assert first_id in {result["node"]["id"] for result in recalled["results"]}
+    assert first_id in {result["id"] for result in recalled["results"]}
 
     looked_up = mcp.tools["memory_lookup"](
         scope="project:alpha",
@@ -249,7 +249,7 @@ def test_same_session_double_recall_stubs_second_call(
         async with Client(mcp) as client:
             first = _structured(await client.call_tool("memory_recall", call))
             second = _structured(await client.call_tool("memory_recall", call))
-            node_id = second["results"][0]["node"]["id"]
+            node_id = second["results"][0]["id"]
             fetched = _structured(
                 await client.call_tool("memory_lookup", {"node_id": node_id})
             )
@@ -263,14 +263,14 @@ def test_same_session_double_recall_stubs_second_call(
     full = first["results"][0]
     stub = second["results"][0]
     assert full["delivery"] == "full"
-    assert full["node"]["content"] == DEDUP_CONTENT
-    assert "content_ref" not in full
+    assert full["content"] == DEDUP_CONTENT
+    assert full["content_ref"] == {"node_id": full["id"]}
 
     assert stub["delivery"] == "session_duplicate"
-    assert stub["node"]["id"] == full["node"]["id"]
-    assert set(stub["node"]) == set(full["node"])  # every node key survives
-    assert stub["node"]["content"] == DEDUP_CONTENT.split("\n")[0]  # one-line preview
-    assert stub["content_ref"]["node_id"] == full["node"]["id"]
+    assert stub["id"] == full["id"]
+    assert set(stub) == set(full)  # every node key survives
+    assert stub["content"] == DEDUP_CONTENT.split("\n")[0]  # one-line preview
+    assert stub["content_ref"]["node_id"] == full["id"]
     assert stub["content_ref"]["full_content_chars"] == len(DEDUP_CONTENT)
 
     # The stub's content_ref path restores byte-identical content.
@@ -279,7 +279,7 @@ def test_same_session_double_recall_stubs_second_call(
 
     # A distinct transport session starts with a clean delivery slate.
     assert fresh["results"][0]["delivery"] == "full"
-    assert fresh["results"][0]["node"]["content"] == DEDUP_CONTENT
+    assert fresh["results"][0]["content"] == DEDUP_CONTENT
 
 
 def test_session_dedup_env_valve_disables_stubs(
@@ -303,7 +303,7 @@ def test_session_dedup_env_valve_disables_stubs(
     first, second = asyncio.run(scenario())
     for response in (first, second):
         assert response["results"][0]["delivery"] == "full"
-        assert response["results"][0]["node"]["content"] == DEDUP_CONTENT
+        assert response["results"][0]["content"] == DEDUP_CONTENT
 
 
 def test_sessionless_direct_recall_stays_full_on_repeat(
@@ -328,8 +328,8 @@ def test_sessionless_direct_recall_stays_full_on_repeat(
         assert response["count"] >= 1
         for result in response["results"]:
             assert result["delivery"] == "full"
-            assert "content_ref" not in result
-    assert second["results"][0]["node"]["content"] == content
+            assert result["content_ref"] == {"node_id": result["id"]}
+    assert second["results"][0]["content"] == content
 
 
 def test_recall_snippets_long_content_with_content_ref(
@@ -350,8 +350,8 @@ def test_recall_snippets_long_content_with_content_ref(
     )
     top = recalled["results"][0]
     assert top["delivery"] == "snippet"
-    assert len(top["node"]["content"]) <= 1200
-    assert top["node"]["content"].endswith("…")
+    assert len(top["content"]) <= 1200
+    assert top["content"].endswith("…")
     assert top["content_ref"]["node_id"] == remembered["node"]["id"]
     assert top["content_ref"]["full_content_chars"] == len(long_content)
 

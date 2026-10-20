@@ -496,7 +496,7 @@ def recipe_obtained(mcp) -> str | None:
 
     recalled = mcp.tools["memory_recall"](RECIPE_QUERY, scope=SCOPE, max_results=5)
     for result in recalled["results"]:
-        node = result["node"]
+        node = result
         if not node["content"].startswith("Procedure: rotate the staging certificate"):
             continue
         if result.get("delivery", "full") == "full":
@@ -565,7 +565,7 @@ def obtained_texts(mcp, query: str, max_results: int = 5) -> list[tuple[str, str
 
     obtained = []
     for result in mcp.tools["memory_recall"](query, scope=SCOPE, max_results=max_results)["results"]:
-        node = result["node"]
+        node = result
         if result.get("delivery", "full") != "full":
             ref = (result.get("content_ref") or {}).get("node_id") or node["id"]
             node = mcp.tools["memory_lookup"](node_id=ref)["results"][0]

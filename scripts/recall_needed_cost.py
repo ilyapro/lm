@@ -217,10 +217,10 @@ def _worker(args: argparse.Namespace) -> None:
                 start = time.perf_counter()
                 result = recall(**query)
                 recall_ms += (time.perf_counter() - start) * 1000
-                ids = [str(item["node"]["id"]) for item in result["results"]]
+                ids = [str(item["id"]) for item in result["results"]]
                 ranking.append(ids)
                 responses.append({"tool": "memory_recall", "chars": response_chars(result)})
-                observed.extend(item["node"] for item in result["results"])
+                observed.extend(item for item in result["results"])
                 missing = remaining(case["required"], observed)
                 # Only sources exposed by this recall may be fetched. Fetch all
                 # currently necessary IDs in one lookup, then re-evaluate.

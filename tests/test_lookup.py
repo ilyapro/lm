@@ -491,7 +491,7 @@ def test_memory_lookup_id_fetch_leaves_the_node_untouched(
 
     # --- Delivered on this transport, policy off: still untouched ----------
     recalled = mcp.tools["memory_recall"]("untouched reading", scope="project:pure")
-    assert [result["node"]["id"] for result in recalled["results"]] == [target_id]
+    assert [result["id"] for result in recalled["results"]] == [target_id]
     delivered = snapshot()
     assert delivered["access_count"] == before["access_count"] + 1, "the recall, not a lookup"
 

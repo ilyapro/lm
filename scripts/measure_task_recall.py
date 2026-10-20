@@ -138,7 +138,7 @@ async def measure() -> dict[str, Any]:
 
         rows = []
         for case in CASES:
-            args = {"query": case["query"], "max_results": LIMIT}
+            args = {"query": case["query"], "max_results": LIMIT, "view": "full"}
             if case["scope"] is not None:
                 args["scope"] = case["scope"]
             start = perf_counter()

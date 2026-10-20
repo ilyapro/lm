@@ -70,12 +70,12 @@ def test_scopeless_mcp_recall_reaches_other_projects_and_explicit_scope_restrict
                 arguments = {"ambient_context": ambient} if ambient else {}
                 for query in (QUERY, "private snapshot immediate commit proof sidecars"):
                     results = await _recall(client, query, **arguments)
-                    ids = [entry["node"]["id"] for entry in results]
+                    ids = [entry["id"] for entry in results]
                     assert ids[0] == fact, (ambient, query)
                     assert not set(ids) & fillers
 
             restricted = await _recall(client, QUERY, scope="project:repo")
-            assert fact not in {entry["node"]["id"] for entry in restricted}
-            assert {entry["node"]["scope"] for entry in restricted} <= {"project:repo", "global"}
+            assert fact not in {entry["id"] for entry in restricted}
+            assert {entry["scope"] for entry in restricted} <= {"project:repo", "global"}
 
     asyncio.run(scenario())

@@ -81,7 +81,7 @@ def test_selected_event_lookup_and_intentional_refetch(tmp_path, monkeypatch) ->
     context = {"transport_session_id": "synthetic-session"}
     answer = recall(query=STEM, scope=SCOPE, max_results=2, depth=0,
                     ambient_context=context)
-    delivered = [entry["node"]["id"] for entry in answer["results"]]
+    delivered = [entry["id"] for entry in answer["results"]]
     assert delivered == [ids["survey_a"], ids["inventory"]]
     event = store.get_recall_event(answer["recall_event_id"])
     assert event is not None and event.result_ids == delivered
@@ -92,11 +92,11 @@ def test_selected_event_lookup_and_intentional_refetch(tmp_path, monkeypatch) ->
 
     repeated = recall(query=STEM, scope=SCOPE, max_results=2, depth=0,
                       ambient_context=context, used=[ids["survey_a"]])
-    assert repeated["results"][0]["node"]["id"] == ids["survey_a"]
+    assert repeated["results"][0]["id"] == ids["survey_a"]
     assert repeated["results"][0]["delivery"] == "session_duplicate"
     assert repeated["feedback_marks"]["accepted"] == 1
     repeated_event = store.get_recall_event(repeated["recall_event_id"])
     assert repeated_event is not None
     assert repeated_event.result_ids == [
-        entry["node"]["id"] for entry in repeated["results"]
+        entry["id"] for entry in repeated["results"]
     ]

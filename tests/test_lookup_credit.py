@@ -165,7 +165,7 @@ def _seed(
         depth=0,
         ambient_context=dict(AMBIENT),
     )
-    delivered = [result["node"]["id"] for result in recalled["results"]]
+    delivered = [result["id"] for result in recalled["results"]]
     assert sorted(delivered) == sorted(node_ids), "the event must deliver all eight"
     event = store.get_recall_event(recalled["recall_event_id"])
     assert event is not None

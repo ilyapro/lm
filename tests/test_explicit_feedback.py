@@ -154,7 +154,7 @@ def _seed(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, MemorySt
         for body in BODIES
     ]
     recalled = _recall(mcp)
-    assert sorted(result["node"]["id"] for result in recalled["results"]) == sorted(node_ids)
+    assert sorted(result["id"] for result in recalled["results"]) == sorted(node_ids)
     return mcp, store, node_ids, recalled["recall_event_id"]
 
 

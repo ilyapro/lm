@@ -40,21 +40,21 @@ async def run():
         required = json.loads(sys.argv[4])
         def sufficient():
             content = "\n".join(
-                item.get("node", item)["content"] for response in responses
+                item["content"] for response in responses
                 for item in response.get("results", [])
             )
             return all(fact in content for fact in required)
         recall_sufficient = sufficient()
         if not recall_sufficient:
-            carrier = next(item for item in recall["results"] if item["node"]["level"] == "concept")
-            assert carrier["content_ref"]["node_id"] == carrier["node"]["id"]
+            carrier = next(item for item in recall["results"] if item["level"] == "concept")
+            assert carrier["content_ref"]["node_id"] == carrier["id"]
             responses.append(structured(await client.call_tool("memory_lookup", {
-                "node_id": carrier["node"]["id"]
+                "node_id": carrier["id"]
             })))
         assert sufficient()
         print(json.dumps({
             "delivery_path": delivery_module.__file__,
-            "ranked_ids": [item["node"]["id"] for item in recall["results"]],
+            "ranked_ids": [item["id"] for item in recall["results"]],
             "ranked_scores": [
                 [item[key] for key in ("score", "bm25_score", "vector_score", "graph_score", "trigger_score")]
                 for item in recall["results"]
@@ -132,5 +132,5 @@ def test_rejected_revision_counterexample(tmp_path: Path) -> None:
     assert after["recall_sufficient"]
     assert after["calls"] == len(after["response_chars"]) == 1
     assert after["responses"][0]["results"][0]["delivery"] == "snippet"
-    assert len(after["responses"][0]["results"][0]["node"]["content"]) <= 2400
+    assert len(after["responses"][0]["results"][0]["content"]) <= 2400
     assert sum(after["response_chars"]) < sum(before["response_chars"])

@@ -223,7 +223,7 @@ def test_fresh_write_reaches_default_top10_against_boosted_competitors(
 
     # Ranked recall over a 10-result page (the tool default shrank to 5;
     # the ranking scenario needs the original page size), same process.
-    recalled = mcp.tools["memory_recall"](QUERY, scope=SCOPE, max_results=10)
+    recalled = mcp.tools["memory_recall"](QUERY, scope=SCOPE, max_results=10, view="full")
 
     assert recalled["count"] == 10, "boosted competitors must fill the result page"
     ranked_ids = [result["node"]["id"] for result in recalled["results"]]

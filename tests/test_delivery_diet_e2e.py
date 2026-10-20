@@ -58,7 +58,7 @@ from test_transport_identity import FakeMCP, _structured
 SNIPPET_LIMIT = 1200  # default LM_DELIVERY_SNIPPET_CHARS (uniform ladder-off mode)
 
 # Node fields every delivery class keeps, whatever the sparse diet drops.
-CORE_NODE_KEYS = {"id", "level", "content", "scope", "context", "stats", "provenance", "created_at"}
+CORE_NODE_KEYS = {"id", "level", "content", "scope", "provenance", "decayed", "decay_reason"}
 
 RECALL_SCOPE = "project:dietprobe"
 RECALL_STEM = "meridian dossier torque calibration"
@@ -97,7 +97,7 @@ def _wire_bytes(payload: dict[str, Any]) -> int:
 
 
 def _by_id(response: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {entry["node"]["id"]: entry for entry in response["results"]}
+    return {entry["id"]: entry for entry in response["results"]}
 
 
 def _bulk_content(tag: str, clauses: int) -> str:
@@ -148,12 +148,12 @@ def test_session_dedup_full_then_stub_then_fresh_session_full_again(
 
     for node_id, entry in _by_id(first).items():
         assert entry["delivery"] == "full"
-        assert "content_ref" not in entry
-        assert entry["node"]["content"] == contents[node_id]
+        assert entry["content_ref"] == {"node_id": node_id}
+        assert entry["content"] == contents[node_id]
 
     for node_id, entry in _by_id(second).items():
         assert entry["delivery"] == "session_duplicate"
-        stub = entry["node"]
+        stub = entry
         assert stub["content"] != contents[node_id]
         assert len(stub["content"]) <= 200  # a one-line preview, not the body
         assert contents[node_id].startswith(stub["content"])
@@ -171,7 +171,7 @@ def test_session_dedup_full_then_stub_then_fresh_session_full_again(
     # A new connection is a new transport session: full content again.
     for node_id, entry in _by_id(fresh).items():
         assert entry["delivery"] == "full"
-        assert entry["node"]["content"] == contents[node_id]
+        assert entry["content"] == contents[node_id]
 
 
 def test_direct_calls_without_transport_identity_never_stub(tmp_path: Path) -> None:
@@ -194,8 +194,8 @@ def test_direct_calls_without_transport_identity_never_stub(tmp_path: Path) -> N
         assert set(by_id) == set(expected)
         for node_id, entry in by_id.items():
             assert entry["delivery"] == "full"
-            assert "content_ref" not in entry
-            assert entry["node"]["content"] == expected[node_id]
+            assert entry["content_ref"] == {"node_id": node_id}
+            assert entry["content"] == expected[node_id]
 
     events = store.list_recall_events()
     assert len(events) == 2
@@ -240,12 +240,12 @@ def test_twin_dedup_delivers_exactly_one_content_bearer(tmp_path: Path) -> None:
     assert len(bearers) == 1 and len(stubs) == 1  # never both full
     bearer_id, stub_id = bearers[0], stubs[0]
 
-    assert by_id[bearer_id]["node"]["content"] == body
+    assert by_id[bearer_id]["content"] == body
     assert "content_ref" not in by_id[bearer_id]
 
     stub = by_id[stub_id]
-    assert stub["node"]["content"] != body
-    assert body.startswith(stub["node"]["content"])  # one-line preview
+    assert stub["content"] != body
+    assert body.startswith(stub["content"])  # one-line preview
     ref = stub["content_ref"]
     assert ref["duplicate_of"] == bearer_id
     assert ref["node_id"] == stub_id
@@ -288,12 +288,12 @@ def test_long_content_top_bounded_by_default_then_tighter_snippet_and_refetch(
     # Default ladder bounds oversized content while retaining a lookup path.
     top_entry = _by_id(default_recall)[node_id]
     assert top_entry["delivery"] == "snippet"
-    assert len(top_entry["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[0]
+    assert len(top_entry["content"]) <= DEFAULT_SNIPPET_LADDER[0]
     assert top_entry["content_ref"]["node_id"] == node_id
 
     entry = _by_id(ladder_recall)[node_id]
     assert entry["delivery"] == "snippet"
-    snippet = entry["node"]["content"]
+    snippet = entry["content"]
     assert snippet != long_content
     assert len(snippet) <= SNIPPET_LIMIT
     assert snippet.endswith("…")
@@ -343,8 +343,8 @@ def test_bulky_context_procedure_compacted_on_all_delivery_classes(tmp_path: Pat
             provenance={"strategy": "procedural"},
         )
         async with Client(mcp) as client:
-            first = await _recall(client, "voltaic pergola rite", scope=scope)
-            second = await _recall(client, "voltaic pergola rite", scope=scope)
+            first = await _recall(client, "voltaic pergola rite", scope=scope, view="full")
+            second = await _recall(client, "voltaic pergola rite", scope=scope, view="full")
             looked_up = _structured(
                 await client.call_tool("memory_lookup", {"node_id": node.id})
             )
@@ -367,8 +367,8 @@ def test_bulky_context_procedure_compacted_on_all_delivery_classes(tmp_path: Pat
     stored_context = full["results"][0]["context"]
     assert stored_context["procedure"] == steps
 
-    first_entry = _by_id(first)[node_id]
-    second_entry = _by_id(second)[node_id]
+    first_entry = {entry["node"]["id"]: entry for entry in first["results"]}[node_id]
+    second_entry = {entry["node"]["id"]: entry for entry in second["results"]}[node_id]
     # Top-ranked bearer: complete content, yet the full-node diet still
     # compacts the context that would re-ship that same content.
     assert first_entry["delivery"] == "full"
@@ -493,7 +493,7 @@ def test_remember_response_bounded_while_write_durable_and_recallable(
 
     entry = _by_id(recalled)[confirmation["id"]]  # and recallable over the wire
     assert entry["delivery"] == "snippet"
-    assert len(entry["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[0]
+    assert len(entry["content"]) <= DEFAULT_SNIPPET_LADDER[0]
     assert entry["content_ref"]["node_id"] == confirmation["id"]
 
 

@@ -43,7 +43,7 @@ def _facts_present(responses: list[dict[str, Any]], facts: tuple[str, ...]) -> b
         node["content"]
         for response in responses
         for item in response.get("results", [])
-        if isinstance(node := item.get("node", item), dict)
+        if isinstance(node := item, dict)
         if isinstance(node.get("content"), str)
     )
     return all(fact in text for fact in facts)
@@ -72,7 +72,7 @@ async def _read_chain(
         responses = [recall]
         recall_sufficient = _facts_present(responses, facts)
         if not recall_sufficient and followup_id is not None:
-            entry = next(item for item in recall["results"] if item["node"]["id"] == followup_id)
+            entry = next(item for item in recall["results"] if item["id"] == followup_id)
             assert entry["content_ref"]["node_id"] == followup_id
             responses.append(_structured(await client.call_tool(
                 "memory_lookup", {"node_id": followup_id}
@@ -92,8 +92,8 @@ def _paired(
     monkeypatch.setenv("LM_DELIVERY_SNIPPET_LADDER", "off")
     monkeypatch.setenv("LM_DELIVERY_SNIPPET_CHARS", "0")
     baseline = asyncio.run(_read_chain(mcp, query, scope, facts, followup_id=followup_id))
-    assert [item["node"]["id"] for item in candidate.responses[0]["results"]] == [
-        item["node"]["id"] for item in baseline.responses[0]["results"]
+    assert [item["id"] for item in candidate.responses[0]["results"]] == [
+        item["id"] for item in baseline.responses[0]["results"]
     ]
     return candidate, baseline
 
@@ -117,10 +117,10 @@ def test_buried_knowledge_and_competing_passages_cost_one_bounded_recall(
         (fact, f"- {source}:"), followup_id=carrier.id,
     )
     entry = candidate.responses[0]["results"][0]
-    assert entry["node"]["id"] == carrier.id
+    assert entry["id"] == carrier.id
     assert entry["delivery"] == "snippet"
-    assert entry["node"]["content"].startswith("Evidence: synthetic equipment cases (case records, not steps)")
-    assert len(entry["node"]["content"]) <= DEFAULT_SNIPPET_LADDER[0]
+    assert entry["content"].startswith("Evidence: synthetic equipment cases (case records, not steps)")
+    assert len(entry["content"]) <= DEFAULT_SNIPPET_LADDER[0]
     assert candidate.recall_sufficient and candidate.sufficient
     assert candidate.calls == baseline.calls == 1
     assert candidate.chars < baseline.chars / 4
@@ -141,7 +141,7 @@ def test_buried_applicable_instruction_is_delivered_as_evidence(
     )
     assert candidate.recall_sufficient and candidate.calls == baseline.calls == 1
     assert candidate.chars < baseline.chars
-    assert "case records, not steps" in candidate.responses[0]["results"][0]["node"]["content"]
+    assert "case records, not steps" in candidate.responses[0]["results"][0]["content"]
 
 
 def test_large_carrier_lookup_cost_covers_the_whole_needed_chain(
@@ -177,10 +177,10 @@ def test_short_knowledge_and_binding_schema_stay_complete(
     facts = (short.content, schema.content)
     candidate, baseline = _paired(monkeypatch, mcp, "silver dial target instruction", scope, facts)
     assert candidate.recall_sufficient and candidate.calls == baseline.calls == 1
-    entries = {entry["node"]["id"]: entry for entry in candidate.responses[0]["results"]}
+    entries = {entry["id"]: entry for entry in candidate.responses[0]["results"]}
     assert entries[short.id]["delivery"] == "full"
     assert entries[schema.id]["delivery"] == "full"
-    assert entries[schema.id]["node"]["content"] == schema.content
+    assert entries[schema.id]["content"] == schema.content
 
 
 def test_superseded_rule_does_not_become_current(
@@ -205,7 +205,7 @@ def test_superseded_rule_does_not_become_current(
     )
     assert taught["supersedes"]["type"] == "supersedes"
     assert candidate.recall_sufficient and candidate.calls == baseline.calls == 1
-    delivered = "\n".join(item["node"]["content"] for item in candidate.responses[0]["results"])
+    delivered = "\n".join(item["content"] for item in candidate.responses[0]["results"])
     assert old.content not in delivered
 
 

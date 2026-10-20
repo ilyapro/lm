@@ -123,7 +123,7 @@ async def _run(db: Path, cases: list[dict[str, str]]) -> dict[str, Any]:
                 if explicit and not scope:
                     continue
                 payload, elapsed, size = await recall(client, case["query"], ambient, scope)
-                ids = [entry["node"]["id"] for entry in payload["results"]]
+                ids = [entry["id"] for entry in payload["results"]]
                 reached += any(target in ids for target in case.get("targets") or [case["target"]])
                 delivered += len(ids)
                 latencies.append(elapsed)
@@ -133,7 +133,7 @@ async def _run(db: Path, cases: list[dict[str, str]]) -> dict[str, Any]:
                     outside += sum(
                         1
                         for entry in payload["results"]
-                        if entry["node"]["scope"] not in {target_scope, "global"}
+                        if entry["scope"] not in {target_scope, "global"}
                     )
         report[label] = {
             "cases": len(latencies),

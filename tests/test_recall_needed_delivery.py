@@ -59,12 +59,12 @@ def test_mcp_sufficient_short_and_buried_instruction_need_one_recall(tmp_path: P
         return short_result, buried_result
 
     short_result, buried_result = asyncio.run(scenario())
-    short_entry = next(e for e in short_result["results"] if e["node"]["id"] == short.id)
+    short_entry = next(e for e in short_result["results"] if e["id"] == short.id)
     assert short_entry["delivery"] == "full"
-    assert short_entry["node"]["content"] == short.content
-    carrier_entry = next(e for e in buried_result["results"] if e["node"]["id"] == carrier.id)
+    assert short_entry["content"] == short.content
+    carrier_entry = next(e for e in buried_result["results"] if e["id"] == carrier.id)
     assert carrier_entry["delivery"] == "snippet"
-    excerpt = carrier_entry["node"]["content"]
+    excerpt = carrier_entry["content"]
     assert len(excerpt) <= DEFAULT_SNIPPET_LADDER[0]
     assert source_ids[14] in excerpt
     assert "apply the cobalt latch before turning the spindle" in excerpt
@@ -104,10 +104,10 @@ def test_mcp_missing_detail_uses_byte_complete_lookup_and_correction_survives(
         return recall, lookup, missing
 
     recall, lookup, missing = asyncio.run(scenario())
-    entry = next(e for e in recall["results"] if e["node"]["id"] == node.id)
+    entry = next(e for e in recall["results"] if e["id"] == node.id)
     assert entry["delivery"] == "snippet"
-    assert "ORBIT-73" not in entry["node"]["content"]
-    assert entry["node"]["provenance"]["corrections"][0]["supersedes"] == "01OLDROTORRULE"
+    assert "ORBIT-73" not in entry["content"]
+    assert entry["provenance"]["corrections"][0]["supersedes"] == "01OLDROTORRULE"
     assert entry["content_ref"]["node_id"] == node.id
     assert lookup["results"][0]["content"] == content
     assert lookup["results"][0]["provenance"]["corrections"] == node.provenance["corrections"]
@@ -135,6 +135,6 @@ def test_mcp_taught_rule_is_current_after_superseding_old_rule(tmp_path: Path) -
 
     taught, recalled = asyncio.run(scenario())
     assert taught["supersedes"]["type"] == "supersedes"
-    contents = [entry["node"]["content"] for entry in recalled["results"]]
+    contents = [entry["content"] for entry in recalled["results"]]
     assert any("release pressure before opening" in content for content in contents)
     assert all("open before pressure release" not in content for content in contents)

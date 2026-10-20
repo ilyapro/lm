@@ -619,7 +619,7 @@ def test_recall_answer_collapses_a_repeat_and_lookup_still_returns_it(
     first, second, distinct = _seed_answer(mcp, store)
 
     response = _recall(mcp, max_results=5)
-    by_id = {entry["node"]["id"]: entry for entry in response["results"]}
+    by_id = {entry["id"]: entry for entry in response["results"]}
 
     assert set(by_id) == {first, second, distinct}
     pair = [by_id[first], by_id[second]]
@@ -627,13 +627,13 @@ def test_recall_answer_collapses_a_repeat_and_lookup_still_returns_it(
     bearers = [entry for entry in pair if entry["delivery"] != DELIVERY_NEAR_DUPLICATE]
     assert len(stubs) == 1 and len(bearers) == 1
     stub, bearer = stubs[0], bearers[0]
-    assert stub["content_ref"]["duplicate_of"] == bearer["node"]["id"]
+    assert stub["content_ref"]["duplicate_of"] == bearer["id"]
     assert by_id[distinct]["delivery"] != DELIVERY_NEAR_DUPLICATE
 
-    stored = store.get_node(stub["node"]["id"])
+    stored = store.get_node(stub["id"])
     assert stub["content_ref"]["full_content_chars"] == len(stored.content)
-    assert len(stub["node"]["content"]) < len(stored.content)  # a preview, not the text
-    looked_up = mcp.tools["memory_lookup"](node_id=stub["node"]["id"])
+    assert len(stub["content"]) < len(stored.content)  # a preview, not the text
+    looked_up = mcp.tools["memory_lookup"](node_id=stub["id"])
     assert looked_up["results"][0]["content"] == stored.content
 
 
@@ -710,18 +710,18 @@ def test_two_tree_nodes_both_reach_the_agent_and_the_valve_gives_that_back(
     first, second = _seed_identifier_answer(mcp, store)
 
     response = _recall(mcp, max_results=5)
-    by_id = {entry["node"]["id"]: entry for entry in response["results"]}
+    by_id = {entry["id"]: entry for entry in response["results"]}
 
     assert set(by_id) == {first, second}
     assert deliveries(response["results"]) == [DELIVERY_FULL, DELIVERY_FULL]
-    delivered = " ".join(entry["node"]["content"] for entry in response["results"])
+    delivered = " ".join(entry["content"] for entry in response["results"])
     assert "layer-fauna" in delivered and "layer-actors" in delivered
 
     monkeypatch.setenv(IDENTIFIER_VETO_ENV, "0")
     rolled_back = _recall(mcp, max_results=5)
 
     assert DELIVERY_NEAR_DUPLICATE in deliveries(rolled_back["results"])
-    hidden = " ".join(entry["node"]["content"] for entry in rolled_back["results"])
+    hidden = " ".join(entry["content"] for entry in rolled_back["results"])
     assert ("layer-fauna" in hidden) != ("layer-actors" in hidden)
 
 

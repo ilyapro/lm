@@ -114,7 +114,7 @@ async def _fresh_session_recall(mcp: Any, query: str, **arguments: Any) -> dict[
 
 
 def _by_id(response: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {entry["node"]["id"]: entry for entry in response["results"]}
+    return {entry["id"]: entry for entry in response["results"]}
 
 
 def _event_row(store: Any, event_id: str) -> Any:
@@ -154,7 +154,7 @@ def _assert_all_full(response: dict[str, Any], contents: dict[str, str]) -> None
     assert set(by_id) == set(contents)
     for node_id, entry in by_id.items():
         assert entry["delivery"] == "full"
-        assert entry["node"]["content"] == contents[node_id]
+        assert entry["content"] == contents[node_id]
         assert "content_ref" not in entry
 
 
@@ -165,7 +165,7 @@ def _assert_all_stubbed(response: dict[str, Any], contents: dict[str, str]) -> N
     assert set(by_id) == set(contents)
     for node_id, entry in by_id.items():
         assert entry["delivery"] == "session_duplicate"
-        stub_content = entry["node"]["content"]
+        stub_content = entry["content"]
         assert stub_content != contents[node_id]
         assert contents[node_id].startswith(stub_content)  # one-line preview
         ref = entry["content_ref"]
@@ -344,9 +344,9 @@ def test_novel_node_ships_content_bearing_while_gated(
     by_id = _by_id(after)
     entry = by_id[novel.id]
     assert entry["delivery"] == "full"
-    assert entry["node"]["content"] == novel.content
+    assert entry["content"] == novel.content
     assert "content_ref" not in entry
-    assert after["results"][-1]["node"]["id"] == novel.id
+    assert after["results"][-1]["id"] == novel.id
     for node_id, other in by_id.items():
         if node_id != novel.id:
             assert node_id in contents
@@ -414,7 +414,7 @@ def test_feedback_link_restores_full_delivery(
     for node_id, entry in by_id.items():
         assert entry["delivery"] == "full"
         if node_id in contents:
-            assert entry["node"]["content"] == contents[node_id]
+            assert entry["content"] == contents[node_id]
     assert _event_row(store, after["recall_event_id"])["gated"] == 0
 
 

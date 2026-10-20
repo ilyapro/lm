@@ -140,7 +140,7 @@ async def _recall(
             if scope is not None:
                 request["scope"] = scope
             result = _payload(await client.call_tool("memory_recall", request))
-            ranked = [item["node"]["id"] for item in result["results"]]
+            ranked = [item["id"] for item in result["results"]]
             rank = next(
                 (index for index, node_id in enumerate(ranked, 1)
                  if node_id == case["expected_node_id"]), None

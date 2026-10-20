@@ -222,7 +222,7 @@ def _run_closed_loop(db_path: Path, *, seed: int) -> SimOutcome:
                     depth=0,
                     ambient_context=dict(ambient),
                 )
-                delivered_ids = [result["node"]["id"] for result in recalled["results"]]
+                delivered_ids = [result["id"] for result in recalled["results"]]
                 for node_id in delivered_ids:
                     deliveries[node_id] += 1
                     topic_deliveries[topic][node_id] += 1
