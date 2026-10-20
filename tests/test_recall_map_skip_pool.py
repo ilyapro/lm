@@ -52,14 +52,14 @@ def test_recall_residual_skips_pool_history(tmp_path: Path, monkeypatch: pytest.
             store.create_node(level="trace", content=f"database migration rollback {index}", context={"scope": scope})
         for index in range(CURTAIL_STREAK):
             store.record_recall_event(
-                query="orchard inspection", scope=scope, ambient_context={"task": task},
+                query="unrelated housekeeping", scope=scope, ambient_context={"task": task},
                 recall_map={"clusters": [{"label": "orchard inspection", "count": 1,
                                           "medoid": {"node_id": f"absent-{index}"}}],
                             "pool": 1, "covered": 1},
             )
         if decay:
             store.record_recall_event(
-                query="orchard inspection", scope=scope, ambient_context={"task": task},
+                query="unrelated housekeeping", scope=scope, ambient_context={"task": task},
                 recall_map={"clusters": [], "covered": 0, "curtailed": True,
                             "streak": CURTAIL_STREAK, "pd": "0123456789abcdef"},
             )
