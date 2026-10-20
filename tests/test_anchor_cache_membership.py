@@ -64,7 +64,7 @@ def test_balanced_decay_revival_updates_matches_seeds_and_demotions(stores, nump
     targets = []
     for item in (a, b):
         node = writer.create_node(level="concept", content=item.id, context={"scope": "global"})
-        writer.upsert_query_anchor_edge(item.id, node.id, weight_delta=1.0)
+        writer.upsert_query_anchor_edge(item.id, node.id, weight=1.0)
         targets.append(node.id)
         with writer.connection:
             writer.connection.execute(QUERY_IRRELEVANCE_SCHEMA_SQL)
@@ -149,7 +149,7 @@ def test_bookkeeping_and_chunk_writes_preserve_anchor_cache(stores, monkeypatch)
     monkeypatch.setattr(reader, "iter_query_anchor_vectors", scan)
     writer.reinforce_query_anchor(a.id, usefulness_delta=0.5)
     node = writer.create_node(level="concept", content="target", context={"scope": "global"}, embedding=[1.0, 0.0])
-    writer.upsert_query_anchor_edge(a.id, node.id, weight_delta=0.5)
+    writer.upsert_query_anchor_edge(a.id, node.id, weight=0.5)
     with writer.connection:
         writer.connection.execute(
             "UPDATE query_anchors SET id=id, scope=scope, dimensions=dimensions, "
@@ -192,7 +192,7 @@ def test_existing_database_and_read_only_reader(tmp_path):
         a = anchor(store, "a", [1.0, 0.0])
         with store.connection:
             for suffix in ("insert", "delete", "update"):
-                store.connection.execute(f"DROP TRIGGER query_anchor_corpus_{suffix}")
+                store.connection.execute(f"DROP TRIGGER IF EXISTS query_anchor_corpus_{suffix}")
             store.connection.execute("DELETE FROM metadata WHERE key='query_anchor_revision'")
     with ReadOnlyAuditStore.open_path(path) as reader, sqlite3.connect(path) as writer:
         assert reader.query_anchor_revision() is None
@@ -241,7 +241,7 @@ def test_anchor_maintenance_allows_only_trigger_revision_writes(stores):
         writer.connection.set_authorizer(None)
 
 
-def test_match_readback_excludes_anchor_decayed_after_scan(stores, monkeypatch):
+def test_match_readback_excludes_anchor_decayed_after_scan(stores):
     reader, writer = stores
     a = anchor(writer, "a", [1.0, 0.0])
     source = service(reader)._anchor_vector_source()
