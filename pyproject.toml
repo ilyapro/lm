@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Living Memory contributors" }]
-dependencies = ["fastmcp>=2.0", "sentence-transformers>=2.2"]
+dependencies = ["fastmcp>=3.2.4,<4", "sentence-transformers>=2.2"]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

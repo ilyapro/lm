@@ -74,6 +74,10 @@ logs, or any tracked file.
 
 ## Correlation identity and feedback closure
 
+LM uses FastMCP 3 with negotiated HTTP sessions. Keep recall, lookup, and
+feedback in one MCP client session: attribution and duplicate delivery depend
+on a stable transport session identity across requests.
+
 Retrieval-policy learning depends on recall events being *closed* — consumed
 as implicit feedback by a later `memory_remember`/`memory_teach`. Clients
 rarely send the explicit `agent`/`task`/`session_id` identity that used to be
