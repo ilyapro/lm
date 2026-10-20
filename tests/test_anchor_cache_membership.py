@@ -10,6 +10,7 @@ import pytest
 from living_memory import query_anchors as qa
 from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.irrelevance import QUERY_IRRELEVANCE_SCHEMA_SQL
+from living_memory.recall_map import RecallMapBuilder
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import ScopePlan
 from living_memory.storage import MemoryStore, pack_chunk_embedding
@@ -186,6 +187,40 @@ def test_revision_and_membership_roll_back_together(stores):
     assert_parity(warm, [1.0, 0.0], [a.id])
 
 
+def test_uncommitted_vectors_cannot_poison_a_reused_revision(tmp_path):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        anchor(store, "a", [1.0, 0.0])
+        anchor(store, "b", [0.0, 1.0])
+        warm = service(store)
+        assert_parity(warm, [1.0, 0.0], ["a"])
+        store.connection.execute(
+            "UPDATE query_anchors SET embedding=? WHERE id='a'",
+            (pack_chunk_embedding([0.0, 1.0]),),
+        )
+        assert_parity(warm, [1.0, 0.0], [])
+        store.connection.rollback()
+        with store.connection:
+            store.connection.execute(
+                "UPDATE query_anchors SET embedding=? WHERE id='b'",
+                (pack_chunk_embedding([1.0, 0.0]),),
+            )
+        assert_parity(warm, [1.0, 0.0], ["a", "b"])
+
+
+def test_recall_map_tracks_the_anchor_revision(stores):
+    reader, writer = stores
+    a = anchor(writer, "a", [1.0, 0.0])
+    b = anchor(writer, "b", [0.0, 1.0])
+    writer.decay_query_anchor(b.id, "inactive")
+    builder = RecallMapBuilder(reader)
+    before = builder._corpus_revision()
+    writer.reinforce_query_anchor(a.id)
+    assert builder._corpus_revision() == before
+    writer.decay_query_anchor(a.id, "inactive")
+    writer.reinforce_query_anchor(b.id)
+    assert builder._corpus_revision() != before
+
+
 def test_existing_database_and_read_only_reader(tmp_path):
     path = tmp_path / "memory.sqlite3"
     with MemoryStore(path) as store:
@@ -197,10 +232,13 @@ def test_existing_database_and_read_only_reader(tmp_path):
     with ReadOnlyAuditStore.open_path(path) as reader, sqlite3.connect(path) as writer:
         assert reader.query_anchor_revision() is None
         warm = service(reader)
+        builder = RecallMapBuilder(reader)
+        before = builder._corpus_revision()
         assert_parity(warm, [1.0, 0.0], [a.id])
         with writer:
             writer.execute("UPDATE query_anchors SET embedding=?", (pack_chunk_embedding([0.0, 1.0]),))
         assert_parity(warm, [0.0, 1.0], [a.id])
+        assert builder._corpus_revision() != before
         original = reader.get_query_anchor(a.id)
     with MemoryStore(path) as store:
         assert store.get_query_anchor(a.id) == original

@@ -215,7 +215,8 @@ def test_v6_database_migrates_leaving_nodes_and_connections_ddl_identical(
         assert _table_sql(store, "nodes") == LIVE_NODES_DDL
         assert _table_sql(store, "connections") == LIVE_CONNECTIONS_DDL
         anchor_tables = store.connection.execute(
-            "SELECT COUNT(*) AS count FROM sqlite_master WHERE name LIKE 'query_anchor%'"
+            "SELECT COUNT(*) AS count FROM sqlite_master "
+            "WHERE type = 'table' AND name LIKE 'query_anchor%'"
         ).fetchone()
         assert int(anchor_tables["count"]) == 2
 
