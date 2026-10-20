@@ -357,9 +357,8 @@ def test_matrix_is_reused_across_recalls_that_write(
 ) -> None:
     """The corpus is scanned once, not once per recall.
 
-    A recall writes -- access counts and a recall event -- so the cheap
-    "anything changed at all" probe moves every time. The chunk-table revision
-    is what keeps those writes from throwing away the matrix.
+    A recall writes access counts and a recall event. Neither changes the
+    corpus revision, so both leave the cached matrix reusable.
     """
 
     put_chunks(store, add_node(store, "alpha", ORTHOGONAL), [PARTIAL, QUERY_VECTOR])
@@ -389,10 +388,8 @@ def test_cache_does_not_serve_a_vector_whose_content_changed(
 ) -> None:
     """A re-embed after an edit must be visible to the very next recall.
 
-    The old per-node dictionary was never invalidated, so it kept answering
-    with the vector of text the node no longer contained. Both invalidation
-    shapes are exercised: chunks replaced in place (same row count, so only the
-    chunk-id half of the revision moves) and chunks dropped.
+    Both invalidation shapes are exercised: chunks replaced with the same row
+    count and chunks dropped. Both change the transactional corpus revision.
 
     Concept nodes, because trace content is append-only in storage -- which is
     also where the live staleness comes from: consolidation rewrites concepts.
@@ -424,9 +421,8 @@ def test_cache_does_not_serve_a_vector_whose_content_changed(
 def test_cache_notices_chunks_written_by_another_connection(tmp_path: Path) -> None:
     """A second process writing chunks invalidates this service's matrix.
 
-    ``total_changes`` only counts this connection's writes; the other half of
-    the cheap probe, ``PRAGMA data_version``, is what covers the backfill
-    script running against the same file as the server.
+    Storage's corpus revision covers a backfill writer using a different
+    connection to the same file as the server.
     """
 
     path = tmp_path / "memory.sqlite3"

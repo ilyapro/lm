@@ -7,8 +7,9 @@ import pytest
 
 from living_memory import retrieval
 from living_memory.decay import memory_forget
+from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.retrieval import MemoryRecallService
-from living_memory.storage import MemoryStore
+from living_memory.storage import MemoryStore, pack_chunk_embedding
 
 
 QUERY = "orbital telemetry drift"
@@ -117,3 +118,59 @@ def test_bookkeeping_keeps_cached_matrices(stores):
     for _ in range(3):
         assert recall(warm)[0].node.id == node_id
         assert all(warm._chunk_index[scope] is index for scope, index in cached.items())
+
+
+def test_embedding_update_with_unchanged_chunk_ids(stores):
+    reader, writer = stores
+    node_id = add_node(writer, "cobalt prism", similarity=0.0)
+    warm = service(reader)
+    assert recall(warm) == []
+    with writer.connection:
+        writer.connection.execute(
+            "UPDATE node_chunk_embeddings SET embedding = ? WHERE node_id = ?",
+            (pack_chunk_embedding(VECTOR), node_id),
+        )
+    assert_same_knowledge(recall(warm), recall(service(reader)), [node_id])
+
+
+def test_membership_revision_rolls_back_with_mutation(stores):
+    reader, writer = stores
+    node_id = add_node(writer, "cobalt prism")
+    before = reader.chunk_corpus_revision()
+    writer.connection.execute("UPDATE nodes SET decayed = 1 WHERE id = ?", (node_id,))
+    assert writer.chunk_corpus_revision() > before
+    writer.connection.rollback()
+    assert reader.chunk_corpus_revision() == writer.chunk_corpus_revision() == before
+    assert not reader.get_node(node_id).decayed
+
+
+def test_existing_database_gains_revision_without_changing_memory(tmp_path):
+    path = tmp_path / "memory.sqlite3"
+    with MemoryStore(path) as store:
+        node_id = add_node(store, "cobalt prism")
+        # Model an existing file without the additive revision objects.
+        with store.connection:
+            for name in ("insert", "delete", "update", "membership"):
+                store.connection.execute(f"DROP TRIGGER chunk_corpus_{name}")
+            store.connection.execute("DELETE FROM metadata WHERE key = 'chunk_corpus_revision'")
+        original = store.get_node(node_id)
+        chunks = list(store.iter_chunk_embedding_rows())
+
+    with ReadOnlyAuditStore.open_path(path) as reader:
+        assert reader.chunk_corpus_revision() is None
+        warm = service(reader)
+        assert_same_knowledge(recall(warm), recall(service(reader)), [node_id])
+        cached = warm._chunk_index["global"]
+        recall(warm)
+        assert warm._chunk_index["global"] is not cached
+
+    with MemoryStore(path) as migrated:
+        assert migrated.get_node(node_id) == original
+        assert list(migrated.iter_chunk_embedding_rows()) == chunks
+        before = migrated.chunk_corpus_revision()
+        assert before is not None
+        memory_forget(migrated, node_id)
+        after = migrated.chunk_corpus_revision()
+        assert after > before
+    with MemoryStore(path) as reopened:
+        assert reopened.chunk_corpus_revision() == after

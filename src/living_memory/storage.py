@@ -4630,8 +4630,8 @@ class MemoryStore:
         and freshness and never rewrites the stored vector, exactly so that the
         cached matrix survives the most frequent write on the anchor path.
 
-        ``MAX(updated_at)`` is absent: ``updated_at`` is in no index, so that aggregate would
-        scan the table, embedding BLOBs included. Two statements rather than
+        ``MAX(updated_at)`` is absent: ``updated_at`` is in no index, so that
+        aggregate would scan the table, embedding BLOBs included. Two statements rather than
         one for the same reason as well — folding them gives up both index fast
         paths.
         """

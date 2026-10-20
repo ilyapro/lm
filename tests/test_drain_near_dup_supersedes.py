@@ -750,13 +750,7 @@ def test_the_cached_chunk_index_still_matches_the_database(
 def test_the_next_recall_reuses_the_cache_the_collapse_left_behind(
     store: MemoryStore, collapse_on: None
 ) -> None:
-    """The write moves ``total_changes``, and that must cost only a probe.
-
-    ``_chunk_corpus_revision``'s tier one (total_changes, data_version) is
-    deliberately not trusted across writes, but tier two asks the chunk table
-    itself -- which this pass never touched -- so the revision comes back
-    unchanged and the 60k-row matrix is not thrown away for an edge insert.
-    """
+    """An edge insert leaves the corpus revision and cached matrix unchanged."""
 
     established(store, "alpha drift measured at three units")
     unvectorized(store, "alpha drift measured at 3 units")
