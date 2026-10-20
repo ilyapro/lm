@@ -251,6 +251,7 @@ def _as_count(value: Any) -> int:
 def _clusters_of(payload: Any) -> tuple[Sequence[Any], bool]:
     """The cluster list of one persisted payload, and whether it held back.
 
+    Curtailment held back the map even when the pool was not computed.
     ``more`` is what the builder dropped to fit the response budget, and
     ``covered < pool`` is what the cascade never clustered at all. Both mean
     the same thing here — the row was not the whole picture — and neither
@@ -262,9 +263,11 @@ def _clusters_of(payload: Any) -> tuple[Sequence[Any], bool]:
     clusters = payload.get("clusters")
     if not isinstance(clusters, Sequence) or isinstance(clusters, (str, bytes)):
         return (), True
-    held_back = _as_count(payload.get("more")) > 0 or _as_count(
-        payload.get("covered")
-    ) < _as_count(payload.get("pool"))
+    held_back = (
+        bool(payload.get("curtailed"))
+        or _as_count(payload.get("more")) > 0
+        or _as_count(payload.get("covered")) < _as_count(payload.get("pool"))
+    )
     return clusters, held_back
 
 

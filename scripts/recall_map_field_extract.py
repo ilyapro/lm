@@ -350,7 +350,7 @@ def largest_fitting_example(payload: dict[str, Any], contents: dict[str, str]) -
     so both answers are the builder's own arithmetic rather than an estimate.
     """
 
-    pool = int(payload.get("pool", 0))
+    pool = payload.get("pool")
     dropped = int(payload.get("more", 0))
     entries = payload.get("clusters", [])
     observed_size = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
@@ -467,7 +467,7 @@ def build_case(
         "curtailed": bool(payload and payload.get("curtailed")),
         "cluster_count": len(clusters),
         "clusters": clusters,
-        "pool_size": int(payload.get("pool", 0)) if payload else 0,
+        "pool_size": payload.get("pool") if payload else None,
         "covered": int(payload.get("covered", 0)) if payload else 0,
         "dropped": int(payload.get("more", 0)) if payload else 0,
         "head_node_ids": head_ids(row),

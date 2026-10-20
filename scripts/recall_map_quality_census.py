@@ -166,10 +166,10 @@ class MapRecord:
     created_at: str
     clusters: int
     curtailed: bool
-    pool: int
+    pool: int | None
     #: ``None`` for a map with no cluster: an empty label set is not a label set.
     label_digest: str | None
-    #: ``None`` when the payload predates ``sel``. NOT zero — see the docstring.
+    #: ``None`` when selection was not recorded or computed; never zero.
     sel_inspected: int | None
     sel_admitted: int | None
     sel_excluded: tuple[int, ...] | None
@@ -299,7 +299,7 @@ def load_records(
                 created_at=str(row["created_at"]),
                 clusters=len(clusters),
                 curtailed=bool(payload.get("curtailed")),
-                pool=pool if isinstance(pool, int) and not isinstance(pool, bool) else 0,
+                pool=pool if isinstance(pool, int) and not isinstance(pool, bool) else None,
                 label_digest=(
                     label_set_digest(labels, salt=salt) if clusters else None
                 ),
@@ -354,10 +354,13 @@ def _cluster_presence(records: list[MapRecord]) -> dict[str, Any]:
             "share_without_clusters": _ratio(uncurtailed_empty, uncurtailed),
         },
         "empty_with_empty_pool": empty_with_empty_pool,
-        "empty_with_non_empty_pool": len(empty) - empty_with_empty_pool,
+        "empty_with_non_empty_pool": sum(
+            1 for record in empty if record.pool is not None and record.pool > 0
+        ),
+        "empty_with_unknown_pool": sum(1 for record in empty if record.pool is None),
         "empty_pool_note": (
-            "a map over an empty residual pool had nothing to describe; the rest "
-            "had members and still delivered none"
+            "an empty pool was measured; a non-empty pool yielded no clusters; "
+            "an absent pool was not measured and belongs to neither count"
         ),
     }
 
@@ -517,8 +520,8 @@ def measure_window(
             "overlap_sel_and_empty_map": empty_with_sel,
             "overlap_sel_and_non_empty_map": sel_carriers - empty_with_sel,
             "why": (
-                "three different denominators over one column: sel arrived after "
-                "the column, so a map without sel is unmeasured, not zero. No "
+                "three different denominators over one column: a map without "
+                "sel is unmeasured, not zero. No "
                 "ratio in this artifact mixes two of these populations."
             ),
         },
@@ -638,8 +641,8 @@ def _sel_epoch(records: list[MapRecord]) -> dict[str, Any]:
             len(records) - before - len(carriers) if first else 0
         ),
         "why": (
-            "sel was added after the column: this is the mechanical reason the "
-            "map denominator and the sel denominator are different populations"
+            "sel is absent from older payloads and from skipped selection; the "
+            "map and sel denominators are different populations"
         ),
     }
 
