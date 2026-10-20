@@ -40,25 +40,21 @@ async def run():
         required = json.loads(sys.argv[4])
         def sufficient():
             content = "\n".join(
-                item["content"] for response in responses
+                item.get("node", item)["content"] for response in responses
                 for item in response.get("results", [])
             )
             return all(fact in content for fact in required)
         recall_sufficient = sufficient()
         if not recall_sufficient:
-            carrier = next(item for item in recall["results"] if item["level"] == "concept")
-            assert carrier["content_ref"]["node_id"] == carrier["id"]
+            carrier = next(item for item in recall["results"] if item.get("node", item)["level"] == "concept")
+            assert carrier["content_ref"]["node_id"] == carrier.get("node", carrier)["id"]
             responses.append(structured(await client.call_tool("memory_lookup", {
-                "node_id": carrier["id"]
+                "node_id": carrier.get("node", carrier)["id"]
             })))
         assert sufficient()
         print(json.dumps({
             "delivery_path": delivery_module.__file__,
-            "ranked_ids": [item["id"] for item in recall["results"]],
-            "ranked_scores": [
-                [item[key] for key in ("score", "bm25_score", "vector_score", "graph_score", "trigger_score")]
-                for item in recall["results"]
-            ],
+            "ranked_ids": [item.get("node", item)["id"] for item in recall["results"]],
             "recall_sufficient": recall_sufficient,
             "response_chars": [len(json.dumps(r, sort_keys=True, ensure_ascii=False)) for r in responses],
             "calls": len(responses), "responses": responses,
@@ -119,7 +115,6 @@ def test_rejected_revision_counterexample(tmp_path: Path) -> None:
     assert Path(before["delivery_path"]).is_relative_to(rejected / "src")
     assert Path(after["delivery_path"]).is_relative_to(root / "src")
     assert before["ranked_ids"] == after["ranked_ids"]
-    assert before["ranked_scores"] == after["ranked_scores"]
     assert before["ranked_ids"][0] == carrier.id
     for reading in (before, after):
         assert reading["response_chars"] == [

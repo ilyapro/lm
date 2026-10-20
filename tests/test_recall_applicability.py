@@ -151,11 +151,11 @@ def test_short_instruction_and_cross_project_fact_survive_public_read_chain(
                 "max_results": 4,
             })
             recall = response.structured_content or json.loads(response.content[0].text)
-            ids = [item["node"]["id"] for item in recall["results"]]
+            ids = [item["id"] for item in recall["results"]]
             assert instruction.id in ids and source.id in ids
             assert all(node.id in ids for node in supporting)
             assert not any(carrier.id in ids for carrier in carriers)
-            entry = next(item for item in recall["results"] if item["node"]["id"] == instruction.id)
+            entry = next(item for item in recall["results"] if item["id"] == instruction.id)
             assert entry["content_ref"]["node_id"] == instruction.id
             lookup_response = await client.call_tool("memory_lookup", {"node_id": entry["content_ref"]["node_id"]})
             lookup = lookup_response.structured_content or json.loads(lookup_response.content[0].text)
