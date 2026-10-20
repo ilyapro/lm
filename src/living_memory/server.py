@@ -13,7 +13,7 @@ import inspect
 from pathlib import Path
 from threading import RLock, Timer
 from types import CodeType, FunctionType, ModuleType
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 import hashlib
 import json
@@ -39,13 +39,12 @@ from living_memory.consolidation import (
 )
 from living_memory.decay import apply_decay
 from living_memory.delivery import (
-    DEFAULT_PROVENANCE_VALUE_MAX_CHARS,
-    _compact_corrections,
     DELIVERY_NEAR_DUPLICATE,
     DELIVERY_SESSION_DUPLICATE,
     DELIVERY_TWIN_DUPLICATE,
     context_value_max_chars_from_env,
     full_node_diet_enabled_from_env,
+    knowledge_node,
     near_dup_cosine_from_env,
     near_dup_length_ratio_from_env,
     provenance_value_max_chars_from_env,
@@ -1408,6 +1407,15 @@ def _register_tools(
         ambient_context: dict[str, Any] | None = None,
         used: _MarkIds = None,
         irrelevant: _MarkIds = None,
+        view: Annotated[
+            Literal["knowledge", "full"],
+            Field(description=(
+                "knowledge returns flat content, identity, validity, delivery and "
+                "content_ref. full returns diagnostic node wrappers, context and "
+                "ranking scores with delivery compaction; memory_lookup by id "
+                "with context_key or view='full' restores original metadata."
+            )),
+        ] = "knowledge",
     ) -> dict[str, Any]:
         """Retrieve relevant memory nodes using scope, text, vector, and graph signals.
 
@@ -1423,13 +1431,14 @@ def _register_tools(
         lower-ranked bearers get descending budgets. Oversized content is
         selected for the query, while short content and binding schemas stay
         complete.
-        Non-full results add a ``content_ref`` whose ``node_id`` fed to
-        ``memory_lookup`` returns complete content and validity. Every delivery is
-        dieted on the wire — oversized context/provenance values compacted to
-        counts/truncations, bookkeeping stats and zero/null fields dropped —
-        and ``memory_lookup(node_id=...)`` restores full content and validity;
-        ``view="full"`` restores the complete stored node
-        (``LM_DELIVERY_*`` env valves roll each cut back).
+        The default ``view="knowledge"`` returns flat knowledge records with
+        identity, content, correction/supersedes provenance and decay validity.
+        Each includes ``delivery`` and a ``content_ref`` for complete content
+        via ``memory_lookup``. ``view="full"`` returns diagnostic node wrappers
+        with ranking scores and compacted context/provenance/stats. Original
+        metadata is available through exact-id lookup's ``context_key`` or
+        ``view="full"``. Both recall views use the same retrieval and delivery
+        selection and keep all envelope fields, including warnings and maps.
 
         When the ranked candidate pool holds more than the delivered results,
         an additive top-level ``recall_map`` describes the *residual*: a
@@ -1444,6 +1453,8 @@ def _register_tools(
         carries a ``feedback_marks`` summary.
         """
 
+        if view not in ("knowledge", "full"):
+            raise ValueError("view must be 'knowledge' or 'full'")
         ambient_context = _with_transport_identity(ambient_context)
         raw_transport_id = (ambient_context or {}).get(_TRANSPORT_SESSION_KEY)
         # Mirror storage's stamping (str() of any non-None value) so the dedup
@@ -1506,6 +1517,7 @@ def _register_tools(
                 store.mark_recall_event_gated(recall_service.last_recall_event_id)
             shaped = shape_recall_results(
                 results,
+                view=view,
                 query=query,
                 already_delivered_ids=already_delivered,
                 snippet_max_chars=snippet_max_chars_from_env(),
@@ -1689,23 +1701,7 @@ def _register_tools(
                     if view == "full":
                         results.append(node)
                         continue
-                    provenance = node["provenance"]
-                    validity = {
-                        "corrections": _compact_corrections(
-                            provenance["corrections"], DEFAULT_PROVENANCE_VALUE_MAX_CHARS
-                        )
-                    }
-                    if "supersedes" in provenance:
-                        validity["supersedes"] = provenance["supersedes"]
-                    knowledge = {
-                        "id": node["id"],
-                        "level": node["level"],
-                        "content": node["content"],
-                        "scope": node["scope"],
-                        "provenance": validity,
-                        "decayed": node["decayed"],
-                        "decay_reason": node["decay_reason"],
-                    }
+                    knowledge = knowledge_node(node)
                     if context_key is not None:
                         knowledge["context"] = (
                             {context_key: node["context"][context_key]}

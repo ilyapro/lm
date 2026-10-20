@@ -331,6 +331,7 @@ def shape_recall_results(
     sparse_entries: bool = True,
     duplicate_of: Mapping[str, str] | None = None,
     query: str | None = None,
+    view: str = "full",
 ) -> list[dict[str, Any]]:
     """Render ranked recall results, deduplicating, snippeting, and dieting.
 
@@ -354,6 +355,9 @@ def shape_recall_results(
     ``duplicate_of``; identical inputs produce identical output. Output order
     matches input order.
     """
+
+    if view not in ("knowledge", "full"):
+        raise ValueError("view must be 'knowledge' or 'full'")
 
     bearer_by_content: dict[str, str] = {}
     # A withheld result's text is not delivered, so it bears nothing.
@@ -409,6 +413,17 @@ def shape_recall_results(
             else:
                 delivery = DELIVERY_FULL
 
+        if view == "knowledge":
+            entry = knowledge_node(node_dict)
+            entry["delivery"] = delivery
+            entry["content_ref"] = {"node_id": node_id}
+            if delivery != DELIVERY_FULL:
+                entry["content_ref"]["full_content_chars"] = full_chars
+            if stub_bearer is not None:
+                entry["content_ref"]["duplicate_of"] = stub_bearer
+            shaped.append(entry)
+            continue
+
         dieted_full = False
         if delivery != DELIVERY_FULL:
             node_dict["provenance"] = _compact_provenance(
@@ -449,6 +464,32 @@ def shape_recall_results(
             _sparsify_entry(entry)
         shaped.append(entry)
     return shaped
+
+
+def knowledge_node(node: dict[str, Any]) -> dict[str, Any]:
+    """Content, identity and validity shared by recall and exact-id lookup.
+
+    Correction entries retain their keys and short values; long correction
+    texts carry a bounded gist. Lookup's full view restores stored details.
+    """
+
+    provenance = node["provenance"]
+    validity = {
+        "corrections": _compact_corrections(
+            provenance["corrections"], DEFAULT_PROVENANCE_VALUE_MAX_CHARS
+        )
+    }
+    if "supersedes" in provenance:
+        validity["supersedes"] = provenance["supersedes"]
+    return {
+        "id": node["id"],
+        "level": node["level"],
+        "content": node["content"],
+        "scope": node["scope"],
+        "provenance": validity,
+        "decayed": node.get("decayed", False),
+        "decay_reason": node.get("decay_reason"),
+    }
 
 
 def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
