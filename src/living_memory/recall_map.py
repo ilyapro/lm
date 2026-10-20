@@ -2927,8 +2927,8 @@ class RecallMap:
     #: The cache key this map was built or served under.
     key: str
     clusters: tuple[MapCluster, ...]
-    #: Members of the residual pool the map considered.
-    pool_size: int
+    #: Members considered, or None when curtailment skipped pool construction.
+    pool_size: int | None
     #: Members the clusters actually account for.
     covered: int
     #: Clusters the caps dropped. Reported, never silent.
@@ -2954,15 +2954,16 @@ class RecallMap:
     #: went quiet and how long it has been quiet for.
     streak: int = 0
     #: Member eligibility and relevance selection, computed before clustering.
-    #: It travels with every inspected residual so no later layer has to
+    #: None means selection was not computed. It travels with every inspected
+    #: residual so no later layer has to
     #: reconstruct unconditional counts from the capped pool.
     selection: SelectionAccounting | None = None
     #: Optional ``q`` examples that survived the response budget.  The core is
     #: never conditional; only these identity-free examples may be removed.
     selection_sample_limit: int = SELECTION_SAMPLE_LIMIT
     #: ``(g, k)`` of the cold exploration lane — cold-eligible candidates
-    #: examined and cold clusters delivered — present exactly when the cold
-    #: valve pair is armed, even at ``(0, 0)``: an armed-and-idle lane and an
+    #: examined and cold clusters delivered — present when selection ran and
+    #: the cold valve pair is armed, even at ``(0, 0)``: an armed-and-idle lane and an
     #: unarmed lane are different facts and the wire must not spell them the
     #: same way. ``None`` (the valves-off value) emits nothing, so absence of
     #: the lane stays encoded exactly one way.
@@ -4433,23 +4434,11 @@ class RecallMapBuilder:
         batch sees one boundary. Supplying it is useful for deterministic
         replay; production callers omit it and receive the current UTC instant.
 
-        A key whose last :data:`CURTAIL_STREAK` maps were delivered and never
-        followed gets the collapsed form instead — clusters empty, ``curtailed``
-        set, the streak carried — and gets it *before* any clustering runs, so
-        a channel nobody reads also stops costing what it costs to fill. With
-        :data:`CURTAIL_DECAY_GATE_ENV` armed a collapsed key that has served
-        its skip run (:attr:`_Curtailment.retry_due`) rebuilds its pool and,
-        only if the pool moved since the key last looked (:meth:`_reoffer`),
-        builds a full map again instead of the marker; a map that comes back
-        with nothing deliverable in it is persisted as a marker too, carrying
-        the new baseline. Nothing else on either path moves.
-
-        With :data:`POOL_DEMOTION_GATE_ENV` armed the curtail verdict is read
-        *before* the pool instead of after it, because the gate needs the
-        ask-echo probe that read already computes. Nothing else moves: the
-        read is the same read behind the same memo, the verdict is carried
-        forward rather than asked for twice, and with the valve unset the
-        order below is untouched.
+        Curtailment decides whether to offer before constructing the pool.
+        The pool is built at most once: for an offer, the initial digest, or
+        a due retry. A skipped build carries no pool or selection counts.
+        Digest baselines and empty retries use the same persisted history as
+        the curtail counters, including across restarts.
         """
 
         self.last_cache_hit = False
@@ -4458,43 +4447,53 @@ class RecallMapBuilder:
             return None
 
         instant = decision_at if decision_at is not None else datetime.now(UTC)
-        # Hoisted above `_pool` so the gate can be handed this key's evidence.
-        # Pure string work on arguments already in hand — no read, no cache
-        # touch — so an unarmed build computes exactly what it always did, in
-        # a different order that nothing downstream can observe.
         map_scope = (
             normalize_scope(scope) if scope else _dominant_residual_scope(results)
         )
         key = cache_key(map_scope, task=task, task_pattern=task_pattern)
         demote_after = pool_demotion_windows_from_env()
         cold_slots = pool_cold_slots_from_env()
-        # The capture list exists only when the pair is armed, so the unarmed
-        # `_pool` call carries `None` and the capture branch never runs.
         cold_rows: list[tuple[int, Node, Any, Any]] | None = (
             [] if cold_slots is not None else None
         )
-        curtailment: _Curtailment | None = None
-        ask_followed: frozenset[str] = frozenset()
-        if demote_after is not None:
-            # One consequence of asking early is worth naming rather than
-            # discovering: a build whose pool comes back empty now seeds a
-            # curtail memo where it previously seeded none, so `_note_delivery`
-            # counts it. That is the honest count — the build did deliver, and
-            # it did offer nothing — and it cannot cause a collapse, because a
-            # collapse is decided by `offers`, which an empty pool never
-            # advances. It can only make the reported streak estimate less of
-            # an undercount.
-            curtailment = self._curtailment(
-                map_scope, task, task_pattern, want_ask_follows=True
-            )
-            ask_followed = self.last_ask_follows
-        pool, selection = self._pool(
-            results,
-            decision_at=instant,
-            demote_after=demote_after,
-            ask_followed=ask_followed,
-            cold_rows=cold_rows,
+        curtailment = self._curtailment(
+            map_scope, task, task_pattern,
+            want_ask_follows=demote_after is not None,
         )
+        self.last_curtailment = curtailment
+        pool: list[_Member] | None = None
+        selection: SelectionAccounting | None = None
+        cold_candidates: list[tuple[int, Node, Any, dict[str, float]]] | None = None
+
+        def ensure_pool() -> list[_Member]:
+            nonlocal pool, selection
+            if pool is None:
+                pool, selection = self._pool(
+                    results,
+                    decision_at=instant,
+                    demote_after=demote_after,
+                    ask_followed=self.last_ask_follows,
+                    cold_rows=cold_rows,
+                )
+            return pool
+
+        def digest() -> str:
+            nonlocal cold_candidates
+            members = ensure_pool()
+            if cold_rows is not None and cold_candidates is None:
+                cold_candidates = self._cold_candidates(cold_rows)
+            return self._pool_digest(members, cold_rows, candidates=cold_candidates)
+
+        offer, pool_digest = self._reoffer(curtailment, digest)
+        if not offer and pool is None:
+            self._note_delivery(map_scope, task, task_pattern, offered=False)
+            return self._collapsed(
+                map_scope, key, pool_size=None, streak=curtailment.streak,
+                selection=None, cold=None, pool_digest=None,
+            )
+
+        pool = ensure_pool()
+        assert selection is not None
         if not pool:
             # A non-empty residual that policy filtered completely is evidence,
             # not the same event as an empty residual.  It offered no cluster
@@ -4526,43 +4525,20 @@ class RecallMapBuilder:
                 ),
             )
             if cold_slots is not None:
-                # The one path that never computed a curtail verdict, so the
-                # lane asks for it itself before delivering anything.
-                built = self._with_cold_lane(
-                    built,
-                    cold_rows or (),
-                    slots=cold_slots,
-                    scope=map_scope,
-                    task=task,
-                    task_pattern=task_pattern,
-                    read_curtailment=True,
-                )
+                if offer:
+                    built = self._with_cold_lane(
+                        built, cold_rows or (), slots=cold_slots,
+                        candidates=cold_candidates,
+                    )
+                else:
+                    built = replace(built, cold=(0, 0))
+            if not built.clusters:
+                built = replace(built, pool_digest=pool_digest)
             self._note_delivery(
                 map_scope, task, task_pattern, offered=bool(built.clusters)
             )
             return built
 
-        if curtailment is None:
-            curtailment = self._curtailment(map_scope, task, task_pattern)
-        self.last_curtailment = curtailment
-
-        # The lane's eligible candidates, computed at most once per build: the
-        # pool digest needs them on a collapsed key, the lane needs them when
-        # it runs, and the probe behind them is a read.
-        cold_candidates: list[tuple[int, Node, Any, dict[str, float]]] | None = None
-
-        def digest() -> str:
-            nonlocal cold_candidates
-            if cold_rows is not None and cold_candidates is None:
-                cold_candidates = self._cold_candidates(cold_rows)
-            return self._pool_digest(pool, cold_rows, candidates=cold_candidates)
-
-        # The decay valve can only turn a collapse into a retry, never the
-        # reverse, so an unarmed build takes exactly the frozen branch and
-        # never computes a digest. A retry that delivers is a plain map: the
-        # next read sees it as the newest offer, zero lead, and the skip run
-        # starts over — doubled, if it too goes unconsumed.
-        offer, pool_digest = self._reoffer(curtailment, digest)
         if not offer:
             self._note_delivery(map_scope, task, task_pattern, offered=False)
             return self._collapsed(
@@ -4606,10 +4582,6 @@ class RecallMapBuilder:
                 built,
                 cold_rows or (),
                 slots=cold_slots,
-                scope=map_scope,
-                task=task,
-                task_pattern=task_pattern,
-                read_curtailment=False,
                 candidates=cold_candidates,
             )
         if built is not None and pool_digest is not None and not built.clusters:
@@ -4969,10 +4941,6 @@ class RecallMapBuilder:
         cold_rows: Sequence[tuple[int, Node, Any, Any]],
         *,
         slots: int,
-        scope: str,
-        task: str | None,
-        task_pattern: str | None,
-        read_curtailment: bool,
         candidates: list[tuple[int, Node, Any, dict[str, float]]] | None = None,
     ) -> RecallMap:
         """Append the lane's outcome to a built map, warm bytes untouched.
@@ -4980,18 +4948,8 @@ class RecallMapBuilder:
         The warm cluster list, counts, ``sel`` core and sample budget were all
         settled before this runs, so with the valves armed the only changes
         are the appended marked clusters and the ``c`` key — the additive
-        contract in its constructive form. ``read_curtailment`` asks for the
-        unread-collapse verdict on the one path that never computed it (the
-        empty-pool build): on a key the machinery would collapse, the lane
-        does not run and an armed build reports ``c = [0, 0]``, because the
-        collapse defense binds cold content exactly as warm — including the
-        decay reprieve, which reopens the lane on the same delivery it would
-        reopen a warm map, and the pool-aware look that precedes it: on this
-        path the pool is the lane's eligible candidates, and a served run that
-        finds them unchanged states ``c = [0, 0]`` and the digest, delivering
-        nothing. The wire on this path never carries ``curtailed`` — the
-        collapse machinery issued no such verdict for an empty pool — so the
-        digest rides the empty map exactly as it rides a marker.
+        contract in its constructive form. The caller has already decided to
+        offer and supplies any candidates computed for the pool digest.
 
         Appended cold examples are shrunk — cold examples only, never a warm
         byte — towards :data:`MAX_RESPONSE_CHARS`; if even bare clusters
@@ -5000,19 +4958,6 @@ class RecallMapBuilder:
         under.
         """
 
-        pool_digest = built.pool_digest
-        if read_curtailment:
-            verdict = self._curtailment(scope, task, task_pattern)
-
-            def digest() -> str:
-                nonlocal candidates
-                if candidates is None:
-                    candidates = self._cold_candidates(cold_rows)
-                return self._pool_digest((), cold_rows, candidates=candidates)
-
-            offer, pool_digest = self._reoffer(verdict, digest)
-            if not offer:
-                return replace(built, cold=(0, 0), pool_digest=pool_digest)
         examined, cold_clusters = self._cold_lane(
             cold_rows,
             slots=slots,
@@ -5020,7 +4965,7 @@ class RecallMapBuilder:
             candidates=candidates,
         )
         if not cold_clusters:
-            return replace(built, cold=(examined, 0), pool_digest=pool_digest)
+            return replace(built, cold=(examined, 0))
 
         outcome = (examined, len(cold_clusters))
         filtered = _filter_block(
@@ -5581,7 +5526,7 @@ class RecallMapBuilder:
 
         ``(True, None)`` is an open key: a map, and nothing to persist.
         ``(False, None)`` is the frozen collapse — the valve unset, or an
-        armed key inside its skip run — the marker exactly as it always was.
+        armed key inside its skip run — no pool construction or accounting.
         The other two shapes are the valve's. ``(False, digest)`` is a marker
         that carries the pool's digest: the first marker after an offer,
         which records the baseline, or a served skip run whose rebuilt pool
@@ -5592,11 +5537,9 @@ class RecallMapBuilder:
         the full map, and should it come back with nothing deliverable in it,
         persist the digest on the marker as the new baseline.
 
-        ``digest`` is a thunk because computing it is the one new cost — the
-        anchor lookups and the cold-lane ledger probe — and the frozen branch
-        must not pay it: with the valve unset this method returns before
-        calling it, so an unarmed build is byte-identical to the frozen one.
-        The valve is read here and nowhere else on the collapse path.
+        ``digest`` constructs the pool lazily, then reads its anchors and
+        cold-lane candidates. Only an initial baseline or a due retry invokes
+        it. The valve is read here and nowhere else on the collapse path.
         """
 
         if not verdict.collapse:
@@ -5615,9 +5558,9 @@ class RecallMapBuilder:
         scope: str,
         key: str,
         *,
-        pool_size: int,
+        pool_size: int | None,
         streak: int,
-        selection: SelectionAccounting,
+        selection: SelectionAccounting | None,
         cold: tuple[int, int] | None,
         pool_digest: str | None,
     ) -> RecallMap:
@@ -5632,7 +5575,7 @@ class RecallMapBuilder:
             curtailed=True,
             streak=streak,
             selection=selection,
-            selection_sample_limit=_selection_sample_limit(
+            selection_sample_limit=0 if selection is None else _selection_sample_limit(
                 (),
                 pool_size,
                 0,
@@ -6629,7 +6572,7 @@ def _filter_block(
 
 def _payload(
     clusters: Sequence[MapCluster],
-    pool_size: int,
+    pool_size: int | None,
     dropped: int,
     *,
     curtailed: bool = False,
@@ -6646,7 +6589,8 @@ def _payload(
     consumer of a persisted map — the instructions channel, the effect gate,
     this module's own :meth:`RecallMapBuilder._curtailment` — reads one shape
     and reaches the collapse through ``curtailed`` instead of through a
-    ``KeyError``.
+    ``KeyError``. Missing ``pool`` and ``sel`` mean the build skipped that
+    work, not that the corpus or candidate selection was empty.
 
     ``filtered`` is a *sibling* key and never an entry inside ``clusters``.
     That is the hard rule the additive shape rests on: ``_delivered_items`` is
@@ -6658,9 +6602,10 @@ def _payload(
 
     payload: dict[str, Any] = {
         "clusters": [cluster.to_dict() for cluster in clusters],
-        "pool": pool_size,
-        "covered": sum(cluster.count for cluster in clusters),
     }
+    if pool_size is not None:
+        payload["pool"] = pool_size
+    payload["covered"] = sum(cluster.count for cluster in clusters)
     if dropped > 0:
         payload["more"] = dropped
     if filtered:
@@ -6687,7 +6632,7 @@ def _payload(
 
 def _selection_sample_limit(
     clusters: Sequence[MapCluster],
-    pool_size: int,
+    pool_size: int | None,
     dropped: int,
     filtered: Mapping[str, Any] | None = None,
     *,
@@ -6720,7 +6665,7 @@ def _selection_sample_limit(
 
 def _payload_size(
     clusters: Sequence[MapCluster],
-    pool_size: int,
+    pool_size: int | None,
     dropped: int,
     filtered: Mapping[str, Any] | None = None,
     *,
