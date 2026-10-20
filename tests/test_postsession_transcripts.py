@@ -39,6 +39,7 @@ from living_memory.postsession.transcripts import (  # noqa: E402
     Roots,
     discover_transcripts,
     load_transcript,
+    parse_recall_payload,
     render_structured_patch,
     repo_root,
 )
@@ -176,6 +177,35 @@ def test_unknown_source_is_rejected(roots: Roots) -> None:
 # --------------------------------------------------------------------------
 # claude
 # --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("wrapped", [False, True], ids=["knowledge", "diagnostic"])
+@pytest.mark.parametrize("delivery", [
+    "full", "snippet", "session_duplicate", "twin_duplicate", "near_duplicate",
+])
+def test_recall_views_preserve_transcript_knowledge_and_content_completeness(
+    wrapped: bool, delivery: str,
+) -> None:
+    node = {
+        "id": "01KNOWLEDGEFACT", "content": "The dial setting is 17.",
+        "level": "trace", "scope": "project:demo",
+    }
+    entry = {"node": node, "score": 0.123456} if wrapped else dict(node)
+    entry.update({"delivery": delivery, "content_ref": {"node_id": node["id"]}})
+    if delivery != "full":
+        entry["content_ref"]["full_content_chars"] = 4000
+    event_id, delivered = parse_recall_payload({
+        "recall_event_id": "01RECALLEVENT", "results": [entry],
+    })
+    assert event_id == "01RECALLEVENT"
+    assert len(delivered) == 1
+    fact = delivered[0]
+    assert (fact.node_id, fact.content, fact.level, fact.scope, fact.rank) == (
+        node["id"], node["content"], "trace", "project:demo", 0,
+    )
+    assert fact.delivery == delivery
+    assert fact.content_truncated is (delivery != "full")
+    assert fact.score == (0.123456 if wrapped else None)
 
 
 def test_claude_recovers_recall_identifiers(roots: Roots) -> None:
