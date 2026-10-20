@@ -223,8 +223,8 @@ def _read_sel(
     """Read the ``sel`` block, or report its absence as absence.
 
     Returning ``(None, None, None, None)`` for a payload without ``sel`` is the
-    whole point: a payload that predates the block inspected an unknown number
-    of candidates, not zero, and folding it in as zero would inflate the
+    whole point: an older payload or a skipped build has no candidate
+    measurement, and folding it in as zero would inflate the
     admitted fraction's denominator by nothing while inflating its payload
     count by one.
     """

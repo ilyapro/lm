@@ -2955,18 +2955,16 @@ class RecallMap:
     streak: int = 0
     #: Member eligibility and relevance selection, computed before clustering.
     #: None means selection was not computed. It travels with every inspected
-    #: residual so no later layer has to
-    #: reconstruct unconditional counts from the capped pool.
+    #: residual so no later layer reconstructs counts from the capped pool.
     selection: SelectionAccounting | None = None
-    #: Optional ``q`` examples that survived the response budget.  The core is
-    #: never conditional; only these identity-free examples may be removed.
+    #: Optional ``q`` examples that survived the response budget. When
+    #: selection is computed, its core counts always survive fitting.
     selection_sample_limit: int = SELECTION_SAMPLE_LIMIT
     #: ``(g, k)`` of the cold exploration lane — cold-eligible candidates
     #: examined and cold clusters delivered — present when selection ran and
-    #: the cold valve pair is armed, even at ``(0, 0)``: an armed-and-idle lane and an
-    #: unarmed lane are different facts and the wire must not spell them the
-    #: same way. ``None`` (the valves-off value) emits nothing, so absence of
-    #: the lane stays encoded exactly one way.
+    #: the cold valve pair is armed, even at ``(0, 0)``. An armed idle lane
+    #: differs from an unarmed lane. On a skipped build, selection and its
+    #: lane accounting are both absent.
     cold: tuple[int, int] | None = None
     #: Digest of the pool this delivery was decided over (``pd``), present on
     #: exactly the deliveries a decay-armed key uses as a baseline: the first
