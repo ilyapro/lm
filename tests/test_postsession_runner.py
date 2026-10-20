@@ -703,7 +703,7 @@ def test_live_write_scenario_attribution_idempotency_and_ledger_loss(
     event_id = recalled["recall_event_id"]
     assert event_id
     delivered_ids = {
-        (entry.get("node") or {}).get("id") for entry in recalled["results"]
+        entry["id"] for entry in recalled["results"]
     }
     assert original_id in delivered_ids
 
@@ -739,7 +739,7 @@ def test_live_write_scenario_attribution_idempotency_and_ledger_loss(
 
     # Attribution, verified on the server, not in our own bookkeeping.
     for decision in (by_kind["remember"], by_kind["teach"]):
-        fetched = client.lookup_nodes([decision.node_id])["results"]
+        fetched = client.lookup_nodes([decision.node_id], view="full")["results"]
         assert fetched, f"{decision.kind} node exists on the server"
         context = fetched[0]["context"]
         assert context["agent"] == "extractor:claude"
@@ -751,9 +751,9 @@ def test_live_write_scenario_attribution_idempotency_and_ledger_loss(
     def count_extracted_fact_nodes() -> int:
         found = client.recall(EXTRACTED_FACT, scope="project:runner-live", max_results=10)
         ids = [
-            (entry.get("node") or {}).get("id")
+            entry["id"]
             for entry in found["results"]
-            if (entry.get("node") or {}).get("id")
+            if entry["id"]
         ]
         if not ids:
             return 0

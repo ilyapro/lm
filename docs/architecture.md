@@ -66,13 +66,14 @@ without changing the other surface.
    node id already delivered on the same transport session becomes a
    `session_duplicate` stub (the delivered-id set is read from the session's
    recent recall events *before* this call's row is written, so a response
-   never stubs itself), and content over the snippet limit is truncated
-   inline. Stubs and snippets keep the full node key set, compact oversized
-   `context` values (strings truncate at a clean boundary; lists/objects —
-   e.g. a procedural schema's `context.procedure`, which duplicates the whole
-   content — collapse to `{"count", "chars"}`), and carry a `content_ref`
-   pointing at `memory_lookup(node_id=...)`, which restores complete content
-   and validity. `context_key` retrieves one original context field;
+   never stubs itself), and oversized ordinary content becomes a bounded
+   excerpt. Binding schemas remain complete instead of being snippeted.
+   The default `view="knowledge"` serializes identity, content, validity,
+   corrections, delivery class, and `content_ref` directly in each result.
+   `view="full"` includes the ranked `node` wrapper, all score fields, and
+   compacted metadata for diagnostic consumers. Both views point to
+   `memory_lookup(node_id=...)` for complete content and current validity;
+   `context_key` retrieves one original context field and lookup's
    `view="full"` restores the complete stored node. Shaping changes the
    serialized response only — the
    recorded event keeps the unshaped result IDs, and without a transport
