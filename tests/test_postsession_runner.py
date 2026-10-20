@@ -733,7 +733,7 @@ def test_live_write_scenario_attribution_idempotency_and_ledger_loss(
     assert by_kind["teach"].supersedes_edge_id, "teach created a supersedes edge"
     assert by_kind["remember"].status == "written"
     assert by_kind["remember"].node_id
-    assert by_kind["attest"].status == "written"
+    assert by_kind["attest"].status == "written", by_kind["attest"].detail
     assert by_kind["attest"].attestation["grounded"] >= 1
     assert by_kind["attest"].attestation["replay"] is False
 
