@@ -193,27 +193,29 @@ class LiveMemoryClient:
         *,
         scope: str | None = None,
         max_results: int = 8,
+        view: str = "knowledge",
     ) -> dict[str, Any]:
-        arguments: dict[str, Any] = {"query": query, "max_results": max_results}
+        arguments: dict[str, Any] = {
+            "query": query, "max_results": max_results, "view": view,
+        }
         if scope is not None:
             arguments["scope"] = scope
         return self.call("memory_recall", arguments)
 
-    def lookup_nodes(self, node_ids: Sequence[str]) -> dict[str, Any]:
-        return self.call("memory_lookup", {"node_ids": list(node_ids)})
+    def lookup_nodes(
+        self, node_ids: Sequence[str], *, view: str = "knowledge",
+    ) -> dict[str, Any]:
+        return self.call("memory_lookup", {"node_ids": list(node_ids), "view": view})
 
 
 def _entry_node(entry: Any) -> dict[str, Any] | None:
-    """The node dict inside one shaped recall result, tolerant of dieting."""
+    """The node dict inside an explicitly requested diagnostic result."""
 
     if not isinstance(entry, dict):
         return None
     node = entry.get("node")
     if isinstance(node, dict) and node.get("id"):
         return node
-    # Sparse entries may carry only ids at the top level.
-    if entry.get("id") or entry.get("node_id"):
-        return {"id": entry.get("id") or entry.get("node_id")}
     return None
 
 
@@ -223,12 +225,12 @@ class McpMemoryIndex:
     ``candidates`` returns *full* node contents: the delivery diet may snippet
     or stub a recall result, and grading containment against a snippet would
     under-count exactly the long traces most worth deduplicating, so anything
-    not delivered ``full`` is re-fetched through ``memory_lookup``.
+    not delivered ``full`` is re-fetched through ``memory_lookup``. Diagnostic
+    recall supplies timestamps and context; a content_ref also requests the
+    original metadata, since compacted source spans cannot identify an extraction.
 
-    Scope matters here: the server resolves a scope-less recall to the global
-    scope only, so callers must pass the scope the write is aimed at — the
-    server then searches that scope plus global, which is the same view a
-    reader recalling in that project would get. The last
+    Callers pass the scope the write is aimed at so the server searches that
+    scope plus global, matching a reader recalling in that project. The last
     fetch's node contexts are kept on :attr:`last_contexts` so the runner can
     additionally recognise its own earlier extraction of the same span
     (transcript sha + source span match) without a second round trip.
@@ -247,7 +249,7 @@ class McpMemoryIndex:
         wanted = min(limit, self.max_results)
         try:
             delivered = self.client.recall(
-                content[:600], scope=scope, max_results=wanted
+                content[:600], scope=scope, max_results=wanted, view="full",
             )
         except ClientError:
             return ()
@@ -260,11 +262,12 @@ class McpMemoryIndex:
                 continue
             node_id = str(node["id"])
             by_id[node_id] = node
-            if entry.get("delivery") != "full" or not node.get("content"):
+            if (entry.get("delivery") != "full" or entry.get("content_ref")
+                    or not node.get("content")):
                 needs_full.append(node_id)
         if needs_full:
             try:
-                fetched = self.client.lookup_nodes(needs_full)
+                fetched = self.client.lookup_nodes(needs_full, view="full")
             except ClientError:
                 fetched = {}
             for full in fetched.get("results") or []:
