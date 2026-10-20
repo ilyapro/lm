@@ -18,7 +18,7 @@ from living_memory.storage import MemoryStore, pack_chunk_embedding
 
 class FixedEmbedder:
     def embed(self, text):
-        return [1.0, 0.0]
+        return [0.0, 1.0] if text == "restored situation" else [1.0, 0.0]
 
 
 @pytest.fixture(params=["memory", "same-connection", "second-connection"])
@@ -221,6 +221,37 @@ def test_recall_map_tracks_the_anchor_revision(stores):
     assert builder._corpus_revision() != before
 
 
+def test_warm_recall_finds_the_revived_anchors_target(stores):
+    reader, writer = stores
+    a = anchor(writer, "a", [1.0, 0.0])
+    b = anchor(writer, "b", [0.0, 1.0])
+    targets = []
+    for item, content in ((a, "cobalt prism"), (b, "amber cylinder")):
+        node = writer.create_node(
+            level="concept", content=content, context={"scope": "global"},
+            embedding=[0.0, 0.0],
+        )
+        writer.upsert_query_anchor_edge(item.id, node.id, weight=1.0)
+        targets.append(node.id)
+    writer.decay_query_anchor(b.id, "inactive")
+    warm = service(reader)
+
+    def recall(retriever, query):
+        return retriever.memory_recall(
+            query, scope="global", depth=1, log_access=False, log_event=False,
+        )
+
+    assert [r.node.id for r in recall(warm, "past situation")] == [targets[0]]
+    assert recall(warm, "restored situation") == []
+    writer.decay_query_anchor(a.id, "inactive")
+    writer.reinforce_query_anchor(b.id)
+    assert recall(warm, "past situation") == recall(service(reader), "past situation") == []
+    result = recall(warm, "restored situation")
+    assert result == recall(service(reader), "restored situation")
+    assert [r.node.id for r in result] == [targets[1]]
+    assert result[0].graph_score > 0 and result[0].vector_score == result[0].bm25_score == 0
+
+
 def test_existing_database_and_read_only_reader(tmp_path):
     path = tmp_path / "memory.sqlite3"
     with MemoryStore(path) as store:
@@ -279,9 +310,14 @@ def test_anchor_maintenance_allows_only_trigger_revision_writes(stores):
         writer.connection.set_authorizer(None)
 
 
-def test_match_readback_excludes_anchor_decayed_after_scan(stores):
+@pytest.mark.parametrize("mutation", ["decay", "scope"])
+def test_match_readback_excludes_anchor_removed_after_scan(stores, mutation):
     reader, writer = stores
     a = anchor(writer, "a", [1.0, 0.0])
     source = service(reader)._anchor_vector_source()
-    writer.decay_query_anchor(a.id, "inactive")
+    if mutation == "decay":
+        writer.decay_query_anchor(a.id, "inactive")
+    else:
+        with writer.connection:
+            writer.connection.execute("UPDATE query_anchors SET scope='project:elsewhere'")
     assert qa.match_anchors(source, [1.0, 0.0], "global") == []
