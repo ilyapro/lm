@@ -1,10 +1,13 @@
 """Pure recall-delivery shaping: dedup, snippet, and diet ranked recall results.
 
 ``shape_recall_results`` maps ranked :class:`~living_memory.retrieval.RecallResult`
-objects to the response dicts served by ``memory_recall``, keeping the
-per-result key set of the legacy renderer (``node``/``score``/``bm25_score``/
-``vector_score``/``graph_score``/``trigger_score``/``scope_rank``/``methods``/
-``path``/``recall_event_id``) and adding a ``delivery`` class per result.
+objects to delivered knowledge or diagnostics. MCP ``memory_recall`` requests
+``view="knowledge"`` by default: flat identity/content/validity records with
+``delivery`` and ``content_ref``. ``view="full"`` returns diagnostic node
+wrappers and scores. Direct offline callers default to that diagnostic view.
+Both views share all content selection and duplicate rules; the metadata diet
+below applies only to diagnostics. Exact-id lookup uses the same knowledge
+projection and restores original metadata with ``context_key`` or ``view="full"``.
 
 Rules, applied in this order per ranked result:
 
@@ -53,7 +56,7 @@ removes nothing the agent is not already holding — and the drop stays doubly
 opt-in behind ``LM_RECALL_REPEAT_GATING`` and
 ``LM_RECALL_REPEAT_DROP_TRAILING_STUBS``.
 
-Diet, applied per delivered entry (each lever has its own rollback valve):
+Diagnostic diet, applied per full-view entry (each lever has its own valve):
 
 * Stubs and snippets preserve every key of the full node dict
   (``resources.node_to_dict``); ``content`` is never absent — stubs carry a
@@ -335,10 +338,10 @@ def shape_recall_results(
 ) -> list[dict[str, Any]]:
     """Render ranked recall results, deduplicating, snippeting, and dieting.
 
-    New-lever defaults match production defaults; passing
+    Metadata controls apply to ``view="full"``. Passing
     ``snippet_ladder=None, full_node_diet=False, provenance_value_max_chars=0,
-    stats_compaction=False, sparse_entries=False`` restores the legacy
-    (pre-diet-extension) renderer byte-for-byte.
+    stats_compaction=False, sparse_entries=False`` retains diagnostic metadata
+    and score precision without compaction.
 
     ``duplicate_of`` is the finished near-duplicate map — ``{duplicate node id:
     bearer node id}`` — normally produced by

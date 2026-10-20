@@ -116,7 +116,7 @@ def test_mcp_read_lookup_feedback_and_diagnostic_access(tmp_path: Path) -> None:
                 "scope": scope, "task_pattern": "quartz-rotor",
             }))["results"][0]
             assert exact["context"]["task_pattern"] == "quartz-rotor"
-            assert store.get_recall_event(recall["recall_event_id"]).result_node_ids == [original.id]
+            assert store.get_recall_event(recall["recall_event_id"]).result_ids == [original.id]
             assert len(store.list_recall_events()) == 2
 
     asyncio.run(scenario())
