@@ -1,10 +1,8 @@
 """Background runner for the consolidation pass a write makes due.
 
-``memory_remember`` used to run the due pass inline and answer only after it:
-the writer that drew the hundredth trace of a scope waited for a pass whose
-cost grows with the corpus, and every other tool call waited behind the same
-runtime lock. The write path now only *schedules*; one worker thread per server
-runs the passes.
+The write path only schedules; one worker thread per server runs the passes.
+Pending scopes are saved before starting the worker. If it cannot start, a
+later request or server start retries without repeating the knowledge write.
 
 Guarantees:
 
@@ -93,7 +91,11 @@ class AutoConsolidationScheduler:
         one more).
         """
 
-        with self._cond:
+        # Keep the queue hidden from an existing worker until the pending
+        # snapshot is saved. The store's guard always precedes the condition.
+        with self._persist_guard, self._cond:
+            if self._closed:
+                raise RuntimeError("auto-consolidation scheduler is closed")
             already_queued = scope in self._queue
             running = self._running == scope
             if not already_queued:
@@ -102,13 +104,14 @@ class AutoConsolidationScheduler:
                 # A due write overrides a back-off: run as soon as possible.
                 self._queue[scope] = min(self._queue[scope], self._clock())
             self._attempts.pop(scope, None)
-            persist = scope not in self._persisted
-            if persist:
-                self._persisted[scope] = _utc_now()
-            self._ensure_worker()
+            self._persisted.setdefault(scope, _utc_now())
+            # Save coalesced requests too: an earlier save may have failed.
+            # Let failure reach the nonfatal post-commit boundary; no durable
+            # scheduling confirmation can be made in that case.
+            if self._save_pending is not None:
+                self._save_pending(json.dumps(self._persisted, sort_keys=True))
+            worker_started = self._ensure_worker()
             self._cond.notify_all()
-        if persist:
-            self._persist()
         report: dict[str, Any] = {
             "status": "scheduled",
             "scope": scope,
@@ -116,6 +119,8 @@ class AutoConsolidationScheduler:
         }
         if trace_count is not None:
             report["trace_count"] = trace_count
+        if not worker_started:
+            report["worker_start_pending"] = True
         return report
 
     def resume(self) -> list[str]:
@@ -133,6 +138,8 @@ class AutoConsolidationScheduler:
             return []
         scopes = [str(scope) for scope in stored]
         with self._cond:
+            if self._closed:
+                return []
             for scope in scopes:
                 self._persisted.setdefault(scope, str(stored[scope]))
                 self._queue.setdefault(scope, self._clock())
@@ -193,15 +200,25 @@ class AutoConsolidationScheduler:
             for scope, start in self._queue.items()
         )
 
-    def _ensure_worker(self) -> None:
-        if self._closed or (self._thread is not None and self._thread.is_alive()):
-            return
-        self._thread = threading.Thread(
-            target=self._work,
-            name="living-memory-auto-consolidation",
-            daemon=True,
-        )
-        self._thread.start()
+    def _ensure_worker(self) -> bool:
+        if self._closed:
+            return False
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        try:
+            thread = threading.Thread(
+                target=self._work,
+                name="living-memory-auto-consolidation",
+                daemon=True,
+            )
+            thread.start()
+        except Exception:
+            _LOG.warning("could not start auto-consolidation worker; scopes remain pending", exc_info=True)
+            return False
+        # Only started threads may be joined by close(). A failed start leaves
+        # the queue intact for the next request or resume, without a retry loop.
+        self._thread = thread
+        return True
 
     def _next_scope(self) -> str | None:
         """Pop the first ready scope, waiting for one; None once closed."""
