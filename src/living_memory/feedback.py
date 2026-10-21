@@ -596,8 +596,7 @@ def apply_pending_recall_feedback(
     provenance["recalled_nodes"] = recalled_nodes
     provenance["source_traces"] = source_traces
     updated = store.update_node(trace.id, provenance=provenance)
-    # After the trace is durable, so a derived write can never cost the write
-    # it was derived from.
+    # Anchor reinforcement is nonfatal; the caller owns the trace transaction.
     anchor_ids = _reinforce_query_anchors(store, anchor_work)
     return ImplicitRecallFeedback(
         trace=updated,
