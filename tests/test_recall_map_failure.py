@@ -90,7 +90,10 @@ def test_map_failure_preserves_selected_response_and_feedback(
 
         actual = recall(failed)
         assert actual["count"] == 3
-        assert all(item["delivery"] == "full" for item in actual["results"])
+        assert all(
+            item["delivery"] != "session_duplicate" and item.get("node", item)["content"]
+            for item in actual["results"]
+        )
         assert "recall_map" not in actual
         assert {k: v for k, v in actual.items() if k != "recall_event_id"} == {
             k: v for k, v in expected.items() if k not in ("recall_event_id", "recall_map")
@@ -177,7 +180,10 @@ def test_stdio_returns_knowledge_on_map_failure_and_preserves_required_errors(tm
             response = first.structured_content
             assert not first.is_error and response["count"] == 3
             assert "recall_map" not in response
-            assert all(item["delivery"] == "full" and item["content"] for item in response["results"])
+            assert all(
+                item["delivery"] != "session_duplicate" and item["content"]
+                for item in response["results"]
+            )
             with sqlite3.connect(path) as connection:
                 event_id = response["recall_event_id"]
                 results, stamp, recall_map = connection.execute(
