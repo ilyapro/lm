@@ -1152,32 +1152,35 @@ def _register_tools(
                 auto_decay = _decay_sweep_if_due(store)
             except Exception:
                 auto_decay = None
-            if alternatives_considered is None:
-                node = store.append_trace(content, context, feedback=feedback)
-                rejected_alternatives: list[Any] | None = None
-            else:
-                node, rejected_nodes = store.append_trace_with_rejected_alternatives(
-                    content,
-                    context,
-                    feedback=feedback,
-                    alternatives_considered=alternatives_considered,
-                )
-                rejected_alternatives = [rejected.id for rejected in rejected_nodes]
-            # Explicit marks before implicit feedback, so an irrelevant mark
-            # carried on the closing call already keeps its edge out.
-            marks = None
-            if has_explicit_marks(used, irrelevant):
-                marks = apply_explicit_marks(
-                    store,
-                    used,
-                    irrelevant,
-                    via_tool="memory_remember",
-                    source_id=node.id,
-                    transport_session_id=_context_transport(context),
-                    agent=_ambient_text(context, "agent"),
-                )
-            implicit_feedback = apply_pending_recall_feedback(store, node)
-            node = implicit_feedback.trace
+            # Knowledge and required recall feedback have one durable outcome.
+            # Optional marks remain nonfatal, but roll back with a failed write.
+            with store.transaction():
+                if alternatives_considered is None:
+                    node = store.append_trace(content, context, feedback=feedback)
+                    rejected_alternatives: list[Any] | None = None
+                else:
+                    node, rejected_nodes = store.append_trace_with_rejected_alternatives(
+                        content,
+                        context,
+                        feedback=feedback,
+                        alternatives_considered=alternatives_considered,
+                    )
+                    rejected_alternatives = [rejected.id for rejected in rejected_nodes]
+                # Explicit marks before implicit feedback, so an irrelevant mark
+                # carried on the closing call already keeps its edge out.
+                marks = None
+                if has_explicit_marks(used, irrelevant):
+                    marks = apply_explicit_marks(
+                        store,
+                        used,
+                        irrelevant,
+                        via_tool="memory_remember",
+                        source_id=node.id,
+                        transport_session_id=_context_transport(context),
+                        agent=_ambient_text(context, "agent"),
+                    )
+                implicit_feedback = apply_pending_recall_feedback(store, node)
+                node = implicit_feedback.trace
             # Typed-edge derivation (edge_derivation.py go-rules) runs after
             # implicit recall feedback so an R6 reference upsert augments the
             # implicit related edge for the same pair instead of being
@@ -1186,12 +1189,16 @@ def _register_tools(
                 derive_edges_for_new_trace(store, node)
             except Exception:
                 pass
+            try:
+                scheduled = _schedule_auto_consolidation_if_due(
+                    store, auto_consolidation, node.scope
+                )
+            except Exception:
+                scheduled = None
             response = {
                 "node": _remember_node_confirmation(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
-                "auto_consolidation": _schedule_auto_consolidation_if_due(
-                    store, auto_consolidation, node.scope
-                ),
+                "auto_consolidation": scheduled,
                 "auto_decay": auto_decay,
             }
             if rejected_alternatives is not None:
