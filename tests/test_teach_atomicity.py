@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import os
 import sqlite3
+import sys
 
 import pytest
 
@@ -178,50 +180,73 @@ def test_invalid_arguments_leave_no_marks(mcp, invalid):
     assert snapshot(store.db_path) == before
 
 
-def test_http_failure_retry_and_transport_attribution(tmp_path, monkeypatch):
+def test_stdio_failure_retry_and_transport_attribution(tmp_path):
     from fastmcp import Client
-    from test_tls_transport import TOKEN, _serve, _structured
+    from fastmcp.client.transports import StdioTransport
 
-    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
-    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "fixed")
-    with _serve(tmp_path, tls=False) as srv:
-        path = srv["db_path"]
+    path = tmp_path / "stdio.sqlite3"
+    transport = StdioTransport(
+        command=sys.executable,
+        args=["-m", "living_memory.server", "--db", str(path), "--transport", "stdio"],
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+            "LIVING_MEMORY_EMBEDDING_BACKEND": "hash",
+            "LM_EXPLICIT_FEEDBACK_POLICY": "credit",
+            "LM_AUTO_CONSOLIDATE_POLICY": "fixed",
+        },
+    )
 
-        async def scenario():
-            async with Client(f"{srv['base_url']}/mcp/", auth=TOKEN) as client:
-                ids = []
-                for content in CONTENTS:
-                    result = _structured(await client.call_tool("memory_remember", {"content": content, "context": CONTEXT}))
-                    ids.append(result["node"]["id"])
-                recall = _structured(await client.call_tool("memory_recall", {
-                    "query": "Harbor calibration crane procedure", "scope": CONTEXT["scope"],
-                    "ambient_context": CONTEXT, "max_results": 2, "depth": 0,
-                }))
-                assert {item["id"] for item in recall["results"]} == set(ids)
-                with sqlite3.connect(path) as connection:
-                    connection.execute(f"CREATE TRIGGER reject_teach {FAULTS['closure']}")
-                before = snapshot(path)
-                arguments = {"trace_id": ids[0], "correction": CORRECTION, "context": CONTEXT,
-                             "used": ids[:1], "irrelevant": ids[1:]}
-                failed = await client.call_tool("memory_teach", arguments, raise_on_error=False)
-                assert failed.is_error
-                assert snapshot(path) == before
-                with sqlite3.connect(path) as connection:
-                    connection.execute("DROP TRIGGER reject_teach")
-                result = _structured(await client.call_tool("memory_teach", arguments))
-                assert result["feedback_marks"]["accepted"] == 2
-                return ids, recall["recall_event_id"], result["corrective_trace"]["id"]
+    async def scenario():
+        async with Client(transport) as client:
+            ids = []
+            for content in CONTENTS:
+                result = await client.call_tool("memory_remember", {"content": content, "context": CONTEXT})
+                ids.append(result.structured_content["node"]["id"])
+            recalled = await client.call_tool("memory_recall", {
+                "query": "Harbor calibration crane procedure", "scope": CONTEXT["scope"],
+                "ambient_context": CONTEXT, "max_results": 2, "depth": 0,
+            })
+            recall = recalled.structured_content
+            assert {item["id"] for item in recall["results"]} == set(ids)
+            with sqlite3.connect(path) as connection:
+                connection.execute(f"CREATE TRIGGER reject_teach {FAULTS['closure']}")
+            before = snapshot(path)
+            arguments = {
+                "trace_id": ids[0], "correction": CORRECTION, "context": CONTEXT,
+                "used": ids[:1], "irrelevant": ids[1:],
+            }
+            failed = await client.call_tool("memory_teach", arguments, raise_on_error=False)
+            assert failed.is_error
+            assert snapshot(path) == before
+            with sqlite3.connect(path) as connection:
+                connection.execute("DROP TRIGGER reject_teach")
+            taught = await client.call_tool("memory_teach", arguments)
+            result = taught.structured_content
+            assert result["feedback_marks"]["accepted"] == 2
+            return ids, recall["recall_event_id"], result["corrective_trace"]["id"]
 
-        ids, event_id, trace_id = asyncio.run(scenario())
-        with sqlite3.connect(path) as connection:
-            stamp, closed_by = connection.execute(
-                "SELECT transport_session_id, feedback_trace_id FROM recall_events WHERE id=?", (event_id,)
-            ).fetchone()
-            assert stamp and closed_by == trace_id
-            assert connection.execute(
-                "SELECT source_id, transport_session_id FROM recall_feedback_marks"
-            ).fetchall() == [(trace_id, stamp), (trace_id, stamp)]
-            context = json.loads(connection.execute("SELECT context FROM nodes WHERE id=?", (trace_id,)).fetchone()[0])
-            assert context["transport_session_id"] == stamp
-            assert context["agent"] == CONTEXT["agent"]
-            assert connection.execute("SELECT source_id, target_id FROM connections WHERE type='supersedes'").fetchall() == [(trace_id, ids[0])]
+    ids, event_id, trace_id = asyncio.run(scenario())
+    # The subprocess has exited; read the durable correction on a new connection.
+    with sqlite3.connect(path) as connection:
+        stamp, closed_by = connection.execute(
+            "SELECT transport_session_id, feedback_trace_id FROM recall_events WHERE id=?", (event_id,)
+        ).fetchone()
+        assert stamp and closed_by == trace_id
+        assert connection.execute(
+            "SELECT source_id, transport_session_id FROM recall_feedback_marks"
+        ).fetchall() == [(trace_id, stamp), (trace_id, stamp)]
+        content, stored_context = connection.execute(
+            "SELECT content, context FROM nodes WHERE id=?", (trace_id,)
+        ).fetchone()
+        assert content == CORRECTION
+        context = json.loads(stored_context)
+        assert context["transport_session_id"] == stamp
+        assert context["agent"] == CONTEXT["agent"]
+        assert connection.execute(
+            "SELECT source_id, target_id FROM connections WHERE type='supersedes'"
+        ).fetchall() == [(trace_id, ids[0])]
+        corrections = json.loads(connection.execute(
+            "SELECT corrections FROM nodes WHERE id=?", (ids[0],)
+        ).fetchone()[0])
+        assert corrections[-1]["new"] == CORRECTION
