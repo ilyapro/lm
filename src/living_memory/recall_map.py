@@ -4337,13 +4337,9 @@ def _data_version(connection: sqlite3.Connection) -> int:
 def _chunk_table_revision(connection: sqlite3.Connection) -> tuple[Any, ...]:
     """``(row count, greatest chunk id)``, or ``()`` on a pre-v6 database.
 
-    The same two statements, and the same completeness argument, as
-    ``retrieval._chunk_table_revision``: chunk rows are only inserted or
-    deleted, never updated in place, so a delete moves the count and an insert
-    raises the ULID maximum. Kept here rather than imported because importing
-    ``retrieval`` would pull the whole ranker — and its embedding model — into
-    a module that exists to stay cheap; ``tests/test_recall_map.py`` pins the
-    two against each other.
+    A delete moves the count and a new maximum id moves the second component.
+    The build's write probe gates this scan; it does not import the ranker or
+    its embedding model.
     """
 
     try:
