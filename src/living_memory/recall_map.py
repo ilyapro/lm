@@ -3034,6 +3034,14 @@ class _Member:
 
 
 @dataclass(slots=True)
+class _AnchorAssignment:
+    """One build's observed anchors and winning anchor for each covered node."""
+
+    by_node: dict[str, str]
+    anchors: dict[str, Any]
+
+
+@dataclass(slots=True)
 class _SelectionLedger:
     """Mutable accounting while the complete residual is classified."""
 
@@ -4329,13 +4337,9 @@ def _data_version(connection: sqlite3.Connection) -> int:
 def _chunk_table_revision(connection: sqlite3.Connection) -> tuple[Any, ...]:
     """``(row count, greatest chunk id)``, or ``()`` on a pre-v6 database.
 
-    The same two statements, and the same completeness argument, as
-    ``retrieval._chunk_table_revision``: chunk rows are only inserted or
-    deleted, never updated in place, so a delete moves the count and an insert
-    raises the ULID maximum. Kept here rather than imported because importing
-    ``retrieval`` would pull the whole ranker — and its embedding model — into
-    a module that exists to stay cheap; ``tests/test_recall_map.py`` pins the
-    two against each other.
+    A delete moves the count and a new maximum id moves the second component.
+    The build's write probe gates this scan; it does not import the ranker or
+    its embedding model.
     """
 
     try:
@@ -4462,6 +4466,7 @@ class RecallMapBuilder:
         pool: list[_Member] | None = None
         selection: SelectionAccounting | None = None
         cold_candidates: list[tuple[int, Node, Any, dict[str, float]]] | None = None
+        anchor_assignment: _AnchorAssignment | None = None
 
         def ensure_pool() -> list[_Member]:
             nonlocal pool, selection
@@ -4476,11 +4481,16 @@ class RecallMapBuilder:
             return pool
 
         def digest() -> str:
-            nonlocal cold_candidates
+            nonlocal cold_candidates, anchor_assignment
             members = ensure_pool()
             if cold_rows is not None and cold_candidates is None:
                 cold_candidates = self._cold_candidates(cold_rows)
-            return self._pool_digest(members, cold_rows, candidates=cold_candidates)
+            if anchor_assignment is None:
+                anchor_assignment = self._anchor_assignment(members)
+            return self._pool_digest(
+                members, cold_rows, candidates=cold_candidates,
+                assignment=anchor_assignment.by_node,
+            )
 
         offer, pool_digest = self._reoffer(curtailment, digest)
         if not offer and pool is None:
@@ -4563,7 +4573,7 @@ class RecallMapBuilder:
             groups = self._recount(cached.templates, pool)
             self.last_cache_hit = groups is not None
         if groups is None:
-            groups = self._cluster(pool)
+            groups = self._cluster(pool, anchor_assignment=anchor_assignment)
             self._remember(key, revision, groups)
         built = self._finish(
             groups,
@@ -5013,7 +5023,10 @@ class RecallMapBuilder:
 
     # -- cascade -------------------------------------------------------
 
-    def _cluster(self, pool: list[_Member]) -> list[_Group]:
+    def _cluster(
+        self, pool: list[_Member], *,
+        anchor_assignment: _AnchorAssignment | None = None,
+    ) -> list[_Group]:
         """Run the four stages, each over what the previous one left."""
 
         groups: list[_Group] = []
@@ -5023,7 +5036,7 @@ class RecallMapBuilder:
         groups.extend(claimed)
         claimed, remaining = self._stage_path(remaining)
         groups.extend(claimed)
-        claimed, remaining = self._stage_anchor(remaining)
+        claimed, remaining = self._stage_anchor(remaining, anchor_assignment)
         groups.extend(claimed)
         claimed, remaining = self._stage_embedding(remaining)
         groups.extend(claimed)
@@ -5168,61 +5181,56 @@ class RecallMapBuilder:
 
     def _anchor_assignment(
         self, members: Sequence[_Member]
-    ) -> tuple[dict[str, str], dict[str, Any], list[_Member]]:
+    ) -> _AnchorAssignment:
         """``node_id -> anchor_id`` for every member a live anchor covers.
 
-        Also returns the anchors reached, by id, and the members no live
-        anchor covers, in their input order. This is stage 3's partition
-        input, factored out so the pool digest can name the anchors that
-        would take part without running the stage.
+        Observe each reached anchor once, including missing rows. A digest
+        needs the whole pool; stage 3 uses only the remaining members of this
+        assignment. Without a digest, only stage 3's members need observation.
         """
 
         anchors: dict[str, Any] = {}
         assignment: dict[str, str] = {}
-        rest: list[_Member] = []
         for member in members:
             best: tuple[float, str] | None = None
             for edge in self.store.list_query_anchor_edges(target_id=member.node.id):
-                anchor = anchors.get(edge.anchor_id)
-                if anchor is None:
-                    anchor = self.store.get_query_anchor(edge.anchor_id)
-                    if anchor is None:
-                        continue
-                    anchors[edge.anchor_id] = anchor
-                if anchor.decayed or not str(anchor.query).strip():
+                if edge.anchor_id not in anchors:
+                    anchors[edge.anchor_id] = self.store.get_query_anchor(edge.anchor_id)
+                anchor = anchors[edge.anchor_id]
+                if anchor is None or anchor.decayed or not str(anchor.query).strip():
                     continue
                 weight = float(edge.weight)
                 if best is None or (-weight, edge.anchor_id) < (-best[0], best[1]):
                     best = (weight, edge.anchor_id)
-            if best is None:
-                rest.append(member)
-            else:
+            if best is not None:
                 assignment[member.node.id] = best[1]
-        return assignment, anchors, rest
+        return _AnchorAssignment(assignment, anchors)
 
     def _stage_anchor(
-        self, members: list[_Member]
+        self, members: list[_Member], assignment: _AnchorAssignment | None = None,
     ) -> tuple[list[_Group], list[_Member]]:
         """Group by the live query anchor whose edges cover each node.
 
-        One indexed lookup per unclaimed node — ``idx_query_anchor_edges_target``
-        exists precisely for this direction — and one anchor row per distinct
-        anchor reached, memoized. A node covered by several anchors goes to the
-        heaviest edge, ties to the lower anchor id, so the assignment does not
-        depend on the order the edge table returns.
+        Reuse the digest's observation when present; otherwise read only the
+        unclaimed nodes. A node covered by several anchors goes to the heaviest
+        edge, ties to the lower anchor id, independent of edge-table order.
         """
 
-        assignment, anchors, rest = self._anchor_assignment(members)
+        if assignment is None:
+            assignment = self._anchor_assignment(members)
 
         buckets: dict[str, list[_Member]] = {}
+        rest: list[_Member] = []
         for member in members:
-            anchor_id = assignment.get(member.node.id)
+            anchor_id = assignment.by_node.get(member.node.id)
             if anchor_id is not None:
                 buckets.setdefault(anchor_id, []).append(member)
+            else:
+                rest.append(member)
 
         groups: list[_Group] = []
         for anchor_id, bucket in sorted(buckets.items()):
-            query = _collapse(anchors[anchor_id].query)
+            query = _collapse(assignment.anchors[anchor_id].query)
             groups.append(
                 _Group(
                     stage=STAGE_ANCHOR,
@@ -5592,6 +5600,7 @@ class RecallMapBuilder:
         cold_rows: Sequence[tuple[int, Node, Any, Any]] | None,
         *,
         candidates: Sequence[tuple[int, Node, Any, dict[str, float]]] | None,
+        assignment: Mapping[str, str],
     ) -> str:
         """What this build could have said, as one comparable string.
 
@@ -5606,7 +5615,6 @@ class RecallMapBuilder:
         """
 
         members = sorted(member.node.id for member in pool)
-        assignment, _anchors, _rest = self._anchor_assignment(pool)
         anchors = [list(pair) for pair in sorted(assignment.items())]
         cold = (
             sorted(node.id for _ordinal, node, _result, _values in candidates)

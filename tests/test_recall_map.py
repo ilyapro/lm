@@ -20,10 +20,8 @@ Every scenario runs against a *corpus*, not a handful of nodes — see
 four notes it has nothing to measure and degrades; a fixture that never gave it
 a corpus would pin the degraded branch and call it the rule.
 
-The two deliberate mirrors in ``recall_map`` are pinned against their originals
-here rather than trusted: ``normalize_key`` against
-``consolidation._normalize_trigger`` and ``_chunk_table_revision`` against
-``retrieval._chunk_table_revision``.
+``normalize_key`` is pinned against ``consolidation._normalize_trigger``;
+the chunk revision probe is checked against actual table changes.
 """
 
 from __future__ import annotations
@@ -1931,15 +1929,18 @@ def test_normalize_key_mirrors_consolidation_normalize_trigger() -> None:
         assert normalize_key(value) == _normalize_trigger(value)
 
 
-def test_chunk_revision_mirrors_the_retrieval_probe(store: MemoryStore) -> None:
-    from living_memory.recall_map import _chunk_table_revision as mirrored
-    from living_memory.retrieval import _chunk_table_revision as original
+def test_chunk_revision_tracks_insert_and_delete(store: MemoryStore) -> None:
+    from living_memory.recall_map import _chunk_table_revision
 
     node = make_node(store, "content that will gain a chunk")
-    assert mirrored(store.connection) == original(store.connection)
+    empty = _chunk_table_revision(store.connection)
 
     embed(store, node, [1.0, 0.0, 0.0])
-    assert mirrored(store.connection) == original(store.connection)
+    populated = _chunk_table_revision(store.connection)
+    assert populated != empty
+    assert _chunk_table_revision(store.connection) == populated
+    assert store.delete_node_chunks(node.id) == 1
+    assert _chunk_table_revision(store.connection) == empty
 
 
 def test_module_imports_nothing_that_calls_a_model_or_the_network() -> None:
