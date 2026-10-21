@@ -813,10 +813,13 @@ def _refresh_derived_node(store: MemoryStore, node: Node) -> Node:
             _connect_schema_to_traces(store, updated, members)
             return updated
     elif strategy in ("token-jaccard", "embedding-cosine"):
+        prepared = _prepare_digest_sources(members)
         cluster = _TraceCluster(node.scope, members, Counter(), strategy=strategy)
-        for member in members:
-            cluster.token_counts.update(_significant_tokens(member.content))
-        updated = _write_cluster_concept(store, cluster, assessment, existing=node)
+        for source in prepared:
+            cluster.token_counts.update(source.tokens)
+        updated = _write_cluster_concept(
+            store, cluster, assessment, existing=node, prepared_sources=prepared,
+        )
         _update_edge_weights_from_co_access(store, updated, members)
         return updated
     elif strategy == "cross-scope-promotion":
@@ -1423,10 +1426,15 @@ def _merge_cluster_into_concept(
     members = assessment.live
     cluster_key = _cluster_key(cluster)
     best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    digest = _synthesize_digest(members, best=best_trace)
+    digest = None
+
+    def candidate_contents() -> set[str]:
+        nonlocal digest
+        digest = _synthesize_digest(members, best=best_trace)
+        return {digest, *(trace.content for trace in members)}
+
     existing = store.get_node(existing.id) if existing else _find_existing_concept(
-        store, cluster.scope, cluster_key,
-        candidate_contents={digest, *(trace.content for trace in members)},
+        store, cluster.scope, cluster_key, candidate_contents=candidate_contents,
     )
     if existing is not None:
         # A current concept already owns useful inputs outside this pass's
@@ -1445,6 +1453,7 @@ def _merge_cluster_into_concept(
 def _write_cluster_concept(
     store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment,
     *, existing: Node | None = None, digest: str | None = None,
+    prepared_sources: Sequence[_DigestSource] | None = None,
 ) -> Node:
     """Materialize one resolved source set, including its digest and provenance."""
 
@@ -1452,7 +1461,7 @@ def _write_cluster_concept(
     cluster_key = _cluster_key(cluster)
     best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
     if digest is None:
-        digest = _synthesize_digest(members, best=best_trace)
+        digest = _synthesize_digest(members, best=best_trace, prepared_sources=prepared_sources)
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
     confidence = _consensus_confidence(members, unique_agents)
@@ -1498,11 +1507,40 @@ def _write_cluster_concept(
     )
 
 
+@dataclass(slots=True)
+class _DigestSource:
+    node: Node
+    tokens: set[str]
+    sentences: list[tuple[str, set[str]]]
+
+
+def _prepare_digest_sources(sources: Sequence[Node]) -> list[_DigestSource]:
+    """Extract whole-source and sentence signals together for one materialization."""
+
+    prepared = []
+    for source in sources:
+        tokens: set[str] = set()
+        sentences = []
+        for sentence in _split_sentences(source.content):
+            sentence_tokens: set[str] = set()
+            for raw in _raw_tokens(sentence):
+                token = _significant_token(raw)
+                if token is not None:
+                    tokens.add(token)
+                    sentence_tokens.add(token)
+            sentences.append((sentence, {token for token in sentence_tokens if token}))
+        # Keep the whole-source insertion order used by _significant_tokens:
+        # Counter's equal-count ordering also determines cluster identity.
+        prepared.append(_DigestSource(source, {token for token in tokens if token}, sentences))
+    return prepared
+
+
 def _synthesize_digest(
     sources: Sequence[Node],
     *,
     best: Node,
     max_chars: int = DIGEST_MAX_CHARS,
+    prepared_sources: Sequence[_DigestSource] | None = None,
 ) -> str:
     """Build a deterministic extractive digest of the sources' contents.
 
@@ -1526,23 +1564,24 @@ def _synthesize_digest(
     if len(lead) + len(DIGEST_FACT_PREFIX) + 2 > budget:
         return best.content
 
+    prepared = prepared_sources if prepared_sources is not None else _prepare_digest_sources(sources)
     token_counts: Counter[str] = Counter()
-    for source in sources:
-        token_counts.update(_significant_tokens(source.content))
+    for source in prepared:
+        token_counts.update(source.tokens)
 
     covered_significant = _significant_tokens(lead)
     covered_raw = set(_raw_tokens(lead))
     included_sentences = [frozenset(_raw_tokens(part)) for part in _split_sentences(lead)]
     ordered_others = sorted(
-        (source for source in sources if source.id != best.id),
-        key=lambda source: (-_token_centrality(source, token_counts), source.id),
+        (source for source in prepared if source.node.id != best.id),
+        key=lambda source: (-_token_centrality(source.tokens, token_counts), source.node.id),
     )
 
     lines = [lead]
     length = len(lead)
     for source in ordered_others:
         sentence = _most_distinctive_sentence(
-            source.content, covered_significant, covered_raw, included_sentences
+            source.sentences, covered_significant, covered_raw, included_sentences
         )
         if sentence is None:
             continue
@@ -1560,7 +1599,9 @@ def _synthesize_digest(
         # Every non-lead sentence was redundant (near-identical cluster). A
         # novel-token fragment keeps the digest byte-distinct from each source
         # and covering more than one of them without echoing whole variants.
-        fragment = _novel_fragment_line(ordered_others, covered_raw, budget - length - 1)
+        fragment = _novel_fragment_line(
+            [source.node for source in ordered_others], covered_raw, budget - length - 1,
+        )
         if fragment is None:
             return best.content
         lines.append(fragment)
@@ -1589,15 +1630,15 @@ def _digest_lead(content: str) -> str:
 
 
 def _most_distinctive_sentence(
-    content: str,
+    sentences: Sequence[tuple[str, set[str]]],
     covered_significant: set[str],
     covered_raw: set[str],
     included_sentences: list[frozenset[str]],
 ) -> str | None:
     best_sentence: str | None = None
     best_rank: tuple[int, int, int] | None = None
-    for index, sentence in enumerate(_split_sentences(content)):
-        significant_novelty = len(_significant_tokens(sentence) - covered_significant)
+    for index, (sentence, tokens) in enumerate(sentences):
+        significant_novelty = len(tokens - covered_significant)
         if significant_novelty < 1:
             continue
         raw = frozenset(_raw_tokens(sentence))
@@ -1651,8 +1692,7 @@ def _novel_tokens_in_order(content: str, covered_raw: set[str]) -> list[str]:
     return preferred or fallback
 
 
-def _token_centrality(node: Node, token_counts: Counter[str]) -> float:
-    tokens = _significant_tokens(node.content)
+def _token_centrality(tokens: set[str], token_counts: Counter[str]) -> float:
     if not tokens:
         return 0.0
     return sum(token_counts[token] for token in tokens) / len(tokens)
@@ -1917,7 +1957,7 @@ def _find_existing_concept(
     scope: str,
     cluster_key: str,
     *,
-    candidate_contents: Collection[str] = (),
+    candidate_contents: Collection[str] | Callable[[], Collection[str]] = (),
 ) -> Node | None:
     concepts = store.list_nodes(
         level="concept",
@@ -1925,8 +1965,7 @@ def _find_existing_concept(
         include_decayed=False,
         limit=100_000,
     )
-    contents = frozenset(candidate_contents)
-    content_twin: Node | None = None
+    eligible = []
     for concept in concepts:
         if concept.corrections:
             # A taught concept holds a corrected belief; merging fresh cluster
@@ -1934,13 +1973,13 @@ def _find_existing_concept(
             continue
         if concept.provenance.get("cluster_key") == cluster_key:
             return concept
-        if content_twin is None and concept.content in contents:
-            content_twin = concept
+        eligible.append(concept)
     # cluster_key is the primary identity; the content twin covers key drift
     # between runs for both digest concepts (an unchanged cluster re-digests to
     # the same bytes) and legacy concepts that copied a source trace verbatim
     # before digests existed. Merge into the twin instead of duplicating it.
-    return content_twin
+    contents = frozenset(candidate_contents() if callable(candidate_contents) else candidate_contents)
+    return next((concept for concept in eligible if concept.content in contents), None)
 
 
 def _trace_embedding(trace: Node, embedder: LocalEmbeddingModel | None) -> list[float] | None:
@@ -2099,12 +2138,18 @@ def _cluster_key(cluster: _TraceCluster) -> str:
 
 def _significant_tokens(content: str) -> set[str]:
     tokens = set()
-    for raw in re.findall(r"\w+", content.lower().replace("ё", "е")):
-        token = raw.strip("_")
-        if len(token) < 3 or token.isdigit() or token in _STOP_WORDS:
-            continue
-        tokens.add(_normalize_token(token))
+    for raw in _raw_tokens(content):
+        token = _significant_token(raw)
+        if token is not None:
+            tokens.add(token)
     return {token for token in tokens if token}
+
+
+def _significant_token(raw: str) -> str | None:
+    token = raw.strip("_")
+    if len(token) < 3 or token.isdigit() or token in _STOP_WORDS:
+        return None
+    return _normalize_token(token)
 
 
 def _normalize_token(token: str) -> str:
