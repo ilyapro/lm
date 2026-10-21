@@ -310,7 +310,7 @@ def _assess_cluster_eras(store: MemoryStore, members: Sequence[Node]) -> _EraAss
     evidence lands in a strictly later regime than the material it corrects.
     """
 
-    member_list = list(members)
+    member_list = list(store.get_nodes([member.id for member in members]).values())
     member_ids = {member.id for member in member_list}
     moments = {member.id: _node_moment(member) for member in member_list}
 
@@ -860,14 +860,32 @@ def _materialize_procedural_schemas(
             groups.setdefault((trace.scope, key.group_id), {})[trace.id] = trace
     schemas: list[tuple[Node, bool]] = []
     for (group_scope, group_id), by_id in groups.items():
-        group_traces = list(by_id.values())
         existing, *duplicates = nodes.get((group_scope, group_id)) or [None]
-        if len(group_traces) < min_cluster_size and existing is None:
+        if len(by_id) < min_cluster_size and existing is None:
             continue
-        declared = [trace for trace in group_traces if _declares_step(trace)]
-        binding = len(declared) >= min_cluster_size
-        with step():
-            assessment = _assess_cluster_eras(store, declared if binding else group_traces)
+        with step(), store.transaction():
+            # The pass can yield between loading its snapshot and writing this
+            # group. A committed correction and the group's current sources
+            # are authoritative at the write boundary.
+            existing = store.get_node(existing.id) if existing else None
+            if existing and (existing.decayed or existing.corrections or _is_superseded(store, existing.id)):
+                continue
+            if existing:
+                inputs = replace(existing, source_traces=sorted({*by_id, *existing.source_traces}))
+                assessment = _current_derivation(store, inputs)
+                group_traces = assessment.live
+            else:
+                group_traces = list(store.get_nodes(by_id).values())
+                assessment = _assess_cluster_eras(store, group_traces)
+            declared = [trace for trace in group_traces if _declares_step(trace)]
+            binding = len(declared) >= min_cluster_size or bool(
+                existing and existing.level == "schema" and declared and len(declared) == len(group_traces)
+            )
+            if binding:
+                assessment = (
+                    replace(assessment, live=declared)
+                    if existing else _assess_cluster_eras(store, declared)
+                )
             if not assessment.live:
                 # Every member is superseded or era-displaced: no current era to
                 # distill, so nothing may be emitted for this group.
