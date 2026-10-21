@@ -5,6 +5,7 @@ from collections import Counter
 import pytest
 
 from living_memory import consolidation as c
+from living_memory.models import Node
 from living_memory.storage import MemoryStore
 
 
@@ -97,3 +98,58 @@ def test_connections_validate_identity_without_loading_endpoint_documents(store,
         assert error.value.args == (missing,)
     with pytest.raises(ValueError):
         store.create_connection("absent-source", "absent-target", "invalid")
+
+
+@pytest.mark.parametrize("content", [
+    " ".join(f"lexeme{i}" for i in range(8)) + ".\n"
+    + " ".join(f"lexeme{i}" for i in range(8, 16)),
+    "Ёлка _cranes_ 12 а calibration.\nКраны проверены; loading loaded loaders! final_step",
+    "Repeated crane inspection. Repeated crane inspection! cable tension? cable tension",
+    "\n\t __ 123 и the \n. ! ; \n",
+])
+def test_preparation_keeps_whole_source_token_order_and_sentence_signals(content):
+    source = Node("source", "trace", content)
+    prepared, = c._prepare_digest_sources([source])
+    expected = c._significant_tokens(content)
+    assert list(prepared.tokens) == list(expected)
+    assert Counter(prepared.tokens).most_common(12) == Counter(expected).most_common(12)
+    assert prepared.sentences == [
+        (sentence, c._significant_tokens(sentence)) for sentence in c._split_sentences(content)
+    ]
+
+
+def test_primary_concept_identity_precedes_lazy_digest_and_all_content_twins(store):
+    source_twin = store.create_node(level="concept", content="source text", context={"scope": "project:harbor"})
+    digest_twin = store.create_node(level="concept", content="digest text", context={"scope": "project:harbor"})
+    primary = store.create_node(level="concept", content="primary concept", context={"scope": "project:harbor"},
+                                provenance={"cluster_key": "primary"})
+    calls = []
+
+    def contents():
+        calls.append(True)
+        return {source_twin.content, digest_twin.content}
+
+    assert c._find_existing_concept(store, "project:harbor", "primary", candidate_contents=contents).id == primary.id
+    assert not calls
+    expected = next(node for node in store.list_nodes(level="concept", scope="project:harbor")
+                    if node.id in (source_twin.id, digest_twin.id))
+    assert c._find_existing_concept(store, "project:harbor", "absent", candidate_contents=contents).id == expected.id
+    assert calls == [True]
+
+
+def test_existing_cluster_renders_only_its_current_source_union(store, monkeypatch):
+    traces = sources(store)
+    concept = cluster(store, traces)
+    group = c._TraceCluster("project:harbor", traces[:2], Counter({"harbor": 2}))
+    rendered = []
+    render = c._synthesize_digest
+
+    def observe(members, **kwargs):
+        rendered.append({member.id for member in members})
+        return render(members, **kwargs)
+
+    monkeypatch.setattr(c, "_synthesize_digest", observe)
+    updated, created = c._merge_cluster_into_concept(store, group, c._assess_cluster_eras(store, traces[:2]))
+    assert not created and updated.id == concept.id
+    assert set(updated.source_traces) == {trace.id for trace in traces}
+    assert rendered == [{trace.id for trace in traces}]
