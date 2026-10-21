@@ -9,7 +9,7 @@ across them:
   older stub classes, and that an absent map reproduces today's answer;
 * the env valves beside it (``LM_RECALL_NEAR_DUP_COSINE`` /
   ``LM_RECALL_NEAR_DUP_LENGTH_RATIO``), including the ``0`` rollback;
-* the single call site (``server._near_duplicate_map`` and ``memory_recall``),
+* the single call site (``server._NearDuplicateObservation`` and ``memory_recall``),
   where the vectors are actually read — over a real ``MemoryStore``, with
   chunk vectors written explicitly so a cosine is readable as an angle rather
   than as whatever an encoder happened to produce.
@@ -51,12 +51,12 @@ from living_memory.near_dup import IDENTIFIER_VETO_ENV
 from living_memory.retrieval import RecallResult
 from living_memory.server import (
     _DROPPABLE_TRAILING_STUBS,
-    _near_duplicate_map,
+    _NearDuplicateObservation,
     create_mcp_server,
 )
 from living_memory.storage import MemoryStore
 
-from test_mcp_server import FakeMCP
+from test_lookup import FakeMCP
 
 SCOPE = "project:neardupdelivery"
 #: Every seeded node carries this stem so one query reaches all of them and
@@ -425,7 +425,7 @@ def test_call_site_maps_a_paraphrase_and_leaves_a_different_fact_alone(
     repeat = seed(store, "at slack water is when the survey runs", unit(5))
     distinct = seed(store, "the quillon inventory was recounted", unit(60))
 
-    mapped = _near_duplicate_map(store, results_for([bearer, repeat, distinct]))
+    mapped = _NearDuplicateObservation(store).map(results_for([bearer, repeat, distinct]))
 
     # 5 degrees is cosine 0.996 — above the shipped 0.95; 60 degrees is 0.5.
     assert mapped == {repeat.id: bearer.id}
@@ -444,7 +444,7 @@ def test_call_site_never_collapses_a_materially_longer_candidate(
         unit(1),
     )
 
-    assert _near_duplicate_map(store, results_for([bearer, longer])) is None
+    assert _NearDuplicateObservation(store).map(results_for([bearer, longer])) is None
 
 
 def test_length_ratio_valve_reaches_the_call_site(
@@ -458,10 +458,10 @@ def test_length_ratio_valve_reaches_the_call_site(
     assert len(bearer.content) < len(longer.content) <= ceiling  # inside the default band
 
     answer = results_for([bearer, longer])
-    assert _near_duplicate_map(store, answer) == {longer.id: bearer.id}
+    assert _NearDuplicateObservation(store).map(answer) == {longer.id: bearer.id}
 
     monkeypatch.setenv(NEAR_DUP_LENGTH_RATIO_ENV, "0")
-    assert _near_duplicate_map(store, answer) is None
+    assert _NearDuplicateObservation(store).map(answer) is None
 
 
 def test_call_site_never_collapses_a_node_without_chunk_vectors(
@@ -473,7 +473,7 @@ def test_call_site_never_collapses_a_node_without_chunk_vectors(
     unvectorized = seed(store, "at slack water is when the survey runs", None)
 
     assert store.list_node_chunks(unvectorized.id) == []
-    assert _near_duplicate_map(store, results_for([bearer, unvectorized])) is None
+    assert _NearDuplicateObservation(store).map(results_for([bearer, unvectorized])) is None
 
 
 def test_cosine_zero_builds_no_map_and_reads_no_vectors(
@@ -493,11 +493,11 @@ def test_cosine_zero_builds_no_map_and_reads_no_vectors(
     monkeypatch.setenv(NEAR_DUP_COSINE_ENV, "0")
     answer = results_for([make_node("a", "a fact"), make_node("b", "the same fact")])
 
-    assert _near_duplicate_map(RefusingStore(), answer) is None  # type: ignore[arg-type]
+    assert _NearDuplicateObservation(RefusingStore()).map(answer) is None  # type: ignore[arg-type]
 
 
 def test_empty_answer_needs_no_map(store: MemoryStore) -> None:
-    assert _near_duplicate_map(store, []) is None
+    assert _NearDuplicateObservation(store).map([]) is None
 
 
 def test_call_site_refuses_a_repeat_that_names_what_its_bearer_does_not(
@@ -514,11 +514,11 @@ def test_call_site_refuses_a_repeat_that_names_what_its_bearer_does_not(
     bearer = seed(store, "узел layer-fauna СДЕЛАН, отчёт записан", unit(0))
     repeat = seed(store, "узел layer-actors СДЕЛАН, отчёт записан", unit(2))
 
-    assert _near_duplicate_map(store, results_for([bearer, repeat])) is None
+    assert _NearDuplicateObservation(store).map(results_for([bearer, repeat])) is None
 
     # And the valve is the only thing holding it: at 0 the pair collapses again.
     monkeypatch.setenv(IDENTIFIER_VETO_ENV, "0")
-    assert _near_duplicate_map(store, results_for([bearer, repeat])) == {
+    assert _NearDuplicateObservation(store).map(results_for([bearer, repeat])) == {
         repeat.id: bearer.id
     }
 
@@ -535,7 +535,7 @@ def test_call_site_still_collapses_a_repeat_that_names_nothing_new(
     bearer = seed(store, "узел layer-fauna СДЕЛАН, отчёт записан", unit(0))
     repeat = seed(store, "отчёт записан, узел layer-fauna СДЕЛАН", unit(2))
 
-    assert _near_duplicate_map(store, results_for([bearer, repeat])) == {
+    assert _NearDuplicateObservation(store).map(results_for([bearer, repeat])) == {
         repeat.id: bearer.id
     }
 
