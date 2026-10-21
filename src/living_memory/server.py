@@ -1144,6 +1144,13 @@ def _register_tools(
         counters, and a ``scheduled`` report when the write made a
         consolidation pass due (the pass runs in the background). Fetch full
         nodes via memory_lookup(node_id=...).
+
+        The trace, alternatives and required recall feedback commit together.
+        Optional explicit marks run before implicit feedback and roll back
+        with a failed required write; their own failures remain nonfatal.
+        Edge derivation, instruction refresh and scheduling are nonfatal
+        post-commit work. This does not make retries after response loss
+        exactly-once.
         """
 
         context = _with_transport_identity(context)
