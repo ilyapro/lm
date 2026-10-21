@@ -242,7 +242,7 @@ def record_query_irrelevance(
     stamp = now or _now()
     anchor = resolve_query_anchor(store, query, event.scope, vectors[0], stamp)
     conn = store.connection
-    with conn:
+    with store.transaction():
         conn.execute(QUERY_IRRELEVANCE_SCHEMA_SQL)
         for node_id in targets:
             conn.execute(
@@ -284,7 +284,7 @@ def cancel_query_irrelevance(
         return 0
     stamp = now or _now()
     cancelled = 0
-    with conn:
+    with store.transaction():
         for node_id in targets:
             cursor = conn.execute(
                 f"""
