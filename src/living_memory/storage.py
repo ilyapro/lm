@@ -1705,10 +1705,11 @@ class MemoryStore:
         metadata: Mapping[str, Any] | None = None,
     ) -> Connection:
         self._validate_connection_type(relation_type)
-        if self.get_node(source_id) is None:
-            raise KeyError(source_id)
-        if self.get_node(target_id) is None:
-            raise KeyError(target_id)
+        # Edge validation needs identity, not either endpoint's content or
+        # potentially large source/provenance documents.
+        for node_id in (source_id, target_id):
+            if self._conn.execute("SELECT 1 FROM nodes WHERE id = ?", (node_id,)).fetchone() is None:
+                raise KeyError(node_id)
 
         with self.transaction():
             self._insert_connection(

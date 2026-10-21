@@ -816,7 +816,7 @@ def _refresh_derived_node(store: MemoryStore, node: Node) -> Node:
         cluster = _TraceCluster(node.scope, members, Counter(), strategy=strategy)
         for member in members:
             cluster.token_counts.update(_significant_tokens(member.content))
-        updated, _ = _merge_cluster_into_concept(store, cluster, assessment, existing=node)
+        updated = _write_cluster_concept(store, cluster, assessment, existing=node)
         _update_edge_weights_from_co_access(store, updated, members)
         return updated
     elif strategy == "cross-scope-promotion":
@@ -1436,7 +1436,22 @@ def _merge_cluster_into_concept(
         members = assessment.live
         if not members:
             return store.soft_delete_node(existing.id, "derivation: no current sources"), False
-        best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
+    return _write_cluster_concept(
+        store, cluster, assessment, existing=existing,
+        digest=digest if existing is None else None,
+    ), existing is None
+
+
+def _write_cluster_concept(
+    store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment,
+    *, existing: Node | None = None, digest: str | None = None,
+) -> Node:
+    """Materialize one resolved source set, including its digest and provenance."""
+
+    members = assessment.live
+    cluster_key = _cluster_key(cluster)
+    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
+    if digest is None:
         digest = _synthesize_digest(members, best=best_trace)
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
@@ -1462,7 +1477,7 @@ def _merge_cluster_into_concept(
     }
 
     if existing is None:
-        concept = store.create_node(
+        return store.create_node(
             level="concept",
             content=digest,
             context={
@@ -1474,16 +1489,13 @@ def _merge_cluster_into_concept(
             stats=stats,
             provenance=provenance,
         )
-        return concept, True
-
-    concept = store.update_node(
+    return store.update_node(
         existing.id,
         content=digest,
         embedding=concept_embedding,
         stats=stats,
         provenance={**existing.provenance, **provenance},
     )
-    return concept, False
 
 
 def _synthesize_digest(
