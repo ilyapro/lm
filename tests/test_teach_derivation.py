@@ -227,8 +227,8 @@ def test_teach_rollback_preserves_all_nodes_edges_chunks_and_feedback(tmp_path, 
         before = list(store.connection.iterdump())
         update = consolidation._refresh_derived_node
 
-        def fail_after_write(store, node):
-            update(store, node)
+        def fail_after_write(store, node, **kwargs):
+            update(store, node, **kwargs)
             raise RuntimeError("failed derived write")
 
         monkeypatch.setattr(consolidation, "_refresh_derived_node", fail_after_write)
