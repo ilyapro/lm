@@ -17,6 +17,7 @@ from typing import Annotated, Any, Literal
 from uuid import uuid4
 import hashlib
 import json
+import logging
 import marshal
 import os
 import secrets
@@ -1196,12 +1197,9 @@ def _register_tools(
                 derive_edges_for_new_trace(store, node)
             except Exception:
                 pass
-            try:
-                scheduled = _schedule_auto_consolidation_if_due(
-                    store, auto_consolidation, node.scope
-                )
-            except Exception:
-                scheduled = None
+            scheduled = _schedule_auto_consolidation_if_due(
+                store, auto_consolidation, node.scope
+            )
             response = {
                 "node": _remember_node_confirmation(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
@@ -2090,12 +2088,21 @@ def _schedule_auto_consolidation_if_due(
     ``scheduled`` (``coalesced`` when it joins one already queued or
     running), and the pass's own summary lands in the scheduler's
     ``last_result(scope)`` when the worker finishes it.
+
+    Both write tools call this after their required transaction commits.
+    Optional scheduling failures are logged and cannot replace that outcome.
     """
 
-    trace_count = _auto_consolidation_due(store, scope)
-    if trace_count is None:
+    try:
+        trace_count = _auto_consolidation_due(store, scope)
+        if trace_count is None:
+            return None
+        return scheduler.request(scope, trace_count=trace_count)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "could not schedule post-commit auto-consolidation for %s", scope, exc_info=True
+        )
         return None
-    return scheduler.request(scope, trace_count=trace_count)
 
 
 def _build_auto_consolidation(
