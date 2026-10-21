@@ -1,5 +1,6 @@
 """Required remember writes share one outcome on disposable SQLite stores."""
 
+import asyncio
 import sqlite3
 
 import pytest
@@ -223,3 +224,43 @@ def test_teach_closure_failure_remains_atomic(mcp, tmp_path):
     result = mcp.tools["memory_teach"](ids[0], CONTENT, context=CONTEXT)
     assert store.trace_count() == 2
     assert store.get_recall_event(event_id).feedback_trace_id == result["corrective_trace"]["id"]
+
+
+def test_fastmcp_error_has_no_durable_write_and_retry_succeeds(tmp_path, monkeypatch):
+    from fastmcp import Client
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "grounded")
+    path = tmp_path / "mcp.sqlite3"
+    mcp = server.create_mcp_server(path)
+    store = mcp.memory_store
+
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("memory_remember", {"content": SOURCE, "context": CONTEXT})
+            recall = await client.call_tool("memory_recall", {
+                "query": "Cobalt routing", "scope": CONTEXT["scope"],
+                "ambient_context": CONTEXT, "depth": 0, "max_results": 1,
+            })
+            event_id = recall.structured_content["recall_event_id"]
+            store.connection.execute(f"CREATE TRIGGER reject_feedback {FAULTS['closure']}")
+            before = snapshot(path)
+            arguments = {
+                "content": CONTENT, "context": CONTEXT,
+                "alternatives_considered": ALTERNATIVES,
+            }
+            failed = await client.call_tool("memory_remember", arguments, raise_on_error=False)
+            assert failed.is_error
+            assert snapshot(path) == before
+            store.connection.execute("DROP TRIGGER reject_feedback")
+            result = await client.call_tool("memory_remember", arguments)
+            assert not result.is_error
+            assert store.trace_count() == 3
+            assert store.get_recall_event(event_id).feedback_trace_id == result.structured_content["node"]["id"]
+            assert len(result.structured_content["rejected_alternatives"]) == 1
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
