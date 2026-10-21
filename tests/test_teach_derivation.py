@@ -90,7 +90,8 @@ def test_teach_then_warm_recall_keeps_only_current_binding_steps(tmp_path, separ
         results = recall(service)
         assert any(r.node.id == schema.id and r.node.content == current.content for r in results)
         assert any(r.node.id == taught.corrective_trace.id for r in results)
-        assert all(STEPS[0] not in r.node.content for r in results if r.node.id != same_title.id)
+        assert STEPS[0] not in current.content
+        assert all(r.node.id != traces[0].id for r in results)
         assert all(r.node.scope != "project:other" for r in results)
         assert {node_id: asdict(store.get_node(node_id)) for node_id in controls} == controls
         historical = store.get_node(traces[0].id)
@@ -124,8 +125,9 @@ def test_incidental_recall_lineage_and_unrecorded_citations_are_independent(tmp_
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         traces, _ = procedure(store)
         service = MemoryRecallService(store, embedder=Encoder())
-        service.memory_recall("workshop release", scope=SCOPE, ambient_context={"agent": "writer"})
-        independent = store.append_trace("The workshop door stays locked overnight.", {"scope": SCOPE, "agent": "writer"})
+        identity = {"agent": "writer", "transport_session_id": "derivation-test"}
+        service.memory_recall("workshop release", scope=SCOPE, ambient_context=identity)
+        independent = store.append_trace("The workshop door stays locked overnight.", {"scope": SCOPE, **identity})
         independent = apply_pending_recall_feedback(store, independent, reinforce_results=False).trace
         assert traces[0].id in independent.source_traces
         cited = store.create_node(
@@ -143,7 +145,7 @@ def test_evidence_carrier_keeps_whole_independent_records_and_correction(tmp_pat
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         traces, carrier = procedure(store, declared=False, texts=records)
         assert carrier.level == "concept"
-        replacement = "Workshop release revised case: " + "Complete substantive evidence. " * 90
+        replacement = ("Workshop release revised case: " + "Complete substantive evidence. " * 90).rstrip()
         taught = memory_teach(store, traces[0].id, replacement)
         current = store.get_node(carrier.id)
         assert current.level == "concept" and "procedure" not in current.context
@@ -154,7 +156,11 @@ def test_evidence_carrier_keeps_whole_independent_records_and_correction(tmp_pat
 
 
 def cluster(store, scope, texts):
-    traces = [store.append_trace(text, {"scope": scope, "agent": f"writer-{i}"}) for i, text in enumerate(texts)]
+    traces = [
+        store.append_trace(text, {"scope": scope, "agent": f"writer-{i}"},
+                           feedback={"usefulness_score": 1.0 if i == 0 else 0.0})
+        for i, text in enumerate(texts)
+    ]
     group = _TraceCluster(scope, traces, Counter({"workshop": len(traces)}))
     concept, _ = _merge_cluster_into_concept(store, group, _assess_cluster_eras(store, traces))
     store.update_node(concept.id, embedding=[1.0, 0.0])
