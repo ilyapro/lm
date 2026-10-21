@@ -153,3 +153,38 @@ def test_existing_cluster_renders_only_its_current_source_union(store, monkeypat
     assert not created and updated.id == concept.id
     assert set(updated.source_traces) == {trace.id for trace in traces}
     assert rendered == [{trace.id for trace in traces}]
+
+
+def test_shared_leaves_prepare_once_and_diamond_consumes_updated_concepts(store, monkeypatch):
+    traces = sources(store)
+
+    def derived(name, members):
+        return store.create_node(
+            level="concept", content=c._synthesize_digest(members, best=members[0]),
+            context={"scope": "project:harbor"},
+            provenance={"strategy": "token-jaccard", "cluster_key": name,
+                        "source_traces": [member.id for member in members]},
+        )
+
+    left = derived("left", traces[:2])
+    right = derived("right", [traces[0], traces[2]])
+    joined = derived("joined", [left, right])
+    prepared = []
+    prepare = c._prepare_digest_sources
+
+    def observe(members):
+        prepared.extend((member.id, member.content) for member in members)
+        return prepare(members)
+
+    monkeypatch.setattr(c, "_prepare_digest_sources", observe)
+    correction = "Harbor crane requires the signed electronic manifest."
+    taught = c.memory_teach(store, traces[0].id, correction)
+    counts = Counter(node_id for node_id, _ in prepared)
+    assert counts == {taught.corrective_trace.id: 1, traces[1].id: 1, traces[2].id: 1,
+                      left.id: 1, right.id: 1}
+    for node in (left, right, joined):
+        current = store.get_node(node.id)
+        assert correction in current.content and traces[0].content not in current.content
+    assert set(store.get_node(joined.id).source_traces) == {left.id, right.id}
+    assert dict(prepared)[left.id] == store.get_node(left.id).content
+    assert dict(prepared)[right.id] == store.get_node(right.id).content
