@@ -171,7 +171,7 @@ def test_request_and_completion_order_saves_guard_before_condition(tmp_path):
     finishing = threading.Event()
     release_second = threading.Event()
     entered_second = threading.Event()
-    lock = threading.Lock()
+    lock = threading.RLock()
     saves = []
 
     class Guard:
@@ -197,20 +197,17 @@ def test_request_and_completion_order_saves_guard_before_condition(tmp_path):
 
         scheduler = AutoConsolidationScheduler(run_pass, save_pending=save, persist_guard=guard)
         try:
-            # Reenter from the first request's save callback so the worker's
-            # completion is waiting for a guard held by this test thread.
-            with scheduler._cond:
+            with guard:
                 scheduler.request("project:first")
-                assert lock.acquire(timeout=5)
-            try:
                 assert finishing.wait(timeout=5)
                 # Completion must release the condition before taking guard.
                 assert scheduler._cond.acquire(timeout=1)
                 scheduler._cond.release()
-            finally:
-                lock.release()
-            scheduler.request("project:second")
+                scheduler.request("project:second")
             assert entered_second.wait(timeout=5)
+            assert [set(saved) for saved in saves] == [
+                {"project:first"}, {"project:second"}, {"project:second"},
+            ]
             assert list(json.loads(store.get_kv(PENDING_KV_KEY))) == ["project:second"]
             release_second.set()
             assert scheduler.wait_idle(timeout=5)
