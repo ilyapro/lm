@@ -115,10 +115,11 @@ def test_map_failure_preserves_selected_response_and_feedback(
             ids = [item.get("node", item)["id"] for item in actual["results"]]
             assert [item["node_id"] for item in json.loads(event[0])] == ids
             assert event[1] is None
+            # The three head results are outside the organic tail ledger.
             assert reader.execute(
                 "SELECT node_id FROM recall_delivery_history WHERE delivery_event_id=?",
                 (actual["recall_event_id"],),
-            ).fetchall() == [(ids[2],)]
+            ).fetchall() == []
             assert reader.execute(
                 "SELECT node_id, accepted, source_id FROM recall_feedback_marks"
             ).fetchall() == [(marked.id, 1, actual["recall_event_id"])]
