@@ -59,13 +59,13 @@ def test_replacements_wait_for_next_write_interval(mcp, monkeypatch, policy, siz
         assert bool(latest["auto_consolidation"]) == (count % interval == 0)
     assert mcp.auto_consolidation.status()["passes_completed"] == 2
     summary = mcp.auto_consolidation.last_result(SCOPE)["summary"]
-    assert summary["concepts_updated"]
-    concepts = store.list_nodes(level="concept", scope=SCOPE)
-    assert len(concepts) == 1
+    materialized = summary["concepts_created"] + summary["concepts_updated"]
+    assert len(materialized) == 1
+    concept = store.get_node(materialized[0])
     active = store.list_nodes(level="trace", scope=SCOPE, limit=1000)
-    assert set(concepts[0].source_traces) == {node.id for node in active}
-    assert original.id not in concepts[0].source_traces
-    assert latest["node"]["id"] in concepts[0].source_traces
+    assert set(concept.source_traces) == {node.id for node in active}
+    assert original.id not in concept.source_traces
+    assert latest["node"]["id"] in concept.source_traces
 
 
 @pytest.mark.parametrize("policy,interval", [("fixed", 100), ("adaptive", 5)])
@@ -82,7 +82,7 @@ def test_retiring_traces_cannot_rearm_a_completed_interval(mcp, monkeypatch, pol
         result = apply_decay(
             store, scope=SCOPE, now=datetime.now(UTC) + timedelta(days=181),
             ttl_days=180, ttl_anchor="created", max_expired=1,
-            include_superseded=False, decay_concept_covered=False,
+            include_superseded=False, decay_concept_covered=True,
         )
         assert len(result.expired) == 1
     assert store.trace_count() == interval
