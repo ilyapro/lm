@@ -74,9 +74,9 @@ def test_teach_then_warm_recall_keeps_only_current_binding_steps(tmp_path, separ
         _, elsewhere = procedure(store, scope="project:other")
         # Same label and scope, independent group and records.
         _, same_title = procedure(store, group="independent", texts=[text + " Independently." for text in STEPS])
-        controls = {node.id: asdict(store.get_node(node.id)) for node in [elsewhere, same_title]}
         service = MemoryRecallService(store, embedder=Encoder())
         assert any(r.node.id == schema.id and STEPS[0] in r.node.content for r in recall(service))
+        controls = {node.id: asdict(store.get_node(node.id)) for node in [elsewhere, same_title]}
 
         if separate_writer:
             with MemoryStore(path) as writer:
@@ -119,6 +119,18 @@ def test_mcp_teach_recall_and_exact_historical_lookup(tmp_path):
         old = mcp.tools["memory_lookup"](node_id=traces[0].id)["results"][0]
         assert old["content"] == STEPS[0]
         assert old["provenance"]["corrections"][-1]["new"] == CORRECTION
+
+
+def test_later_materialization_cannot_undo_teach_or_erase_independent_steps(tmp_path):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        traces, schema = procedure(store)
+        taught = memory_teach(store, traces[0].id, CORRECTION)
+        # A background pass can already hold these append-only sources when
+        # teach commits. Its later guarded write must use current validity.
+        _materialize_procedural_schemas(store, traces, min_cluster_size=3)
+        assert store.get_node(schema.id).context["procedure"] == [CORRECTION, *STEPS[1:]]
+        _materialize_procedural_schemas(store, [*traces, taught.corrective_trace], min_cluster_size=3)
+        assert store.get_node(schema.id).context["procedure"] == [CORRECTION, *STEPS[1:]]
 
 
 def test_incidental_recall_lineage_and_unrecorded_citations_are_independent(tmp_path):
