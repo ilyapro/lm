@@ -48,7 +48,8 @@ def test_map_failure_preserves_selected_response_and_feedback(
     tmp_path, monkeypatch, caplog, stage, view, policy,
 ):
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", policy)
-    monkeypatch.setattr(storage, "_utc_now", lambda: "2026-10-21T00:00:00Z")
+    now = storage._utc_now()
+    monkeypatch.setattr(storage, "_utc_now", lambda: now)
     ambient = {"transport_session_id": "map-failure", "agent": "fixture"}
     seed = tmp_path / "seed.sqlite3"
     with MemoryStore(seed) as store:
