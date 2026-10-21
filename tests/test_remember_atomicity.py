@@ -164,9 +164,10 @@ def test_optional_mark_failure_does_not_fail_required_write(mcp):
 def test_optional_post_write_failure_keeps_confirmation(mcp, monkeypatch, stage):
     ids, event_id = seed_recall(mcp)
     store = mcp.memory_store
+    transaction_states = []
 
     def fail(*args, **kwargs):
-        assert not store.connection.in_transaction
+        transaction_states.append(store.connection.in_transaction)
         raise RuntimeError("optional post-write fault")
 
     if stage == "edges":
@@ -181,16 +182,18 @@ def test_optional_post_write_failure_keeps_confirmation(mcp, monkeypatch, stage)
     assert store.get_node(result["node"]["id"]).source_traces == ids
     assert store.get_recall_event(event_id).feedback_trace_id == result["node"]["id"]
     assert result["auto_consolidation"] is None
+    assert transaction_states == [False]
 
 
 def test_required_write_has_one_outer_commit_before_derivation(mcp, monkeypatch):
     seed_recall(mcp)
     store = mcp.memory_store
     statements = []
+    transaction_states = []
     store.connection.set_trace_callback(statements.append)
 
     def after_commit(*args):
-        assert not store.connection.in_transaction
+        transaction_states.append(store.connection.in_transaction)
         store.connection.set_trace_callback(None)
 
     monkeypatch.setattr(server, "derive_edges_for_new_trace", after_commit)
@@ -204,6 +207,7 @@ def test_required_write_has_one_outer_commit_before_derivation(mcp, monkeypatch)
             commits += depth == 0
         assert not statement.startswith(("COMMIT", "END TRANSACTION"))
     assert depth == 0
+    assert transaction_states == [False]
     assert commits == 1, f"required write has {commits} separate durable boundaries"
 
 
