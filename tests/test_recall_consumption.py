@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from threading import Barrier
+import sqlite3
 
 import pytest
 
@@ -111,7 +112,7 @@ def test_selected_order_access_metadata_and_one_tail_transaction(store, limit):
     assert marks[0].accepted and marks[0].event.id == event.id and marks[0].rank == 0
     assert not marks[1].accepted and marks[1].reject_reason == "not_delivered"
     shaped = shape_recall_results(
-        results, query=QUERY, already_delivered_ids=set(), snippet_max_chars=1200,
+        results, view="knowledge", query=QUERY, already_delivered_ids=set(), snippet_max_chars=1200,
         context_value_max_chars=160, session_dedup=True,
     )
     assert all(item["content_ref"]["node_id"] == item["id"] for item in shaped)
@@ -159,7 +160,7 @@ def test_failed_tail_rolls_back_access_event_history_and_fingerprint(store, monk
             CREATE TEMP TRIGGER reject_event BEFORE INSERT ON recall_events
             BEGIN SELECT RAISE(ABORT, 'injected event failure'); END
         """)
-        expected = Exception
+        expected = sqlite3.IntegrityError
     else:
         method = {"history": "_record_recall_history_event",
                   "fingerprint": "_apply_recall_fingerprint_delivery",
