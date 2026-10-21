@@ -35,10 +35,11 @@ import os
 import re
 
 from living_memory.decay import DecayResult, apply_decay, memory_forget
-from living_memory.edge_derivation import DERIVED_FROM_ANNOTATION
+from living_memory.edge_derivation import DERIVED_FROM_ANNOTATION, DERIVED_FROM_KIND
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
 from living_memory.models import Connection, Node, string_list
+from living_memory.query_anchors import resolve_replacement
 from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
@@ -362,7 +363,7 @@ def _assess_cluster_eras(store: MemoryStore, members: Sequence[Node]) -> _EraAss
                 if edge.source_id in member_ids and edge.target_id not in member_ids:
                     target = _external(edge.target_id)
                     if target is not None:
-                        displaced = (set(target.source_traces) & member_ids) - {edge.source_id}
+                        displaced = (set(_derivation_sources(store, target)) & member_ids) - {edge.source_id}
                         for displaced_id in sorted(displaced):
                             excluded.setdefault(
                                 displaced_id, f"displaced-via:{edge.target_id}"
@@ -631,65 +632,189 @@ def memory_teach(
 ) -> TeachResult:
     """Create a corrective trace and connect it to the original as superseding."""
 
-    original = store.get_node(trace_id)
-    if original is None:
-        raise KeyError(trace_id)
+    with store.transaction():
+        original = store.get_node(trace_id)
+        if original is None:
+            raise KeyError(trace_id)
 
-    correction_text = _correction_text(correction)
-    if not correction_text:
-        raise ValueError("correction must be non-empty")
+        correction_text = _correction_text(correction)
+        if not correction_text:
+            raise ValueError("correction must be non-empty")
 
-    # The correction replaces the step text, not its place.
-    context_data = {key: value for key, value in original.context.items() if key not in _STEP_TEXT_KEYS}
-    context_data.update(dict(context or {}))
-    context_data.setdefault("scope", original.scope)
-    context_data["timestamp"] = _utc_now()
-    teacher = str(context_data.get("agent") or "teacher")
-    context_data["agent"] = teacher
+        # The correction replaces the step text, not its place.
+        context_data = {key: value for key, value in original.context.items() if key not in _STEP_TEXT_KEYS}
+        context_data.update(dict(context or {}))
+        context_data.setdefault("scope", original.scope)
+        context_data["timestamp"] = _utc_now()
+        teacher = str(context_data.get("agent") or "teacher")
+        context_data["agent"] = teacher
 
-    requested_confidence = 0.5 if confidence is None else float(confidence)
-    feedback = {
-        "confidence": requested_confidence,
-        "unique_agents": 1,
-        "usefulness_score": max(1.0, original.usefulness_score + 1.0),
-    }
-    corrective_trace = store.append_trace(correction_text, context_data, feedback=feedback)
+        requested_confidence = 0.5 if confidence is None else float(confidence)
+        feedback = {
+            "confidence": requested_confidence,
+            "unique_agents": 1,
+            "usefulness_score": max(1.0, original.usefulness_score + 1.0),
+        }
+        corrective_trace = store.append_trace(correction_text, context_data, feedback=feedback)
 
-    supersedes = _upsert_weighted_connection(
-        store,
-        corrective_trace.id,
-        original.id,
-        "supersedes",
-        weight=1.0,
-        metadata={"by": teacher, "correction": correction_text},
-    )
+        supersedes = _upsert_weighted_connection(
+            store,
+            corrective_trace.id,
+            original.id,
+            "supersedes",
+            weight=1.0,
+            metadata={"by": teacher, "correction": correction_text},
+        )
 
-    corrected_original = store.add_correction(
-        original.id,
-        old=original.content,
-        new=correction_text,
-        by=teacher,
-    )
-    corrected_original = store.update_node(
-        corrected_original.id,
-        stats={
-            "confidence": min(corrected_original.confidence, 0.25),
-            "unique_agents": corrected_original.unique_agents,
-            "usefulness_score": min(corrected_original.usefulness_score, -0.25),
-        },
-    )
-    implicit_feedback = apply_pending_recall_feedback(
-        store,
-        corrective_trace,
-        reinforce_results=False,
-    )
-    corrective_trace = implicit_feedback.trace
-    return TeachResult(
-        corrective_trace=corrective_trace,
-        supersedes=supersedes,
-        original=corrected_original,
-        implicit_feedback=implicit_feedback,
-    )
+        corrected_original = store.add_correction(
+            original.id,
+            old=original.content,
+            new=correction_text,
+            by=teacher,
+        )
+        corrected_original = store.update_node(
+            corrected_original.id,
+            stats={
+                "confidence": min(corrected_original.confidence, 0.25),
+                "unique_agents": corrected_original.unique_agents,
+                "usefulness_score": min(corrected_original.usefulness_score, -0.25),
+            },
+        )
+        _refresh_derived_from(store, original.id)
+        implicit_feedback = apply_pending_recall_feedback(
+            store,
+            corrective_trace,
+            reinforce_results=False,
+        )
+        corrective_trace = implicit_feedback.trace
+        return TeachResult(
+            corrective_trace=corrective_trace,
+            supersedes=supersedes,
+            original=corrected_original,
+            implicit_feedback=implicit_feedback,
+        )
+
+
+def _derivation_sources(store: MemoryStore, node: Node) -> list[str]:
+    """Read recorded materializer inputs, never incidental recall lineage."""
+
+    strategy = node.provenance.get("strategy")
+    if node.level in ("schema", "concept"):
+        if strategy == "cross-scope-promotion":
+            return string_list(node.provenance.get("source_concepts"))
+        if strategy == "procedural" or (
+            strategy in ("token-jaccard", "embedding-cosine")
+            and node.provenance.get("cluster_key")
+        ):
+            return node.source_traces
+    return [
+        edge.target_id
+        for edge in store.list_connections(source_id=node.id, relation_type="related")
+        if edge.metadata.get("kind") == DERIVED_FROM_KIND
+    ]
+
+
+def _current_derivation(store: MemoryStore, node: Node) -> _EraAssessment:
+    """Resolve each recorded input independently, without displacing other eras."""
+
+    members = list(store.get_nodes(_derivation_sources(store, node)).values())
+    live: dict[str, Node] = {}
+    excluded: dict[str, str] = {}
+    for member in members:
+        replacement_id = resolve_replacement(store, member.id)
+        current = store.get_node(replacement_id) if replacement_id else member
+        if replacement_id:
+            excluded[member.id] = f"superseded-by:{replacement_id}"
+        if current is not None and not current.decayed and not current.corrections:
+            live[current.id] = current
+        else:
+            excluded.setdefault(member.id, "no current source")
+    return _EraAssessment(members, list(live.values()), excluded, False, 1)
+
+
+def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
+    """Refresh the affected derivation subgraph, sources before their consumers.
+
+    The graph is call-local. Discover it before changing membership so diamonds
+    and cross-scope descendants see all of their updated inputs in one teach.
+    """
+
+    affected: dict[str, Node] = {}
+    pending = [source_id]
+    while pending:
+        changed = pending.pop()
+        for node in store.nodes_referencing_source(changed):
+            if node.id == source_id or node.id in affected:
+                continue
+            if changed not in _derivation_sources(store, node):
+                continue
+            if node.corrections or _is_superseded(store, node.id):
+                continue
+            affected[node.id] = node
+            pending.append(node.id)
+
+    visiting: set[str] = set()
+    refreshed: set[str] = set()
+
+    def refresh(node_id: str) -> None:
+        if node_id in refreshed:
+            return
+        if node_id in visiting:
+            # A cycle has no source-first evaluation. Keep its evidence by id,
+            # but it cannot remain current after one of its inputs changed.
+            store.soft_delete_node(node_id, "derivation: cyclic sources")
+            return
+        visiting.add(node_id)
+        for dependency in _derivation_sources(store, affected[node_id]):
+            if dependency in affected:
+                refresh(dependency)
+        node = store.get_node(node_id)
+        if node is not None and not node.decayed:
+            _refresh_derived_node(store, node)
+        visiting.remove(node_id)
+        refreshed.add(node_id)
+
+    for node_id in affected:
+        refresh(node_id)
+
+
+def _refresh_derived_node(store: MemoryStore, node: Node) -> Node:
+    assessment = _current_derivation(store, node)
+    members = assessment.live
+    if not members:
+        return store.soft_delete_node(node.id, "derivation: no current sources")
+
+    strategy = node.provenance.get("strategy")
+    if strategy == "procedural":
+        # Keep the recorded group and its retrieval label. A correction is an
+        # explicit replacement even when its writer changes its context.
+        key = _procedure_key(node)
+        if key is not None:
+            declared = [member for member in members if _declares_step(member)]
+            binding = node.level == "schema" and len(declared) == len(members)
+            current = store.update_node(
+                node.id, provenance={**node.provenance, "source_traces": [m.id for m in members]}
+            )
+            updated, _ = _create_or_update_schema(
+                store, node.scope, key, members, current,
+                era=assessment if binding else None,
+            )
+            _connect_schema_to_traces(store, updated, members)
+            return updated
+    elif strategy in ("token-jaccard", "embedding-cosine"):
+        cluster = _TraceCluster(node.scope, members, Counter(), strategy=strategy)
+        for member in members:
+            cluster.token_counts.update(_significant_tokens(member.content))
+        updated, _ = _merge_cluster_into_concept(store, cluster, assessment, existing=node)
+        _update_edge_weights_from_co_access(store, updated, members)
+        return updated
+    elif strategy == "cross-scope-promotion":
+        return _write_global_promotion(store, members, existing=node)
+
+    # An explicit derived_from edge proves dependency, but cannot specify how
+    # to rewrite an arbitrary expression. Its sources and old content remain
+    # available through exact lookup with the normal decay validity.
+    return store.soft_delete_node(node.id, "derivation: corrected source requires rederivation")
 
 
 def _materialize_procedural_schemas(
@@ -1264,7 +1389,8 @@ def _cluster_traces_indexed(
 
 
 def _merge_cluster_into_concept(
-    store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment
+    store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment,
+    *, existing: Node | None = None,
 ) -> tuple[Node, bool]:
     members = assessment.live
     source_traces = sorted({trace.id for trace in members})
@@ -1293,7 +1419,7 @@ def _merge_cluster_into_concept(
         "usefulness_score": usefulness,
     }
 
-    existing = _find_existing_concept(
+    existing = existing or _find_existing_concept(
         store,
         cluster.scope,
         cluster_key,
@@ -1319,15 +1445,9 @@ def _merge_cluster_into_concept(
     )
     provenance["source_traces"] = merged_sources
     provenance["cluster_size"] = len(merged_sources)
-    content_update = (
-        digest
-        if digest != existing.content
-        and _trace_quality(best_trace) >= _node_quality(existing)
-        else None
-    )
     concept = store.update_node(
         existing.id,
-        content=content_update,
+        content=digest,
         embedding=concept_embedding,
         stats=stats,
         provenance={**existing.provenance, **provenance},
