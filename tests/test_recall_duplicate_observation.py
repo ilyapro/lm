@@ -12,7 +12,7 @@ from living_memory.chunking import TextChunk
 from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.storage import MemoryStore
 
-from test_mcp_server import FakeMCP
+from test_lookup import FakeMCP
 
 
 SCOPE = "project:duplicate-observation"

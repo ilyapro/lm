@@ -56,7 +56,7 @@ from living_memory.server import (
 )
 from living_memory.storage import MemoryStore
 
-from test_mcp_server import FakeMCP
+from test_lookup import FakeMCP
 
 SCOPE = "project:neardupdelivery"
 #: Every seeded node carries this stem so one query reaches all of them and
