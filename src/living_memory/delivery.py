@@ -34,7 +34,7 @@ Rules, applied in this order per ranked result:
    snippet ladder indexed by its content-bearer position (stubs of every
    class don't consume ladder slots): the first bearer has a finite 2400-char
    budget, lower-ranked bearers get descending budgets, and oversized content
-   is selected in task-relevant passages. Binding schemas ship complete. With
+   is selected in task-relevant passages. Schema recipes ship complete. With
    the ladder disabled (``snippet_ladder=None``) every bearer shares the
    uniform ``snippet_max_chars`` budget (``0`` disables snippeting) — the
    legacy contract.

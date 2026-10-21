@@ -841,8 +841,8 @@ def _materialize_procedural_schemas(
     its `procedure_id`. Traces sharing a `task_pattern` cluster together even
     when their `procedure_id` labels differ between instances.
 
-    Only writer-declared steps make a binding schema. A group without them gets
-    a nonbinding carrier instead: a concept that the group's trigger finds and
+    Only writer-declared steps make a procedure schema. A group without them gets
+    an evidence carrier instead: a concept that the group's trigger finds and
     that holds its current records whole as evidence, never as steps. A schema
     the replaced mechanism built from such a group, visited or not, becomes
     that carrier in place.
@@ -1029,7 +1029,7 @@ def _create_or_update_schema(
         procedure_key.field: procedure_key.raw,
         "trigger": trigger,
     }
-    if era is not None:  # a binding schema speaks for its era; a carrier has none
+    if era is not None:  # a recipe describes its era; an evidence carrier has none
         context["procedure"] = steps
     if era_block is not None:
         context["era_status"] = "current"
