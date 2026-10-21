@@ -191,53 +191,25 @@ that were credited before it.
 
 ## Prompt arms (`LM_EXPLICIT_FEEDBACK_PROMPT`)
 
-The arm is read once, at server start. The experiment switches arms only by
-restarting its sandbox server with this env var.
+The arm is read once, at server start. Both arms share `_RECALL_DESCRIPTION`:
+recall before acting and mid-work, use knowledge under current instructions and
+task conditions, verify changeable claims when needed, and immediately teach
+refutations. A schema's type grants no authority; complete recipes and
+`content_ref`/`memory_lookup` access remain available.
 
-- **optional** (default): every tool description is byte-identical to
-  before. The hint is carried only by the field schemas: `used` = "Optional:
-  ids of results from your earlier recalls this session that you used.",
-  `irrelevant` = "Optional: ids of earlier recall results that did not fit
-  their query."
-- **mandatory**: `memory_recall` gets `_RECALL_DESCRIPTION_MANDATORY`, which
-  ends in the binding sentence "You MUST mark each recall's results on your
-  next call: used ids as used, off-topic ids as irrelevant." It was fitted by
-  rewording, not appending:
-  - the mid-work law no longer repeats the opener's "at every new turn of
-    thought";
-  - "searching," and "— measuring" were dropped from the world trigger,
-    whose class "pulling knowledge from the world" and the world-before-memory
-    clause still cover both;
-  - "choosing a design or approach" became "choosing an approach";
-  - "Query: identifiers and what you need; re-ask as it moves." became
-    "Query by identifiers; re-ask.";
-  - the content_ref sentence was shortened.
+- **optional** (default): feedback field descriptions request ids used and ids
+  that did not fit their recall query.
+- **mandatory**: `_RECALL_DESCRIPTION_MANDATORY` adds: "You MUST mark each
+  recall's results on your next call: used ids as used, off-topic ids as
+  irrelevant." Feedback fields on recall, remember and teach say "REQUIRED
+  after a recall: …". Remember and teach descriptions are shared by both arms.
 
-  "Depth 'causal' when debugging." stays in the mandatory arm too: it was
-  dropped in the first fit and restored by the two world-trigger and design
-  cuts above (tests/test_recall_description_causal.py).
-
-  Every pinned law phrase stays (tests/test_explicit_feedback.py,
-  tests/test_instructions_imperative.py). The field schemas on all three
-  tools say "REQUIRED after a recall: …". The remember and teach
-  descriptions are unchanged: `memory_remember` is at 1022/1024 and its
-  every clause is pinned, and the recall sentence already binds "your next
-  call".
-
-Character cost (measured on the real FastMCP `list_tools`):
-
-| arm | recall desc | remember desc | teach desc | field-schema delta per tool (JSON chars) | total extra vs. pre-feature |
-|---|---|---|---|---|---|
-| pre-feature | 1015 | 1022 | 614 | 0 | 0 |
-| optional | 1015 (+0) | 1022 (+0) | 614 (+0) | +399 | +1197 (schema only) |
-| mandatory | 1020 (+5) | 1022 (+0) | 614 (+0) | +419 | +1262 (+5 desc, +1257 schema) |
-
-The mandatory binding sentence costs 101 description characters, funded by
-the rewording. The field schemas are paid in both arms. The deployed-protocol
-checker now selects the expected arm from the local unit's env file by default,
-or from `--prompt-arm` for an explicit target. A host serving the selected arm
-passes; a host serving the other arm is reported as configuration drift. See
-`docs/deployment.md` for remote and sandbox examples.
+The client budget is 1024 characters per tool description. The shared recall
+text is 872 characters; the mandatory arm is 974. Tests check both lengths and
+the causal debugging hint, action triggers, knowledge boundary and lookup path.
+The deployed-protocol checker selects the expected arm from the local service's
+env file, or from `--prompt-arm` for an explicit target. Serving the other arm
+is configuration drift. See `docs/deployment.md` for its invocation.
 
 ## Rollout notes
 

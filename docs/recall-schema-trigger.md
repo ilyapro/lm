@@ -77,7 +77,7 @@ trigger contributes through the existing blend only in proportion to the
 square of that coverage when it cites procedural source records; an arbitrary
 concept with only a trigger gets no new rank claim. Its vector, bm25, graph,
 scope, feedback and correction evidence keep their existing roles. The score gate uses the same
-coverage for nonbinding carriers. Binding schemas keep their trigger
+coverage for case-evidence carriers. Schema recipes keep their trigger
 availability scale, so an applicable short instruction can survive a
 compound query even without a strong content vector. The `name` valve stays
 disabled by default.
@@ -85,7 +85,7 @@ disabled by default.
 The square makes an unrelated single-label match weak in a compound query,
 while a preserved legacy carrier whose trigger describes the whole query can
 still reach the result slots and offer its full current group evidence through
-`content_ref`. This does not treat case records as binding steps. See
+`content_ref`. Discovery scores do not establish procedure authority or current applicability. See
 `artifacts/recall-applicability/candidate-v3.md` for the synthetic retention
 checks and the frozen development comparison.
 

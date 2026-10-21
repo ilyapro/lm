@@ -50,7 +50,30 @@ and exercises all nine registered core tools locally.
 content, delivery class, re-fetch reference, and validity/corrections. Read
 `results[i].content` and use its `id` for feedback. When an excerpt or duplicate
 preview is insufficient, pass `content_ref.node_id` to `memory_lookup` for
-complete content and current validity. Binding schemas retain complete content.
+complete content and current validity. Schema recipes retain complete content;
+duplicate previews still provide `content_ref` access to the whole recipe.
+
+Recall before acting and at every new turn of thought, including mid-work.
+Use relevant knowledge and applicable complete recipes under current system
+and operator instructions and the actual task conditions. Those instructions
+define permissions and restrictions; neither a nonempty result nor
+`level:schema` creates authority. A schema preserves a useful recipe as a whole;
+its storage level does not establish that the procedure applies now.
+
+A nonempty recall neither forbids nor replaces necessary checks of changeable
+claims against current sources. For example, after recalling a historical
+service overview, read the current overview or code when the task requires it.
+Use what remains relevant and immediately correct a refuted claim through
+`memory_teach(trace_id=..., correction=...)`, which creates the `supersedes`
+edge. An applicable exact recipe retains its steps and conditions; access to
+that knowledge is independent of permission to act.
+
+Remember only verified knowledge expensive to re-derive. Use `used` for results
+you used and `irrelevant` only for results off-topic for their recall query;
+a relevant historical result is not off-topic merely because it needs checking.
+The mandatory feedback arm requires those marks on the next call. Both arms,
+server instructions and `memory://prompt/retrieval_context` share the same
+knowledge and authority contract.
 
 Request `memory_recall(..., view="full")` to inspect ranked entries with their
 `node`, scores, and compacted metadata. For original metadata, use exact-id
