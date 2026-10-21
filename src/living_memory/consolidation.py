@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from collections import Counter
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from math import log1p
 from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
@@ -790,6 +790,7 @@ def _refresh_derived_node(store: MemoryStore, node: Node) -> Node:
         # explicit replacement even when its writer changes its context.
         key = _procedure_key(node)
         if key is not None:
+            key = replace(key, trigger=str(node.context.get("trigger") or key.trigger))
             declared = [member for member in members if _declares_step(member)]
             binding = node.level == "schema" and len(declared) == len(members)
             current = store.update_node(
@@ -1675,57 +1676,60 @@ def _cross_scope_promotion(
             project_sources,
             similarities=similarities,
         )
-    return _create_global_promoted_concept(
+    return _write_global_promotion(
         store,
         project_sources,
         similarities=similarities,
     )
 
 
-def _create_global_promoted_concept(
+def _write_global_promotion(
     store: MemoryStore,
     project_sources: list[Node],
     *,
-    similarities: Mapping[str, float],
+    existing: Node | None = None,
+    similarities: Mapping[str, float] | None = None,
 ) -> Node:
+    """One writer for a promotion's content, current inputs and validity stats."""
+
     best_source = _highest_confidence_source(project_sources)
     digest = _synthesize_digest(project_sources, best=best_source)
     source_scopes = _source_scopes(project_sources)
     source_concepts = _source_concept_ids(project_sources)
-    source_traces = _source_trace_ids(project_sources)
     promoted_at = _utc_now()
-    provenance = {
-        "source_traces": source_traces,
+    provenance = dict(existing.provenance) if existing else {}
+    provenance.update({
+        "source_traces": _source_trace_ids(project_sources),
         "promoted_from": source_scopes,
         "source_concepts": source_concepts,
-        "promoted_at": promoted_at,
+        "active_promoted_from": source_scopes,
+        "active_source_concepts": source_concepts,
         "strategy": "cross-scope-promotion",
-        "promotion_events": [
-            _promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at)
-        ],
+    })
+    provenance.setdefault("promoted_at", promoted_at)
+    if similarities is not None:
+        events = list(provenance.get("promotion_events", []))
+        events.append(_promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at))
+        provenance["promotion_events"] = events
+        provenance["last_promoted_at"] = promoted_at
+    stats = {
+        "confidence": _active_promotion_confidence(project_sources),
+        "unique_agents": _promoted_unique_agents(project_sources),
+        "temporal_hint": _promoted_temporal_hint(project_sources),
+        "usefulness_score": _promoted_usefulness(project_sources),
     }
-    global_concept = store.create_node(
-        level="concept",
-        content=digest,
-        context={
-            "scope": "global",
-            "agent": "memory_consolidate",
-            "timestamp": promoted_at,
-        },
-        embedding=best_source.embedding,
-        stats={
-            "confidence": _promoted_confidence(project_sources),
-            "unique_agents": _promoted_unique_agents(project_sources),
-            "temporal_hint": _promoted_temporal_hint(project_sources),
-            "usefulness_score": _promoted_usefulness(project_sources),
-        },
-        provenance=provenance,
-    )
+    if existing is None:
+        global_concept = store.create_node(
+            level="concept", content=digest,
+            context={"scope": "global", "agent": "memory_consolidate", "timestamp": promoted_at},
+            embedding=best_source.embedding, stats=stats, provenance=provenance,
+        )
+    else:
+        global_concept = store.update_node(
+            existing.id, content=digest, stats=stats, provenance=provenance,
+        )
     _connect_project_concepts_to_global(
-        store,
-        project_sources,
-        global_concept,
-        similarities=similarities,
+        store, project_sources, global_concept, similarities=similarities or {},
     )
     return global_concept
 
@@ -1737,44 +1741,17 @@ def _reinforce_global_concept(
     *,
     similarities: Mapping[str, float],
 ) -> Node | None:
-    source_scopes = set(_source_scopes(project_sources))
-    source_concepts = set(_source_concept_ids(project_sources))
-    existing_scopes = set(string_list(global_concept.provenance.get("promoted_from")))
-    existing_concepts = set(string_list(global_concept.provenance.get("source_concepts")))
-    source_traces = set(_source_trace_ids(project_sources))
-    existing_traces = set(global_concept.source_traces)
-    new_scopes = source_scopes - existing_scopes
-    new_concepts = source_concepts - existing_concepts
-    new_traces = source_traces - existing_traces
-
-    _connect_project_concepts_to_global(
-        store,
-        project_sources,
-        global_concept,
-        similarities=similarities,
-    )
-    if not new_scopes and not new_concepts and not new_traces:
+    current = _current_derivation(store, global_concept).live
+    sources = {source.id: source for source in [*current, *project_sources]}
+    added = set(sources) - set(_derivation_sources(store, global_concept))
+    if not added:
+        _connect_project_concepts_to_global(
+            store, project_sources, global_concept, similarities=similarities,
+        )
         return None
-
-    promoted_at = _utc_now()
-    provenance = dict(global_concept.provenance)
-    provenance["source_traces"] = sorted(existing_traces | source_traces)
-    provenance["promoted_from"] = sorted(existing_scopes | source_scopes)
-    provenance["source_concepts"] = sorted(existing_concepts | source_concepts)
-    provenance.setdefault("promoted_at", promoted_at)
-    provenance["last_promoted_at"] = promoted_at
-    provenance["strategy"] = "cross-scope-promotion"
-    events = list(provenance.get("promotion_events", []))
-    events.append(_promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at))
-    provenance["promotion_events"] = events
-
-    stats = {
-        "confidence": _reinforced_confidence(global_concept, project_sources, len(new_scopes)),
-        "unique_agents": max(global_concept.unique_agents, _promoted_unique_agents(project_sources)),
-        "temporal_hint": global_concept.temporal_hint or _promoted_temporal_hint(project_sources),
-        "usefulness_score": max(global_concept.usefulness_score, _promoted_usefulness(project_sources)),
-    }
-    return store.update_node(global_concept.id, stats=stats, provenance=provenance)
+    return _write_global_promotion(
+        store, list(sources.values()), existing=global_concept, similarities=similarities,
+    )
 
 
 def _connect_project_concepts_to_global(
@@ -1851,15 +1828,6 @@ def _promoted_confidence(project_sources: Iterable[Node]) -> float:
     return round(min(0.99, base + scope_bonus), 6)
 
 
-def _reinforced_confidence(
-    global_concept: Node, project_sources: Iterable[Node], new_scope_count: int
-) -> float:
-    if new_scope_count <= 0:
-        return global_concept.confidence
-    source_confidence = _promoted_confidence(project_sources)
-    boost = min(0.1, 0.02 * new_scope_count)
-    return round(min(0.99, max(global_concept.confidence, source_confidence) + boost), 6)
-
 
 def _promoted_unique_agents(project_sources: Iterable[Node]) -> int:
     return sum(max(1, source.unique_agents) for source in project_sources)
@@ -1880,50 +1848,12 @@ def _promoted_temporal_hint(project_sources: Iterable[Node]) -> str | None:
 
 
 def _refresh_promoted_global_concepts(store: MemoryStore) -> list[Node]:
-    refreshed: list[Node] = []
-    global_concepts = store.list_nodes(
-        level="concept",
-        scope="global",
-        include_decayed=False,
-        limit=100_000,
-    )
-    for global_concept in global_concepts:
-        source_concept_ids = string_list(global_concept.provenance.get("source_concepts"))
-        if not source_concept_ids:
-            continue
-
-        active_sources = [
-            source
-            for source_id in source_concept_ids
-            if (source := store.get_node(source_id)) is not None
-            and source.level == "concept"
-            and source.scope.startswith("project:")
-            and not source.decayed
-        ]
-        active_scopes = _source_scopes(active_sources)
-        active_concepts = _source_concept_ids(active_sources)
-        if (
-            string_list(global_concept.provenance.get("active_promoted_from")) == active_scopes
-            and string_list(global_concept.provenance.get("active_source_concepts"))
-            == active_concepts
-        ):
-            continue
-
-        provenance = dict(global_concept.provenance)
-        provenance["active_promoted_from"] = active_scopes
-        provenance["active_source_concepts"] = active_concepts
-        provenance["last_promotion_refresh_at"] = _utc_now()
-        stats = {
-            "confidence": min(
-                global_concept.confidence,
-                _active_promotion_confidence(active_sources),
-            ),
-            "unique_agents": _promoted_unique_agents(active_sources),
-            "temporal_hint": _promoted_temporal_hint(active_sources),
-            "usefulness_score": _promoted_usefulness(active_sources),
-        }
-        refreshed.append(store.update_node(global_concept.id, stats=stats, provenance=provenance))
-    return refreshed
+    return [
+        _refresh_derived_node(store, node)
+        for node in store.list_nodes(level="concept", scope="global", include_decayed=False, limit=100_000)
+        if node.provenance.get("strategy") == "cross-scope-promotion"
+        and not node.corrections and not _is_superseded(store, node.id)
+    ]
 
 
 def _active_promotion_confidence(project_sources: Iterable[Node]) -> float:
