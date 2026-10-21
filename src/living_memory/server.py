@@ -1346,7 +1346,9 @@ def _register_tools(
         phrasing to ask with — what else memory holds for this task, as a plan
         for the next recall. It never reorders or replaces ``results``, and it
         is absent whenever there is no residual or nothing worth saying about
-        it (``LM_RECALL_MAP=0`` removes it outright).
+        it (``LM_RECALL_MAP=0`` removes it outright). Map construction and
+        recording are optional: failures are logged and leave the selected
+        knowledge intact. A map is returned only after its attribution is stored.
 
         Optional ``used``/``irrelevant`` mark results of *earlier* recalls on
         this transport session (docs/explicit-feedback.md); the response then
@@ -1464,26 +1466,30 @@ def _register_tools(
                     resolved=pending_marks,
                 )
                 response["feedback_marks"] = marks.summary()
-            # The map of what the cut left behind, attached verbatim as one
-            # more top-level key — the same additive shape ``auto_decay``
-            # established. Everything about *what* it says lives in
-            # recall_map.py: the server decides only whether there is a
-            # residual to describe, and records what it delivered.
+            # The required response is complete. Publish the optional map only
+            # after its payload and attribution have been recorded together.
             residual = recall_service.last_residual
             if residual and _recall_map_enabled():
-                built = recall_map_builder.build(
-                    residual,
-                    scope=scope,
-                    task=_ambient_text(ambient_context, "task"),
-                    task_pattern=_ambient_text(ambient_context, "task_pattern"),
-                )
-                if built is not None:
-                    response["recall_map"] = built.to_dict()
-                    if recall_service.last_recall_event_id is not None:
+                try:
+                    built = recall_map_builder.build(
+                        residual,
+                        scope=scope,
+                        task=_ambient_text(ambient_context, "task"),
+                        task_pattern=_ambient_text(ambient_context, "task_pattern"),
+                    )
+                    if built is not None and recall_service.last_recall_event_id is not None:
+                        payload = built.to_dict()
                         store.attach_recall_map(
                             recall_service.last_recall_event_id,
-                            response["recall_map"],
+                            payload,
                         )
+                        response["recall_map"] = payload
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "could not deliver optional recall map for event %s",
+                        recall_service.last_recall_event_id,
+                        exc_info=True,
+                    )
             # The map this call just persisted is the signal the *next*
             # session's instructions are composed from. Last, after the
             # response is complete, so nothing an agent waits on depends on
