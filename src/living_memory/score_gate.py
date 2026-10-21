@@ -150,7 +150,7 @@ def trigger_gate_score(
     """Score of a trigger-found schema on the trigger scale; ``None`` otherwise.
 
     ``trigger_score / SCHEMA_TRIGGER_SCALE`` times node feedback and demotion.
-    Nonbinding carriers also need query coverage; a binding schema retains
+    Case-evidence carriers also need query coverage; a schema recipe retains
     its short-instruction availability when its trigger is one clause of a
     longer question. Scope and causal boosts are left out.
     """
