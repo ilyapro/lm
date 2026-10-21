@@ -2332,9 +2332,9 @@ def _blend_candidate_score(
         # contribution unless content/graph evidence supports the carrier.
         # The channel weights keep it on the ordinary blend's scale. Taking
         # the maximum avoids counting the same lexical claim twice.
-        # A binding schema has its writer-declared authority. A nonbinding
-        # procedural carrier earns this route only while it cites source
-        # records; an arbitrary concept with a matching trigger does not.
+        # Schemas carry reusable recipes. Other procedural carriers earn
+        # this discovery route only while citing source records; a matching
+        # trigger on an arbitrary concept does not establish that support.
         if node.level == "schema" or (
             node.provenance.get("strategy") == "procedural" and node.source_traces
         ):
