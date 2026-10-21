@@ -5,6 +5,7 @@ from collections import Counter
 import pytest
 
 from living_memory import query_anchors as qa
+from living_memory import irrelevance
 from living_memory.irrelevance import QUERY_IRRELEVANCE_SCHEMA_SQL
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
@@ -78,6 +79,7 @@ def recall(service, *, query="situation", depth=1, scope="project:demo"):
 def count_work(monkeypatch, store):
     counts = Counter()
     for obj, name in ((qa, "_rank_anchors"), (store, "get_query_anchor"),
+                      (irrelevance, "has_active_irrelevance"),
                       (store, "list_query_anchor_edges"), (store, "query_anchor_revision")):
         original = getattr(obj, name)
 
@@ -137,7 +139,7 @@ def test_disabled_and_empty_paths_do_not_gain_work(tmp_path, monkeypatch, case, 
             with store.connection:
                 store.connection.execute({"no-table": "DROP TABLE query_irrelevance",
                                           "cancelled": "UPDATE query_irrelevance SET weight = 0",
-                                          "no-anchors": "DELETE FROM query_anchors"}[case])
+                                          "no-anchors": "UPDATE query_anchors SET decayed = 1"}[case])
         elif case == "no-match":
             query = "unrelated"
         elif case == "empty-vector":

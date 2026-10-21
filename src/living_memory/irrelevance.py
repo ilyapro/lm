@@ -337,6 +337,8 @@ def query_demotions(
     Omission performs an independent match without loading graph targets.
     """
 
+    if matches is not None and not matches:
+        return {}
     strength_cap = 1.0 - (query_irrelevance_factor() if factor is None else factor)
     if strength_cap <= 0.0 or not query_embedding or not has_active_irrelevance(store):
         return {}
