@@ -1225,35 +1225,46 @@ def _register_tools(
         used: _MarkIds = None,
         irrelevant: _MarkIds = None,
     ) -> dict[str, Any]:
-        """Store a corrective trace and connect it to the original."""
+        """Commit the correction, provenance and accompanying marks together.
+
+        Explicit marks precede implicit feedback and receive the corrective
+        source before commit. Their own failures remain nonfatal. Optional
+        consolidation scheduling runs only after the knowledge commit.
+        """
 
         context = _with_transport_identity(context)
         with runtime_lock:
-            # Marks must precede the implicit feedback memory_teach runs
-            # inside, so they are recorded before the corrective trace exists
-            # and stamped with its id after. A teach that is about to fail on
-            # its own arguments records nothing.
-            marks = None
-            if (
-                has_explicit_marks(used, irrelevant)
-                and store.get_node(trace_id) is not None
-                and _correction_text(correction)
-            ):
-                marks = apply_explicit_marks(
-                    store,
-                    used,
-                    irrelevant,
-                    via_tool="memory_teach",
-                    source_id="",
-                    transport_session_id=_context_transport(context),
-                    agent=_ambient_text(context, "agent"),
+            with store.transaction():
+                # Marks must precede implicit feedback, before the corrective
+                # trace exists. A failed required write also rolls them back.
+                marks = None
+                if (
+                    has_explicit_marks(used, irrelevant)
+                    and store.get_node(trace_id) is not None
+                    and _correction_text(correction)
+                ):
+                    marks = apply_explicit_marks(
+                        store,
+                        used,
+                        irrelevant,
+                        via_tool="memory_teach",
+                        source_id="",
+                        transport_session_id=_context_transport(context),
+                        agent=_ambient_text(context, "agent"),
+                    )
+                taught = consolidation_service.memory_teach(
+                    trace_id,
+                    correction,
+                    confidence=confidence,
+                    context=context,
                 )
-            taught = consolidation_service.memory_teach(
-                trace_id,
-                correction,
-                confidence=confidence,
-                context=context,
-            )
+                if marks is not None:
+                    try:
+                        store.set_feedback_marks_source(
+                            marks.mark_ids, taught.corrective_trace.id
+                        )
+                    except Exception:
+                        pass
             response = _teach_result_to_dict(taught)
             # The corrective trace counts toward the scope's cadence like any
             # write; the pass it makes due is scheduled, never run here.
@@ -1261,12 +1272,6 @@ def _register_tools(
                 store, auto_consolidation, taught.corrective_trace.scope
             )
             if marks is not None:
-                try:
-                    store.set_feedback_marks_source(
-                        marks.mark_ids, taught.corrective_trace.id
-                    )
-                except Exception:
-                    pass
                 response["feedback_marks"] = marks.summary()
             return response
 
