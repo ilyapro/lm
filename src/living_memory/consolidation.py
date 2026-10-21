@@ -721,10 +721,6 @@ def _current_derivation(
 
     source_ids = [*_derivation_sources(store, node), *(member.id for member in additional)]
     members = list(store.get_nodes(source_ids).values())
-    return _resolve_current_sources(store, members)
-
-
-def _resolve_current_sources(store: MemoryStore, members: list[Node]) -> _EraAssessment:
     live: dict[str, Node] = {}
     excluded: dict[str, str] = {}
     for member in members:
@@ -778,11 +774,13 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
         if node.provenance.get("strategy") in ("token-jaccard", "embedding-cosine")
         for source_id in _derivation_sources(store, node)
     }
-    sources = _resolve_current_sources(store, list(store.get_nodes(source_ids).values()))
+    if source_ids:
+        source_ids.add(resolve_replacement(store, source_id) or source_id)
     source_inputs = {
         source.node.id: source
         for source in _prepare_digest_sources([
-            member for member in sources.live if member.id not in affected
+            member for member in store.get_nodes(source_ids).values()
+            if member.id not in affected and not member.decayed and not member.corrections
         ])
     }
 
