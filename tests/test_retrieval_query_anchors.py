@@ -278,7 +278,11 @@ class SpuriousAnchorSeedService(MemoryRecallService):
 
 
 def pre_fix_service(store, anchors=True):
-    return _pre_fix_module.MemoryRecallService(store, embedder=model, anchor_seeding=anchors)
+    svc = _pre_fix_module.MemoryRecallService(store, embedder=model, anchor_seeding=anchors)
+    # This score oracle uses the frozen matcher with live storage. Read vectors
+    # directly: its historical cache expects a different revision API.
+    svc._anchor_vector_source = lambda: store
+    return svc
 
 
 def jargon_corpus(store):
