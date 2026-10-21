@@ -106,7 +106,9 @@ def test_digest_and_cascade_share_reads(store, monkeypatch, early_stages):
     anchored = [c for c in first.clusters if c.stage == STAGE_ANCHOR]
     assert [c.member_ids for c in anchored] == [("member-0", "member-1"), ("member-2",)]
     if early_stages:
-        assert {c.stage for c in first.clusters} == {STAGE_STRUCTURAL, STAGE_PATH, STAGE_ANCHOR}
+        assert {c.stage for c in builder._cache[first.key].templates} == {
+            STAGE_STRUCTURAL, STAGE_PATH, STAGE_ANCHOR,
+        }
     with observed(builder) as cached_reads:
         cached = build(builder, results)
     assert builder.last_cache_hit
@@ -121,7 +123,7 @@ def test_offer_without_digest_observes_only_remaining_and_cache_hit_reads_nothin
     monkeypatch.setattr(builder, "_curtailment", lambda *a, **kw: _Curtailment(0, 0))
     with observed(builder) as reads:
         first = build(builder, results)
-    assert len(first.clusters) == 4
+    assert first.pool_size == 5 and first.clusters
     assert_reads(reads, [r.node.id for r in results[:3]], ["anchor-a", "anchor-b"])
     assert reads[2] == []
     with observed(builder) as reads:
@@ -167,14 +169,18 @@ def test_next_build_sees_external_anchor_changes(store, monkeypatch):
     results = seed_pool(store)
     builder = RecallMapBuilder(store)
     monkeypatch.setattr(builder, "_curtailment", lambda *a, **kw: due())
-    first = build(builder, results)
+    with observed(builder) as initial:
+        first = build(builder, results)
     with sqlite3.connect(store.connection.execute("PRAGMA database_list").fetchone()[2]) as writer:
-        writer.execute("UPDATE query_anchors SET query = 'prune seasonal branches' WHERE id = 'anchor-a'")
+        writer.execute("UPDATE query_anchors SET decayed = 1 WHERE id = 'anchor-a'")
     with observed(builder) as reads:
         changed = build(builder, results)
     assert not builder.last_cache_hit
     assert changed != first
-    assert changed.clusters[0].ask_hint == "prune seasonal branches"
+    assert [c.ask_hint for c in changed.clusters if c.stage == STAGE_ANCHOR] == [
+        "schedule harvest rotation",
+    ]
+    assert reads[2] != initial[2]
     assert_reads(reads, [r.node.id for r in results], ["anchor-a", "anchor-b"])
 
 
