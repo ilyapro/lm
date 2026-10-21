@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from array import array
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -1057,6 +1058,7 @@ class MemoryStore:
         # TEMP objects are per-connection, so this cache cannot go stale the
         # way an on-disk schema probe can.
         self._fts_term_tokenizer_ready = False
+        self._savepoint_serial = 0
         if str(self.db_path) != ":memory:":
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1085,6 +1087,47 @@ class MemoryStore:
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Compose store writes without committing their caller's transaction."""
+
+        self._savepoint_serial += 1
+        name = f"memory_write_{self._savepoint_serial}"
+        self._conn.execute(f"SAVEPOINT {name}")
+        try:
+            yield
+        except BaseException:
+            self._conn.execute(f"ROLLBACK TO {name}")
+            raise
+        finally:
+            self._conn.execute(f"RELEASE {name}")
+
+    def nodes_referencing_source(self, source_id: str) -> list[Node]:
+        """Candidate dependents; the materializer must verify derivation semantics.
+
+        Source lists can also contain recall lineage. Neither a citation nor
+        an ordinary related edge alone establishes a logical dependency.
+        """
+
+        rows = self._conn.execute(
+            """
+            SELECT n.* FROM nodes n
+            WHERE n.decayed = 0 AND (
+                EXISTS (SELECT 1 FROM json_each(n.source_traces) WHERE value = ?)
+                OR EXISTS (
+                    SELECT 1 FROM json_each(n.provenance, '$.source_concepts') WHERE value = ?
+                )
+                OR n.id IN (
+                    SELECT source_id FROM connections
+                    WHERE target_id = ? AND type = 'related'
+                      AND json_extract(metadata, '$.kind') = 'derived_from'
+                )
+            )
+            """,
+            (source_id, source_id, source_id),
+        ).fetchall()
+        return [_node_from_row(row) for row in rows]
 
     # ------------------------------------------------------------------
     # Schema-shape probes
@@ -1162,7 +1205,7 @@ class MemoryStore:
 
     def set_kv(self, key: str, value: str) -> None:
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 INSERT INTO kv (key, value, updated_at)
@@ -1192,7 +1235,7 @@ class MemoryStore:
         node_id: str | None = None,
         timestamp: str | None = None,
     ) -> Node:
-        with self._conn:
+        with self.transaction():
             new_id = self._insert_node(
                 level=level,
                 content=content,
@@ -1357,7 +1400,7 @@ class MemoryStore:
             return self.append_trace(content, context, feedback=feedback), []
 
         rejected_ids: list[str] = []
-        with self._conn:
+        with self.transaction():
             primary_id = self._insert_node(
                 level="trace",
                 content=content,
@@ -1567,7 +1610,7 @@ class MemoryStore:
                 stored_embedding = None
             embedding_value = (stored_embedding,)
 
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 f"""
                 UPDATE nodes
@@ -1638,7 +1681,7 @@ class MemoryStore:
         if existing is None:
             raise KeyError(node_id)
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 UPDATE nodes
@@ -1667,7 +1710,7 @@ class MemoryStore:
         if self.get_node(target_id) is None:
             raise KeyError(target_id)
 
-        with self._conn:
+        with self.transaction():
             self._insert_connection(
                 source_id,
                 target_id,
@@ -1789,7 +1832,7 @@ class MemoryStore:
             raise KeyError(connection_id)
 
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 UPDATE connections
@@ -1806,7 +1849,7 @@ class MemoryStore:
         return self.get_connection(connection_id)  # type: ignore[return-value]
 
     def delete_connection(self, connection_id: str) -> None:
-        with self._conn:
+        with self.transaction():
             cursor = self._conn.execute(
                 "DELETE FROM connections WHERE id = ?",
                 (connection_id,),
@@ -1875,7 +1918,7 @@ class MemoryStore:
         if self.get_node(node_id) is None:
             raise KeyError(node_id)
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 UPDATE nodes
@@ -1927,7 +1970,7 @@ class MemoryStore:
         # callers can reproduce the fingerprint from (query, requested scope)
         # without any storage round-trip.
         fingerprint = recall_fingerprint(query, requested_scope or scope)
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 INSERT INTO recall_events (
@@ -1984,7 +2027,7 @@ class MemoryStore:
         """
 
         encoded = _encode_recall_map(recall_map)
-        with self._conn:
+        with self.transaction():
             updated = self._conn.execute(
                 "UPDATE recall_events SET recall_map = ? WHERE id = ?",
                 (encoded, event_id),
@@ -2166,7 +2209,7 @@ class MemoryStore:
             raise ValueError(f"unparsable lookup instant: {occurred_at!r}")
         transport = _optional_str(transport_session_id)
         event_id = new_ulid()
-        with self._conn:
+        with self.transaction():
             self._conn.executemany(
                 f"""
                 INSERT INTO {RECALL_LOOKUP_EVENT_TABLE} (
@@ -2265,7 +2308,7 @@ class MemoryStore:
             if instant is None:
                 raise ValueError(f"unparsable credit instant: {credited_at!r}")
         event_id, target = str(recall_event_id), str(node_id)
-        with self._conn:
+        with self.transaction():
             if basis == "explicit":
                 cursor = self._conn.execute(
                     f"""
@@ -2328,7 +2371,7 @@ class MemoryStore:
         if not marks:
             return ids
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             for mark in marks:
                 rank = mark.get("rank")
                 cursor = self._conn.execute(
@@ -2368,7 +2411,7 @@ class MemoryStore:
         ids = [int(mark_id) for mark_id in mark_ids]
         if not ids or not source_id:
             return
-        with self._conn:
+        with self.transaction():
             self._conn.executemany(
                 f"UPDATE {RECALL_FEEDBACK_MARKS_TABLE} SET source_id = ? WHERE id = ?",
                 [(str(source_id), mark_id) for mark_id in ids],
@@ -3040,7 +3083,7 @@ class MemoryStore:
             raise KeyError(event_id)
         fingerprint = _optional_str(event_row["fingerprint"])
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             flipped = self._conn.execute(
                 """
                 UPDATE recall_events
@@ -3084,7 +3127,7 @@ class MemoryStore:
 
         if self.get_recall_event(event_id) is None:
             raise KeyError(event_id)
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 "UPDATE recall_events SET gated = 1 WHERE id = ?",
                 (event_id,),
@@ -3180,7 +3223,7 @@ class MemoryStore:
         attestation_id = new_ulid()
         now = _utc_now()
         try:
-            with self._conn:
+            with self.transaction():
                 self._conn.execute(
                     """
                     INSERT INTO recall_attestations (
@@ -3228,7 +3271,7 @@ class MemoryStore:
 
         if self.get_recall_attestation(attestation_id) is None:
             raise KeyError(attestation_id)
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 UPDATE recall_attestations
@@ -3356,7 +3399,7 @@ class MemoryStore:
             for statement in _FTS_TERM_TOKENIZER_SQL:
                 self._conn.execute(statement)
             self._fts_term_tokenizer_ready = True
-        with self._conn:
+        with self.transaction():
             self._conn.execute("DELETE FROM temp.fts_term_tokenizer")
             self._conn.executemany(
                 "INSERT INTO temp.fts_term_tokenizer(rowid, term) VALUES (?, ?)",
@@ -3672,7 +3715,7 @@ class MemoryStore:
 
         if not self._chunk_table_present():
             return 0
-        with self._conn:
+        with self.transaction():
             cur = self._conn.execute(
                 f"DELETE FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ?",
                 (str(node_id),),
@@ -3712,7 +3755,7 @@ class MemoryStore:
         if row is None:
             raise KeyError(node_id)
         fingerprint = str(content_fingerprint or row["content_fingerprint"] or "")
-        with self._conn:
+        with self.transaction():
             written = self._replace_node_chunks(node_id, chunks, fingerprint)
         return written
 
@@ -3833,7 +3876,7 @@ class MemoryStore:
 
         if not self._node_embedding_column_present(refresh=True):
             return False
-        with self._conn:
+        with self.transaction():
             self._conn.execute("DROP INDEX IF EXISTS idx_nodes_embedded_active_scope")
             self._conn.execute("ALTER TABLE nodes DROP COLUMN embedding")
         self._invalidate_schema_shape_cache()
@@ -4078,7 +4121,7 @@ class MemoryStore:
         learning_rate: float = 0.05,
     ) -> RetrievalWeights:
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 INSERT INTO retrieval_weights (scope, bm25, vector, graph, learning_rate, updated_at)
@@ -4296,7 +4339,7 @@ class MemoryStore:
             raise ValueError("anchor embedding must not be empty")
         stamp = now or _utc_now()
         new_id = str(anchor_id) if anchor_id else new_ulid()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 f"""
                 INSERT INTO {QUERY_ANCHOR_TABLE} (
@@ -4342,7 +4385,7 @@ class MemoryStore:
         if not self._anchor_tables_present():
             return None
         stamp = now or _utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 f"""
                 UPDATE {QUERY_ANCHOR_TABLE}
@@ -4366,7 +4409,7 @@ class MemoryStore:
         if not self._anchor_tables_present():
             return None
         stamp = now or _utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 f"""
                 UPDATE {QUERY_ANCHOR_TABLE}
@@ -4494,7 +4537,7 @@ class MemoryStore:
             raise RuntimeError("query anchor tables are absent (pre-v7 database)")
         stamp = now or _utc_now()
         increment = min(1.0, max(0.0, float(weight)))
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 f"""
                 INSERT INTO {QUERY_ANCHOR_EDGE_TABLE} (
@@ -5669,7 +5712,7 @@ class MemoryStore:
             )
         if not rows:
             return
-        with self._conn:
+        with self.transaction():
             self._conn.executemany(
                 f"""
                 INSERT INTO {CONSOLIDATION_EMBEDDING_TABLE}
@@ -5697,7 +5740,7 @@ class MemoryStore:
         """Upsert a server-wide kv entry with an UTC updated_at stamp."""
 
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             self._conn.execute(
                 """
                 INSERT INTO kv (key, value, updated_at)
@@ -5711,7 +5754,7 @@ class MemoryStore:
 
     def _seed_retrieval_weights(self) -> None:
         now = _utc_now()
-        with self._conn:
+        with self.transaction():
             for scope, weights in self.config.retrieval_weights.items():
                 self._conn.execute(
                     """
