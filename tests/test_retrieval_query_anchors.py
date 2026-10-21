@@ -272,7 +272,7 @@ class SpuriousAnchorSeedService(MemoryRecallService):
         super().__init__(store, embedder=model)
         self.target = target
 
-    def _collect_anchor_seeds(self, plan, query_embedding):
+    def _collect_anchor_seeds(self, plan, query_embedding, **kwargs):
         # A mutant: cold start or unrelated anchors spuriously seed a node.
         return {self.target: 1.0}
 

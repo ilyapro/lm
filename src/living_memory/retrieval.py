@@ -241,6 +241,7 @@ from living_memory.near_dup import (
 from living_memory.query_anchors import (
     ANCHOR_MATCH_COSINE_THRESHOLD,
     ANCHOR_MATCH_LIMIT,
+    AnchorMatch,
     match_anchors,
 )
 from living_memory.schema_dedup import collapse_schema_duplicates
@@ -669,13 +670,15 @@ class MemoryRecallService:
         # nothing for a seed to open. The query vector is the one
         # ``_collect_vector`` already computed -- an anchor match embeds
         # nothing of its own.
-        anchor_seeds = (
-            self._collect_anchor_seeds(plan, query_embedding) if graph_depth > 0 else {}
+        anchor_matches = (
+            self._match_query_anchors(plan, query_embedding)
+            if graph_depth > 0 and self.anchor_seeding else None
         )
-        # ``or anchor_seeds`` is the blind spot being fixed: until now the
-        # graph could not run unless some other channel had already produced a
-        # candidate to seed it from, which is exactly the case anchors exist
-        # to answer.
+        anchor_seeds = (
+            self._collect_anchor_seeds(plan, query_embedding, matches=anchor_matches)
+            if graph_depth > 0 else {}
+        )
+        # Anchors can open the graph even when no other channel found a seed.
         if graph_depth > 0 and (candidates or anchor_seeds):
             self._collect_graph(
                 plan,
@@ -687,7 +690,7 @@ class MemoryRecallService:
             )
 
         demotions = _merge_demotions(
-            self._collect_query_demotions(plan, query_embedding),
+            self._collect_query_demotions(plan, query_embedding, matches=anchor_matches),
             self._collect_hub_demotions(),
         )
         supersedes = self._supersedes_sets()
@@ -1386,8 +1389,27 @@ class MemoryRecallService:
     # Query anchors: the graph channel's entry from query space
     # ------------------------------------------------------------------
 
-    def _collect_anchor_seeds(
+    def _match_query_anchors(
         self, plan: ScopePlan, query_embedding: list[float]
+    ) -> list[AnchorMatch]:
+        """Observe matches and graph targets for this recall only."""
+
+        if not query_embedding:
+            return []
+        source = self._anchor_vector_source()
+        if source is None:
+            return []
+        return match_anchors(
+            source,
+            query_embedding,
+            plan,
+            limit=ANCHOR_MATCH_LIMIT,
+            min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
+        )
+
+    def _collect_anchor_seeds(
+        self, plan: ScopePlan, query_embedding: list[float],
+        *, matches: list[AnchorMatch] | None = None,
     ) -> dict[str, float]:
         """Graph seeds contributed by the anchors this query matches.
 
@@ -1411,17 +1433,10 @@ class MemoryRecallService:
 
         if not self.anchor_seeding or not query_embedding:
             return {}
-        source = self._anchor_vector_source()
-        if source is None:
-            return {}
+        if matches is None:
+            matches = self._match_query_anchors(plan, query_embedding)
         seeds: dict[str, float] = {}
-        for match in match_anchors(
-            source,
-            query_embedding,
-            plan,
-            limit=ANCHOR_MATCH_LIMIT,
-            min_similarity=ANCHOR_MATCH_COSINE_THRESHOLD,
-        ):
+        for match in matches:
             for target_id, weight in match.targets:
                 activation = match.similarity * min(1.0, max(0.0, weight))
                 if activation > seeds.get(target_id, 0.0):
@@ -1437,7 +1452,8 @@ class MemoryRecallService:
         )
 
     def _collect_query_demotions(
-        self, plan: ScopePlan, query_embedding: list[float]
+        self, plan: ScopePlan, query_embedding: list[float],
+        *, matches: list[AnchorMatch] | None = None,
     ) -> dict[str, float]:
         """Query-relative irrelevance multipliers for this recall. Never raises.
 
@@ -1446,8 +1462,9 @@ class MemoryRecallService:
         ``audit`` or ``off`` restores the undemoted ranking without touching
         the store -- and only when ``LM_QUERY_IRRELEVANCE_FACTOR`` < 1. Anchor
         matching is ``match_anchors`` with the anchor channel's floor and
-        limit, served from the same cached vectors, independent of the graph
-        depth and of ``anchor_seeding``. The probe for any live row runs
+        limit. Matches already observed by graph seeding are reused within
+        this recall, including an empty result. Otherwise matching is independent
+        of graph depth and ``anchor_seeding``. The probe for any live row runs
         first, so a store that never saw a credited irrelevant mark pays one
         indexed lookup and no anchor scan.
         """
@@ -1455,6 +1472,8 @@ class MemoryRecallService:
         if not query_embedding or _explicit_feedback_policy() != "credit":
             return {}
         try:
+            if matches is not None:
+                return query_demotions(self.store, query_embedding, plan, matches=matches)
             source = self._anchor_vector_source()
             if source is None:
                 return {}

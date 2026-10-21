@@ -80,6 +80,7 @@ from typing import Any
 from living_memory.query_anchors import (
     ANCHOR_MATCH_COSINE_THRESHOLD,
     ANCHOR_MATCH_LIMIT,
+    AnchorMatch,
     match_anchors,
     resolve_query_anchor,
 )
@@ -325,25 +326,29 @@ def query_demotions(
     factor: float | None = None,
     min_similarity: float = ANCHOR_MATCH_COSINE_THRESHOLD,
     limit: int = ANCHOR_MATCH_LIMIT,
+    matches: Sequence[AnchorMatch] | None = None,
 ) -> dict[str, float]:
     """``{node_id: multiplier}`` for the incoming query; ``{}`` when none apply.
 
     ``store`` may be the retrieval layer's cached-vector face; only
     ``match_anchors`` and ``connection`` are used. Each multiplier is in
-    ``[factor, 1)``.
+    ``[factor, 1)``. ``matches`` may supply this recall's observation for the
+    same query, scope, floor and limit; an empty sequence means no matches.
+    Omission performs an independent match without loading graph targets.
     """
 
     strength_cap = 1.0 - (query_irrelevance_factor() if factor is None else factor)
     if strength_cap <= 0.0 or not query_embedding or not has_active_irrelevance(store):
         return {}
-    matches = match_anchors(
-        store,
-        query_embedding,
-        scope_plan,
-        limit=limit,
-        min_similarity=min_similarity,
-        include_targets=False,
-    )
+    if matches is None:
+        matches = match_anchors(
+            store,
+            query_embedding,
+            scope_plan,
+            limit=limit,
+            min_similarity=min_similarity,
+            include_targets=False,
+        )
     if not matches:
         return {}
     full_cosine = query_irrelevance_full_cosine(min_similarity)
