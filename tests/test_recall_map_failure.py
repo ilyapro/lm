@@ -12,17 +12,32 @@ from living_memory import storage
 from living_memory.recall_map import RecallMap, RecallMapBuilder
 from living_memory.server import create_mcp_server
 from living_memory.storage import MemoryStore
-from test_recall_map_curtail import OPERATOR_VALVES
-from test_recall_map_delivery import MAP_QUERY, MAP_SCOPE, _seed
 from test_transport_identity import FakeMCP
 
 
+MAP_SCOPE = "project:mapdelivery"
+MAP_QUERY = "deployment failure database migration rollback"
 MAP_FAULTS = {
     "update": "BEFORE UPDATE OF recall_map ON recall_events",
     "attribution": """BEFORE INSERT ON recall_delivery_history
         WHEN (SELECT recall_map FROM recall_events
               WHERE id=NEW.delivery_event_id) IS NOT NULL""",
 }
+
+
+def _seed(store):
+    for index in range(40):
+        store.append_trace(
+            f"quarterly ledger reconciliation entry {index}",
+            {"scope": "project:mapdelivery-elsewhere"},
+        )
+    for procedure, count in (("canary-window", 6), ("checkpoint-drill", 4), ("throttle-runbook", 3)):
+        for index in range(count):
+            store.append_trace(
+                f"deployment failure case {procedure} {index}: database "
+                f"migration rollback step {index}",
+                {"scope": MAP_SCOPE, "procedure_id": procedure},
+            )
 
 
 def reject_map(connection, stage):
@@ -32,7 +47,10 @@ def reject_map(connection, stage):
 
 @pytest.fixture(autouse=True)
 def knobs(monkeypatch):
-    for name in (*OPERATOR_VALVES, "LM_RECALL_REPEAT_GATING"):
+    for name in (
+        "LM_MAP_CURTAIL_DECAY", "LM_MAP_POOL_DEMOTION_GATE", "LM_MAP_POOL_DEMOTE_AFTER",
+        "LM_MAP_POOL_USEFULNESS_GATE", "LM_MAP_POOL_MIN_USEFULNESS", "LM_RECALL_REPEAT_GATING",
+    ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LM_RECALL_MAP", "1")
