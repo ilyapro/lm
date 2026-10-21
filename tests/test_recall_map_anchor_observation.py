@@ -13,13 +13,22 @@ import pytest
 from living_memory.recall_map import (
     RecallMapBuilder, STAGE_ANCHOR, STAGE_PATH, STAGE_STRUCTURAL, _Curtailment,
 )
-from living_memory.storage import MemoryStore, recall_fingerprint
+from living_memory.retrieval import RecallResult
+from living_memory.storage import MaturedRecallHistory, MemoryStore, recall_fingerprint
 
-from test_recall_map import DECISION_AT, SCOPE, eligible_history, pool, seed_corpus
+SCOPE = "project:lm"
+DECISION_AT = "2026-08-23T12:00:00Z"
+
+
+def eligible_history(candidate_ids, _decision_at):
+    return {node_id: MaturedRecallHistory.known(100, 50, 50) for node_id in candidate_ids}
 
 
 def seed_pool(store, *, early_stages=False):
-    seed_corpus(store)
+    # Unrelated documents give the real label gate a corpus for rarity scores.
+    for i in range(32):
+        store.create_node(level="trace", content=f"quarterly ledger reconciliation entry {i}",
+                          context={"scope": SCOPE})
     contexts = [{}, {}, {}]
     if early_stages:
         contexts += [{"procedure_id": "orchard-inspection"}, {"files": ["src/harvest/plan.py"]}]
@@ -42,7 +51,7 @@ def seed_pool(store, *, early_stages=False):
         for index in indices:
             if index < len(nodes):
                 store.upsert_query_anchor_edge(anchor_id, nodes[index].id, weight=0.5)
-    return pool(nodes)
+    return [RecallResult(node=node, score=1.0 - i * 0.01) for i, node in enumerate(nodes)]
 
 
 def due(digest="0" * 16):
