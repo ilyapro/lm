@@ -1503,6 +1503,7 @@ def _register_tools(
                     already_delivered = already_delivered | (
                         store.fingerprint_delivered_node_ids(fingerprint)
                     )
+            near_duplicates = _NearDuplicateObservation(store)
             results = recall_service.memory_recall(
                 query,
                 scope=scope,
@@ -1510,7 +1511,7 @@ def _register_tools(
                 depth=depth,
                 max_results=max_results,
                 select_results=lambda limited, residual, limit: _select_distinct_results(
-                    store, limited, residual, limit, already_delivered
+                    near_duplicates, limited, residual, limit, already_delivered
                 ),
             )
             if gated and recall_service.last_recall_event_id is not None:
@@ -1528,10 +1529,9 @@ def _register_tools(
                 provenance_value_max_chars=provenance_value_max_chars_from_env(),
                 stats_compaction=stats_compaction_enabled_from_env(),
                 sparse_entries=sparse_entries_enabled_from_env(),
-                # Built here, from this answer's own node vectors, because
-                # shaping is pure: the database read and the env threshold
-                # live on this side of the call.
-                duplicate_of=_near_duplicate_map(store, results),
+                # Reclassify in answer order using the selection observation:
+                # a pool bearer may be absent from the selected answer.
+                duplicate_of=near_duplicates.map(results),
             )
             if gated and gate_policy.drop_trailing_stubs:
                 # The trailing all-stub run of a gated delivery carries no
@@ -1951,58 +1951,55 @@ def _recall_map_enabled() -> bool:
     return os.environ.get("LM_RECALL_MAP", "").strip() != "0"
 
 
-def _near_duplicate_map(
-    store: MemoryStore, results: Sequence[Any]
-) -> dict[str, str] | None:
-    """Build this answer's near-duplicate map, or None when there is none.
+class _NearDuplicateObservation:
+    """Chunk directions observed by one recall's selection and delivery.
 
-    The impure half of the near-dup collapse, deliberately kept here rather
-    than in ``delivery``: it reads the env threshold and it reads the database.
-    ``shape_recall_results`` then receives a finished ``{duplicate: bearer}``
-    map and stays the pure function it is documented to be.
-
-    Only the handful of node ids this answer actually returns are pooled, so
-    the read is ``max_results`` chunk lookups (5 by default) and not a matrix
-    over the scope. A node with no chunk rows — never drained, or written
-    since the last drain — is simply absent from ``vectors`` and therefore
-    never collapsed.
-
-    ``LM_RECALL_NEAR_DUP_COSINE=0`` returns before the first query: the
-    rollback valve costs one env read, not one wasted database pass.
-
-    Each candidate carries its text, because the identifier veto reads it: a
-    result naming an id, path or node name its bearer does not name is a
-    different fact and must not become a stub. ``LM_NEAR_DUP_IDENTIFIER_VETO``
-    is that valve, read here and in the drain through the same function.
+    Read and mean-pool each requested id once, including unknown directions.
+    Selection observes only its bounded pool; delivery can also run alone when
+    the score gate bypasses selection. Maps are rebuilt in each result order
+    so every duplicate names a bearer present in that answer. Nothing survives
+    the recall, and disabling near-dup performs no chunk reads.
     """
 
-    if not results:
-        return None
-    cosine_threshold = near_dup_cosine_from_env()
-    if cosine_threshold <= 0.0:
-        return None
-    vectors = mean_pooled_vectors(store, [result.node.id for result in results])
-    if not vectors:
-        return None
-    duplicate_of = build_duplicate_map(
-        [
-            DuplicateCandidate(
-                node_id=result.node.id,
-                content_length=len(result.node.content or ""),
-                content=result.node.content or "",
-            )
-            for result in results
-        ],
-        vectors,
-        cosine_threshold=cosine_threshold,
-        min_length_ratio=near_dup_length_ratio_from_env(),
-        identifier_veto=identifier_veto_enabled(),
-    )
-    return duplicate_of or None
+    def __init__(self, store: MemoryStore) -> None:
+        self.store = store
+        self.observed: set[str] = set()
+        self.vectors: dict[str, list[float]] = {}
+        self.cosine_threshold = near_dup_cosine_from_env()
+        self.min_length_ratio = near_dup_length_ratio_from_env()
+        self.identifier_veto = identifier_veto_enabled()
+
+    def map(self, results: Sequence[Any]) -> dict[str, str] | None:
+        if not results or self.cosine_threshold <= 0.0:
+            return None
+        missing = list(dict.fromkeys(
+            result.node.id for result in results
+            if result.node.id not in self.observed
+        ))
+        if missing:
+            self.vectors.update(mean_pooled_vectors(self.store, missing))
+            self.observed.update(missing)
+        if not self.vectors:
+            return None
+        duplicate_of = build_duplicate_map(
+            [
+                DuplicateCandidate(
+                    node_id=result.node.id,
+                    content_length=len(result.node.content or ""),
+                    content=result.node.content or "",
+                )
+                for result in results
+            ],
+            self.vectors,
+            cosine_threshold=self.cosine_threshold,
+            min_length_ratio=self.min_length_ratio,
+            identifier_veto=self.identifier_veto,
+        )
+        return duplicate_of or None
 
 
 def _select_distinct_results(
-    store: MemoryStore,
+    near_duplicates: _NearDuplicateObservation,
     limited: list[Any],
     residual: list[Any],
     max_results: int,
@@ -2019,7 +2016,7 @@ def _select_distinct_results(
     if len(limited) < max_results or not residual:
         return limited, residual
     pool = limited + residual[:max_results]
-    duplicate_of = _near_duplicate_map(store, pool) or {}
+    duplicate_of = near_duplicates.map(pool) or {}
     seen_content: dict[str, str] = {}
     selected: list[Any] = []
     for result in pool:
