@@ -17,6 +17,7 @@ from typing import Annotated, Any, Literal
 from uuid import uuid4
 import hashlib
 import json
+import logging
 import marshal
 import os
 import secrets
@@ -2087,6 +2088,9 @@ def _schedule_auto_consolidation_if_due(
     ``scheduled`` (``coalesced`` when it joins one already queued or
     running), and the pass's own summary lands in the scheduler's
     ``last_result(scope)`` when the worker finishes it.
+
+    Both write tools call this after their required transaction commits.
+    Optional scheduling failures are logged and cannot replace that outcome.
     """
 
     try:
