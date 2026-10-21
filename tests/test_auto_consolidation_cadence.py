@@ -165,3 +165,28 @@ def test_reopen_indexes_retained_writes_without_new_progress_state(tmp_path, mon
         assert not any("SCAN nodes" in detail for detail in plan)
         store.append_trace(TOPIC, CONTEXT)
         assert _auto_consolidation_due(store, SCOPE) is None
+
+
+@pytest.mark.parametrize("policy,interval", [("fixed", 100), ("adaptive", 5)])
+def test_teach_replacements_share_the_remember_interval(mcp, monkeypatch, policy, interval):
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", policy)
+    store = mcp.memory_store
+    seeded = seed(store, interval - 1)
+    original = seeded[1]
+    corrections = []
+    for count in range(interval, 2 * interval + 1):
+        taught = mcp.tools["memory_teach"](original.id, seeded[0].content, context=CONTEXT)
+        corrections.append(taught["corrective_trace"]["id"])
+        assert bool(taught["auto_consolidation"]) == (count % interval == 0)
+        assert mcp.auto_consolidation.wait_idle(timeout=30)
+        assert store.list_connections(
+            source_id=corrections[-1], target_id=original.id, relation_type="supersedes",
+        )
+    assert mcp.auto_consolidation.status()["passes_completed"] == 2
+    summary = mcp.auto_consolidation.last_result(SCOPE)["summary"]
+    assert summary["concepts_updated"]
+    concept = store.get_node(summary["concepts_updated"][0])
+    assert corrections[-1] in concept.source_traces
+    assert not set(corrections[:-1]) & set(concept.source_traces)
+    assert original.id not in concept.source_traces
+    assert store.get_node(original.id).corrections[-1]["new"] == seeded[0].content
