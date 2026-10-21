@@ -66,7 +66,13 @@ def test_nonempty_history_allows_current_source_check_and_teach(
             }))
             contents = [item["content"] for item in recalled["results"]]
             assert current in contents
-            assert all("offline refresh only" not in content for content in contents)
+            assert recalled["results"][0]["id"] == corrected["id"]
+            for item in recalled["results"]:
+                if item["id"] == historical.id:
+                    assert any(
+                        correction["new"] == current
+                        for correction in item["provenance"]["corrections"]
+                    )
 
     try:
         asyncio.run(scenario())
