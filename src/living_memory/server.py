@@ -1811,7 +1811,7 @@ def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             )
 
 
-_ADAPTIVE_MIN_TRACES = 5
+_ADAPTIVE_MIN_WRITES = 5
 
 
 def _adaptive_trigger_step(write_count: int) -> int | None:
@@ -1821,7 +1821,7 @@ def _adaptive_trigger_step(write_count: int) -> int | None:
     every 5 writes up to 50, every 25 up to 500, then the fixed cadence.
     """
 
-    if write_count < _ADAPTIVE_MIN_TRACES:
+    if write_count < _ADAPTIVE_MIN_WRITES:
         return None
     if write_count < 50:
         return 5

@@ -22,3 +22,17 @@ whole in a nonbinding evidence carrier. An explicit derivative without a known
 materializer becomes decayed when its source changes. Exact `memory_lookup`
 preserves original sources, corrections and historical content with their
 correction or decay validity.
+
+`memory_remember` and `memory_teach` share one background consolidation
+scheduler. The fixed cadence is every 100 admitted trace writes per scope;
+`LM_AUTO_CONSOLIDATE_POLICY=adaptive` uses every 5 below 50 writes, every 25
+below 500, then every 100. Replacements and rejected alternatives count as
+writes. A batch crossing an interval schedules one pass. Retained trace rows
+supply the count through a covering index, including forgotten and decayed
+traces; no separate progress state is needed. The indexed read is linear in
+the scope's retained trace count.
+
+Active traces supply the material and determine the existing merge floors in
+`consolidation.py`, independently of cadence. Scheduling follows the required
+knowledge/feedback commit and is nonfatal. The scheduler coalesces requests,
+backs off after failures and resumes durable pending scopes on server start.
