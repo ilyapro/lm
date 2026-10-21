@@ -630,7 +630,7 @@ def memory_teach(
     confidence: float | None = None,
     context: Mapping[str, Any] | None = None,
 ) -> TeachResult:
-    """Create a corrective trace and connect it to the original as superseding."""
+    """Atomically correct a source and refresh its recorded derivatives."""
 
     with store.transaction():
         original = store.get_node(trace_id)
@@ -704,7 +704,7 @@ def _derivation_sources(store: MemoryStore, node: Node) -> list[str]:
             return string_list(node.provenance.get("source_concepts"))
         if strategy == "procedural" or (
             strategy in ("token-jaccard", "embedding-cosine")
-            and node.provenance.get("cluster_key")
+            and "cluster_key" in node.provenance
         ):
             return node.source_traces
     return [
@@ -796,7 +796,7 @@ def _refresh_derived_node(store: MemoryStore, node: Node) -> Node:
     if not members:
         return store.soft_delete_node(node.id, "derivation: no current sources")
 
-    strategy = node.provenance.get("strategy")
+    strategy = node.provenance.get("strategy") if node.level != "trace" else None
     if strategy == "procedural":
         # Keep the recorded group and its retrieval label. A correction is an
         # explicit replacement even when its writer changes its context.

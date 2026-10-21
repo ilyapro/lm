@@ -148,11 +148,11 @@ Input:
 }
 ```
 
-The `context.procedure_id` (or `context.task_pattern`) field is opt-in:
-agents that want to teach a repeatable procedure tag related traces with the
-same identifier. Once three or more traces share an id, `memory_consolidate`
-materializes a `level='schema'` node carrying a normalized `trigger` and an
-ordered `procedure` list of step descriptions.
+The `context.procedure_id` (or `context.task_pattern`) field groups related
+records within one scope. Three or more writer-declared steps can form a
+binding `level='schema'` with a normalized `trigger` and ordered `procedure`.
+Groups of case records form nonbinding concepts containing their evidence
+whole. A shared label alone does not declare a step or merge different groups.
 
 Output is a compact, size-bounded write confirmation — the writer already
 holds the content it just stored, so nothing bulky is echoed back:
@@ -237,6 +237,22 @@ The tool appends a corrective trace, creates a `supersedes` edge from the
 corrective trace to the original, and records the correction in provenance. If
 the correction follows a compatible recall, the corrective trace records that
 recall in provenance without reinforcing the incorrect original fact.
+
+Before success, the same transaction refreshes the affected recorded
+derivatives: procedural schemas and evidence carriers, clustered concepts,
+and their cross-scope promotions. Each current input follows its explicit
+replacement; independent inputs keep their meaning and scope. The existing
+materializers rewrite content and source lists together, and the normal
+storage writer invalidates changed content's chunks. No full consolidation
+or additional language-model call is required.
+
+Derivation comes from materializer provenance or an explicit `derived_from`
+edge. `source_traces` on an ordinary trace can be recall history and does not
+make that trace dependent on everything it read. An explicit derivative with
+no supported materializer becomes decayed rather than retaining an unsupported
+current assertion. Original sources and corrections remain available by exact
+`memory_lookup`, with their correction or decay validity. Later consolidation
+reads current recorded inputs at its write boundary.
 
 ### `memory_connect`
 
@@ -755,12 +771,14 @@ trace. The direct `memory_consolidate` response reports created/updated
 nodes as full node dicts (the automatic pass a write schedules keeps only an
 id-only summary). A pass encodes through the model only traces it has not
 seen: whole-content trace vectors are cached in `consolidation_embeddings`
-keyed by content fingerprint and encoder. Procedural traces
-(those tagged with `context.procedure_id` or `context.task_pattern`) are
-grouped by normalized trigger and materialized as `level='schema'` nodes once
-three traces share the pattern. The schema's `context` stores `procedure_key`,
-`trigger` (normalized pattern), the original opt-in field, and `procedure`
-(ordered step descriptions).
+keyed by content fingerprint and encoder. Procedural records are grouped by
+scope and normalized `task_pattern`, falling back to `procedure_id`. Three
+writer-declared steps can form a binding schema; other groups retain their
+whole records as nonbinding evidence. The schema's `context` stores
+`procedure_key`, `trigger`, the original opt-in field, and `procedure`
+(ordered step descriptions). Current materialized sources are resolved
+individually, so correcting one step does not discard untouched steps merely
+because they were recorded earlier.
 
 ### `memory_forget`
 
