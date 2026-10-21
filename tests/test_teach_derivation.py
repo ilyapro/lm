@@ -133,6 +133,19 @@ def test_later_materialization_cannot_undo_teach_or_erase_independent_steps(tmp_
         assert store.get_node(schema.id).context["procedure"] == [CORRECTION, *STEPS[1:]]
 
 
+def test_teaching_a_replacement_reaches_derivatives_still_citing_its_predecessor(tmp_path, monkeypatch):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        traces, schema = procedure(store)
+        # Recorded input still names the original, while its replacement is
+        # the source being corrected now.
+        with monkeypatch.context() as previous:
+            previous.setattr(consolidation, "_refresh_derived_from", lambda *_: None)
+            earlier = memory_teach(store, traces[0].id, "Workshop release uses a temporary manifest.")
+        assert STEPS[0] in store.get_node(schema.id).content
+        memory_teach(store, earlier.corrective_trace.id, CORRECTION)
+        assert store.get_node(schema.id).context["procedure"] == [CORRECTION, *STEPS[1:]]
+
+
 def test_incidental_recall_lineage_and_unrecorded_citations_are_independent(tmp_path):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         traces, _ = procedure(store)
