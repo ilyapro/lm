@@ -1942,7 +1942,47 @@ class MemoryStore:
         results: Iterable[Mapping[str, Any]] | None = None,
         recall_map: Mapping[str, Any] | None = None,
     ) -> RecallEvent:
-        """Persist one recall interaction for later feedback/provenance.
+        """Persist a recall event without recording node access."""
+
+        _, event = self.record_recall(
+            query=query,
+            scope=scope,
+            requested_scope=requested_scope,
+            resolved_scopes=resolved_scopes,
+            ambient_context=ambient_context,
+            depth=depth,
+            max_results=max_results,
+            results=results,
+            recall_map=recall_map,
+            log_access=False,
+        )
+        assert event is not None
+        return event
+
+    def record_recall(
+        self,
+        *,
+        query: str,
+        nodes: Iterable[Node] = (),
+        log_access: bool = True,
+        log_event: bool = True,
+        scope: str,
+        requested_scope: str | None = None,
+        resolved_scopes: Iterable[str] | None = None,
+        ambient_context: Mapping[str, Any] | None = None,
+        depth: str | int | None = None,
+        max_results: int = 10,
+        results: Iterable[Mapping[str, Any]] | None = None,
+        recall_map: Mapping[str, Any] | None = None,
+    ) -> tuple[list[Node], RecallEvent | None]:
+        """Persist selected-node access and its recall event in one savepoint.
+
+        Return the selected nodes in order with access metadata from SQLite's
+        increments, preserving their selected content and validity. Missing
+        nodes or event/history/fingerprint failures roll back the entire write.
+        Access and event logging can be disabled independently. This records
+        the retrieval tail; response shaping and network delivery are outside
+        the transaction.
 
         ``recall_map`` is the map served with this delivery, stored verbatim as
         compact JSON. The live recall path leaves it unset and calls
@@ -1953,6 +1993,11 @@ class MemoryStore:
         instead of two.
         """
 
+        selected = list(nodes)
+        if not log_access and not log_event:
+            return selected, None
+        if not selected and not log_event:
+            return selected, None
         normalized_results = [dict(item) for item in results or []]
         event_id = new_ulid()
         now = _utc_now()
@@ -1971,6 +2016,39 @@ class MemoryStore:
         # without any storage round-trip.
         fingerprint = recall_fingerprint(query, requested_scope or scope)
         with self.transaction():
+            if log_access and selected:
+                # JSON keeps this one bounded-parameter batch even for large
+                # result sets. Counts preserve repeated ids in caller order.
+                rows = self._conn.execute(
+                    """
+                    WITH accesses AS (
+                        SELECT value AS id, COUNT(*) AS increments
+                        FROM json_each(?) GROUP BY value
+                    )
+                    UPDATE nodes
+                    SET access_count = access_count + (
+                            SELECT increments FROM accesses WHERE accesses.id = nodes.id
+                        ),
+                        last_accessed = ?, updated_at = ?
+                    WHERE id IN (SELECT id FROM accesses)
+                    RETURNING id, access_count, last_accessed, updated_at
+                    """,
+                    (_json_dumps([node.id for node in selected]), now, now),
+                ).fetchall()
+                access = {row["id"]: dict(row) for row in rows}
+                for node in selected:
+                    if node.id not in access:
+                        raise KeyError(node.id)
+                # Reconstruct each occurrence's metadata without mutating the
+                # selected snapshots, including when a caller repeats an id.
+                updated = []
+                for node in reversed(selected):
+                    metadata = access[node.id]
+                    updated.append(replace(node, **metadata))
+                    metadata["access_count"] -= 1
+                selected = list(reversed(updated))
+            if not log_event:
+                return selected, None
             self._conn.execute(
                 """
                 INSERT INTO recall_events (
@@ -2012,7 +2090,8 @@ class MemoryStore:
                 recall_map=recall_map,
             )
             self._apply_recall_fingerprint_delivery(fingerprint, transport_session_id, now)
-        return self.get_recall_event(event_id)  # type: ignore[return-value]
+            event = self.get_recall_event(event_id)
+        return selected, event
 
     def attach_recall_map(
         self, event_id: str, recall_map: Mapping[str, Any] | None
