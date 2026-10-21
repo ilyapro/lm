@@ -793,9 +793,7 @@ def _refresh_derived_node(store: MemoryStore, node: Node) -> Node:
             key = replace(key, trigger=str(node.context.get("trigger") or key.trigger))
             declared = [member for member in members if _declares_step(member)]
             binding = node.level == "schema" and len(declared) == len(members)
-            current = store.update_node(
-                node.id, provenance={**node.provenance, "source_traces": [m.id for m in members]}
-            )
+            current = replace(node, source_traces=[member.id for member in members])
             updated, _ = _create_or_update_schema(
                 store, node.scope, key, members, current,
                 era=assessment if binding else None,
@@ -1412,14 +1410,29 @@ def _merge_cluster_into_concept(
     *, existing: Node | None = None,
 ) -> tuple[Node, bool]:
     members = assessment.live
-    source_traces = sorted({trace.id for trace in members})
     cluster_key = _cluster_key(cluster)
+    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
+    digest = _synthesize_digest(members, best=best_trace)
+    existing = store.get_node(existing.id) if existing else _find_existing_concept(
+        store, cluster.scope, cluster_key,
+        candidate_contents={digest, *(trace.content for trace in members)},
+    )
+    if existing is not None:
+        # A current concept already owns useful inputs outside this pass's
+        # snapshot. Resolve them along with the newly admitted members before
+        # writing both the digest and its source list.
+        inputs = replace(existing, source_traces=sorted({*existing.source_traces, *(m.id for m in members)}))
+        assessment = _current_derivation(store, inputs)
+        members = assessment.live
+        if not members:
+            return store.soft_delete_node(existing.id, "derivation: no current sources"), False
+        best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
+        digest = _synthesize_digest(members, best=best_trace)
+    source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
     confidence = _consensus_confidence(members, unique_agents)
     temporal_hint = detect_temporal_hint(members)
-    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    concept_embedding = cluster.embedding_for(best_trace) or cluster.representative_embedding
-    digest = _synthesize_digest(members, best=best_trace)
+    concept_embedding = cluster.embedding_for(best_trace)
     usefulness = sum(max(0.0, trace.usefulness_score) for trace in members) / len(members)
 
     provenance = {
@@ -1438,12 +1451,6 @@ def _merge_cluster_into_concept(
         "usefulness_score": usefulness,
     }
 
-    existing = existing or _find_existing_concept(
-        store,
-        cluster.scope,
-        cluster_key,
-        candidate_contents={digest, *(trace.content for trace in members)},
-    )
     if existing is None:
         concept = store.create_node(
             level="concept",
@@ -1459,11 +1466,6 @@ def _merge_cluster_into_concept(
         )
         return concept, True
 
-    merged_sources = sorted(
-        {*existing.source_traces, *source_traces} - set(assessment.excluded)
-    )
-    provenance["source_traces"] = merged_sources
-    provenance["cluster_size"] = len(merged_sources)
     concept = store.update_node(
         existing.id,
         content=digest,

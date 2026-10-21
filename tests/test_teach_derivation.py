@@ -150,6 +150,9 @@ def test_incidental_recall_lineage_and_unrecorded_citations_are_independent(tmp_
         memory_teach(store, traces[0].id, CORRECTION)
         assert {node_id: asdict(store.get_node(node_id)) for node_id in before} == before
         assert not _assess_cluster_eras(store, [traces[0], independent]).excluded.get(independent.id)
+        corrected_independent = memory_teach(store, independent.id, "The workshop door uses the night latch.")
+        assessment = _assess_cluster_eras(store, [traces[1], corrected_independent.corrective_trace])
+        assert traces[1].id not in assessment.excluded
 
 
 def test_evidence_carrier_keeps_whole_independent_records_and_correction(tmp_path):
@@ -196,6 +199,11 @@ def test_cluster_correction_reaches_cross_scope_promotion_without_reconsolidatio
             assert not current.decayed
         assert taught.corrective_trace.id in store.get_node(concept.id).source_traces
         assert {node_id: asdict(store.get_node(node_id)) for node_id in controls} == controls
+        stale_cluster = _TraceCluster(SCOPE, traces, Counter({"workshop": len(traces)}))
+        _merge_cluster_into_concept(store, stale_cluster, _assess_cluster_eras(store, traces), existing=concept)
+        current = store.get_node(concept.id)
+        assert CORRECTION in current.content and STEPS[0] not in current.content
+        assert taught.corrective_trace.id in current.source_traces
 
 
 def test_teach_rollback_preserves_all_nodes_edges_chunks_and_feedback(tmp_path, monkeypatch):
