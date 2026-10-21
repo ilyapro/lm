@@ -731,12 +731,13 @@ class MemoryRecallService:
             limited, self.last_residual = select_results(
                 limited, self.last_residual, max_results
             )
-        if log_access:
-            limited = [self._record_result_access(result) for result in limited]
         if log_event is None:
             log_event = log_access
-        if log_event:
-            event = self.store.record_recall_event(
+        if log_access or log_event:
+            nodes, event = self.store.record_recall(
+                nodes=[result.node for result in limited],
+                log_access=log_access,
+                log_event=log_event,
                 query=query,
                 scope=plan.requested_scope,
                 requested_scope=plan.requested_scope,
@@ -746,8 +747,11 @@ class MemoryRecallService:
                 max_results=max_results,
                 results=[_recall_result_summary(index, result) for index, result in enumerate(limited)],
             )
-            self.last_recall_event_id = event.id
-            limited = [replace(result, recall_event_id=event.id) for result in limited]
+            self.last_recall_event_id = event.id if event is not None else None
+            limited = [
+                replace(result, node=node, recall_event_id=self.last_recall_event_id)
+                for result, node in zip(limited, nodes, strict=True)
+            ]
         return limited
 
     def memory_connect(
@@ -1895,10 +1899,6 @@ class MemoryRecallService:
             return
         embedder = self.embedder
         share(lambda texts: [embedder.embed(text) for text in texts])
-
-    def _record_result_access(self, result: RecallResult) -> RecallResult:
-        updated_node = self.store.record_access(result.node.id)
-        return replace(result, node=updated_node)
 
     def _supersedes_sets(self) -> tuple[dict[str, tuple[str, ...]], set[str]]:
         """Supersedes edges as (superseded -> corrections, superseding ids).

@@ -452,6 +452,9 @@ class ReadOnlyAuditStore(MemoryStore):
     def record_access(self, *args: Any, **kwargs: Any) -> Node:
         raise RuntimeError("health audit latency probe is read-only")
 
+    def record_recall(self, *args: Any, **kwargs: Any) -> tuple[list[Node], RecallEvent | None]:
+        raise RuntimeError("health audit latency probe is read-only")
+
     def record_recall_event(self, *args: Any, **kwargs: Any) -> RecallEvent:
         raise RuntimeError("health audit latency probe is read-only")
 
