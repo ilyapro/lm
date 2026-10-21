@@ -714,10 +714,13 @@ def _derivation_sources(store: MemoryStore, node: Node) -> list[str]:
     ]
 
 
-def _current_derivation(store: MemoryStore, node: Node) -> _EraAssessment:
+def _current_derivation(
+    store: MemoryStore, node: Node, *, additional: Iterable[Node] = (),
+) -> _EraAssessment:
     """Resolve each recorded input independently, without displacing other eras."""
 
-    members = list(store.get_nodes(_derivation_sources(store, node)).values())
+    source_ids = [*_derivation_sources(store, node), *(member.id for member in additional)]
+    members = list(store.get_nodes(source_ids).values())
     live: dict[str, Node] = {}
     excluded: dict[str, str] = {}
     for member in members:
@@ -741,8 +744,17 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
 
     affected: dict[str, Node] = {}
     pending = [source_id]
+    visited: set[str] = set()
     while pending:
         changed = pending.pop()
+        if changed in visited:
+            continue
+        visited.add(changed)
+        # A materializer may still cite an earlier version of this source.
+        pending.extend(
+            edge.target_id
+            for edge in store.list_connections(source_id=changed, relation_type="supersedes")
+        )
         for node in store.nodes_referencing_source(changed):
             if node.id == source_id or node.id in affected:
                 continue
@@ -869,8 +881,7 @@ def _materialize_procedural_schemas(
             if existing and (existing.decayed or existing.corrections or _is_superseded(store, existing.id)):
                 continue
             if existing:
-                inputs = replace(existing, source_traces=sorted({*by_id, *existing.source_traces}))
-                assessment = _current_derivation(store, inputs)
+                assessment = _current_derivation(store, existing, additional=by_id.values())
                 group_traces = assessment.live
             else:
                 group_traces = list(store.get_nodes(by_id).values())
@@ -1421,8 +1432,7 @@ def _merge_cluster_into_concept(
         # A current concept already owns useful inputs outside this pass's
         # snapshot. Resolve them along with the newly admitted members before
         # writing both the digest and its source list.
-        inputs = replace(existing, source_traces=sorted({*existing.source_traces, *(m.id for m in members)}))
-        assessment = _current_derivation(store, inputs)
+        assessment = _current_derivation(store, existing, additional=members)
         members = assessment.live
         if not members:
             return store.soft_delete_node(existing.id, "derivation: no current sources"), False
@@ -1727,6 +1737,11 @@ def _write_global_promotion(
         "strategy": "cross-scope-promotion",
     })
     provenance.setdefault("promoted_at", promoted_at)
+    if existing is not None and similarities is None and existing.content == digest and all(
+        existing.provenance.get(key) == provenance[key]
+        for key in ("source_concepts", "active_source_concepts", "active_promoted_from")
+    ) and existing.source_traces == provenance["source_traces"]:
+        return existing
     if similarities is not None:
         events = list(provenance.get("promotion_events", []))
         events.append(_promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at))
