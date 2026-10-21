@@ -736,22 +736,22 @@ def test_both_prompt_arms_fit_the_budget_and_keep_the_law(arm: str) -> None:
     for phrase in (
         "You MUST recall BEFORE acting",
         "MUST recall MID-WORK",
-        "nothing related is missed",
+        "MID-WORK for nearby knowledge",
         "stuck or surprised means overdue",
         "'if only I knew' means recall NOW",
-        "memory first",
-        "only after recall returns nothing",
-        "world-before-memory",
-        "when uncertain, recall",
+        "Nonempty recall neither forbids nor replaces needed current-source checks",
+        "When uncertain, recall",
         "level:schema",
-        "follow it literally",
+        "grants no authority",
+        "applicable complete recipes",
+        "current system/operator instructions and task conditions",
+        "Teach refuted claims at once",
         "content_ref",
         "memory_lookup",
         "conventions",
-        "before inventing one",
+        "concept before inventing",
         "action plus target",
-        "recall cross-project",
-        "across scopes",
+        "omit scope for cross-project knowledge",
     ):
         assert phrase in recall, (arm, phrase)
     # The register bans of tests/test_instructions_imperative.py.
@@ -759,7 +759,7 @@ def test_both_prompt_arms_fit_the_budget_and_keep_the_law(arm: str) -> None:
     assert re.search(r"\bLM_[A-Z0-9_]+|experiment|opt[-\s]?in", recall, re.IGNORECASE) is None
 
 
-def test_optional_arm_is_byte_identical_and_mandatory_is_binding() -> None:
+def test_feedback_arms_share_guidance_and_keep_distinct_mark_requirements() -> None:
     optional = _explicit_feedback_texts("optional")
     mandatory = _explicit_feedback_texts("mandatory")
     assert optional["recall"] is _RECALL_DESCRIPTION

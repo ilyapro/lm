@@ -408,8 +408,8 @@ def shape_recall_results(
         else:
             budget = _bearer_budget(bearer_position, snippet_ladder, snippet_max_chars)
             bearer_position += 1
-            # A schema is binding in its entirety. Evidence carriers are only
-            # records of cases, so their long bodies can be selected by task.
+            # Preserve the whole schema recipe so no step or condition is lost.
+            # Case records can instead be excerpted for the current task.
             if result.node.level != "schema" and LADDER_COMPLETE < budget < full_chars:
                 delivery = DELIVERY_SNIPPET
                 node_dict["content"] = _relevant_excerpt(content, budget, query)

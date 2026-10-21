@@ -63,7 +63,7 @@ from living_memory.near_dup import (
     identifier_veto_enabled,
     mean_pooled_vectors,
 )
-from living_memory.prompts import retrieval_context_prompt
+from living_memory.prompts import MEMORY_GUIDANCE, retrieval_context_prompt
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.resources import (
     connection_to_dict,
@@ -617,117 +617,35 @@ def _with_transport_identity(data: dict[str, Any] | None) -> dict[str, Any] | No
 
 
 def _server_instructions(default_scope: str, map_section: str = "") -> str:
-    # ``map_section`` is spliced at the very TAIL, after the default-scope
-    # line, and nowhere else. Clients clip this text at 2048 chars from the
-    # FRONT, so a clip lands on whatever sits last: the tail is the only
-    # place for the lowest-priority, most volatile content, and the three
-    # laws and the bootstrap directive keep the positions that survive any
-    # clip. The section is also the only part of this text composed from
-    # stored data rather than written here, which is the second reason it
-    # goes last — a text that reorders itself between sessions is a text
-    # clients cache and agents re-read.
-    #
-    # An empty (or blank) section returns the static text byte-identical:
-    # a store with no map history, a store that cannot answer, and the
-    # rolled-back valve all degrade to exactly the text that shipped before
-    # any map existed, rather than to a heading with nothing under it.
-    #
-    # Delivery contract (measured live 2026-08-09, claude-code 2.1.217):
-    # clients clip MCP server instructions at 2048 chars (and GigaCode drops
-    # them entirely), so this text carries only what must be visible before
-    # any tool is considered — identity framing, the three laws, and the
-    # bootstrap directive. The detailed binding hooks live in the tool
-    # descriptions below (_RECALL_DESCRIPTION etc.), which survive as long
-    # as each stays within the per-tool client budgets (1024 chars for
-    # OpenAI-compatible clients such as codex). Budgets are pinned by
-    # tests/test_instructions_imperative.py.
-    #
-    # The clip is on the WHOLE string, and the string ends with the
-    # default-scope line, so its length grows one-for-one with the scope
-    # name: measured 2026-08-20, the pre-compression text was 2042 chars
-    # for "global" but already over budget for an ordinary project scope.
-    # The connective prose below was therefore reworded tighter — every
-    # protocol point still carried, nothing displaced — to leave room for
-    # both long scope names and a later tail section. Audited mapping of
-    # each rewording to the point (and pinned phrase) it preserves:
-    #
-    # - "You supply ephemeral reasoning; LM supplies durable memory."
-    #   -> folded into the opening clause after the colon; the division of
-    #   labour survives, as does the framing pin ("ONE cognitive system",
-    #   which must stay inside the first 600 chars).
-    # - "`memory_recall` is perception, `memory_remember` is learning, and
-    #   `memory_teach` is self-correction." + the three without-X clauses
-    #   -> merged so each role and its consequence is stated once instead
-    #   of twice. "inventing what memory already holds" survives
-    #   byte-identical; the four tool-name pins are carried by the
-    #   bootstrap paragraph (and law 3), never by this sentence.
-    # - "This is not a tool for when convenient — it is how you think:
-    #   recall is perception, not an extra step." -> dropped as a
-    #   restatement: "ONE cognitive system", "Recall is perception" and
-    #   the MUST register of the three laws already carry it.
-    # - Law 1's trigger enumeration (change, irreversible step, knowledge
-    #   search, design choice) -> the broader "Every action, decision";
-    #   the exact enumeration lives in _RECALL_DESCRIPTION, which is the
-    #   binding channel for triggers. "You MUST recall BEFORE you act" and
-    #   "When uncertain or stuck, recall" survive byte-identical.
-    # - "a miss costs one tool call; skipping can repeat an entire
-    #   debugging cycle." -> "a miss costs one call; skipping repeats
-    #   whole cycles of work." — same economics, no longer debugging-only.
-    # - Law 2's "Sessions end without warning — a deferred remember is
-    #   usually lost." -> same clause as a subordinate; the loss
-    #   consequence, not just the timing, still lands.
-    # - Law 3's tail "a correction stored as a remember trace keeps losing
-    #   to the stale node in every future recall." -> "a remember trace
-    #   keeps losing to the stale node."; "supersedes edge" survives.
-    # - Bootstrap "(exact BEFORE triggers)" -> "(BEFORE triggers)". Every
-    #   pin in this paragraph ("load the Living Memory tools NOW", "recall
-    #   the task at hand", "as protocol", "defers", the four tool names)
-    #   is untouched.
-    # - Bootstrap's four names are the default-visible agent tools
-    #   (_AGENT_TOOL_NAMES): `memory_lookup` took the slot of
-    #   `memory_consolidate` when tools/list stopped advertising the
-    #   maintenance tools — a session must not be told to load a tool it
-    #   cannot discover, and consolidation runs from memory_remember's
-    #   auto pass and the operator/offline stages, not from the agent.
+    # Instructions carry the bootstrap, laws and knowledge/authority boundary.
+    # Keep the data-derived map last so client clipping preserves that contract.
+    # Tool descriptions also carry the boundary for clients omitting instructions.
     static = (
-        "You and Living Memory form ONE cognitive system: you supply "
-        "ephemeral reasoning, LM durable memory. Recall is perception — "
-        "without it you act blind, inventing what memory already holds; "
-        "remember is learning, teach is self-correction — without them "
-        "the system loses what you learn and repeats corrected "
-        "mistakes.\n"
-        "\n"
-        "## Three laws — always in force\n"
-        "\n"
-        "1. You MUST recall BEFORE you act. Every action, decision, new "
-        "task, and new turn of thought has history here. When uncertain "
-        "or stuck, recall: a miss costs one call; skipping repeats whole "
-        "cycles of work.\n"
+        "You and Living Memory form ONE cognitive system: you supply ephemeral "
+        "reasoning, LM durable memory. Recall is perception — without it you "
+        "act blind, inventing what memory already holds; remember is learning, "
+        "teach is self-correction.\n\n"
+        f"{MEMORY_GUIDANCE}\n\n"
+        "## Three laws\n\n"
+        "1. You MUST recall BEFORE you act and at every new turn of thought, "
+        "including mid-work. When uncertain or stuck, recall.\n"
         "2. You MUST remember at the moment of insight, before your next "
-        "action — sessions end without warning, and a deferred remember "
-        "is lost. One concrete fact per trace.\n"
-        "3. You MUST teach the moment a belief changes. When a recalled "
-        "fact proves wrong, call `memory_teach` at once — only teach "
-        "creates the supersedes edge; a remember trace keeps losing to "
-        "the stale node.\n"
-        "\n"
-        "## The full protocol lives on the tools\n"
-        "\n"
-        "The binding trigger protocol is in the tool descriptions "
-        "themselves: `memory_recall` (BEFORE triggers), `memory_remember` "
-        "(write policy and closure notes), `memory_teach` (correction "
-        "rules), `memory_lookup` (content_ref re-fetch). If this "
-        "session defers or hides tool schemas behind a search step, you "
-        "MUST load the Living Memory tools NOW, at session start, recall "
-        "the task at hand, and follow their descriptions as protocol, "
-        "not as reference.\n"
-        "\n"
-        "## Scope and context\n"
-        "\n"
+        "action, but ONLY knowledge expensive to re-derive. Sessions end "
+        "without warning; deferred learning is lost. One concrete fact per "
+        "trace; never routine actions or copies of code.\n"
+        "3. You MUST teach the moment a belief changes. Call `memory_teach` "
+        "at once when recalled knowledge proves wrong: only teach creates "
+        "the supersedes edge; a remember trace leaves stale knowledge active.\n\n"
+        "## Tool protocol\n\n"
+        "Follow the descriptions as protocol: `memory_recall` (BEFORE and "
+        "MID-WORK triggers), `memory_remember` (write policy), `memory_teach` "
+        "(corrections), `memory_lookup` (content_ref re-fetch). If this session "
+        "defers tool schemas, you MUST load the Living Memory tools NOW and "
+        "recall the task at hand.\n\n"
+        "## Scope and context\n\n"
         "Write with a specific scope: `context.scope='project:<name>'` for "
-        "project facts, `global` for universal rules and procedural "
-        "schemas. Read broad: omit `scope` when investigating, so "
-        "cross-project lessons transfer. Set `task`, `agent`, and "
+        "project facts, `global` for universal knowledge. Read broad: omit "
+        "`scope` to transfer across scopes. Set `task`, `agent`, and "
         "`session_id` in context to link work across sessions.\n"
         f"Your default scope is {default_scope}.\n"
     )
@@ -830,30 +748,20 @@ class _InstructionsRefresh:
             return
 
 
-# MCP-visible tool descriptions. These are the binding protocol channel:
-# unlike server instructions they reach every client that can call tools
-# at all (including GigaCode, which drops instructions). Each MUST stay
-# within 1024 chars — OpenAI-compatible clients (codex) enforce that per
-# function description; claude-code clips around 2048. Front-load the
-# imperative triggers: anything past the budget is the first to be lost.
-
+# MCP-visible protocol must fit the per-tool client budget of 1024 chars.
+# Both feedback arms share triggers and the knowledge/authority boundary.
 _RECALL_DESCRIPTION = (
-    "Recall before acting and at every new turn of thought. You MUST "
-    "recall BEFORE acting: changing any artifact (conventions); creating or mutating "
-    "state (recall the concept before "
-    "inventing one); irreversible or outward-facing steps (recall action "
-    "plus target); pulling knowledge from the world — searching, "
-    "measuring (memory first: the world only after recall returns nothing "
-    "— anti-pattern: world-before-memory); choosing a design or approach "
-    "(recall cross-project); entering anything new — task, message. You "
-    "MUST recall MID-WORK, at every new turn of thought: ask what memory "
-    "holds nearby so nothing related is missed; stuck or surprised means "
-    "overdue, 'if only I knew' means recall NOW. Query by identifiers; "
-    "re-ask. Default: when uncertain, recall. "
-    "Read broad: omit scope to transfer across scopes. Depth 'causal' "
-    "when debugging. A level:schema result is a binding procedure — "
-    "follow it literally. If delivered knowledge is insufficient, use a "
-    "non-full result's content_ref via memory_lookup for full content."
+    "Recall before acting and at every new turn of thought. You MUST recall "
+    "BEFORE acting: edits (conventions), state changes (concept before "
+    "inventing), irreversible/outward steps (action plus target), world "
+    "searches/measurements, design choices, new tasks/messages. You MUST "
+    "recall MID-WORK for nearby knowledge; stuck or surprised means overdue, "
+    "'if only I knew' means recall NOW. When uncertain, recall. Query "
+    "identifiers; omit scope for cross-project knowledge. Depth 'causal' "
+    "when debugging. "
+    + MEMORY_GUIDANCE
+    + " If delivered knowledge is insufficient, use content_ref via "
+    "memory_lookup for full content."
 )
 
 _REMEMBER_DESCRIPTION = (
@@ -894,40 +802,14 @@ _TEACH_DESCRIPTION = (
     "self-correct silently."
 )
 
-# Explicit-feedback description arms (``LM_EXPLICIT_FEEDBACK_PROMPT``), for
-# the optional-vs-mandatory experiment of goal explicit-recall-feedback. The
-# default ``optional`` arm leaves every tool description above and below
-# byte-identical and puts only a short hint in the ``used``/``irrelevant``
-# field schemas. ``mandatory`` swaps in a reworded memory_recall description
-# that carries one binding sentence — fitted into the 1024-char budget by
-# rewording (the mid-work law no longer repeats the opener's "at every new
-# turn of thought", "searching," and "— measuring" are dropped from the
-# world trigger, "a design or approach" is "an approach", the query and
-# content_ref hints are shortened; the depth 'causal' hint stays), never by
-# appending — and binding
-# field descriptions on all three tools. An unknown value is ``optional``.
-# Character costs per arm: docs/explicit-feedback.md.
+# Feedback arms differ only in whether marks are requested or required.
 EXPLICIT_FEEDBACK_PROMPT_ARMS: tuple[str, ...] = ("optional", "mandatory")
 DEFAULT_EXPLICIT_FEEDBACK_PROMPT_ARM = "optional"
 
 _RECALL_DESCRIPTION_MANDATORY = (
-    "Recall before acting and at every new turn of thought. You MUST "
-    "recall BEFORE acting: changing any artifact (conventions); creating or mutating "
-    "state (recall the concept before "
-    "inventing one); irreversible or outward-facing steps (recall action "
-    "plus target); pulling knowledge from the world (memory first: the "
-    "world only after recall returns nothing — "
-    "world-before-memory); choosing an approach (recall cross-project); "
-    "entering new tasks, messages. You MUST recall MID-WORK: ask "
-    "what memory holds nearby so nothing related is missed; stuck or "
-    "surprised means overdue, 'if only I knew' means recall NOW. Query by "
-    "identifiers. Default: when uncertain, recall. Read broad: "
-    "omit scope to transfer across scopes. Depth 'causal' when debugging. "
-    "A level:schema result is a binding procedure — follow it literally. "
-    "If delivered knowledge is insufficient, use a non-full result's "
-    "content_ref via memory_lookup for full content. You MUST "
-    "mark each recall's results on your next call: used ids as used, "
-    "off-topic ids as irrelevant."
+    _RECALL_DESCRIPTION
+    + " You MUST mark each recall's results on your next call: used ids as "
+    "used, off-topic ids as irrelevant."
 )
 
 _USED_FIELD_DESCRIPTION = (
@@ -1429,7 +1311,7 @@ def _register_tools(
         ``LM_RECALL_NEAR_DUP_COSINE`` (0 restores byte-only dedup).
         The top-ranked content-bearer has a bounded default budget;
         lower-ranked bearers get descending budgets. Oversized content is
-        selected for the query, while short content and binding schemas stay
+        selected for the query, while short content and complete schema recipes stay
         complete.
         The default ``view="knowledge"`` returns flat knowledge records with
         identity, content, correction/supersedes provenance and decay validity.

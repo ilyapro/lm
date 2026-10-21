@@ -436,8 +436,9 @@ def test_real_fastmcp_projection_with_nonempty_map_and_drift_cases(
 
     changed = dict(served)
     changed["server instructions"] = changed["server instructions"].replace(
-        "You MUST recall BEFORE you act.", "Recall later.", 1
+        "You MUST recall BEFORE you act", "Recall later", 1
     )
+    assert changed["server instructions"] != served["server instructions"]
     assert [item.name for item in checker.compare(expected, changed)] == ["server instructions"]
     changed = dict(served)
     changed["memory_lookup"] += " Unapproved change."
@@ -447,6 +448,7 @@ def test_real_fastmcp_projection_with_nonempty_map_and_drift_cases(
     assert [item.name for item in checker.compare(expected, changed)] == ["memory_lookup"]
     changed = dict(served)
     changed["server instructions"] += "Unapproved trailing core text."
+    assert changed["server instructions"] != served["server instructions"]
     assert [item.name for item in checker.compare(expected, changed)] == ["server instructions"]
 
 # --- live smoke: a server started from THIS worktree ------------------------
