@@ -1,5 +1,6 @@
 """Accepted trace writes set cadence; active traces supply consolidation material."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -190,3 +191,44 @@ def test_teach_replacements_share_the_remember_interval(mcp, monkeypatch, policy
     assert not set(corrections[:-1]) & set(concept.source_traces)
     assert original.id not in concept.source_traces
     assert store.get_node(original.id).corrections[-1]["new"] == seeded[0].content
+
+
+def test_fastmcp_write_tools_keep_cadence_and_correction_links(tmp_path, monkeypatch):
+    from fastmcp import Client
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "fixed")
+    monkeypatch.delenv("LM_CONSOLIDATE_MERGE_FLOOR", raising=False)
+    mcp = create_mcp_server(tmp_path / "transport.sqlite3")
+    store = mcp.memory_store
+    seeded = seed(store, 99)
+
+    async def scenario():
+        async with Client(mcp) as client:
+            response = await client.call_tool("memory_remember", {
+                "content": seeded[0].content, "context": CONTEXT,
+            })
+            assert response.structured_content["auto_consolidation"]["trace_count"] == 99
+            assert mcp.auto_consolidation.wait_idle(timeout=30)
+            assert mcp.auto_consolidation.last_result(SCOPE)["summary"]["concepts_created"]
+            for _ in range(3):
+                response = await client.call_tool("memory_teach", {
+                    "trace_id": seeded[1].id, "correction": seeded[0].content, "context": CONTEXT,
+                })
+                taught = response.structured_content
+                assert taught["auto_consolidation"] is None
+                trace_id = taught["corrective_trace"]["id"]
+                lookup = await client.call_tool("memory_lookup", {"node_id": trace_id})
+                node = lookup.structured_content["results"][0]
+                assert node["content"] == seeded[0].content and not node["decayed"]
+                assert store.list_connections(
+                    source_id=trace_id, target_id=seeded[1].id, relation_type="supersedes",
+                )
+            assert store.trace_count() == 103
+            assert mcp.auto_consolidation.status()["passes_completed"] == 1
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
