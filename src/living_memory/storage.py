@@ -5006,6 +5006,12 @@ class MemoryStore:
                     ON nodes(scope, timestamp DESC)
                     WHERE level = 'trace' AND decayed = 0;
 
+                -- Write cadence includes replaced and decayed traces. Keep
+                -- its per-scope count covering, independent of active indexes.
+                CREATE INDEX IF NOT EXISTS idx_nodes_trace_scope
+                    ON nodes(level, scope)
+                    WHERE level = 'trace';
+
                 CREATE INDEX IF NOT EXISTS idx_nodes_concepts_content
                     ON nodes(content)
                     WHERE level IN ('concept', 'schema') AND decayed = 0;

@@ -1198,7 +1198,8 @@ def _register_tools(
             except Exception:
                 pass
             scheduled = _schedule_auto_consolidation_if_due(
-                store, auto_consolidation, node.scope
+                store, auto_consolidation, node.scope,
+                admitted_traces=1 + len(rejected_alternatives or []),
             )
             response = {
                 "node": _remember_node_confirmation(node),
@@ -1810,22 +1811,21 @@ def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
             )
 
 
-_ADAPTIVE_MIN_TRACES = 5
+_ADAPTIVE_MIN_WRITES = 5
 
 
-def _adaptive_trigger_step(trace_count: int) -> int | None:
+def _adaptive_trigger_step(write_count: int) -> int | None:
     """Trigger step for adaptive auto-consolidate policy.
 
-    Fires earlier on young scopes (every 5 up to 50, every 25 up to 500)
-    and falls back to the fixed cadence on mature scopes. Returns None when
-    the scope holds too few traces to be worth consolidating.
+    Counts admitted traces, including replacements and decayed traces:
+    every 5 writes up to 50, every 25 up to 500, then the fixed cadence.
     """
 
-    if trace_count < _ADAPTIVE_MIN_TRACES:
+    if write_count < _ADAPTIVE_MIN_WRITES:
         return None
-    if trace_count < 50:
+    if write_count < 50:
         return 5
-    if trace_count < 500:
+    if write_count < 500:
         return 25
     return DEFAULT_MIN_CLUSTER_SIZE
 
@@ -2035,9 +2035,34 @@ def _maybe_decay_sweep(store: MemoryStore) -> dict[str, Any] | None:
 _AUTO_CONSOLIDATION_STEP_HANDOFF_SECONDS = 0.005
 
 
-def _auto_consolidation_due(store: MemoryStore, scope: str) -> int | None:
-    """Active trace count of ``scope`` when its write made a pass due, else None."""
+def _auto_consolidation_due(
+    store: MemoryStore, scope: str, admitted_traces: int = 1,
+) -> int | None:
+    """Active population when the committed writes crossed an interval.
 
+    Trace rows retain admitted knowledge, including replacements and soft
+    deletions. Their scoped covering index supplies the cadence without a
+    separate progress record. A remember with alternatives can cross a
+    boundary without ending exactly on it.
+    """
+
+    row = store.connection.execute(
+        "SELECT COUNT(*) AS count FROM nodes WHERE level = 'trace' AND scope = ?",
+        (scope,),
+    ).fetchone()
+    write_count = int(row["count"])
+    step = (
+        _adaptive_trigger_step(write_count)
+        if _auto_consolidate_policy() == "adaptive"
+        else DEFAULT_MIN_CLUSTER_SIZE
+    )
+    if step is None or write_count < step:
+        return None
+    if write_count // step == max(0, write_count - admitted_traces) // step:
+        return None
+
+    # Population supplies material, not cadence. Consolidation owns the
+    # merge floors and sizes them from the active traces it actually loads.
     row = store.connection.execute(
         """
         SELECT COUNT(*) AS count
@@ -2046,21 +2071,7 @@ def _auto_consolidation_due(store: MemoryStore, scope: str) -> int | None:
         """,
         (scope,),
     ).fetchone()
-    trace_count = int(row["count"])
-
-    if _auto_consolidate_policy() == "adaptive":
-        # The merge floor itself is no longer decided here: consolidation.py
-        # owns the ladder and the LM_CONSOLIDATE_MERGE_FLOOR valve, and sizes
-        # it from this same scope's active traces. This branch only picks the
-        # trigger cadence.
-        step = _adaptive_trigger_step(trace_count)
-        if step is None or trace_count % step != 0:
-            return None
-        return trace_count
-
-    if trace_count < DEFAULT_MIN_CLUSTER_SIZE or trace_count % DEFAULT_MIN_CLUSTER_SIZE != 0:
-        return None
-    return trace_count
+    return int(row["count"]) or None
 
 
 def _auto_consolidate_if_due(
@@ -2081,6 +2092,8 @@ def _schedule_auto_consolidation_if_due(
     store: MemoryStore,
     scheduler: AutoConsolidationScheduler,
     scope: str,
+    *,
+    admitted_traces: int = 1,
 ) -> dict[str, Any] | None:
     """Schedule the pass this write made due; report, never run it.
 
@@ -2094,7 +2107,7 @@ def _schedule_auto_consolidation_if_due(
     """
 
     try:
-        trace_count = _auto_consolidation_due(store, scope)
+        trace_count = _auto_consolidation_due(store, scope, admitted_traces)
         if trace_count is None:
             return None
         return scheduler.request(scope, trace_count=trace_count)
