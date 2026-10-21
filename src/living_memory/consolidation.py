@@ -721,6 +721,10 @@ def _current_derivation(
 
     source_ids = [*_derivation_sources(store, node), *(member.id for member in additional)]
     members = list(store.get_nodes(source_ids).values())
+    return _resolve_current_sources(store, members)
+
+
+def _resolve_current_sources(store: MemoryStore, members: list[Node]) -> _EraAssessment:
     live: dict[str, Node] = {}
     excluded: dict[str, str] = {}
     for member in members:
@@ -765,6 +769,23 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
             affected[node.id] = node
             pending.append(node.id)
 
+    # Shared leaf inputs are immutable during this atomic refresh. Prepare
+    # them together once; affected derivatives must instead be read after
+    # their own source-first update, including cycle invalidation.
+    source_ids = {
+        source_id
+        for node in affected.values()
+        if node.provenance.get("strategy") in ("token-jaccard", "embedding-cosine")
+        for source_id in _derivation_sources(store, node)
+    }
+    sources = _resolve_current_sources(store, list(store.get_nodes(source_ids).values()))
+    source_inputs = {
+        source.node.id: source
+        for source in _prepare_digest_sources([
+            member for member in sources.live if member.id not in affected
+        ])
+    }
+
     visiting: set[str] = set()
     refreshed: set[str] = set()
 
@@ -782,7 +803,7 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
                 refresh(dependency)
         node = store.get_node(node_id)
         if node is not None and not node.decayed:
-            _refresh_derived_node(store, node)
+            _refresh_derived_node(store, node, source_inputs=source_inputs)
         visiting.remove(node_id)
         refreshed.add(node_id)
 
@@ -790,7 +811,10 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
         refresh(node_id)
 
 
-def _refresh_derived_node(store: MemoryStore, node: Node) -> Node:
+def _refresh_derived_node(
+    store: MemoryStore, node: Node,
+    *, source_inputs: Mapping[str, _DigestSource] | None = None,
+) -> Node:
     assessment = _current_derivation(store, node)
     members = assessment.live
     if not members:
@@ -813,7 +837,13 @@ def _refresh_derived_node(store: MemoryStore, node: Node) -> Node:
             _connect_schema_to_traces(store, updated, members)
             return updated
     elif strategy in ("token-jaccard", "embedding-cosine"):
-        prepared = _prepare_digest_sources(members)
+        prepared = (
+            _prepare_digest_sources(members) if source_inputs is None else [
+                source_inputs[member.id] if member.id in source_inputs
+                else _prepare_digest_sources([member])[0]
+                for member in members
+            ]
+        )
         cluster = _TraceCluster(node.scope, members, Counter(), strategy=strategy)
         for source in prepared:
             cluster.token_counts.update(source.tokens)
