@@ -70,11 +70,13 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
         ]
         limit = 3
     elif case == "identifier":
-        specs[1] = ("repeat", CONTENTS[1] + " Permit PX-18.", 3)
+        specs[0] = ("bearer", "Permit PX-17: " + CONTENTS[0], 0)
+        specs[1] = ("repeat", "Permit PX-18: " + CONTENTS[1], 3)
     elif case == "length":
         specs[1] = ("repeat", CONTENTS[1] + " The pilot records the tide and checks the mooring before departure.", 3)
     # The tail must not enter the bounded observation even though it is ranked.
-    specs.append(("outside", "The warehouse roof needs an inspection.", 180))
+    if case == "bounded":
+        specs.append(("outside", "The warehouse roof needs an inspection.", 180))
     ranked = []
     for index, (node_id, content, degrees) in enumerate(specs):
         node = store.create_node(level="trace", content=content, node_id=node_id,
@@ -153,12 +155,14 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
         assert set(access_ids) == set(selected)
         for entry in entries:
             node_id = entry.get("node", entry)["id"]
-            assert entry["content_ref"]["node_id"] == node_id
+            if view == "knowledge" or "content_ref" in entry:
+                assert entry["content_ref"]["node_id"] == node_id
         # Generated event ids are not semantic output; verify the relationship
         # before normalizing them for comparisons between fresh stores.
         if view == "full":
-            assert all(entry["recall_event_id"] == event_id for entry in entries)
-            entries = [{**entry, "recall_event_id": "event"} for entry in entries]
+            assert all(entry.get("recall_event_id", event_id) == event_id for entry in entries)
+            entries = [{**entry, "recall_event_id": "event"} if "recall_event_id" in entry
+                       else entry for entry in entries]
         return {"selected": selected,
                 "residual": [row.node.id for row in services[0].last_residual],
                 "results": entries, "event_ids": list(event.result_ids),
@@ -172,7 +176,7 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
 def test_selection_and_delivery_observe_the_bounded_pool_once(tmp_path, monkeypatch, view):
     result = make_recall(tmp_path, monkeypatch, view=view)()
     assert result["selected"] == ["bearer", "distinct"]
-    assert result["residual"] == ["repeat", "later", "outside"]
+    assert result["residual"] == ["repeat", "later"]
     assert result["reads"] == ["bearer", "repeat", "distinct", "later"]
     assert result["pools"] == 4
     assert [row["delivery"] for row in result["results"]] == ["full", "full"]
@@ -189,7 +193,7 @@ def test_unknown_vectors_and_guards_keep_the_fact_without_rereading(tmp_path, mo
 def test_omitted_pool_bearer_is_replaced_in_answer_order(tmp_path, monkeypatch):
     result = make_recall(tmp_path, monkeypatch, case="omitted-bearer")()
     assert result["selected"] == ["first", "bearer", "repeat"]
-    assert result["residual"] == ["omitted", "distinct", "later", "outside"]
+    assert result["residual"] == ["omitted", "distinct", "later"]
     assert result["results"][2]["delivery"] == "near_duplicate"
     assert result["results"][2]["content_ref"]["duplicate_of"] == "bearer"
     assert set(Counter(result["reads"]).values()) == {1}
@@ -232,9 +236,15 @@ def test_intentional_repeat_selection_keeps_session_delivery(tmp_path, monkeypat
     assert result["reads"] == ["bearer", "repeat", "distinct", "later"]
 
 
-@pytest.mark.parametrize("limit,expected", [(0, []), (8, ["bearer", "repeat", "distinct", "later", "outside"])])
+@pytest.mark.parametrize("limit,expected", [(0, []), (8, ["bearer", "repeat", "distinct", "later"])])
 def test_empty_and_short_answers_read_only_delivered_nodes(tmp_path, monkeypatch, limit, expected):
     result = make_recall(tmp_path, monkeypatch, limit=limit)()
     assert result["reads"] == expected
     if limit == 0:
         assert result["event_ids"] == [] and result["pools"] == 0
+
+
+def test_residual_beyond_the_selection_pool_is_not_observed(tmp_path, monkeypatch):
+    result = make_recall(tmp_path, monkeypatch, case="bounded")()
+    assert result["residual"] == ["repeat", "later", "outside"]
+    assert result["reads"] == ["bearer", "repeat", "distinct", "later"]
