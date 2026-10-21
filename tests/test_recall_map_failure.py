@@ -36,6 +36,8 @@ def knobs(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LM_RECALL_MAP", "1")
+    monkeypatch.setenv("LM_MAP_POOL_COLD_QUOTA_GATE", "1")
+    monkeypatch.setenv("LM_MAP_POOL_COLD_SLOTS", "1")
     monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
     monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
     monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "1")
