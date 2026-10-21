@@ -130,19 +130,26 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
     def run():
         reads.clear()
         pools.clear()
-        before = {row.node.id: store.get_node(row.node.id).stats.access_count for row in ranked}
+        before = {row.node.id: store.get_node(row.node.id).stats.get("access_count", 0) for row in ranked}
         answer = mcp.tools["memory_recall"](
             "harbour survey", scope=SCOPE, depth=0, max_results=limit, view=view,
             ambient_context={"transport_session_id": "fixture-session"},
         )
         event_id = answer["recall_event_id"]
+        if limit <= 0:
+            assert event_id is None and answer["results"] == []
+            assert all(store.get_node(row.node.id).stats.get("access_count", 0)
+                       == before[row.node.id] for row in ranked)
+            return {"selected": [], "residual": [], "results": [],
+                    "event_ids": [], "access_ids": [], "reads": list(reads),
+                    "pools": len(pools)}
         event = store.get_recall_event(event_id)
         assert event is not None
         entries = answer["results"]
         selected = [entry.get("node", entry)["id"] for entry in entries]
         assert list(event.result_ids) == selected
         access_ids = [row.node.id for row in ranked
-                      if store.get_node(row.node.id).stats.access_count > before[row.node.id]]
+                      if store.get_node(row.node.id).stats.get("access_count", 0) > before[row.node.id]]
         assert set(access_ids) == set(selected)
         for entry in entries:
             node_id = entry.get("node", entry)["id"]
@@ -192,7 +199,7 @@ def test_omitted_pool_bearer_is_replaced_in_answer_order(tmp_path, monkeypatch):
 def test_next_recall_reads_changed_chunks(tmp_path, monkeypatch):
     run = make_recall(tmp_path, monkeypatch)
     assert run()["selected"] == ["bearer", "distinct"]
-    with MemoryStore(run.store.path) as writer:
+    with MemoryStore(run.store.db_path) as writer:
         put_vector(writer, "repeat", 140)
     # Isolate duplicate observation from intentional session repeat selection.
     monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
@@ -227,11 +234,7 @@ def test_intentional_repeat_selection_keeps_session_delivery(tmp_path, monkeypat
 
 @pytest.mark.parametrize("limit,expected", [(0, []), (8, ["bearer", "repeat", "distinct", "later", "outside"])])
 def test_empty_and_short_answers_read_only_delivered_nodes(tmp_path, monkeypatch, limit, expected):
-    result = make_recall(tmp_path, monkeypatch, limit=limit)
+    result = make_recall(tmp_path, monkeypatch, limit=limit)()
+    assert result["reads"] == expected
     if limit == 0:
-        # The real service deliberately emits no event for an empty request.
-        with pytest.raises(AssertionError):
-            result()
-        assert result.store.connection.execute("SELECT count(*) FROM recall_events").fetchone()[0] == 0
-    else:
-        assert result()["reads"] == expected
+        assert result["event_ids"] == [] and result["pools"] == 0
