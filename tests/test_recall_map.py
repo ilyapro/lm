@@ -1939,8 +1939,7 @@ def test_chunk_revision_tracks_insert_and_delete(store: MemoryStore) -> None:
     populated = _chunk_table_revision(store.connection)
     assert populated != empty
     assert _chunk_table_revision(store.connection) == populated
-    with store.connection:
-        store.connection.execute("DELETE FROM chunk_embeddings WHERE node_id = ?", (node.id,))
+    assert store.delete_node_chunks(node.id) == 1
     assert _chunk_table_revision(store.connection) == empty
 
 
