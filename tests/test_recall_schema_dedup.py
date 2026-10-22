@@ -114,6 +114,7 @@ def test_live_path_frees_slots_for_next_ranked(tmp_path: Path, monkeypatch) -> N
     # schemas deliberately match more closely than the supporting notes, so
     # duplicates occupy baseline slots regardless of an installed model.
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0")
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         schema_ids = set(_seed(store))
         service = MemoryRecallService(store)

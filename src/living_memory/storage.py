@@ -4104,7 +4104,7 @@ class MemoryStore:
         working without every one of them learning about chunks. While
         ``nodes.embedding`` is present it stays the scoring vector and results
         are bit-identical to v5 — that matters because the callers' thresholds
-        (``_find_existing_concept``, cross-scope promotion) were calibrated
+        (cross-scope promotion and semantic retrieval) were calibrated
         against single-vector scores, and max-pooling chunks would silently
         raise every score and merge more aggressively than anyone asked for.
         Once the column is gone every node scores from its chunks instead, as
