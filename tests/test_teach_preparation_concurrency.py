@@ -2,7 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from threading import Event
+from threading import Event, RLock
 import sqlite3
 
 import pytest
@@ -214,3 +214,67 @@ def test_unchanged_cluster_renders_once_in_ordinary_handler(mcp, monkeypatch):
     result = mcp.tools["memory_teach"](traces[0].id, CORRECTION, context=CONTEXT)
     assert rendered == [result["corrective_trace"]["id"]]
     assert CORRECTION in lookup(mcp, nodes)["results"][0]["content"]
+
+
+def test_tool_reader_waits_for_complete_required_write(tmp_path, monkeypatch):
+    attempted, writing, release = Event(), Event(), Event()
+
+    class ObservedLock:
+        def __init__(self):
+            self.lock = RLock()
+
+        def __enter__(self):
+            if not self.lock.acquire(blocking=False):
+                attempted.set()
+                self.lock.acquire()
+            return self
+
+        def __exit__(self, *args):
+            self.lock.release()
+
+    monkeypatch.setattr(server, "RLock", ObservedLock)
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    mcp = server.create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    mcp.auto_consolidation.close()
+    traces, nodes = seed(mcp, diamond=True)
+    refresh = c._refresh_derived_from
+
+    def pause_write(*args, **kwargs):
+        refresh(*args, **kwargs)
+        writing.set()
+        assert release.wait(15), "test did not release required write"
+
+    monkeypatch.setattr(c, "_refresh_derived_from", pause_write)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            taught = workers.submit(mcp.tools["memory_teach"], traces[0].id, CORRECTION, context=CONTEXT)
+            try:
+                assert writing.wait(10)
+                reader = workers.submit(lookup, mcp, nodes)
+                assert attempted.wait(10)
+                assert not reader.done()
+                with sqlite3.connect(mcp.memory_store.db_path) as connection:
+                    for node in nodes:
+                        assert connection.execute("SELECT content FROM nodes WHERE id=?", (node.id,)).fetchone() == (node.content,)
+                    assert connection.execute("SELECT count(*) FROM connections WHERE type='supersedes'").fetchone() == (0,)
+            finally:
+                release.set()
+            taught.result(timeout=10)
+            assert all(CORRECTION in item["content"] for item in reader.result(timeout=10)["results"])
+    finally:
+        mcp.memory_store.close()
+
+
+def test_cycle_validity_is_decided_by_current_graph(mcp, monkeypatch):
+    traces, nodes = seed(mcp)
+    store = mcp.memory_store
+    with preparing(mcp, monkeypatch, traces[0]) as (_, taught):
+        with MemoryStore(store.db_path) as writer:
+            cyclic = derived(writer, "cycle", [nodes[0]])
+            writer.update_node(nodes[0].id, provenance={
+                **nodes[0].provenance, "source_traces": [traces[0].id, cyclic.id],
+            })
+    taught.result(timeout=10)
+    historical = lookup(mcp, [nodes[0], cyclic])["results"]
+    assert all(item["decayed"] for item in historical)
+    assert "cyclic sources" in historical[0]["decay_reason"]
