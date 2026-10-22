@@ -278,3 +278,40 @@ def test_cycle_validity_is_decided_by_current_graph(mcp, monkeypatch):
     historical = lookup(mcp, [nodes[0], cyclic])["results"]
     assert all(item["decayed"] for item in historical)
     assert "cyclic sources" in historical[0]["decay_reason"]
+
+
+def test_changed_source_content_with_same_identity_discards_preparation(mcp, monkeypatch):
+    store = mcp.memory_store
+    trace = store.append_trace(TEXTS[0], CONTEXT)
+    source = store.create_node(
+        level="concept", content="Harbor weather checks use the legacy wind gauge.",
+        context=CONTEXT, stats={"usefulness_score": 10.0},
+    )
+    owner = derived(store, "mixed sources", [trace, source])
+    changed = "Harbor wind safety uses the certified digital anemometer."
+    with preparing(mcp, monkeypatch, trace) as (_, taught):
+        with MemoryStore(store.db_path) as writer:
+            writer.update_node(source.id, content=changed)
+    result = taught.result(timeout=10)
+    current = store.get_node(owner.id)
+    assert current.content.startswith(changed)
+    assert source.content not in current.content
+    assert set(current.source_traces) == {source.id, result["corrective_trace"]["id"]}
+
+
+def test_marks_and_concurrent_recall_have_one_corrective_source(mcp, monkeypatch):
+    traces, _ = seed(mcp)
+    first = recall(mcp)
+    marked = [item["id"] for item in first["results"]]
+    with preparing(mcp, monkeypatch, traces[0], used=marked[:1], irrelevant=marked[1:]) as (workers, taught):
+        second = workers.submit(recall, mcp).result(timeout=10)
+    result = taught.result(timeout=10)
+    store = mcp.memory_store
+    new_id = result["corrective_trace"]["id"]
+    assert result["feedback_marks"]["accepted"] == len(marked)
+    assert {row[0] for row in store.connection.execute("SELECT source_id FROM recall_feedback_marks")} == {new_id}
+    for event in (first, second):
+        assert store.get_recall_event(event["recall_event_id"]).feedback_trace_id == new_id
+    assert {event["id"] for event in store.get_node(new_id).provenance["prior_recalls"]} == {
+        first["recall_event_id"], second["recall_event_id"],
+    }
