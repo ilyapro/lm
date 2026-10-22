@@ -37,6 +37,7 @@ from living_memory.consolidation import (
     ConsolidationResult,
     ConsolidationService,
     TeachResult,
+    prepare_teach,
 )
 from living_memory.decay import apply_decay
 from living_memory.delivery import (
@@ -1230,9 +1231,14 @@ def _register_tools(
         Explicit marks precede implicit feedback and receive the corrective
         source before commit. Their own failures remain nonfatal. Optional
         consolidation scheduling runs only after the knowledge commit.
+        Pure digest preparation runs outside the store lock; the writer checks
+        its inputs against the current graph before using it.
         """
 
         context = _with_transport_identity(context)
+        preparation = prepare_teach(
+            store, trace_id, correction, confidence=confidence, guard=lambda: runtime_lock,
+        )
         with runtime_lock:
             with store.transaction():
                 # Marks must precede implicit feedback, before the corrective
@@ -1257,6 +1263,7 @@ def _register_tools(
                     correction,
                     confidence=confidence,
                     context=context,
+                    preparation=preparation,
                 )
                 if marks is not None:
                     try:
