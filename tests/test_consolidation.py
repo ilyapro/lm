@@ -289,7 +289,7 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
             provenance={"source_traces": ["trace-gamma"]},
         )
 
-        promoted = _cross_scope_promotion(store, alpha, phase_number=4)
+        promoted, = _cross_scope_promotion(store, alpha, phase_number=4)
         assert promoted is not None
         original_confidence = promoted.confidence
 
@@ -334,7 +334,7 @@ def test_cross_scope_promotion_skips_concept_without_embedding(tmp_path: Path) -
 
         promoted = _cross_scope_promotion(store, concept, phase_number=4)
 
-        assert promoted is None
+        assert promoted == []
         assert store.list_nodes(level="concept", scope="global") == []
 
 
@@ -519,7 +519,7 @@ def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
             provenance={"source_traces": ["trace-gamma"]},
         )
 
-        promoted = _cross_scope_promotion(store, alpha, phase_number=4)
+        promoted, = _cross_scope_promotion(store, alpha, phase_number=4)
 
         assert promoted is not None
         sources = [alpha, beta, gamma]

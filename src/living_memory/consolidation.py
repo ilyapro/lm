@@ -66,7 +66,6 @@ JACCARD_SIMILARITY_THRESHOLD = 0.58
 EMBEDDING_SIMILARITY_THRESHOLD = 0.65
 CROSS_SCOPE_PROMOTION_PHASE = 4
 CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
-GLOBAL_PROMOTION_DEDUP_THRESHOLD = 0.8
 PROCEDURAL_MIN_CLUSTER_SIZE = 3
 _STEP_TEXT_KEYS = ("step_description", "step_content")
 DIGEST_MAX_CHARS = 1200
@@ -599,9 +598,9 @@ def memory_consolidate(
             materialized = _materialize_cluster(store, cluster, min_cluster_size=merge_floor)
         for concept, created in materialized:
             with step():
-                promoted = _cross_scope_promotion(store, concept, phase_number=phase.number)
-            if promoted is not None:
-                result.concepts_promoted.append(promoted)
+                result.concepts_promoted.extend(
+                    _cross_scope_promotion(store, concept, phase_number=phase.number)
+                )
             if created:
                 result.concepts_created.append(concept)
             else:
@@ -1458,6 +1457,22 @@ def _source_ancestors(store: MemoryStore, members: Sequence[Node]) -> dict[str, 
     return ancestors
 
 
+def _partition_sources(
+    store: MemoryStore, owners: Sequence[Node], members: Sequence[Node],
+) -> tuple[dict[str, set[str]], set[str]]:
+    """Partition by recorded inputs, keeping ambiguous owners independent."""
+
+    ancestors = _source_ancestors(store, members)
+    assigned: dict[str, set[str]] = {}
+    unowned = {member.id for member in members}
+    for owner in owners:
+        owned = set().union(*(ancestors.get(source, set()) for source in owner.materializer_sources))
+        if owned:
+            assigned[owner.id] = owned
+            unowned.difference_update(owned)
+    return assigned, unowned
+
+
 def _materialize_cluster(
     store: MemoryStore, cluster: _TraceCluster, *, min_cluster_size: int,
 ) -> list[tuple[Node, bool]]:
@@ -1474,19 +1489,13 @@ def _materialize_cluster(
         members = {member.id: member for member in current.live}
         if not members:
             return []
-        ancestors = _source_ancestors(store, current.live)
         owners = [
             node for node in store.list_nodes(level="concept", scope=cluster.scope, limit=100_000)
             if node.materializer == "cluster" and node.source_traces
             and not node.corrections and not _is_superseded(store, node.id)
         ]
-        assigned: dict[str, set[str]] = {}
-        claimed: set[str] = set()
-        for owner in owners:
-            owned = set().union(*(ancestors.get(source, set()) for source in owner.source_traces))
-            if owned:
-                assigned[owner.id] = owned
-                claimed.update(owned)
+        assigned, unowned = _partition_sources(store, owners, current.live)
+        ancestors = _source_ancestors(store, current.live)
 
         fresh = _assess_cluster_eras(store, cluster.traces)
         admitted = {member.id for member in fresh.live}
@@ -1498,7 +1507,6 @@ def _materialize_cluster(
                 for source_id, reason in fresh.excluded.items()
             )
         )
-        unowned = set(members) - claimed
         unowned.intersection_update(admitted)
         if len(assigned) == 1:
             owner = next(owner for owner in owners if owner.id in assigned)
@@ -1799,60 +1807,58 @@ def _raw_tokens(text: str) -> list[str]:
 
 def _cross_scope_promotion(
     store: MemoryStore, concept: Node, *, phase_number: int
-) -> Node | None:
+) -> list[Node]:
     if phase_number < CROSS_SCOPE_PROMOTION_PHASE:
-        return None
+        return []
     if concept.level != "concept" or not concept.scope.startswith("project:"):
-        return None
-    if concept.embedding is None or concept.corrections:
-        return None
+        return []
+    if concept.embedding is None or concept.corrections or _is_superseded(store, concept.id):
+        return []
 
     matches = store.find_similar_by_embedding(
-        concept.embedding,
-        level="concept",
-        exclude_scope=concept.scope,
-        scope_prefix="project:",
-        threshold=CROSS_SCOPE_PROMOTION_THRESHOLD,
-        limit=100_000,
+        concept.embedding, level="concept", exclude_scope=concept.scope,
+        scope_prefix="project:", threshold=CROSS_SCOPE_PROMOTION_THRESHOLD, limit=100_000,
     )
+    group = _cluster_group(concept)[1]
     sources_by_scope: dict[str, tuple[Node, float]] = {concept.scope: (concept, 1.0)}
     for candidate, similarity in matches:
         if candidate.id == concept.id or candidate.scope == concept.scope:
             continue
-        if candidate.corrections:
-            # Corrected project concepts must not feed the global digest.
+        if candidate.corrections or _is_superseded(store, candidate.id) or _cluster_group(candidate)[1] != group:
             continue
         current = sources_by_scope.get(candidate.scope)
-        if current is None or (similarity, candidate.confidence) > (
-            current[1],
-            current[0].confidence,
-        ):
+        if current is None or (similarity, candidate.confidence) > (current[1], current[0].confidence):
             sources_by_scope[candidate.scope] = (candidate, similarity)
-
     if len(sources_by_scope) < 3:
-        return None
+        return []
 
-    project_sources = [source for source, _similarity in sources_by_scope.values()]
-    similarities = {source.id: similarity for source, similarity in sources_by_scope.values()}
-    global_matches = store.find_similar_by_embedding(
-        concept.embedding,
-        level="concept",
-        scope="global",
-        threshold=GLOBAL_PROMOTION_DEDUP_THRESHOLD,
-        limit=10,
-    )
-    if global_matches:
-        return _reinforce_global_concept(
-            store,
-            global_matches[0][0],
-            project_sources,
-            similarities=similarities,
-        )
-    return _write_global_promotion(
-        store,
-        project_sources,
-        similarities=similarities,
-    )
+    with store.transaction():
+        members = {source.id: source for source, _ in sources_by_scope.values()}
+        similarities = {source.id: similarity for source, similarity in sources_by_scope.values()}
+        owners = [
+            node for node in store.list_nodes(level="concept", scope="global", limit=100_000)
+            if node.materializer == "cross-scope-promotion"
+            and not node.corrections and not _is_superseded(store, node.id)
+        ]
+        assigned, unowned = _partition_sources(store, owners, list(members.values()))
+        if len(assigned) == 1:
+            owner = next(owner for owner in owners if owner.id in assigned)
+            if _cluster_group(owner)[1] == group:
+                assigned[owner.id].update(unowned)
+                unowned.clear()
+        result = []
+        for owner in owners:
+            if owner.id not in assigned:
+                continue
+            current = _current_derivation(
+                store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
+            ).live
+            if {source.id for source in current} != set(owner.materializer_sources):
+                result.append(_write_global_promotion(store, current, existing=owner, similarities=similarities))
+        remaining = [members[source] for source in sorted(unowned)]
+        if len(_source_scopes(remaining)) >= 3:
+            result.append(_write_global_promotion(store, remaining, similarities=similarities))
+        return result
 
 
 def _write_global_promotion(
@@ -1895,40 +1901,25 @@ def _write_global_promotion(
         "temporal_hint": _promoted_temporal_hint(project_sources),
         "usefulness_score": _promoted_usefulness(project_sources),
     }
-    if existing is None:
-        global_concept = store.create_node(
-            level="concept", content=digest,
-            context={"scope": "global", "agent": "memory_consolidate", "timestamp": promoted_at},
-            embedding=best_source.embedding, stats=stats, provenance=provenance,
-        )
-    else:
-        global_concept = store.update_node(
-            existing.id, content=digest, stats=stats, provenance=provenance,
-        )
-    _connect_project_concepts_to_global(
-        store, project_sources, global_concept, similarities=similarities or {},
-    )
-    return global_concept
-
-
-def _reinforce_global_concept(
-    store: MemoryStore,
-    global_concept: Node,
-    project_sources: list[Node],
-    *,
-    similarities: Mapping[str, float],
-) -> Node | None:
-    current = _current_derivation(store, global_concept).live
-    sources = {source.id: source for source in [*current, *project_sources]}
-    added = set(sources) - set(_derivation_sources(store, global_concept))
-    if not added:
+    with store.transaction():
+        if existing is None:
+            context = {"scope": "global", "agent": "memory_consolidate", "timestamp": promoted_at}
+            key = _procedure_key(best_source)
+            if key is not None:
+                context[key.group_field] = key.group_raw
+            global_concept = store.create_node(
+                level="concept", content=digest,
+                context=context,
+                embedding=best_source.embedding, stats=stats, provenance=provenance,
+            )
+        else:
+            global_concept = store.update_node(
+                existing.id, content=digest, stats=stats, provenance=provenance,
+            )
         _connect_project_concepts_to_global(
-            store, project_sources, global_concept, similarities=similarities,
+            store, project_sources, global_concept, similarities=similarities or {},
         )
-        return None
-    return _write_global_promotion(
-        store, list(sources.values()), existing=global_concept, similarities=similarities,
-    )
+    return global_concept
 
 
 def _connect_project_concepts_to_global(
