@@ -40,7 +40,7 @@ from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
 from living_memory.models import Connection, Node, string_list
 from living_memory.query_anchors import resolve_replacement
-from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore
+from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore, new_ulid
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
 _LOG = logging.getLogger(__name__)
@@ -513,6 +513,7 @@ class ConsolidationService:
         *,
         confidence: float | None = None,
         context: Mapping[str, Any] | None = None,
+        preparation: _TeachPreparation | None = None,
     ) -> TeachResult:
         return memory_teach(
             self.store,
@@ -520,6 +521,7 @@ class ConsolidationService:
             correction,
             confidence=confidence,
             context=context,
+            preparation=preparation,
         )
 
     def memory_forget(self, node_id: str, reason: str | None = None) -> Node:
@@ -615,6 +617,82 @@ def memory_consolidate(
 consolidate = memory_consolidate
 
 
+@dataclass(slots=True)
+class _PreparedDigest:
+    sources: tuple[tuple[str, str], ...]
+    best_id: str
+    content: str
+    cluster_key: str
+
+    def matches(self, members: Sequence[Node], best: Node) -> bool:
+        return self.best_id == best.id and self.sources == tuple(
+            (member.id, member.content) for member in members
+        )
+
+
+@dataclass(slots=True)
+class _TeachPreparation:
+    corrective_id: str
+    source_inputs: dict[str, _DigestSource]
+    digests: dict[str, _PreparedDigest]
+
+
+def prepare_teach(
+    store: MemoryStore,
+    trace_id: str,
+    correction: str | Mapping[str, Any],
+    *,
+    confidence: float | None = None,
+    guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+) -> _TeachPreparation:
+    """Prepare expensive text work on call-local copies, without a transaction.
+
+    Only reads use the shared-store guard. The atomic writer resolves the graph
+    again and accepts each prepared digest only for its actual content inputs
+    and best source. Changed descendants and concurrent writes use the normal
+    writer; this snapshot never supplies stats, provenance or edge weights.
+    """
+
+    with guard():
+        original = store.get_node(trace_id)
+        if original is None:
+            raise KeyError(trace_id)
+        content = _correction_text(correction)
+        if not content:
+            raise ValueError("correction must be non-empty")
+        corrective = Node(
+            id=new_ulid(), level="trace", content=content,
+            confidence=min(0.5, 0.5 if confidence is None else float(confidence)),
+            usefulness_score=max(1.0, original.usefulness_score + 1.0),
+        )
+        snapshots = []
+        for node in _affected_derivatives(store, trace_id).values():
+            if node.materializer not in ("cluster", "cross-scope-promotion"):
+                continue
+            members = [
+                corrective if member.id == trace_id else member
+                for member in _current_derivation(store, node).live
+            ]
+            if members:
+                snapshots.append((node, members))
+
+    source_inputs = {
+        source.node.id: source
+        for source in _prepare_digest_sources(list({
+            member.id: member for _, members in snapshots for member in members
+        }.values()))
+    }
+    digests = {}
+    for node, members in snapshots:
+        prepared = [source_inputs[member.id] for member in members]
+        best = (
+            max(members, key=lambda member: (_trace_quality(member), member.id))
+            if node.materializer == "cluster" else _highest_confidence_source(members)
+        )
+        digests[node.id] = _prepare_digest(node.scope, members, best, prepared)
+    return _TeachPreparation(corrective.id, source_inputs, digests)
+
+
 def memory_teach(
     store: MemoryStore,
     trace_id: str,
@@ -622,6 +700,7 @@ def memory_teach(
     *,
     confidence: float | None = None,
     context: Mapping[str, Any] | None = None,
+    preparation: _TeachPreparation | None = None,
 ) -> TeachResult:
     """Atomically correct a source and refresh its recorded derivatives."""
 
@@ -648,7 +727,10 @@ def memory_teach(
             "unique_agents": 1,
             "usefulness_score": max(1.0, original.usefulness_score + 1.0),
         }
-        corrective_trace = store.append_trace(correction_text, context_data, feedback=feedback)
+        corrective_trace = store.append_trace(
+            correction_text, context_data, feedback=feedback,
+            node_id=preparation.corrective_id if preparation is not None else None,
+        )
 
         supersedes = _upsert_weighted_connection(
             store,
@@ -673,7 +755,10 @@ def memory_teach(
                 "usefulness_score": min(corrected_original.usefulness_score, -0.25),
             },
         )
-        _refresh_derived_from(store, original.id)
+        if preparation is None:
+            _refresh_derived_from(store, original.id)
+        else:
+            _refresh_derived_from(store, original.id, preparation=preparation)
         implicit_feedback = apply_pending_recall_feedback(
             store,
             corrective_trace,
@@ -743,13 +828,8 @@ def _current_sources(store: MemoryStore, source_ids: Iterable[str]) -> _EraAsses
     return _EraAssessment(members, list(live.values()), excluded, False, 1)
 
 
-def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
-    """Refresh the affected derivation subgraph, sources before their consumers.
-
-    The graph is call-local. Discover it before changing membership so diamonds
-    and cross-scope descendants see all of their updated inputs in one teach.
-    """
-
+def _affected_derivatives(store: MemoryStore, source_id: str) -> dict[str, Node]:
+    """Discover recorded consumers, including earlier source identities."""
     affected: dict[str, Node] = {}
     pending = [source_id]
     visited: set[str] = set()
@@ -772,6 +852,19 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
                 continue
             affected[node.id] = node
             pending.append(node.id)
+    return affected
+
+
+def _refresh_derived_from(
+    store: MemoryStore, source_id: str, *, preparation: _TeachPreparation | None = None,
+) -> None:
+    """Refresh the current derivation subgraph, sources before their consumers.
+
+    Discover it before changing membership so diamonds and cross-scope
+    descendants see all of their updated inputs in one atomic teach.
+    """
+
+    affected = _affected_derivatives(store, source_id)
 
     # Shared leaf inputs are immutable during this atomic refresh. Prepare
     # them together once; affected derivatives must instead be read after
@@ -784,13 +877,16 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
     }
     if source_ids:
         source_ids.add(resolve_replacement(store, source_id) or source_id)
-    source_inputs = {
+    source_inputs = dict(preparation.source_inputs) if preparation is not None else {}
+    source_inputs.update({
         source.node.id: source
         for source in _prepare_digest_sources([
             member for member in store.get_nodes(source_ids).values()
             if member.id not in affected and not member.decayed and not member.corrections
+            and (member.id not in source_inputs
+                 or source_inputs[member.id].node.content != member.content)
         ])
-    }
+    })
 
     visiting: set[str] = set()
     refreshed: set[str] = set()
@@ -809,7 +905,10 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
                 refresh(dependency)
         node = store.get_node(node_id)
         if node is not None and not node.decayed:
-            _refresh_derived_node(store, node, source_inputs=source_inputs)
+            _refresh_derived_node(
+                store, node, source_inputs=source_inputs,
+                prepared_digest=preparation.digests.get(node.id) if preparation else None,
+            )
         visiting.remove(node_id)
         refreshed.add(node_id)
 
@@ -820,6 +919,7 @@ def _refresh_derived_from(store: MemoryStore, source_id: str) -> None:
 def _refresh_derived_node(
     store: MemoryStore, node: Node,
     *, source_inputs: Mapping[str, _DigestSource] | None = None,
+    prepared_digest: _PreparedDigest | None = None,
 ) -> Node:
     assessment = _current_derivation(store, node)
     members = assessment.live
@@ -847,9 +947,12 @@ def _refresh_derived_node(
             store, node.scope, assessment, existing=node,
             strategy=str(node.provenance.get("strategy") or "token-jaccard"),
             source_inputs=source_inputs,
+            prepared_digest=prepared_digest,
         )
     elif materializer == "cross-scope-promotion":
-        return _write_global_promotion(store, members, existing=node)
+        return _write_global_promotion(
+            store, members, existing=node, prepared_digest=prepared_digest,
+        )
 
     # An explicit derived_from edge proves dependency, but cannot specify how
     # to rewrite an arbitrary expression. Its sources and old content remain
@@ -1564,23 +1667,23 @@ def _write_cluster_concept(
     *, existing: Node | None = None, strategy: str,
     embeddings: Mapping[str, list[float]] | None = None,
     source_inputs: Mapping[str, _DigestSource] | None = None,
+    prepared_digest: _PreparedDigest | None = None,
 ) -> Node:
     """Write one owner's digest, retrieval label, inputs and edges atomically."""
 
     members = assessment.live
-    prepared = (
-        _prepare_digest_sources(members) if source_inputs is None else [
-            source_inputs[member.id] if member.id in source_inputs
+    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
+    if prepared_digest is None or not prepared_digest.matches(members, best_trace):
+        prepared = [
+            source_inputs[member.id]
+            if source_inputs is not None and member.id in source_inputs
+            and source_inputs[member.id].node.content == member.content
             else _prepare_digest_sources([member])[0]
             for member in members
         ]
-    )
-    tokens: Counter[str] = Counter()
-    for source in prepared:
-        tokens.update(source.tokens)
-    cluster_key = _cluster_key(_TraceCluster(scope, members, tokens))
-    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    digest = _synthesize_digest(members, best=best_trace, prepared_sources=prepared)
+        prepared_digest = _prepare_digest(scope, members, best_trace, prepared)
+    digest = prepared_digest.content
+    cluster_key = prepared_digest.cluster_key
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
     concept_embedding = best_trace.embedding or (embeddings or {}).get(best_trace.id)
@@ -1624,6 +1727,20 @@ class _DigestSource:
     node: Node
     tokens: set[str]
     sentences: list[tuple[str, set[str]]]
+
+
+def _prepare_digest(
+    scope: str, members: Sequence[Node], best: Node, sources: Sequence[_DigestSource],
+) -> _PreparedDigest:
+    tokens: Counter[str] = Counter()
+    for source in sources:
+        tokens.update(source.tokens)
+    return _PreparedDigest(
+        sources=tuple((member.id, member.content) for member in members),
+        best_id=best.id,
+        content=_synthesize_digest(members, best=best, prepared_sources=sources),
+        cluster_key=_cluster_key(_TraceCluster(scope, list(members), tokens)),
+    )
 
 
 def _prepare_digest_sources(sources: Sequence[Node]) -> list[_DigestSource]:
@@ -1891,11 +2008,16 @@ def _write_global_promotion(
     *,
     existing: Node | None = None,
     similarities: Mapping[str, float] | None = None,
+    prepared_digest: _PreparedDigest | None = None,
 ) -> Node:
     """One writer for a promotion's content, current inputs and validity stats."""
 
     best_source = _highest_confidence_source(project_sources)
-    digest = _synthesize_digest(project_sources, best=best_source)
+    digest = (
+        prepared_digest.content
+        if prepared_digest is not None and prepared_digest.matches(project_sources, best_source)
+        else _synthesize_digest(project_sources, best=best_source)
+    )
     source_scopes = _source_scopes(project_sources)
     source_concepts = _source_concept_ids(project_sources)
     promoted_at = _utc_now()
