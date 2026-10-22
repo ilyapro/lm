@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Iterable
 
-from living_memory.models import Node
+from living_memory.models import NODE_LEVELS, Node
 from living_memory.storage import MemoryStore
 from living_memory.temporal import parse_timestamp
 
@@ -249,25 +249,43 @@ def soft_delete_expired(
     cutoff = moment - timedelta(days=ttl)
     coverage = concept_coverage(store)
 
-    candidates: list[tuple[datetime, str, Node, str]] = []
+    candidates: list[tuple[datetime, str, str]] = []
     for level in levels:
-        nodes = store.list_nodes(
-            level=level, scope=scope, include_decayed=False, limit=100_000
-        )
-        for node in nodes:
-            reference = _ttl_reference(node, anchor)
-            if node.id in coverage:
+        clauses = ["decayed = 0"]
+        params: list[str] = []
+        if level is not None:
+            if level not in NODE_LEVELS:
+                raise ValueError(f"invalid node level: {level}")
+            clauses.append("level = ?")
+            params.append(level)
+        if scope is not None:
+            clauses.append("scope = ?")
+            params.append(scope)
+        # Eligibility needs dates and identity, not content or provenance.
+        # Full nodes are read by soft_delete_node only for selected retirements.
+        rows = store.connection.execute(
+            f"""
+            SELECT id, timestamp, created_at, last_accessed FROM nodes
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp DESC, id DESC LIMIT 100000
+            """,
+            params,
+        ).fetchall()
+        for row in rows:
+            node_id = str(row["id"])
+            reference = _ttl_reference(row, anchor)
+            if node_id in coverage:
                 if not coverage_rule:
                     # The invariant: no trace listed in a live concept's
                     # source_traces is decayed. Its digest points back here.
                     continue
-                if not _read_since(node, coverage[node.id]):
+                if not _read_since(row, coverage[node_id]):
                     candidates.append(
-                        (reference or moment, node.id, node, CONCEPT_COVERED_REASON)
+                        (reference or moment, node_id, CONCEPT_COVERED_REASON)
                     )
                     continue
             if reference is not None and reference < cutoff:
-                candidates.append((reference, node.id, node, TTL_EXPIRED_REASON))
+                candidates.append((reference, node_id, TTL_EXPIRED_REASON))
 
     # Oldest reference first, id as tie-breaker: whatever the cap defers is the
     # youngest of the batch, and the next sweep resumes exactly where this one
@@ -276,7 +294,7 @@ def soft_delete_expired(
     if cap:
         candidates = candidates[:cap]
 
-    return [store.soft_delete_node(node.id, reason) for _, _, node, reason in candidates]
+    return [store.soft_delete_node(node_id, reason) for _, node_id, reason in candidates]
 
 
 def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> list[Node]:
@@ -314,22 +332,21 @@ def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> l
     return decayed
 
 
-def _ttl_reference(node: Node, anchor: str) -> datetime | None:
+def _ttl_reference(row: Any, anchor: str) -> datetime | None:
     """The moment a node's TTL counts from, under the selected anchor."""
 
     if anchor == TTL_ANCHOR_LAST_ACCESSED:
-        # The legacy expression, kept verbatim: last read, else creation.
-        return parse_timestamp(node.last_accessed) or parse_timestamp(node.timestamp)
+        return parse_timestamp(row["last_accessed"]) or parse_timestamp(row["timestamp"])
     # ``timestamp`` is the node's own creation moment (storage fills it from
     # the writer's context or from now); ``created_at`` is the row insert and
-    # only differs for a backdated write — 2 rows in 12,887 on the live corpus.
-    return parse_timestamp(node.timestamp) or parse_timestamp(node.created_at)
+    # can differ for a backdated write.
+    return parse_timestamp(row["timestamp"]) or parse_timestamp(row["created_at"])
 
 
-def _read_since(node: Node, covered_at: datetime | None) -> bool:
+def _read_since(row: Any, covered_at: datetime | None) -> bool:
     """True when the trace was read after a concept started covering it."""
 
-    read_at = parse_timestamp(node.last_accessed)
+    read_at = parse_timestamp(row["last_accessed"])
     if read_at is None:
         return False
     if covered_at is None:
