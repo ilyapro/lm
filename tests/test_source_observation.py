@@ -99,6 +99,80 @@ def test_shared_resolution_preserves_lineage_displacement_and_validity(store):
         assert c._current_sources(store, group, observation=observation) == c._current_sources(store, group)
 
 
+def test_recorded_related_inputs_are_shared_in_store_order(store, monkeypatch):
+    traces = sources(store)
+    rejected = store.create_node(level="concept", content="Harbor inspection records.")
+    replacement = store.append_trace("Harbor inspection uses calibrated sensors.")
+    incidental = store.append_trace("Harbor inspection schedule.")
+    for index, (trace, weight) in enumerate(zip(traces, (0.6, 0.8, 0.8))):
+        monkeypatch.setattr(storage, "_utc_now", lambda i=index: f"2026-01-0{i + 1}T00:00:00Z")
+        store.create_connection(rejected.id, trace.id, "related", weight=weight,
+                                metadata={"kind": c.DERIVED_FROM_KIND})
+    store.create_connection(rejected.id, incidental.id, "related", weight=1.0)
+    store.create_connection(replacement.id, rejected.id, "supersedes")
+    owners = [derived(store, name, [replacement, *traces, incidental]) for name in ("left", "right")]
+    expected = [c._current_derivation(store, owner) for owner in owners]
+    expected_inputs = c._current_derivation(store, rejected)
+    queries = Counter()
+    read = store.list_connections
+
+    def counted(**kwargs):
+        queries[tuple(sorted(kwargs.items()))] += 1
+        return read(**kwargs)
+
+    monkeypatch.setattr(store, "list_connections", counted)
+    observation = c._SourceObservation(store, [replacement.id, incidental.id, *[t.id for t in traces]])
+    for _ in range(2):
+        assert c._derivation_sources(observation, rejected) == [trace.id for trace in reversed(traces)]
+        assert c._current_derivation(store, rejected, observation=observation) == expected_inputs
+        assert [c._current_derivation(store, owner, observation=observation) for owner in owners] == expected
+    related_reads = sum(count for query, count in queries.items()
+                        if dict(query).get("relation_type") == "related")
+    assert related_reads == 1
+    assert {node.id for node in expected[0].live} == {replacement.id, incidental.id}
+
+
+@pytest.mark.parametrize("strategy", ["token-jaccard", "procedural"])
+def test_source_first_writers_refresh_related_reads_for_owners_and_inputs(store, monkeypatch, strategy):
+    traces = sources(store)
+    for trace in traces:
+        store.record_access(trace.id)
+    left = derived(store, "left", traces, strategy=strategy)
+    independent = derived(store, "independent", traces[1:])
+    promotion = derived(store, "promotion", [left, independent],
+                        strategy="cross-scope-promotion", scope="global")
+    initialize = c._SourceObservation.__init__
+    update = c._SourceObservation.updated
+    changed = {}
+
+    def prime(self, *args, **kwargs):
+        initialize(self, *args, **kwargs)
+        for source_id in self.nodes.keys() | self.changing:
+            self.list_connections(source_id=source_id, relation_type="related")
+
+    def updated(self, node):
+        inputs = {node.id, *node.materializer_sources}
+        before = {source: self.list_connections(source_id=source, relation_type="related")
+                  for source in inputs}
+        current = {source: store.list_connections(source_id=source, relation_type="related")
+                   for source in inputs}
+        changed[node.id] = {source for source in inputs if before[source] != current[source]}
+        update(self, node)
+        for source in inputs:
+            assert self.list_connections(source_id=source, relation_type="related") == current[source]
+
+    monkeypatch.setattr(c._SourceObservation, "__init__", prime)
+    monkeypatch.setattr(c._SourceObservation, "updated", updated)
+    taught = c.memory_teach(store, traces[0].id, "Harbor crane uses the electronic manifest.")
+    assert left.id in changed[left.id]
+    if strategy == "token-jaccard":
+        assert changed[left.id] & {trace.id for trace in traces[1:]}
+    assert changed[promotion.id] == {left.id, independent.id}
+    assert store.get_node(independent.id) == independent
+    assert set(store.get_node(left.id).source_traces) == {taught.corrective_trace.id, *[t.id for t in traces[1:]]}
+    assert store.get_node(left.id).content in store.get_node(promotion.id).content
+
+
 class SeparateReads:
     """Reference execution uses the store directly for every owner."""
 
