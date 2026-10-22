@@ -38,9 +38,9 @@ from living_memory.decay import DecayResult, apply_decay, memory_forget
 from living_memory.edge_derivation import DERIVED_FROM_ANNOTATION, DERIVED_FROM_KIND
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
-from living_memory.models import Connection, Node, string_list
+from living_memory.models import Connection, ConnectionType, Node, string_list
 from living_memory.query_anchors import resolve_replacement
-from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore, new_ulid
+from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore, _node_read_batches, new_ulid
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
 _LOG = logging.getLogger(__name__)
@@ -665,13 +665,18 @@ def prepare_teach(
             confidence=min(0.5, 0.5 if confidence is None else float(confidence)),
             usefulness_score=max(1.0, original.usefulness_score + 1.0),
         )
+        owners = [
+            node for node in _affected_derivatives(store, trace_id).values()
+            if node.materializer in ("cluster", "cross-scope-promotion")
+        ]
+        observation = _SourceObservation(store, (
+            source for node in owners for source in _derivation_sources(store, node)
+        ))
         snapshots = []
-        for node in _affected_derivatives(store, trace_id).values():
-            if node.materializer not in ("cluster", "cross-scope-promotion"):
-                continue
+        for node in owners:
             members = [
                 corrective if member.id == trace_id else member
-                for member in _current_derivation(store, node).live
+                for member in _current_derivation(store, node, observation=observation).live
             ]
             if members:
                 snapshots.append((node, members))
@@ -785,25 +790,78 @@ def _derivation_sources(store: MemoryStore, node: Node) -> list[str]:
     ]
 
 
+class _SourceObservation:
+    """Share current reads only within one guarded phase of derivation work.
+
+    Sources being rewritten are read on demand until their source-first writer
+    supplies the resulting node. Supersedes edges do not change during refresh;
+    their endpoint validity is always checked against the current node values.
+    """
+
+    def __init__(
+        self, store: MemoryStore, source_ids: Iterable[str], *, changing: Iterable[str] = (),
+    ) -> None:
+        self.store = store
+        self.changing = set(changing)
+        ids = set(source_ids) - self.changing
+        self.nodes: dict[str, Node | None] = dict.fromkeys(ids)
+        self.nodes.update(store.get_nodes(ids))
+        self.edges: dict[tuple[str | None, str | None, ConnectionType | None], list[Connection]] = {}
+
+    def get_node(self, node_id: str) -> Node | None:
+        if node_id in self.changing:
+            return self.store.get_node(node_id)
+        if node_id not in self.nodes:
+            self.nodes[node_id] = self.store.get_node(node_id)
+        return self.nodes[node_id]
+
+    def get_nodes(self, source_ids: Iterable[str]) -> dict[str, Node]:
+        return {
+            source: node
+            for batch in _node_read_batches(source_ids) for source in batch
+            if (node := self.get_node(source)) is not None
+        }
+
+    def list_connections(
+        self, *, source_id: str | None = None, target_id: str | None = None,
+        relation_type: ConnectionType | None = None,
+    ) -> list[Connection]:
+        key = (source_id, target_id, relation_type)
+        if key not in self.edges:
+            self.edges[key] = self.store.list_connections(
+                source_id=source_id, target_id=target_id, relation_type=relation_type,
+            )
+        return self.edges[key]
+
+    def updated(self, node: Node) -> None:
+        self.changing.discard(node.id)
+        self.nodes[node.id] = node
+
+
 def _current_derivation(
     store: MemoryStore, node: Node, *, additional: Iterable[Node] = (),
+    observation: _SourceObservation | None = None,
 ) -> _EraAssessment:
     """Resolve each recorded input independently, without displacing other eras."""
 
     return _current_sources(
         store, [*_derivation_sources(store, node), *(member.id for member in additional)],
+        observation=observation,
     )
 
 
-def _current_sources(store: MemoryStore, source_ids: Iterable[str]) -> _EraAssessment:
+def _current_sources(
+    store: MemoryStore, source_ids: Iterable[str], *, observation: _SourceObservation | None = None,
+) -> _EraAssessment:
     """Resolve the same source identities for lookup, refresh and writing."""
 
-    members = list(store.get_nodes(source_ids).values())
+    reader = observation or store
+    members = list(reader.get_nodes(source_ids).values())
     live: dict[str, Node] = {}
     excluded: dict[str, str] = {}
     for member in members:
-        replacement_id = resolve_replacement(store, member.id)
-        current = store.get_node(replacement_id) if replacement_id else member
+        replacement_id = resolve_replacement(reader, member.id)
+        current = reader.get_node(replacement_id) if replacement_id else member
         if replacement_id:
             excluded[member.id] = f"superseded-by:{replacement_id}"
         if current is not None and not current.decayed and not current.corrections:
@@ -815,10 +873,10 @@ def _current_sources(store: MemoryStore, source_ids: Iterable[str]) -> _EraAsses
     # have the same age or appear in the same clustering pass.
     displaced: dict[str, str] = {}
     for member in live.values():
-        for edge in store.list_connections(source_id=member.id, relation_type="supersedes"):
+        for edge in reader.list_connections(source_id=member.id, relation_type="supersedes"):
             if edge.metadata.get("kind") == _DUPLICATE_CONTENT_KIND:
                 continue
-            target = store.get_node(edge.target_id)
+            target = reader.get_node(edge.target_id)
             if target is not None:
                 for source in set(_derivation_sources(store, target)) & live.keys() - {member.id}:
                     displaced[source] = f"displaced-via:{target.id}"
@@ -866,27 +924,10 @@ def _refresh_derived_from(
 
     affected = _affected_derivatives(store, source_id)
 
-    # Shared leaf inputs are immutable during this atomic refresh. Prepare
-    # them together once; affected derivatives must instead be read after
-    # their own source-first update, including cycle invalidation.
-    source_ids = {
-        source_id
-        for node in affected.values()
-        if node.provenance.get("strategy") in ("token-jaccard", "embedding-cosine")
-        for source_id in _derivation_sources(store, node)
-    }
-    if source_ids:
-        source_ids.add(resolve_replacement(store, source_id) or source_id)
+    observation = _SourceObservation(store, (
+        source for node in affected.values() for source in _derivation_sources(store, node)
+    ), changing=affected)
     source_inputs = dict(preparation.source_inputs) if preparation is not None else {}
-    source_inputs.update({
-        source.node.id: source
-        for source in _prepare_digest_sources([
-            member for member in store.get_nodes(source_ids).values()
-            if member.id not in affected and not member.decayed and not member.corrections
-            and (member.id not in source_inputs
-                 or source_inputs[member.id].node.content != member.content)
-        ])
-    })
 
     visiting: set[str] = set()
     refreshed: set[str] = set()
@@ -897,18 +938,19 @@ def _refresh_derived_from(
         if node_id in visiting:
             # A cycle has no source-first evaluation. Keep its evidence by id,
             # but it cannot remain current after one of its inputs changed.
-            store.soft_delete_node(node_id, "derivation: cyclic sources")
+            observation.updated(store.soft_delete_node(node_id, "derivation: cyclic sources"))
             return
         visiting.add(node_id)
         for dependency in _derivation_sources(store, affected[node_id]):
             if dependency in affected:
                 refresh(dependency)
-        node = store.get_node(node_id)
+        node = observation.get_node(node_id)
         if node is not None and not node.decayed:
-            _refresh_derived_node(
+            observation.updated(_refresh_derived_node(
                 store, node, source_inputs=source_inputs,
                 prepared_digest=preparation.digests.get(node.id) if preparation else None,
-            )
+                observation=observation,
+            ))
         visiting.remove(node_id)
         refreshed.add(node_id)
 
@@ -918,10 +960,11 @@ def _refresh_derived_from(
 
 def _refresh_derived_node(
     store: MemoryStore, node: Node,
-    *, source_inputs: Mapping[str, _DigestSource] | None = None,
+    *, source_inputs: dict[str, _DigestSource] | None = None,
     prepared_digest: _PreparedDigest | None = None,
+    observation: _SourceObservation | None = None,
 ) -> Node:
-    assessment = _current_derivation(store, node)
+    assessment = _current_derivation(store, node, observation=observation)
     members = assessment.live
     if not members:
         return store.soft_delete_node(node.id, "derivation: no current sources")
@@ -939,6 +982,7 @@ def _refresh_derived_node(
             updated, _ = _create_or_update_schema(
                 store, node.scope, key, members, current,
                 era=assessment if binding else None,
+                observation=observation,
             )
             _connect_schema_to_traces(store, updated, members)
             return updated
@@ -952,6 +996,7 @@ def _refresh_derived_node(
     elif materializer == "cross-scope-promotion":
         return _write_global_promotion(
             store, members, existing=node, prepared_digest=prepared_digest,
+            source_inputs=source_inputs,
         )
 
     # An explicit derived_from edge proves dependency, but cannot specify how
@@ -1122,6 +1167,7 @@ def _create_or_update_schema(
     existing: Node | None,
     *,
     era: _EraAssessment | None = None,
+    observation: _SourceObservation | None = None,
 ) -> tuple[Node, bool]:
     trigger = procedure_key.trigger
     group_id = procedure_key.group_id
@@ -1171,7 +1217,7 @@ def _create_or_update_schema(
     content = (
         _format_schema_content(trigger, steps)
         if era is not None
-        else _format_evidence_content(store, trigger, store.get_nodes(sources).values())
+        else _format_evidence_content(store, trigger, (observation or store).get_nodes(sources).values())
     )
     provenance = {
         **(existing.provenance if existing else {}),
@@ -1666,7 +1712,7 @@ def _write_cluster_concept(
     store: MemoryStore, scope: str, assessment: _EraAssessment,
     *, existing: Node | None = None, strategy: str,
     embeddings: Mapping[str, list[float]] | None = None,
-    source_inputs: Mapping[str, _DigestSource] | None = None,
+    source_inputs: dict[str, _DigestSource] | None = None,
     prepared_digest: _PreparedDigest | None = None,
 ) -> Node:
     """Write one owner's digest, retrieval label, inputs and edges atomically."""
@@ -1674,13 +1720,7 @@ def _write_cluster_concept(
     members = assessment.live
     best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
     if prepared_digest is None or not prepared_digest.matches(members, best_trace):
-        prepared = [
-            source_inputs[member.id]
-            if source_inputs is not None and member.id in source_inputs
-            and source_inputs[member.id].node.content == member.content
-            else _prepare_digest_sources([member])[0]
-            for member in members
-        ]
+        prepared = _digest_sources(members, source_inputs)
         prepared_digest = _prepare_digest(scope, members, best_trace, prepared)
     digest = prepared_digest.content
     cluster_key = prepared_digest.cluster_key
@@ -1727,6 +1767,19 @@ class _DigestSource:
     node: Node
     tokens: set[str]
     sentences: list[tuple[str, set[str]]]
+
+
+def _digest_sources(
+    members: Sequence[Node], source_inputs: dict[str, _DigestSource] | None,
+) -> list[_DigestSource]:
+    inputs = source_inputs if source_inputs is not None else {}
+    missing = [
+        member for member in members
+        if member.id not in inputs or inputs[member.id].node.content != member.content
+    ]
+    if missing:
+        inputs.update((source.node.id, source) for source in _prepare_digest_sources(missing))
+    return [inputs[member.id] for member in members]
 
 
 def _prepare_digest(
@@ -2009,6 +2062,7 @@ def _write_global_promotion(
     existing: Node | None = None,
     similarities: Mapping[str, float] | None = None,
     prepared_digest: _PreparedDigest | None = None,
+    source_inputs: dict[str, _DigestSource] | None = None,
 ) -> Node:
     """One writer for a promotion's content, current inputs and validity stats."""
 
@@ -2016,7 +2070,10 @@ def _write_global_promotion(
     digest = (
         prepared_digest.content
         if prepared_digest is not None and prepared_digest.matches(project_sources, best_source)
-        else _synthesize_digest(project_sources, best=best_source)
+        else _synthesize_digest(
+            project_sources, best=best_source,
+            prepared_sources=_digest_sources(project_sources, source_inputs),
+        )
     )
     source_scopes = _source_scopes(project_sources)
     source_concepts = _source_concept_ids(project_sources)
