@@ -1824,6 +1824,9 @@ def _cross_scope_promotion(
 ) -> list[Node]:
     if phase_number < CROSS_SCOPE_PROMOTION_PHASE:
         return []
+    concept = store.get_node(concept.id)
+    if concept is None or concept.decayed:
+        return []
     if concept.level != "concept" or not concept.scope.startswith("project:"):
         return []
     if concept.embedding is None or concept.corrections or _is_superseded(store, concept.id):
@@ -1847,7 +1850,12 @@ def _cross_scope_promotion(
         return []
 
     with store.transaction():
-        members = {source.id: source for source, _ in sources_by_scope.values()}
+        current = _current_sources(store, (source.id for source, _ in sources_by_scope.values())).live
+        members = {source.id: source for source in current
+                   if source.level == "concept" and source.scope.startswith("project:")
+                   and _cluster_group(source)[1] == group}
+        if len(_source_scopes(members.values())) < 3:
+            return []
         similarities = {source.id: similarity for source, similarity in sources_by_scope.values()}
         owners = [
             node for node in store.list_nodes(level="concept", scope="global", limit=100_000)
@@ -1868,8 +1876,9 @@ def _cross_scope_promotion(
             current = _current_derivation(
                 store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
             ).live
-            if {source.id for source in current} != set(owner.materializer_sources):
-                result.append(_write_global_promotion(store, current, existing=owner, similarities=similarities))
+            updated = _write_global_promotion(store, current, existing=owner, similarities=similarities)
+            if updated != owner:
+                result.append(updated)
         remaining = [members[source] for source in sorted(unowned)]
         if len(_source_scopes(remaining)) >= 3:
             result.append(_write_global_promotion(store, remaining, similarities=similarities))
@@ -1900,22 +1909,26 @@ def _write_global_promotion(
         "strategy": "cross-scope-promotion",
     })
     provenance.setdefault("promoted_at", promoted_at)
-    if existing is not None and similarities is None and existing.content == digest and all(
-        existing.provenance.get(key) == provenance[key]
-        for key in ("source_concepts", "active_source_concepts", "active_promoted_from")
-    ) and existing.source_traces == provenance["source_traces"]:
-        return existing
-    if similarities is not None:
-        events = list(provenance.get("promotion_events", []))
-        events.append(_promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at))
-        provenance["promotion_events"] = events
-        provenance["last_promoted_at"] = promoted_at
     stats = {
         "confidence": _active_promotion_confidence(project_sources),
         "unique_agents": _promoted_unique_agents(project_sources),
         "temporal_hint": _promoted_temporal_hint(project_sources),
         "usefulness_score": _promoted_usefulness(project_sources),
     }
+    if existing is not None and existing.content == digest and all(
+        existing.provenance.get(key) == provenance[key]
+        for key in ("source_concepts", "active_source_concepts", "active_promoted_from")
+    ) and existing.source_traces == provenance["source_traces"] and all(
+        getattr(existing, key) == value for key, value in stats.items()
+    ):
+        return existing
+    if similarities is not None and (
+        existing is None or set(existing.materializer_sources) != set(source_concepts)
+    ):
+        events = list(provenance.get("promotion_events", []))
+        events.append(_promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at))
+        provenance["promotion_events"] = events
+        provenance["last_promoted_at"] = promoted_at
     with store.transaction():
         if existing is None:
             context = {"scope": "global", "agent": "memory_consolidate", "timestamp": promoted_at}

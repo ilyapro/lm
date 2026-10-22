@@ -319,3 +319,26 @@ def test_promotion_edge_failure_is_atomic(store, monkeypatch):
     with pytest.raises(RuntimeError, match="promotion source edge failure"):
         c._cross_scope_promotion(store, sources[0], phase_number=4)
     assert list(store.connection.iterdump()) == before
+
+
+def test_promotion_rereads_project_sources_and_refreshes_same_input_ids(store):
+    original = trace(store, "Release requires the obsolete paper permit.", scope="project:alpha")
+    (stale, _), = materialize(store, [original])
+    store.update_node(stale.id, embedding=[1.0, 0.0])
+    stale = store.get_node(stale.id)
+    for scope in ("beta", "gamma"):
+        store.create_node(level="concept", content=f"Release {scope} verifies the checksum.",
+                          context={"scope": f"project:{scope}"}, embedding=[1.0, 0.0])
+    replacement = "Release requires the electronic manifest."
+    c.memory_teach(store, original.id, replacement)
+    promoted, = c._cross_scope_promotion(store, stale, phase_number=4)
+    assert replacement in promoted.content and "obsolete paper permit" not in promoted.content
+    source_ids = promoted.provenance["source_concepts"]
+    current = store.get_node(stale.id)
+    fresh = trace(store, "Release encrypts transport packets.", scope=current.scope)
+    materialize(store, [*store.get_nodes(current.source_traces).values(), fresh])
+    updated, = c._cross_scope_promotion(store, stale, phase_number=4)
+    assert updated.id == promoted.id and updated.provenance["source_concepts"] == source_ids
+    assert fresh.id in updated.source_traces
+    assert "transport packets" in updated.content
+    assert c._cross_scope_promotion(store, stale, phase_number=4) == []
