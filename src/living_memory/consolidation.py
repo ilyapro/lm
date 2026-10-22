@@ -946,7 +946,7 @@ def _refresh_derived_from(
             observation.updated(store.soft_delete_node(node_id, "derivation: cyclic sources"))
             return
         visiting.add(node_id)
-        for dependency in _derivation_sources(store, affected[node_id]):
+        for dependency in _derivation_sources(observation, affected[node_id]):
             if dependency in affected:
                 refresh(dependency)
         node = observation.get_node(node_id)
