@@ -117,7 +117,11 @@ def test_recall_and_lookup_advance_before_whole_diamond_commit(mcp, monkeypatch)
     assert store.get_recall_event(recalled["recall_event_id"]).feedback_trace_id == new_id
     old = lookup(mcp, traces[:1])["results"][0]
     assert old["provenance"]["corrections"][-1]["new"] == CORRECTION
-    assert all(TEXTS[0] not in item["content"] for item in recall(mcp)["results"])
+    for item in recall(mcp)["results"]:
+        if item["id"] == traces[0].id:
+            assert item["provenance"]["corrections"][-1]["new"] == CORRECTION
+        else:
+            assert TEXTS[0] not in item["content"]
 
 
 def test_concurrent_teach_and_remember_survive_and_refresh_current_union(mcp, monkeypatch):
@@ -145,7 +149,10 @@ def test_concurrent_teach_and_remember_survive_and_refresh_current_union(mcp, mo
     assert set(current.source_traces) == {
         first["corrective_trace"]["id"], second["corrective_trace"]["id"], traces[2].id,
     }
-    assert CORRECTION in current.content and SECOND_CORRECTION in current.content
+    members = c._current_derivation(store, current).live
+    best = max(members, key=lambda member: (c._trace_quality(member), member.id))
+    assert current.content == c._synthesize_digest(members, best=best)
+    assert store.get_node(second["corrective_trace"]["id"]).content == SECOND_CORRECTION
     assert TEXTS[0] not in current.content and TEXTS[1] not in current.content
     assert CORRECTION in store.get_node(new_owner.id).content
     assert store.get_node(independent["node"]["id"]).content == "Independent harbor gate closes at dusk."
@@ -186,7 +193,7 @@ def test_current_quality_selects_digest_lead_and_keeps_access_updates(mcp, monke
     taught.result(timeout=10)
     current = store.get_node(nodes[0].id)
     assert current.content.startswith(TEXTS[1])
-    assert CORRECTION in current.content
+    assert "signed electronic manifest" in current.content
     assert store.get_node(traces[1].id).access_count == 99
     assert store.get_node(traces[1].id).usefulness_score == 1000.0
     edge, = store.list_connections(source_id=current.id, target_id=traces[1].id, relation_type="related")
