@@ -6222,15 +6222,8 @@ def _same_content_identity(left: Node, right: Node) -> bool:
 
     if left.materializer is None and right.materializer is None:
         return True
-    if left.materializer != right.materializer or not left.materializer_sources:
-        return False
-    def group(node: Node) -> Any:
-        return (node.context.get("task_pattern") or node.context.get("procedure_key")
-                or node.context.get("procedure_id") or node.provenance.get("procedure_key"))
-    return (
-        group(left) == group(right)
-        and set(left.materializer_sources) == set(right.materializer_sources)
-    )
+    identity = left.derivation_identity
+    return identity is not None and identity == right.derivation_identity
 
 
 def _node_from_row(row: sqlite3.Row) -> Node:

@@ -1,21 +1,9 @@
-"""Collapse same-procedure schema duplicates within one recall answer.
+"""Collapse identical recorded procedure derivations within one recall answer.
 
-Stage of goal recall-precision. ``collapse_schema_duplicates`` takes the ranked
-list (before the quality gate and the ``max_results`` cut) and returns
-``(kept, collapsed)``: ``kept`` keeps the ranked order, ``collapsed`` holds the
-lower-ranked duplicates it removed, so the next ranked results fill the freed
-slots.
-
-Behind ``LM_RECALL_SCHEMA_DEDUP`` (``1``/``true``/``yes``/``on``); unset or any
-other value is the identity split.
-
-"Same procedure" is the schema's title: the first line of its content,
-``Procedure: <trigger>`` as ``consolidation._format_schema_content`` writes it,
-whitespace-collapsed and casefolded. On the sfx store every such title maps to
-one procedure_id, and the title reproduces the measured duplicate share; the
-numbers are in docs/recall-schema-dedup.md. A schema with no trigger (bare
-``Procedure``) or an empty first line has no title and is never collapsed.
-Nodes other than schemas and group carriers are never collapsed.
+The optional LM_RECALL_SCHEMA_DEDUP valve keeps the highest-ranked copy before
+max_results, freeing its slot for the next result. Scope, group, recorded inputs
+and content must all agree. Shared titles alone never hide independent knowledge;
+unknown legacy derivations remain visible.
 """
 
 from __future__ import annotations
@@ -57,14 +45,17 @@ def collapse_schema_duplicates(
         return list(ranked), []
     kept: list[Any] = []
     collapsed: list[Any] = []
-    seen: set[str] = set()
+    seen: set[tuple[Any, ...]] = set()
     for result in ranked:
-        title = schema_title(result.node)
-        if title is None:
+        node = result.node
+        identity = node.derivation_identity
+        if node.materializer != "procedural" or identity is None:
             kept.append(result)
-        elif title in seen:
+            continue
+        key = (node.scope, node.level, identity, node.content)
+        if key in seen:
             collapsed.append(result)
         else:
-            seen.add(title)
+            seen.add(key)
             kept.append(result)
     return kept, collapsed
