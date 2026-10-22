@@ -41,8 +41,8 @@ def test_union_preserves_each_callers_sql_order_across_batches(store):
         expected = []
         for start in range(0, len(unique), 999):
             batch = unique[start:start + 999]
-            expected.extend(row[0] for row in store.connection.execute(
-                f"SELECT id FROM nodes WHERE id IN ({','.join('?' for _ in batch)})", batch,
+            expected.extend(row["id"] for row in store.connection.execute(
+                f"SELECT * FROM nodes WHERE id IN ({','.join('?' for _ in batch)})", batch,
             ))
         assert list(store.get_nodes(group)) == expected
         observed = observation.get_nodes(group)
