@@ -27,7 +27,7 @@ def mcp(tmp_path, monkeypatch, request):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", request.param)
     monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "fixed")
-    monkeypatch.setenv("LM_RECALL_SESSION_DEDUP", "0")
+    monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
     monkeypatch.setattr(server, "_transport_session_id", lambda: "preparation-transport")
     instance = server.create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     instance.auto_consolidation.close()
