@@ -1463,8 +1463,8 @@ def _materialize_cluster(
 
     Clustering admits related new evidence. Recorded inputs decide which node
     owns it: overlapping owners retain their separate derivations, and a new
-    member is never broadcast across them. A unique exact digest witness can
-    reconnect re-remembered knowledge; a lexical label cannot.
+    member is never broadcast across them. Neither a lexical label nor a lossy
+    digest identifies the sources of another derivation.
     """
 
     with store.transaction():
@@ -1485,20 +1485,6 @@ def _materialize_cluster(
             if owned:
                 assigned[owner.id] = owned
                 claimed.update(owned)
-
-        # A whole stored digest is stronger than a shared label or a fragment.
-        # It can introduce a source to one owner, but cannot move a source
-        # already belonging to another derivation or guess among twins.
-        for member in current.live:
-            if member.id in claimed:
-                continue
-            twins = [
-                owner for owner in owners
-                if owner.content == member.content and _cluster_group(owner) == _cluster_group(member)
-            ]
-            if len(twins) == 1:
-                assigned.setdefault(twins[0].id, set()).add(member.id)
-                claimed.add(member.id)
 
         fresh = _assess_cluster_eras(store, cluster.traces)
         admitted = {member.id for member in fresh.live}
@@ -1621,7 +1607,7 @@ def _prepare_digest_sources(sources: Sequence[Node]) -> list[_DigestSource]:
                     sentence_tokens.add(token)
             sentences.append((sentence, {token for token in sentence_tokens if token}))
         # Keep the whole-source insertion order used by _significant_tokens:
-        # Counter's equal-count ordering also determines cluster identity.
+        # Counter's equal-count ordering also determines the retrieval label.
         prepared.append(_DigestSource(source, {token for token in tokens if token}, sentences))
     return prepared
 
