@@ -711,6 +711,13 @@ _TASK_PATTERN_BACKFILL_PREDICATE = f"""
 """
 
 
+def _node_read_batches(node_ids: Iterable[str]) -> Iterator[list[str]]:
+    """Keep each caller's bounded ID batches in SQLite primary-key order."""
+    ids = list(set(node_ids))
+    for i in range(0, len(ids), 999):
+        yield sorted(ids[i : i + 999])
+
+
 def _content_fingerprint(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -1471,15 +1478,11 @@ class MemoryStore:
         return _node_from_row(row) if row else None
 
     def get_nodes(self, node_ids: Iterable[str]) -> dict[str, Node]:
-        ids = list(set(node_ids))
-        if not ids:
-            return {}
         nodes: dict[str, Node] = {}
-        for i in range(0, len(ids), 999):
-            chunk = ids[i : i + 999]
+        for chunk in _node_read_batches(node_ids):
             placeholders = ",".join("?" for _ in chunk)
             rows = self._conn.execute(
-                f"SELECT * FROM nodes WHERE id IN ({placeholders})", chunk
+                f"SELECT * FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
             ).fetchall()
             for row in rows:
                 node = _node_from_row(row)

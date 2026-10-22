@@ -57,10 +57,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol
 import math
 
 from living_memory.embeddings import cosine_similarity
+from living_memory.models import Connection, ConnectionType, Node
 from living_memory.scope import ScopePlan, normalize_scope
 from living_memory.storage import (
     MemoryStore,
@@ -604,8 +605,16 @@ def decay_stale_anchors(
 # ----------------------------------------------------------------------
 
 
+class _ReplacementReader(Protocol):
+    def get_node(self, node_id: str) -> Node | None: ...
+
+    def list_connections(
+        self, *, target_id: str, relation_type: ConnectionType,
+    ) -> list[Connection]: ...
+
+
 def resolve_replacement(
-    store: MemoryStore, node_id: str, *, max_depth: int = MAX_SUPERSEDES_CHAIN_DEPTH
+    store: _ReplacementReader, node_id: str, *, max_depth: int = MAX_SUPERSEDES_CHAIN_DEPTH
 ) -> str | None:
     """Follow ``supersedes`` upward to the node that currently replaces ``node_id``.
 
@@ -631,7 +640,7 @@ def resolve_replacement(
     return None if current == str(node_id) else current
 
 
-def _direct_superseder(store: MemoryStore, node_id: str) -> str | None:
+def _direct_superseder(store: _ReplacementReader, node_id: str) -> str | None:
     """The live node that most strongly supersedes ``node_id``, if any."""
 
     edges = store.list_connections(target_id=node_id, relation_type="supersedes")
