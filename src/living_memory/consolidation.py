@@ -29,7 +29,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from math import log1p
-from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 import logging
 import os
 import re
@@ -593,25 +593,17 @@ def memory_consolidate(
             result.schemas_updated.append(schema)
 
     for cluster in clusters:
-        if len(cluster.traces) < merge_floor:
-            continue
         with step():
-            assessment = _assess_cluster_eras(store, cluster.traces)
-            if not assessment.live:
-                # Every member is superseded or era-displaced: there is no current
-                # era to speak for, so nothing may be promoted from this cluster.
-                continue
-            concept, created = _merge_cluster_into_concept(store, cluster, assessment)
-        with step():
-            _update_edge_weights_from_co_access(store, concept, assessment.live)
-        with step():
-            promoted = _cross_scope_promotion(store, concept, phase_number=phase.number)
-        if promoted is not None:
-            result.concepts_promoted.append(promoted)
-        if created:
-            result.concepts_created.append(concept)
-        else:
-            result.concepts_updated.append(concept)
+            materialized = _materialize_cluster(store, cluster, min_cluster_size=merge_floor)
+        for concept, created in materialized:
+            with step():
+                promoted = _cross_scope_promotion(store, concept, phase_number=phase.number)
+            if promoted is not None:
+                result.concepts_promoted.append(promoted)
+            if created:
+                result.concepts_created.append(concept)
+            else:
+                result.concepts_updated.append(concept)
 
     with step():
         decay_result: DecayResult = apply_decay(store, scope=scope)
@@ -698,15 +690,8 @@ def memory_teach(
 def _derivation_sources(store: MemoryStore, node: Node) -> list[str]:
     """Read recorded materializer inputs, never incidental recall lineage."""
 
-    strategy = node.provenance.get("strategy")
-    if node.level in ("schema", "concept"):
-        if strategy == "cross-scope-promotion":
-            return string_list(node.provenance.get("source_concepts"))
-        if strategy == "procedural" or (
-            strategy in ("token-jaccard", "embedding-cosine")
-            and "cluster_key" in node.provenance
-        ):
-            return node.source_traces
+    if node.materializer:
+        return node.materializer_sources
     return [
         edge.target_id
         for edge in store.list_connections(source_id=node.id, relation_type="related")
@@ -719,7 +704,14 @@ def _current_derivation(
 ) -> _EraAssessment:
     """Resolve each recorded input independently, without displacing other eras."""
 
-    source_ids = [*_derivation_sources(store, node), *(member.id for member in additional)]
+    return _current_sources(
+        store, [*_derivation_sources(store, node), *(member.id for member in additional)],
+    )
+
+
+def _current_sources(store: MemoryStore, source_ids: Iterable[str]) -> _EraAssessment:
+    """Resolve the same source identities for lookup, refresh and writing."""
+
     members = list(store.get_nodes(source_ids).values())
     live: dict[str, Node] = {}
     excluded: dict[str, str] = {}
@@ -818,8 +810,8 @@ def _refresh_derived_node(
     if not members:
         return store.soft_delete_node(node.id, "derivation: no current sources")
 
-    strategy = node.provenance.get("strategy") if node.level != "trace" else None
-    if strategy == "procedural":
+    materializer = node.materializer
+    if materializer == "procedural":
         # Keep the recorded group and its retrieval label. A correction is an
         # explicit replacement even when its writer changes its context.
         key = _procedure_key(node)
@@ -834,23 +826,13 @@ def _refresh_derived_node(
             )
             _connect_schema_to_traces(store, updated, members)
             return updated
-    elif strategy in ("token-jaccard", "embedding-cosine"):
-        prepared = (
-            _prepare_digest_sources(members) if source_inputs is None else [
-                source_inputs[member.id] if member.id in source_inputs
-                else _prepare_digest_sources([member])[0]
-                for member in members
-            ]
+    elif materializer == "cluster":
+        return _write_cluster_concept(
+            store, node.scope, assessment, existing=node,
+            strategy=str(node.provenance.get("strategy") or "token-jaccard"),
+            source_inputs=source_inputs,
         )
-        cluster = _TraceCluster(node.scope, members, Counter(), strategy=strategy)
-        for source in prepared:
-            cluster.token_counts.update(source.tokens)
-        updated = _write_cluster_concept(
-            store, cluster, assessment, existing=node, prepared_sources=prepared,
-        )
-        _update_edge_weights_from_co_access(store, updated, members)
-        return updated
-    elif strategy == "cross-scope-promotion":
+    elif materializer == "cross-scope-promotion":
         return _write_global_promotion(store, members, existing=node)
 
     # An explicit derived_from edge proves dependency, but cannot specify how
@@ -1299,7 +1281,7 @@ def _cluster_prepared_reference(
         best_score = 0.0
         best_strategy = "token-jaccard"
         for cluster in clusters:
-            if cluster.scope != trace.scope:
+            if _cluster_group(cluster.traces[0]) != _cluster_group(trace):
                 continue
             score, strategy = _cluster_similarity(tokens, embedding, cluster)
             if score > best_score:
@@ -1376,11 +1358,12 @@ def _cluster_traces_indexed(
     clusters: list[_TraceCluster] = []
     capacity = max(1, len(prepared))
     width = max(1, dimensions)
-    scopes: dict[str, _ScopeIndex] = {}
+    scopes: dict[tuple[str, str | None], _ScopeIndex] = {}
     for trace, tokens, embedding in prepared:
-        state = scopes.get(trace.scope)
+        group = _cluster_group(trace)
+        state = scopes.get(group)
         if state is None:
-            state = scopes[trace.scope] = _ScopeIndex(capacity, width)
+            state = scopes[group] = _ScopeIndex(capacity, width)
         size = len(state.clusters)
         best = -1
         if size:
@@ -1447,92 +1430,172 @@ def _cluster_traces_indexed(
     return clusters
 
 
-def _merge_cluster_into_concept(
-    store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment,
-    *, existing: Node | None = None,
-) -> tuple[Node, bool]:
-    members = assessment.live
-    cluster_key = _cluster_key(cluster)
-    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    digest = None
+def _cluster_group(node: Node) -> tuple[str, str | None]:
+    key = _procedure_key(node)
+    return node.scope, key.group_id if key else None
 
-    def candidate_contents() -> set[str]:
-        nonlocal digest
-        digest = _synthesize_digest(members, best=best_trace)
-        return {digest, *(trace.content for trace in members)}
 
-    existing = store.get_node(existing.id) if existing else _find_existing_concept(
-        store, cluster.scope, cluster_key, candidate_contents=candidate_contents,
-    )
-    if existing is not None:
-        # A current concept already owns useful inputs outside this pass's
-        # snapshot. Resolve them along with the newly admitted members before
-        # writing both the digest and its source list.
-        assessment = _current_derivation(store, existing, additional=members)
-        members = assessment.live
+def _source_ancestors(store: MemoryStore, members: Sequence[Node]) -> dict[str, set[str]]:
+    """Map recorded input versions to the current members replacing them."""
+
+    ancestors: dict[str, set[str]] = {}
+    for member in members:
+        pending = [member.id]
+        seen: set[str] = set()
+        while pending:
+            source_id = pending.pop()
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            ancestors.setdefault(source_id, set()).add(member.id)
+            pending.extend(
+                edge.target_id for edge in store.list_connections(
+                    source_id=source_id, relation_type="supersedes",
+                )
+            )
+    return ancestors
+
+
+def _materialize_cluster(
+    store: MemoryStore, cluster: _TraceCluster, *, min_cluster_size: int,
+) -> list[tuple[Node, bool]]:
+    """Continue recorded owners and materialize only the unowned remainder.
+
+    Clustering admits related new evidence. Recorded inputs decide which node
+    owns it: overlapping owners retain their separate derivations, and a new
+    member is never broadcast across them. A unique exact digest witness can
+    reconnect re-remembered knowledge; a lexical label cannot.
+    """
+
+    with store.transaction():
+        current = _current_sources(store, (member.id for member in cluster.traces))
+        members = {member.id: member for member in current.live}
         if not members:
-            return store.soft_delete_node(existing.id, "derivation: no current sources"), False
-    return _write_cluster_concept(
-        store, cluster, assessment, existing=existing,
-        digest=digest if existing is None else None,
-    ), existing is None
+            return []
+        ancestors = _source_ancestors(store, current.live)
+        owners = [
+            node for node in store.list_nodes(level="concept", scope=cluster.scope, limit=100_000)
+            if node.materializer == "cluster" and node.source_traces
+            and not node.corrections and not _is_superseded(store, node.id)
+        ]
+        assigned: dict[str, set[str]] = {}
+        claimed: set[str] = set()
+        for owner in owners:
+            owned = set().union(*(ancestors.get(source, set()) for source in owner.source_traces))
+            if owned:
+                assigned[owner.id] = owned
+                claimed.update(owned)
+
+        # A whole stored digest is stronger than a shared label or a fragment.
+        # It can introduce a source to one owner, but cannot move a source
+        # already belonging to another derivation or guess among twins.
+        for member in current.live:
+            if member.id in claimed:
+                continue
+            twins = [
+                owner for owner in owners
+                if owner.content == member.content and _cluster_group(owner) == _cluster_group(member)
+            ]
+            if len(twins) == 1:
+                assigned.setdefault(twins[0].id, set()).add(member.id)
+                claimed.add(member.id)
+
+        fresh = _assess_cluster_eras(store, cluster.traces)
+        admitted = {member.id for member in fresh.live}
+        admitted.update(
+            member.id for member in current.live
+            if any(
+                source_id in ancestors and member.id in ancestors[source_id]
+                and (reason == "corrected" or reason.startswith("superseded-by:"))
+                for source_id, reason in fresh.excluded.items()
+            )
+        )
+        unowned = set(members) - claimed
+        unowned.intersection_update(admitted)
+        if len(assigned) == 1:
+            owner = next(owner for owner in owners if owner.id in assigned)
+            compatible = {source for source in unowned if _cluster_group(members[source]) == _cluster_group(owner)}
+            assigned[owner.id].update(compatible)
+            unowned.difference_update(compatible)
+
+        result: list[tuple[Node, bool]] = []
+        for owner in owners:
+            if owner.id not in assigned:
+                continue
+            assessment = _current_derivation(
+                store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
+            )
+            result.append((_write_cluster_concept(
+                store, cluster.scope, assessment, existing=owner, strategy=cluster.strategy,
+                embeddings=cluster.embeddings_by_trace_id,
+            ), False))
+        if len(unowned) >= min_cluster_size:
+            assessment = replace(fresh, live=[members[source] for source in sorted(unowned)])
+            result.append((_write_cluster_concept(
+                store, cluster.scope, assessment, strategy=cluster.strategy,
+                embeddings=cluster.embeddings_by_trace_id,
+            ), True))
+        return result
 
 
 def _write_cluster_concept(
-    store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment,
-    *, existing: Node | None = None, digest: str | None = None,
-    prepared_sources: Sequence[_DigestSource] | None = None,
+    store: MemoryStore, scope: str, assessment: _EraAssessment,
+    *, existing: Node | None = None, strategy: str,
+    embeddings: Mapping[str, list[float]] | None = None,
+    source_inputs: Mapping[str, _DigestSource] | None = None,
 ) -> Node:
-    """Materialize one resolved source set, including its digest and provenance."""
+    """Write one owner's digest, retrieval label, inputs and edges atomically."""
 
     members = assessment.live
-    cluster_key = _cluster_key(cluster)
+    prepared = (
+        _prepare_digest_sources(members) if source_inputs is None else [
+            source_inputs[member.id] if member.id in source_inputs
+            else _prepare_digest_sources([member])[0]
+            for member in members
+        ]
+    )
+    tokens: Counter[str] = Counter()
+    for source in prepared:
+        tokens.update(source.tokens)
+    cluster_key = _cluster_key(_TraceCluster(scope, members, tokens))
     best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    if digest is None:
-        digest = _synthesize_digest(members, best=best_trace, prepared_sources=prepared_sources)
+    digest = _synthesize_digest(members, best=best_trace, prepared_sources=prepared)
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
-    confidence = _consensus_confidence(members, unique_agents)
-    temporal_hint = detect_temporal_hint(members)
-    concept_embedding = cluster.embedding_for(best_trace)
-    usefulness = sum(max(0.0, trace.usefulness_score) for trace in members) / len(members)
-
+    concept_embedding = best_trace.embedding or (embeddings or {}).get(best_trace.id)
     provenance = {
+        **(existing.provenance if existing else {}),
         "source_traces": source_traces,
         "cluster_key": cluster_key,
         "cluster_size": len(source_traces),
         "consolidated_at": _utc_now(),
-        "strategy": cluster.strategy,
+        "strategy": strategy,
     }
     if assessment.filtered:
         provenance["era"] = assessment.era_provenance()
     stats = {
-        "confidence": confidence,
+        "confidence": _consensus_confidence(members, unique_agents),
         "unique_agents": unique_agents,
-        "temporal_hint": temporal_hint,
-        "usefulness_score": usefulness,
+        "temporal_hint": detect_temporal_hint(members),
+        "usefulness_score": sum(max(0.0, trace.usefulness_score) for trace in members) / len(members),
     }
-
-    if existing is None:
-        return store.create_node(
-            level="concept",
-            content=digest,
-            context={
-                "scope": cluster.scope,
-                "agent": "memory_consolidate",
-                "timestamp": _utc_now(),
-            },
-            embedding=concept_embedding,
-            stats=stats,
-            provenance=provenance,
-        )
-    return store.update_node(
-        existing.id,
-        content=digest,
-        embedding=concept_embedding,
-        stats=stats,
-        provenance={**existing.provenance, **provenance},
-    )
+    with store.transaction():
+        if existing is None:
+            context = {"scope": scope, "agent": "memory_consolidate", "timestamp": _utc_now()}
+            key = _procedure_key(members[0])
+            if key is not None:
+                context[key.group_field] = key.group_raw
+            concept = store.create_node(
+                level="concept", content=digest, context=context,
+                embedding=concept_embedding, stats=stats, provenance=provenance,
+            )
+        else:
+            concept = store.update_node(
+                existing.id, content=digest, embedding=concept_embedding,
+                stats=stats, provenance=provenance,
+            )
+        _update_edge_weights_from_co_access(store, concept, members)
+    return concept
 
 
 @dataclass(slots=True)
@@ -1978,36 +2041,6 @@ def _active_promotion_confidence(project_sources: Iterable[Node]) -> float:
     if len(_source_scopes(sources)) < 3:
         return round(max(source.confidence for source in sources), 6)
     return _promoted_confidence(sources)
-
-
-def _find_existing_concept(
-    store: MemoryStore,
-    scope: str,
-    cluster_key: str,
-    *,
-    candidate_contents: Collection[str] | Callable[[], Collection[str]] = (),
-) -> Node | None:
-    concepts = store.list_nodes(
-        level="concept",
-        scope=scope,
-        include_decayed=False,
-        limit=100_000,
-    )
-    eligible = []
-    for concept in concepts:
-        if concept.corrections:
-            # A taught concept holds a corrected belief; merging fresh cluster
-            # content into it would resurrect it. Let a new concept form.
-            continue
-        if concept.provenance.get("cluster_key") == cluster_key:
-            return concept
-        eligible.append(concept)
-    # cluster_key is the primary identity; the content twin covers key drift
-    # between runs for both digest concepts (an unchanged cluster re-digests to
-    # the same bytes) and legacy concepts that copied a source trace verbatim
-    # before digests existed. Merge into the twin instead of duplicating it.
-    contents = frozenset(candidate_contents() if callable(candidate_contents) else candidate_contents)
-    return next((concept for concept in eligible if concept.content in contents), None)
 
 
 def _trace_embedding(trace: Node, embedder: LocalEmbeddingModel | None) -> list[float] | None:
