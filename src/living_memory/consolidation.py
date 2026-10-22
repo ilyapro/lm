@@ -593,6 +593,8 @@ def memory_consolidate(
             result.schemas_updated.append(schema)
 
     for cluster in clusters:
+        if len(cluster.traces) < merge_floor:
+            continue
         with step():
             materialized = _materialize_cluster(store, cluster, min_cluster_size=merge_floor)
         for concept, created in materialized:
@@ -1356,14 +1358,14 @@ def _cluster_traces_indexed(
     """
 
     clusters: list[_TraceCluster] = []
-    capacity = max(1, len(prepared))
+    group_sizes = Counter(_cluster_group(trace) for trace, _, _ in prepared)
     width = max(1, dimensions)
     scopes: dict[tuple[str, str | None], _ScopeIndex] = {}
     for trace, tokens, embedding in prepared:
         group = _cluster_group(trace)
         state = scopes.get(group)
         if state is None:
-            state = scopes[group] = _ScopeIndex(capacity, width)
+            state = scopes[group] = _ScopeIndex(group_sizes[group], width)
         size = len(state.clusters)
         best = -1
         if size:
