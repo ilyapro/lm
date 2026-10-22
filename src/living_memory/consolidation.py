@@ -982,6 +982,7 @@ def _refresh_derived_node(
             updated, _ = _create_or_update_schema(
                 store, node.scope, key, members, current,
                 era=assessment if binding else None,
+                observation=observation,
             )
             _connect_schema_to_traces(store, updated, members)
             return updated
@@ -1166,6 +1167,7 @@ def _create_or_update_schema(
     existing: Node | None,
     *,
     era: _EraAssessment | None = None,
+    observation: _SourceObservation | None = None,
 ) -> tuple[Node, bool]:
     trigger = procedure_key.trigger
     group_id = procedure_key.group_id
@@ -1215,7 +1217,7 @@ def _create_or_update_schema(
     content = (
         _format_schema_content(trigger, steps)
         if era is not None
-        else _format_evidence_content(store, trigger, store.get_nodes(sources).values())
+        else _format_evidence_content(store, trigger, (observation or store).get_nodes(sources).values())
     )
     provenance = {
         **(existing.provenance if existing else {}),
