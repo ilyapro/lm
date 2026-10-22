@@ -1667,23 +1667,23 @@ def _write_cluster_concept(
     *, existing: Node | None = None, strategy: str,
     embeddings: Mapping[str, list[float]] | None = None,
     source_inputs: Mapping[str, _DigestSource] | None = None,
+    prepared_digest: _PreparedDigest | None = None,
 ) -> Node:
     """Write one owner's digest, retrieval label, inputs and edges atomically."""
 
     members = assessment.live
-    prepared = (
-        _prepare_digest_sources(members) if source_inputs is None else [
-            source_inputs[member.id] if member.id in source_inputs
+    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
+    if prepared_digest is None or not prepared_digest.matches(members, best_trace):
+        prepared = [
+            source_inputs[member.id]
+            if source_inputs is not None and member.id in source_inputs
+            and source_inputs[member.id].node.content == member.content
             else _prepare_digest_sources([member])[0]
             for member in members
         ]
-    )
-    tokens: Counter[str] = Counter()
-    for source in prepared:
-        tokens.update(source.tokens)
-    cluster_key = _cluster_key(_TraceCluster(scope, members, tokens))
-    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    digest = _synthesize_digest(members, best=best_trace, prepared_sources=prepared)
+        prepared_digest = _prepare_digest(scope, members, best_trace, prepared)
+    digest = prepared_digest.content
+    cluster_key = prepared_digest.cluster_key
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
     concept_embedding = best_trace.embedding or (embeddings or {}).get(best_trace.id)
@@ -1727,6 +1727,20 @@ class _DigestSource:
     node: Node
     tokens: set[str]
     sentences: list[tuple[str, set[str]]]
+
+
+def _prepare_digest(
+    scope: str, members: Sequence[Node], best: Node, sources: Sequence[_DigestSource],
+) -> _PreparedDigest:
+    tokens: Counter[str] = Counter()
+    for source in sources:
+        tokens.update(source.tokens)
+    return _PreparedDigest(
+        sources=tuple((member.id, member.content) for member in members),
+        best_id=best.id,
+        content=_synthesize_digest(members, best=best, prepared_sources=sources),
+        cluster_key=_cluster_key(_TraceCluster(scope, list(members), tokens)),
+    )
 
 
 def _prepare_digest_sources(sources: Sequence[Node]) -> list[_DigestSource]:
@@ -1994,11 +2008,16 @@ def _write_global_promotion(
     *,
     existing: Node | None = None,
     similarities: Mapping[str, float] | None = None,
+    prepared_digest: _PreparedDigest | None = None,
 ) -> Node:
     """One writer for a promotion's content, current inputs and validity stats."""
 
     best_source = _highest_confidence_source(project_sources)
-    digest = _synthesize_digest(project_sources, best=best_source)
+    digest = (
+        prepared_digest.content
+        if prepared_digest is not None and prepared_digest.matches(project_sources, best_source)
+        else _synthesize_digest(project_sources, best=best_source)
+    )
     source_scopes = _source_scopes(project_sources)
     source_concepts = _source_concept_ids(project_sources)
     promoted_at = _utc_now()
