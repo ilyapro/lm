@@ -241,3 +241,16 @@ def test_unknown_legacy_and_unrelated_materializers_are_not_owners(store):
     (created, is_new), = materialize(store, sources)
     assert is_new and created.id not in before
     assert {node_id: asdict(store.get_node(node_id)) for node_id in before} == before
+
+
+@pytest.mark.parametrize("changed", [{"task_pattern": "south"}, {"scope": "project:elsewhere"}])
+def test_new_materialization_groups_current_replacements_not_stale_snapshot(store, changed):
+    a, b = [trace(store, text, task_pattern="north") for text in TEXTS[:2]]
+    taught = c.memory_teach(store, a.id, CORRECTION, context=changed)
+    outputs = materialize(store, [a, b])
+    assert len(outputs) == 2
+    for owner, created in outputs:
+        assert created and len(owner.source_traces) == 1
+        source = store.get_node(owner.source_traces[0])
+        assert c._cluster_group(owner) == c._cluster_group(source)
+    assert {source for owner, _ in outputs for source in owner.source_traces} == {b.id, taught.corrective_trace.id}

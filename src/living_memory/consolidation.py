@@ -1517,10 +1517,21 @@ def _materialize_cluster(
                 store, cluster.scope, assessment, existing=owner, strategy=cluster.strategy,
                 embeddings=cluster.embeddings_by_trace_id,
             ), False))
-        if len(unowned) >= min_cluster_size:
-            assessment = replace(fresh, live=[members[source] for source in sorted(unowned)])
+        groups: dict[tuple[str, str | None], list[Node]] = {}
+        for source in sorted(unowned):
+            member = members[source]
+            groups.setdefault(_cluster_group(member), []).append(member)
+        for (scope, _group), new_members in groups.items():
+            # The admission floor applies before era filtering. A correction
+            # may leave a smaller current derivation; splitting into different
+            # current groups or away from other owners needs its own support.
+            if len(new_members) < min_cluster_size and (
+                assigned or len(groups) > 1 or len(cluster.traces) < min_cluster_size
+            ):
+                continue
+            assessment = replace(fresh, live=new_members)
             result.append((_write_cluster_concept(
-                store, cluster.scope, assessment, strategy=cluster.strategy,
+                store, scope, assessment, strategy=cluster.strategy,
                 embeddings=cluster.embeddings_by_trace_id,
             ), True))
         return result
