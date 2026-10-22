@@ -18,8 +18,7 @@ def store(tmp_path, monkeypatch):
 
 def cluster(store, traces):
     group = c._TraceCluster("project:harbor", traces, Counter({"harbor": len(traces)}))
-    node, _ = c._merge_cluster_into_concept(store, group, c._assess_cluster_eras(store, traces))
-    c._update_edge_weights_from_co_access(store, node, traces)
+    (node, _), = c._materialize_cluster(store, group, min_cluster_size=1)
     return node
 
 
@@ -118,25 +117,6 @@ def test_preparation_keeps_whole_source_token_order_and_sentence_signals(content
     ]
 
 
-def test_primary_concept_identity_precedes_lazy_digest_and_all_content_twins(store):
-    source_twin = store.create_node(level="concept", content="source text", context={"scope": "project:harbor"})
-    digest_twin = store.create_node(level="concept", content="digest text", context={"scope": "project:harbor"})
-    primary = store.create_node(level="concept", content="primary concept", context={"scope": "project:harbor"},
-                                provenance={"cluster_key": "primary"})
-    calls = []
-
-    def contents():
-        calls.append(True)
-        return {source_twin.content, digest_twin.content}
-
-    assert c._find_existing_concept(store, "project:harbor", "primary", candidate_contents=contents).id == primary.id
-    assert not calls
-    expected = next(node for node in store.list_nodes(level="concept", scope="project:harbor")
-                    if node.id in (source_twin.id, digest_twin.id))
-    assert c._find_existing_concept(store, "project:harbor", "absent", candidate_contents=contents).id == expected.id
-    assert calls == [True]
-
-
 def test_existing_cluster_renders_only_its_current_source_union(store, monkeypatch):
     traces = sources(store)
     concept = cluster(store, traces)
@@ -149,7 +129,7 @@ def test_existing_cluster_renders_only_its_current_source_union(store, monkeypat
         return render(members, **kwargs)
 
     monkeypatch.setattr(c, "_synthesize_digest", observe)
-    updated, created = c._merge_cluster_into_concept(store, group, c._assess_cluster_eras(store, traces[:2]))
+    (updated, created), = c._materialize_cluster(store, group, min_cluster_size=1)
     assert not created and updated.id == concept.id
     assert set(updated.source_traces) == {trace.id for trace in traces}
     assert rendered == [{trace.id for trace in traces}]

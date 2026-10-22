@@ -10,7 +10,7 @@ from living_memory.consolidation import (
     _assess_cluster_eras,
     _cross_scope_promotion,
     _materialize_procedural_schemas,
-    _merge_cluster_into_concept,
+    _materialize_cluster,
     _TraceCluster,
     memory_teach,
 )
@@ -190,7 +190,7 @@ def cluster(store, scope, texts):
         for i, text in enumerate(texts)
     ]
     group = _TraceCluster(scope, traces, Counter({"workshop": len(traces)}))
-    concept, _ = _merge_cluster_into_concept(store, group, _assess_cluster_eras(store, traces))
+    (concept, _), = _materialize_cluster(store, group, min_cluster_size=1)
     store.update_node(concept.id, embedding=[1.0, 0.0])
     return traces, store.get_node(concept.id)
 
@@ -213,7 +213,7 @@ def test_cluster_correction_reaches_cross_scope_promotion_without_reconsolidatio
         assert taught.corrective_trace.id in store.get_node(concept.id).source_traces
         assert {node_id: asdict(store.get_node(node_id)) for node_id in controls} == controls
         stale_cluster = _TraceCluster(SCOPE, traces, Counter({"workshop": len(traces)}))
-        _merge_cluster_into_concept(store, stale_cluster, _assess_cluster_eras(store, traces), existing=concept)
+        _materialize_cluster(store, stale_cluster, min_cluster_size=1)
         current = store.get_node(concept.id)
         assert CORRECTION in current.content and STEPS[0] not in current.content
         assert taught.corrective_trace.id in current.source_traces
