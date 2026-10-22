@@ -259,7 +259,6 @@ def test_new_materialization_groups_current_replacements_not_stale_snapshot(stor
 def test_explicit_derivative_replacement_does_not_displace_independent_older_input(store):
     obsolete, independent = [trace(store, text, timestamp="2025-01-01T00:00:00Z") for text in TEXTS[:2]]
     (retired, _), = materialize(store, [obsolete])
-    (owner, _), = materialize(store, [obsolete, independent])
     # A distinct retained derivation depends on the same old input plus an
     # independently valid older source. Only the explicit target is rejected.
     other = store.create_node(level="concept", content="Other retained derivation.", context={"scope": SCOPE},
@@ -276,3 +275,47 @@ def test_explicit_derivative_replacement_does_not_displace_independent_older_inp
     outputs = materialize(store, [obsolete, independent, correction])
     assert any(node.id == other.id and set(node.source_traces) == {independent.id, correction.id}
                for node, _ in outputs)
+
+
+def test_promotions_use_recorded_owners_and_keep_other_global_knowledge(store):
+    unrelated = store.create_node(level="concept", content="Independent global release policy.",
+                                  context={"scope": "global"}, embedding=[1.0, 0.0])
+    groups = {}
+    for group in ("north", "south"):
+        groups[group] = [
+            store.create_node(level="concept", content=f"Release {group} evidence {scope}.",
+                              context={"scope": f"project:{scope}", "task_pattern": group},
+                              embedding=[1.0, 0.0])
+            for scope in ("alpha", "beta", "gamma")
+        ]
+    before = asdict(store.get_node(unrelated.id))
+    north, = c._cross_scope_promotion(store, groups["north"][0], phase_number=4)
+    south, = c._cross_scope_promotion(store, groups["south"][0], phase_number=4)
+    assert north.id != south.id
+    assert set(north.provenance["source_concepts"]) == {node.id for node in groups["north"]}
+    assert set(south.provenance["source_concepts"]) == {node.id for node in groups["south"]}
+    assert c._cross_scope_promotion(store, groups["north"][0], phase_number=4) == []
+    assert asdict(store.get_node(unrelated.id)) == before
+    fourth = store.create_node(level="concept", content="Release north fourth project evidence.",
+                               context={"scope": "project:delta", "task_pattern": "north"}, embedding=[1.0, 0.0])
+    updated, = c._cross_scope_promotion(store, fourth, phase_number=4)
+    assert updated.id == north.id
+    assert set(updated.provenance["source_concepts"]) == {node.id for node in groups["north"]} | {fourth.id}
+    assert store.get_node(south.id).source_traces == south.source_traces
+
+
+def test_promotion_edge_failure_is_atomic(store, monkeypatch):
+    sources = [store.create_node(level="concept", content=f"Release evidence {scope}.",
+                                 context={"scope": f"project:{scope}"}, embedding=[1.0, 0.0])
+               for scope in ("alpha", "beta", "gamma")]
+    before = list(store.connection.iterdump())
+    write = c._connect_project_concepts_to_global
+
+    def fail(*args, **kwargs):
+        write(*args, **kwargs)
+        raise RuntimeError("promotion source edge failure")
+
+    monkeypatch.setattr(c, "_connect_project_concepts_to_global", fail)
+    with pytest.raises(RuntimeError, match="promotion source edge failure"):
+        c._cross_scope_promotion(store, sources[0], phase_number=4)
+    assert list(store.connection.iterdump()) == before
