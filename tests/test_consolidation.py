@@ -86,7 +86,7 @@ def test_consolidation_creates_concept_from_similar_traces_and_keeps_sources(
         assert store.list_nodes(level="concept", scope="project:alpha") == [second.concepts_updated[0]]
 
 
-def test_consolidation_merges_identical_content_concept_when_cluster_key_drifts(
+def test_consolidation_keeps_source_owner_when_cluster_key_drifts(
     tmp_path: Path,
 ) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
@@ -289,7 +289,7 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
             provenance={"source_traces": ["trace-gamma"]},
         )
 
-        promoted = _cross_scope_promotion(store, alpha, phase_number=4)
+        promoted, = _cross_scope_promotion(store, alpha, phase_number=4)
         assert promoted is not None
         original_confidence = promoted.confidence
 
@@ -334,7 +334,7 @@ def test_cross_scope_promotion_skips_concept_without_embedding(tmp_path: Path) -
 
         promoted = _cross_scope_promotion(store, concept, phase_number=4)
 
-        assert promoted is None
+        assert promoted == []
         assert store.list_nodes(level="concept", scope="global") == []
 
 
@@ -461,7 +461,7 @@ def test_consolidation_near_identical_cluster_digest_stays_compact_and_distinct(
         assert len(concept.content) <= longest + 40
 
 
-def test_consolidation_merges_legacy_verbatim_copy_concept_into_digest(
+def test_consolidation_preserves_legacy_copy_without_recorded_sources(
     tmp_path: Path,
 ) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
@@ -477,13 +477,16 @@ def test_consolidation_merges_legacy_verbatim_copy_concept_into_digest(
 
         result = memory_consolidate(store, scope="project:beta", min_cluster_size=10)
 
-        assert result.concepts_created == []
-        assert [node.id for node in result.concepts_updated] == [legacy.id]
-        updated = result.concepts_updated[0]
-        assert updated.content != best_content
-        assert all(updated.content != trace.content for trace in traces)
-        active = store.list_nodes(level="concept", scope="project:beta", limit=100)
-        assert [node.id for node in active] == [legacy.id]
+        assert result.concepts_updated == []
+        created, = result.concepts_created
+        assert created.id != legacy.id
+        assert set(created.source_traces) == {trace.id for trace in traces}
+        assert created.content != best_content
+        assert store.get_node(legacy.id) == legacy
+        repeated = memory_consolidate(store, scope="project:beta", min_cluster_size=10)
+        assert repeated.concepts_created == []
+        assert [node.id for node in repeated.concepts_updated] == [created.id]
+        assert store.get_node(legacy.id) == legacy
 
 
 def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
@@ -516,7 +519,7 @@ def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
             provenance={"source_traces": ["trace-gamma"]},
         )
 
-        promoted = _cross_scope_promotion(store, alpha, phase_number=4)
+        promoted, = _cross_scope_promotion(store, alpha, phase_number=4)
 
         assert promoted is not None
         sources = [alpha, beta, gamma]

@@ -165,3 +165,22 @@ def test_guarded_pass_takes_the_guard_per_step_and_matches_the_unguarded_one(
     assert entries >= 4  # load, schemas, one per promoted cluster, decay
     assert stepped.clusters_considered == unguarded.clusters_considered
     assert len(stepped.concepts_created) == len(unguarded.concepts_created) >= 1
+
+
+def test_indexed_groups_allocate_only_their_own_population(monkeypatch) -> None:
+    prepared = _synthetic(17, 162)
+    for index, (node, _, _) in enumerate(prepared):
+        node.context["task_pattern"] = f"group-{index // 3}"
+    capacities = []
+    original = consolidation._ScopeIndex
+
+    def allocate(capacity, dimensions):
+        capacities.append(capacity)
+        return original(capacity, dimensions)
+
+    monkeypatch.setattr(consolidation, "_ScopeIndex", allocate)
+    indexed = _cluster_traces_indexed(prepared, 24)
+    reference = _cluster_prepared_reference(prepared)
+    assert sum(capacities) == len(prepared)
+    assert max(capacities) <= 3
+    assert [[t.id for t in c.traces] for c in indexed] == [[t.id for t in c.traces] for c in reference]

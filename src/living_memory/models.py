@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Literal
+import re
 
 NodeLevel = Literal["trace", "concept", "schema"]
 ConnectionType = Literal["related", "caused", "contradicts", "supersedes", "requires"]
@@ -45,6 +46,40 @@ class Node:
     provenance: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""
+
+    @property
+    def materializer(self) -> str | None:
+        """The recorded writer, distinct from incidental recall citations."""
+
+        if self.level not in ("concept", "schema"):
+            return None
+        strategy = self.provenance.get("strategy")
+        if strategy in ("procedural", "cross-scope-promotion"):
+            return strategy
+        if self.level == "concept" and (
+            strategy in ("token-jaccard", "embedding-cosine")
+            or (strategy is None and "cluster_key" in self.provenance)
+        ):
+            return "cluster"
+        return None
+
+    @property
+    def materializer_sources(self) -> list[str]:
+        if self.materializer == "cross-scope-promotion":
+            return string_list(self.provenance.get("source_concepts"))
+        return self.source_traces if self.materializer else []
+
+    @property
+    def derivation_identity(self) -> tuple[str, str, frozenset[str]] | None:
+        """Recorded writer, group and inputs; content and labels are not keys."""
+
+        materializer = self.materializer
+        if materializer is None or not self.materializer_sources:
+            return None
+        raw = (self.context.get("procedure_key") or self.provenance.get("procedure_key")
+               or self.context.get("task_pattern") or self.context.get("procedure_id") or "")
+        group = re.sub(r"[\s_/-]+", " ", str(raw)).strip().lower()
+        return materializer, group, frozenset(self.materializer_sources)
 
     @property
     def stats(self) -> dict[str, Any]:

@@ -43,10 +43,10 @@ def test_non_enabling_values_are_identity(value: str) -> None:
     assert kept == ranked and collapsed == []
 
 
-def test_on_keeps_highest_ranked_schema_per_title_and_never_touches_traces() -> None:
+def test_same_title_without_recorded_identity_never_hides_knowledge() -> None:
     kept, collapsed = collapse_schema_duplicates(_ranked(), env=ON)
-    assert [r.node_id for r in kept] == ["s1", "t1", "s3", "t2"]
-    assert [r.node_id for r in collapsed] == ["s2", "s4"]
+    assert kept == _ranked()
+    assert not collapsed
 
 
 def test_untitled_schemas_are_not_collapsed() -> None:
@@ -68,10 +68,8 @@ def test_schema_title_definition() -> None:
     assert schema_title(carrier) == "evidence: reopen lesson"
 
 
-def test_group_carriers_sharing_a_title_keep_one_slot() -> None:
-    """A group carrier holds its records whole, so the best-matching carrier
-    of a title wins its slot as the legacy schema it replaced did; the
-    others give up theirs instead of crowding out records."""
+def test_group_carriers_sharing_a_title_keep_their_slots() -> None:
+    """A title does not identify the records represented by a carrier."""
 
     def carrier(node_id: str, score: float) -> RecallResult:
         node = Node(id=node_id, level="concept", content="Evidence: verify pass\n- x", context={"trigger": "verify pass"})
@@ -79,12 +77,13 @@ def test_group_carriers_sharing_a_title_keep_one_slot() -> None:
 
     ranked = [carrier("c1", 0.9), _result("t1", "trace", "x", 0.8), carrier("c2", 0.7)]
     kept, collapsed = collapse_schema_duplicates(ranked, env=ON)
-    assert [r.node_id for r in kept] == ["c1", "t1"]
-    assert [r.node_id for r in collapsed] == ["c2"]
+    assert kept == ranked
+    assert not collapsed
 
 
 def _seed(store: MemoryStore) -> list[str]:
     ids = []
+    source = store.append_trace("Recorded input for the release.", {"scope": "project:alpha"})
     for index in range(3):
         node = store.create_node(
             level="schema",
@@ -94,6 +93,11 @@ def _seed(store: MemoryStore) -> list[str]:
             ),
             context={"scope": "project:alpha", "procedure_id": "deploy_rollback"},
             stats={"confidence": 0.9 - index * 0.1},
+        )
+        store.update_node(
+            node.id, content="Procedure: deploy rollback\n1. restore release",
+            provenance={"strategy": "procedural", "source_traces": [source.id],
+                        "procedure_key": "deploy rollback"},
         )
         ids.append(node.id)
     for index in range(4):
@@ -110,6 +114,7 @@ def test_live_path_frees_slots_for_next_ranked(tmp_path: Path, monkeypatch) -> N
     # schemas deliberately match more closely than the supporting notes, so
     # duplicates occupy baseline slots regardless of an installed model.
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0")
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         schema_ids = set(_seed(store))
         service = MemoryRecallService(store)
@@ -147,3 +152,26 @@ def test_live_path_frees_slots_for_next_ranked(tmp_path: Path, monkeypatch) -> N
         assert [r.node_id for r in deduped] == expected_ids
         assert set(expected_ids) - {r.node_id for r in baseline}
         assert all(r.node.level == "trace" for r in deduped if r.node_id not in schema_ids)
+
+
+@pytest.mark.parametrize("difference", ["scope", "group", "sources", "content", "unknown"])
+def test_recorded_procedures_need_the_same_scope_group_inputs_and_content(difference):
+    def node(node_id):
+        return Node(id=node_id, level="schema", content="Procedure: release\n1. check manifest",
+                    scope="project:alpha", context={"task_pattern": "north"},
+                    provenance={"strategy": "procedural"}, source_traces=["source"])
+    first, duplicate, independent = node("first"), node("duplicate"), node("independent")
+    if difference == "scope":
+        independent.scope = "project:beta"
+    elif difference == "group":
+        independent.context["task_pattern"] = "south"
+    elif difference == "sources":
+        independent.source_traces = ["different-source"]
+    elif difference == "content":
+        independent.content += " and signature"
+    else:
+        independent.provenance = {}
+    ranked = [RecallResult(node=n, score=1.0) for n in [first, duplicate, independent]]
+    kept, collapsed = collapse_schema_duplicates(ranked, env=ON)
+    assert [r.node_id for r in kept] == [first.id, independent.id]
+    assert [r.node_id for r in collapsed] == [duplicate.id]

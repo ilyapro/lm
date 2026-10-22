@@ -1289,11 +1289,15 @@ class MemoryStore:
         new_id = node_id or new_ulid()
         fingerprint = _content_fingerprint(content)
 
+        candidate = Node(
+            id=new_id, level=level, content=content, context=context_data,
+            provenance=provenance_data, source_traces=source_traces,
+        )
         duplicate_ids = [
             str(row["id"])
             for row in self._conn.execute(
                 """
-                SELECT id FROM nodes
+                SELECT * FROM nodes
                 WHERE level = ?
                   AND scope = ?
                   AND content_fingerprint = ?
@@ -1301,6 +1305,7 @@ class MemoryStore:
                 """,
                 (level, scope, fingerprint),
             ).fetchall()
+            if _same_content_identity(candidate, _node_from_row(row))
         ]
 
         vector = None if embedding is None else list(embedding)
@@ -4099,7 +4104,7 @@ class MemoryStore:
         working without every one of them learning about chunks. While
         ``nodes.embedding`` is present it stays the scoring vector and results
         are bit-identical to v5 — that matters because the callers' thresholds
-        (``_find_existing_concept``, cross-scope promotion) were calibrated
+        (cross-scope promotion and semantic retrieval) were calibrated
         against single-vector scores, and max-pooling chunks would silently
         raise every score and merge more aggressively than anyone asked for.
         Once the column is gone every node scores from its chunks instead, as
@@ -6210,6 +6215,15 @@ def _row_value(row: sqlite3.Row, column: str, default: Any = None) -> Any:
         return row[column]
     except IndexError:
         return default
+
+
+def _same_content_identity(left: Node, right: Node) -> bool:
+    """Equal bytes cannot supersede a different recorded derivation."""
+
+    if left.materializer is None and right.materializer is None:
+        return True
+    identity = left.derivation_identity
+    return identity is not None and identity == right.derivation_identity
 
 
 def _node_from_row(row: sqlite3.Row) -> Node:

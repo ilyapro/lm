@@ -29,7 +29,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from math import log1p
-from typing import Any, Callable, Collection, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 import logging
 import os
 import re
@@ -66,7 +66,6 @@ JACCARD_SIMILARITY_THRESHOLD = 0.58
 EMBEDDING_SIMILARITY_THRESHOLD = 0.65
 CROSS_SCOPE_PROMOTION_PHASE = 4
 CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
-GLOBAL_PROMOTION_DEDUP_THRESHOLD = 0.8
 PROCEDURAL_MIN_CLUSTER_SIZE = 3
 _STEP_TEXT_KEYS = ("step_description", "step_content")
 DIGEST_MAX_CHARS = 1200
@@ -596,22 +595,16 @@ def memory_consolidate(
         if len(cluster.traces) < merge_floor:
             continue
         with step():
-            assessment = _assess_cluster_eras(store, cluster.traces)
-            if not assessment.live:
-                # Every member is superseded or era-displaced: there is no current
-                # era to speak for, so nothing may be promoted from this cluster.
-                continue
-            concept, created = _merge_cluster_into_concept(store, cluster, assessment)
-        with step():
-            _update_edge_weights_from_co_access(store, concept, assessment.live)
-        with step():
-            promoted = _cross_scope_promotion(store, concept, phase_number=phase.number)
-        if promoted is not None:
-            result.concepts_promoted.append(promoted)
-        if created:
-            result.concepts_created.append(concept)
-        else:
-            result.concepts_updated.append(concept)
+            materialized = _materialize_cluster(store, cluster, min_cluster_size=merge_floor)
+        for concept, created in materialized:
+            with step():
+                result.concepts_promoted.extend(
+                    _cross_scope_promotion(store, concept, phase_number=phase.number)
+                )
+            if created:
+                result.concepts_created.append(concept)
+            else:
+                result.concepts_updated.append(concept)
 
     with step():
         decay_result: DecayResult = apply_decay(store, scope=scope)
@@ -698,15 +691,8 @@ def memory_teach(
 def _derivation_sources(store: MemoryStore, node: Node) -> list[str]:
     """Read recorded materializer inputs, never incidental recall lineage."""
 
-    strategy = node.provenance.get("strategy")
-    if node.level in ("schema", "concept"):
-        if strategy == "cross-scope-promotion":
-            return string_list(node.provenance.get("source_concepts"))
-        if strategy == "procedural" or (
-            strategy in ("token-jaccard", "embedding-cosine")
-            and "cluster_key" in node.provenance
-        ):
-            return node.source_traces
+    if node.materializer:
+        return node.materializer_sources
     return [
         edge.target_id
         for edge in store.list_connections(source_id=node.id, relation_type="related")
@@ -719,7 +705,14 @@ def _current_derivation(
 ) -> _EraAssessment:
     """Resolve each recorded input independently, without displacing other eras."""
 
-    source_ids = [*_derivation_sources(store, node), *(member.id for member in additional)]
+    return _current_sources(
+        store, [*_derivation_sources(store, node), *(member.id for member in additional)],
+    )
+
+
+def _current_sources(store: MemoryStore, source_ids: Iterable[str]) -> _EraAssessment:
+    """Resolve the same source identities for lookup, refresh and writing."""
+
     members = list(store.get_nodes(source_ids).values())
     live: dict[str, Node] = {}
     excluded: dict[str, str] = {}
@@ -732,6 +725,21 @@ def _current_derivation(
             live[current.id] = current
         else:
             excluded.setdefault(member.id, "no current source")
+    # Superseding a recorded derivative explicitly rejects its cited inputs.
+    # This does not reject independently current sources merely because they
+    # have the same age or appear in the same clustering pass.
+    displaced: dict[str, str] = {}
+    for member in live.values():
+        for edge in store.list_connections(source_id=member.id, relation_type="supersedes"):
+            if edge.metadata.get("kind") == _DUPLICATE_CONTENT_KIND:
+                continue
+            target = store.get_node(edge.target_id)
+            if target is not None:
+                for source in set(_derivation_sources(store, target)) & live.keys() - {member.id}:
+                    displaced[source] = f"displaced-via:{target.id}"
+    for source, reason in displaced.items():
+        del live[source]
+        excluded[source] = reason
     return _EraAssessment(members, list(live.values()), excluded, False, 1)
 
 
@@ -818,8 +826,8 @@ def _refresh_derived_node(
     if not members:
         return store.soft_delete_node(node.id, "derivation: no current sources")
 
-    strategy = node.provenance.get("strategy") if node.level != "trace" else None
-    if strategy == "procedural":
+    materializer = node.materializer
+    if materializer == "procedural":
         # Keep the recorded group and its retrieval label. A correction is an
         # explicit replacement even when its writer changes its context.
         key = _procedure_key(node)
@@ -834,23 +842,13 @@ def _refresh_derived_node(
             )
             _connect_schema_to_traces(store, updated, members)
             return updated
-    elif strategy in ("token-jaccard", "embedding-cosine"):
-        prepared = (
-            _prepare_digest_sources(members) if source_inputs is None else [
-                source_inputs[member.id] if member.id in source_inputs
-                else _prepare_digest_sources([member])[0]
-                for member in members
-            ]
+    elif materializer == "cluster":
+        return _write_cluster_concept(
+            store, node.scope, assessment, existing=node,
+            strategy=str(node.provenance.get("strategy") or "token-jaccard"),
+            source_inputs=source_inputs,
         )
-        cluster = _TraceCluster(node.scope, members, Counter(), strategy=strategy)
-        for source in prepared:
-            cluster.token_counts.update(source.tokens)
-        updated = _write_cluster_concept(
-            store, cluster, assessment, existing=node, prepared_sources=prepared,
-        )
-        _update_edge_weights_from_co_access(store, updated, members)
-        return updated
-    elif strategy == "cross-scope-promotion":
+    elif materializer == "cross-scope-promotion":
         return _write_global_promotion(store, members, existing=node)
 
     # An explicit derived_from edge proves dependency, but cannot specify how
@@ -1299,7 +1297,7 @@ def _cluster_prepared_reference(
         best_score = 0.0
         best_strategy = "token-jaccard"
         for cluster in clusters:
-            if cluster.scope != trace.scope:
+            if _cluster_group(cluster.traces[0]) != _cluster_group(trace):
                 continue
             score, strategy = _cluster_similarity(tokens, embedding, cluster)
             if score > best_score:
@@ -1374,13 +1372,14 @@ def _cluster_traces_indexed(
     """
 
     clusters: list[_TraceCluster] = []
-    capacity = max(1, len(prepared))
+    group_sizes = Counter(_cluster_group(trace) for trace, _, _ in prepared)
     width = max(1, dimensions)
-    scopes: dict[str, _ScopeIndex] = {}
+    scopes: dict[tuple[str, str | None], _ScopeIndex] = {}
     for trace, tokens, embedding in prepared:
-        state = scopes.get(trace.scope)
+        group = _cluster_group(trace)
+        state = scopes.get(group)
         if state is None:
-            state = scopes[trace.scope] = _ScopeIndex(capacity, width)
+            state = scopes[group] = _ScopeIndex(group_sizes[group], width)
         size = len(state.clusters)
         best = -1
         if size:
@@ -1447,92 +1446,177 @@ def _cluster_traces_indexed(
     return clusters
 
 
-def _merge_cluster_into_concept(
-    store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment,
-    *, existing: Node | None = None,
-) -> tuple[Node, bool]:
-    members = assessment.live
-    cluster_key = _cluster_key(cluster)
-    best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    digest = None
+def _cluster_group(node: Node) -> tuple[str, str | None]:
+    key = _procedure_key(node)
+    return node.scope, key.group_id if key else None
 
-    def candidate_contents() -> set[str]:
-        nonlocal digest
-        digest = _synthesize_digest(members, best=best_trace)
-        return {digest, *(trace.content for trace in members)}
 
-    existing = store.get_node(existing.id) if existing else _find_existing_concept(
-        store, cluster.scope, cluster_key, candidate_contents=candidate_contents,
-    )
-    if existing is not None:
-        # A current concept already owns useful inputs outside this pass's
-        # snapshot. Resolve them along with the newly admitted members before
-        # writing both the digest and its source list.
-        assessment = _current_derivation(store, existing, additional=members)
-        members = assessment.live
+def _source_ancestors(store: MemoryStore, members: Sequence[Node]) -> dict[str, set[str]]:
+    """Map recorded input versions to the current members replacing them."""
+
+    ancestors: dict[str, set[str]] = {}
+    for member in members:
+        pending = [member.id]
+        seen: set[str] = set()
+        while pending:
+            source_id = pending.pop()
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            ancestors.setdefault(source_id, set()).add(member.id)
+            pending.extend(
+                edge.target_id for edge in store.list_connections(
+                    source_id=source_id, relation_type="supersedes",
+                )
+            )
+    return ancestors
+
+
+def _partition_sources(
+    owners: Sequence[Node], members: Sequence[Node], ancestors: Mapping[str, set[str]],
+) -> tuple[dict[str, set[str]], set[str]]:
+    """Partition by recorded inputs, keeping ambiguous owners independent."""
+
+    assigned: dict[str, set[str]] = {}
+    unowned = {member.id for member in members}
+    for owner in owners:
+        owned = set().union(*(ancestors.get(source, set()) for source in owner.materializer_sources))
+        if owned:
+            assigned[owner.id] = owned
+            unowned.difference_update(owned)
+    return assigned, unowned
+
+
+def _materialize_cluster(
+    store: MemoryStore, cluster: _TraceCluster, *, min_cluster_size: int,
+) -> list[tuple[Node, bool]]:
+    """Continue recorded owners and materialize only the unowned remainder.
+
+    Clustering admits related new evidence. Recorded inputs decide which node
+    owns it: overlapping owners retain their separate derivations, and a new
+    member is never broadcast across them. Neither a lexical label nor a lossy
+    digest identifies the sources of another derivation.
+    """
+
+    with store.transaction():
+        current = _current_sources(store, (member.id for member in cluster.traces))
+        members = {member.id: member for member in current.live}
         if not members:
-            return store.soft_delete_node(existing.id, "derivation: no current sources"), False
-    return _write_cluster_concept(
-        store, cluster, assessment, existing=existing,
-        digest=digest if existing is None else None,
-    ), existing is None
+            return []
+        owners = [
+            node for node in store.list_nodes(level="concept", scope=cluster.scope, limit=100_000)
+            if node.materializer == "cluster" and node.source_traces
+            and not node.corrections and not _is_superseded(store, node.id)
+        ]
+        ancestors = _source_ancestors(store, current.live)
+        assigned, unowned = _partition_sources(owners, current.live, ancestors)
+
+        fresh = _assess_cluster_eras(store, cluster.traces)
+        admitted = {member.id for member in fresh.live}
+        admitted.update(
+            member.id for member in current.live
+            if any(
+                source_id in ancestors and member.id in ancestors[source_id]
+                and (reason == "corrected" or reason.startswith("superseded-by:"))
+                for source_id, reason in fresh.excluded.items()
+            )
+        )
+        unowned.intersection_update(admitted)
+        if len(assigned) == 1:
+            owner = next(owner for owner in owners if owner.id in assigned)
+            compatible = {source for source in unowned if _cluster_group(members[source]) == _cluster_group(owner)}
+            assigned[owner.id].update(compatible)
+            unowned.difference_update(compatible)
+
+        result: list[tuple[Node, bool]] = []
+        for owner in owners:
+            if owner.id not in assigned:
+                continue
+            assessment = _current_derivation(
+                store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
+            )
+            result.append((_write_cluster_concept(
+                store, cluster.scope, assessment, existing=owner, strategy=cluster.strategy,
+                embeddings=cluster.embeddings_by_trace_id,
+            ), False))
+        groups: dict[tuple[str, str | None], list[Node]] = {}
+        for source in sorted(unowned):
+            member = members[source]
+            groups.setdefault(_cluster_group(member), []).append(member)
+        for (scope, _group), new_members in groups.items():
+            # The admission floor applies before era filtering. A correction
+            # may leave a smaller current derivation; splitting into different
+            # current groups or away from other owners needs its own support.
+            if len(new_members) < min_cluster_size and (
+                assigned or len(groups) > 1 or len(cluster.traces) < min_cluster_size
+            ):
+                continue
+            assessment = replace(fresh, live=new_members)
+            result.append((_write_cluster_concept(
+                store, scope, assessment, strategy=cluster.strategy,
+                embeddings=cluster.embeddings_by_trace_id,
+            ), True))
+        return result
 
 
 def _write_cluster_concept(
-    store: MemoryStore, cluster: _TraceCluster, assessment: _EraAssessment,
-    *, existing: Node | None = None, digest: str | None = None,
-    prepared_sources: Sequence[_DigestSource] | None = None,
+    store: MemoryStore, scope: str, assessment: _EraAssessment,
+    *, existing: Node | None = None, strategy: str,
+    embeddings: Mapping[str, list[float]] | None = None,
+    source_inputs: Mapping[str, _DigestSource] | None = None,
 ) -> Node:
-    """Materialize one resolved source set, including its digest and provenance."""
+    """Write one owner's digest, retrieval label, inputs and edges atomically."""
 
     members = assessment.live
-    cluster_key = _cluster_key(cluster)
+    prepared = (
+        _prepare_digest_sources(members) if source_inputs is None else [
+            source_inputs[member.id] if member.id in source_inputs
+            else _prepare_digest_sources([member])[0]
+            for member in members
+        ]
+    )
+    tokens: Counter[str] = Counter()
+    for source in prepared:
+        tokens.update(source.tokens)
+    cluster_key = _cluster_key(_TraceCluster(scope, members, tokens))
     best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    if digest is None:
-        digest = _synthesize_digest(members, best=best_trace, prepared_sources=prepared_sources)
+    digest = _synthesize_digest(members, best=best_trace, prepared_sources=prepared)
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
-    confidence = _consensus_confidence(members, unique_agents)
-    temporal_hint = detect_temporal_hint(members)
-    concept_embedding = cluster.embedding_for(best_trace)
-    usefulness = sum(max(0.0, trace.usefulness_score) for trace in members) / len(members)
-
+    concept_embedding = best_trace.embedding or (embeddings or {}).get(best_trace.id)
     provenance = {
+        **(existing.provenance if existing else {}),
         "source_traces": source_traces,
         "cluster_key": cluster_key,
         "cluster_size": len(source_traces),
         "consolidated_at": _utc_now(),
-        "strategy": cluster.strategy,
+        "strategy": strategy,
     }
     if assessment.filtered:
         provenance["era"] = assessment.era_provenance()
     stats = {
-        "confidence": confidence,
+        "confidence": _consensus_confidence(members, unique_agents),
         "unique_agents": unique_agents,
-        "temporal_hint": temporal_hint,
-        "usefulness_score": usefulness,
+        "temporal_hint": detect_temporal_hint(members),
+        "usefulness_score": sum(max(0.0, trace.usefulness_score) for trace in members) / len(members),
     }
-
-    if existing is None:
-        return store.create_node(
-            level="concept",
-            content=digest,
-            context={
-                "scope": cluster.scope,
-                "agent": "memory_consolidate",
-                "timestamp": _utc_now(),
-            },
-            embedding=concept_embedding,
-            stats=stats,
-            provenance=provenance,
-        )
-    return store.update_node(
-        existing.id,
-        content=digest,
-        embedding=concept_embedding,
-        stats=stats,
-        provenance={**existing.provenance, **provenance},
-    )
+    with store.transaction():
+        if existing is None:
+            context = {"scope": scope, "agent": "memory_consolidate", "timestamp": _utc_now()}
+            key = _procedure_key(members[0])
+            if key is not None:
+                context[key.group_field] = key.group_raw
+            concept = store.create_node(
+                level="concept", content=digest, context=context,
+                embedding=concept_embedding, stats=stats, provenance=provenance,
+            )
+        else:
+            concept = store.update_node(
+                existing.id, content=digest, embedding=concept_embedding,
+                stats=stats, provenance=provenance,
+            )
+        _update_edge_weights_from_co_access(store, concept, members)
+    return concept
 
 
 @dataclass(slots=True)
@@ -1558,7 +1642,7 @@ def _prepare_digest_sources(sources: Sequence[Node]) -> list[_DigestSource]:
                     sentence_tokens.add(token)
             sentences.append((sentence, {token for token in sentence_tokens if token}))
         # Keep the whole-source insertion order used by _significant_tokens:
-        # Counter's equal-count ordering also determines cluster identity.
+        # Counter's equal-count ordering also determines the retrieval label.
         prepared.append(_DigestSource(source, {token for token in tokens if token}, sentences))
     return prepared
 
@@ -1737,60 +1821,68 @@ def _raw_tokens(text: str) -> list[str]:
 
 def _cross_scope_promotion(
     store: MemoryStore, concept: Node, *, phase_number: int
-) -> Node | None:
+) -> list[Node]:
     if phase_number < CROSS_SCOPE_PROMOTION_PHASE:
-        return None
+        return []
+    concept = store.get_node(concept.id)
+    if concept is None or concept.decayed:
+        return []
     if concept.level != "concept" or not concept.scope.startswith("project:"):
-        return None
-    if concept.embedding is None or concept.corrections:
-        return None
+        return []
+    if concept.embedding is None or concept.corrections or _is_superseded(store, concept.id):
+        return []
 
     matches = store.find_similar_by_embedding(
-        concept.embedding,
-        level="concept",
-        exclude_scope=concept.scope,
-        scope_prefix="project:",
-        threshold=CROSS_SCOPE_PROMOTION_THRESHOLD,
-        limit=100_000,
+        concept.embedding, level="concept", exclude_scope=concept.scope,
+        scope_prefix="project:", threshold=CROSS_SCOPE_PROMOTION_THRESHOLD, limit=100_000,
     )
+    group = _cluster_group(concept)[1]
     sources_by_scope: dict[str, tuple[Node, float]] = {concept.scope: (concept, 1.0)}
     for candidate, similarity in matches:
         if candidate.id == concept.id or candidate.scope == concept.scope:
             continue
-        if candidate.corrections:
-            # Corrected project concepts must not feed the global digest.
+        if candidate.corrections or _is_superseded(store, candidate.id) or _cluster_group(candidate)[1] != group:
             continue
         current = sources_by_scope.get(candidate.scope)
-        if current is None or (similarity, candidate.confidence) > (
-            current[1],
-            current[0].confidence,
-        ):
+        if current is None or (similarity, candidate.confidence) > (current[1], current[0].confidence):
             sources_by_scope[candidate.scope] = (candidate, similarity)
-
     if len(sources_by_scope) < 3:
-        return None
+        return []
 
-    project_sources = [source for source, _similarity in sources_by_scope.values()]
-    similarities = {source.id: similarity for source, similarity in sources_by_scope.values()}
-    global_matches = store.find_similar_by_embedding(
-        concept.embedding,
-        level="concept",
-        scope="global",
-        threshold=GLOBAL_PROMOTION_DEDUP_THRESHOLD,
-        limit=10,
-    )
-    if global_matches:
-        return _reinforce_global_concept(
-            store,
-            global_matches[0][0],
-            project_sources,
-            similarities=similarities,
-        )
-    return _write_global_promotion(
-        store,
-        project_sources,
-        similarities=similarities,
-    )
+    with store.transaction():
+        current = _current_sources(store, (source.id for source, _ in sources_by_scope.values())).live
+        members = {source.id: source for source in current
+                   if source.level == "concept" and source.scope.startswith("project:")
+                   and _cluster_group(source)[1] == group}
+        if len(_source_scopes(members.values())) < 3:
+            return []
+        similarities = {source.id: similarity for source, similarity in sources_by_scope.values()}
+        owners = [
+            node for node in store.list_nodes(level="concept", scope="global", limit=100_000)
+            if node.materializer == "cross-scope-promotion"
+            and not node.corrections and not _is_superseded(store, node.id)
+        ]
+        sources = list(members.values())
+        assigned, unowned = _partition_sources(owners, sources, _source_ancestors(store, sources))
+        if len(assigned) == 1:
+            owner = next(owner for owner in owners if owner.id in assigned)
+            if _cluster_group(owner)[1] == group:
+                assigned[owner.id].update(unowned)
+                unowned.clear()
+        result = []
+        for owner in owners:
+            if owner.id not in assigned:
+                continue
+            current = _current_derivation(
+                store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
+            ).live
+            updated = _write_global_promotion(store, current, existing=owner, similarities=similarities)
+            if updated != owner:
+                result.append(updated)
+        remaining = [members[source] for source in sorted(unowned)]
+        if len(_source_scopes(remaining)) >= 3:
+            result.append(_write_global_promotion(store, remaining, similarities=similarities))
+        return result
 
 
 def _write_global_promotion(
@@ -1817,56 +1909,45 @@ def _write_global_promotion(
         "strategy": "cross-scope-promotion",
     })
     provenance.setdefault("promoted_at", promoted_at)
-    if existing is not None and similarities is None and existing.content == digest and all(
-        existing.provenance.get(key) == provenance[key]
-        for key in ("source_concepts", "active_source_concepts", "active_promoted_from")
-    ) and existing.source_traces == provenance["source_traces"]:
-        return existing
-    if similarities is not None:
-        events = list(provenance.get("promotion_events", []))
-        events.append(_promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at))
-        provenance["promotion_events"] = events
-        provenance["last_promoted_at"] = promoted_at
     stats = {
         "confidence": _active_promotion_confidence(project_sources),
         "unique_agents": _promoted_unique_agents(project_sources),
         "temporal_hint": _promoted_temporal_hint(project_sources),
         "usefulness_score": _promoted_usefulness(project_sources),
     }
-    if existing is None:
-        global_concept = store.create_node(
-            level="concept", content=digest,
-            context={"scope": "global", "agent": "memory_consolidate", "timestamp": promoted_at},
-            embedding=best_source.embedding, stats=stats, provenance=provenance,
-        )
-    else:
-        global_concept = store.update_node(
-            existing.id, content=digest, stats=stats, provenance=provenance,
-        )
-    _connect_project_concepts_to_global(
-        store, project_sources, global_concept, similarities=similarities or {},
-    )
-    return global_concept
-
-
-def _reinforce_global_concept(
-    store: MemoryStore,
-    global_concept: Node,
-    project_sources: list[Node],
-    *,
-    similarities: Mapping[str, float],
-) -> Node | None:
-    current = _current_derivation(store, global_concept).live
-    sources = {source.id: source for source in [*current, *project_sources]}
-    added = set(sources) - set(_derivation_sources(store, global_concept))
-    if not added:
+    if existing is not None and existing.content == digest and all(
+        existing.provenance.get(key) == provenance[key]
+        for key in ("source_concepts", "active_source_concepts", "active_promoted_from")
+    ) and existing.source_traces == provenance["source_traces"] and all(
+        getattr(existing, key) == value for key, value in stats.items()
+    ):
+        return existing
+    if similarities is not None and (
+        existing is None or set(existing.materializer_sources) != set(source_concepts)
+    ):
+        events = list(provenance.get("promotion_events", []))
+        events.append(_promotion_event(project_sources, similarities=similarities, promoted_at=promoted_at))
+        provenance["promotion_events"] = events
+        provenance["last_promoted_at"] = promoted_at
+    with store.transaction():
+        if existing is None:
+            context = {"scope": "global", "agent": "memory_consolidate", "timestamp": promoted_at}
+            key = _procedure_key(best_source)
+            if key is not None:
+                context[key.group_field] = key.group_raw
+            global_concept = store.create_node(
+                level="concept", content=digest,
+                context=context,
+                embedding=best_source.embedding, stats=stats, provenance=provenance,
+            )
+        else:
+            global_concept = store.update_node(
+                existing.id, content=digest, stats=stats, provenance=provenance,
+            )
         _connect_project_concepts_to_global(
-            store, project_sources, global_concept, similarities=similarities,
+            store, project_sources, global_concept, similarities=similarities or {},
         )
-        return None
-    return _write_global_promotion(
-        store, list(sources.values()), existing=global_concept, similarities=similarities,
-    )
+    return global_concept
 
 
 def _connect_project_concepts_to_global(
@@ -1978,36 +2059,6 @@ def _active_promotion_confidence(project_sources: Iterable[Node]) -> float:
     if len(_source_scopes(sources)) < 3:
         return round(max(source.confidence for source in sources), 6)
     return _promoted_confidence(sources)
-
-
-def _find_existing_concept(
-    store: MemoryStore,
-    scope: str,
-    cluster_key: str,
-    *,
-    candidate_contents: Collection[str] | Callable[[], Collection[str]] = (),
-) -> Node | None:
-    concepts = store.list_nodes(
-        level="concept",
-        scope=scope,
-        include_decayed=False,
-        limit=100_000,
-    )
-    eligible = []
-    for concept in concepts:
-        if concept.corrections:
-            # A taught concept holds a corrected belief; merging fresh cluster
-            # content into it would resurrect it. Let a new concept form.
-            continue
-        if concept.provenance.get("cluster_key") == cluster_key:
-            return concept
-        eligible.append(concept)
-    # cluster_key is the primary identity; the content twin covers key drift
-    # between runs for both digest concepts (an unchanged cluster re-digests to
-    # the same bytes) and legacy concepts that copied a source trace verbatim
-    # before digests existed. Merge into the twin instead of duplicating it.
-    contents = frozenset(candidate_contents() if callable(candidate_contents) else candidate_contents)
-    return next((concept for concept in eligible if concept.content in contents), None)
 
 
 def _trace_embedding(trace: Node, embedder: LocalEmbeddingModel | None) -> list[float] | None:
