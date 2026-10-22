@@ -725,6 +725,21 @@ def _current_sources(store: MemoryStore, source_ids: Iterable[str]) -> _EraAsses
             live[current.id] = current
         else:
             excluded.setdefault(member.id, "no current source")
+    # Superseding a recorded derivative explicitly rejects its cited inputs.
+    # This does not reject independently current sources merely because they
+    # have the same age or appear in the same clustering pass.
+    displaced: dict[str, str] = {}
+    for member in live.values():
+        for edge in store.list_connections(source_id=member.id, relation_type="supersedes"):
+            if edge.metadata.get("kind") == _DUPLICATE_CONTENT_KIND:
+                continue
+            target = store.get_node(edge.target_id)
+            if target is not None:
+                for source in set(_derivation_sources(store, target)) & live.keys() - {member.id}:
+                    displaced[source] = f"displaced-via:{target.id}"
+    for source, reason in displaced.items():
+        del live[source]
+        excluded[source] = reason
     return _EraAssessment(members, list(live.values()), excluded, False, 1)
 
 
@@ -1458,11 +1473,10 @@ def _source_ancestors(store: MemoryStore, members: Sequence[Node]) -> dict[str, 
 
 
 def _partition_sources(
-    store: MemoryStore, owners: Sequence[Node], members: Sequence[Node],
+    owners: Sequence[Node], members: Sequence[Node], ancestors: Mapping[str, set[str]],
 ) -> tuple[dict[str, set[str]], set[str]]:
     """Partition by recorded inputs, keeping ambiguous owners independent."""
 
-    ancestors = _source_ancestors(store, members)
     assigned: dict[str, set[str]] = {}
     unowned = {member.id for member in members}
     for owner in owners:
@@ -1494,8 +1508,8 @@ def _materialize_cluster(
             if node.materializer == "cluster" and node.source_traces
             and not node.corrections and not _is_superseded(store, node.id)
         ]
-        assigned, unowned = _partition_sources(store, owners, current.live)
         ancestors = _source_ancestors(store, current.live)
+        assigned, unowned = _partition_sources(owners, current.live, ancestors)
 
         fresh = _assess_cluster_eras(store, cluster.traces)
         admitted = {member.id for member in fresh.live}
@@ -1840,7 +1854,8 @@ def _cross_scope_promotion(
             if node.materializer == "cross-scope-promotion"
             and not node.corrections and not _is_superseded(store, node.id)
         ]
-        assigned, unowned = _partition_sources(store, owners, list(members.values()))
+        sources = list(members.values())
+        assigned, unowned = _partition_sources(owners, sources, _source_ancestors(store, sources))
         if len(assigned) == 1:
             owner = next(owner for owner in owners if owner.id in assigned)
             if _cluster_group(owner)[1] == group:

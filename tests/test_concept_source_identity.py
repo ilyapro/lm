@@ -254,3 +254,25 @@ def test_new_materialization_groups_current_replacements_not_stale_snapshot(stor
         source = store.get_node(owner.source_traces[0])
         assert c._cluster_group(owner) == c._cluster_group(source)
     assert {source for owner, _ in outputs for source in owner.source_traces} == {b.id, taught.corrective_trace.id}
+
+
+def test_explicit_derivative_replacement_does_not_displace_independent_older_input(store):
+    obsolete, independent = [trace(store, text, timestamp="2025-01-01T00:00:00Z") for text in TEXTS[:2]]
+    (retired, _), = materialize(store, [obsolete])
+    (owner, _), = materialize(store, [obsolete, independent])
+    # A distinct retained derivation depends on the same old input plus an
+    # independently valid older source. Only the explicit target is rejected.
+    other = store.create_node(level="concept", content="Other retained derivation.", context={"scope": SCOPE},
+                              provenance={"strategy": "token-jaccard", "cluster_key": "release",
+                                          "source_traces": [obsolete.id, independent.id]})
+    correction = trace(store, CORRECTION)
+    store.create_connection(correction.id, retired.id, "supersedes")
+    store.update_node(other.id, provenance={**other.provenance,
+                                           "source_traces": [obsolete.id, independent.id, correction.id]})
+    # The target's actual recorded inputs delimit the rejection.
+    store.update_node(retired.id, provenance={**retired.provenance, "source_traces": [obsolete.id]})
+    current = c._refresh_derived_node(store, store.get_node(other.id))
+    assert_sources(store, current, [independent.id, correction.id])
+    outputs = materialize(store, [obsolete, independent, correction])
+    assert any(node.id == other.id and set(node.source_traces) == {independent.id, correction.id}
+               for node, _ in outputs)
