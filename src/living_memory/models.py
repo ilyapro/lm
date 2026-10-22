@@ -47,6 +47,28 @@ class Node:
     updated_at: str = ""
 
     @property
+    def materializer(self) -> str | None:
+        """The recorded writer, distinct from incidental recall citations."""
+
+        if self.level not in ("concept", "schema"):
+            return None
+        strategy = self.provenance.get("strategy")
+        if strategy in ("procedural", "cross-scope-promotion"):
+            return strategy
+        if self.level == "concept" and (
+            strategy in ("token-jaccard", "embedding-cosine")
+            or (strategy is None and "cluster_key" in self.provenance)
+        ):
+            return "cluster"
+        return None
+
+    @property
+    def materializer_sources(self) -> list[str]:
+        if self.materializer == "cross-scope-promotion":
+            return string_list(self.provenance.get("source_concepts"))
+        return self.source_traces if self.materializer else []
+
+    @property
     def stats(self) -> dict[str, Any]:
         return {
             "access_count": self.access_count,

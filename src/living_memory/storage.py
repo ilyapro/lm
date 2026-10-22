@@ -1289,11 +1289,15 @@ class MemoryStore:
         new_id = node_id or new_ulid()
         fingerprint = _content_fingerprint(content)
 
+        candidate = Node(
+            id=new_id, level=level, content=content, context=context_data,
+            provenance=provenance_data, source_traces=source_traces,
+        )
         duplicate_ids = [
             str(row["id"])
             for row in self._conn.execute(
                 """
-                SELECT id FROM nodes
+                SELECT * FROM nodes
                 WHERE level = ?
                   AND scope = ?
                   AND content_fingerprint = ?
@@ -1301,6 +1305,7 @@ class MemoryStore:
                 """,
                 (level, scope, fingerprint),
             ).fetchall()
+            if _same_content_identity(candidate, _node_from_row(row))
         ]
 
         vector = None if embedding is None else list(embedding)
@@ -6210,6 +6215,22 @@ def _row_value(row: sqlite3.Row, column: str, default: Any = None) -> Any:
         return row[column]
     except IndexError:
         return default
+
+
+def _same_content_identity(left: Node, right: Node) -> bool:
+    """Equal bytes cannot supersede a different recorded derivation."""
+
+    if left.materializer is None and right.materializer is None:
+        return True
+    if left.materializer != right.materializer or not left.materializer_sources:
+        return False
+    def group(node: Node) -> Any:
+        return (node.context.get("task_pattern") or node.context.get("procedure_key")
+                or node.context.get("procedure_id") or node.provenance.get("procedure_key"))
+    return (
+        group(left) == group(right)
+        and set(left.materializer_sources) == set(right.materializer_sources)
+    )
 
 
 def _node_from_row(row: sqlite3.Row) -> Node:
