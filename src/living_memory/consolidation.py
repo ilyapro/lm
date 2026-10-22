@@ -42,6 +42,7 @@ from living_memory.models import Connection, Node, string_list
 from living_memory.query_anchors import resolve_replacement
 from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
+from living_memory.ids import new_ulid
 
 _LOG = logging.getLogger(__name__)
 
@@ -513,6 +514,7 @@ class ConsolidationService:
         *,
         confidence: float | None = None,
         context: Mapping[str, Any] | None = None,
+        preparation: _TeachPreparation | None = None,
     ) -> TeachResult:
         return memory_teach(
             self.store,
@@ -520,6 +522,7 @@ class ConsolidationService:
             correction,
             confidence=confidence,
             context=context,
+            preparation=preparation,
         )
 
     def memory_forget(self, node_id: str, reason: str | None = None) -> Node:

@@ -1386,9 +1386,12 @@ class MemoryStore:
         context: Mapping[str, Any] | None = None,
         *,
         feedback: Mapping[str, Any] | None = None,
+        node_id: str | None = None,
     ) -> Node:
         stats = dict(feedback or {})
-        return self.create_node(level="trace", content=content, context=context, stats=stats)
+        return self.create_node(
+            level="trace", content=content, context=context, stats=stats, node_id=node_id,
+        )
 
     def append_trace_with_rejected_alternatives(
         self,
