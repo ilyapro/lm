@@ -778,7 +778,7 @@ def memory_teach(
         )
 
 
-def _derivation_sources(store: MemoryStore, node: Node) -> list[str]:
+def _derivation_sources(store: MemoryStore | _SourceObservation, node: Node) -> list[str]:
     """Read recorded materializer inputs, never incidental recall lineage."""
 
     if node.materializer:
@@ -796,6 +796,7 @@ class _SourceObservation:
     Sources being rewritten are read on demand until their source-first writer
     supplies the resulting node. Supersedes edges do not change during refresh;
     their endpoint validity is always checked against the current node values.
+    Related inputs are shared until a writer updates their source node.
     """
 
     def __init__(
@@ -836,6 +837,10 @@ class _SourceObservation:
     def updated(self, node: Node) -> None:
         self.changing.discard(node.id)
         self.nodes[node.id] = node
+        # Writers connect the owner to its inputs, co-accessed input pairs,
+        # and promotion inputs to their global concept.
+        for source_id in (node.id, *node.materializer_sources):
+            self.edges.pop((source_id, None, "related"), None)
 
 
 def _current_derivation(
@@ -845,7 +850,7 @@ def _current_derivation(
     """Resolve each recorded input independently, without displacing other eras."""
 
     return _current_sources(
-        store, [*_derivation_sources(store, node), *(member.id for member in additional)],
+        store, [*_derivation_sources(observation or store, node), *(member.id for member in additional)],
         observation=observation,
     )
 
@@ -878,7 +883,7 @@ def _current_sources(
                 continue
             target = reader.get_node(edge.target_id)
             if target is not None:
-                for source in set(_derivation_sources(store, target)) & live.keys() - {member.id}:
+                for source in set(_derivation_sources(reader, target)) & live.keys() - {member.id}:
                     displaced[source] = f"displaced-via:{target.id}"
     for source, reason in displaced.items():
         del live[source]
@@ -941,7 +946,7 @@ def _refresh_derived_from(
             observation.updated(store.soft_delete_node(node_id, "derivation: cyclic sources"))
             return
         visiting.add(node_id)
-        for dependency in _derivation_sources(store, affected[node_id]):
+        for dependency in _derivation_sources(observation, affected[node_id]):
             if dependency in affected:
                 refresh(dependency)
         node = observation.get_node(node_id)
