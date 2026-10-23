@@ -11,9 +11,26 @@ import pytest
 
 from living_memory import consolidation as c, server
 from living_memory.auto_consolidation import PENDING_KV_KEY
-from test_mcp_server import FakeMCP
 
 SCOPE = "project:harbor"
+
+
+class FakeMCP:
+    def __init__(self, name, instructions=None):
+        self.instructions = instructions
+        self.tools = {}
+
+    def tool(self, func=None, **kwargs):
+        def register(handler):
+            self.tools[handler.__name__] = handler
+            return handler
+        return register if func is None else register(func)
+
+    def resource(self, uri):
+        return lambda handler: handler
+
+    def prompt(self, func=None, **kwargs):
+        return (lambda handler: handler) if func is None else func
 
 
 @pytest.fixture
