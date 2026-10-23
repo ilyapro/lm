@@ -546,7 +546,7 @@ def memory_consolidate(
 
     ``guard`` lets a caller that shares ``store`` across threads run the pass
     beside other work: every step that touches the store runs inside
-    ``guard()``, one short step at a time (one cluster, one encode), and the
+    ``guard()``, one atomic owner at a time (or one encode batch), and the
     clustering itself — pure computation on the snapshot the pass loaded —
     runs outside it. Without a guard the pass runs exactly as one block.
     """
@@ -596,8 +596,9 @@ def memory_consolidate(
     for cluster in clusters:
         if len(cluster.traces) < merge_floor:
             continue
-        with step():
-            materialized = _materialize_cluster(store, cluster, min_cluster_size=merge_floor)
+        materialized = _materialize_cluster(
+            store, cluster, min_cluster_size=merge_floor, step=step,
+        )
         for concept, created in materialized:
             with step():
                 result.concepts_promoted.extend(
@@ -1643,16 +1644,20 @@ def _partition_sources(
 
 def _materialize_cluster(
     store: MemoryStore, cluster: _TraceCluster, *, min_cluster_size: int,
+    step: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> list[tuple[Node, bool]]:
     """Continue recorded owners and materialize only the unowned remainder.
 
     Clustering admits related new evidence. Recorded inputs decide which node
     owns it: overlapping owners retain their separate derivations, and a new
     member is never broadcast across them. Neither a lexical label nor a lossy
-    digest identifies the sources of another derivation.
+    digest identifies the sources of another derivation. Admission is planned
+    from one guarded observation. Each independent owner then commits its full
+    current union, digest and edges together, releasing the guard between
+    owners. A failed pass can resume without exposing a partial owner.
     """
 
-    with store.transaction():
+    with step(), store.transaction():
         current = _current_sources(store, (member.id for member in cluster.traces))
         members = {member.id: member for member in current.live}
         if not members:
@@ -1682,35 +1687,45 @@ def _materialize_cluster(
             assigned[owner.id].update(compatible)
             unowned.difference_update(compatible)
 
-        result: list[tuple[Node, bool]] = []
-        for owner in owners:
-            if owner.id not in assigned:
-                continue
-            assessment = _current_derivation(
-                store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
-            )
-            result.append((_write_cluster_concept(
-                store, cluster.scope, assessment, existing=owner, strategy=cluster.strategy,
-                embeddings=cluster.embeddings_by_trace_id,
-            ), False))
+        updates = [
+            (owner.id, sorted(assigned[owner.id]))
+            for owner in owners if owner.id in assigned
+        ]
         groups: dict[tuple[str, str | None], list[Node]] = {}
         for source in sorted(unowned):
             member = members[source]
             groups.setdefault(_cluster_group(member), []).append(member)
+        # New owners and their admission share the same observation. No other
+        # materializer can claim these sources between selection and creation.
+        created: list[tuple[Node, bool]] = []
         for (scope, _group), new_members in groups.items():
-            # The admission floor applies before era filtering. A correction
-            # may leave a smaller current derivation; splitting into different
-            # current groups or away from other owners needs its own support.
             if len(new_members) < min_cluster_size and (
                 assigned or len(groups) > 1 or len(cluster.traces) < min_cluster_size
             ):
                 continue
             assessment = replace(fresh, live=new_members)
-            result.append((_write_cluster_concept(
+            created.append((_write_cluster_concept(
                 store, scope, assessment, strategy=cluster.strategy,
                 embeddings=cluster.embeddings_by_trace_id,
             ), True))
-        return result
+
+    result: list[tuple[Node, bool]] = []
+    for owner_id, source_ids in updates:
+        with step(), store.transaction():
+            owner = store.get_node(owner_id)
+            if owner is None or owner.decayed or owner.corrections or _is_superseded(store, owner_id):
+                continue
+            assessment = _current_derivation(
+                store, owner, additional=store.get_nodes(source_ids).values(),
+            )
+            if not assessment.live:
+                store.soft_delete_node(owner_id, "derivation: no current sources")
+                continue
+            result.append((_write_cluster_concept(
+                store, owner.scope, assessment, existing=owner, strategy=cluster.strategy,
+                embeddings=cluster.embeddings_by_trace_id,
+            ), False))
+    return [*result, *created]
 
 
 def _write_cluster_concept(
