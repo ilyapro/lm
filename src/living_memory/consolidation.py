@@ -1749,7 +1749,7 @@ def _write_cluster_concept(
     cluster_key = prepared_digest.cluster_key
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
-    concept_embedding = best_trace.embedding or (embeddings or {}).get(best_trace.id)
+    representative = best_trace.embedding or (embeddings or {}).get(best_trace.id)
     provenance = {
         **(existing.provenance if existing else {}),
         "source_traces": source_traces,
@@ -1774,11 +1774,11 @@ def _write_cluster_concept(
                 context[key.group_field] = key.group_raw
             concept = store.create_node(
                 level="concept", content=digest, context=context,
-                embedding=concept_embedding, stats=stats, provenance=provenance,
+                representative_embedding=representative, stats=stats, provenance=provenance,
             )
         else:
             concept = store.update_node(
-                existing.id, content=digest, embedding=concept_embedding,
+                existing.id, content=digest, representative_embedding=representative,
                 stats=stats, provenance=provenance,
             )
         _update_edge_weights_from_co_access(store, concept, members)
@@ -2149,11 +2149,12 @@ def _write_global_promotion(
             global_concept = store.create_node(
                 level="concept", content=digest,
                 context=context,
-                embedding=best_source.embedding, stats=stats, provenance=provenance,
+                representative_embedding=best_source.embedding, stats=stats, provenance=provenance,
             )
         else:
             global_concept = store.update_node(
-                existing.id, content=digest, stats=stats, provenance=provenance,
+                existing.id, content=digest, representative_embedding=best_source.embedding,
+                stats=stats, provenance=provenance,
             )
         _connect_project_concepts_to_global(
             store, project_sources, global_concept, similarities=similarities or {},

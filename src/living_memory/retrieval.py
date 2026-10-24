@@ -330,6 +330,7 @@ def schema_trigger_by_name() -> bool:
 VECTOR_MATCH_THRESHOLD = 0.08
 GRAPH_SEED_LIMIT = 50
 MAX_NEIGHBORS_PER_NODE = 200
+LAZY_CHUNK_NODE_LIMIT = 16
 
 #: Turns on the drain's near-duplicate collapse. Unset -- the default -- and
 #: the drain writes chunks and nothing else, exactly as it did before this
@@ -995,60 +996,20 @@ class MemoryRecallService:
         per_scope_limit = max(50, max_results * 12)
         query_embedding = self.embedder.embed(query)
 
-        # Lazy backfill: ensure every active node in the searched scopes has an
-        # embedding before the scan. In steady state these queries return zero
-        # rows. The loop drains batches until none are left so first-time
-        # recalls populate the full scope just like the previous code did.
-        # Under schema v6 this also produces the node's chunks, because
-        # update_node writes them in the same transaction as the vector -- so a
-        # node the drain reaches is scannable by the very next statement here.
-        #
-        # Two feeder queries, because the column drop changes which one can see
-        # the work. While ``nodes.embedding`` exists, list_unembedded_nodes
-        # names every node written without a vector. Once the column is dropped
-        # it returns nothing by contract, and list_unchunked_nodes is the only
-        # query that still sees fresh traces -- without it, every node written
-        # after the drop stays invisible to this channel forever. It also
-        # catches the one case the legacy query never could: content edited
-        # after chunking, where the stale chunks were deleted but the stored
-        # vector stayed put -- which is why _rechunk_node re-embeds instead of
-        # trusting node.embedding. The ``attempted`` guard terminates the drain
-        # even for a node that gains no chunk row (list_unchunked_nodes already
-        # excludes whitespace-only content, so it should never fire; it exists
-        # so no single node can make recall loop).
-        # Nodes this call gave vectors to, per scope, and only when the collapse
-        # is switched on -- with the flag unset nothing reads this and nothing
-        # writes it, which is what keeps the drain byte-for-byte what it was.
-        # Both feeders count: a node is "freshly vectorized" wherever it entered,
-        # and while ``nodes.embedding`` still exists it is the *unembedded*
-        # feeder that reaches a new trace first.
+        # One bounded queue covers new content, edits and migrated derived
+        # chunks. Chunk presence, not the legacy representative, decides work.
+        # Oldest-first progress prevents new writes from starving old repairs.
         collapse_near_dups = drain_near_dup_supersedes_enabled()
         freshly_chunked: dict[str, dict[str, Node]] = {}
-        for scope in plan.search_scopes:
-            while True:
-                unembedded = self.store.list_unembedded_nodes(scope=scope, limit=500)
-                if not unembedded:
-                    break
-                for node in unembedded:
-                    self._ensure_embedding(node)
-                if collapse_near_dups:
-                    for node in unembedded:
-                        freshly_chunked.setdefault(node.scope, {})[node.id] = node
-            attempted: set[str] = set()
-            while True:
-                unchunked = [
-                    node
-                    for node in self.store.list_unchunked_nodes(scope=scope, limit=500)
-                    if node.id not in attempted
-                ]
-                if not unchunked:
-                    break
-                for node in unchunked:
-                    attempted.add(node.id)
-                    self._rechunk_node(node)
-                if collapse_near_dups:
-                    for node in unchunked:
-                        freshly_chunked.setdefault(node.scope, {})[node.id] = node
+        pending = sorted(
+            (node for scope in plan.search_scopes
+             for node in self.store.list_unchunked_nodes(scope=scope, limit=LAZY_CHUNK_NODE_LIMIT)),
+            key=lambda node: (node.timestamp, node.id),
+        )[:LAZY_CHUNK_NODE_LIMIT]
+        for node in pending:
+            self._rechunk_node(node)
+            if collapse_near_dups:
+                freshly_chunked.setdefault(node.scope, {})[node.id] = node
 
         q_arr = _as_query_array(query_embedding)
         # After the drain, never before it: the drain writes chunks.
@@ -1858,26 +1819,16 @@ class MemoryRecallService:
                         candidate.path = path + (neighbor_id,)
                     queue.append((neighbor_id, next_score, depth + 1, path + (neighbor_id,)))
 
-    def _ensure_embedding(self, node: Node) -> list[float]:
-        if node.embedding is not None:
-            return node.embedding
-        return self._rechunk_node(node)
-
-    def _rechunk_node(self, node: Node) -> list[float]:
-        """Embed ``node.content`` and store it; chunks rewrite in-transaction.
-
-        Unlike :meth:`_ensure_embedding` this does not trust a stored vector:
-        the unchunked drain hands it nodes whose content may have changed after
-        embedding, and the cached vector describes text the node no longer
-        holds. Post-drop ``updated.embedding`` is None (there is no column), so
-        the freshly computed vector is what the caller gets back.
-        """
+    def _rechunk_node(self, node: Node) -> None:
+        """Refresh content search without overwriting a cluster representative."""
 
         self._share_embedder_with_store()
-        embedding = self.embedder.embed(node.content)
-        updated = self.store.update_node(node.id, embedding=embedding)
-        node.embedding = updated.embedding
-        return updated.embedding or embedding
+        if node.materializer in ("cluster", "cross-scope-promotion") and node.embedding:
+            self.store.update_node(node.id, representative_embedding=node.embedding)
+        else:
+            embedding = self.embedder.embed(node.content)
+            updated = self.store.update_node(node.id, embedding=embedding)
+            node.embedding = updated.embedding
 
     def _share_embedder_with_store(self) -> None:
         """Lend the store this service's encoder for the chunks it writes.

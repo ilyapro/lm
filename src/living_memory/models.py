@@ -28,6 +28,8 @@ class Node:
     level: NodeLevel
     content: str
     context: dict[str, Any] = field(default_factory=dict)
+    # Legacy whole-node similarity: materializers can retain a source representative.
+    # Content search reads independently encoded node_chunk_embeddings.
     embedding: list[float] | None = None
     scope: str = "global"
     agent: str | None = None
