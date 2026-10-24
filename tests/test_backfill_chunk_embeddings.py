@@ -264,7 +264,7 @@ def run_in_process(
     summary = bf.BackfillSummary(mode="backfill", db=str(db), started_at="fixture")
     store = bf.MemoryStore(db)
     try:
-        bf.install_chunk_only_authorizer(store.connection)
+        bf.install_derived_only_authorizer(store.connection, corpus="chunks")
         try:
             return bf.run_backfill(
                 store,
@@ -805,7 +805,7 @@ def test_the_authorizer_denies_every_write_outside_the_chunk_table(
     db = fixture_copy(source_db, "authorized.sqlite3")
     store = MemoryStore(db)
     try:
-        bf.install_chunk_only_authorizer(store.connection)
+        bf.install_derived_only_authorizer(store.connection, corpus="chunks")
         for sql in (
             "UPDATE nodes SET embedding = NULL",
             "UPDATE nodes SET content = 'x'",

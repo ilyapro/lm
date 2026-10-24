@@ -482,7 +482,7 @@ def test_authorizer_denies_every_write_outside_the_anchor_tables(
     db = fixture_copy(source_db, "authorizer.sqlite3")
     store = MemoryStore(db)
     try:
-        bf.install_anchor_only_authorizer(store.connection)
+        bf.install_derived_only_authorizer(store.connection, corpus="anchors")
 
         with pytest.raises(sqlite3.DatabaseError):
             store.connection.execute(

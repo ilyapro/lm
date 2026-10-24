@@ -36,8 +36,8 @@ The backfill only ever writes rows of ``query_anchors`` and
 ``nodes``, ``connections`` and ``recall_events`` are read, never written:
 after the store is opened (which runs the additive v6 ->
 v7 migration) a SQLite *authorizer* is installed that denies every write
-outside those tables and revision triggers. The database enforces protection
-of the node graph. ``PRAGMA busy_timeout`` is raised and every
+outside those tables and their schema-owned revision effects. The shared storage
+policy protects the source knowledge. ``PRAGMA busy_timeout`` is raised and every
 anchor write retries on ``SQLITE_BUSY``, because the MCP server is writing to
 the same WAL database throughout.
 
@@ -142,6 +142,7 @@ from living_memory.storage import (  # noqa: E402
     QUERY_ANCHOR_EDGE_TABLE,
     QUERY_ANCHOR_TABLE,
     MemoryStore,
+    install_derived_only_authorizer,
     recall_fingerprint,
 )
 from living_memory.temporal import parse_timestamp  # noqa: E402
@@ -181,26 +182,6 @@ DEFAULT_MIN_BACKUP_FRACTION = 0.99
 MAX_REPORTED_EXAMPLES = 20
 
 _SQLITE_BUSY_CODES = frozenset({5, 6})  # SQLITE_BUSY, SQLITE_LOCKED
-
-#: The only two tables this process may write directly. The node graph,
-#: connections and recall history it reads are read-only for the
-#: rest of the run, enforced by the authorizer below.
-WRITABLE_TABLES = frozenset({QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE})
-
-_WRITE_ACTIONS_TABLE_ARG = frozenset(
-    {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
-)
-_ALWAYS_DENIED_ACTIONS = frozenset(
-    {
-        sqlite3.SQLITE_ALTER_TABLE,
-        sqlite3.SQLITE_ATTACH,
-        sqlite3.SQLITE_DETACH,
-        sqlite3.SQLITE_DROP_INDEX,
-        sqlite3.SQLITE_DROP_TABLE,
-        sqlite3.SQLITE_DROP_TRIGGER,
-        sqlite3.SQLITE_DROP_VIEW,
-    }
-)
 
 #: ``Sequence[str] -> one vector per text``. Same shape as
 #: ``storage.ChunkEmbedder``; queries are single texts, so there is one vector
@@ -463,7 +444,7 @@ def has_table(conn: sqlite3.Connection, name: str) -> bool:
 
 
 def has_anchor_tables(conn: sqlite3.Connection) -> bool:
-    return all(has_table(conn, name) for name in sorted(WRITABLE_TABLES))
+    return all(has_table(conn, name) for name in (QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE))
 
 
 def count_nodes(conn: sqlite3.Connection) -> int:
@@ -585,49 +566,6 @@ def ensure_backup(
         quick_check=quick,
         seconds=round(seconds, 3),
     )
-
-
-def install_anchor_only_authorizer(conn: sqlite3.Connection) -> None:
-    """Let the database enforce "anchor tables only" for the rest of this process.
-
-    This script reads the whole graph — nodes, connections, recall events — to
-    decide what an anchor should point at, and a bug that turned one of those
-    reads into a write would be a mutation of the live memory itself, not of a
-    derived table. Rather than trusting that no code path here writes outside
-    the anchor tables, deny it at the connection: reads stay open, writes are
-    allowed on ``query_anchors``/``query_anchor_edges``. Only their revision
-    triggers may update ``metadata.value``; direct metadata writes and DDL
-    are refused. Install *after* ``MemoryStore.__init__`` has run
-    its migrations — the v7 ``CREATE TABLE`` is a legitimate write and must not
-    be blocked.
-    """
-
-    def authorizer(
-        action: int,
-        arg1: str | None,
-        arg2: str | None,
-        database: str | None,
-        source: str | None,
-    ) -> int:
-        if action in _ALWAYS_DENIED_ACTIONS:
-            return sqlite3.SQLITE_DENY
-        if action in _WRITE_ACTIONS_TABLE_ARG and arg1 not in WRITABLE_TABLES:
-            if (
-                action == sqlite3.SQLITE_UPDATE
-                and database == "main"
-                and arg1 == "metadata"
-                and arg2 == "value"
-                and source in {
-                    "query_anchor_corpus_insert",
-                    "query_anchor_corpus_delete",
-                    "query_anchor_corpus_update",
-                }
-            ):
-                return sqlite3.SQLITE_OK
-            return sqlite3.SQLITE_DENY
-        return sqlite3.SQLITE_OK
-
-    conn.set_authorizer(authorizer)
 
 
 # ---------------------------------------------------------------------------
@@ -1732,7 +1670,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
         store.connection.execute(f"PRAGMA busy_timeout = {int(args.busy_timeout_ms)}")
         # After the migration, before any anchor write: from here the connection
         # physically cannot touch nodes, connections or recall_events.
-        install_anchor_only_authorizer(store.connection)
+        install_derived_only_authorizer(store.connection, corpus="anchors")
         try:
             run_backfill(
                 store,
