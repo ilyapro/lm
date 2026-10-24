@@ -196,13 +196,14 @@ def test_mapless_use_in_continued_explicit_work_reopens_the_map(tmp_path, isolat
 
 
 @pytest.mark.parametrize("tied", [False, True])
-def test_lookup_after_work_switch_is_not_attributed_to_earlier_work(tmp_path, isolated, tied):
+@pytest.mark.parametrize("next_task", ["other", None])
+def test_lookup_after_work_switch_is_not_attributed_to_earlier_work(tmp_path, isolated, tied, next_task):
     with MemoryStore(tmp_path / "switch.sqlite3") as store:
         medoid = offer_three(store, isolated, task="backup", transport_session_id="A")
         if tied:
             isolated[0] = "2026-01-01T00:03:00Z"
         store.record_recall_event(query="idle", scope=SCOPE,
-                                 ambient_context={"task": "other", "transport_session_id": "A"})
+                                 ambient_context={"task": next_task, "transport_session_id": "A"})
         isolated[0] = "2026-01-01T00:05:00Z"
         store.record_lookup_event([medoid], transport_session_id="A")
         assert verdict(store, task="backup").collapse
