@@ -116,6 +116,7 @@ from living_memory.storage import (  # noqa: E402
     CHUNK_EMBEDDING_TABLE,
     ChunkEmbedder,
     MemoryStore,
+    install_derived_only_authorizer,
     # Private on purpose: SQLite's one-argument TRIM strips spaces only, so the
     # whitespace set the pending predicate must trim is a detail of the schema.
     # Importing the one definition beats keeping a second copy in step with it.
@@ -155,21 +156,6 @@ DEFAULT_PROGRESS_INTERVAL = 5.0
 DEFAULT_MIN_BACKUP_FRACTION = 0.99
 
 _SQLITE_BUSY_CODES = frozenset({5, 6})  # SQLITE_BUSY, SQLITE_LOCKED
-
-_WRITE_ACTIONS_TABLE_ARG = frozenset(
-    {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
-)
-_ALWAYS_DENIED_ACTIONS = frozenset(
-    {
-        sqlite3.SQLITE_ALTER_TABLE,
-        sqlite3.SQLITE_ATTACH,
-        sqlite3.SQLITE_DETACH,
-        sqlite3.SQLITE_DROP_INDEX,
-        sqlite3.SQLITE_DROP_TABLE,
-        sqlite3.SQLITE_DROP_TRIGGER,
-        sqlite3.SQLITE_DROP_VIEW,
-    }
-)
 
 
 class BackfillError(RuntimeError):
@@ -417,27 +403,6 @@ def ensure_backup(
         quick_check=quick,
         seconds=round(seconds, 3),
     )
-
-
-def install_chunk_only_authorizer(conn: sqlite3.Connection) -> None:
-    """Let the database enforce "chunk rows only" for the rest of this process.
-
-    The running MCP server reads ``nodes.embedding``, so a backfill that touched
-    it would break a live process. Rather than trusting that no code path here
-    writes to ``nodes``, deny it at the connection: reads stay open, writes are
-    allowed on ``node_chunk_embeddings`` and nowhere else, and DDL is refused
-    outright. Install *after* ``MemoryStore.__init__`` has run its migrations —
-    those are legitimate writes to ``nodes`` and must not be blocked.
-    """
-
-    def authorizer(action: int, arg1: str | None, arg2: str | None, *_rest: Any) -> int:
-        if action in _ALWAYS_DENIED_ACTIONS:
-            return sqlite3.SQLITE_DENY
-        if action in _WRITE_ACTIONS_TABLE_ARG and arg1 != CHUNK_EMBEDDING_TABLE:
-            return sqlite3.SQLITE_DENY
-        return sqlite3.SQLITE_OK
-
-    conn.set_authorizer(authorizer)
 
 
 # ---------------------------------------------------------------------------
@@ -1226,7 +1191,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
         store.connection.execute(f"PRAGMA busy_timeout = {int(args.busy_timeout_ms)}")
         # After the migration, before any chunk write: from here the connection
         # physically cannot touch nodes.embedding.
-        install_chunk_only_authorizer(store.connection)
+        install_derived_only_authorizer(store.connection, corpus="chunks")
         try:
             run_backfill(
                 store,

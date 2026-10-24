@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 import hashlib
 import json
 import os
@@ -93,25 +93,32 @@ _SQL_WHITESPACE = "' ' || CHAR(9) || CHAR(10) || CHAR(11) || CHAR(12) || CHAR(13
 # One transactional revision covers the rows and node membership used by
 # iter_chunk_embedding_rows. Triggers also cover other connections and SQL
 # maintenance; access, feedback and provenance writes leave it unchanged.
-_CHUNK_CORPUS_REVISION_SQL = """
-    INSERT OR IGNORE INTO metadata (key, value) VALUES ('chunk_corpus_revision', '0');
-
-    CREATE TRIGGER IF NOT EXISTS chunk_corpus_insert
+_CHUNK_CORPUS_TRIGGERS = (
+    """CREATE TRIGGER chunk_corpus_insert
     AFTER INSERT ON node_chunk_embeddings BEGIN
         UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
-    END;
-    CREATE TRIGGER IF NOT EXISTS chunk_corpus_delete
+    END
+    """.strip(),
+    """CREATE TRIGGER chunk_corpus_delete
     AFTER DELETE ON node_chunk_embeddings BEGIN
         UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
-    END;
-    CREATE TRIGGER IF NOT EXISTS chunk_corpus_update
+    END
+    """.strip(),
+    """CREATE TRIGGER chunk_corpus_update
     AFTER UPDATE OF node_id, chunk_index, embedding ON node_chunk_embeddings
     WHEN OLD.node_id IS NOT NEW.node_id
         OR OLD.chunk_index IS NOT NEW.chunk_index
         OR OLD.embedding IS NOT NEW.embedding
     BEGIN
         UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
-    END;
+    END
+    """.strip(),
+)
+
+_CHUNK_CORPUS_REVISION_SQL = """
+    INSERT OR IGNORE INTO metadata (key, value) VALUES ('chunk_corpus_revision', '0');
+
+
     CREATE TRIGGER IF NOT EXISTS chunk_corpus_membership
     AFTER UPDATE OF scope, decayed ON nodes
     WHEN (OLD.scope IS NOT NEW.scope OR OLD.decayed IS NOT NEW.decayed)
@@ -119,23 +126,26 @@ _CHUNK_CORPUS_REVISION_SQL = """
     BEGIN
         UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
     END;
-"""
+""" + "\n".join(
+    sql.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1) + ";"
+    for sql in _CHUNK_CORPUS_TRIGGERS
+)
 
 # Independent of chunks: anchor membership and vectors have their own revision.
 # INSERT/DELETE also cover SQL replacement, whose implicit deletion need not
 # fire a DELETE trigger when SQLite recursive_triggers is disabled.
-_QUERY_ANCHOR_REVISION_SQL = """
-    INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0');
-
-    CREATE TRIGGER IF NOT EXISTS query_anchor_corpus_insert
+_QUERY_ANCHOR_CORPUS_TRIGGERS = (
+    """CREATE TRIGGER query_anchor_corpus_insert
     AFTER INSERT ON query_anchors BEGIN
         UPDATE metadata SET value = value + 1 WHERE key = 'query_anchor_revision';
-    END;
-    CREATE TRIGGER IF NOT EXISTS query_anchor_corpus_delete
+    END
+    """.strip(),
+    """CREATE TRIGGER query_anchor_corpus_delete
     AFTER DELETE ON query_anchors BEGIN
         UPDATE metadata SET value = value + 1 WHERE key = 'query_anchor_revision';
-    END;
-    CREATE TRIGGER IF NOT EXISTS query_anchor_corpus_update
+    END
+    """.strip(),
+    """CREATE TRIGGER query_anchor_corpus_update
     AFTER UPDATE OF id, scope, dimensions, embedding, decayed ON query_anchors
     WHEN (OLD.decayed = 0 OR NEW.decayed = 0) AND (
         OLD.id IS NOT NEW.id OR OLD.scope IS NOT NEW.scope
@@ -145,8 +155,91 @@ _QUERY_ANCHOR_REVISION_SQL = """
     )
     BEGIN
         UPDATE metadata SET value = value + 1 WHERE key = 'query_anchor_revision';
-    END;
-"""
+    END
+    """.strip(),
+)
+
+_QUERY_ANCHOR_REVISION_SQL = """
+    INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0');
+
+
+""" + "\n".join(
+    sql.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1) + ";"
+    for sql in _QUERY_ANCHOR_CORPUS_TRIGGERS
+)
+
+def install_derived_only_authorizer(
+    conn: sqlite3.Connection, *, corpus: Literal["chunks", "anchors"]
+) -> None:
+    """Restrict maintenance to one derived corpus and its schema-owned revision.
+
+    Install after MemoryStore migrations. Reads and transactions remain open;
+    direct knowledge/metadata writes, foreign trigger writes and DDL are denied.
+    The same trigger SQL creates the schema and establishes its permitted effects.
+    Check it when SQLite prepares a write, including after a schema change forces
+    re-preparation. A trigger name alone cannot authorize a metadata update.
+    """
+
+    if corpus == "chunks":
+        tables = {CHUNK_EMBEDDING_TABLE}
+        triggers = _CHUNK_CORPUS_TRIGGERS
+        revision_key = "chunk_corpus_revision"
+    elif corpus == "anchors":
+        tables = {QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE}
+        triggers = _QUERY_ANCHOR_CORPUS_TRIGGERS
+        revision_key = "query_anchor_revision"
+    else:
+        raise ValueError(f"unknown derived corpus: {corpus!r}")
+
+    expected = {sql.split()[2]: sql for sql in triggers}
+    placeholders = ",".join("?" for _ in expected)
+
+    def revision_schema_matches() -> bool:
+        actual = dict(conn.execute(
+            f"SELECT name, sql FROM main.sqlite_master "
+            f"WHERE type = 'trigger' AND name IN ({placeholders})",
+            tuple(expected),
+        ))
+        # SQLite's source argument does not distinguish main from TEMP triggers.
+        shadow = conn.execute(
+            f"SELECT 1 FROM temp.sqlite_master "
+            f"WHERE type = 'trigger' AND name IN ({placeholders}) LIMIT 1",
+            tuple(expected),
+        ).fetchone()
+        revision = conn.execute(
+            "SELECT value FROM main.metadata WHERE key = ?", (revision_key,)
+        ).fetchone()
+        return actual == expected and shadow is None and revision is not None
+
+    def authorizer(
+        action: int,
+        table: str | None,
+        column: str | None,
+        database: str | None,
+        source: str | None,
+    ) -> int:
+        if action in {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}:
+            if database == "main":
+                if table in tables and source is None and revision_schema_matches():
+                    return sqlite3.SQLITE_OK
+                if (
+                    action == sqlite3.SQLITE_UPDATE
+                    and table == "metadata" and column == "value"
+                    and source in expected
+                ):
+                    return sqlite3.SQLITE_OK
+            return sqlite3.SQLITE_DENY
+        if action in {
+            sqlite3.SQLITE_READ, sqlite3.SQLITE_SELECT, sqlite3.SQLITE_FUNCTION,
+            sqlite3.SQLITE_TRANSACTION, sqlite3.SQLITE_SAVEPOINT, sqlite3.SQLITE_RECURSIVE,
+        }:
+            return sqlite3.SQLITE_OK
+        if action == sqlite3.SQLITE_PRAGMA and table == "table_info":
+            return sqlite3.SQLITE_OK
+        return sqlite3.SQLITE_DENY
+
+    conn.set_authorizer(authorizer)
+
 
 #: Query-anchor DDL (schema v7). Held as one constant because it has two
 #: callers that must never drift apart: ``_initialize_schema`` runs it so a

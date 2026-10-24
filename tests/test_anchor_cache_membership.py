@@ -287,10 +287,10 @@ def test_existing_database_and_read_only_reader(tmp_path):
 
 def test_anchor_maintenance_allows_only_trigger_revision_writes(stores):
     reader, writer = stores
-    install = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/backfill_query_anchors.py"))["install_anchor_only_authorizer"]
+    install = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/backfill_query_anchors.py"))["install_derived_only_authorizer"]
     warm = service(reader)
     assert matches(warm, [1.0, 0.0]) == []
-    install(writer.connection)
+    install(writer.connection, corpus="anchors")
     try:
         a = anchor(writer, "a", [1.0, 0.0])
         assert_parity(warm, [1.0, 0.0], [a.id])
