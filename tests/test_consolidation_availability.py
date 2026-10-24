@@ -127,6 +127,9 @@ def test_reader_waits_for_one_complete_owner_then_proceeds_before_the_next(memor
 def test_between_owner_write_uses_current_sources_and_preserves_foreground_feedback(memory, monkeypatch, change):
     mcp, lock, _, traces, owners, cluster = memory
     store = mcp.memory_store
+    if change == "content":
+        # Derived sources can change content while retaining their identity.
+        traces[2] = store.update_node(traces[2].id, level="concept")
     written = []
     original = c._write_cluster_concept
 
