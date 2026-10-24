@@ -1157,7 +1157,7 @@ def test_cached_structure_survives_a_changed_pool_and_refreshes_counts(
     assert builder.last_cache_hit is False
 
     # A later recall for the same task surfaces a different slice of the pool.
-    second = builder.build(pool(nodes[1:]), scope=SCOPE, task="Postsession-Extraction")
+    second = builder.build(pool(nodes[1:]), scope=SCOPE, task="postsession extraction")
     assert second is not None
     assert builder.last_cache_hit is True
     assert builder.cache_size == 1  # the two task spellings fold to one key
