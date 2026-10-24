@@ -6,7 +6,7 @@ import pytest
 
 from living_memory.chunking import chunk_text
 from living_memory.config import MemoryConfig
-from living_memory.consolidation import memory_consolidate, memory_teach
+from living_memory.consolidation import _cross_scope_promotion, memory_consolidate, memory_teach
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.retrieval import LAZY_CHUNK_NODE_LIMIT, MemoryRecallService
 from living_memory.storage import MemoryStore
@@ -238,3 +238,47 @@ def test_existing_single_chunk_derivatives_are_repaired_by_bounded_ordinary_reca
 
     with MemoryStore(path, chunk_embedder=encoder.batch) as store:
         assert {n.id: store.list_node_chunks(n.id) for n in affected} == fixed
+
+
+@pytest.mark.parametrize("long", [False, True])
+def test_promotion_owns_search_vectors_for_distinct_project_contents(tmp_path, long):
+    encoder = Encoder()
+    with MemoryStore(tmp_path / "memory.sqlite3", chunk_embedder=encoder.batch) as store:
+        core = CORE if not long else " ".join([CORE] * 5)
+        sources = []
+        for i, fact in enumerate(("Alpha checks certificates.", "Beta keeps seven retries.", "Gamma alerts on saturation.")):
+            content = f"{core} {fact}"
+            sources.append(store.create_node(
+                level="concept", content=content, context={"scope": f"project:p{i}"},
+                embedding=encoder.embed(content), stats={"confidence": .9 - i * .1, "unique_agents": 2},
+            ))
+        encoder.calls.clear()
+        promoted, = _cross_scope_promotion(store, sources[0], phase_number=4)
+        assert all(promoted.content != source.content for source in sources)
+        assert "seven retries" in promoted.content
+        assert "saturation" in promoted.content
+        assert encoder.calls == [w.text for w in chunk_text(promoted.content)]
+        assert_content_vectors(store, promoted, encoder)
+        assert promoted.embedding == sources[0].embedding
+        assert (len(chunk_text(promoted.content)) > 1) is long
+        service = MemoryRecallService(store, embedder=encoder)
+        delivered = next(r for r in recall(service, promoted.content, scope="global") if r.node.id == promoted.id)
+        assert delivered.node.content == promoted.content
+        if not long:
+            assert delivered.vector_score == pytest.approx(1., abs=1e-6)
+
+        changed_text = f"{core} Beta keeps nine retries."
+        store.update_node(sources[1].id, content=changed_text, embedding=encoder.embed(changed_text))
+        encoder.calls.clear()
+        updated, = _cross_scope_promotion(store, sources[0], phase_number=4)
+        assert updated.id == promoted.id
+        assert "nine retries" in updated.content and "seven retries" not in updated.content
+        assert encoder.calls == [w.text for w in chunk_text(updated.content)]
+        assert_content_vectors(store, updated, encoder)
+        assert set(updated.materializer_sources) == {s.id for s in sources}
+        assert updated.scope == "global"
+        before = store.list_node_chunks(updated.id)
+        encoder.calls.clear()
+        assert _cross_scope_promotion(store, sources[0], phase_number=4) == []
+        assert encoder.calls == []
+        assert store.list_node_chunks(updated.id) == before
