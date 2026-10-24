@@ -1654,7 +1654,7 @@ class MemoryRecallService:
             # total_changes again. Never retain them for a later level/pass.
             if connection.in_transaction or state != observed_state:
                 observations.clear()
-            observed_state = state
+            observed_state = None if connection.in_transaction else state
             key = tuple(node_ids)
             if key not in observations:
                 connections = self.store.list_recall_connections(
