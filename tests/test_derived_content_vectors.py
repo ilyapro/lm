@@ -180,9 +180,16 @@ def test_representative_change_does_not_reencode_unchanged_content_and_failure_r
             store.update_node(node.id, content=CORE + " New fact.", representative_embedding=[1., 0.])
         assert asdict(store.get_node(node.id)) == before
         assert store.list_node_chunks(node.id) == chunks
+        store.set_chunk_embedder(encoder.batch)
+        for content in ("Signed release manifest.", " ".join([CORE] * 8)):
+            encoder.calls.clear()
+            updated = store.update_node(node.id, content=content, representative_embedding=[1., 0.])
+            assert encoder.calls == [w.text for w in chunk_text(content)]
+            assert_content_vectors(store, updated, encoder)
 
 
-def test_existing_single_chunk_derivatives_are_repaired_by_bounded_ordinary_recall(tmp_path):
+@pytest.mark.parametrize("drop_legacy", [False, True])
+def test_existing_single_chunk_derivatives_are_repaired_by_bounded_ordinary_recall(tmp_path, drop_legacy):
     encoder = Encoder()
     path = tmp_path / "memory.sqlite3"
     with MemoryStore(path, chunk_embedder=encoder.batch) as store:
@@ -205,7 +212,9 @@ def test_existing_single_chunk_derivatives_are_repaired_by_bounded_ordinary_reca
             provenance={"strategy": "procedural", "source_traces": [source.id]},
         )
         untouched = {n.id: store.list_node_chunks(n.id) for n in (source, multi, unrelated, procedural)}
-        nodes_before = {n.id: asdict(n) for n in affected}
+        if drop_legacy:
+            store.drop_node_embedding_column()
+        nodes_before = {n.id: asdict(store.get_node(n.id)) for n in affected}
         store.connection.execute("DELETE FROM metadata WHERE key='derived_content_chunks'")
         store.connection.commit()
 
@@ -224,7 +233,7 @@ def test_existing_single_chunk_derivatives_are_repaired_by_bounded_ordinary_reca
         recall(service, affected[-1].content)
         for node in affected:
             assert_content_vectors(store, store.get_node(node.id), encoder)
-            assert store.get_node(node.id).embedding == source.embedding
+            assert store.get_node(node.id).embedding == (None if drop_legacy else source.embedding)
         fixed = {n.id: store.list_node_chunks(n.id) for n in affected}
 
     with MemoryStore(path, chunk_embedder=encoder.batch) as store:
