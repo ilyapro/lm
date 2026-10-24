@@ -166,6 +166,13 @@ def residual(store: MemoryStore) -> list[RecallResult]:
     ]
 
 
+def follow(store: MemoryStore, node_id: str) -> None:
+    store.record_recall_event(
+        query=IDLE_QUERY, scope=SCOPE, ambient_context={"task": TASK},
+        results=[{"node_id": node_id}],
+    )
+
+
 def cluster(label: str, medoid_id: str, *, count: int = 2, ask_hint: str | None = None):
     """One cluster of a delivered payload, in ``MapCluster.to_dict`` shape."""
 
@@ -380,18 +387,12 @@ def test_a_later_query_echoing_a_cluster_resets_the_streak(store: MemoryStore) -
 
 
 def test_reaching_a_medoid_resets_the_streak(store: MemoryStore) -> None:
-    """The example was reached: something delivered the node the map pointed at.
-
-    ``record_access`` is exactly the write ``retrieval`` performs for every
-    result it hands over, and the write a ``memory_lookup`` of that node id
-    performs when it is recorded — so this is the medoid probe under both of
-    its names, with no query anywhere near it.
-    """
+    """A mapless recall in this work can reach an offered medoid."""
 
     medoids = unread_deliveries(store, CURTAIL_STREAK)
     # The middle delivery's example, not the newest: the walk must stop where
     # the evidence is, not wherever it happens to be looking first.
-    store.record_access(medoids[1].id)
+    follow(store, medoids[1].id)
 
     builder = RecallMapBuilder(store)
     built = builder.build(residual(store), scope=SCOPE, task=TASK)
@@ -431,27 +432,19 @@ def test_an_untouched_medoid_is_not_evidence(store: MemoryStore) -> None:
 def test_a_medoid_lookup_inside_the_window_resets_the_streak(
     store: MemoryStore,
 ) -> None:
-    """The one probe the ranker cannot satisfy on the agent's behalf.
-
-    ``record_access`` — the probe above — is written by *any* recall that
-    returns the node, so a hub the trigger boost mixes into every recall reads
-    as "used" forever without a reader anywhere. An id-fetch of one exact ULID
-    is different in kind: nothing produces it but a reader who was handed that
-    id, which is what the map does.
-
-    So this test deliberately proves the *new* probe and not the old one: the
-    node's ``last_accessed`` is asserted untouched on both sides of the lookup,
-    because ``memory_lookup`` is a pure read by construction. If the streak
-    still resets, only the ledger can have reset it.
-    """
+    """An id-fetch follows the current work without changing node access counters."""
 
     medoids = unread_deliveries(store, CURTAIL_STREAK, task_pattern=PATTERN)
     # The middle delivery's example again: the walk must stop where the
     # evidence is, not at whichever delivery it looks at first.
     before = store.get_node(medoids[1].id)
 
+    store.record_recall_event(
+        query=IDLE_QUERY, scope=SCOPE,
+        ambient_context={"task_pattern": PATTERN, "transport_session_id": "reader"},
+    )
     store.record_lookup_event(
-        [medoids[1].id],
+        [medoids[1].id], transport_session_id="reader",
         occurred_at=datetime.now(UTC) + timedelta(hours=1),
     )
 
@@ -580,18 +573,16 @@ def test_a_taskless_key_does_not_inherit_a_tasks_streak(store: MemoryStore) -> N
     assert built.clusters
 
 
-def test_a_taskless_key_collapses_on_its_own_streak(store: MemoryStore) -> None:
-    """...and still has a streak of its own, or the re-check would be a mute."""
-
-    for index in range(CURTAIL_STREAK):
-        medoid = make_node(store, f"taskless recipe {index}")
-        deliver(store, offered(cluster(f"deploy rollback {index}", medoid.id)), task=None)
-
-    built = RecallMapBuilder(store).build(residual(store), scope=SCOPE, task=None)
-
-    assert built is not None
-    assert built.curtailed is True
-    assert built.streak == CURTAIL_STREAK
+def test_unidentified_calls_do_not_inherit_or_accumulate_nonuse(store: MemoryStore) -> None:
+    unread_deliveries(store, CURTAIL_STREAK, task=None)
+    builder = RecallMapBuilder(store)
+    pool = residual(store)
+    for _ in range(CURTAIL_STREAK + 2):
+        built = builder.build(pool, scope=SCOPE)
+        assert built is not None and built.clusters and not built.curtailed
+        assert not builder.last_cache_hit and not builder.last_curtail_read
+        deliver(store, built.to_dict(), task=None)
+    assert not builder._cache and not builder._curtail_memo
 
 
 # ----------------------------------------------------------------------
@@ -602,15 +593,7 @@ def test_a_taskless_key_collapses_on_its_own_streak(store: MemoryStore) -> None:
 def test_a_per_turn_task_chat_accumulates_its_streak_under_one_pattern(
     store: MemoryStore,
 ) -> None:
-    """The scenario this rule was silently useless for, now pinned.
-
-    An AE chat sends ``task=chat:<id>/turn-<N>`` — a fresh string every turn,
-    by contract — alongside a ``task_pattern`` that never changes. The map has
-    always keyed its cache on the pattern; the delivery history could only be
-    filtered by the task, so every turn read an empty window, every turn was
-    the first delivery, and ``CURTAIL_STREAK`` could never be reached no matter
-    how long nobody read the map.
-    """
+    """A stable explicit pattern groups per-turn tasks across the same work."""
 
     unread_deliveries(
         store, CURTAIL_STREAK, per_turn_task=True, task_pattern=PATTERN
@@ -658,15 +641,9 @@ def test_without_the_pattern_the_same_history_is_invisible(
 def test_a_delivery_carrying_no_pattern_falls_back_to_its_task(
     store: MemoryStore,
 ) -> None:
-    """Every row written before the column existed is this shape.
+    """Task and task_pattern naming the same work share an exact identity."""
 
-    A pattern-keyed build cannot ask those rows for a pattern they do not
-    have, so it asks them for the only identity they carry. Without the
-    fallback, deploying the column would reset every accrued streak in the
-    database to zero.
-    """
-
-    unread_deliveries(store, CURTAIL_STREAK)  # no task_pattern anywhere
+    unread_deliveries(store, CURTAIL_STREAK, task=PATTERN)
     assert all(
         row["task_pattern"] is None
         for row in store.connection.execute(
@@ -1197,7 +1174,7 @@ def test_a_moved_pool_reoffers_and_the_first_consumption_resets(
 
     # The retry's own example is finally reached — the access `retrieval`
     # records — and the key maps again on the very next build.
-    store.record_access(retry.clusters[0].medoid.node_id)
+    follow(store, retry.clusters[0].medoid.node_id)
     again = builder.build(pool, scope=SCOPE, task=TASK)
     assert again is not None
     assert again.curtailed is False
@@ -1425,7 +1402,7 @@ def test_a_consumption_during_the_skip_run_reopens_and_resets(
     assert entry.curtailed is True
     # The run is one marker in and far from served when the newest offer's
     # example is finally reached — the same access `retrieval` records.
-    store.record_access(medoids[-1].id)
+    follow(store, medoids[-1].id)
 
     again = builder.build(pool, scope=SCOPE, task=TASK)
     assert again is not None
@@ -1469,7 +1446,7 @@ def test_real_maps_are_their_own_evidence(store: MemoryStore) -> None:
 
     # ...and reopens on real evidence: reach the example the last real map
     # pointed at, and the next build maps again.
-    store.record_access(built.clusters[0].medoid.node_id)
+    follow(store, built.clusters[0].medoid.node_id)
 
     assert (revived := builder.build(pool, scope=SCOPE, task=TASK)) is not None
     assert revived.curtailed is False

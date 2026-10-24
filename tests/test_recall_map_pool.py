@@ -51,6 +51,7 @@ from living_memory.storage import (
     MAX_RECALL_HISTORY_CANDIDATES,
     MaturedRecallHistory,
     MemoryStore,
+    RecallWork,
 )
 
 POOL_QUERY = "deployment failure database migration rollback"
@@ -859,7 +860,7 @@ def test_all_filtered_build_has_a_revision_bound_negative_cache(
         # Seed the delivery memo so the real `_note_delivery` path is visible:
         # journal-only builds may increase its observation count, but never its
         # offer count and therefore never advance the collapse decision.
-        assert builder._curtailment(POOL_SCOPE, "negative-cache").offers == 0
+        assert builder._curtailment(RecallWork.resolve(POOL_SCOPE, task="negative-cache")).offers == 0
 
         first = builder.build(
             residual,
@@ -2142,7 +2143,7 @@ def test_skipped_key_delivers_no_cold_or_selection_accounting(
         monkeypatch.setattr(
             RecallMapBuilder,
             "_curtailment",
-            lambda self, scope, task, task_pattern=None, want_ask_follows=False: (
+            lambda self, work: (
                 recall_map_module._Curtailment(streak=6, offers=6)
             ),
         )
@@ -2190,7 +2191,7 @@ def test_empty_pool_cold_lane_honors_a_collapsing_curtail_verdict(
         monkeypatch.setattr(
             RecallMapBuilder,
             "_curtailment",
-            lambda self, scope, task, task_pattern=None, want_ask_follows=False: (
+            lambda self, work: (
                 recall_map_module._Curtailment(streak=6, offers=6)
             ),
         )
@@ -2219,7 +2220,7 @@ def test_empty_pool_cold_lane_reopens_on_a_decay_reprieve(
         monkeypatch.setattr(
             RecallMapBuilder,
             "_curtailment",
-            lambda self, scope, task, task_pattern=None, want_ask_follows=False: (
+            lambda self, work: (
                 recall_map_module._Curtailment(
                     streak=11,
                     offers=recall_map_module.CURTAIL_STREAK,
@@ -2258,7 +2259,7 @@ def test_empty_pool_cold_lane_extends_the_run_when_nothing_new_is_eligible(
         monkeypatch.setattr(
             RecallMapBuilder,
             "_curtailment",
-            lambda self, scope, task, task_pattern=None, want_ask_follows=False: (
+            lambda self, work: (
                 curtailment(**fields)
             ),
         )
