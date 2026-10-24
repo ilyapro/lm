@@ -1237,17 +1237,26 @@ class MemoryStore:
         content: str,
         context: Mapping[str, Any] | None = None,
         embedding: Iterable[float] | None = None,
+        representative_embedding: Iterable[float] | None = None,
         stats: Mapping[str, Any] | None = None,
         provenance: Mapping[str, Any] | None = None,
         node_id: str | None = None,
         timestamp: str | None = None,
     ) -> Node:
+        """Store content and its search chunks.
+
+        ``embedding`` describes this content and can supply its single chunk.
+        ``representative_embedding`` is for consolidation similarity only;
+        it is stored in the legacy node column and never reused as a chunk.
+        """
+
         with self.transaction():
             new_id = self._insert_node(
                 level=level,
                 content=content,
                 context=context,
                 embedding=embedding,
+                representative_embedding=representative_embedding,
                 stats=stats,
                 provenance=provenance,
                 node_id=node_id,
@@ -1262,6 +1271,7 @@ class MemoryStore:
         content: str,
         context: Mapping[str, Any] | None = None,
         embedding: Iterable[float] | None = None,
+        representative_embedding: Iterable[float] | None = None,
         stats: Mapping[str, Any] | None = None,
         provenance: Mapping[str, Any] | None = None,
         node_id: str | None = None,
@@ -1315,7 +1325,9 @@ class MemoryStore:
             if _same_content_identity(candidate, _node_from_row(row))
         ]
 
-        vector = None if embedding is None else list(embedding)
+        content_vector = None if embedding is None else list(embedding)
+        vector = (list(representative_embedding)
+                  if representative_embedding is not None else content_vector)
         legacy_embedding = self._node_embedding_column_present()
         embedding_column = "embedding, " if legacy_embedding else ""
         embedding_placeholder = "?, " if legacy_embedding else ""
@@ -1363,7 +1375,7 @@ class MemoryStore:
         # path of every remember. A node with no vector simply has no chunks
         # yet, exactly as it has no nodes.embedding yet.
         if vector:
-            self._write_node_chunks(new_id, content, fingerprint, vector)
+            self._write_node_chunks(new_id, content, fingerprint, content_vector)
 
         for old_id in duplicate_ids:
             self._insert_connection(
@@ -1580,6 +1592,7 @@ class MemoryStore:
         content: str | None = None,
         context: Mapping[str, Any] | None = None,
         embedding: Iterable[float] | None = None,
+        representative_embedding: Iterable[float] | None = None,
         stats: Mapping[str, Any] | None = None,
         provenance: Mapping[str, Any] | None = None,
         level: NodeLevel | None = None,  # moves the node, same id and history, to a level
@@ -1602,7 +1615,9 @@ class MemoryStore:
         new_content = existing.content if content is None else content
         content_changed = new_content != existing.content
         new_fingerprint = _content_fingerprint(new_content)
-        vector = None if embedding is None else list(embedding)
+        content_vector = None if embedding is None else list(embedding)
+        vector = (list(representative_embedding)
+                  if representative_embedding is not None else content_vector)
         now = _utc_now()
         unique_agents = int(stats_data.get("unique_agents", existing.unique_agents))
         confidence = float(stats_data.get("confidence", existing.confidence))
@@ -1654,21 +1669,12 @@ class MemoryStore:
                     node_id,
                 ),
             )
-            # Chunk maintenance, in the same transaction as the row it describes.
-            #
-            # A new vector re-chunks: this is the path the recall channel's lazy
-            # backfill takes (_ensure_embedding -> update_node(embedding=...)),
-            # and the path consolidation takes for a concept.
-            #
-            # Content that changed without a new vector only invalidates: the
-            # old chunks describe text that no longer exists, and keeping them
-            # would answer queries with content the node lost. Re-embedding is
-            # left to whoever holds the model — list_unchunked_nodes reports the
-            # node until then. Everything else (an access-count bump, a
-            # correction, a provenance merge) leaves chunks alone, so the model
-            # is not invoked by writes that cannot have changed the text.
-            if vector:
-                self._write_node_chunks(node_id, new_content, new_fingerprint, vector)
+            # Representatives affect clustering, not content search. An unchanged
+            # digest with current chunks needs no encoding or chunk replacement.
+            if content_vector or (vector and representative_embedding is not None and (
+                content_changed or not self.node_chunks_are_current(node_id)
+            )):
+                self._write_node_chunks(node_id, new_content, new_fingerprint, content_vector)
             elif content_changed and self._chunk_table_present():
                 self._conn.execute(
                     f"DELETE FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ?",
@@ -3794,7 +3800,7 @@ class MemoryStore:
                     WHERE c.node_id = n.id
                       AND c.content_fingerprint = n.content_fingerprint
               )
-            ORDER BY n.timestamp DESC, n.id DESC
+            ORDER BY n.timestamp ASC, n.id ASC
             LIMIT ?
             """,
             params,
@@ -5161,6 +5167,7 @@ class MemoryStore:
             self._backfill_recall_delivery_history()
             self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
+            self._invalidate_derived_proxy_chunks()
             self._backfill_recall_fingerprint_signal()
             self._backfill_recall_events_task_pattern()
             self._conn.execute(
@@ -5171,6 +5178,33 @@ class MemoryStore:
                 """,
                 (str(SCHEMA_VERSION),),
             )
+
+    def _invalidate_derived_proxy_chunks(self) -> None:
+        """Queue single-window materializer chunks for ordinary content encoding.
+
+        Multi-window writes already encoded their own text. Only the two
+        representative-bearing materializers need this one-time invalidation;
+        node content, representatives, sources and validity remain untouched.
+        """
+
+        key = "derived_content_chunks"
+        if self._conn.execute("SELECT 1 FROM metadata WHERE key = ?", (key,)).fetchone():
+            return
+        self._conn.execute(
+            f"""
+            DELETE FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id IN (
+                SELECT n.id FROM nodes n
+                WHERE n.level = 'concept' AND (
+                    json_extract(n.provenance, '$.strategy') IN (
+                        'token-jaccard', 'embedding-cosine', 'cross-scope-promotion'
+                    ) OR (json_extract(n.provenance, '$.strategy') IS NULL
+                          AND json_type(n.provenance, '$.cluster_key') IS NOT NULL)
+                ) AND (SELECT COUNT(*) FROM {CHUNK_EMBEDDING_TABLE} c
+                       WHERE c.node_id = n.id) = 1
+            )
+            """
+        )
+        self._conn.execute("INSERT INTO metadata (key, value) VALUES (?, '1')", (key,))
 
     def _migrate_task_fts(self) -> None:
         """Rebuild the derived FTS index once when opening a pre-task database.
