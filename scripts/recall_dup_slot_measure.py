@@ -137,8 +137,8 @@ if str(REPO_ROOT / "src") not in sys.path:
     # installed: the arms must exercise the code under review.
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from living_memory.delivery import (
-    DeliveryHistory,  # noqa: E402
+from living_memory.delivery import (  # noqa: E402
+    DeliveryHistory,
     DEFAULT_NEAR_DUP_COSINE,
     DEFAULT_NEAR_DUP_LENGTH_RATIO,
     DELIVERY_FULL,

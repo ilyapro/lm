@@ -775,8 +775,8 @@ def test_twin_preview_does_not_claim_full_delivery_for_its_id(tmp_path):
     mcp, store = _server(tmp_path)
     content = (f"{QUERY_STEM}: harbour survey procedure.\n" +
                "The complete survey is countersigned by the harbour office on Tuesday.")
-    for _ in range(2):
-        store.create_node(level="concept", content=content, context={"scope": SCOPE})
+    for level in ("concept", "trace"):
+        store.create_node(level=level, content=content, context={"scope": SCOPE})
     context = {"transport_session_id": "reader"}
     response = _recall(mcp, max_results=2, ambient_context=context)
     stub = next(item for item in response["results"] if item["delivery"] == "twin_duplicate")

@@ -366,11 +366,11 @@ def recall_delivery_records(
     for entry in shaped:
         node = entry.get("node", entry)
         node_id = node["id"]
-        records[node_id] = {
-            "kind": entry["delivery"],
-            "content_sha256": _content_digest(sources[node_id]),
-            "delivered_sha256": _content_digest(node["content"]),
-        }
+        record = {"kind": entry["delivery"]}
+        if entry["delivery"] in (DELIVERY_FULL, DELIVERY_SNIPPET):
+            record["content_sha256"] = _content_digest(sources[node_id])
+            record["delivered_sha256"] = _content_digest(node["content"])
+        records[node_id] = record
     return records
 
 

@@ -427,8 +427,9 @@ Session dedup is keyed by the transport-derived `transport_session_id` and
 reads shaped-content evidence from the 200 most recent recall events before
 retrieval. Each selected result retains its ranking/access/feedback history;
 after constructing the final response, the handler adds a `delivery` record
-with `kind`, `content_sha256` (source text), and `delivered_sha256` (response
-text). A dropped result records `kind: "omitted"`. Both response views use the
+with `kind` and, for full/snippet bodies, `content_sha256` (source text) and
+`delivered_sha256` (response text). Stubs need only their kind; a dropped result
+records `kind: "omitted"`. Both response views use the
 same evidence. Only `full` and `snippet` records prove content delivery:
 withheld text, duplicate previews, and legacy events without these records
 cannot suppress a later full result. Selection recognizes previously offered
