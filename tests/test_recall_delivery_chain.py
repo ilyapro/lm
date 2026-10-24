@@ -333,16 +333,18 @@ def test_legacy_selection_and_receipt_failure_do_not_suppress_content(tmp_path, 
     legacy = store.record_recall_event(query=args["query"], scope=scope,
                                       ambient_context=args["ambient_context"], results=[{"node_id": node.id}])
     assert "delivery" not in legacy.results[0]
-    record = store.record_recall_delivery
-    def fail(*args):
-        raise OSError("synthetic receipt failure")
-    monkeypatch.setattr(store, "record_recall_delivery", fail)
+    store.connection.execute("""
+        CREATE TEMP TRIGGER reject_receipt BEFORE UPDATE OF results ON recall_events
+        BEGIN SELECT RAISE(ABORT, 'synthetic receipt failure'); END
+    """)
     failed = mcp.tools["memory_recall"](**args)
     assert failed["results"][0]["content"] == node.content
     assert "delivery" not in store.get_recall_event(failed["recall_event_id"]).results[0]
-    monkeypatch.setattr(store, "record_recall_delivery", record)
+    store.connection.execute("DROP TRIGGER reject_receipt")
     retried = mcp.tools["memory_recall"](**args)
     assert retried["results"][0]["delivery"] == "full"
     assert mcp.tools["memory_recall"](**args)["results"][0]["delivery"] == "session_duplicate"
+    def fail(*args, **kwargs):
+        raise OSError("synthetic history read failure")
     monkeypatch.setattr(store, "recall_delivery_history", fail)
     assert mcp.tools["memory_recall"](**args)["results"][0]["content"] == node.content

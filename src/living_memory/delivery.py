@@ -15,8 +15,8 @@ Rules, applied in this order per ranked result:
    a concept and its verbatim source trace), the highest-ranked result is the
    content-bearer; the rest become ``delivery: "twin_duplicate"`` stubs.
 2. Session dedup — when enabled and this version's complete content or the
-   excerpt about to be offered was shaped on this transport session, it becomes a ``delivery: "session_duplicate"``
-   stub. Only content-bearers are considered: a twin of a session-duplicate
+   excerpt about to be offered was shaped on this transport session, it becomes
+   a ``delivery: "session_duplicate"`` stub. Only content-bearers are considered: a twin of a session-duplicate
    stays a twin stub, never re-classified or promoted to full.
 3. Near-duplicate dedup — a result that repeats the *meaning* of a
    higher-ranked result of the same answer becomes a

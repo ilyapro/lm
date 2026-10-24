@@ -604,14 +604,15 @@ def test_changed_content_survives_fingerprint_gating_and_trailing_drop(tmp_path,
     _fast_gate(monkeypatch)
     async def scenario():
         mcp, store = _server(tmp_path)
-        contents = _seed(store, ("alpha",))
-        node_id = next(iter(contents))
+        content = _gate_content("alpha")
+        node = store.create_node(level="concept", content=content, context={"scope": GATE_SCOPE})
+        node_id = node.id
         for _ in range(3):
             response = await _fresh_session_recall(mcp, GATE_QUERY, scope=GATE_SCOPE)
         _assert_gated_dropped(response)
         event = store.get_recall_event(response["recall_event_id"])
         assert event.results[0]["delivery"] == {"kind": "omitted"}
-        current = contents[node_id] + " Authorization now requires OMEGA."
+        current = content + " Authorization now requires OMEGA."
         store.update_node(node_id, content=current)
         response = await _fresh_session_recall(mcp, GATE_QUERY, scope=GATE_SCOPE)
         assert response["results"][0]["id"] == node_id
