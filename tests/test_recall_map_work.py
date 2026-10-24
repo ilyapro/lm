@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from pathlib import Path
 
 import pytest
 from fastmcp import Client
@@ -14,7 +13,7 @@ from living_memory.server import create_mcp_server
 from living_memory.storage import MaturedRecallHistory, MemoryStore, RecallWork
 
 from test_recall_map_curtail import OPERATOR_VALVES, cluster, offered, residual
-from test_transport_identity import FakeMCP, _structured
+from test_transport_identity import _structured
 
 SCOPE = "project:current-work"
 NOTES = {
@@ -130,6 +129,7 @@ def test_explicit_work_continues_on_new_transport_and_cold_server(tmp_path, isol
 
 def test_no_context_is_not_a_shared_work_and_cache_tracks_the_same_identity(tmp_path):
     with MemoryStore(tmp_path / "cache.sqlite3") as store:
+        seed(store)
         pool = residual(store)
         builder = RecallMapBuilder(store)
         for _ in range(5):

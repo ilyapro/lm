@@ -1,18 +1,9 @@
-"""The recall map, folded into one section of the server instructions.
+"""Render selected persisted maps as a compact, sanitized summary.
 
-The map's first delivery is the recall response, which reaches an agent only
-*after* it has decided to call recall. This is the second: at ``initialize``
-every MCP client hands the server instructions to the agent before it acts at
-all, so a session can open already knowing the shape of what memory holds for
-the work it keeps coming back to. No scope or ambient context exists at that
-moment — only what earlier deliveries persisted — so the signal is
-``MemoryStore.recent_recall_map_history``: the maps this store has already
-shown, newest first.
-
-Composition is a pure function of those rows. No LLM call, no network, no
-clock, no ``set`` iteration order reaching the output: the same history must
-compose the same string on every process, or the channel becomes a source of
-churn in a text that clients cache per session.
+Callers choose the history and any consumer filters. The live MCP server sends
+maps with recall responses; bootstrap instructions have no current-work identity
+and contain no history-derived map. Composition here is deterministic and can
+also serve offline diagnostics without running retrieval or a model.
 
 Why the sanitizer is the load-bearing part
 ------------------------------------------

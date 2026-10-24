@@ -1154,13 +1154,14 @@ class RecallWork:
         """SQL over recall_events, with the same precedence as resolution."""
 
         prefix = f"{alias}." if alias else ""
-        pattern = f"NULLIF({prefix}task_pattern, '')"
-        task = f"NULLIF({prefix}task, '')"
+        pattern = f"{prefix}task_pattern"
+        task = f"{prefix}task"
+        no_pattern = f"({pattern} IS NULL OR {pattern} = '')"
         if self.kind == "work":
-            identity = f"({pattern} = ? OR ({pattern} IS NULL AND {task} = ?))"
+            identity = f"({pattern} = ? OR ({no_pattern} AND {task} = ?))"
             values = (self.value, self.value)
         else:
-            identity = (f"{pattern} IS NULL AND {task} IS NULL "
+            identity = (f"{no_pattern} AND ({task} IS NULL OR {task} = '') "
                         f"AND {prefix}transport_session_id = ?")
             values = (self.value,)
         return f"{prefix}scope = ? AND ({identity})", (self.scope, *values)
@@ -3064,47 +3065,17 @@ class MemoryStore:
         *,
         work: RecallWork | None = None,
     ) -> list[dict[str, Any]]:
-        """Recent deliveries that carried a recall map, newest first.
+        """Map-bearing recall events, newest first, in a bounded result window.
 
-        The read side of ``recall_events.recall_map``, for the downstream
-        consumers of what was already shown: the server-instructions channel
-        (what did this session's earlier recalls map?), consumption curtailment
-        (which clusters keep being delivered and never followed?), and the
-        effect gate (what was on offer when the next recall came in?). Rows
-        without a map are not history and never appear.
+        ``work`` selects the exact consumer used by cache and curtailment:
+        scope plus effective task_pattern/task, or transport when both are
+        absent. The optional individual filters remain available to diagnostic
+        readers; ``task_pattern`` there includes patternless rows matching the
+        supplied task. Passing ``work`` replaces that diagnostic disjunction.
 
-        Every filter is an equality probe on an indexed column, so the scan is
-        bounded by the window rather than by the table:
-        ``transport_session_id`` rides ``idx_recall_events_transport_created``
-        and ``scope`` the leading column of
-        ``idx_recall_events_scope_pending_created``. ``scope`` matches the
-        resolved ``scope`` column only — not the ``scope OR requested_scope``
-        disjunction :meth:`list_recall_events` uses, which no index can serve —
-        and ``task`` is a residual filter over whatever the indexed columns
-        already narrowed.
-
-        ``task_pattern`` is the map's own cache label and therefore the only
-        filter that groups a client's deliveries the way the map groups them.
-        Passing it changes what ``task`` means, deliberately: the read becomes
-        *"this pattern, or — for a row that carries no pattern at all — this
-        task"*, which is one predicate rather than two filters because a row
-        predating the column has nothing but its ``task`` to be recognized by,
-        while a row carrying the pattern belongs to the key whatever its
-        per-turn ``task`` happens to say. That disjunction is what
-        ``idx_recall_events_scope_pattern_created`` exists for: SQLite resolves
-        it as a MULTI-INDEX OR over two ``(scope, task_pattern)`` ranges of that
-        index — one on a value, one on NULL — instead of walking the scope's
-        whole event partition. The union is still sorted, but it is a sort of
-        two bounded ranges rather than of everything the scope ever recalled.
-
-        Matching is on the stored strings, not on the map's folded key, so a
-        client that spells its pattern two ways gets two histories. That is the
-        safe direction for the one consumer that acts on this read: seeing less
-        history can only shorten a curtail streak.
-
-        Each row is ``id``, ``created_at``, ``scope``, ``task``, ``query``,
-        ``transport_session_id`` and ``recall_map`` decoded back into the
-        payload that was delivered.
+        Scope matches the persisted resolved scope. Transport and pattern have
+        existing indexes; task is a residual filter. Rows carry id, timestamp,
+        scope, task, query, transport and the decoded delivered map.
         """
 
         if limit <= 0:
