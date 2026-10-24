@@ -750,3 +750,42 @@ def test_near_duplicate_joins_the_droppable_trailing_stub_classes() -> None:
     # carrying text nothing else within the agent's reach holds.
     assert DELIVERY_FULL not in _DROPPABLE_TRAILING_STUBS
     assert DELIVERY_SNIPPET not in _DROPPABLE_TRAILING_STUBS
+
+
+def test_preview_does_not_suppress_a_later_answer_to_its_missing_detail(tmp_path):
+    mcp, store = _server(tmp_path)
+    first, second, _ = _seed_answer(mcp, store)
+    context = {"transport_session_id": "reader"}
+    response = _recall(mcp, max_results=5, ambient_context=context)
+    stub = next(item for item in response["results"]
+                if item["id"] in (first, second) and item["delivery"] == "near_duplicate")
+    current = store.get_node(stub["id"])
+    day = "monday" if "monday" in current.content else "tuesday"
+    assert day not in " ".join(item["content"] for item in response["results"])
+    answer = mcp.tools["memory_recall"](
+        query=f"{QUERY_STEM} countersigned harbour office {day}", scope=SCOPE,
+        max_results=1, depth=0, ambient_context=context,
+    )
+    assert answer["results"][0]["id"] == current.id
+    assert answer["results"][0]["delivery"] == "full"
+    assert day in answer["results"][0]["content"]
+
+
+def test_twin_preview_does_not_claim_full_delivery_for_its_id(tmp_path):
+    mcp, store = _server(tmp_path)
+    content = (f"{QUERY_STEM}: harbour survey procedure.\n" +
+               "The complete survey is countersigned by the harbour office on Tuesday.")
+    for _ in range(2):
+        store.create_node(level="concept", content=content, context={"scope": SCOPE})
+    context = {"transport_session_id": "reader"}
+    response = _recall(mcp, max_results=2, ambient_context=context)
+    stub = next(item for item in response["results"] if item["delivery"] == "twin_duplicate")
+    bearer = stub["content_ref"]["duplicate_of"]
+    # The first response already supplied the fact through its twin. The
+    # history must still distinguish that bearer from this id's preview.
+    assert content in [item["content"] for item in response["results"]]
+    store.update_node(bearer, context={"scope": "project:separate-twin"})
+    answer = _recall(mcp, max_results=1, ambient_context=context)
+    assert answer["results"][0]["id"] == stub["id"]
+    assert answer["results"][0]["delivery"] == "full"
+    assert answer["results"][0]["content"] == content
