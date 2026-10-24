@@ -75,8 +75,8 @@ without changing the other surface.
    `memory_lookup(node_id=...)` for complete content and current validity;
    `context_key` retrieves one original context field and lookup's
    `view="full"` restores the complete stored node. After shaping, an optional
-   atomic event update adds the actual delivery class and source/body hashes
-   to each selected result. Selection IDs and scores retain their access and
+   atomic event update records each selected result's delivery class and, for
+   full/snippet bodies, source/body hashes. Selection IDs and scores retain their access and
    feedback roles. Missing delivery evidence permits re-delivery, including
    for legacy events. Without a transport session id, session dedup is skipped.
    A formed response is not proof of successful network transport.
