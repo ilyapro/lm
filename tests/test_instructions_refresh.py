@@ -85,7 +85,10 @@ def test_tool_calls_leave_the_next_clients_bootstrap_static(tmp_path: Path) -> N
 def test_bootstrap_and_tools_do_not_read_unscoped_map_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    reads: list[None] = []
+
     def forbidden(*_args: Any, **_kwargs: Any) -> Any:
+        reads.append(None)
         raise AssertionError("bootstrap has no current work to query")
 
     monkeypatch.setattr(MemoryStore, "recent_recall_map_history", forbidden)
@@ -97,5 +100,6 @@ def test_bootstrap_and_tools_do_not_read_unscoped_map_history(
         assert recalled["count"] == 0
         assert remembered["node"]["id"]
         assert mcp.instructions == _server_instructions(mcp.memory_store.config.default_scope)
+        assert reads == []
     finally:
         mcp.memory_store.close()
