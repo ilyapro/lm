@@ -3154,52 +3154,38 @@ class MemoryStore:
         if not medoid_ids:
             return evidence
         marks = ",".join("?" for _ in medoid_ids)
+        consumer_predicate, consumer_values = work.predicate("consumer")
+        tied_predicate, tied_values = work.predicate("tied")
         lookups = self._conn.execute(
-            f"""SELECT node_id, occurred_at, transport_session_id
-                FROM {RECALL_LOOKUP_EVENT_TABLE}
-                WHERE node_id IN ({marks}) AND occurred_at > ?
-                ORDER BY occurred_at DESC LIMIT ?""",
-            (*medoid_ids, _normalize_recall_history_instant(since), limit + 1),
+            f"""SELECT lookup.node_id, lookup.occurred_at
+                FROM {RECALL_LOOKUP_EVENT_TABLE} AS lookup
+                JOIN recall_events AS consumer ON consumer.rowid = (
+                    SELECT e.rowid FROM recall_events AS e
+                    JOIN {RECALL_HISTORY_EVENT_TABLE} AS h
+                      ON h.recall_event_id = e.id
+                    WHERE e.transport_session_id = lookup.transport_session_id
+                      AND h.occurred_at <= lookup.occurred_at
+                    ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1
+                )
+                WHERE lookup.node_id IN ({marks}) AND lookup.occurred_at > ?
+                  AND ({consumer_predicate})
+                  AND NOT EXISTS (
+                      SELECT 1 FROM recall_events AS tied
+                      WHERE tied.transport_session_id = consumer.transport_session_id
+                        AND tied.created_at = consumer.created_at
+                        AND NOT COALESCE(({tied_predicate}), 0)
+                  )
+                ORDER BY lookup.occurred_at DESC LIMIT ?""",
+            (*medoid_ids, _normalize_recall_history_instant(since),
+             *consumer_values, *tied_values, limit + 1),
         ).fetchall()
         if len(lookups) > limit:
             return None
-        contexts: dict[tuple[str, str], RecallWork | None] = {}
-        for lookup in lookups:
-            transport = lookup["transport_session_id"]
-            if not transport:
-                continue
-            at = lookup["occurred_at"]
-            key = (transport, at)
-            if key not in contexts:
-                # Both tables store the same event; the normalized timestamp
-                # permits comparison with lookup's fixed-width UTC timestamp.
-                latest = self._conn.execute(
-                    f"""SELECT e.scope, e.task, e.task_pattern,
-                               e.transport_session_id, h.occurred_at
-                        FROM recall_events AS e
-                        JOIN {RECALL_HISTORY_EVENT_TABLE} AS h
-                          ON h.recall_event_id = e.id
-                        WHERE e.transport_session_id = ? AND h.occurred_at <= ?
-                        ORDER BY e.created_at DESC, e.rowid DESC LIMIT ?""",
-                    (transport, at, limit + 1),
-                ).fetchall()
-                context = None
-                if latest:
-                    instant = latest[0]["occurred_at"]
-                    tied = [row for row in latest if row["occurred_at"] == instant]
-                    identities = {
-                        RecallWork.resolve(
-                            row["scope"], task=row["task"],
-                            task_pattern=row["task_pattern"],
-                            transport_session_id=row["transport_session_id"],
-                        ) for row in tied
-                    }
-                    if len(identities) == 1 and len(tied) <= limit:
-                        context = identities.pop()
-                contexts[key] = context
-            if contexts[key] == work:
-                evidence.append({"at": at, "query": "", "node_ids": [lookup["node_id"]],
-                                 "event_id": None})
+        evidence.extend(
+            {"at": row["occurred_at"], "query": "", "node_ids": [row["node_id"]],
+             "event_id": None}
+            for row in lookups
+        )
         return evidence
 
     def _apply_recall_fingerprint_delivery(

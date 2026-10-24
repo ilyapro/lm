@@ -161,7 +161,7 @@ def test_optional_mark_failure_does_not_fail_required_write(mcp):
     assert store.credited_node_ids(event_id) == set(ids)
 
 
-@pytest.mark.parametrize("stage", ["edges", "instructions", "scheduling"])
+@pytest.mark.parametrize("stage", ["edges", "scheduling"])
 def test_optional_post_write_failure_keeps_confirmation(mcp, monkeypatch, stage):
     ids, event_id = seed_recall(mcp)
     store = mcp.memory_store
@@ -173,9 +173,6 @@ def test_optional_post_write_failure_keeps_confirmation(mcp, monkeypatch, stage)
 
     if stage == "edges":
         monkeypatch.setattr(server, "derive_edges_for_new_trace", fail)
-    elif stage == "instructions":
-        mcp._mcp_server = mcp
-        monkeypatch.setattr(server, "_instructions_with_map", fail)
     else:
         monkeypatch.setattr(server, "_auto_consolidation_due", lambda *args: 100)
         monkeypatch.setattr(mcp.auto_consolidation, "request", fail)

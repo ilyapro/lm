@@ -244,3 +244,17 @@ def test_scopeless_service_keeps_cross_project_recall_and_feedback(tmp_path, iso
             assert result["feedback_marks"]["dropped"] == 1
         mcp.memory_store.close()
     asyncio.run(run())
+
+
+def test_foreign_lookup_volume_cannot_disable_own_noise_limit(tmp_path, isolated):
+    with MemoryStore(tmp_path / "lookup-bound.sqlite3") as store:
+        medoid = offer_three(store, isolated, task="backup", transport_session_id="A")
+        assert verdict(store, task="backup").collapse
+        # Work can switch even on a connection that previously belonged to A.
+        store.record_recall_event(query="idle", scope=SCOPE,
+                                 ambient_context={"task": "other", "transport_session_id": "A"})
+        isolated[0] = "2026-01-01T00:05:00Z"
+        for _ in range(201):
+            store.record_lookup_event([medoid], transport_session_id="A")
+        assert verdict(store, task="backup").collapse
+        assert verdict(store, task="backup").offers == 3
