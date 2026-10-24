@@ -10,6 +10,7 @@ import pytest
 from fastmcp import Client
 
 from living_memory.delivery import shape_recall_results
+from test_delivery_shaping import delivered_history
 from living_memory.models import Node
 from living_memory.postsession.client import LiveMemoryClient, McpMemoryIndex
 from living_memory.retrieval import RecallResult
@@ -40,7 +41,7 @@ def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None
     ]
     original = deepcopy(results)
     options = dict(
-        already_delivered_ids={"session"}, snippet_max_chars=100,
+        delivery_history=delivered_history(results, {"session"}), snippet_max_chars=100,
         context_value_max_chars=160, session_dedup=True,
         snippet_ladder=(100,), duplicate_of={"near": "snippet"},
     )

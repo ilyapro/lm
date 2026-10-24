@@ -155,7 +155,7 @@ def replay_arms(
     """Each event through ``memory_recall`` per arm; delivered entries with shaped sizes."""
 
     from living_memory.config import MemoryConfig
-    from living_memory.delivery import shape_recall_results
+    from living_memory.delivery import DeliveryHistory, shape_recall_results
     from living_memory.retrieval import MemoryRecallService
     from living_memory.storage import MemoryStore
 
@@ -194,7 +194,7 @@ def replay_arms(
                     latency[name].append(time.perf_counter() - started)
                     shaped = shape_recall_results(
                         results,
-                        already_delivered_ids=set(),
+                        delivery_history=DeliveryHistory(),
                         snippet_max_chars=1000,
                         context_value_max_chars=300,
                         session_dedup=False,

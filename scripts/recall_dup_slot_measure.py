@@ -137,7 +137,8 @@ if str(REPO_ROOT / "src") not in sys.path:
     # installed: the arms must exercise the code under review.
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from living_memory.delivery import (  # noqa: E402
+from living_memory.delivery import (
+    DeliveryHistory,  # noqa: E402
     DEFAULT_NEAR_DUP_COSINE,
     DEFAULT_NEAR_DUP_LENGTH_RATIO,
     DELIVERY_FULL,
@@ -703,7 +704,7 @@ def _replay_one(
     duplicate_map = _near_duplicate_map(store, results) or {}
     shaped = shape_recall_results(
         results,
-        already_delivered_ids=set(),
+        delivery_history=DeliveryHistory(),
         snippet_max_chars=snippet_max_chars_from_env(),
         context_value_max_chars=context_value_max_chars_from_env(),
         session_dedup=False,

@@ -9,6 +9,7 @@ import pytest
 
 from living_memory import near_dup, server, storage
 from living_memory.chunking import TextChunk
+from living_memory.delivery import recall_delivery_records
 from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.storage import MemoryStore
 
@@ -109,12 +110,20 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
     monkeypatch.setattr(MemoryRecallService, "_collect_vector", lambda *a, **kw: [])
     monkeypatch.setattr(MemoryRecallService, "_collect_query_demotions", lambda *a, **kw: {})
     monkeypatch.setattr(MemoryRecallService, "_collect_hub_demotions", lambda *a, **kw: {})
-    if case == "session":
-        monkeypatch.setattr(store, "delivered_node_ids", lambda session: {"repeat"})
+    if case in ("session", "repeat-gated"):
+        repeat = store.get_node("repeat")
+        event = store.record_recall_event(
+            query="harbour survey", scope=SCOPE,
+            ambient_context={"transport_session_id": "fixture-session"},
+            results=[{"node_id": repeat.id}],
+        )
+        store.record_recall_delivery(event.id, recall_delivery_records(ranked, [
+            {"id": repeat.id, "content": repeat.content, "delivery": "full"},
+        ]))
     if case == "repeat-gated":
         monkeypatch.setenv("LM_RECALL_REPEAT_GATING", "1")
+        monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
         monkeypatch.setattr(server, "should_gate_fingerprint", lambda *a: True)
-        monkeypatch.setattr(store, "fingerprint_delivered_node_ids", lambda fingerprint: {"repeat"})
     reads, pools = [], []
     list_chunks, mean_pool = store.list_node_chunks, near_dup._mean_pool
 

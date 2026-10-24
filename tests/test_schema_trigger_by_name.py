@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from living_memory.delivery import shape_recall_results
+from living_memory.delivery import DeliveryHistory, shape_recall_results
 from living_memory.retrieval import (
     SCHEMA_NAME_TRIGGER_SCORE,
     SCHEMA_TRIGGER_ENV,
@@ -118,7 +118,7 @@ def test_query_naming_the_procedure_puts_it_first_and_full(
     assert "trigger" in first.methods
     shaped = shape_recall_results(
         delivered,
-        already_delivered_ids=set(),
+        delivery_history=DeliveryHistory(),
         snippet_max_chars=1000,
         context_value_max_chars=300,
         session_dedup=False,

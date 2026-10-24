@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from living_memory.delivery import (
+    DeliveryHistory,
     DELIVERY_BELOW_THRESHOLD,
     shape_recall_results,
 )
@@ -175,7 +176,7 @@ def test_stub_shapes_as_content_less_stub_with_content_ref() -> None:
     ]
     shaped = shape_recall_results(
         results,
-        already_delivered_ids=set(),
+        delivery_history=DeliveryHistory(),
         snippet_max_chars=1200,
         context_value_max_chars=160,
         session_dedup=False,
@@ -203,7 +204,7 @@ def test_withheld_result_is_not_a_twin_bearer() -> None:
     ]
     shaped = shape_recall_results(
         results,
-        already_delivered_ids=set(),
+        delivery_history=DeliveryHistory(),
         snippet_max_chars=1200,
         context_value_max_chars=160,
         session_dedup=False,
@@ -217,7 +218,7 @@ def test_shaping_without_withheld_is_unchanged() -> None:
     results = [make_result("a", 1.0), make_result("b", 0.5)]
     shaped = shape_recall_results(
         results,
-        already_delivered_ids=set(),
+        delivery_history=DeliveryHistory(),
         snippet_max_chars=1200,
         context_value_max_chars=160,
         session_dedup=False,

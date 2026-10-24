@@ -1358,90 +1358,36 @@ def test_lookup_column_leaves_the_frozen_ledger_byte_identical(
     assert with_lookups == FROZEN_LEDGER_GOLDEN
 
 
-def test_delivered_node_ids_accumulates_per_transport_session(tmp_path: Path) -> None:
+@pytest.mark.parametrize("selector", ["transport", "fingerprint"])
+def test_recall_delivery_history_is_bounded_and_isolated(tmp_path: Path, selector) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        store.record_recall_event(
-            query="alpha query",
-            scope="project:alpha",
-            ambient_context={"transport_session_id": "transport-1"},
-            results=[
-                {"rank": 1, "node_id": "NODE-A"},
-                {"rank": 2, "node_id": "NODE-B"},
-            ],
-        )
-        store.record_recall_event(
-            query="bravo query",
-            scope="project:alpha",
-            ambient_context={"transport_session_id": "transport-1"},
-            results=[
-                {"rank": 1, "node_id": "NODE-B"},
-                {"rank": 2, "node_id": "NODE-C"},
-                {"rank": 3, "note": "entry without a node id is skipped"},
-            ],
-        )
-        # Same transport on another scope still accumulates: delivery history
-        # follows the connection, not the scope.
-        store.record_recall_event(
-            query="charlie query",
-            scope="project:beta",
-            ambient_context={"transport_session_id": "transport-1"},
-            results=[{"rank": 1, "node_id": "NODE-D"}],
-        )
-        store.record_recall_event(
-            query="delta query",
-            scope="project:alpha",
-            ambient_context={"transport_session_id": "transport-2"},
-            results=[{"rank": 1, "node_id": "NODE-E"}],
-        )
-        # Unstamped event: transport_session_id stays NULL.
-        store.record_recall_event(
-            query="echo query",
-            scope="project:alpha",
-            results=[{"rank": 1, "node_id": "NODE-F"}],
-        )
-
-        assert store.delivered_node_ids("transport-1") == {
-            "NODE-A",
-            "NODE-B",
-            "NODE-C",
-            "NODE-D",
-        }
-        assert store.delivered_node_ids("transport-2") == {"NODE-E"}
-        assert store.delivered_node_ids("transport-unknown") == set()
-
-
-def test_delivered_node_ids_none_or_empty_transport_returns_empty(tmp_path: Path) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        store.record_recall_event(
-            query="alpha query",
-            scope="project:alpha",
-            ambient_context={"transport_session_id": "transport-1"},
-            results=[{"rank": 1, "node_id": "NODE-A"}],
-        )
-        assert store.delivered_node_ids(None) == set()
-        assert store.delivered_node_ids("") == set()
-
-
-def test_delivered_node_ids_caps_window_to_most_recent_events(tmp_path: Path) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        events = []
         for index in range(5):
-            store.record_recall_event(
-                query=f"query {index}",
-                scope="project:alpha",
+            event = store.record_recall_event(
+                query="alpha", scope="project:alpha",
                 ambient_context={"transport_session_id": "transport-1"},
-                results=[{"rank": 1, "node_id": f"NODE-{index}"}],
+                results=[{"node_id": f"NODE-{index}", "score": 0.5}],
             )
-
-        assert store.delivered_node_ids("transport-1") == {
-            f"NODE-{index}" for index in range(5)
-        }
-        # created_at ties break by rowid, matching list_recall_events
-        # ordering: the window keeps the newest inserts.
-        assert store.delivered_node_ids("transport-1", max_events=2) == {
-            "NODE-3",
-            "NODE-4",
-        }
-        assert store.delivered_node_ids("transport-1", max_events=0) == set()
+            store.record_recall_delivery(event.id, {
+                f"NODE-{index}": {"kind": "full", "content_sha256": "source",
+                                  "delivered_sha256": "source"},
+            })
+            events.append(event)
+        store.record_recall_event(
+            query="other", scope="project:other",
+            ambient_context={"transport_session_id": "transport-2"},
+            results=[{"node_id": "OTHER"}],
+        )
+        args = ({"transport_session_id": "transport-1"} if selector == "transport"
+                else {"fingerprint": recall_fingerprint("alpha", "project:alpha")})
+        history = store.recall_delivery_history(**args)
+        assert [row["node_id"] for row in history] == [f"NODE-{i}" for i in reversed(range(5))]
+        assert all(row["score"] == 0.5 for row in history)
+        assert len(store.recall_delivery_history(**args, max_events=2)) == 2
+        assert store.recall_delivery_history(**args, max_events=0) == []
+        assert store.recall_delivery_history() == []
+        assert store.recall_delivery_history("missing", fingerprint="missing") == []
+        assert store.get_recall_event(events[0].id).result_ids == ["NODE-0"]
 
 
 def test_recall_events_transport_index_exists_and_serves_the_probe(tmp_path: Path) -> None:
@@ -1630,12 +1576,8 @@ def test_schema_v4_database_migrates_to_v5_with_fingerprint_signal(tmp_path: Pat
         assert by_id["REPEAT02"].results == [{"node_id": "NODE-B", "rank": 1}]
         assert by_id["REPEAT04"].transport_session_id is None
 
-        assert store.fingerprint_delivered_node_ids(repeat_fp) == {
-            "NODE-A",
-            "NODE-B",
-            "NODE-C",
-        }
-        assert store.fingerprint_delivered_node_ids(repeat_fp, max_events=1) == {"NODE-C"}
+        # Selection-only legacy events do not establish content delivery.
+        assert store.recall_delivery_history(fingerprint=repeat_fp) == []
 
         # The migrated aggregates feed the gate rule directly (explicit
         # policy values; the default constants are not pinned here).
@@ -1840,42 +1782,9 @@ def test_mark_recall_event_gated_flags_only_that_event(tmp_path: Path) -> None:
             store.mark_recall_event_gated("MISSING-EVENT-ID")
 
 
-def test_fingerprint_delivered_node_ids_unions_and_caps_window(tmp_path: Path) -> None:
+def test_recall_delivery_history_fingerprint_index(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         fp = recall_fingerprint("zeta query", "project:alpha")
-        for index in range(5):
-            store.record_recall_event(
-                query="zeta query",
-                scope="project:alpha",
-                ambient_context={"transport_session_id": f"t-{index}"},
-                results=[
-                    {"rank": 1, "node_id": f"NODE-{index}"},
-                    {"rank": 2, "note": "entry without a node id is skipped"},
-                ],
-            )
-        # A different fingerprint's deliveries stay invisible.
-        store.record_recall_event(
-            query="other query",
-            scope="project:alpha",
-            results=[{"rank": 1, "node_id": "NODE-X"}],
-        )
-
-        assert store.fingerprint_delivered_node_ids(fp) == {
-            f"NODE-{index}" for index in range(5)
-        }
-        # created_at ties break by rowid, matching delivered_node_ids: the
-        # window keeps the newest inserts.
-        assert store.fingerprint_delivered_node_ids(fp, max_events=2) == {
-            "NODE-3",
-            "NODE-4",
-        }
-        assert store.fingerprint_delivered_node_ids(fp, max_events=0) == set()
-        assert store.fingerprint_delivered_node_ids(None) == set()
-        assert store.fingerprint_delivered_node_ids("") == set()
-        assert store.fingerprint_delivered_node_ids(
-            recall_fingerprint("unseen", "global")
-        ) == set()
-
         plan = " ".join(
             row["detail"]
             for row in store.connection.execute(

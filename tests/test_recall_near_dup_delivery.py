@@ -30,7 +30,9 @@ from typing import Any, Iterator, Sequence
 import pytest
 
 from living_memory.chunking import TextChunk
+from test_delivery_shaping import delivered_history
 from living_memory.delivery import (
+    DeliveryHistory,
     DEFAULT_NEAR_DUP_COSINE,
     DEFAULT_NEAR_DUP_LENGTH_RATIO,
     DELIVERY_FULL,
@@ -134,7 +136,7 @@ def shape(results: list[RecallResult], **overrides: Any) -> list[dict[str, Any]]
     """The production defaults, so the wire shape under test is the shipped one."""
 
     kwargs: dict[str, Any] = {
-        "already_delivered_ids": set(),
+        "delivery_history": DeliveryHistory(),
         "snippet_max_chars": 1200,
         "context_value_max_chars": 160,
         "session_dedup": True,
@@ -270,7 +272,7 @@ def test_session_duplicate_keeps_its_own_class_and_its_own_content_ref() -> None
         make_result(make_node("b", "the same ballast survey fact, reworded")),
     ]
 
-    shaped = shape(results, already_delivered_ids={"b"}, duplicate_of={"b": "a"})
+    shaped = shape(results, delivery_history=delivered_history(results, {"b"}), duplicate_of={"b": "a"})
 
     assert deliveries(shaped) == [DELIVERY_FULL, DELIVERY_SESSION_DUPLICATE]
     assert "duplicate_of" not in shaped[1]["content_ref"]

@@ -14,6 +14,8 @@ from typing import Any
 import pytest
 
 from living_memory.delivery import (
+    DeliveryHistory,
+    recall_delivery_records,
     CONTEXT_VALUE_CHARS_ENV,
     DEFAULT_CONTEXT_VALUE_MAX_CHARS,
     DEFAULT_PROVENANCE_VALUE_MAX_CHARS,
@@ -105,6 +107,17 @@ def make_result(node: Node, **overrides: Any) -> RecallResult:
     return RecallResult(**defaults)
 
 
+def delivered_history(results, ids):
+    records = recall_delivery_records(results, [
+        {"id": row.node.id, "content": row.node.content, "delivery": "full"}
+        for row in results if row.node.id in ids
+    ])
+    return DeliveryHistory([
+        {"node_id": node_id, "delivery": delivery}
+        for node_id, delivery in records.items()
+    ])
+
+
 def shape(
     results: list[RecallResult],
     *,
@@ -117,7 +130,7 @@ def shape(
 
     return shape_recall_results(
         results,
-        already_delivered_ids=delivered or set(),
+        delivery_history=delivered_history(results, delivered or set()),
         snippet_max_chars=snippet_max,
         context_value_max_chars=context_max,
         session_dedup=dedup,
@@ -138,7 +151,7 @@ def shape_default(
     """Production defaults: ladder, full-node diet, compaction, sparse."""
 
     kwargs: dict[str, Any] = {
-        "already_delivered_ids": delivered or set(),
+        "delivery_history": delivered_history(results, delivered or set()),
         "snippet_max_chars": DEFAULT_SNIPPET_MAX_CHARS,
         "context_value_max_chars": DEFAULT_CONTEXT_VALUE_MAX_CHARS,
         "session_dedup": True,
@@ -693,14 +706,14 @@ def test_inputs_not_mutated_and_output_deterministic() -> None:
 
     first = shape_recall_results(
         results,
-        already_delivered_ids=delivered,
+        delivery_history=delivered_history(results, delivered),
         snippet_max_chars=1200,
         context_value_max_chars=240,
         session_dedup=True,
     )
     second = shape_recall_results(
         results,
-        already_delivered_ids=delivered,
+        delivery_history=delivered_history(results, delivered),
         snippet_max_chars=1200,
         context_value_max_chars=240,
         session_dedup=True,

@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from living_memory.delivery import shape_recall_results
+from living_memory.delivery import DeliveryHistory, shape_recall_results
 from living_memory.feedback import resolve_explicit_marks
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
@@ -112,7 +112,7 @@ def test_selected_order_access_metadata_and_one_tail_transaction(store, limit):
     assert marks[0].accepted and marks[0].event.id == event.id and marks[0].rank == 0
     assert not marks[1].accepted and marks[1].reject_reason == "not_delivered"
     shaped = shape_recall_results(
-        results, view="knowledge", query=QUERY, already_delivered_ids=set(), snippet_max_chars=1200,
+        results, view="knowledge", query=QUERY, delivery_history=DeliveryHistory(), snippet_max_chars=1200,
         context_value_max_chars=160, session_dedup=True,
     )
     assert all(item["content_ref"]["node_id"] == item["id"] for item in shaped)
