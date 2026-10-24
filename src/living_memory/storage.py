@@ -2031,6 +2031,51 @@ class MemoryStore:
                 conns_by_node[conn.target_id].append(conn)
         return conns_by_node
 
+    def list_recall_connections(
+        self, node_ids: Iterable[str], *, limit: int
+    ) -> dict[str, list[Connection]]:
+        """Bound each adjacency before decoding connections and their metadata.
+
+        Keep the bulk reader's query, batch order and tie order. A connection
+        shared by two requested nodes occupies a slot in each adjacency but
+        needs only one object. Close the cursor as soon as every list is full.
+        """
+
+        ids = list(set(node_ids))
+        result: dict[str, list[Connection]] = {node_id: [] for node_id in ids}
+        if limit <= 0:
+            return result
+        remaining = len(ids)
+        seen: set[str] = set()
+        for i in range(0, len(ids), 400):
+            chunk = ids[i : i + 400]
+            placeholders = ",".join("?" for _ in chunk)
+            cursor = self._conn.execute(
+                f"SELECT * FROM connections WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders}) ORDER BY weight DESC, created_at DESC",
+                chunk + chunk,
+            )
+            try:
+                for row in cursor:
+                    if row["id"] in seen:
+                        continue
+                    targets = [
+                        node_id for node_id in dict.fromkeys((row["source_id"], row["target_id"]))
+                        if node_id in result and len(result[node_id]) < limit
+                    ]
+                    if not targets:
+                        continue
+                    connection = _connection_from_row(row)
+                    seen.add(connection.id)
+                    for node_id in targets:
+                        result[node_id].append(connection)
+                        if len(result[node_id]) == limit:
+                            remaining -= 1
+                    if remaining == 0:
+                        return result
+            finally:
+                cursor.close()
+        return result
+
     def record_access(self, node_id: str) -> Node:
         if self.get_node(node_id) is None:
             raise KeyError(node_id)

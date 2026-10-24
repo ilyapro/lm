@@ -1637,6 +1637,41 @@ class MemoryRecallService:
         candidate had been worth before the anchor named it.
         """
 
+        # A bulk query's tie order depends on its entire frontier, so reuse
+        # observations only for the same ordered request. Both walks share
+        # these bounded, directional neighbors, never their score state.
+        observations: dict[tuple[str, ...], dict[str, list[tuple[str, float]]]] = {}
+        observed_state: tuple[int, int] | None = None
+
+        def neighbors_for_nodes(node_ids: list[str]) -> dict[str, list[tuple[str, float]]]:
+            nonlocal observed_state
+            connection = self.store.connection
+            state = (
+                connection.total_changes,
+                connection.execute("PRAGMA data_version").fetchone()[0],
+            )
+            # Transaction-local reads may be rolled back without changing
+            # total_changes again. Never retain them for a later level/pass.
+            if connection.in_transaction or state != observed_state:
+                observations.clear()
+            observed_state = None if connection.in_transaction else state
+            key = tuple(node_ids)
+            if key not in observations:
+                connections = self.store.list_recall_connections(
+                    node_ids, limit=MAX_NEIGHBORS_PER_NODE
+                )
+                observations[key] = {
+                    node_id: [
+                        traversal for edge in edges
+                        if (traversal := _traversal(
+                            edge, node_id, causal_mode=causal_mode,
+                            decision_mode=decision_mode,
+                        )) is not None
+                    ]
+                    for node_id, edges in connections.items()
+                }
+            return observations[key]
+
         # Seed BFS only from the top-K pre-graph candidates to avoid
         # fan-out from low-quality matches that would dilute the graph
         # signal and waste cycles on super-hub expansions.
@@ -1653,8 +1688,7 @@ class MemoryRecallService:
                 for candidate in seed_candidates
             ],
             max_depth=max_depth,
-            causal_mode=causal_mode,
-            decision_mode=decision_mode,
+            neighbors_for_nodes=neighbors_for_nodes,
             anchor_pass=False,
         )
 
@@ -1680,8 +1714,7 @@ class MemoryRecallService:
             candidates,
             anchor_roots,
             max_depth=max_depth,
-            causal_mode=causal_mode,
-            decision_mode=decision_mode,
+            neighbors_for_nodes=neighbors_for_nodes,
             anchor_pass=True,
         )
 
@@ -1692,8 +1725,7 @@ class MemoryRecallService:
         roots: list[tuple[str, float]],
         *,
         max_depth: int,
-        causal_mode: bool,
-        decision_mode: bool,
+        neighbors_for_nodes: Callable[[list[str]], dict[str, list[tuple[str, float]]]],
         anchor_pass: bool,
     ) -> None:
         """One breadth-first activation spread from ``roots``.
@@ -1720,34 +1752,21 @@ class MemoryRecallService:
             current_depth = queue[0][2]
             if current_depth >= max_depth:
                 break
-                
+
             level_items = []
             while queue and queue[0][2] == current_depth:
                 level_items.append(queue.popleft())
 
-            # Batch fetch connections for this level
             node_ids_at_depth = list({item[0] for item in level_items})
-            connections_by_node = self.store.list_connections_for_nodes(node_ids_at_depth)
+            neighbors_by_node = neighbors_for_nodes(node_ids_at_depth)
 
-            # Pre-calculate which neighbor nodes we'll need to fetch.
-            # Apply the same per-node neighbor bound as the processing pass
-            # so super-hubs don't dominate even the pre-fetch phase.
+            # Prepare each path-dependent transition once, in traversal order.
+            # best_seen must also be checked when consuming the transitions:
+            # an earlier item at this level can strengthen the same neighbor.
+            transitions = []
             needed_neighbor_ids = set()
-            for item in level_items:
-                node_id, activation, depth, path = item
-                node_connections = connections_by_node.get(node_id, [])
-                if len(node_connections) > MAX_NEIGHBORS_PER_NODE:
-                    node_connections = node_connections[:MAX_NEIGHBORS_PER_NODE]
-                for connection in node_connections:
-                    traversal = _traversal(
-                        connection,
-                        node_id,
-                        causal_mode=causal_mode,
-                        decision_mode=decision_mode,
-                    )
-                    if traversal is None:
-                        continue
-                    neighbor_id, relation_score = traversal
+            for node_id, activation, depth, path in level_items:
+                for neighbor_id, relation_score in neighbors_by_node[node_id]:
                     if neighbor_id in path:
                         continue
 
@@ -1755,69 +1774,40 @@ class MemoryRecallService:
                     if next_score <= best_seen.get(neighbor_id, 0.0):
                         continue
 
+                    transitions.append((neighbor_id, next_score, depth + 1, path + (neighbor_id,)))
                     if neighbor_id not in node_cache and neighbor_id not in candidates:
                         needed_neighbor_ids.add(neighbor_id)
-            
+
             # Batch fetch missing neighbor nodes
             if needed_neighbor_ids:
                 fetched_nodes = self.store.get_nodes(needed_neighbor_ids)
                 for nid in needed_neighbor_ids:
                     node_cache[nid] = fetched_nodes.get(nid)
 
-            # Process the level. Bound per-node neighbor fan-out to avoid
-            # super-hubs (nodes with thousands of edges) dominating the BFS.
-            for item in level_items:
-                node_id, activation, depth, path = item
-                node_connections = connections_by_node.get(node_id, [])
-                if len(node_connections) > MAX_NEIGHBORS_PER_NODE:
-                    node_connections = node_connections[:MAX_NEIGHBORS_PER_NODE]
-                for connection in node_connections:
-                    traversal = _traversal(
-                        connection,
-                        node_id,
-                        causal_mode=causal_mode,
-                        decision_mode=decision_mode,
-                    )
-                    if traversal is None:
-                        continue
-                    neighbor_id, relation_score = traversal
-                    if neighbor_id in path:
-                        continue
+            for neighbor_id, next_score, depth, path in transitions:
+                if next_score <= best_seen.get(neighbor_id, 0.0):
+                    continue
 
-                    next_score = activation * relation_score * (0.72 ** depth)
-                    if next_score <= best_seen.get(neighbor_id, 0.0):
-                        continue
+                neighbor = (
+                    node_cache[neighbor_id] if neighbor_id in node_cache
+                    else candidates[neighbor_id].node
+                )
+                if neighbor is None or neighbor.decayed or not plan.allows(neighbor.scope):
+                    continue
 
-                    if neighbor_id in node_cache:
-                        neighbor = node_cache[neighbor_id]
-                    else:
-                        existing_candidate = candidates.get(neighbor_id)
-                        if existing_candidate is not None:
-                            neighbor = existing_candidate.node
-                        else:
-                            neighbor = self.store.get_node(neighbor_id)
-                            node_cache[neighbor_id] = neighbor
-                    
-                    if neighbor is None or neighbor.decayed or not plan.allows(neighbor.scope):
-                        continue
-
-                    best_seen[neighbor_id] = next_score
-                    candidate = candidates.setdefault(neighbor_id, _Candidate(node=neighbor))
-                    if anchor_pass:
-                        reached = min(1.5, next_score)
-                        # ``path`` is provenance for the strongest explanation
-                        # of a candidate's graph evidence, so the anchor walk
-                        # claims it only when its own route is that
-                        # explanation.
-                        if reached > candidate.combined_graph_score:
-                            candidate.path = path + (neighbor_id,)
-                        candidate.anchor_score = max(candidate.anchor_score, reached)
-                    else:
-                        candidate.graph_score = max(
-                            candidate.graph_score, min(1.5, next_score)
-                        )
-                        candidate.path = path + (neighbor_id,)
-                    queue.append((neighbor_id, next_score, depth + 1, path + (neighbor_id,)))
+                best_seen[neighbor_id] = next_score
+                candidate = candidates.setdefault(neighbor_id, _Candidate(node=neighbor))
+                if anchor_pass:
+                    reached = min(1.5, next_score)
+                    # Provenance belongs to the strongest explanation across
+                    # the ordinary and anchor walks.
+                    if reached > candidate.combined_graph_score:
+                        candidate.path = path
+                    candidate.anchor_score = max(candidate.anchor_score, reached)
+                else:
+                    candidate.graph_score = max(candidate.graph_score, min(1.5, next_score))
+                    candidate.path = path
+                queue.append((neighbor_id, next_score, depth, path))
 
     def _rechunk_node(self, node: Node) -> None:
         """Refresh content search without overwriting a cluster representative."""
