@@ -168,3 +168,59 @@ def test_shared_leaves_prepare_once_and_diamond_consumes_updated_concepts(store,
     assert set(store.get_node(joined.id).source_traces) == {left.id, right.id}
     assert dict(prepared)[left.id] == store.get_node(left.id).content
     assert dict(prepared)[right.id] == store.get_node(right.id).content
+
+
+@pytest.mark.parametrize("materializer", ["cluster", "cross-scope-promotion"])
+def test_overlapping_owners_share_text_preparation_only_within_one_operation(store, monkeypatch, materializer):
+    if materializer == "cluster":
+        members = sources(store)
+        groups = [members[:2], members[1:]]
+        scope = "project:harbor"
+        provenance_key = "source_traces"
+        strategy = "token-jaccard"
+
+        def materialize():
+            group = c._TraceCluster(scope, members, Counter())
+            return [node for node, _ in c._materialize_cluster(store, group, min_cluster_size=1)]
+    else:
+        members = [store.create_node(
+            level="concept", content=text, context={"scope": f"project:harbor-{i}"},
+            embedding=[1.0, 0.0],
+        ) for i, text in enumerate([
+            "Harbor crane checks the paper permit.",
+            "Harbor crane inspects the brake assembly.",
+            "Harbor crane measures cable tension.",
+            "Harbor crane records the departure time.",
+        ])]
+        groups = [members[:3], members[1:]]
+        scope = "global"
+        provenance_key = "source_concepts"
+        strategy = materializer
+
+        def materialize():
+            return c._cross_scope_promotion(store, members[0], phase_number=4)
+
+    owners = [store.create_node(
+        level="concept", content=f"Harbor owner {i} awaiting materialization.",
+        context={"scope": scope},
+        provenance={"strategy": strategy, provenance_key: [member.id for member in group]},
+    ) for i, group in enumerate(groups)]
+    prepared = Counter()
+    prepare = c._prepare_digest_sources
+
+    def observe(members):
+        prepared.update(member.id for member in members)
+        return prepare(members)
+
+    monkeypatch.setattr(c, "_prepare_digest_sources", observe)
+    assert {node.id for node in materialize()} == {owner.id for owner in owners}
+    assert prepared == {member.id: 1 for member in members}
+    for owner, group in zip(owners, groups):
+        current = store.get_node(owner.id)
+        assert set(current.materializer_sources) == {member.id for member in group}
+        assert not current.decayed
+        best = (max(group, key=lambda member: (c._trace_quality(member), member.id))
+                if materializer == "cluster" else c._highest_confidence_source(group))
+        assert current.content == c._synthesize_digest(group, best=best, prepared_sources=prepare(group))
+    materialize()
+    assert prepared == {member.id: 2 for member in members}

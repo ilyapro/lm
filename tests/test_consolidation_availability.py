@@ -123,7 +123,7 @@ def test_reader_waits_for_one_complete_owner_then_proceeds_before_the_next(memor
     assert {n.id for n in result.concepts_updated} == {n.id for n in owners}
 
 
-@pytest.mark.parametrize("change", ["source", "owner", "decay", "union"])
+@pytest.mark.parametrize("change", ["source", "owner", "decay", "union", "content", "metadata"])
 def test_between_owner_write_uses_current_sources_and_preserves_foreground_feedback(memory, monkeypatch, change):
     mcp, lock, _, traces, owners, cluster = memory
     store = mcp.memory_store
@@ -167,10 +167,17 @@ def test_between_owner_write_uses_current_sources_and_preserves_foreground_feedb
                 mcp.tools["memory_teach"](remaining.id, "Harbor inspection uses an independent current procedure.")
             elif change == "decay":
                 mcp.tools["memory_forget"](remaining.id, "retired by operator")
-            else:
+            elif change == "union":
                 current = store.get_node(remaining.id)
                 store.update_node(remaining.id, provenance={**current.provenance, "source_traces": [*current.source_traces, remembered["node"]["id"]]})
                 store.update_node(traces[2].id, stats={"access_count": 77, "usefulness_score": 4})
+            else:
+                updates = {"content": "Harbor inspection verifies the calibrated compass."} if change == "content" else {}
+                store.update_node(
+                    traces[2].id, **updates, embedding=[0.0, 1.0],
+                    context={"scope": SCOPE, "agent": "independent-inspector"},
+                    stats={"access_count": 99, "usefulness_score": 1000, "confidence": 0.9, "unique_agents": 12},
+                )
 
     c._materialize_cluster(store, cluster, min_cluster_size=3, step=step)
     current = store.get_node(facts["remaining"])
@@ -186,10 +193,26 @@ def test_between_owner_write_uses_current_sources_and_preserves_foreground_feedb
     elif change == "decay":
         assert current.decayed and current.decay_reason == "retired by operator"
         assert current.id not in written
-    else:
+    elif change == "union":
         assert facts["remembered"] in current.source_traces
         edge, = store.list_connections(source_id=current.id, target_id=traces[2].id, relation_type="related")
         assert edge.metadata["co_access"] == 77
+    else:
+        members = c._current_derivation(store, current).live
+        best = max(members, key=lambda member: (c._trace_quality(member), member.id))
+        expected = c._prepare_digest(SCOPE, members, best, c._prepare_digest_sources(members))
+        assert best.id == traces[2].id
+        assert current.content == expected.content
+        assert current.provenance["cluster_key"] == expected.cluster_key
+        assert current.embedding == best.embedding == [0.0, 1.0]
+        assert current.unique_agents == 12
+        assert current.confidence == c._consensus_confidence(members, 12)
+        assert current.usefulness_score == sum(member.usefulness_score for member in members) / len(members)
+        edge, = store.list_connections(source_id=current.id, target_id=best.id, relation_type="related")
+        assert edge.metadata["co_access"] == 99
+        if change == "content":
+            assert "calibrated compass" in current.content
+            assert traces[2].content not in current.content
 
 
 def test_interrupted_pass_rolls_back_current_owner_and_resumes_durable_pending(memory, monkeypatch):
