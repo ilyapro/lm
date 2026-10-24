@@ -66,11 +66,13 @@ budget exclusions. The additive `sel` journal records candidate selection.
 | `CACHE_MIN_COVERAGE` | 0.5 | Minimum cached-template coverage |
 | `MAX_CACHE_ENTRIES` | 32 | Structures retained per builder |
 
-The response fitter squeezes excerpts before dropping clusters and does not
-reflow excerpts after dropping them. A rich residual can therefore produce
-clusters with node ids but no examples. `memory_lookup` remains the full-content
-path. A fully skipped curtail decision omits `pool` and `sel`: neither was
-computed. A measured empty pool includes `pool: 0` and selection accounting.
+The response fitter searches for the widest common excerpt after each change
+in displayed breadth. It drops tail clusters and optional journal names to
+preserve a useful gist. If the minimum useful presentation cannot fit, it
+delivers selection accounting without clusters. `memory_lookup` remains the
+full-content path. A fully skipped curtail decision omits `pool` and `sel`:
+neither was computed. A measured empty pool includes `pool: 0` and selection
+accounting.
 
 ## 3. Current-work identity
 
@@ -160,17 +162,20 @@ the same document-frequency evidence.
 Identical input and policy produce deterministic groups. Every sort has a
 tie-break and each stage receives only members unclaimed by earlier stages.
 Label disambiguation preserves distinct groups and makes their displayed names
-unique after truncation. Display order is by group size, stage, then label.
-A valid cached representative remains preferred; embedding groups otherwise
-choose the most central member and other groups use the highest-ranked member.
+unique after truncation. Display order follows maximum member relevance, mean
+member relevance, then original residual ordinal. Embedding groups choose the
+most central member; other groups use the best original residual ordinal.
+Representatives and presentation order are recomputed from the current pool.
 
 ## 5. Structure cache
 
-The process-local cache stores cluster stage, signature, label, query, member
-ids and representative. Every offered map refreshes counts and membership
-against the current pool. Structural and path templates can classify newly
-arriving members; anchor and embedding templates retain known membership. If
-cached templates cover less than half the pool, the builder rebuilds them.
+The process-local cache stores cluster stage, signature, label, query and member
+ids. Every offered map refreshes counts, membership and representatives against
+the current pool. Structural and path templates can classify newly arriving
+members; anchor and embedding templates retain known membership. Unmatched
+members cause a rebuild. Embedding membership is checked against fresh vectors
+and the current ranked pool before cached labels are reused. Scores, order and
+representative identity do not survive as cached decisions.
 
 Corpus revision probes use `connection.total_changes` and `PRAGMA data_version`
 before checking chunk and query-anchor revisions. Corpus or policy changes
