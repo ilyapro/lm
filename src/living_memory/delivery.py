@@ -14,8 +14,8 @@ Rules, applied in this order per ranked result:
 1. Twin dedup — among results whose ``node.content`` are byte-identical (e.g.
    a concept and its verbatim source trace), the highest-ranked result is the
    content-bearer; the rest become ``delivery: "twin_duplicate"`` stubs.
-2. Session dedup — when enabled and the node id was already delivered on this
-   transport session, the result becomes a ``delivery: "session_duplicate"``
+2. Session dedup — when enabled and this version's complete content or the
+   excerpt about to be offered was shaped on this transport session, it becomes a ``delivery: "session_duplicate"``
    stub. Only content-bearers are considered: a twin of a session-duplicate
    stays a twin stub, never re-classified or promoted to full.
 3. Near-duplicate dedup — a result that repeats the *meaning* of a
@@ -128,6 +128,7 @@ recall call site; this module only receives the finished map.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -137,6 +138,7 @@ from typing import TYPE_CHECKING, Any
 from .resources import node_to_dict
 
 if TYPE_CHECKING:
+    from .models import Node
     from .retrieval import RecallResult
 
 DELIVERY_FULL = "full"
@@ -320,10 +322,62 @@ def sparse_entries_enabled_from_env() -> bool:
     return _enabled_from_env(SPARSE_ENV)
 
 
+def _content_digest(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+class DeliveryHistory:
+    """Bounded request-local evidence of full text or excerpts actually shaped.
+
+    Selection can recognize a previously offered version; compaction additionally
+    requires the complete content or the exact excerpt it would offer now.
+    Metadata timestamps, legacy selections and duplicate previews prove neither.
+    """
+
+    def __init__(self, results: Sequence[Mapping[str, Any]] = ()) -> None:
+        self._versions: dict[tuple[str, str], set[str]] = {}
+        for result in results:
+            delivery = result.get("delivery")
+            if not isinstance(delivery, Mapping) or delivery.get("kind") not in (
+                DELIVERY_FULL, DELIVERY_SNIPPET,
+            ):
+                continue
+            node_id = result.get("node_id")
+            source = delivery.get("content_sha256")
+            body = delivery.get("delivered_sha256")
+            if node_id and isinstance(source, str) and isinstance(body, str):
+                self._versions.setdefault((str(node_id), source), set()).add(body)
+
+    def has_content(self, node: Node) -> bool:
+        return (node.id, _content_digest(node.content)) in self._versions
+
+    def covers(self, node: Node, excerpt: str) -> bool:
+        source = _content_digest(node.content)
+        bodies = self._versions.get((node.id, source), ())
+        return source in bodies or _content_digest(excerpt) in bodies
+
+
+def recall_delivery_records(
+    results: Sequence[RecallResult], shaped: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, str]]:
+    """Record the final response's bodies, never infer them from selected ids."""
+    sources = {result.node.id: result.node.content for result in results}
+    records = {}
+    for entry in shaped:
+        node = entry.get("node", entry)
+        node_id = node["id"]
+        records[node_id] = {
+            "kind": entry["delivery"],
+            "content_sha256": _content_digest(sources[node_id]),
+            "delivered_sha256": _content_digest(node["content"]),
+        }
+    return records
+
+
 def shape_recall_results(
     results: Sequence[RecallResult],
     *,
-    already_delivered_ids: set[str],
+    delivery_history: DeliveryHistory,
     snippet_max_chars: int,
     context_value_max_chars: int,
     session_dedup: bool,
@@ -354,7 +408,7 @@ def shape_recall_results(
     the vectors, the threshold, and the database read that produced it all
     happen at the call site, which is what keeps this function pure.
 
-    Pure: never mutates ``results``, their nodes, ``already_delivered_ids``, or
+    Pure: never mutates ``results``, their nodes, ``delivery_history``, or
     ``duplicate_of``; identical inputs produce identical output. Output order
     matches input order.
     """
@@ -398,16 +452,8 @@ def shape_recall_results(
             delivery = DELIVERY_TWIN_DUPLICATE
             stub_bearer = twin_of
             node_dict["content"] = _one_line_preview(content)
-        elif session_dedup and node_id in already_delivered_ids:
-            delivery = DELIVERY_SESSION_DUPLICATE
-            node_dict["content"] = _one_line_preview(content)
-        elif near_dup_of is not None:
-            delivery = DELIVERY_NEAR_DUPLICATE
-            stub_bearer = near_dup_of
-            node_dict["content"] = _one_line_preview(content)
         else:
             budget = _bearer_budget(bearer_position, snippet_ladder, snippet_max_chars)
-            bearer_position += 1
             # Preserve the whole schema recipe so no step or condition is lost.
             # Case records can instead be excerpted for the current task.
             if result.node.level != "schema" and LADDER_COMPLETE < budget < full_chars:
@@ -415,6 +461,15 @@ def shape_recall_results(
                 node_dict["content"] = _relevant_excerpt(content, budget, query)
             else:
                 delivery = DELIVERY_FULL
+            if session_dedup and delivery_history.covers(result.node, node_dict["content"]):
+                delivery = DELIVERY_SESSION_DUPLICATE
+                node_dict["content"] = _one_line_preview(content)
+            elif near_dup_of is not None:
+                delivery = DELIVERY_NEAR_DUPLICATE
+                stub_bearer = near_dup_of
+                node_dict["content"] = _one_line_preview(content)
+            else:
+                bearer_position += 1
 
         if view == "knowledge":
             entry = knowledge_node(node_dict)

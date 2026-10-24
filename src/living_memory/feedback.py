@@ -46,7 +46,7 @@ LOOKUP_CREDIT_POLICIES: tuple[str, ...] = ("delivered", "off")
 DEFAULT_LOOKUP_CREDIT_POLICY = "delivered"
 DEFAULT_LOOKUP_CREDIT_WINDOW_SECONDS = 86400
 #: Candidate events per lookup: the newest this many events of the transport
-#: session, the same horizon ``MemoryStore.delivered_node_ids`` bounds the
+#: session, the same horizon ``MemoryStore.recall_delivery_history`` bounds the
 #: session-delivery dedup with.
 _LOOKUP_CREDIT_EVENT_LIMIT = 200
 

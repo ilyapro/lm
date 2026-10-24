@@ -2679,7 +2679,7 @@ class MemoryStore:
         """The most recent recall events stamped with one transport session.
 
         Newest first, served by ``idx_recall_events_transport_created``, and
-        bounded like :meth:`delivered_node_ids`: on a long-lived session only
+        bounded like :meth:`recall_delivery_history`: on a long-lived session only
         the ``limit`` most recent events are candidates for the lookup-credit
         join, and a ``None`` or empty transport id identifies no session and
         returns nothing without touching the database. Closed events are
@@ -3169,84 +3169,66 @@ class MemoryStore:
         ).fetchall()
         return [_recall_event_from_row(row) for row in rows]
 
-    def delivered_node_ids(
+    def recall_delivery_history(
         self,
-        transport_session_id: str | None,
+        transport_session_id: str | None = None,
         *,
+        fingerprint: str | None = None,
         max_events: int = 200,
-    ) -> set[str]:
-        """Node ids already delivered to one transport session.
+    ) -> list[dict[str, Any]]:
+        """Read shaped-content evidence from bounded, indexed event windows.
 
-        Unions the ``node_id`` entries (same key semantics as
-        ``RecallEvent.result_ids``: falsy ids skipped) from the ``results``
-        JSON of the most recent ``max_events`` recall_events stamped with
-        ``transport_session_id``. The window bounds per-call work on
-        long-lived sessions: events older than the ``max_events`` most
-        recent ones fall outside the dedup horizon, so their nodes count as
-        undelivered again. A ``None`` or empty transport id identifies no
-        session and returns an empty set without touching the database.
+        Each selector has its own most-recent-event horizon. Legacy results
+        remain readable but carry no evidence of delivered content. The caller
+        compares the recorded bodies with the current candidate, not node ids.
         """
+        results: list[dict[str, Any]] = []
+        if max_events <= 0:
+            return results
+        for column, value in (
+            ("transport_session_id", transport_session_id),
+            ("fingerprint", fingerprint),
+        ):
+            if not value:
+                continue
+            rows = self._conn.execute(
+                f"""
+                SELECT results FROM recall_events WHERE {column} = ?
+                ORDER BY created_at DESC, rowid DESC LIMIT ?
+                """,
+                (value, int(max_events)),
+            ).fetchall()
+            for row in rows:
+                results.extend(
+                    item for item in _json_loads(row["results"], [])
+                    if isinstance(item, dict) and isinstance(item.get("delivery"), dict)
+                )
+        return results
 
-        if not transport_session_id or max_events <= 0:
-            return set()
-        rows = self._conn.execute(
-            """
-            SELECT results
-            FROM recall_events
-            WHERE transport_session_id = ?
-            ORDER BY created_at DESC, rowid DESC
-            LIMIT ?
-            """,
-            (transport_session_id, int(max_events)),
-        ).fetchall()
-        delivered: set[str] = set()
-        for row in rows:
-            for item in _json_loads(row["results"], []):
-                if not isinstance(item, Mapping):
-                    continue
-                node_id = item.get("node_id")
-                if node_id:
-                    delivered.add(str(node_id))
-        return delivered
+    def record_recall_delivery(
+        self, event_id: str, deliveries: Mapping[str, Mapping[str, str]],
+    ) -> None:
+        """Attach the shaper's final bodies without replacing selection history.
 
-    def fingerprint_delivered_node_ids(
-        self,
-        fingerprint: str | None,
-        *,
-        max_events: int = 200,
-    ) -> set[str]:
-        """Node ids already delivered for one recall fingerprint.
-
-        Same semantics and horizon as ``delivered_node_ids``, keyed by the
-        exact-request fingerprint instead of the transport session: unions
-        the ``node_id`` entries from the ``results`` JSON of the most recent
-        ``max_events`` stamped events (served by
-        ``idx_recall_events_fingerprint_created``), so older deliveries fall
-        outside the dedup horizon. A ``None`` or empty fingerprint returns
-        an empty set without touching the database.
+        This atomic optional write occurs after response construction. A missing
+        receipt permits re-delivery; it must not make memory unavailable. It
+        records a formed response, not acknowledgment by the network recipient.
         """
-
-        if not fingerprint or max_events <= 0:
-            return set()
-        rows = self._conn.execute(
-            """
-            SELECT results
-            FROM recall_events
-            WHERE fingerprint = ?
-            ORDER BY created_at DESC, rowid DESC
-            LIMIT ?
-            """,
-            (fingerprint, int(max_events)),
-        ).fetchall()
-        delivered: set[str] = set()
-        for row in rows:
-            for item in _json_loads(row["results"], []):
-                if not isinstance(item, Mapping):
-                    continue
-                node_id = item.get("node_id")
-                if node_id:
-                    delivered.add(str(node_id))
-        return delivered
+        with self.transaction():
+            row = self._conn.execute(
+                "SELECT results FROM recall_events WHERE id = ?", (event_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(event_id)
+            results = _json_loads(row["results"], [])
+            for result in results:
+                result["delivery"] = dict(deliveries.get(
+                    str(result.get("node_id", "")), {"kind": "omitted"},
+                ))
+            self._conn.execute(
+                "UPDATE recall_events SET results = ? WHERE id = ?",
+                (_json_dumps(results), event_id),
+            )
 
     def get_recall_fingerprint_stats(
         self, fingerprint: str | None
@@ -5241,14 +5223,14 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_recall_events_session_pending_created
                     ON recall_events(session_id, feedback_applied, created_at DESC);
 
-                -- Session-delivery dedup (delivered_node_ids): equality probe
+                -- Session content delivery history: equality probe
                 -- on transport_session_id plus the most-recent-events window,
                 -- instead of scanning every session's events. Runs after
                 -- _migrate_pre_v4_schema, so the column exists on legacy DBs.
                 CREATE INDEX IF NOT EXISTS idx_recall_events_transport_created
                     ON recall_events(transport_session_id, created_at DESC);
 
-                -- Fingerprint delivery history (fingerprint_delivered_node_ids
+                -- Fingerprint delivery history (recall_delivery_history
                 -- and gating reads): equality probe on the request fingerprint
                 -- plus the most-recent-events window. Runs after
                 -- _migrate_pre_v5_schema, so the column exists on legacy DBs.

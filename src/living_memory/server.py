@@ -52,6 +52,8 @@ from living_memory.delivery import (
     provenance_value_max_chars_from_env,
     session_dedup_enabled_from_env,
     shape_recall_results,
+    DeliveryHistory,
+    recall_delivery_records,
     snippet_ladder_from_env,
     snippet_max_chars_from_env,
     sparse_entries_enabled_from_env,
@@ -1380,13 +1382,6 @@ def _register_tools(
                 if has_explicit_marks(used, irrelevant)
                 else None
             )
-            # Snapshot delivered ids BEFORE the service records this call's
-            # recall_event, so the current response cannot stub itself.
-            already_delivered = (
-                store.delivered_node_ids(transport_session_id)
-                if session_dedup
-                else set()
-            )
             # Experimental repeat gating is a strict opt-in via
             # LM_RECALL_REPEAT_GATING=1. resolve_scope runs the same resolver
             # retrieval will, so the fingerprint equals the one
@@ -1395,6 +1390,7 @@ def _register_tools(
             # accounting accumulated by prior requests.
             gate_policy = FingerprintGatePolicy.from_env()
             gated = False
+            fingerprint = None
             if gate_policy.enabled:
                 plan = resolve_scope(
                     scope=scope,
@@ -1405,13 +1401,18 @@ def _register_tools(
                 gated = should_gate_fingerprint(
                     store.get_recall_fingerprint_stats(fingerprint), gate_policy
                 )
-                if gated:
-                    # Nodes this exact request already shipped become
-                    # session_duplicate stubs; never-delivered nodes still
-                    # ship content-bearing.
-                    already_delivered = already_delivered | (
-                        store.fingerprint_delivered_node_ids(fingerprint)
-                    )
+            # Read only prior formed responses. Selection and shaping share
+            # this bounded observation; recording the current event adds no proof.
+            try:
+                delivery_history = DeliveryHistory(store.recall_delivery_history(
+                    transport_session_id if session_dedup else None,
+                    fingerprint=fingerprint if gated else None,
+                ))
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "could not read recall delivery history", exc_info=True,
+                )
+                delivery_history = DeliveryHistory()
             near_duplicates = _NearDuplicateObservation(store)
             results = recall_service.memory_recall(
                 query,
@@ -1420,7 +1421,7 @@ def _register_tools(
                 depth=depth,
                 max_results=max_results,
                 select_results=lambda limited, residual, limit: _select_distinct_results(
-                    near_duplicates, limited, residual, limit, already_delivered
+                    near_duplicates, limited, residual, limit, delivery_history
                 ),
             )
             if gated and recall_service.last_recall_event_id is not None:
@@ -1429,7 +1430,7 @@ def _register_tools(
                 results,
                 view=view,
                 query=query,
-                already_delivered_ids=already_delivered,
+                delivery_history=delivery_history,
                 snippet_max_chars=snippet_max_chars_from_env(),
                 context_value_max_chars=context_value_max_chars_from_env(),
                 session_dedup=session_dedup or gated,
@@ -1496,6 +1497,17 @@ def _register_tools(
                         "could not deliver optional recall map for event %s",
                         recall_service.last_recall_event_id,
                         exc_info=True,
+                    )
+            if recall_service.last_recall_event_id is not None:
+                try:
+                    store.record_recall_delivery(
+                        recall_service.last_recall_event_id,
+                        recall_delivery_records(results, shaped),
+                    )
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "could not record recall delivery for event %s",
+                        recall_service.last_recall_event_id, exc_info=True,
                     )
             # The map this call just persisted is the signal the *next*
             # session's instructions are composed from. Last, after the
@@ -1915,7 +1927,7 @@ def _select_distinct_results(
     limited: list[Any],
     residual: list[Any],
     max_results: int,
-    already_delivered: set[str],
+    delivery_history: DeliveryHistory,
 ) -> tuple[list[Any], list[Any]]:
     """Spend a bounded cut on distinct knowledge when a repeat hides a fact.
 
@@ -1939,7 +1951,7 @@ def _select_distinct_results(
         bearer = prior_twin or duplicate_of.get(node.id)
         if (
             bearer in {item.node.id for item in selected}
-            and node.id not in already_delivered
+            and not delivery_history.has_content(node)
         ):
             continue
         selected.append(result)
