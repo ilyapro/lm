@@ -48,8 +48,8 @@ Replay fidelity limits (compare)
   (escape-related residuals of a few chars are counted and reported).
 * Session-dedup replay sees only the selected split's slice of each transport
   session (splits are hash-partitioned by event id), applying equally to
-  BEFORE and AFTER counters; the delivered-id horizon mirrors
-  storage.delivered_node_ids (last 200 session events).
+  BEFORE and AFTER counters; the delivery-history horizon mirrors
+  storage.recall_delivery_history (last 200 session events).
 
 The holdout split is SEALED (corpus/POLICY.md): report/verify aggregate it
 only through the same generic code path as dev/eval; `compare --split
@@ -81,7 +81,7 @@ SCHEMA_VERSION = 1
 # Verbatim caveat required by the evaluation contract.
 FEEDBACK_APPLIED_CAVEAT = "lower-bound proxy for observed use, not ground-truth relevance"
 
-# Mirrors storage.delivered_node_ids(max_events=200): the session dedup horizon.
+# Mirrors storage.recall_delivery_history(max_events=200): the session dedup horizon.
 DELIVERED_HORIZON_EVENTS = 200
 
 # Cross-build repeat identities are keyed HMACs created by the separately
@@ -736,6 +736,8 @@ def _import_living_memory() -> dict[str, Any]:
         provenance_value_max_chars_from_env,
         session_dedup_enabled_from_env,
         shape_recall_results,
+        DeliveryHistory,
+        recall_delivery_records,
         snippet_ladder_from_env,
         snippet_max_chars_from_env,
         sparse_entries_enabled_from_env,
@@ -766,6 +768,8 @@ def _import_living_memory() -> dict[str, Any]:
         "should_gate_fingerprint": should_gate_fingerprint,
         "node_to_dict": node_to_dict,
         "shape_recall_results": shape_recall_results,
+        "DeliveryHistory": DeliveryHistory,
+        "recall_delivery_records": recall_delivery_records,
         "snippet_max_chars_from_env": snippet_max_chars_from_env,
         "context_value_max_chars_from_env": context_value_max_chars_from_env,
         "session_dedup_enabled_from_env": session_dedup_enabled_from_env,
@@ -981,18 +985,18 @@ def replay_delivery(corpus: ReplayCorpus) -> dict[str, dict[str, Any]]:
 
     outcome: dict[str, dict[str, Any]] = {}
     for session in corpus.sessions():
-        history: list[set[str]] = []
+        history: list[list[dict[str, Any]]] = []
         content_delivered: set[str] = set()
         for event in session:
             transport = event.get("transport_session_id")
             session_dedup = bool(transport) and dedup_default
-            delivered: set[str] = set()
-            for previous in history[-DELIVERED_HORIZON_EVENTS:]:
-                delivered |= previous
+            history_view = lm["DeliveryHistory"]([
+                item for previous in history[-DELIVERED_HORIZON_EVENTS:] for item in previous
+            ])
             results = corpus.recall_results(event)
             shaped = shape(
                 results,
-                already_delivered_ids=delivered,
+                delivery_history=history_view,
                 snippet_max_chars=snippet_chars,
                 context_value_max_chars=context_chars,
                 session_dedup=session_dedup,
@@ -1035,7 +1039,7 @@ def replay_delivery(corpus: ReplayCorpus) -> dict[str, dict[str, Any]]:
                 "chars": len(json.dumps(envelope, ensure_ascii=False)),
                 "unshaped_chars": len(json.dumps(unshaped_envelope, ensure_ascii=False)),
                 "classes": [entry["delivery"] for entry in shaped],
-                "repeat_ids": [nid for nid in result_ids if nid in delivered],
+                "repeat_ids": [r.node.id for r in results if history_view.has_content(r.node)],
                 "result_ids": result_ids,
                 "top_retained": _top_content_retained(shaped, content_delivered),
                 "content_access_retained": _content_access_retained(shaped, content_delivered),
@@ -1045,7 +1049,10 @@ def replay_delivery(corpus: ReplayCorpus) -> dict[str, dict[str, Any]]:
                 for entry in shaped
                 if entry["delivery"] in ("full", "snippet")
             )
-            history.append(set(result_ids))
+            history.append([
+                {"node_id": node_id, "delivery": receipt}
+                for node_id, receipt in lm["recall_delivery_records"](results, shaped).items()
+            ])
     return outcome
 
 
@@ -1250,7 +1257,7 @@ def family_auto_recall(corpus: ReplayCorpus, delivery: dict[str, dict[str, Any]]
             "note": (
                 "duplicates = result node ids already delivered by an earlier"
                 " event of the same transport session (200-event horizon,"
-                " mirroring storage.delivered_node_ids); before ships every"
+                " mirroring storage.recall_delivery_history); before ships every"
                 " result full, after classifies repeats via current delivery"
             ),
         },
@@ -1636,12 +1643,11 @@ def family_repeat_gating(
     a fixed sentinel scope; their independently de-identified query surrogate
     remains in the response envelope, so privacy identity never changes the
     payload measurement or enters output.
-    Each event is shaped twice — ungated (the ``replay_delivery`` outcome,
-    reused untouched) and gated (when the rule fires, the fingerprint's
-    delivered ids union into ``already_delivered_ids`` and ``session_dedup``
-    is forced on, exactly like the handler). The event is then recorded
-    (``record_recall_event`` with the event's query/scope/transport/session
-    surrogates and result node ids), and gated events are flagged post-record.
+    Each event is shaped from the store's prior response receipts. A gated
+    event also reads fingerprint history and may drop trailing stubs. The
+    selected event and its final shaped bodies are then recorded separately,
+    just as in the handler. Dropped or preview-only results never establish
+    full-content delivery, even though selection history retains their ids.
     Feedback links are interleaved at ``feedback_applied_at`` (deliveries
     before links on ties), matching storage's authoritative aggregate rebuild.
     The store never sees corpus class/template labels; those labels and dev
@@ -1671,7 +1677,6 @@ def family_repeat_gating(
         anchor = store.create_node(
             level="trace", content="repeat-gating replay feedback anchor"
         )
-        session_history: dict[Any, list[set[str]]] = defaultdict(list)
         session_content: dict[Any, set[str]] = defaultdict(set)
         pending_feedback: list[tuple[str, int, str]] = []
         for index, event in enumerate(corpus.events):
@@ -1685,11 +1690,6 @@ def family_repeat_gating(
 
             transport = event.get("transport_session_id")
             session_key: Any = transport if transport else ("solo", index)
-            history = session_history[session_key]
-            delivered: set[str] = set()
-            for previous in history[-DELIVERED_HORIZON_EVENTS:]:
-                delivered |= previous
-
             family_identity, store_query, store_scope = _event_repeat_identity(
                 event, identity_mode, lm
             )
@@ -1706,72 +1706,64 @@ def family_repeat_gating(
             result_ids = replayed["result_ids"]
             if gated:
                 gated_event_ids.add(event["id"])
-                shaped = shape(
-                    corpus.recall_results(event),
-                    already_delivered_ids=(
-                        delivered | store.fingerprint_delivered_node_ids(fingerprint)
-                    ),
-                    snippet_max_chars=snippet_chars,
-                    context_value_max_chars=context_chars,
-                    session_dedup=True,
-                    snippet_ladder=snippet_ladder,
-                    full_node_diet=full_node_diet,
-                    provenance_value_max_chars=provenance_chars,
-                    stats_compaction=stats_compaction,
-                    sparse_entries=sparse_entries,
-                )
-                dropped_twin_sources: set[str] = set()
-                if policy.drop_trailing_stubs:
-                    # Mirror the handler: a gated delivery drops its trailing
-                    # all-stub run (reduced-result-count compaction).
-                    while shaped and shaped[-1]["delivery"] in (
-                        "session_duplicate",
-                        "twin_duplicate",
-                    ):
-                        dropped = shaped.pop()
-                        duplicate_of = (dropped.get("content_ref") or {}).get(
-                            "duplicate_of"
-                        )
-                        if (
-                            dropped["delivery"] == "twin_duplicate"
-                            and isinstance(duplicate_of, str)
-                            and any(
-                                item["node"]["id"] == duplicate_of
-                                and (
-                                    item["delivery"]
-                                    in ("full", "snippet", "twin_duplicate")
-                                    or "content_ref" in item
-                                )
-                                for item in shaped
+            shaped = shape(
+                corpus.recall_results(event),
+                delivery_history=lm["DeliveryHistory"](store.recall_delivery_history(
+                    transport if lm["session_dedup_enabled_from_env"]() else None,
+                    fingerprint=fingerprint if gated else None,
+                )),
+                snippet_max_chars=snippet_chars,
+                context_value_max_chars=context_chars,
+                session_dedup=gated or (bool(transport) and lm["session_dedup_enabled_from_env"]()),
+                snippet_ladder=snippet_ladder,
+                full_node_diet=full_node_diet,
+                provenance_value_max_chars=provenance_chars,
+                stats_compaction=stats_compaction,
+                sparse_entries=sparse_entries,
+            )
+            dropped_twin_sources: set[str] = set()
+            if gated and policy.drop_trailing_stubs:
+                # Mirror the handler: a gated delivery drops its trailing
+                # all-stub run (reduced-result-count compaction).
+                while shaped and shaped[-1]["delivery"] in (
+                    "session_duplicate",
+                    "twin_duplicate",
+                ):
+                    dropped = shaped.pop()
+                    duplicate_of = (dropped.get("content_ref") or {}).get(
+                        "duplicate_of"
+                    )
+                    if (
+                        dropped["delivery"] == "twin_duplicate"
+                        and isinstance(duplicate_of, str)
+                        and any(
+                            item["node"]["id"] == duplicate_of
+                            and (
+                                item["delivery"]
+                                in ("full", "snippet", "twin_duplicate")
+                                or "content_ref" in item
                             )
-                        ):
-                            dropped_twin_sources.add(dropped["node"]["id"])
-                envelope = {
-                    "query": event.get("query_surrogate") or "",
-                    "scope": event.get("requested_scope") or event.get("scope"),
-                    "recall_event_id": event["id"],
-                    "count": len(shaped),
-                    "results": shaped,
-                    "auto_decay": None,
+                            for item in shaped
+                        )
+                    ):
+                        dropped_twin_sources.add(dropped["node"]["id"])
+            envelope = {
+                "query": event.get("query_surrogate") or "",
+                "scope": event.get("requested_scope") or event.get("scope"),
+                "recall_event_id": event["id"],
+                "count": len(shaped),
+                "results": shaped,
+                "auto_decay": None,
+            }
+            chars = len(json.dumps(envelope, ensure_ascii=False))
+            entries = [
+                {
+                    "delivery": item["delivery"],
+                    "node": {"id": item["node"]["id"]},
+                    "has_content_ref": "content_ref" in item,
                 }
-                chars = len(json.dumps(envelope, ensure_ascii=False))
-                entries = [
-                    {
-                        "delivery": item["delivery"],
-                        "node": {"id": item["node"]["id"]},
-                        "has_content_ref": "content_ref" in item,
-                    }
-                    for item in shaped
-                ]
-            else:
-                # Rule idle: shaping inputs equal the ungated replay's (the
-                # recorded results, and with them the session horizon, are
-                # identical in both worlds), so its outcome is reused as-is.
-                chars = replayed["chars"]
-                entries = [
-                    {"delivery": delivery_class, "node": {"id": node_id}}
-                    for node_id, delivery_class in zip(result_ids, replayed["classes"])
-                ]
+                for item in shaped
+            ]
             gated_chars[event["id"]] = chars
             gated_retained[event["id"]] = (
                 _response_content_access_retained(
@@ -1780,15 +1772,12 @@ def family_repeat_gating(
                     session_content[session_key],
                     dropped_twin_sources,
                 )
-                if gated
-                else replayed["content_access_retained"]
             )
             session_content[session_key].update(
                 item["node"]["id"]
                 for item in entries
                 if item["delivery"] in ("full", "snippet")
             )
-            history.append(set(result_ids))
 
             recorded = store.record_recall_event(
                 query=store_query,
@@ -1806,6 +1795,9 @@ def family_repeat_gating(
                 max_results=int(event.get("max_results") or 10),
                 results=[{"node_id": node_id} for node_id in result_ids],
             )
+            store.record_recall_delivery(recorded.id, lm["recall_delivery_records"](
+                corpus.recall_results(event), shaped,
+            ))
             if gated:
                 store.mark_recall_event_gated(recorded.id)
             if event.get("feedback_applied"):
