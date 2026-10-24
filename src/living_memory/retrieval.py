@@ -1001,19 +1001,15 @@ class MemoryRecallService:
         # Oldest-first progress prevents new writes from starving old repairs.
         collapse_near_dups = drain_near_dup_supersedes_enabled()
         freshly_chunked: dict[str, dict[str, Node]] = {}
-        remaining = LAZY_CHUNK_NODE_LIMIT
-        scopes = plan.search_scopes
-        for index, scope in enumerate(scopes):
-            # Reserve work for every searched scope, including global, even
-            # when the narrowest scope has a sustained stream of new traces.
-            limit = remaining // (len(scopes) - index)
-            pending = self.store.list_unchunked_nodes(scope=scope, limit=limit)
-            for node in pending:
-                self._rechunk_node(node)
-            remaining -= len(pending)
+        pending = sorted(
+            (node for scope in plan.search_scopes
+             for node in self.store.list_unchunked_nodes(scope=scope, limit=LAZY_CHUNK_NODE_LIMIT)),
+            key=lambda node: (node.timestamp, node.id),
+        )[:LAZY_CHUNK_NODE_LIMIT]
+        for node in pending:
+            self._rechunk_node(node)
             if collapse_near_dups:
-                for node in pending:
-                    freshly_chunked.setdefault(node.scope, {})[node.id] = node
+                freshly_chunked.setdefault(node.scope, {})[node.id] = node
 
         q_arr = _as_query_array(query_embedding)
         # After the drain, never before it: the drain writes chunks.
