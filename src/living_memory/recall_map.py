@@ -211,6 +211,7 @@ from living_memory.storage import (
     RECALL_DELIVERY_HISTORY_STATE_TABLE,
     RECALL_DELIVERY_HISTORY_TABLE,
     MemoryStore,
+    RecallWork,
     _RECALL_DELIVERY_HISTORY_FORMAT,
 )
 
@@ -4421,6 +4422,7 @@ class RecallMapBuilder:
         scope: str | None = None,
         task: str | None = None,
         task_pattern: str | None = None,
+        transport_session_id: str | None = None,
         decision_at: str | datetime | None = None,
     ) -> RecallMap | None:
         """Cluster one residual pool. ``None`` when there is nothing to say.
@@ -4452,14 +4454,18 @@ class RecallMapBuilder:
         map_scope = (
             normalize_scope(scope) if scope else _dominant_residual_scope(results)
         )
-        key = cache_key(map_scope, task=task, task_pattern=task_pattern)
+        work = RecallWork.resolve(
+            map_scope, task=task, task_pattern=task_pattern,
+            transport_session_id=transport_session_id,
+        )
+        key = work.key if work else ""
         demote_after = pool_demotion_windows_from_env()
         cold_slots = pool_cold_slots_from_env()
         cold_rows: list[tuple[int, Node, Any, Any]] | None = (
             [] if cold_slots is not None else None
         )
         curtailment = self._curtailment(
-            map_scope, task, task_pattern,
+            work,
             want_ask_follows=demote_after is not None,
         )
         self.last_curtailment = curtailment
@@ -4494,7 +4500,7 @@ class RecallMapBuilder:
 
         offer, pool_digest = self._reoffer(curtailment, digest)
         if not offer and pool is None:
-            self._note_delivery(map_scope, task, task_pattern, offered=False)
+            self._note_delivery(work, offered=False)
             return self._collapsed(
                 map_scope, key, pool_size=None, streak=curtailment.streak,
                 selection=None, cold=None, pool_digest=None,
@@ -4543,12 +4549,12 @@ class RecallMapBuilder:
             if not built.clusters:
                 built = replace(built, pool_digest=pool_digest)
             self._note_delivery(
-                map_scope, task, task_pattern, offered=bool(built.clusters)
+                work, offered=bool(built.clusters)
             )
             return built
 
         if not offer:
-            self._note_delivery(map_scope, task, task_pattern, offered=False)
+            self._note_delivery(work, offered=False)
             return self._collapsed(
                 map_scope,
                 key,
@@ -4598,7 +4604,7 @@ class RecallMapBuilder:
             # uncollapsed map — and the marker carries the digest of the pool
             # that had nothing to say, so the next look compares against it
             # rather than re-discovering the same nothing every delivery.
-            self._note_delivery(map_scope, task, task_pattern, offered=False)
+            self._note_delivery(work, offered=False)
             return self._collapsed(
                 map_scope,
                 key,
@@ -4613,7 +4619,7 @@ class RecallMapBuilder:
             # not disappear from field evidence, but it offered the agent no
             # cluster and therefore must not advance the curtail offer count.
             self._note_delivery(
-                map_scope, task, task_pattern, offered=bool(built.clusters)
+                work, offered=bool(built.clusters)
             )
         return built
 
@@ -5628,9 +5634,7 @@ class RecallMapBuilder:
 
     def _curtailment(
         self,
-        scope: str,
-        task: str | None,
-        task_pattern: str | None = None,
+        work: RecallWork | None,
         *,
         want_ask_follows: bool = False,
     ) -> _Curtailment:
@@ -5659,7 +5663,11 @@ class RecallMapBuilder:
         whether one delivery was followed.
         """
 
-        key = cache_key(scope, task=task, task_pattern=task_pattern)
+        if work is None:
+            self.last_curtail_read = False
+            self.last_ask_follows = frozenset()
+            return _Curtailment(streak=0, offers=0)
+        key = work.key
         memo = self._curtail_memo.get(key)
         if (
             memo is not None
@@ -5673,7 +5681,7 @@ class RecallMapBuilder:
         self.last_curtail_read = True
         ask_follows: set[str] | None = set() if want_ask_follows else None
         verdict = self._read_curtailment(
-            scope, task, task_pattern, ask_follows=ask_follows
+            work, ask_follows=ask_follows
         )
         followed = frozenset(ask_follows or ())
         self._curtail_memo.pop(key, None)
@@ -5689,9 +5697,7 @@ class RecallMapBuilder:
 
     def _note_delivery(
         self,
-        scope: str,
-        task: str | None,
-        task_pattern: str | None = None,
+        work: RecallWork | None,
         *,
         offered: bool,
     ) -> None:
@@ -5703,9 +5709,7 @@ class RecallMapBuilder:
         knows it did.
         """
 
-        memo = self._curtail_memo.get(
-            cache_key(scope, task=task, task_pattern=task_pattern)
-        )
+        memo = self._curtail_memo.get(work.key) if work else None
         if memo is None:  # pragma: no cover - the read always seeds one
             return
         memo.total += 1
@@ -5714,9 +5718,7 @@ class RecallMapBuilder:
 
     def _read_curtailment(
         self,
-        scope: str,
-        task: str | None,
-        task_pattern: str | None = None,
+        work: RecallWork | None,
         *,
         ask_follows: set[str] | None = None,
     ) -> _Curtailment:
@@ -5753,7 +5755,7 @@ class RecallMapBuilder:
         """
 
         try:
-            history = self._delivery_history(scope, task, task_pattern)
+            history = self._delivery_history(work)
         except (AttributeError, sqlite3.Error):  # pragma: no cover - old store
             return _Curtailment(streak=0, offers=0)
         if not history:
@@ -5824,67 +5826,16 @@ class RecallMapBuilder:
             since_digest=since_digest,
         )
 
-    def _delivery_history(
-        self, scope: str, task: str | None, task_pattern: str | None = None
-    ) -> list[dict[str, Any]]:
-        """This key's recent deliveries, newest first.
+    def _delivery_history(self, work: RecallWork | None) -> list[dict[str, Any]]:
+        """Maps offered to this exact consumer, newest first."""
 
-        The read is keyed the way :func:`cache_key` keys the map: on the
-        ``task_pattern`` when there is one, on the ``task`` when there is not.
-        That alignment is the whole point of this method. Before
-        ``recall_events`` had a ``task_pattern`` column the read could only ask
-        for the ``task``, and the docstring here called that a safe compromise
-        because it merges tasks rather than splitting them — which was true of
-        a stable ``task`` and false of the client that matters. An AE chat
-        sends ``task=chat:<id>/turn-<N>`` per the section 9 contract, a fresh
-        string every turn, so the window under a stable ``task_pattern`` key
-        was not merely coarse: it was empty on every single turn, and
-        :data:`CURTAIL_STREAK` could never accumulate for the one channel most
-        in need of going quiet.
-
-        Storage carries the pattern-or-legacy-task disjunction, so a row is
-        counted when it names this pattern, or when it names no pattern at all
-        and its ``task`` matches — the only identity a row written before the
-        column can offer. The ``task`` re-check below therefore runs *only* for
-        a key with no pattern, where it still does its original job: make a
-        task-less key its own key instead of a bucket collecting every task in
-        the scope.
-
-        What is left is under-seeing, in two shapes, both of which end in "less
-        history": a stored pattern spelled differently from this call's
-        (storage matches strings, the key folds them), and a scope resolved
-        differently from the one the map is built under. Seeing less history
-        can only shorten a streak, and a shorter streak is a map that keeps
-        being delivered, which is this module's standing answer to every
-        ambiguity. A key with no pattern is affected by neither: those rows are
-        matched exactly as they always were.
-
-        One over-see survives and is named rather than hidden: a key with no
-        pattern still counts rows that carry one, because the storage filter
-        for that case is byte-identical to what it always was. It takes a
-        client that sends a ``task_pattern`` on some calls and not others under
-        the same ``task``; the rows are still that task's own deliveries, and
-        the fix would be a behaviour change to every existing caller of
-        :meth:`~living_memory.storage.MemoryStore.recent_recall_map_history`
-        for a case no client produces.
-        """
-
-        rows = self.store.recent_recall_map_history(
-            scope=scope,
-            task=task,
-            task_pattern=task_pattern or None,
-            limit=CURTAIL_HISTORY_LIMIT,
-        )
-        if task_pattern:
-            return [
-                row for row in rows if isinstance(row.get("recall_map"), Mapping)
-            ]
-        wanted = normalize_key(task) if task else ""
+        if work is None:
+            return []
         return [
-            row
-            for row in rows
-            if normalize_key(str(row.get("task") or "")) == wanted
-            and isinstance(row.get("recall_map"), Mapping)
+            row for row in self.store.recent_recall_map_history(
+                work=work, limit=CURTAIL_HISTORY_LIMIT,
+            )
+            if isinstance(row.get("recall_map"), Mapping)
         ]
 
     def _medoid_access(
@@ -6038,6 +5989,8 @@ class RecallMapBuilder:
     def _remember(
         self, key: str, revision: tuple[Any, ...], groups: list[_Group]
     ) -> None:
+        if not key:
+            return
         templates = tuple(
             _ClusterTemplate(
                 stage=group.stage,
@@ -6497,18 +6450,17 @@ class RecallMapBuilder:
 # ----------------------------------------------------------------------
 
 
-def cache_key(scope: str, *, task: str | None = None, task_pattern: str | None = None) -> str:
-    """``(scope, normalized task or task_pattern)`` as one stable string.
+def cache_key(
+    scope: str, *, task: str | None = None, task_pattern: str | None = None,
+    transport_session_id: str | None = None,
+) -> str:
+    """Current consumer's exact key, or empty when context is unavailable."""
 
-    ``task_pattern`` wins when both are present: it names the recurring *class*
-    of work, which is what should share a structure across sessions, while a
-    ``task`` string is usually this session's phrasing of it. Both are folded by
-    :func:`normalize_key`, so "postsession-extraction" and "Postsession
-    Extraction" are one key.
-    """
-
-    label = task_pattern if task_pattern else task
-    return f"{normalize_scope(scope)}|{normalize_key(label) if label else ''}"
+    work = RecallWork.resolve(
+        scope, task=task, task_pattern=task_pattern,
+        transport_session_id=transport_session_id,
+    )
+    return work.key if work else ""
 
 
 def _dominant_scope(pool: list[_Member]) -> str:

@@ -1122,6 +1122,50 @@ def should_gate_fingerprint(
     return True
 
 
+@dataclass(frozen=True)
+class RecallWork:
+    """Current map consumer, derived from existing recall-event fields.
+
+    An explicit pattern or task names work across connections. Otherwise only
+    the transport identifies a consumer. Labels are opaque, case-sensitive
+    strings; no knowledge-search normalization merges independent work.
+    """
+
+    scope: str
+    kind: str
+    value: str
+
+    @classmethod
+    def resolve(
+        cls, scope: str, *, task: Any = None, task_pattern: Any = None,
+        transport_session_id: Any = None,
+    ) -> RecallWork | None:
+        label = _optional_str(task_pattern) or _optional_str(task)
+        if label:
+            return cls(normalize_scope(scope), "work", label)
+        transport = _optional_str(transport_session_id)
+        return cls(normalize_scope(scope), "transport", transport) if transport else None
+
+    @property
+    def key(self) -> str:
+        return json.dumps((self.scope, self.kind, self.value), separators=(",", ":"))
+
+    def predicate(self, alias: str = "") -> tuple[str, tuple[str, ...]]:
+        """SQL over recall_events, with the same precedence as resolution."""
+
+        prefix = f"{alias}." if alias else ""
+        pattern = f"NULLIF({prefix}task_pattern, '')"
+        task = f"NULLIF({prefix}task, '')"
+        if self.kind == "work":
+            identity = f"({pattern} = ? OR ({pattern} IS NULL AND {task} = ?))"
+            values = (self.value, self.value)
+        else:
+            identity = (f"{pattern} IS NULL AND {task} IS NULL "
+                        f"AND {prefix}transport_session_id = ?")
+            values = (self.value,)
+        return f"{prefix}scope = ? AND ({identity})", (self.scope, *values)
+
+
 class MemoryStore:
     """Stable CRUD API over one SQLite file.
 
@@ -3017,6 +3061,8 @@ class MemoryStore:
         transport_session_id: str | None = None,
         limit: int = 20,
         task_pattern: str | None = None,
+        *,
+        work: RecallWork | None = None,
     ) -> list[dict[str, Any]]:
         """Recent deliveries that carried a recall map, newest first.
 
@@ -3071,7 +3117,11 @@ class MemoryStore:
         if scope is not None:
             clauses.append("scope = ?")
             params.append(scope)
-        if task_pattern is not None:
+        if work is not None:
+            predicate, values = work.predicate()
+            clauses.append(predicate)
+            params.extend(values)
+        elif task_pattern is not None:
             clauses.append("(task_pattern = ? OR (task_pattern IS NULL AND task IS ?))")
             params.extend([task_pattern, task])
         elif task is not None:

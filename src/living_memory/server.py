@@ -60,7 +60,6 @@ from living_memory.delivery import (
     stats_compaction_enabled_from_env,
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
-from living_memory.instructions_map import map_section as _compose_map_section
 from living_memory.near_dup import (
     DuplicateCandidate,
     build_duplicate_map,
@@ -292,11 +291,8 @@ def create_mcp_server(
     LocalEmbeddingModel(model_name=store.config.embedding_model).warmup()
     mcp_cls = mcp_factory or _load_fastmcp()
     factory_kwargs: dict[str, Any] = {
-        # Composed once here, and again after each recall/remember — see
-        # _InstructionsRefresh. Composing at boot rather than only on refresh
-        # is what lets a restarted process serve the map its predecessor
-        # persisted instead of an empty one.
-        "instructions": _instructions_with_map(store, store.config.default_scope),
+        # Initialization has no current-work identity. Maps accompany recalls.
+        "instructions": _server_instructions(store.config.default_scope),
     }
     # A token rotated earlier via POST /admin/token and persisted to the store
     # KV wins over the LM_AUTH_TOKEN env seed, so a rotation survives restart;
@@ -657,99 +653,6 @@ def _server_instructions(default_scope: str, map_section: str = "") -> str:
     if not section:
         return static
     return f"{static}\n{section}\n"
-
-
-#: History rows the section is composed from, far below
-#: ``instructions_map.DEFAULT_HISTORY_LIMIT``. Two reasons, and the cheap one
-#: is not the main one.
-#:
-#: Recency is the point: this channel personalizes a session from what memory
-#: has *lately* been mapping, and a window reaching twenty recalls back drags
-#: in structure the work has moved on from. Three maps carry up to three times
-#: ``instructions_map.MAX_LABELS`` candidate labels for the six slots the
-#: section shows, so the cap binds long before the window does.
-#:
-#: It is also what keeps the refresh off the latency budget. Composition
-#: screens every label of every cluster of every row against the register ban
-#: battery, so its cost is linear in rows x clusters and it — not the indexed
-#: read — is what a wide window costs: measured 2026-08-20 over a 40-map
-#: history, twenty rows cost 0.14ms of read against 0.54ms of composition,
-#: and a whole refresh falls from 0.68ms there to 0.13ms at three.
-_INSTRUCTIONS_MAP_HISTORY_ROWS = 3
-
-
-def _instructions_with_map(store: MemoryStore, default_scope: str) -> str:
-    """The instructions text this store's persisted history composes right now.
-
-    Called once at construction and again after each recall/remember, never
-    on a path an agent waits on for anything else. The read is one bounded,
-    indexed query and the composition is pure — no LLM, no network — because
-    this text is also what ``initialize`` blocks on.
-
-    ``LM_RECALL_MAP=0`` removes the section as well as the response key: the
-    valve is the rollback for the whole map, and a rollback that left one
-    channel populated would not be one.
-    """
-
-    section = ""
-    if _recall_map_enabled():
-        try:
-            section = _compose_map_section(
-                store, limit=_INSTRUCTIONS_MAP_HISTORY_ROWS
-            )
-        except Exception:
-            # The instructions are the one text every client shows before any
-            # tool is considered. They render, whatever the store says.
-            section = ""
-    return _server_instructions(default_scope, map_section=section)
-
-
-class _InstructionsRefresh:
-    """Re-snapshot the served instructions between transport sessions.
-
-    ``FastMCP`` takes ``instructions`` as a construction kwarg and never
-    re-reads the composed text, so nothing here would ever change after boot.
-    What *is* re-read is the low-level attribute: ``Server.
-    create_initialization_options()`` reads ``instructions=self.instructions``
-    at call time, and ``StreamableHTTPSessionManager`` calls it inside each
-    ``app.run(...)`` — once per transport session. Assigning
-    ``_mcp_server.instructions`` therefore reaches the NEXT session's
-    ``initialize``; the current session, already initialized, is untouched.
-    Over stdio there is one session per process, so the map a session sees is
-    the state at its own boot.
-
-    Two properties this must have, because it hangs off the recall path:
-
-    * It never raises into the tool. A map is a decoration on instructions;
-      losing it must never lose a recall or a write.
-    * It is defensive about the object. ``create_mcp_server`` accepts an
-      ``mcp_factory``, and a test double is under no obligation to own a
-      ``_mcp_server`` — absent, this is a silent no-op.
-
-    The assignment is skipped when the composed text is unchanged, which is
-    the common case: history only moves when a recall delivers a new map.
-    """
-
-    def __init__(self, mcp: Any, store: MemoryStore) -> None:
-        self._mcp = mcp
-        self._store = store
-        self._default_scope = store.config.default_scope
-        # Whatever was composed at construction, so the first call assigns
-        # only if the history has actually moved since boot.
-        self._text = getattr(mcp, "instructions", None)
-
-    def __call__(self) -> None:
-        try:
-            server = getattr(self._mcp, "_mcp_server", None)
-            if server is None:
-                return
-            text = _instructions_with_map(self._store, self._default_scope)
-            if text == self._text:
-                return
-            self._text = text
-            server.instructions = text
-        except Exception:
-            return
 
 
 # MCP-visible protocol must fit the per-tool client budget of 1024 chars.
@@ -1115,10 +1018,6 @@ def _register_tools(
     # which only holds if the thing remembering the structure outlives a call.
     recall_map_builder = RecallMapBuilder(store)
     consolidation_service = ConsolidationService(store)
-    # Runs under ``runtime_lock`` with the rest of the tool body: the store
-    # holds one sqlite connection shared across threads, and the refresh reads
-    # it. One bounded indexed query, after the response is already built.
-    refresh_instructions = _InstructionsRefresh(mcp, store)
     auto_consolidation = _build_auto_consolidation(store, runtime_lock, consolidation_service)
     _attach(mcp, "auto_consolidation", auto_consolidation)
     # Read once per server, like every description: the experiment switches
@@ -1214,7 +1113,6 @@ def _register_tools(
                 response["rejected_alternatives"] = rejected_alternatives
             if marks is not None:
                 response["feedback_marks"] = marks.summary()
-            refresh_instructions()
             return response
 
     @mcp.tool(description=protocol_texts["memory_teach"])
@@ -1481,9 +1379,12 @@ def _register_tools(
                 try:
                     built = recall_map_builder.build(
                         residual,
-                        scope=scope,
-                        task=_ambient_text(ambient_context, "task"),
-                        task_pattern=_ambient_text(ambient_context, "task_pattern"),
+                        scope=resolve_scope(
+                            scope=scope, ambient_context=ambient_context, store=store,
+                        ).requested_scope,
+                        task=(ambient_context or {}).get("task"),
+                        task_pattern=(ambient_context or {}).get("task_pattern"),
+                        transport_session_id=transport_session_id,
                     )
                     if built is not None and recall_service.last_recall_event_id is not None:
                         payload = built.to_dict()
@@ -1509,11 +1410,6 @@ def _register_tools(
                         "could not record recall delivery for event %s",
                         recall_service.last_recall_event_id, exc_info=True,
                     )
-            # The map this call just persisted is the signal the *next*
-            # session's instructions are composed from. Last, after the
-            # response is complete, so nothing an agent waits on depends on
-            # it — and swallowing, so nothing it can hit costs a recall.
-            refresh_instructions()
             return response
 
     # memory_attest is NOT registered by default (expose_attest=False). Field
