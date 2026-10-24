@@ -3151,6 +3151,86 @@ class MemoryStore:
             for row in rows
         ]
 
+    def recall_work_followups(
+        self, work: RecallWork, *, since: str, medoid_ids: Sequence[str],
+        limit: int = 200,
+    ) -> list[dict[str, Any]] | None:
+        """Bounded recall and lookup evidence for one current-work consumer.
+
+        Recall events include mapless results. A lookup has only a transport;
+        its latest preceding recall identifies the work, including continuation
+        on another connection. Conflicting work at the same timestamp cannot
+        attribute a lookup. Corpus-wide delivery outcomes remain independent.
+        ``None`` means the observation exceeded its bound, not non-use.
+        """
+
+        predicate, values = work.predicate()
+        recalls = self._conn.execute(
+            f"""SELECT id, created_at, query, results FROM recall_events
+                WHERE {predicate} AND created_at >= ?
+                ORDER BY created_at DESC, rowid DESC LIMIT ?""",
+            (*values, since, limit + 1),
+        ).fetchall()
+        if len(recalls) > limit:
+            return None
+        evidence = [
+            {"at": _normalize_recall_history_instant(row["created_at"]),
+             "query": row["query"],
+             "node_ids": _recall_result_node_ids(_json_loads(row["results"], [])),
+             "event_id": row["id"]}
+            for row in recalls
+        ]
+        if not medoid_ids:
+            return evidence
+        marks = ",".join("?" for _ in medoid_ids)
+        lookups = self._conn.execute(
+            f"""SELECT node_id, occurred_at, transport_session_id
+                FROM {RECALL_LOOKUP_EVENT_TABLE}
+                WHERE node_id IN ({marks}) AND occurred_at > ?
+                ORDER BY occurred_at DESC LIMIT ?""",
+            (*medoid_ids, _normalize_recall_history_instant(since), limit + 1),
+        ).fetchall()
+        if len(lookups) > limit:
+            return None
+        contexts: dict[tuple[str, str], RecallWork | None] = {}
+        for lookup in lookups:
+            transport = lookup["transport_session_id"]
+            if not transport:
+                continue
+            at = lookup["occurred_at"]
+            key = (transport, at)
+            if key not in contexts:
+                # Both tables store the same event; the normalized timestamp
+                # permits comparison with lookup's fixed-width UTC timestamp.
+                latest = self._conn.execute(
+                    f"""SELECT e.scope, e.task, e.task_pattern,
+                               e.transport_session_id, h.occurred_at
+                        FROM recall_events AS e
+                        JOIN {RECALL_HISTORY_EVENT_TABLE} AS h
+                          ON h.recall_event_id = e.id
+                        WHERE e.transport_session_id = ? AND h.occurred_at <= ?
+                        ORDER BY e.created_at DESC, e.rowid DESC LIMIT ?""",
+                    (transport, at, limit + 1),
+                ).fetchall()
+                context = None
+                if latest:
+                    instant = latest[0]["occurred_at"]
+                    tied = [row for row in latest if row["occurred_at"] == instant]
+                    identities = {
+                        RecallWork.resolve(
+                            row["scope"], task=row["task"],
+                            task_pattern=row["task_pattern"],
+                            transport_session_id=row["transport_session_id"],
+                        ) for row in tied
+                    }
+                    if len(identities) == 1 and len(tied) <= limit:
+                        context = identities.pop()
+                contexts[key] = context
+            if contexts[key] == work:
+                evidence.append({"at": at, "query": "", "node_ids": [lookup["node_id"]],
+                                 "event_id": None})
+        return evidence
+
     def _apply_recall_fingerprint_delivery(
         self,
         fingerprint: str,
