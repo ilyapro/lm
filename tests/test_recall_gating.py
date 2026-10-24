@@ -256,7 +256,7 @@ def test_repeat_across_sessions_full_warmup_then_compact(
         _assert_gated_dropped(response)
         assert _event_row(store, response["recall_event_id"])["gated"] == 1
 
-    # The recorded events stay unshaped: every delivery logs its result ids,
+    # Selection history retains its result ids alongside shaped-body receipts,
     # and the aggregate counted each connection as a distinct session.
     for response in responses:
         event = store.get_recall_event(response["recall_event_id"])
@@ -598,3 +598,24 @@ def test_protocol_wording_served_intact(tmp_path: Path) -> None:
     assert len(tools["memory_recall"]) <= 1024
     assert "MUST teach the moment a belief changes" in tools["memory_teach"]
     assert "supersedes edge" in tools["memory_teach"]
+
+
+def test_changed_content_survives_fingerprint_gating_and_trailing_drop(tmp_path, monkeypatch):
+    _fast_gate(monkeypatch)
+    async def scenario():
+        mcp, store = _server(tmp_path)
+        contents = _seed(store, ("alpha",))
+        node_id = next(iter(contents))
+        for _ in range(3):
+            response = await _fresh_session_recall(mcp, GATE_QUERY, scope=GATE_SCOPE)
+        _assert_gated_dropped(response)
+        event = store.get_recall_event(response["recall_event_id"])
+        assert event.results[0]["delivery"] == {"kind": "omitted"}
+        current = contents[node_id] + " Authorization now requires OMEGA."
+        store.update_node(node_id, content=current)
+        response = await _fresh_session_recall(mcp, GATE_QUERY, scope=GATE_SCOPE)
+        assert response["results"][0]["id"] == node_id
+        assert response["results"][0]["delivery"] == "full"
+        assert response["results"][0]["content"] == current
+        _assert_gated_dropped(await _fresh_session_recall(mcp, GATE_QUERY, scope=GATE_SCOPE))
+    asyncio.run(scenario())

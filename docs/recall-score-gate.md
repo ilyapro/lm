@@ -80,11 +80,10 @@ This is an added delivery class, and the existing classes keep their meaning.
 Without the gate, nothing changes. `below_threshold` is not in the server's
 `_DROPPABLE_TRAILING_STUBS`, so the repeat-gating trailing drop leaves it alone.
 
-Known interaction: a stubbed node is recorded in the event like any delivered
-node. `store.delivered_node_ids` therefore counts it, and within the same
-transport session a later recall can render it as `session_duplicate` (a
-one-line preview) instead of `full`. `memory_lookup` still reaches it. Measure
-this before turning `stub` on together with session dedup.
+A withheld node retains its selected event entry and lookup reference, but its
+empty response body does not establish content delivery. If a later recall
+selects it above the gate, session dedup permits its current text unless a
+separate full/snippet response already supplied that content.
 
 ## Gate score
 

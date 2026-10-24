@@ -63,22 +63,23 @@ without changing the other surface.
 5. The ranked results then pass through the pure delivery-shaping stage
    (`delivery.shape_recall_results`) on their way to the wire: a result
    byte-identical to a higher-ranked one becomes a `twin_duplicate` stub, a
-   node id already delivered on the same transport session becomes a
-   `session_duplicate` stub (the delivered-id set is read from the session's
-   recent recall events *before* this call's row is written, so a response
-   never stubs itself), and oversized ordinary content becomes a bounded
-   excerpt. Binding schemas remain complete instead of being snippeted.
+   current version whose complete content or offered excerpt was included in
+   an earlier session response becomes a `session_duplicate` stub, and
+   oversized ordinary content becomes a bounded excerpt. Binding schemas
+   remain complete instead of being snippeted. The bounded event history is
+   read before retrieval, so a response never stubs itself.
    The default `view="knowledge"` serializes identity, content, validity,
    corrections, delivery class, and `content_ref` directly in each result.
    `view="full"` includes the ranked `node` wrapper, all score fields, and
    compacted metadata for diagnostic consumers. Both views point to
    `memory_lookup(node_id=...)` for complete content and current validity;
    `context_key` retrieves one original context field and lookup's
-   `view="full"` restores the complete stored node. Shaping changes the
-   serialized response only — the
-   recorded event keeps the unshaped result IDs, and without a transport
-   session id the session-dedup stage is skipped entirely (legacy full
-   delivery).
+   `view="full"` restores the complete stored node. After shaping, an optional
+   atomic event update adds the actual delivery class and source/body hashes
+   to each selected result. Selection IDs and scores retain their access and
+   feedback roles. Missing delivery evidence permits re-delivery, including
+   for legacy events. Without a transport session id, session dedup is skipped.
+   A formed response is not proof of successful network transport.
 6. The next compatible `memory_remember` consumes the pending recall event,
    records it in the new trace provenance, creates `related` edges to recalled
    nodes, and applies implicit positive feedback to the recalled results and
@@ -211,9 +212,10 @@ windowed closure ratio per identity class (`explicit`, `transport_only`,
 
 The same column also feeds recall delivery shaping: an idempotent
 `idx_recall_events_transport_created` index supports
-`MemoryStore.delivered_node_ids`, the bounded per-session query (node ids in
-the 200 most recent events of one transport session) that session dedup
-consults before delivering full content twice on the same connection.
+`MemoryStore.recall_delivery_history`, which reads content receipts from the
+200 most recent events of a transport session. Session and experimental
+fingerprint repeat controls compare the same receipts against current source
+content and the proposed excerpt; selected IDs alone do not prove delivery.
 
 `fingerprint` and `gated` (schema v5) are recall *accounting*, not a delivery
 policy. `record_recall_event` unconditionally stamps every event with

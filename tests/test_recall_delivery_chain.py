@@ -317,7 +317,7 @@ def test_new_query_can_deliver_a_previously_unseen_excerpt(tmp_path, monkeypatch
             changed = await recall("hidden iris rotor exception code NOVA-82")
             assert changed["delivery"] == "snippet" and fact in changed["content"]
             assert (await recall("hidden iris rotor exception code NOVA-82"))["delivery"] == "session_duplicate"
-            lookup = _structured(await client.call_tool("memory_lookup", changed["content_ref"]))
+            lookup = _structured(await client.call_tool("memory_lookup", {"node_id": changed["content_ref"]["node_id"]}))
             assert lookup["results"][0]["content"] == content
     asyncio.run(scenario())
 

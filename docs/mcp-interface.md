@@ -354,8 +354,9 @@ class:
 * `full` — complete `content`.
 * `snippet` — content longer than this bearer's ladder budget, truncated
   inline at a clean boundary with a trailing `…`.
-* `session_duplicate` — the node's full content was already delivered on
-  this transport session; `content` is a one-line preview (~160 chars).
+* `session_duplicate` — this version's complete content or the exact excerpt
+  now offered was included in an earlier response on this transport session;
+  `content` is a one-line preview (~160 chars).
 * `twin_duplicate` — the content is byte-identical to a higher-ranked result
   in the same response (typically a legacy concept and its verbatim source
   trace): exactly one twin bears the content, the rest are stubs.
@@ -423,16 +424,34 @@ results carry that minimal reference when complete content was delivered
 but context or provenance was compacted.
 
 Session dedup is keyed by the transport-derived `transport_session_id` and
-consults the node ids recorded in that session's recent recall events (a
-bounded window of the 200 most recent) *before* the current call's event is
-written, so a response never stubs itself. A new connection is a new
-transport session and receives full content again. Without a transport
-session id (direct in-process calls, servers embedded without a request
-context) session dedup degrades to legacy behaviour — every recall delivers
-full content every time; twin dedup and snippeting still apply, being
-per-response and deterministic. The persisted recall event always records
-the unshaped result ids: delivery shaping changes the wire response only and
-never perturbs feedback closure.
+reads shaped-content evidence from the 200 most recent recall events before
+retrieval. Each selected result retains its ranking/access/feedback history;
+after constructing the final response, the handler adds a `delivery` record
+with `kind`, `content_sha256` (source text), and `delivered_sha256` (response
+text). A dropped result records `kind: "omitted"`. Both response views use the
+same evidence. Only `full` and `snippet` records prove content delivery:
+withheld text, duplicate previews, and legacy events without these records
+cannot suppress a later full result. Selection recognizes previously offered
+versions from these same records; shaping also checks the offered excerpt.
+
+Changed source content is eligible again, including in-place derived-node
+updates. A different query or snippet budget can offer a different excerpt,
+which is eligible unless this version's complete content was already included.
+A schema recipe is always offered complete. Access timestamps and other
+bookkeeping do not define a content version. Expired evidence permits delivery
+again; no corpus rewrite or separate persistent cache is needed.
+
+A new transport session has independent history. Without a transport session
+id, session dedup is skipped; within-response dedup and snippeting still apply.
+The experimental fingerprint repeat control reads the same content records
+within its own bounded window and remains disabled by default.
+
+Recording response content is an optional atomic event update after response
+construction. Read or write failure logs a warning and permits re-delivery,
+without cancelling the recall or its selection/access/feedback history. These
+records describe formed responses, not transport acknowledgments: a failed
+connection can lose a response after its record was saved. Exact-id lookup
+remains the full-content access path; there is no network exactly-once promise.
 
 Env knobs — every diet lever has its own rollback valve:
 
