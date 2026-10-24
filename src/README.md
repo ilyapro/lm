@@ -6,9 +6,23 @@ retrieval service and MCP interface.
 `memory_teach` appends a corrective trace, records the original's correction,
 and refreshes its recorded derivatives in one transaction. Procedural schemas
 and evidence carriers, clustered concepts and cross-scope promotions use their
-existing writers. The store invalidates changed content's chunks; ordinary
-recall reads the current content without a full consolidation or an additional
-language-model call.
+existing writers. Search chunks encode the current content. A cluster or
+promotion can keep a source representative in the legacy node embedding for
+consolidation similarity; writers pass it as `representative_embedding`,
+separately from a precomputed embedding of the content. A changed digest
+encodes its own chunks atomically with its content and sources. Unchanged
+digests keep their current chunks even when their representative changes.
+Writers without a vector invalidate changed content for lazy encoding.
+
+Ordinary recall repairs at most 16 pending nodes per call, sharing that budget
+among the searched scopes and taking the oldest pending content first. The
+limit bounds nodes, not the duration of encoding one large node. Lexical and
+graph retrieval remain available for pending content. Opening an older store
+once invalidates only single-chunk cluster/promotion concepts: their vectors
+may describe a source instead of their digest. Multi-chunk content, other
+materializers, node identities, sources and validity are preserved. Repair
+uses the same recall queue and configured encoder, without a full
+consolidation or an additional language-model call.
 
 Materializer provenance and explicit `derived_from` edges establish dependency.
 An ordinary trace's `source_traces` can contain recall history and does not make

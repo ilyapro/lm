@@ -1002,10 +1002,12 @@ class MemoryRecallService:
         collapse_near_dups = drain_near_dup_supersedes_enabled()
         freshly_chunked: dict[str, dict[str, Node]] = {}
         remaining = LAZY_CHUNK_NODE_LIMIT
-        for scope in plan.search_scopes:
-            if remaining <= 0:
-                break
-            pending = self.store.list_unchunked_nodes(scope=scope, limit=remaining)
+        scopes = plan.search_scopes
+        for index, scope in enumerate(scopes):
+            # Reserve work for every searched scope, including global, even
+            # when the narrowest scope has a sustained stream of new traces.
+            limit = remaining // (len(scopes) - index)
+            pending = self.store.list_unchunked_nodes(scope=scope, limit=limit)
             for node in pending:
                 self._rechunk_node(node)
             remaining -= len(pending)
