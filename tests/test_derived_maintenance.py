@@ -45,7 +45,7 @@ def revision(store, corpus):
 
 def snapshot(store):
     return {
-        table: [tuple(row) for row in store.connection.execute(f"SELECT * FROM {table}")]
+        table: [tuple(row) for row in store.connection.execute(f"SELECT * FROM main.{table}")]
         for table in (
             "nodes", "connections", "recall_events", "metadata",
             "node_chunk_embeddings", "query_anchors", "query_anchor_edges",

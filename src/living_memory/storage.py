@@ -191,6 +191,11 @@ def install_derived_only_authorizer(
 
     expected = {sql.split()[2]: sql for sql in triggers}
     placeholders = ",".join("?" for _ in expected)
+    writes = {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}
+    read_and_transaction_actions = {
+        sqlite3.SQLITE_READ, sqlite3.SQLITE_SELECT, sqlite3.SQLITE_FUNCTION,
+        sqlite3.SQLITE_TRANSACTION, sqlite3.SQLITE_SAVEPOINT, sqlite3.SQLITE_RECURSIVE,
+    }
 
     def revision_schema_matches() -> bool:
         actual = dict(conn.execute(
@@ -216,7 +221,7 @@ def install_derived_only_authorizer(
         database: str | None,
         source: str | None,
     ) -> int:
-        if action in {sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE}:
+        if action in writes:
             if database == "main":
                 if table in tables and source is None and revision_schema_matches():
                     return sqlite3.SQLITE_OK
@@ -227,13 +232,12 @@ def install_derived_only_authorizer(
                 ):
                     return sqlite3.SQLITE_OK
             return sqlite3.SQLITE_DENY
-        if action in {
-            sqlite3.SQLITE_READ, sqlite3.SQLITE_SELECT, sqlite3.SQLITE_FUNCTION,
-            sqlite3.SQLITE_TRANSACTION, sqlite3.SQLITE_SAVEPOINT, sqlite3.SQLITE_RECURSIVE,
-        }:
+        if action in read_and_transaction_actions:
             return sqlite3.SQLITE_OK
-        if action == sqlite3.SQLITE_PRAGMA and table == "table_info":
-            return sqlite3.SQLITE_OK
+        if action == sqlite3.SQLITE_PRAGMA:
+            # FTS5 checks data_version while reading its index.
+            if table == "table_info" or (table == "data_version" and column is None):
+                return sqlite3.SQLITE_OK
         return sqlite3.SQLITE_DENY
 
     conn.set_authorizer(authorizer)
