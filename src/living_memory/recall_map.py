@@ -1,196 +1,34 @@
-"""Recall map: what *else* memory holds for this task, as a handful of clusters.
+"""Deterministic maps of the recall's residual knowledge.
 
-A recall returns its top results and throws the rest of the ranked pool away.
-The residual is not noise — it is the answer to a question the agent has not
-asked yet, and the field measurement that motivates this module says the
-question never gets asked: over 57 live recalls the median call sat at position
-0.02 of the session, i.e. one start-of-session ritual and nothing after. The map
-turns that single reliable recall into a *plan* for the mid-session ones: each
-cluster carries a label, a count, a medoid example, a phrasing to ask with, and
-a todo-plan line the agent can paste into its own plan.
+The map supplements selected results with structural, path, query-anchor and
+embedding clusters. Labels are enriched and screened against corpus document
+frequencies, then fitted to the response budget. Main retrieval and corpus
+relevance remain independent of map delivery.
 
-Deterministic by construction
------------------------------
-No LLM call happens on this path and none may be added: the map is built inside
-the live recall latency budget, and a model call there would cost more than the
-recall it decorates. Labels come from a four-stage cascade, each stage claiming
-what it can and handing the rest down:
+Structure and delivery cadence belong to one current-work consumer: scope plus
+an exact explicit task_pattern or task, otherwise the server's transport id.
+Without that identity each call builds its own map and carries no non-use
+judgment. Membership, counts and medoids refresh from the current residual;
+labels and ask-hints stay stable until the corpus changes.
 
-1. **Structural context keys** — ``procedure_id``, ``lesson_kind``, ``type``,
-   ``topic``, ``task_pattern``. The extraction stage already writes these, so
-   most of a healthy corpus never reaches stage 2. The label *is* the key,
-   normalized the way ``consolidation._normalize_trigger`` normalizes a
-   procedure id, except where the raw key is an opaque hash — then the label
-   comes from the group's medoid instead.
-2. **Path collapse** — nodes carrying file paths become their subsystem, so
-   ``src/living_memory/postsession/report.py`` reads as ``postsession`` rather
-   than as five near-identical paths.
-3. **Query anchors** — an anchor is a *past grounded query* (see
-   ``query_anchors``), so an anchor covering a node supplies both the label and,
-   verbatim, a proven way to ask for it. This is the only stage whose ask-hint
-   is evidence rather than construction.
-4. **Chunk-embedding fallback** — greedy leader clustering over the chunk
-   vectors already in the store, labelled by c-TF-IDF against the FTS
-   document-frequency index (``term_document_frequencies`` /
-   ``fts_document_count``): terms frequent inside the cluster and rare in the
-   corpus.
+Three unconsumed offers curtail the same work's repeated noise. Persisted map
+history supplies the cadence and survives process restart. Follow evidence is
+read from that work's recall events (including mapless recalls) and id lookups
+attributed to the current work on their transport. Global node access and
+corpus consumption statistics do not identify a current consumer.
 
-Identical input yields a byte-identical map. Every sort carries an explicit tie
-break, the greedy pass walks the pool in rank order, and stage precedence is
-fixed — a node with both a ``procedure_id`` and a file list is a structural
-cluster member, never a path one.
-
-Silence beats a word nobody can act on
---------------------------------------
-The label *is* the interface. The first field window of this channel measured
-what happens when it degenerates: 27 delivered injections, 0 consumptions, and
-labels that had collapsed into single house words — ``public (73)``, ``test
-(37)``, ``mmo (8)`` — while a control run of the same code over a corpus whose
-labels read ``cleanup commit invariant`` was consumed on its first pass.
-
-Two rules follow, and they work as a pair. Stages 1 and 2 *enrich*: a cluster
-named after a structural value or a directory segment gets that name plus its
-own most distinguishing terms (:meth:`RecallMapBuilder._enrich`), so the label
-says something the corpus does not say everywhere. Then every label, from every
-stage, is *gated*: :meth:`RecallMapBuilder._deliverable` withholds a cluster
-whose best terms are collectively too common to distinguish anything
-(:data:`LABEL_GATE_MIN_IC`). Enrichment is the rescue and the gate is the net —
-after enrichment the gate should rarely fire, and when it does it is reporting a
-cluster with nothing to say.
-
-The gate is a corpus statistic, never a word list. "Generic" means generic to
-the corpus this recall searched, measured against the same document-frequency
-index the c-TF-IDF labeller already reads, so the rule transfers to a corpus
-whose house vocabulary is different words instead of memorizing the ones a
-field window happened to show.
-
-And nothing leaves quietly. Every cluster the gate withholds and every cluster
-the response budget drops is counted — and, as far as the budget allows, named
-— in the payload's additive ``filtered`` key (:func:`_filter_block`), which
-persists into ``recall_events.recall_map``. Without it a field reader cannot
-tell "memory had nothing to say" from "the filter was too harsh", which are
-opposite findings that both look like a short map.
-
-Stability across sessions
--------------------------
-A task that asks twice should see the same shape twice, or the map is furniture
-rather than a plan. :class:`RecallMapBuilder` therefore caches the cluster
-*structure* per ``(scope, normalized task)`` and revalidates it with the same
-cheap monotonic probes ``retrieval`` uses for its chunk and anchor caches —
-``(total_changes, PRAGMA data_version)`` in front of the chunk-table and
-anchor-table revisions. Counts, medoids and membership refresh against the pool
-in hand on every call; labels and ask-hints survive until the corpus moves.
-There are no timers: a cache that expires on a clock would hand the same task a
-different plan for no reason the agent can see.
-
-Collapse when nobody follows it
--------------------------------
-Delivered is not used. The preprompt push already taught this project that a
-channel keeps costing its budget long after it stopped changing behaviour, so
-the map is built with its own retreat: it measures whether the maps this key
-already delivered were *followed*, and when three in a row were not
-(:data:`CURTAIL_STREAK`) it stops occupying the channel and ships a marker
-instead — ``curtailed: true`` with the zero-consumption streak, ~60 characters
-where a map would have spent 700.
-
-Consumption is measured, never assumed, from evidence the server already
-writes (:meth:`RecallMapBuilder._curtailment`). A delivered cluster counts as
-consumed when any of three probes fires after the delivery that offered it:
-
-* **the ask was asked** — a later recall under the same key phrased a query
-  covering :data:`CURTAIL_QUERY_OVERLAP` of the cluster's label or ask-hint
-  tokens, under the tokenizer the grounding rail uses, so "followed the plan
-  item" is the same measurement everywhere in this codebase;
-* **the example was reached** — the cluster's medoid node was accessed after
-  the delivery. ``retrieval`` stamps ``nodes.last_accessed`` on every result it
-  delivers, so this fires the moment a later recall actually hands the agent
-  the node the map pointed at;
-* **the example was fetched** — a ``memory_lookup`` named the cluster's medoid
-  by id inside the delivery's frozen outcome window. This is the only one of
-  the three that no ranker can produce for itself: the two above both reduce to
-  "a later recall returned this node again", which a hub schema satisfies
-  forever without anybody reading it, while an id-fetch of one exact ULID is an
-  act only a reader who was handed that ULID performs. The endogenous pair
-  stays regardless — in curtail an ambiguity is resolved against collapsing, so
-  a weak probe is evidence, not noise.
-
-All three probes read tables the recall path already writes — a bounded window
-over ``recall_events`` via ``MemoryStore.recent_recall_map_history``, one
-primary-key batch over ``nodes``, and one over the delivery ledger that already
-correlates lookups with their windows. Nothing new is written and no LLM is
-asked.
-
-The window read is not free, and pretending otherwise would be the wrong kind
-of quiet: before the ``task_pattern`` column no index covered "this key's
-deliveries that carried a map, newest first", so SQLite walked the scope's
-whole partition and sorted — 8.5 ms on a 21k-event scope, measured, and rising
-with it. ``idx_recall_events_scope_pattern_created`` narrows the pattern-keyed
-form of that question to two bounded index ranges, but the read stays *gated*
-rather than paid per recall, because the task-keyed form is unchanged and
-because a narrower read is still a read: :class:`_CurtailMemo` counts the
-offers this builder has made since it last read, and asks for a read only once
-that count could reach the threshold. Its key is the map's key, both components
-of it, or a per-turn client would seed a fresh memo every turn and pay on every
-delivery the read the gate exists to avoid. The gate can delay a collapse and
-can ask for a read it did not
-need; it can never collapse a map by itself. What is left after the gate,
-isolated by running ``scripts/recall_map_latency_bench.py`` twice over one
-snapshot with the probe stubbed out of the second: +1.0 ms on the map stage's
-median, which leaves the whole feature's pooled p95 overhead at 0.022 against
-its pre-registered budget of 0.20.
-
-The collapse is not a death sentence. Evidence lives in a window
-(:data:`CURTAIL_HISTORY_LIMIT`), so the unread maps that silenced a key
-eventually slide out from under the markers that replaced them and the key
-offers again — 3 deliveries in 25 for a key that is never once followed.
-
-The rule is unconditional. There is no environment flag and no opt-in: a
-retreat that has to be switched on is a retreat nobody takes, and the protocol
-channels forbid machinery an agent cannot rely on being there. Every ambiguity
-in the evidence resolves *against* collapsing — an unreadable history, a
-timestamp tie, a key whose deliveries this store cannot see all read as "used"
-— because the cost of curtailing a map that was working is larger than the cost
-of one more unread map.
-
-How fast a collapsed key *returns* is the one part of the rule that is not in
-that guarantee, and the field found the fixed cadence wrong on exactly the day
-it mattered: when the cold lane first filled the maps on the alt store, the
-curtailed share of a quiet day jumped 0.024 → 0.562 — the streaks strangled
-the channel at the moment it first had something to say
-(``~/p/ae/artifacts/injection-throttle/prereg-draft.md``, П2). So behind
-:data:`CURTAIL_DECAY_GATE_ENV` the retry decays instead of waiting for the
-window: after ``N`` unaccepted offers the key spends
-``min(2**(N-1), CURTAIL_DECAY_SKIP_MAX)`` deliveries on markers and then
-offers a full map again, and the first consumed delivery resets the walk
-exactly as it always did. The entry threshold, the markers, the probes and
-the evidence window are byte-identical either way; the valve can shorten a
-silence and can never start one, and with it unset the cadence is exactly the
-window arithmetic above.
-
-The first field read of that valve (``~/p/ae/artifacts/injection-throttle/
-read-2026-09-02/READ.md``) found the retry firing into nothing: a served skip
-run rebuilt the map over a pool that had nothing deliverable in it, the empty
-map counted as one more marker-shaped delivery, and the next build retried
-again — every delivery after the run became an *empty, uncollapsed* map, so
-the curtailed share fell to nothing while the empty share stayed at the storm
-level. So the retry is pool-aware. The first marker after an offer persists a
-digest of the key's pool (``pd``: the admitted members, the anchors that would
-partition them, the cold-lane candidates) inside the marker it was going to
-write anyway. A served skip run rebuilds the pool and compares: unchanged, the
-key writes the same digest into one more marker and the run starts over —
-not an offer, the streak's offer count does not move; changed, it builds the
-full map, and if that map has nothing deliverable in it either, the marker
-carries the new digest instead. The decay wakes only when the key has
-something new to say. The digest lives in the same window the streak is read
-from, so it survives a restart and needs no table; with the valve unset it is
-neither computed nor written.
+A bounded memo avoids history reads before a collapse is possible; it cannot
+collapse a map without a fresh read. Missing or truncated evidence permits an
+offer. The ordinary finite history window permits retries. The optional decay
+cadence compares a persisted pool digest before rebuilding an unchanged offer.
+No model call, new history table or background process is needed.
 """
 
 from __future__ import annotations
 
 from bisect import bisect_left
 from collections import Counter
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from math import fsum, isfinite, log, log1p, sqrt
@@ -356,8 +194,7 @@ SELECTION_REASON_CODES: tuple[str, ...] = (
 POOL_GATE_REASON_CODES: tuple[str, ...] = (
     #: Below the usefulness floor of :data:`POOL_USEFULNESS_FLOOR_ENV`.
     "uf",
-    #: Demoted after :data:`POOL_DEMOTION_WINDOWS_ENV` known delivery windows
-    #: that nobody followed.
+    #: Reserved positional code for readers of stored selection journals.
     "nf",
 )
 SELECTION_LEDGER_REASON_CODES: tuple[str, ...] = (
@@ -424,13 +261,13 @@ POOL_USEFULNESS_FLOOR_ENV = "LM_MAP_POOL_MIN_USEFULNESS"
 # With the valve pair unset nothing below runs and the payload is byte-for-byte
 # what the pre-lane module emitted.
 
-#: Valve for the cold quota lane, drain-valve spelling like the two gates
+#: Valve for the cold quota lane, drain-valve spelling like the usefulness floor
 #: above. On with no parseable slot count is inert: "on, but at what?" has no
 #: safe answer.
 POOL_COLD_QUOTA_GATE_ENV = "LM_MAP_POOL_COLD_QUOTA_GATE"
 #: The slot count itself. The registered domain is ``1..POOL_COLD_SLOTS_MAX``;
 #: anything else — non-integer, empty, ``0``, negative, larger — leaves the
-#: lane inert, exactly as :func:`pool_demotion_windows_from_env` rejects ``0``.
+#: lane inert.
 POOL_COLD_SLOTS_ENV = "LM_MAP_POOL_COLD_SLOTS"
 #: The registered quota is a 1-2 slot exploration lane; a larger number is not
 #: this design and reads as the misconfiguration it is.
@@ -3837,7 +3674,7 @@ def pool_usefulness_floor_from_env() -> float | None:
 def pool_cold_slots_from_env() -> int | None:
     """The armed cold-lane slot count, or ``None`` when the lane is inert.
 
-    Same paired-valve grammar as the two gates above: the lane runs only when
+    Same paired-valve grammar as the usefulness floor: the lane runs only when
     :data:`POOL_COLD_QUOTA_GATE_ENV` is on *and*
     :data:`POOL_COLD_SLOTS_ENV` parses to an integer inside the registered
     ``1..POOL_COLD_SLOTS_MAX`` domain. Non-integer, empty, ``0``, negative or
@@ -4301,25 +4138,16 @@ class RecallMapBuilder:
         transport_session_id: str | None = None,
         decision_at: str | datetime | None = None,
     ) -> RecallMap | None:
-        """Cluster one residual pool. ``None`` when there is nothing to say.
+        """Cluster one residual pool, or return None when there is nothing to say.
 
-        ``results`` is the ranked residual — ``MemoryRecallService.last_residual``
-        — best first. Its original order supplies the frozen ordinal after
-        relevance selection; the selected pool itself is ordered by score.
-        ``task``/``task_pattern`` name the work the recall belongs to and, with
-        ``scope``, form the cache key; without either, the key degrades to the
-        scope alone, which is still stable and merely coarser.
+        Work identity keys both structure and curtailment. Explicit task_pattern
+        takes precedence over task and supports continuation across transports.
+        Otherwise transport_session_id identifies the consumer. Absent context
+        bypasses both caches. Scope must match the recorded recall's scope.
 
-        ``decision_at`` is captured once per call so every bounded history
-        batch sees one boundary. Supplying it is useful for deterministic
-        replay; production callers omit it and receive the current UTC instant.
-
-        Curtailment decides whether to offer before constructing the pool.
-        The pool is built at most once: for an offer, the initial digest, or
-        a due retry. A skipped build carries no pool or selection counts.
-        Digest baselines and empty retries use the same persisted history as
-        the curtail counters, including across restarts.
-        """
+        decision_at freezes the candidate-history boundary for deterministic
+        replay. The pool is built at most once, only for an offer, an initial
+        digest or a due retry; skipped calls carry no pool/selection counts."""
 
         self.last_cache_hit = False
         self._reset_corpus_memo()
@@ -4502,46 +4330,12 @@ class RecallMapBuilder:
         decision_at: str | datetime,
         cold_rows: list[tuple[int, Node, Any, Any]] | None = None,
     ) -> tuple[list[_Member], SelectionAccounting]:
-        """Apply the frozen member pipeline before the pool cap.
+        """Select eligible residual members using corpus relevance before the cap.
 
-        Classification is one ordinal pass.  History is then read only for
-        first-occurrence, structurally eligible identities, in batches no
-        larger than storage's frozen bound.  Every survivor is scored before
-        the stable relevance sort and cap, so machine ballast and low-score
-        head entries cannot crowd a useful tail member out of the 200.
-
-        Two env-gated gates sit *around* that pipeline and never inside it.
-        Gate (a) — a ``usefulness_score`` floor — runs with the ballast rules,
-        before history is read, because a candidate the floor rejects should
-        not cost a ledger row.  Gate (b) — the unfollowed-window demotion —
-        runs after the frozen threshold has spoken, so ``nf`` counts exactly
-        the rows the gate newly removed rather than re-labelling rows ``lr``
-        would have dropped anyway.  Both read only what is already in hand:
-        the score off the node the residual carries, the window aggregates off
-        the same bounded batch :meth:`_matured_history` already fetches, and
-        ``ask_followed`` off the curtail read the build did before calling
-        here.  Neither adds a query, and neither adds a per-row one.
-
-        The two valves are read in different places, and the asymmetry is
-        deliberate. Gate (a) needs nothing but this method's own arguments, so
-        it reads its valve here. Gate (b) needs the ask-echo evidence, which
-        only :meth:`build` can obtain and only when it knows in advance that
-        the gate is armed — so ``demote_after`` arrives as an argument, and a
-        caller that reaches ``_pool`` directly gets no demotion rather than a
-        demotion decided without the evidence that holds rows back.
-
-        With both valves unset ``demote_after`` is ``None``, the floor is
-        ``None``, nothing below branches, and the ledger trims back to the
-        frozen seven-code vector.
-
-        What survives classification is the ``RecallResult`` and not just its
-        node. The result is where a node's *own* evidence for this query lives
-        — see :data:`_CANDIDATE_SCORE_FIELDS` — and a node with no delivery
-        history owns nothing else; this pass is the last place that evidence
-        exists, so dropping it here is what would make a cold-start scorer
-        unbuildable. :func:`relevance_score` takes it and, under the frozen
-        policy, declines it: carrying it moves no score.
-        """
+        Classification is one ordinal pass; eligible identities share bounded
+        matured-history reads. Survivors are stably sorted by relevance. The
+        optional usefulness floor reads the node's score; cold candidates are
+        captured separately without changing warm selection."""
 
         usefulness_floor = pool_usefulness_floor_from_env()
         ledger = _SelectionLedger(inspected=len(results))
@@ -5497,30 +5291,11 @@ class RecallMapBuilder:
         self,
         work: RecallWork | None,
     ) -> _Curtailment:
-        """This key's unaccepted-offer streak, read only when it could bite.
+        """Read this work's non-use streak only when a collapse is possible.
 
-        The gate in front of the read is :class:`_CurtailMemo`, and the whole
-        argument for it is there. What matters here: a verdict returned from
-        the memo is an estimate and never collapses anything, because the
-        estimate is only trusted while it stays *below* the threshold.
-
-        ``task_pattern`` is threaded in for one reason and it is not a
-        refinement: the memo must be keyed by :func:`cache_key` with *both*
-        components, exactly as the map's structure cache is, or a client whose
-        ``task`` changes every turn gets a fresh memo per turn while its map
-        keeps hitting one cached structure — the counter and the thing it
-        counts would be describing different keys.
-
-        ``want_ask_follows`` asks the read for the ask-echo probe as well, and
-        forces a read when the memo in hand was seeded without it. It buys no
-        extra query — the probe is computed from rows the read already walks —
-        and it changes no verdict. What it does buy is staleness of exactly
-        the kind the memo already accepts: an ask that landed since the read
-        is invisible until the next one, so the gate can miss a follow and
-        demote a row it should have kept. That is the same window curtail
-        judges by, deliberately, so the two rules cannot disagree about
-        whether one delivery was followed.
-        """
+        The memo can delay a collapse but never authorize it. Every collapsed
+        call reads fresh persisted history so its own follow evidence can reopen
+        the channel. Unidentified calls have no shared state."""
 
         if work is None:
             self.last_curtail_read = False
@@ -5567,37 +5342,12 @@ class RecallMapBuilder:
         self,
         work: RecallWork | None,
     ) -> _Curtailment:
-        """Walk this key's deliveries back until one of them was followed.
+        """Walk this work's map deliveries back to the first followed offer.
 
-        Newest first, stopping at the first delivery with a consumed cluster:
-        what is *before* that delivery cannot make the channel look unused,
-        because the channel demonstrably was used. Everything walked past is
-        the streak; the offers among it are what decides the collapse; the
-        offerless run at the head of it is the ``lead`` the decay valve
-        measures its skip quota against, and costs this walk nothing it was
-        not already counting.
-
-        Three reads for the whole window, not three per delivery: the medoid
-        timestamps and the ledger's lookup verdicts each come back in one
-        batch and every query is tokenized once, because this is the expensive
-        half of the rule and :class:`_CurtailMemo` exists to keep it from being
-        asked often. Any store that cannot answer a read — an older schema, a
-        ranking-only store face — contributes no evidence from it, and a store
-        that can answer none of them yields an empty verdict, which never
-        collapses anything.
-
-        ``ask_follows``, when a set is passed, is filled with the medoids whose
-        label or ask-hint a later query in this window echoed — the ask-echo
-        probe of :meth:`_was_followed`, reported per medoid instead of per
-        delivery so :func:`_demoted` can ask it about one row. It is an out
-        parameter rather than a second return value because it is a by-product:
-        the verdict is what this method decides, and the harvest must not be
-        able to change it. Two properties make that literal — the walk below
-        covers the *whole* window rather than stopping at the streak boundary
-        (a follow before the boundary is still a follow of that row), and it
-        runs over the rows and tokens already in hand, so asking for it costs
-        no read.
-        """
+        Own recalls, including mapless ones, can echo an ask or return a medoid.
+        Lookups are attributed by the most recent work on their transport.
+        Existing delivery windows bound both probes. Missing or truncated
+        observation cannot establish non-use."""
 
         try:
             history = self._delivery_history(work)

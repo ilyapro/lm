@@ -52,8 +52,6 @@ from living_memory.recall_map import (
     MEDOID_EXAMPLE_CHARS,
     MIN_CLUSTERS,
     MIN_MEDOID_EXAMPLE_CHARS,
-    POOL_DEMOTION_GATE_ENV,
-    POOL_DEMOTION_WINDOWS_ENV,
     POOL_GATE_REASON_CODES,
     POOL_USEFULNESS_FLOOR_ENV,
     POOL_USEFULNESS_GATE_ENV,
@@ -2001,8 +1999,6 @@ def _valves_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         POOL_USEFULNESS_GATE_ENV,
         POOL_USEFULNESS_FLOOR_ENV,
-        POOL_DEMOTION_GATE_ENV,
-        POOL_DEMOTION_WINDOWS_ENV,
         recall_map.POOL_COLD_QUOTA_GATE_ENV,
         recall_map.POOL_COLD_SLOTS_ENV,
     ):
