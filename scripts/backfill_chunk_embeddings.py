@@ -21,11 +21,12 @@ Three subcommands, deliberately separate:
 
 Safe under a live server
 ------------------------
-The backfill only ever INSERTs and DELETEs rows of ``node_chunk_embeddings``.
+The backfill INSERTs and DELETEs rows of ``node_chunk_embeddings`` and advances
+their trigger-maintained cache revision.
 ``nodes`` is read, never written: after the store is opened (which runs the
 additive v5 -> v6 migration) a SQLite *authorizer* is installed that denies every
-write outside the chunk table, so "it must not rewrite ``nodes.embedding``" is
-enforced by the database rather than by review. ``PRAGMA busy_timeout`` is raised
+write outside the chunk table and its schema-owned revision effects. The shared
+storage policy protects the source knowledge. ``PRAGMA busy_timeout`` is raised
 and every chunk write retries on SQLITE_BUSY, because the MCP server is writing
 to the same WAL database throughout.
 

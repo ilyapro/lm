@@ -36,8 +36,8 @@ The backfill only ever writes rows of ``query_anchors`` and
 ``nodes``, ``connections`` and ``recall_events`` are read, never written:
 after the store is opened (which runs the additive v6 ->
 v7 migration) a SQLite *authorizer* is installed that denies every write
-outside those tables and revision triggers. The database enforces protection
-of the node graph. ``PRAGMA busy_timeout`` is raised and every
+outside those tables and their schema-owned revision effects. The shared storage
+policy protects the source knowledge. ``PRAGMA busy_timeout`` is raised and every
 anchor write retries on ``SQLITE_BUSY``, because the MCP server is writing to
 the same WAL database throughout.
 

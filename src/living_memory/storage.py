@@ -118,7 +118,6 @@ _CHUNK_CORPUS_TRIGGERS = (
 _CHUNK_CORPUS_REVISION_SQL = """
     INSERT OR IGNORE INTO metadata (key, value) VALUES ('chunk_corpus_revision', '0');
 
-
     CREATE TRIGGER IF NOT EXISTS chunk_corpus_membership
     AFTER UPDATE OF scope, decayed ON nodes
     WHEN (OLD.scope IS NOT NEW.scope OR OLD.decayed IS NOT NEW.decayed)
@@ -161,12 +160,11 @@ _QUERY_ANCHOR_CORPUS_TRIGGERS = (
 
 _QUERY_ANCHOR_REVISION_SQL = """
     INSERT OR IGNORE INTO metadata (key, value) VALUES ('query_anchor_revision', '0');
-
-
 """ + "\n".join(
     sql.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1) + ";"
     for sql in _QUERY_ANCHOR_CORPUS_TRIGGERS
 )
+
 
 def install_derived_only_authorizer(
     conn: sqlite3.Connection, *, corpus: Literal["chunks", "anchors"]
