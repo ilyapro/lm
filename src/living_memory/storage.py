@@ -1326,8 +1326,10 @@ class MemoryStore:
         ]
 
         content_vector = None if embedding is None else list(embedding)
-        vector = (list(representative_embedding)
-                  if representative_embedding is not None else content_vector)
+        vector = (
+            list(representative_embedding)
+            if representative_embedding is not None else content_vector
+        )
         legacy_embedding = self._node_embedding_column_present()
         embedding_column = "embedding, " if legacy_embedding else ""
         embedding_placeholder = "?, " if legacy_embedding else ""
@@ -1369,11 +1371,9 @@ class MemoryStore:
             ),
         )
 
-        # Chunks follow the embedding, not the insert: memory_remember and
-        # memory_teach pass no vector (traces are embedded later, lazily, by the
-        # recall path), and encoding them here would put the model on the write
-        # path of every remember. A node with no vector simply has no chunks
-        # yet, exactly as it has no nodes.embedding yet.
+        # A supplied vector makes content searchable now. Only content_vector
+        # can supply a single chunk; representatives require content encoding.
+        # Remember/teach traces supply neither and remain lazy.
         if vector:
             self._write_node_chunks(new_id, content, fingerprint, content_vector)
 
@@ -1597,6 +1597,8 @@ class MemoryStore:
         provenance: Mapping[str, Any] | None = None,
         level: NodeLevel | None = None,  # moves the node, same id and history, to a level
     ) -> Node:
+        """Update one node atomically, using the vector roles of create_node."""
+
         existing = self.get_node(node_id)
         if existing is None:
             raise KeyError(node_id)
@@ -1616,8 +1618,10 @@ class MemoryStore:
         content_changed = new_content != existing.content
         new_fingerprint = _content_fingerprint(new_content)
         content_vector = None if embedding is None else list(embedding)
-        vector = (list(representative_embedding)
-                  if representative_embedding is not None else content_vector)
+        vector = (
+            list(representative_embedding)
+            if representative_embedding is not None else content_vector
+        )
         now = _utc_now()
         unique_agents = int(stats_data.get("unique_agents", existing.unique_agents))
         confidence = float(stats_data.get("confidence", existing.confidence))

@@ -149,7 +149,10 @@ def test_cross_scope_create_update_and_teach_reach_warm_recall(tmp_path):
         assert delivered.node.content == current.content
         assert_content_vectors(store, current, encoder)
         assert all(r.node.scope in (SCOPE, "global") for r in results)
-        assert old.id not in {r.node.id for r in results}
+        positions = {r.node.id: i for i, r in enumerate(results)}
+        if old.id in positions:
+            assert positions[taught.corrective_trace.id] < positions[old.id]
+            assert results[positions[old.id]].superseded
         assert store.get_node(old.id).content == old.content
         assert store.list_connections(source_id=taught.corrective_trace.id, target_id=old.id, relation_type="supersedes")
 
