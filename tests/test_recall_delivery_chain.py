@@ -238,3 +238,111 @@ def test_missing_detail_requires_lookup_but_unknown_memory_stays_discoverable(
     missing = asyncio.run(absent())
     assert missing["count"] == 0
     assert missing["results"] == []
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+def test_same_session_delivers_current_content_and_preserves_feedback(tmp_path, monkeypatch, view):
+    monkeypatch.setenv("LM_RECALL_MAP", "0")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    store = mcp.memory_store
+    scope = "project:synthetic-current"
+    lead = ("Harbour deployment checklist covers the equipment inspection and routine crew briefing. "
+            "The loading record retains its descriptive introduction for the harbour crew. ")
+    node = store.create_node(level="concept", content=lead + "ZEPHYR authorization: gate ALPHA.",
+                             context={"scope": scope})
+    args = {"query": "ZEPHYR authorization", "scope": scope, "max_results": 1, "depth": 0, "view": view}
+
+    async def scenario():
+        async with Client(mcp) as client:
+            async def recall(**extra):
+                answer = _structured(await client.call_tool("memory_recall", {**args, **extra}))
+                entry = answer["results"][0]
+                body = entry.get("node", entry)
+                assert body["id"] == node.id
+                event = store.get_recall_event(answer["recall_event_id"])
+                assert event.result_ids == [node.id]
+                assert event.results[0]["delivery"]["kind"] == entry["delivery"]
+                return answer, entry, body
+
+            first, entry, body = await recall()
+            assert entry["delivery"] == "full" and "ALPHA" in body["content"]
+            repeat, entry, body = await recall()
+            assert entry["delivery"] == "session_duplicate"
+            # Access metadata changes do not constitute new knowledge.
+            store.record_access(node.id)
+            _, entry, _ = await recall()
+            assert entry["delivery"] == "session_duplicate"
+            store.update_node(node.id, content=lead + "ZEPHYR authorization: gate OMEGA.")
+            changed, entry, body = await recall(used=[node.id])
+            assert entry["delivery"] == "full" and "OMEGA" in body["content"]
+            assert "ALPHA" not in body["content"]
+            assert changed["feedback_marks"]["accepted"] == 1
+            _, entry, _ = await recall(irrelevant=[node.id])
+            assert entry["delivery"] == "session_duplicate"
+            remembered = _structured(await client.call_tool("memory_remember", {
+                "content": "ZEPHYR authorization outcome: gate OMEGA checked.",
+                "context": {"scope": scope},
+            }))
+            assert remembered["implicit_feedback"]["recall_event_ids"]
+            assert store.get_recall_event(first["recall_event_id"]).feedback_applied
+            lookup = _structured(await client.call_tool("memory_lookup", {"node_id": node.id}))
+            assert "OMEGA" in lookup["results"][0]["content"]
+        async with Client(mcp) as fresh:
+            answer = _structured(await fresh.call_tool("memory_recall", args))
+            entry = answer["results"][0]
+            assert entry["delivery"] == "full"
+            assert "OMEGA" in entry.get("node", entry)["content"]
+
+    asyncio.run(scenario())
+
+
+def test_new_query_can_deliver_a_previously_unseen_excerpt(tmp_path, monkeypatch):
+    monkeypatch.setenv("LM_RECALL_MAP", "0")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    scope = "project:synthetic-new-excerpt"
+    fact = "The hidden iris rotor exception code is NOVA-82."
+    content = "Iris rotor handbook.\n\n" + "Iris rotor handbook background. " * 170 + "\n\n" + fact
+    node = mcp.memory_store.create_node(level="concept", content=content, context={"scope": scope})
+
+    async def scenario():
+        async with Client(mcp) as client:
+            async def recall(query):
+                return _structured(await client.call_tool("memory_recall", {
+                    "query": query, "scope": scope, "max_results": 1, "depth": 0,
+                }))["results"][0]
+            first = await recall("iris rotor handbook")
+            assert first["id"] == node.id and first["delivery"] == "snippet"
+            assert fact not in first["content"]
+            assert (await recall("iris rotor handbook"))["delivery"] == "session_duplicate"
+            changed = await recall("hidden iris rotor exception code NOVA-82")
+            assert changed["delivery"] == "snippet" and fact in changed["content"]
+            assert (await recall("hidden iris rotor exception code NOVA-82"))["delivery"] == "session_duplicate"
+            lookup = _structured(await client.call_tool("memory_lookup", changed["content_ref"]))
+            assert lookup["results"][0]["content"] == content
+    asyncio.run(scenario())
+
+
+def test_legacy_selection_and_receipt_failure_do_not_suppress_content(tmp_path, monkeypatch):
+    from test_lookup import FakeMCP
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store = mcp.memory_store
+    scope = "project:synthetic-legacy"
+    node = store.create_node(level="concept", content="Harbour authorization: use gate OMEGA.", context={"scope": scope})
+    args = {"query": "Harbour authorization", "scope": scope, "depth": 0,
+            "ambient_context": {"transport_session_id": "reader"}}
+    legacy = store.record_recall_event(query=args["query"], scope=scope,
+                                      ambient_context=args["ambient_context"], results=[{"node_id": node.id}])
+    assert "delivery" not in legacy.results[0]
+    record = store.record_recall_delivery
+    def fail(*args):
+        raise OSError("synthetic receipt failure")
+    monkeypatch.setattr(store, "record_recall_delivery", fail)
+    failed = mcp.tools["memory_recall"](**args)
+    assert failed["results"][0]["content"] == node.content
+    assert "delivery" not in store.get_recall_event(failed["recall_event_id"]).results[0]
+    monkeypatch.setattr(store, "record_recall_delivery", record)
+    retried = mcp.tools["memory_recall"](**args)
+    assert retried["results"][0]["delivery"] == "full"
+    assert mcp.tools["memory_recall"](**args)["results"][0]["delivery"] == "session_duplicate"
+    monkeypatch.setattr(store, "recall_delivery_history", fail)
+    assert mcp.tools["memory_recall"](**args)["results"][0]["content"] == node.content

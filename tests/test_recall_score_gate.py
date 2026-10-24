@@ -407,3 +407,30 @@ def test_live_path_drop_and_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         WITHHELD_BELOW_THRESHOLD
     ] * (len(off_ids) - 1)
     assert stub_residual == off_residual
+
+
+def test_withheld_content_reaches_same_session_when_it_becomes_relevant(tmp_path, monkeypatch):
+    from living_memory.server import create_mcp_server
+    from test_lookup import FakeMCP
+    monkeypatch.setenv(MIN_SCORE_ENV, "5")
+    monkeypatch.setenv(GATE_FORM_ENV, "stub")
+    monkeypatch.setenv("LM_RECALL_MAP", "0")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store = mcp.memory_store
+    store.append_trace("Harbour ALPHA authorization: pier permit KESTREL.", {"scope": SCOPE})
+    target = store.append_trace(
+        "Harbour OMEGA authorization includes the standard equipment inspection and routine crew briefing. "
+        "The ordinary loading description retains the harbour paperwork and inspection checklist. "
+        "Pier permit NIGHTJAR authorizes rescue launch.", {"scope": SCOPE},
+    )
+    def recall(query):
+        return mcp.tools["memory_recall"](query=query, scope=SCOPE, depth=0, max_results=2,
+            ambient_context={"transport_session_id": "reader"})
+    first = recall("Harbour ALPHA KESTREL")
+    withheld = next(item for item in first["results"] if item["id"] == target.id)
+    assert withheld["delivery"] == "below_threshold" and withheld["content"] == ""
+    second = recall("Harbour OMEGA NIGHTJAR")
+    assert second["results"][0]["id"] == target.id
+    assert second["results"][0]["delivery"] == "full"
+    assert "NIGHTJAR" in second["results"][0]["content"]
+    assert recall("Harbour OMEGA NIGHTJAR")["results"][0]["delivery"] == "session_duplicate"

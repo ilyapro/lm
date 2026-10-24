@@ -105,14 +105,22 @@ def test_teach_then_warm_recall_keeps_only_current_binding_steps(tmp_path, separ
         assert any(r.node.id == schema.id and replacement in r.node.content for r in recall(service))
 
 
-def test_mcp_teach_recall_and_exact_historical_lookup(tmp_path):
+@pytest.mark.parametrize("declared", [True, False])
+def test_mcp_teach_recall_and_exact_historical_lookup(tmp_path, declared):
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     with mcp.memory_store as store:
-        traces, schema = procedure(store)
+        traces, schema = procedure(store, declared=declared)
+        recall_args = {"scope": SCOPE, "ambient_context": {"transport_session_id": "reader"}}
+        first = mcp.tools["memory_recall"]("workshop release", **recall_args)
+        assert next(item for item in first["results"] if item["id"] == schema.id)["delivery"] == "full"
+        repeat = mcp.tools["memory_recall"]("workshop release", **recall_args)
+        assert next(item for item in repeat["results"] if item["id"] == schema.id)["delivery"] == "session_duplicate"
         taught = mcp.tools["memory_teach"](traces[0].id, CORRECTION)
-        results = mcp.tools["memory_recall"]("workshop release", scope=SCOPE)["results"]
+        results = mcp.tools["memory_recall"]("workshop release", **recall_args)["results"]
         delivered = next(item for item in results if item["id"] == schema.id)
-        assert delivered["level"] == "schema" and delivered["delivery"] == "full"
+        assert delivered["level"] == ("schema" if declared else "concept")
+        assert delivered["delivery"] == "full"
+        assert delivered["content"] == store.get_node(schema.id).content
         assert all(text in delivered["content"] for text in [CORRECTION, *STEPS[1:]])
         assert STEPS[0] not in delivered["content"]
         assert any(item["id"] == taught["corrective_trace"]["id"] for item in results)
