@@ -7,7 +7,7 @@ import pytest
 
 import living_memory.retrieval as retrieval
 import living_memory.storage as storage
-from living_memory.retrieval import MemoryRecallService, MAX_NEIGHBORS_PER_NODE
+from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
 
 
