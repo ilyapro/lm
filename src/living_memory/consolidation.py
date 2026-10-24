@@ -683,7 +683,7 @@ def prepare_teach(
                 snapshots.append((node, members))
 
     source_inputs = {
-        source.node.id: source
+        source.id: source
         for source in _prepare_digest_sources(list({
             member.id: member for _, members in snapshots for member in members
         }.values()))
@@ -1657,6 +1657,7 @@ def _materialize_cluster(
     owners. A failed pass can resume without exposing a partial owner.
     """
 
+    source_inputs: dict[str, _DigestSource] = {}
     with step(), store.transaction():
         current = _current_sources(store, (member.id for member in cluster.traces))
         members = {member.id: member for member in current.live}
@@ -1707,6 +1708,7 @@ def _materialize_cluster(
             created.append((_write_cluster_concept(
                 store, scope, assessment, strategy=cluster.strategy,
                 embeddings=cluster.embeddings_by_trace_id,
+                source_inputs=source_inputs,
             ), True))
 
     result: list[tuple[Node, bool]] = []
@@ -1724,6 +1726,7 @@ def _materialize_cluster(
             result.append((_write_cluster_concept(
                 store, owner.scope, assessment, existing=owner, strategy=cluster.strategy,
                 embeddings=cluster.embeddings_by_trace_id,
+                source_inputs=source_inputs,
             ), False))
     return [*result, *created]
 
@@ -1784,7 +1787,10 @@ def _write_cluster_concept(
 
 @dataclass(slots=True)
 class _DigestSource:
-    node: Node
+    """Pure text signals; owner writes obtain metadata from current members."""
+
+    id: str
+    content: str
     tokens: set[str]
     sentences: list[tuple[str, set[str]]]
 
@@ -1795,10 +1801,10 @@ def _digest_sources(
     inputs = source_inputs if source_inputs is not None else {}
     missing = [
         member for member in members
-        if member.id not in inputs or inputs[member.id].node.content != member.content
+        if member.id not in inputs or inputs[member.id].content != member.content
     ]
     if missing:
-        inputs.update((source.node.id, source) for source in _prepare_digest_sources(missing))
+        inputs.update((source.id, source) for source in _prepare_digest_sources(missing))
     return [inputs[member.id] for member in members]
 
 
@@ -1833,7 +1839,7 @@ def _prepare_digest_sources(sources: Sequence[Node]) -> list[_DigestSource]:
             sentences.append((sentence, {token for token in sentence_tokens if token}))
         # Keep the whole-source insertion order used by _significant_tokens:
         # Counter's equal-count ordering also determines the retrieval label.
-        prepared.append(_DigestSource(source, {token for token in tokens if token}, sentences))
+        prepared.append(_DigestSource(source.id, source.content, {token for token in tokens if token}, sentences))
     return prepared
 
 
@@ -1875,8 +1881,8 @@ def _synthesize_digest(
     covered_raw = set(_raw_tokens(lead))
     included_sentences = [frozenset(_raw_tokens(part)) for part in _split_sentences(lead)]
     ordered_others = sorted(
-        (source for source in prepared if source.node.id != best.id),
-        key=lambda source: (-_token_centrality(source.tokens, token_counts), source.node.id),
+        (source for source in prepared if source.id != best.id),
+        key=lambda source: (-_token_centrality(source.tokens, token_counts), source.id),
     )
 
     lines = [lead]
@@ -1902,7 +1908,7 @@ def _synthesize_digest(
         # novel-token fragment keeps the digest byte-distinct from each source
         # and covering more than one of them without echoing whole variants.
         fragment = _novel_fragment_line(
-            [source.node for source in ordered_others], covered_raw, budget - length - 1,
+            ordered_others, covered_raw, budget - length - 1,
         )
         if fragment is None:
             return best.content
@@ -1959,7 +1965,7 @@ def _most_distinctive_sentence(
 
 
 def _novel_fragment_line(
-    ordered_others: Sequence[Node],
+    ordered_others: Sequence[_DigestSource],
     covered_raw: set[str],
     budget_left: int,
 ) -> str | None:
@@ -2059,6 +2065,7 @@ def _cross_scope_promotion(
             if _cluster_group(owner)[1] == group:
                 assigned[owner.id].update(unowned)
                 unowned.clear()
+        source_inputs: dict[str, _DigestSource] = {}
         result = []
         for owner in owners:
             if owner.id not in assigned:
@@ -2066,12 +2073,17 @@ def _cross_scope_promotion(
             current = _current_derivation(
                 store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
             ).live
-            updated = _write_global_promotion(store, current, existing=owner, similarities=similarities)
+            updated = _write_global_promotion(
+                store, current, existing=owner, similarities=similarities,
+                source_inputs=source_inputs,
+            )
             if updated != owner:
                 result.append(updated)
         remaining = [members[source] for source in sorted(unowned)]
         if len(_source_scopes(remaining)) >= 3:
-            result.append(_write_global_promotion(store, remaining, similarities=similarities))
+            result.append(_write_global_promotion(
+                store, remaining, similarities=similarities, source_inputs=source_inputs,
+            ))
         return result
 
 
