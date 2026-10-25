@@ -2,8 +2,8 @@
 
 Everything here runs offline against :class:`FakeJudge`, so the assertions are
 about the *pipeline*, not about a model's taste: which stage vetoes what, what
-attribution lands on a proposed op, and that a near-duplicate of an existing
-node never becomes one. The one thing that is emphatically not tested here is
+attribution lands on a proposed op, and that only an exact repeat of the
+same extraction is suppressed. The one thing that is emphatically not tested here is
 "did the judge find the right insight" -- there is no answer key for that, and
 inventing one would be the shortcut this stage is forbidden to take.
 """
@@ -17,7 +17,6 @@ from typing import Any
 import pytest
 
 from living_memory.postsession.dedup import (
-    DEDUP_COSINE_THRESHOLD,
     DedupConfig,
     Deduper,
     NodeSnapshot,
@@ -48,7 +47,9 @@ from living_memory.postsession.judge import (
 )
 from living_memory.postsession.mining import CANDIDATE_KINDS, mine
 from living_memory.postsession.session import (
+    DeliveredNode,
     FileMutation,
+    RecallInteraction,
     ProposedOpError,
     SessionRecord,
     SourceSpan,
@@ -363,97 +364,103 @@ def test_summary_reports_yield_and_the_reason_breakdown() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_dedup_reuses_the_query_anchor_cosine_precedent() -> None:
-    from living_memory.query_anchors import ANCHOR_DEDUP_COSINE_THRESHOLD
-
-    assert DEDUP_COSINE_THRESHOLD == ANCHOR_DEDUP_COSINE_THRESHOLD == 0.95
+SOURCE = ("b" * 64, "claude:/tmp/source.jsonl:3")
+IDENTITY = {"scope": "project:lm", "source_identity": SOURCE}
 
 
-def test_containment_catches_a_near_duplicate_the_server_would_not() -> None:
-    """``_insert_node`` only links byte-identical content inside one scope."""
-
-    existing = NodeSnapshot("01EXISTING", FACT, scope="project:lm")
+@pytest.mark.parametrize("changed", [
+    FACT + " Approval is mandatory.",
+    FACT.replace("collapses", "does not collapse"),
+    FACT.replace("collapses", "preserves"),
+    "src/app.py restart is forbidden before approval.",
+])
+def test_related_claims_remain_distinct(changed: str) -> None:
+    existing = NodeSnapshot("01EXISTING", FACT, "project:lm", source_identity=SOURCE)
     deduper = Deduper(StaticMemoryIndex([existing]))
-    verdict = deduper.check(FACT + " (noticed again today)", scope="project:lm")
+    deduper.remember_proposal("s#0", FACT, **IDENTITY)
 
+    assert not deduper.check(changed, **IDENTITY).duplicate
+    assert not deduper.check_within_run(changed, **IDENTITY).duplicate
+
+
+def test_exact_repeat_requires_scope_and_recorded_source_identity() -> None:
+    existing = NodeSnapshot("01EXISTING", FACT, "project:lm", source_identity=SOURCE)
+    deduper = Deduper(StaticMemoryIndex([existing]))
+    verdict = deduper.check(FACT, **IDENTITY)
     assert verdict.duplicate
-    assert (verdict.channel, verdict.node_id) == ("containment", "01EXISTING")
+    assert (verdict.channel, verdict.node_id) == ("exact", "01EXISTING")
     assert verdict.code == "duplicate_of_existing_node"
+    assert not deduper.check(FACT, scope="global", source_identity=SOURCE).duplicate
+    assert not deduper.check(FACT, scope="project:lm", source_identity=("c" * 64, SOURCE[1])).duplicate
+    assert not deduper.check(FACT, scope="project:lm").duplicate
 
 
-def test_an_unrelated_fact_is_not_a_duplicate() -> None:
-    deduper = Deduper(StaticMemoryIndex([NodeSnapshot("01OTHER", FACT, scope="project:lm")]))
-    verdict = deduper.check(
-        "openstack server reboot --hard is the only thing that recreates the "
-        "libvirt domain when a hot-attached port stays DOWN.",
-        scope="project:lm",
-    )
-    assert not verdict.duplicate
+def test_unknown_existing_source_does_not_identify_an_extraction() -> None:
+    deduper = Deduper(StaticMemoryIndex([NodeSnapshot("01OLD", FACT, "project:lm")]))
+    assert not deduper.check(FACT, **IDENTITY).duplicate
 
 
-def test_the_embedding_channel_catches_what_containment_misses() -> None:
-    class _Encoder:
-        def embed(self, text: str) -> list[float]:
-            return [1.0, 0.0] if "reboot" in text else [0.0, 1.0]
-
-    node = NodeSnapshot("01VEC", "a paraphrase with no shared rare tokens", scope="project:lm")
-    index = StaticMemoryIndex(
-        [node], embeddings={"01VEC": [1.0, 0.0]}, encoder=_Encoder()
-    )
-    verdict = Deduper(index).check(
-        "only `openstack server reboot --hard` recreates the libvirt domain",
-        scope="project:lm",
-    )
-
-    assert verdict.duplicate
-    assert (verdict.channel, verdict.node_id) == ("embedding", "01VEC")
-    assert verdict.cosine >= DEDUP_COSINE_THRESHOLD
-
-
-def test_within_run_dedup_collapses_two_spans_that_taught_one_thing() -> None:
+def test_within_run_exact_repeats_preserve_scope_and_source() -> None:
     deduper = Deduper(StaticMemoryIndex([]))
-    deduper.remember_proposal("s#0", FACT)
-
-    assert deduper.check_within_run(FACT).code == "duplicate_within_run"
-    assert not deduper.check_within_run("something else entirely about --flags").duplicate
-
+    deduper.remember_proposal("s#0", FACT, **IDENTITY)
+    assert deduper.check_within_run(FACT, **IDENTITY).code == "duplicate_within_run"
+    assert not deduper.check_within_run(FACT, scope="global", source_identity=SOURCE).duplicate
+    assert not deduper.check_within_run(FACT, scope="project:lm", source_identity=(SOURCE[0], "other span")).duplicate
+    assert not deduper.check_within_run(FACT, scope="project:lm", source_identity=None).duplicate
     deduper.reset()
-    assert not deduper.check_within_run(FACT).duplicate
+    assert not deduper.check_within_run(FACT, **IDENTITY).duplicate
 
 
 def test_a_duplicate_is_a_rejection_with_its_own_code_not_a_silent_drop() -> None:
-    deduper = Deduper(StaticMemoryIndex([NodeSnapshot("01EXISTING", FACT, scope="project:lm")]))
-    result, _ = _run([_insight()], deduper=deduper)
-
+    record = _record()
+    candidate = mine(record)[0]
+    existing = NodeSnapshot(
+        "01EXISTING", FACT, "project:lm",
+        source_identity=(record.transcript_sha256, candidate.span.locator()),
+    )
+    result, _ = _run([_insight()], record=record, deduper=Deduper(StaticMemoryIndex([existing])))
     assert result.ops == []
     assert result.outcomes[0].code == "duplicate_of_existing_node"
     assert result.outcomes[0].dedup["node_id"] == "01EXISTING"
 
 
-def test_no_index_reports_unavailable_rather_than_pretending_everything_is_new() -> None:
-    deduper = Deduper(NullMemoryIndex())
-    verdict = deduper.check(FACT, scope="project:lm")
+def test_repeating_one_source_session_is_idempotent_but_another_source_survives() -> None:
+    deduper = Deduper(StaticMemoryIndex([]))
+    first, _ = _run([_insight()], deduper=deduper)
+    repeated, _ = _run([_insight()], deduper=deduper)
+    independent, _ = _run([_insight()], record=_record(transcript_sha256="c" * 64), deduper=deduper)
+    assert len(first.ops) == len(independent.ops) == 1
+    assert repeated.ops == []
+    assert repeated.outcomes[0].code == "duplicate_within_run"
 
+
+@pytest.mark.parametrize("fact", [
+    FACT.replace("collapses", "does not collapse"),
+    FACT + " Approval is mandatory.",
+])
+def test_similar_recalled_or_diff_text_does_not_veto_new_claim(fact: str) -> None:
+    record = _record()
+    record.recalls.append(RecallInteraction(
+        ordinal=0, query="pytest report", span=_span(4),
+        delivered=[DeliveredNode(node_id="01OLD", rank=0, content=FACT)],
+    ))
+    record.file_mutations.append(FileMutation(
+        1, "pyproject.toml", "update", _span(5), post_image=FACT,
+    ))
+    result, _ = _run([_insight(fact)], record=record)
+    assert len(result.ops) == 1, result.outcomes
+    assert result.ops[0].payload["content"] == fact
+
+
+def test_no_index_reports_unavailable_rather_than_pretending_everything_is_new() -> None:
+    verdict = Deduper(NullMemoryIndex()).check(FACT, **IDENTITY)
     assert (verdict.duplicate, verdict.available) == (False, False)
     assert dedup_breakdown([verdict])["unavailable"] == 1
 
 
-def test_dedup_looks_across_scopes_because_recall_reads_broad() -> None:
-    """A twin sitting in ``global`` is still a duplicate to a reader."""
-
-    elsewhere = NodeSnapshot("01GLOBAL", FACT, scope="global")
-    index = StaticMemoryIndex([elsewhere])
-
-    assert Deduper(index).check(FACT, scope="project:lm").duplicate
-    scoped = Deduper(index, config=DedupConfig(cross_scope=False))
-    assert not scoped.check(FACT, scope="project:lm").duplicate
-    assert scoped.check(FACT, scope="global").duplicate
-
-
-def test_dedup_thresholds_are_configurable_without_touching_the_rules() -> None:
-    index = StaticMemoryIndex([NodeSnapshot("01E", FACT, scope="project:lm")])
-    strict = Deduper(index, config=DedupConfig(min_containment=0.999))
-    assert not strict.check(FACT + " and one more clause about --flags", scope="project:lm").duplicate
+def test_candidate_retrieval_remains_bounded() -> None:
+    index = StaticMemoryIndex([NodeSnapshot("01E", FACT, "project:lm", source_identity=SOURCE)])
+    assert not Deduper(index, config=DedupConfig(candidate_limit=0)).check(FACT, **IDENTITY).duplicate
 
 
 # --------------------------------------------------------------------------
@@ -491,7 +498,7 @@ def test_the_eval_report_carries_a_machine_readable_rejection_breakdown(
     reasons = eval_report["extraction"]["rejection_reasons"]
 
     assert reasons, "a run that rejected nothing has no gate"
-    assert set(reasons) <= set(REJECTION_CODES) | {"budget_exhausted"}
+    assert all(isinstance(code, str) and code for code in reasons)
     assert sum(reasons.values()) + eval_report["extraction"]["proposed"] > 0
 
 

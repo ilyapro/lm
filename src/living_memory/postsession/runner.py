@@ -641,7 +641,6 @@ class RunnerConfig:
     #: Attest ops per session / per run; idempotent server-side, still bounded.
     max_attests_per_session: int = 8
     max_total_attests: int = 64
-    #: Containment at which the LM-side pre-write check calls it a duplicate.
     insights: ExtractionConfig = DEFAULT_EXTRACTION
     corrections: DetectorConfig = DEFAULT_CORRECTIONS
 

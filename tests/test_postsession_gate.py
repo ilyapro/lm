@@ -22,8 +22,6 @@ from living_memory.postsession.gate import (
     REJECTION_CODES,
     Gate,
     GateConfig,
-    SessionContext,
-    containment_of,
     rejection_breakdown,
 )
 from living_memory.postsession.mining import Candidate
@@ -71,7 +69,7 @@ def _gate(**overrides: object) -> Gate:
 
 def _check(fact: str, **overrides: object):
     return _gate(**overrides).check(
-        fact, candidate=_candidate(), context=SessionContext()
+        fact, candidate=_candidate()
     )
 
 
@@ -120,7 +118,6 @@ def test_completion_claims_are_rejected_but_a_measurement_survives() -> None:
         "The goal is fully met at freeze commit 9b1a78f: all 88 tests pass and "
         "every manifest hash in artifacts/x.json matches.",
         candidate=_candidate(),
-        context=SessionContext(),
     )
     assert (claim.accepted, claim.code) == (False, "journal_phrasing")
 
@@ -131,7 +128,6 @@ def test_completion_claims_are_rejected_but_a_measurement_survives() -> None:
         candidate=_candidate(
             quote="$ pytest --findRelatedTests src/living_memory/storage.py\n44 tests passing"
         ),
-        context=SessionContext(),
     )
     assert measured.accepted, measured.detail
 
@@ -147,7 +143,6 @@ def test_a_real_lesson_that_mentions_a_fix_survives_on_its_mechanism() -> None:
         candidate=_candidate(
             quote="status=DOWN\n$ openstack server reboot --hard vm1\nimmers.cloud"
         ),
-        context=SessionContext(),
     )
     assert verdict.accepted, f"{verdict.code}: {verdict.detail}"
 
@@ -173,7 +168,6 @@ def test_one_quoted_json_key_is_not_a_context_leak() -> None:
     verdict = _gate().check(
         fact,
         candidate=_candidate(quote='$ curl /api/status\n{"error": "not found"}\n404'),
-        context=SessionContext(),
     )
     assert verdict.accepted, f"{verdict.code}: {verdict.detail}"
 
@@ -194,7 +188,6 @@ def test_speculation_is_rejected_unless_it_was_resolved() -> None:
         "We suspected the cache, but measured it: src/app.py spends 214ms in the "
         "tokenizer, not the cache, so --strict-mcp-config changes nothing.",
         candidate=_candidate(),
-        context=SessionContext(),
     )
     assert resolved.accepted, resolved.detail
 
@@ -223,7 +216,6 @@ def test_a_single_fact_may_be_two_paragraphs_about_the_same_thing() -> None:
         "So a rewritten src/living_memory/storage.py with an unchanged mtime is "
         "served stale, which is why the 214ms number never moved.",
         candidate=_candidate(),
-        context=SessionContext(),
     )
     assert verdict.accepted, f"{verdict.code}: {verdict.detail}"
 
@@ -252,59 +244,8 @@ def test_grounding_accepts_a_home_path_the_judge_saw_redacted() -> None:
         "The loader resolves ~/p/lm/src/app.py relative to the worktree, so a "
         "relative path fails there while an absolute one works.",
         candidate=_candidate(),
-        context=SessionContext(),
     )
     assert verdict.accepted, f"{verdict.code}: {verdict.detail}"
-
-
-def test_a_fact_the_diff_already_says_is_rederivable() -> None:
-    record = SessionRecord(
-        session_key="claude:t",
-        source="claude",
-        cli="claude",
-        path="/tmp/t.jsonl",
-        file_mutations=[
-            FileMutation(
-                ordinal=0,
-                path="src/living_memory/storage.py",
-                kind="update",
-                span=SPAN,
-                unified_diff=(
-                    "--- a/src/living_memory/storage.py\n"
-                    "+++ b/src/living_memory/storage.py\n@@\n"
-                    "+    # pyproject.toml sets addopts -q so passing -q again\n"
-                    "+    # collapses the pytest report to one line and hides\n"
-                    "+    # which test failed\n"
-                ),
-            )
-        ],
-    )
-    verdict = _gate().check(
-        GOOD, candidate=_candidate(), context=SessionContext.from_record(record)
-    )
-    assert (verdict.accepted, verdict.code) == (False, "rederivable_from_diff")
-
-
-def test_a_fact_the_session_was_already_shown_is_a_restatement() -> None:
-    record = SessionRecord(
-        session_key="claude:t",
-        source="claude",
-        cli="claude",
-        path="/tmp/t.jsonl",
-        recalls=[
-            RecallInteraction(
-                ordinal=0,
-                query="pytest addopts",
-                span=SPAN,
-                delivered=[DeliveredNode(node_id="01ABC", rank=0, content=GOOD)],
-            )
-        ],
-    )
-    verdict = _gate().check(
-        GOOD, candidate=_candidate(), context=SessionContext.from_record(record)
-    )
-    assert (verdict.accepted, verdict.code) == (False, "restates_recalled_node")
-    assert verdict.signals["node_id"] == "01ABC"
 
 
 @pytest.mark.parametrize(
@@ -316,7 +257,7 @@ def test_shape_rules(fact: str, code: str) -> None:
 
 
 # --------------------------------------------------------------------------
-# ordering, reporting, and the shared containment measure
+# ordering and reporting
 # --------------------------------------------------------------------------
 
 
@@ -341,14 +282,8 @@ def test_rejection_breakdown_lists_every_known_code() -> None:
     assert breakdown["too_short"] == 1
 
 
-def test_containment_is_the_shared_grounding_measure() -> None:
-    assert containment_of("src/app.py raised ValueError", "src/app.py raised ValueError") == 1.0
-    assert containment_of("src/app.py", "") == 0.0
-    assert containment_of("", "anything") == 0.0
-
-
 def test_check_text_skips_the_session_rules_only() -> None:
-    """The calibration path must apply every text rule and no session rule."""
+    """The calibration path applies text rules without mined evidence."""
 
     gate = Gate()
     journal = (
