@@ -842,15 +842,105 @@ def test_query_finds_relevant_passage_inside_one_long_record() -> None:
     source = "01M" + "7" * 23
     content = (
         "Evidence: fixtures (case records, not steps)\n"
-        f"- {source}: " + "ordinary notes\n" * 150
+        f"- {source}: " + "Ordinary notes.\n" * 150
         + "A buried xenon gasket correction says use the blue seal.\n"
-        + "ordinary notes\n" * 150
+        + "Ordinary notes.\n" * 150
     )
 
     entry = shape_default([make_result(make_node("carrier", content))], query="xenon gasket seal")[0]
 
     assert entry["delivery"] == DELIVERY_SNIPPET
     assert f"- {source}: A buried xenon gasket correction says use the blue seal." in entry["node"]["content"]
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("source", ["", "01SYNTHETICSOURCE0000000001"])
+@pytest.mark.parametrize("qualifier", ["Do not", "Only if the indicator is green,"])
+@pytest.mark.parametrize("boundary", [700, 1400])
+def test_excerpt_keeps_statement_qualifier(view, source, qualifier, boundary) -> None:
+    statement = qualifier + " open the amber hatch."
+    lead = "Archive " + "x" * (boundary - len(qualifier) - len("Archive . ")) + ". "
+    body = lead + statement + " Routine background." * 100
+    heading = "Evidence: hatch cases (case records, not steps)\n" if source else ""
+    prefix = f"- {source}: " if source else ""
+    content = heading + prefix + body
+    node = make_node("hatch", content)
+
+    entry = shape_default(
+        [make_result(node)], query="open amber hatch", snippet_ladder=(200,), view=view,
+    )[0]
+
+    excerpt = entry.get("node", entry)["content"]
+    assert heading + prefix + statement in excerpt
+    assert len(excerpt) <= 200
+    assert entry["delivery"] == DELIVERY_SNIPPET
+    assert entry["content_ref"] == {"node_id": node.id, "full_content_chars": len(content)}
+    assert node.content == content
+
+
+@pytest.mark.parametrize("qualifier", ["Do not", "Only if the indicator is green,"])
+def test_excerpt_keeps_qualifier_across_soft_line_wrap(qualifier) -> None:
+    statement = qualifier + "\nopen the amber hatch."
+    content = "Archive background. " * 100 + statement + " Routine background." * 100
+
+    entry = shape_default(
+        [make_result(make_node("wrapped", content))], query="open amber hatch", snippet_ladder=(200,),
+    )[0]
+
+    assert statement in entry["node"]["content"]
+    assert len(entry["node"]["content"]) <= 200
+
+
+def test_excerpt_selects_late_constraint_with_its_source_topic() -> None:
+    source = "01SYNTHETICSOURCE0000000001"
+    other = "01SYNTHETICSOURCE0000000002"
+    constraint = "Do not open the hatch unless the indicator is green."
+    content = (
+        "Evidence: hatch cases (case records, not steps)\n"
+        f"- {other}: Open amber hatch discussion. " + "Routine notes. " * 100
+        + f"\n- {source}: Amber hatch calibration and pressure inspection. "
+        + "Routine notes. " * 100 + constraint
+    )
+
+    entry = shape_default(
+        [make_result(make_node("carrier", content))],
+        query="amber hatch calibration pressure open indicator green", snippet_ladder=(200,),
+    )[0]
+
+    excerpt = entry["node"]["content"]
+    assert f"- {source}: {constraint}" in excerpt
+    assert f"- {other}: {constraint}" not in excerpt
+    assert len(excerpt) <= 200
+
+
+@pytest.mark.parametrize("budget", [1, 40, 80, 200, 700, 1000, 2400])
+def test_indivisible_excerpt_is_a_marked_prefix_with_full_content_ref(budget) -> None:
+    content = "x" * 694 + "do not open the amber hatch" + " background" * 1000
+    node = make_node("indivisible", content)
+
+    entry = shape_default(
+        [make_result(node)], query="open amber hatch", snippet_ladder=(budget,),
+    )[0]
+
+    excerpt = entry["node"]["content"]
+    assert excerpt.endswith(ELLIPSIS)
+    assert content.startswith(excerpt[:-len(ELLIPSIS)])
+    assert len(excerpt) <= budget
+    assert entry["content_ref"] == {"node_id": node.id, "full_content_chars": len(content)}
+
+
+@pytest.mark.parametrize("budget", [1, 40, 80, 200])
+def test_evidence_heading_and_label_respect_small_budget(budget) -> None:
+    heading = "Evidence: " + "lengthy topic " * 30 + "(case records, not steps)\n"
+    content = heading + "- 01SYNTHETICSOURCE0000000001: Do not open the amber hatch. " * 30
+
+    entry = shape_default(
+        [make_result(make_node("carrier", content))], query="open amber hatch",
+        snippet_ladder=(budget,),
+    )[0]
+
+    assert len(entry["node"]["content"]) <= budget
+    assert entry["content_ref"]["full_content_chars"] == len(content)
 
 
 def test_binding_schema_and_short_result_remain_complete_with_query() -> None:
