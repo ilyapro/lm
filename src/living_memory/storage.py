@@ -1236,8 +1236,18 @@ class MemoryStore:
         return self._conn
 
     @contextmanager
-    def transaction(self) -> Iterator[None]:
-        """Compose store writes without committing their caller's transaction."""
+    def transaction(self, *, immediate: bool = False) -> Iterator[None]:
+        """Compose writes; reserve an outer writer before read/modify/write work."""
+
+        if immediate and not self._conn.in_transaction:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+            return
 
         self._savepoint_serial += 1
         name = f"memory_write_{self._savepoint_serial}"
@@ -1864,30 +1874,26 @@ class MemoryStore:
         *,
         weight: float = 1.0,
         metadata: Mapping[str, Any] | None = None,
+        merge: bool = False,
     ) -> Connection:
-        self._validate_connection_type(relation_type)
-        # Edge validation needs identity, not either endpoint's content or
-        # potentially large source/provenance documents.
-        for node_id in (source_id, target_id):
-            if self._conn.execute("SELECT 1 FROM nodes WHERE id = ?", (node_id,)).fetchone() is None:
-                raise KeyError(node_id)
+        """Replace an edge, or merge a contribution with ``merge=True``.
 
-        with self.transaction():
-            self._insert_connection(
+        Contributions take the maximum weight, clamped to [0, 1] and rounded
+        to six decimals, and shallow-merge metadata with incoming keys winning.
+        An unchanged contribution retains the row and its updated_at; every
+        supersedes call still moves any anchors attached to the old target.
+        """
+
+        with self.transaction(immediate=True):
+            return self._insert_connection(
                 source_id,
                 target_id,
                 relation_type,
                 weight=weight,
                 metadata=metadata,
+                merge=merge,
+                validate_endpoints=True,
             )
-        row = self._conn.execute(
-            """
-            SELECT * FROM connections
-            WHERE source_id = ? AND target_id = ? AND type = ?
-            """,
-            (source_id, target_id, relation_type),
-        ).fetchone()
-        return _connection_from_row(row)
 
     def _insert_connection(
         self,
@@ -1897,35 +1903,68 @@ class MemoryStore:
         *,
         weight: float = 1.0,
         metadata: Mapping[str, Any] | None = None,
-    ) -> str:
+        merge: bool = False,
+        validate_endpoints: bool = False,
+    ) -> Connection:
+        """Apply one edge write inside the caller's transaction."""
+
         self._validate_connection_type(relation_type)
+        existing = None
+        metadata_data = dict(metadata or {})
+        if merge:
+            row = self._conn.execute(
+                """
+                SELECT * FROM connections
+                WHERE source_id = ? AND target_id = ? AND type = ?
+                """,
+                (source_id, target_id, relation_type),
+            ).fetchone()
+            if row is not None:
+                existing = _connection_from_row(row)
+                weight = max(float(weight), existing.weight)
+                metadata_data = {**existing.metadata, **metadata_data}
+            weight = round(min(1.0, max(0.0, float(weight))), 6)
+
+        # An existing edge's foreign keys already establish both endpoints.
+        # New edges and replacement writes validate identity without node payloads.
+        if validate_endpoints and existing is None:
+            for node_id in (source_id, target_id):
+                if self._conn.execute("SELECT 1 FROM nodes WHERE id = ?", (node_id,)).fetchone() is None:
+                    raise KeyError(node_id)
+
         now = _utc_now()
-        connection_id = new_ulid()
-        self._conn.execute(
-            """
-            INSERT INTO connections (
-                id, source_id, target_id, type, weight, metadata, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(source_id, target_id, type) DO UPDATE SET
-                weight = excluded.weight,
-                metadata = excluded.metadata,
-                updated_at = excluded.updated_at
-            """,
-            (
-                connection_id,
-                source_id,
-                target_id,
-                relation_type,
-                float(weight),
-                _json_dumps(dict(metadata or {})),
-                now,
-                now,
-            ),
-        )
+        metadata_json = _json_dumps(metadata_data)
+        if (existing is not None and weight == existing.weight
+                and metadata_json == _json_dumps(existing.metadata)):
+            connection = existing
+        else:
+            row = self._conn.execute(
+                """
+                INSERT INTO connections (
+                    id, source_id, target_id, type, weight, metadata, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source_id, target_id, type) DO UPDATE SET
+                    weight = excluded.weight,
+                    metadata = excluded.metadata,
+                    updated_at = excluded.updated_at
+                RETURNING *
+                """,
+                (
+                    new_ulid(),
+                    source_id,
+                    target_id,
+                    relation_type,
+                    float(weight),
+                    metadata_json,
+                    now,
+                    now,
+                ),
+            ).fetchone()
+            connection = _connection_from_row(row)
         if relation_type == "supersedes":
             self._follow_supersedes_with_anchor_edges(source_id, target_id, now=now)
-        return connection_id
+        return connection
 
     def _follow_supersedes_with_anchor_edges(
         self, source_id: str, target_id: str, *, now: str
@@ -4828,19 +4867,9 @@ class MemoryStore:
     ) -> QueryAnchorEdge:
         """Accumulate weight onto an anchor -> node edge; never clobber it.
 
-        Read-modify-write in one statement, the contract
-        ``consolidation._upsert_weighted_connection`` exists to provide and
-        that :meth:`create_connection` does *not*: its
-        ``ON CONFLICT ... DO UPDATE SET weight = excluded.weight`` overwrites,
-        so a re-derivation at a lower weight silently downgrades an edge that
-        repeated use had strengthened.
-
-        Anchor edges go one step further than that mirror's ``max()``: weight
-        *adds*, saturating at 1.0. An anchor edge is a repetition signal — the
-        same question grounding on the same node again is new evidence, not a
-        restatement of the old one-shot structural score that ``max()`` is
-        right for. ``hits`` keeps counting after the weight saturates, so the
-        evidence stays legible.
+        Anchor weight adds, saturating at 1.0, while structural contributions
+        use a maximum. Grounding the same question on the same node again is
+        new evidence. ``hits`` keeps counting after weight saturates.
         """
 
         if not self._anchor_tables_present():

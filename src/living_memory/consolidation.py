@@ -738,11 +738,11 @@ def memory_teach(
             node_id=preparation.corrective_id if preparation is not None else None,
         )
 
-        supersedes = _upsert_weighted_connection(
-            store,
+        supersedes = store.create_connection(
             corrective_trace.id,
             original.id,
             "supersedes",
+            merge=True,
             weight=1.0,
             metadata={"by": teacher, "correction": correction_text},
         )
@@ -1337,11 +1337,11 @@ def _connect_schema_to_traces(
         or schema.context.get("procedure_key")
     )
     for trace in traces:
-        _upsert_weighted_connection(
-            store,
+        store.create_connection(
             schema.id,
             trace.id,
             "related",
+            merge=True,
             weight=0.6,
             metadata={
                 "basis": "procedural",
@@ -1349,7 +1349,7 @@ def _connect_schema_to_traces(
                 "procedure_id": procedure_pattern,
                 # R5a: schema→source-trace edges are provenance ground truth
                 # (typed-edge-rules.md §R5a). The metadata merge in
-                # _upsert_weighted_connection annotates existing edges on the
+                # storage writer annotates existing edges on the
                 # next pass without adding rows; the kind drives asymmetric
                 # traversal factors in retrieval._traversal. Concept edges
                 # (cluster/co_access bases) stay unannotated by design.
@@ -2170,11 +2170,11 @@ def _connect_project_concepts_to_global(
     similarities: Mapping[str, float],
 ) -> None:
     for source in project_sources:
-        _upsert_weighted_connection(
-            store,
+        store.create_connection(
             source.id,
             global_concept.id,
             "related",
+            merge=True,
             weight=max(0.1, similarities.get(source.id, CROSS_SCOPE_PROMOTION_THRESHOLD)),
             metadata={
                 "basis": "cross_scope_promotion",
@@ -2313,11 +2313,11 @@ def _update_edge_weights_from_co_access(
     max_access = max((trace.access_count for trace in trace_list), default=0)
     for trace in trace_list:
         weight = _source_edge_weight(trace, max_access)
-        _upsert_weighted_connection(
-            store,
+        store.create_connection(
             concept.id,
             trace.id,
             "related",
+            merge=True,
             weight=weight,
             metadata={"basis": "cluster", "co_access": trace.access_count},
         )
@@ -2330,42 +2330,14 @@ def _update_edge_weights_from_co_access(
         for right in co_accessed[index + 1 :]:
             source_id, target_id = sorted((left.id, right.id))
             weight = _pair_edge_weight(left, right, max_access)
-            _upsert_weighted_connection(
-                store,
+            store.create_connection(
                 source_id,
                 target_id,
                 "related",
+                merge=True,
                 weight=weight,
                 metadata={"basis": "co_access", "left": left.access_count, "right": right.access_count},
             )
-
-
-def _upsert_weighted_connection(
-    store: MemoryStore,
-    source_id: str,
-    target_id: str,
-    relation_type: str,
-    *,
-    weight: float,
-    metadata: Mapping[str, Any] | None = None,
-) -> Connection:
-    existing = store.list_connections(
-        source_id=source_id,
-        target_id=target_id,
-        relation_type=relation_type,
-    )
-    if existing:
-        weight = max(float(weight), existing[0].weight)
-        merged_metadata = {**existing[0].metadata, **dict(metadata or {})}
-    else:
-        merged_metadata = dict(metadata or {})
-    return store.create_connection(
-        source_id,
-        target_id,
-        relation_type,
-        weight=round(min(1.0, max(0.0, weight)), 6),
-        metadata=merged_metadata,
-    )
 
 
 def _source_edge_weight(trace: Node, max_access: int) -> float:

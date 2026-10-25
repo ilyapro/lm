@@ -487,29 +487,15 @@ def rule_r5a_derived_from_annotations(
 
 
 def upsert_derived_edge(store: "MemoryStore", edge: DerivedEdge) -> Connection:
-    """Persist one derived edge with ``_upsert_weighted_connection`` semantics.
+    """Apply this rule's contribution through the graph writer."""
 
-    Mirrors consolidation.py: same-direction lookup, weight max-merge,
-    metadata merge, clamp to [0, 1] rounded to 6 decimals. Kept local because
-    consolidation imports this module for the R5a annotation.
-    """
-
-    existing = store.list_connections(
-        source_id=edge.source_id,
-        target_id=edge.target_id,
-        relation_type=edge.type,
-    )
-    weight = float(edge.weight)
-    metadata = dict(edge.metadata)
-    if existing:
-        weight = max(weight, existing[0].weight)
-        metadata = {**existing[0].metadata, **metadata}
     return store.create_connection(
         edge.source_id,
         edge.target_id,
         edge.type,
-        weight=round(min(1.0, max(0.0, weight)), 6),
-        metadata=metadata,
+        weight=edge.weight,
+        metadata=edge.metadata,
+        merge=True,
     )
 
 
