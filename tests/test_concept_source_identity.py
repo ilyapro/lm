@@ -207,6 +207,41 @@ def test_stale_pass_resolves_corrections_even_before_first_materialization(store
     assert_sources(store, repeated, [final.corrective_trace.id, b.id])
 
 
+def test_legacy_owner_follows_recorded_ancestor_and_drops_deleted_inputs(store):
+    original, removed = [trace(store, text) for text in TEXTS[:2]]
+    intermediate = c.memory_teach(store, original.id, CORRECTION).corrective_trace
+    current = c.memory_teach(store, intermediate.id, "Deploy release uses the electronic archive.").corrective_trace
+    store.delete_node(removed.id)
+    owner = store.create_node(
+        level="concept", content="Recorded archive evidence.", context={"scope": SCOPE},
+        provenance={"cluster_key": "archive", "source_traces": [original.id, removed.id, "missing-source"]},
+    )
+    (updated, created), = materialize(store, [current])
+    assert not created and updated.id == owner.id
+    assert_sources(store, updated, [current.id])
+
+
+@pytest.mark.parametrize("invalid", ["decayed", "corrected", "superseded"])
+def test_invalid_recorded_owner_does_not_claim_current_inputs(store, invalid):
+    members = [trace(store, text) for text in TEXTS[:2]]
+    owner = store.create_node(
+        level="concept", content="Retired release evidence.", context={"scope": SCOPE},
+        provenance={"strategy": "token-jaccard", "source_traces": [member.id for member in members]},
+    )
+    if invalid == "decayed":
+        store.soft_delete_node(owner.id)
+    elif invalid == "corrected":
+        store.update_node(owner.id, provenance={**owner.provenance, "corrections": [{"reason": "rejected"}]})
+    else:
+        replacement = trace(store, "Retired release evidence was rejected.")
+        store.create_connection(replacement.id, owner.id, "supersedes")
+    before = asdict(store.get_node(owner.id))
+    (current, created), = materialize(store, members)
+    assert created and current.id != owner.id
+    assert_sources(store, current, [member.id for member in members])
+    assert asdict(store.get_node(owner.id)) == before
+
+
 @pytest.mark.parametrize("existing", [False, True])
 def test_ordinary_materialization_edge_failure_rolls_back_sources_digest_and_chunks(store, monkeypatch, existing):
     a, b, fresh = [trace(store, text) for text in TEXTS]
