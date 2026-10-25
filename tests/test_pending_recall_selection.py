@@ -33,41 +33,37 @@ def test_foreign_events_do_not_displace_current_work(context: dict[str, str]) ->
         )] == [own.id]
 
 
-@pytest.mark.parametrize("event_context,context,content,scope,expected", [
-    ({"session_id": "s"}, {"session": "s"}, "unrelated", SCOPE, 2),
-    ({"task": "t"}, {"task": "t"}, "unrelated", SCOPE, 2),
-    ({"session_id": "s", "task": "a"}, {"session_id": "s", "task": "b"}, TEXT, SCOPE, 0),
-    ({"session_id": "a", "task": "t"}, {"session_id": "b", "task": "t"}, TEXT, SCOPE, 0),
+@pytest.mark.parametrize("event_context,context,scope,expected", [
+    ({"session_id": "s"}, {"session": "s"}, SCOPE, 2),
+    ({"task": "t"}, {"task": "t"}, SCOPE, 2),
+    ({"session_id": "s", "task": "a"}, {"session_id": "s", "task": "b"}, SCOPE, 0),
+    ({"session_id": "a", "task": "t"}, {"session_id": "b", "task": "t"}, SCOPE, 0),
     ({"session_id": "s", "agent": "a", "transport_session_id": "a"},
-     {"session_id": "s", "agent": "b", "transport_session_id": "b"}, "unrelated", SCOPE, 2),
+     {"session_id": "s", "agent": "b", "transport_session_id": "b"}, SCOPE, 2),
     ({"task": "t", "transport_session_id": "a"},
-     {"task": "t", "transport_session_id": "b"}, "unrelated", SCOPE, 2),
+     {"task": "t", "transport_session_id": "b"}, SCOPE, 2),
     ({"session_id": "a", "transport_session_id": "t"},
-     {"session_id": "b", "transport_session_id": "t"}, TEXT, SCOPE, 0),
+     {"session_id": "b", "transport_session_id": "t"}, SCOPE, 0),
     ({"task": "a", "transport_session_id": "t"},
-     {"task": "b", "transport_session_id": "t"}, TEXT, SCOPE, 0),
+     {"task": "b", "transport_session_id": "t"}, SCOPE, 0),
     ({"agent": "a", "transport_session_id": "t"},
-     {"agent": "b", "transport_session_id": "t"}, TEXT, SCOPE, 0),
-    ({"transport_session_id": "t"}, {"transport_session_id": "t"}, "unrelated", SCOPE, 2),
-    ({"transport_session_id": "a"}, {"transport_session_id": "b"}, TEXT, SCOPE, 0),
-    ({"transport_session_id": "t"}, {}, TEXT, SCOPE, 0),
-    ({}, {"transport_session_id": "t"}, TEXT, SCOPE, 0),
-    ({}, {}, TEXT, SCOPE, 0),
-    ({}, {}, None, SCOPE, 0),
-    ({}, {}, "unrelated", SCOPE, 0),
-    ({"agent": "a"}, {"agent": "a"}, TEXT, SCOPE, 0),
-    ({"agent": "a"}, {"agent": "a"}, "unrelated", SCOPE, 0),
-    ({"agent": "a"}, {"agent": "b"}, TEXT, SCOPE, 0),
-    ({"session_id": "s"}, {}, TEXT, SCOPE, 0),
-    ({}, {"session_id": "s"}, TEXT, SCOPE, 0),
-    ({"transport_session_id": "t"}, {"transport_session_id": "t"}, "unrelated", "global", 2),
-    ({"task": "a", "transport_session_id": "t"},
-     {"task": "b", "transport_session_id": "t"}, TEXT, "global", 0),
-    ({"session_id": "s"}, {"session_id": "s"}, TEXT, "global", 0),
-    ({}, {}, TEXT, "global", 0),
+     {"agent": "b", "transport_session_id": "t"}, SCOPE, 0),
+    ({"transport_session_id": "t"}, {"transport_session_id": "t"}, SCOPE, 2),
+    ({"transport_session_id": "a"}, {"transport_session_id": "b"}, SCOPE, 0),
+    ({"transport_session_id": "t"}, {}, SCOPE, 0),
+    ({}, {"transport_session_id": "t"}, SCOPE, 0),
+    ({}, {}, SCOPE, 0),
+    ({"agent": "a"}, {"agent": "a"}, SCOPE, 0),
+    ({"agent": "a"}, {"agent": "b"}, SCOPE, 0),
+    ({"session_id": "s"}, {}, SCOPE, 0),
+    ({}, {"session_id": "s"}, SCOPE, 0),
+    ({"transport_session_id": "t"}, {"transport_session_id": "t"}, "global", 2),
+     {"task": "b", "transport_session_id": "t"}, "global", 0),
+    ({"session_id": "s"}, {"session_id": "s"}, "global", 0),
+    ({}, {}, "global", 0),
 ])
 def test_shared_identity_and_conflict_precedence(
-    event_context, context, content, scope, expected,
+    event_context, context, scope, expected,
 ) -> None:
     with MemoryStore(":memory:") as store:
         events = [store.record_recall_event(
@@ -149,7 +145,8 @@ def test_remember_consumes_own_event_once_amid_foreign_events(
     ({"transport_session_id": "own"}, {}, SCOPE),
     ({"task": "own", "session_id": "own"}, {"task": "own", "session_id": "other"}, SCOPE),
     ({"task": "own", "session_id": "own"}, {"task": "other", "session_id": "own"}, SCOPE),
-    ({"task": "own"}, {"task": "own"}, "project:other"),
+    ({}, {}, "project:other"),
+    ({"agent": "own"}, {"agent": "own"}, SCOPE),
 ])
 def test_pending_selection_reads_current_identity_without_materializing_foreign_rows(
     monkeypatch: pytest.MonkeyPatch, context, foreign_context, foreign_scope,
@@ -179,8 +176,11 @@ def test_pending_selection_reads_current_identity_without_materializing_foreign_
                 result = store.pending_recall_events(scope=SCOPE, context=context, limit=5)
             finally:
                 store.connection.set_progress_handler(None, 0)
-            assert [event.id for event in result] == [own.id]
-            assert decoded == [own.id]
+            expected = [own.id] if any(context.get(key) for key in (
+                "task", "session_id", "transport_session_id",
+            )) else []
+            assert [event.id for event in result] == expected
+            assert decoded == expected
             return steps
 
         small = select_steps()
