@@ -433,9 +433,9 @@ class _ChunkBlock:
     ``rows`` holds every chunk vector of ``node_ids`` back to back in scan
     order and ``starts[i]`` is where node ``i``'s run of chunks begins, which
     is what lets the max-pool be one ``np.maximum.reduceat`` instead of a
-    Python loop over the corpus's 60,530 rows. Rows are stored unit-length, so
-    a dot product with a unit query *is* the cosine — and so the numpy path and
-    the numpy-free path compute the same number rather than two different ones.
+    Python loop over chunk rows. Raw float32 rows and their norms are retained
+    so scoped and broad queries can share them while applying normalization
+    to the query's complete width block.
 
     One block per vector width, because a corpus is allowed to hold more than
     one: a fixture storing 3-d vectors, a database caught mid-re-embed,
@@ -450,13 +450,15 @@ class _ChunkBlock:
     #: ``np.ndarray[intp]`` with numpy, ``tuple[int, ...]`` without.
     starts: Any
     #: ``(len(rows), dimension)`` float32 matrix with numpy, a tuple of
-    #: per-chunk float tuples without.
+    #: per-chunk float tuples without. These are the stored, unnormalized rows.
     rows: Any
     row_count: int
     #: ``log2`` of each node's chunk count, aligned with ``node_ids``. Computed
     #: once at scan time because it is what the length-bias correction
     #: subtracts, on every query, from every node.
     log2_chunk_counts: Any
+    norms: Any = None
+    needs_normalization: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -522,7 +524,7 @@ class MemoryRecallService:
         # can hold one snapshot, one goldset, and one code path fixed and vary
         # nothing but the graph channel's entry from query space.
         self.anchor_seeding = bool(anchor_seeding)
-        self._chunk_index: dict[str | None, _ScopeChunkIndex] = {}
+        self._chunk_index: dict[str, _ScopeChunkIndex] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
         self._store_embedder_shared = False
 
@@ -907,20 +909,16 @@ class MemoryRecallService:
             self._rechunk_node(node)
 
         q_arr = _as_query_array(query_embedding)
-        # After the drain, never before it: the drain writes chunks.
-        revision = self._chunk_corpus_revision()
-
+        # Resolve membership after the drain, which can write new chunks.
         scoped_scores: list[tuple[float, str]] = []
-        for scope in plan.search_scopes:
-            index = self._scope_chunk_index(scope, revision)
-            for block in index.blocks:
-                if block.dimension != len(query_embedding):
-                    continue
-                for similarity, node_id in _pooled_chunk_similarities(
-                    block, query_embedding, q_arr
-                ):
-                    if similarity >= VECTOR_MATCH_THRESHOLD:
-                        scoped_scores.append((similarity, node_id))
+        for block in self._chunk_blocks(plan):
+            if block.dimension != len(query_embedding):
+                continue
+            for similarity, node_id in _pooled_chunk_similarities(
+                block, query_embedding, q_arr
+            ):
+                if similarity >= VECTOR_MATCH_THRESHOLD:
+                    scoped_scores.append((similarity, node_id))
 
         if not scoped_scores:
             return query_embedding
@@ -956,40 +954,52 @@ class MemoryRecallService:
     # Chunk corpus cache
     # ------------------------------------------------------------------
 
-    def _chunk_corpus_revision(self) -> int | None:
-        """Read storage's transactional vector and membership revision."""
+    def _chunk_blocks(self, plan: ScopePlan) -> Iterable[_ChunkBlock]:
+        """Use the same scope partitions for restricted and whole-store recall.
 
-        return self.store.chunk_corpus_revision()
+        Broad queries temporarily gather rows in node/chunk order. Keeping the
+        full width block's normalization and matmul shape preserves scores and
+        stable candidate ties; there is no second persistent corpus matrix.
+        Metadata, corrections and source validity are read outside this cache.
+        """
 
-    def _scope_chunk_index(self, scope: str | None, revision: int | None) -> _ScopeChunkIndex:
+        revisions = self.store.chunk_corpus_revisions(
+            plan.scopes if plan.restricted else None,
+        )
+        if revisions is None:
+            # Old read-only snapshots have no trustworthy cache identity.
+            for scope in plan.search_scopes:
+                yield from self._build_chunk_index(scope, None).blocks
+            return
+        if plan.restricted:
+            for scope in plan.scopes:
+                yield from self._scope_chunk_index(scope, revisions[scope]).blocks
+            return
+        by_width: dict[int, list[_ChunkBlock]] = {}
+        for scope, revision in revisions.items():
+            for block in self._scope_chunk_index(scope, revision).blocks:
+                by_width.setdefault(block.dimension, []).append(block)
+        for width in sorted(by_width):
+            yield _gather_chunk_blocks(by_width[width])
+
+    def _scope_chunk_index(self, scope: str, revision: int) -> _ScopeChunkIndex:
+        # A rollback can reuse a revision for different data. Never retain
+        # uncommitted rows, including reads inside an outer caller transaction.
+        if self.store.connection.in_transaction:
+            return self._build_chunk_index(scope, None)
         cached = self._chunk_index.get(scope)
-        if revision is not None and cached is not None and cached.revision == revision:
+        if cached is not None and cached.revision == revision:
             return cached
         index = self._build_chunk_index(scope, revision)
         self._chunk_index[scope] = index
         return index
 
     def _build_chunk_index(self, scope: str | None, revision: int | None) -> _ScopeChunkIndex:
-        """Read one scope's chunk BLOBs into reusable matrices.
+        """Read a scope's chunk BLOBs into reusable blocks by vector width.
 
-        The whole point of the cache. Measured over the whole corpus of a
-        snapshot of the live database (12,862 active nodes, 60,530 chunks,
-        88.7 MiB of vectors): 146 ms once and nothing afterwards, against the
-        767 ms the JSON column costs on the same box for the same nodes
-        (100 ms to fetch, 666 ms to ``json.loads``) -- and *that* scan was
-        re-issued on every recall, not cached. A recall touches only its plan's
-        scopes, so the first recall of a two-scope plan pays ~69 ms of this,
-        not the full 146.
-
-        Rows are grouped by byte width rather than by the ``dimensions`` column
-        storage records, and that is not the shortcut it looks like. Reading
-        the column would mean a second full scan of the chunk table per scope
-        for a fact the scorer does not need: a block is only ever multiplied by
-        a query of *exactly* its own width, so a row whose bytes disagree with
-        its recorded width lands in a width nothing queries and is skipped by
-        construction, which is the same outcome and no scan. What the byte
-        length must never do is reshape a *scored* corpus around itself, and it
-        cannot -- the query width decides that.
+        Byte width determines the block. Malformed or empty BLOBs are skipped;
+        only the width matching the query is scored. The ordered storage scan
+        keeps each node's chunks together for max-pooling.
         """
 
         accumulators: dict[int, _BlockAccumulator] = {}
@@ -2036,14 +2046,7 @@ LENGTH_BIAS_LOG2_COEFFICIENT = 0.031
 
 
 class _BlockAccumulator:
-    """Scan-time buffer for one vector width, frozen into a ``_ChunkBlock``.
-
-    The BLOBs are concatenated into one ``bytearray`` as they arrive rather
-    than collected into a list and joined at the end. Measured over the live
-    corpus that is the difference between a 146 ms cold build and a 276 ms
-    one: the list costs 60,530 Python objects to hold, and the join then
-    copies all 89 MiB of them a second time.
-    """
+    """Collect ordered BLOBs once, retaining one raw array per vector width."""
 
     __slots__ = ("payload", "node_ids", "starts", "rows")
 
@@ -2065,19 +2068,18 @@ class _BlockAccumulator:
     def freeze(self, dimension: int) -> _ChunkBlock:
         node_ids = tuple(self.node_ids)
         if _np is not None:
-            # One reinterpretation of one buffer, no per-vector Python object:
-            # this is the step that replaces 685 ms of json.loads. The
-            # bytearray stays alive as the array's base and is buffer-locked
-            # against resizing for exactly as long.
+            # The bytearray remains alive as the array's base; no BLOB list or
+            # second persistent matrix is retained.
             matrix = _np.frombuffer(self.payload, dtype=CHUNK_EMBEDDING_DTYPE).reshape(
                 self.rows, dimension
             )
             # einsum here is a fused row-wise self-dot: the row norms without a
             # temporary copy of the matrix.
             norms = _np.sqrt(_np.einsum("ij,ij->i", matrix, matrix))
-            if self.rows and float(_np.abs(norms - 1.0).max()) > UNIT_NORM_TOLERANCE:
-                norms[norms == 0.0] = 1.0
-                matrix = matrix / norms[:, None]
+            needs_normalization = bool(
+                self.rows and float(_np.abs(norms - 1.0).max()) > UNIT_NORM_TOLERANCE
+            )
+            norms[norms == 0.0] = 1.0
             starts = _np.asarray(self.starts, dtype=_np.intp)
             counts = _np.diff(_np.append(starts, self.rows)).astype(_np.float32)
             return _ChunkBlock(
@@ -2087,6 +2089,8 @@ class _BlockAccumulator:
                 rows=matrix,
                 row_count=self.rows,
                 log2_chunk_counts=_np.log2(counts),
+                norms=norms,
+                needs_normalization=needs_normalization,
             )
         payload = bytes(self.payload)
         stride = dimension * CHUNK_EMBEDDING_ITEMSIZE
@@ -2107,6 +2111,51 @@ class _BlockAccumulator:
         )
 
 
+def _gather_chunk_blocks(blocks: list[_ChunkBlock]) -> _ChunkBlock:
+    """One temporary whole-width block in the storage scan's exact row order."""
+
+    if len(blocks) == 1:
+        return blocks[0]
+    runs = sorted(
+        (node_id, block, index)
+        for block in blocks for index, node_id in enumerate(block.node_ids)
+    )
+    node_ids = tuple(node_id for node_id, _, _ in runs)
+    counts = [
+        (int(block.starts[index + 1]) if index + 1 < len(block.node_ids) else block.row_count)
+        - int(block.starts[index])
+        for _, block, index in runs
+    ]
+    row_count = sum(counts)
+    dimension = blocks[0].dimension
+    if _np is not None and isinstance(blocks[0].rows, _np.ndarray):
+        starts = _np.cumsum([0, *counts[:-1]], dtype=_np.intp)
+        destinations = dict(zip(node_ids, starts, strict=True))
+        rows = _np.empty((row_count, dimension), dtype=CHUNK_EMBEDDING_DTYPE)
+        norms = _np.empty(row_count, dtype=_np.float32)
+        for block in blocks:
+            offsets = _np.asarray([destinations[node_id] for node_id in block.node_ids])
+            lengths = _np.diff(_np.append(block.starts, block.row_count))
+            positions = _np.repeat(offsets - block.starts, lengths) + _np.arange(block.row_count)
+            rows[positions] = block.rows
+            norms[positions] = block.norms
+        return _ChunkBlock(
+            dimension, node_ids, starts, rows, row_count,
+            _np.asarray([block.log2_chunk_counts[index] for _, block, index in runs]),
+            norms, any(block.needs_normalization for block in blocks),
+        )
+    starts_list = []
+    scalar_rows = []
+    for (_, block, index), count in zip(runs, counts, strict=True):
+        starts_list.append(len(scalar_rows))
+        start = block.starts[index]
+        scalar_rows.extend(block.rows[start:start + count])
+    return _ChunkBlock(
+        dimension, node_ids, tuple(starts_list), tuple(scalar_rows), row_count,
+        tuple(block.log2_chunk_counts[index] for _, block, index in runs),
+    )
+
+
 def _pooled_chunk_similarities(
     block: _ChunkBlock,
     query_embedding: list[float],
@@ -2124,7 +2173,8 @@ def _pooled_chunk_similarities(
         if q_arr is None:
             # A query with no direction has no cosine to anything.
             return []
-        sims = block.rows @ q_arr
+        rows = block.rows / block.norms[:, None] if block.needs_normalization else block.rows
+        sims = rows @ q_arr
         # `starts` is the run boundary of each node, so one reduceat pools
         # every node at once -- no Python loop over the corpus's 60k chunk rows.
         pooled = _np.clip(_np.maximum.reduceat(sims, block.starts), 0.0, None)
