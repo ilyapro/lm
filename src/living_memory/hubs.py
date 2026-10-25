@@ -40,12 +40,14 @@ Cost
 The inputs are append-only (nothing in LM deletes from them), so the hub set
 is cached on the store keyed by ``MAX(rowid)`` of ``recall_feedback_marks``,
 ``recall_credit_ledger``, ``recall_explicit_credit`` and ``query_anchors``
-(four index-only lookups). Marks and credit grow on almost every recall, and a
-full recount costs tens of milliseconds on the sfx store, so a changed key
-does not mean a recount: positive evidence in the appended rows lifts its
+(four index-only lookups). Each full recount reads the current exact anchor
+identities in one statement, without vectors, and shares that observation
+across events. This identity map lives only for the call. Marks and credit
+grow on almost every recall, so a changed key does not mean a recount:
+positive evidence in the appended rows lifts its
 hubs immediately, and a recount (the only way a node becomes a hub) runs at
 most once per ``HUB_REFRESH_SECONDS`` and only when new irrelevant marks
-arrived. Numbers and the sfx census are in docs/hub-suppression.md.
+arrived.
 """
 
 from __future__ import annotations
@@ -185,7 +187,16 @@ def hub_counts(
             " WHERE last_event_id IS NOT NULL"
         ):
             near_anchor[(str(event_id), str(node_id))] = str(anchor_id)
-    has_anchors = _ANCHORS in present
+    exact_anchors = (
+        {
+            (scope, fingerprint): f"anchor:{anchor_id}"
+            for scope, fingerprint, anchor_id in conn.execute(
+                f"SELECT scope, fingerprint, id FROM {_ANCHORS}"
+            )
+        }
+        if _ANCHORS in present and _EVENTS in present
+        else {}
+    )
     anchor_by_event: dict[str, tuple[str, str | None]] = {}
 
     anchors: dict[str, set[str]] = {}
@@ -202,13 +213,7 @@ def hub_counts(
         else:
             anchor_scope = normalize_scope(scope or "global")
             raw_key = f"query:{anchor_scope}\n{' '.join(str(query).split())}"
-            exact = None
-            if has_anchors:
-                hit = conn.execute(
-                    f"SELECT id FROM {_ANCHORS} WHERE scope = ? AND fingerprint = ?",
-                    (anchor_scope, recall_fingerprint(query, anchor_scope)),
-                ).fetchone()
-                exact = None if hit is None else f"anchor:{hit[0]}"
+            exact = exact_anchors.get((anchor_scope, recall_fingerprint(query, anchor_scope)))
             anchor_by_event[event_id] = (raw_key, exact)
         anchor_key = exact
         if anchor_key is None:
