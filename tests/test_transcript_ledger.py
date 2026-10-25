@@ -24,17 +24,22 @@ import os
 import sqlite3
 import subprocess
 import sys
-import types
 
 import pytest
 
-from storage_schema_compat import PENDING_RECALL_INDEXES, assert_preserved_schema
+from storage_schema_compat import (
+    ADDITIVE_OBJECTS,
+    assert_preserved_schema,
+    assert_schema_upgrade,
+    memory_rows,
+    prepare_pre_ledger_schema,
+    schema_objects,
+    schema_version,
+)
 
 from living_memory.server import create_mcp_server
 from living_memory.storage import (
-    CONSOLIDATION_EMBEDDING_TABLE,
     MemoryStore,
-    RECALL_CREDIT_LEDGER_TABLE,
     TRANSCRIPT_GROUNDING_TABLE,
 )
 from living_memory.transcript_ledger import (
@@ -46,18 +51,6 @@ from living_memory.transcript_ledger import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LEDGER_INDEX = "idx_transcript_grounding_node_graded"
-#: Objects created additively on open, without changing existing ledgers.
-NEW_OBJECTS = {
-    TRANSCRIPT_GROUNDING_TABLE,
-    LEDGER_INDEX,
-    RECALL_CREDIT_LEDGER_TABLE,
-    "recall_explicit_credit",
-    "recall_feedback_marks",
-    "idx_recall_feedback_marks_event",
-    CONSOLIDATION_EMBEDDING_TABLE,
-} | PENDING_RECALL_INDEXES
-
 SCOPE = "project:ledger"
 AMBIENT = {"agent": "seeder", "task": "ledger-fixture", "session_id": "seed-session"}
 
@@ -98,74 +91,8 @@ class FakeMCP:
 
 
 # ---------------------------------------------------------------------------
-# Helpers: master's storage build, schema snapshots, verdict payloads
+# Verdict payloads
 # ---------------------------------------------------------------------------
-
-_MASTER_STORAGE_CACHE: list[types.ModuleType] = []
-
-
-def _master_storage() -> types.ModuleType:
-    """master's ``storage.py``, executed as a module against current siblings.
-
-    Only ``storage.py`` changes in this release's schema surface, so master's
-    storage against the current sibling modules *is* the deployed DDL. Loaded
-    once per test process.
-    """
-
-    if _MASTER_STORAGE_CACHE:
-        return _MASTER_STORAGE_CACHE[0]
-    try:
-        source = subprocess.run(
-            ["git", "show", "master:src/living_memory/storage.py"],
-            cwd=REPO_ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError) as error:  # pragma: no cover
-        pytest.skip(f"master's storage.py unavailable via git: {error}")
-    module = types.ModuleType("living_memory._storage_at_master")
-    module.__file__ = str(REPO_ROOT / "src" / "living_memory" / "storage.py")
-    sys.modules[module.__name__] = module
-    exec(compile(source, "master:src/living_memory/storage.py", "exec"), module.__dict__)
-    _MASTER_STORAGE_CACHE.append(module)
-    return module
-
-
-def _schema_objects(db_path: Path) -> dict[str, str]:
-    """``sqlite_master`` name -> verbatim SQL for every named object."""
-
-    conn = sqlite3.connect(db_path)
-    try:
-        rows = conn.execute(
-            "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL"
-        ).fetchall()
-    finally:
-        conn.close()
-    return {str(name): str(sql) for name, sql in rows}
-
-
-def _schema_version(db_path: Path) -> str:
-    conn = sqlite3.connect(db_path)
-    try:
-        row = conn.execute(
-            "SELECT value FROM metadata WHERE key = 'schema_version'"
-        ).fetchone()
-    finally:
-        conn.close()
-    return str(row[0])
-
-
-def _assert_only_ledger_added(before: dict[str, str], after: dict[str, str]) -> None:
-    """Only the precise task-index delta and additive ledgers are allowed."""
-
-    assert_preserved_schema(before, after)
-    added = set(after) - set(before)
-    # Subset, not equality: once this release reaches master, master's build
-    # creates the ledger too and the difference legitimately collapses to
-    # nothing.
-    assert added <= NEW_OBJECTS, f"unexpected schema objects: {sorted(added - NEW_OBJECTS)}"
-    assert NEW_OBJECTS <= set(after)
 
 
 def _verdict(index: int = 0, **overrides: Any) -> dict[str, Any]:
@@ -215,8 +142,8 @@ def _ledger_rows(db_path: Path) -> list[tuple[Any, ...]]:
 def test_fresh_db_creates_required_ledgers(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "current.sqlite3"):
         pass
-    assert NEW_OBJECTS <= set(_schema_objects(tmp_path / "current.sqlite3"))
-    assert _schema_version(tmp_path / "current.sqlite3") == "8"
+    assert ADDITIVE_OBJECTS <= set(schema_objects(tmp_path / "current.sqlite3"))
+    assert schema_version(tmp_path / "current.sqlite3") == "8"
 
 
 # ---------------------------------------------------------------------------
@@ -224,12 +151,11 @@ def test_fresh_db_creates_required_ledgers(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_reopening_master_preserves_data_and_allows_only_ledger_and_task_index(tmp_path: Path) -> None:
-    master = _master_storage()
+def test_reopening_pre_ledger_schema_preserves_data_and_builds_task_index(tmp_path: Path) -> None:
     db = tmp_path / "existing.sqlite3"
-    with master.MemoryStore(db) as store:
+    with MemoryStore(db) as store:
         node = store.append_trace("ledger fixture trace body", {"scope": SCOPE, **AMBIENT})
-        event = store.record_recall_event(
+        store.record_recall_event(
             query="ledger fixture",
             scope=SCOPE,
             ambient_context=dict(AMBIENT),
@@ -243,19 +169,24 @@ def test_reopening_master_preserves_data_and_allows_only_ledger_and_task_index(t
                 }
             ],
         )
-        node_before = dict(store.connection.execute("SELECT * FROM nodes WHERE id = ?", (node.id,)).fetchone())
-        event_before = dict(store.connection.execute("SELECT * FROM recall_events WHERE id = ?", (event.id,)).fetchone())
-    before = _schema_objects(db)
-    assert _schema_version(db) == "8"
+        rows = memory_rows(store.connection)
+    before = prepare_pre_ledger_schema(db)
 
     with MemoryStore(db) as reopened:
-        assert dict(reopened.connection.execute("SELECT * FROM nodes WHERE id = ?", (node.id,)).fetchone()) == node_before
-        assert dict(reopened.connection.execute("SELECT * FROM recall_events WHERE id = ?", (event.id,)).fetchone()) == event_before
+        assert memory_rows(reopened.connection) == rows
         assert [n.id for n, _ in reopened.search_content('"ledger-fixture"')] == [node.id]
         assert [n.id for n, _ in reopened.search_content("body")] == [node.id]
 
-    _assert_only_ledger_added(before, _schema_objects(db))
-    assert _schema_version(db) == "8"
+    after = schema_objects(db)
+    assert_schema_upgrade(before, after)
+    assert schema_version(db) == "8"
+
+    with MemoryStore(db) as again:
+        assert memory_rows(again.connection) == rows
+        assert [n.id for n, _ in again.search_content('"ledger-fixture"')] == [node.id]
+        assert [n.id for n, _ in again.search_content("body")] == [node.id]
+    assert schema_objects(db) == after
+    assert schema_version(db) == "8"
 
 
 @pytest.mark.parametrize("name, replacement", [
@@ -270,25 +201,10 @@ def test_task_index_allowance_rejects_unrelated_or_incomplete_ddl(
     db = tmp_path / "schema.sqlite3"
     with MemoryStore(db):
         pass
-    before = _schema_objects(db)
+    before = schema_objects(db)
     after = {**before, name: replacement}
     with pytest.raises(AssertionError):
-        _assert_only_ledger_added(before, after)
-
-
-def test_dropped_ledger_reappears_on_reopen(tmp_path: Path) -> None:
-    """CREATE IF NOT EXISTS on every open is the migration — same as v8."""
-
-    db = tmp_path / "dropped.sqlite3"
-    with MemoryStore(db) as store:
-        store.connection.execute(f"DROP TABLE {TRANSCRIPT_GROUNDING_TABLE}")
-        store.connection.commit()
-    assert TRANSCRIPT_GROUNDING_TABLE not in _schema_objects(db)
-
-    with MemoryStore(db):
-        pass
-    after = _schema_objects(db)
-    assert NEW_OBJECTS <= set(after)
+        assert_preserved_schema(before, after)
 
 
 # ---------------------------------------------------------------------------

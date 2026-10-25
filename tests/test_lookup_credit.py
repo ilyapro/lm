@@ -24,9 +24,9 @@ credit and, above all, how it is kept from double-counting:
 * **Reversible and derived.** ``LM_LOOKUP_CREDIT_POLICY=off`` keeps the record
   and skips the credit; an unknown value is the default. A failed credit is
   logged and the lookup returns as if nothing had been attempted.
-* **Additive schema.** The ledger appears on a database master's build
-  created, on reopen, with ``schema_version`` still 8 and every pre-existing
-  DDL string byte-identical outside the precisely checked task-index migration.
+* **Additive schema.** Opening a database without the ledgers creates them,
+  with ``schema_version`` still 8, exact node/event rows, and unchanged unrelated
+  DDL outside the precisely checked task-index and pending-index migration.
 """
 
 from __future__ import annotations
@@ -36,13 +36,16 @@ from pathlib import Path
 from typing import Any
 import logging
 import sqlite3
-import subprocess
-import sys
-import types
 
 import pytest
 
-from storage_schema_compat import PENDING_RECALL_INDEXES, assert_preserved_schema
+from storage_schema_compat import (
+    assert_schema_upgrade,
+    memory_rows,
+    prepare_pre_ledger_schema,
+    schema_objects,
+    schema_version,
+)
 
 import living_memory.feedback as feedback_module
 import living_memory.server as server_module
@@ -57,14 +60,12 @@ from living_memory.feedback import (
 from living_memory.query_anchors import ANCHOR_EDGE_WEIGHT
 from living_memory.server import create_mcp_server
 from living_memory.storage import (
-    CONSOLIDATION_EMBEDDING_TABLE,
     RECALL_CREDIT_LEDGER_TABLE,
     RECALL_LOOKUP_EVENT_TABLE,
     MemoryStore,
     QueryAnchor,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 SCOPE = "project:lookup-credit"
 QUERY = "kappa ledger"
 AMBIENT = {"agent": "agent-a", "task": "credit-task", "session_id": "credit-session"}
@@ -818,58 +819,9 @@ def test_recall_events_for_transport_is_newest_first_bounded_and_scoped_to_the_s
 # Additive ledger schema alongside the explicit derived task-index migration
 # ---------------------------------------------------------------------------
 
-_MASTER_STORAGE_CACHE: list[types.ModuleType] = []
-
-
-def _master_storage() -> types.ModuleType:
-    """master's ``storage.py``, executed as a module against current siblings.
-
-    Same helper as tests/test_transcript_ledger.py: the comparison is against
-    the code actually deployed, not a copy that could drift.
-    """
-
-    if _MASTER_STORAGE_CACHE:
-        return _MASTER_STORAGE_CACHE[0]
-    try:
-        source = subprocess.run(
-            ["git", "show", "master:src/living_memory/storage.py"],
-            cwd=REPO_ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError) as error:  # pragma: no cover
-        pytest.skip(f"master's storage.py unavailable via git: {error}")
-    module = types.ModuleType("living_memory._storage_at_master_for_lookup_credit")
-    module.__file__ = str(REPO_ROOT / "src" / "living_memory" / "storage.py")
-    sys.modules[module.__name__] = module
-    exec(compile(source, "master:src/living_memory/storage.py", "exec"), module.__dict__)
-    _MASTER_STORAGE_CACHE.append(module)
-    return module
-
-
-def _schema_objects(db_path: Path) -> dict[str, str]:
-    conn = sqlite3.connect(db_path)
-    try:
-        rows = conn.execute("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL").fetchall()
-    finally:
-        conn.close()
-    return {str(name): str(sql) for name, sql in rows}
-
-
-def _schema_version(db_path: Path) -> str:
-    conn = sqlite3.connect(db_path)
-    try:
-        row = conn.execute("SELECT value FROM metadata WHERE key = 'schema_version'").fetchone()
-    finally:
-        conn.close()
-    return str(row[0])
-
-
-def test_ledger_is_created_on_a_master_built_database_on_reopen(tmp_path: Path) -> None:
-    master = _master_storage()
+def test_reopening_pre_ledger_schema_creates_credit_once_across_bases(tmp_path: Path) -> None:
     db = tmp_path / "existing.sqlite3"
-    with master.MemoryStore(db) as store:
+    with MemoryStore(db) as store:
         node = store.append_trace("ledger fixture trace body", {"scope": SCOPE, **AMBIENT})
         event = store.record_recall_event(
             query="ledger fixture",
@@ -877,43 +829,34 @@ def test_ledger_is_created_on_a_master_built_database_on_reopen(tmp_path: Path) 
             ambient_context=dict(AMBIENT),
             results=[{"node_id": node.id, "rank": 0, "bm25_score": 1.0, "vector_score": 0.5}],
         )
-    before = _schema_objects(db)
-    assert _schema_version(db) == "8"
+        rows = memory_rows(store.connection)
+    before = prepare_pre_ledger_schema(db)
 
     with MemoryStore(db) as reopened:
-        assert reopened.get_node(node.id) is not None
-        assert reopened.get_recall_event(event.id) is not None
+        assert memory_rows(reopened.connection) == rows
+        assert [n.id for n, _ in reopened.search_content('"credit-task"')] == [node.id]
+        assert [n.id for n, _ in reopened.search_content("body")] == [node.id]
         # Usable at once: the whole migration was the open.
         assert reopened.claim_recall_credit(event.id, node.id, basis="grounded", source_id="T") is True
         assert reopened.claim_recall_credit(event.id, node.id, basis="lookup", source_id="L") is False
         assert reopened.credited_node_ids(event.id) == {node.id}
+        credit_rows = [tuple(row) for row in reopened.connection.execute(
+            f"SELECT * FROM {RECALL_CREDIT_LEDGER_TABLE}"
+        )]
+        assert len(credit_rows) == 1
 
-    after = _schema_objects(db)
-    assert_preserved_schema(before, after)
-    # Reopening may add the ledgers, derived cache and pending-work indexes;
-    # existing objects and their data remain intact.
-    assert set(after) - set(before) <= {
-        RECALL_CREDIT_LEDGER_TABLE,
-        "recall_explicit_credit",
-        "recall_feedback_marks",
-        "idx_recall_feedback_marks_event",
-        CONSOLIDATION_EMBEDDING_TABLE,
-    } | PENDING_RECALL_INDEXES
-    assert RECALL_CREDIT_LEDGER_TABLE in after
-    assert _schema_version(db) == "8"
+    after = schema_objects(db)
+    assert_schema_upgrade(before, after)
+    assert schema_version(db) == "8"
 
-    # Idempotent: reopening again neither duplicates nor drops the table.
     with MemoryStore(db) as again:
+        assert memory_rows(again.connection) == rows
         assert again.credited_node_ids(event.id) == {node.id}
-    assert _schema_objects(db) == after
-
-
-def test_dropped_ledger_reappears_on_reopen(tmp_path: Path) -> None:
-    db = tmp_path / "dropped.sqlite3"
-    with MemoryStore(db) as store:
-        store.connection.execute(f"DROP TABLE {RECALL_CREDIT_LEDGER_TABLE}")
-        store.connection.commit()
-    assert RECALL_CREDIT_LEDGER_TABLE not in _schema_objects(db)
-    with MemoryStore(db) as store:
-        assert store.claim_recall_credit("E", "N", basis="lookup", source_id="L") is True
-    assert RECALL_CREDIT_LEDGER_TABLE in _schema_objects(db)
+        assert again.claim_recall_credit(event.id, node.id, basis="lookup", source_id="L2") is False
+        assert [tuple(row) for row in again.connection.execute(
+            f"SELECT * FROM {RECALL_CREDIT_LEDGER_TABLE}"
+        )] == credit_rows
+        assert [n.id for n, _ in again.search_content('"credit-task"')] == [node.id]
+        assert [n.id for n, _ in again.search_content("body")] == [node.id]
+    assert schema_objects(db) == after
+    assert schema_version(db) == "8"
