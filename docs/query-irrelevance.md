@@ -1,7 +1,7 @@
 # Query-relative irrelevance demotion
 
 Part of goal explicit-recall-feedback (P3). Code: `src/living_memory/irrelevance.py`;
-hook `feedback._apply_query_irrelevance`; read path
+write path `feedback._apply_query_feedback`; read path
 `MemoryRecallService._collect_query_demotions` in `retrieval.py`. Tests:
 `tests/test_query_irrelevance.py`. Explicit-mark interface: `docs/explicit-feedback.md`.
 

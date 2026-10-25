@@ -39,6 +39,7 @@ from living_memory.feedback import (
     _explicit_feedback_policy,
     _implicit_link_policy,
 )
+from living_memory.irrelevance import list_query_irrelevance
 from living_memory.server import (
     _IRRELEVANT_FIELD_DESCRIPTION,
     _IRRELEVANT_FIELD_DESCRIPTION_MANDATORY,
@@ -571,6 +572,183 @@ def test_off_mode_records_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 # ---------------------------------------------------------------------------
 # Irrelevance: hook, global usefulness, link hygiene
 # ---------------------------------------------------------------------------
+
+
+def _apply_marks(store: MemoryStore, used: list[str], irrelevant: list[str]) -> Any:
+    return feedback_module.apply_explicit_marks(
+        store, used, irrelevant, via_tool="memory_remember",
+        source_id="feedback-test", transport_session_id=TRANSPORT,
+    )
+
+
+def _count_query_vectors(store: MemoryStore) -> list[list[str]]:
+    calls: list[list[str]] = []
+    embedder = store._resolve_chunk_embedder()
+
+    def counting(texts: Any) -> Any:
+        calls.append(list(texts))
+        return embedder(texts)
+
+    store.set_chunk_embedder(counting)
+    return calls
+
+
+@pytest.mark.parametrize("lookup_first", [False, True])
+def test_mixed_feedback_prepares_query_once_and_preserves_credit_and_cancellation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lookup_first: bool
+) -> None:
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    mcp, store, nodes, event_id = _seed(tmp_path / "mixed.sqlite3", monkeypatch)
+    used, irrelevant = nodes[:2]
+    _apply_marks(store, [], [used])
+    if lookup_first:
+        mcp.tools["memory_lookup"](node_id=used)
+        assert list_query_irrelevance(store)[0]["weight"] == 0.5
+    before = _usefulness(store, nodes)
+    anchor_before = store.list_query_anchors(scope=SCOPE)[0]
+    calls = _count_query_vectors(store)
+
+    result = _apply_marks(store, [used], [irrelevant])
+
+    assert result.summary() == {"accepted": 2, "dropped": 0, "by_reason": {}}
+    assert calls == [[QUERY]]
+    assert result.credited == ([] if lookup_first else [(event_id, used)])
+    anchor, = store.list_query_anchors(scope=SCOPE)
+    assert anchor.id == anchor_before.id
+    assert anchor.reinforcement_count == anchor_before.reinforcement_count + (not lookup_first)
+    assert result.anchor_ids == ([] if lookup_first else [anchor.id])
+    edge, = store.list_query_anchor_edges(anchor_id=anchor.id)
+    assert edge.target_id == used and edge.hits == 1
+    rows = {row["node_id"]: row for row in list_query_irrelevance(store)}
+    assert rows[used]["weight"] == 0 and rows[used]["cancels"] == 1
+    assert rows[irrelevant]["weight"] == 0.5 and rows[irrelevant]["marks"] == 1
+    assert {row["anchor_id"] for row in rows.values()} == {anchor.id}
+    after = _usefulness(store, nodes)
+    assert after[1:] == before[1:]
+    assert after[0] == before[0] if lookup_first else after[0] > before[0]
+    assert _ledger(store) == [(event_id, used, "lookup" if lookup_first else "explicit")]
+
+    _apply_marks(store, [used], [])
+    assert calls == [[QUERY], [QUERY]]
+    assert _usefulness(store, nodes) == after
+    assert store.list_query_anchors(scope=SCOPE)[0].reinforcement_count == anchor.reinforcement_count
+    assert store.list_query_anchor_edges(anchor_id=anchor.id)[0].hits == 1
+    assert {row["node_id"]: row for row in list_query_irrelevance(store)} == rows
+
+
+def test_explicit_feedback_batches_mixed_positive_negative_and_blank_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    _mcp, store, nodes, _event_id = _seed(tmp_path / "batch.sqlite3", monkeypatch)
+    queries = ["  apple orchard  ", "bronze sculpture", "  coral reef  ", "  "]
+    events = [
+        store.record_recall_event(
+            query=query, scope=SCOPE,
+            ambient_context={"transport_session_id": TRANSPORT},
+            results=[{"node_id": node_id} for node_id in nodes[index * 2:index * 2 + 2]],
+        )
+        for index, query in enumerate(queries)
+    ]
+    calls = _count_query_vectors(store)
+
+    result = _apply_marks(store, [nodes[0], nodes[2], nodes[6]], [nodes[1], nodes[4], nodes[7]])
+
+    assert result.summary()["accepted"] == 6
+    assert calls == [[queries[0], queries[1], queries[2].strip()]]
+    anchors = {anchor.query: anchor for anchor in store.list_query_anchors(scope=SCOPE)}
+    assert set(anchors) == {queries[0], queries[1], queries[2].strip()}
+    assert set(result.anchor_ids) == {anchors[queries[0]].id, anchors[queries[1]].id}
+    assert store.list_query_anchor_edges(anchor_id=anchors[queries[2].strip()].id) == []
+    assert {(row["last_event_id"], row["node_id"]) for row in list_query_irrelevance(store)} == {
+        (events[0].id, nodes[1]), (events[2].id, nodes[4]),
+    }
+    assert set(result.credited) == {(events[i].id, nodes[2 * i]) for i in (0, 1, 3)}
+
+
+@pytest.mark.parametrize("failure", ["positive_edge", "cancellation", "negative"])
+def test_optional_query_write_failure_preserves_independent_effects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    _mcp, store, nodes, event_id = _seed(tmp_path / "write-failure.sqlite3", monkeypatch)
+    used, irrelevant = nodes[:2]
+    _apply_marks(store, [], [used])
+    anchor_before = store.list_query_anchors(scope=SCOPE)[0]
+    calls = _count_query_vectors(store)
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("optional write unavailable")
+
+    if failure == "positive_edge":
+        monkeypatch.setattr(store, "upsert_query_anchor_edge", fail)
+    else:
+        function = "cancel_query_irrelevance" if failure == "cancellation" else "record_query_irrelevance"
+        monkeypatch.setattr(feedback_module, function, fail)
+    result = _apply_marks(store, [used], [irrelevant])
+
+    assert result.summary()["accepted"] == 2
+    assert result.credited == [(event_id, used)]
+    assert calls == [[QUERY]]
+    anchor, = store.list_query_anchors(scope=SCOPE)
+    assert anchor.id == anchor_before.id
+    assert anchor.reinforcement_count == anchor_before.reinforcement_count + 1
+    edges = store.list_query_anchor_edges(anchor_id=anchor.id)
+    assert [edge.target_id for edge in edges] == ([] if failure == "positive_edge" else [used])
+    rows = {row["node_id"]: row for row in list_query_irrelevance(store)}
+    assert rows[used]["weight"] == (0.5 if failure == "cancellation" else 0)
+    if failure == "negative":
+        assert irrelevant not in rows
+    else:
+        assert rows[irrelevant]["weight"] == 0.5
+
+
+@pytest.mark.parametrize("preparation", ["blank", "no_encoder", "raises", "empty_batch", "empty_vector"])
+def test_unavailable_query_preparation_preserves_explicit_credit_and_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preparation: str
+) -> None:
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    _mcp, store, nodes, event_id = _seed(tmp_path / "preparation.sqlite3", monkeypatch)
+    if preparation == "blank":
+        with store.transaction():
+            store.connection.execute("UPDATE recall_events SET query = '  ' WHERE id = ?", (event_id,))
+    calls: list[list[str]] = []
+
+    def encode(texts: Any) -> Any:
+        calls.append(list(texts))
+        if preparation == "raises":
+            raise RuntimeError("encoder unavailable")
+        return [] if preparation == "empty_batch" else [[] for _ in texts]
+
+    monkeypatch.setattr(feedback_module, "_anchor_embedder", lambda store: None if preparation == "no_encoder" else encode)
+    result = _apply_marks(store, [nodes[0]], [nodes[1]])
+
+    assert result.summary()["accepted"] == 2
+    assert result.credited == [(event_id, nodes[0])]
+    assert _ledger(store) == [(event_id, nodes[0], "explicit")]
+    assert calls == ([] if preparation in {"blank", "no_encoder"} else [[QUERY]])
+    assert result.anchor_ids == [] and store.list_query_anchors(scope=SCOPE) == []
+    assert list_query_irrelevance(store) == []
+
+
+def test_zero_weight_credit_still_cancels_and_records_negatives_once_prepared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    monkeypatch.setenv("LM_EXPLICIT_CREDIT_WEIGHT", "0")
+    _mcp, store, nodes, event_id = _seed(tmp_path / "zero-weight.sqlite3", monkeypatch)
+    _apply_marks(store, [], [nodes[0]])
+    before = (_usefulness(store, nodes), _weights(store), store.list_query_anchors(scope=SCOPE))
+    calls = _count_query_vectors(store)
+
+    result = _apply_marks(store, [nodes[0]], [nodes[1]])
+
+    assert calls == [[QUERY]]
+    assert result.credited == [(event_id, nodes[0])] and result.anchor_ids == []
+    assert (_usefulness(store, nodes), _weights(store), store.list_query_anchors(scope=SCOPE)) == before
+    rows = {row["node_id"]: row for row in list_query_irrelevance(store)}
+    assert rows[nodes[0]]["cancels"] == 1 and rows[nodes[0]]["weight"] == 0
+    assert rows[nodes[1]]["weight"] == 0.5
 
 
 def test_irrelevance_hook_runs_only_under_credit_and_never_lowers_usefulness(

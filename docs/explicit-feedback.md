@@ -150,15 +150,15 @@ repeat cancellation of an already cleared row.
   reinforcement, **no ledger or side-table row is claimed**, and grounded
   and lookup credit behave exactly as without marks.
 - **credit**: audit, plus explicit credit for accepted `used` marks, plus
-  `_apply_query_irrelevance(store, event, node_ids)` once per event for
-  accepted `irrelevant` marks.
+  query-relative demotion for accepted `irrelevant` marks. Each event's query
+  preparation is shared across its positive and negative effects.
 - **off**: the fields are accepted and ignored. Nothing is recorded, and
   there is no hygiene: this is exactly the behaviour before the feature.
 
 ## Irrelevance
 
-`feedback._apply_query_irrelevance(store, event, node_ids)` delegates to
-`src/living_memory/irrelevance.py`, which records a query-anchor-relative
+`feedback._apply_query_feedback` passes the prepared anchor to
+`irrelevance.record_query_irrelevance`, which records a query-anchor-relative
 demotion (see docs/query-irrelevance.md). It is called only under `credit`, with
 that event's accepted irrelevant ids, deduplicated and in mark order. An
 irrelevant mark must never lower a node's global `usefulness_score`. It
