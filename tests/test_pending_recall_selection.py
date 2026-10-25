@@ -146,6 +146,11 @@ def test_remember_consumes_own_event_once_amid_foreign_events(
     ({"transport_session_id": "own"}, {}, SCOPE),
     ({"task": "own", "session_id": "own"}, {"task": "own", "session_id": "other"}, SCOPE),
     ({"task": "own", "session_id": "own"}, {"task": "other", "session_id": "own"}, SCOPE),
+    ({"task": "own", "session_id": "own", "transport_session_id": "own"},
+     {"task": "own", "session_id": "other", "transport_session_id": "other"}, SCOPE),
+    ({"task": "own", "session_id": "own", "transport_session_id": "own"},
+     {"task": "other", "session_id": "own", "transport_session_id": "other"}, SCOPE),
+    ({"task": "own", "session_id": "own", "transport_session_id": "own"}, {}, SCOPE),
     ({}, {}, "project:other"),
     ({"agent": "own"}, {"agent": "own"}, SCOPE),
 ])

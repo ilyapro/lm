@@ -276,8 +276,9 @@ term stays an exact quoted term. Identifiers, paths, hashes and mixed-script
 tokens are never stemmed. `LM_TOKENIZE_CYRILLIC_STEM=off` disables the Russian
 stemmer and the prefix terms together and restores the surface-form behaviour;
 the setting is read once per process (`embeddings.reset_cyrillic_stem_cache`
-re-reads it). The same `tokenize` feeds IDF containment in `grounding.py`, the
-schema-trigger overlap, so those see one token per Russian lemma too; recall-map labels keep their own unstemmed term
+re-reads it). The same `tokenize` feeds IDF containment in `grounding.py` and
+schema-trigger overlap, so those see one token per Russian lemma too;
+recall-map labels keep their own unstemmed term
 extraction (`recall_map._terms`) because they are looked up in
 `nodes_fts_vocab`.
 

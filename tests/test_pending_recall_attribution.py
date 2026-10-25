@@ -5,6 +5,7 @@ import asyncio
 import pytest
 from fastmcp import Client
 
+from living_memory.irrelevance import list_query_irrelevance
 from living_memory.server import create_mcp_server
 
 
@@ -89,8 +90,9 @@ def test_only_current_delivery_contributes_provenance_credit_and_anchors(mcp, to
     assert len(anchors) == int(credited)
     if credited:
         assert store.credited_node_ids(own) == {original.id}
-        assert anchors[0].reinforcement_count == 1
-        assert [edge.target_id for edge in store.list_query_anchor_edges(anchor_id=anchors[0].id)] == [original.id]
+        assert anchors[0].reinforcement_count == 0
+        edge, = store.list_query_anchor_edges(anchor_id=anchors[0].id)
+        assert (edge.target_id, edge.hits) == (original.id, 1)
     if tool == "memory_teach":
         assert not any(trace.context.get(key) for key in ("session", "session_id", "task"))
         assert trace.context["transport_session_id"] != "source-connection"
@@ -151,4 +153,7 @@ def test_explicit_irrelevance_survives_without_implicit_work_match(mcp, tool):
     assert result["feedback_marks"] == {"accepted": 1, "dropped": 0, "by_reason": {}}
     assert store.irrelevant_marked_node_ids(event.id) == {original.id}
     assert not store.credited_node_ids(event.id)
-    assert store.get_node(original.id).usefulness_score < original.usefulness_score
+    rejection, = list_query_irrelevance(store)
+    assert rejection["last_event_id"] == event.id
+    assert rejection["node_id"] == original.id
+    assert rejection["weight"] > 0
