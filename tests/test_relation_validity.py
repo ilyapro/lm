@@ -185,7 +185,7 @@ def test_historical_bookkeeping_never_corrects_distinct_knowledge(tmp_path, meta
             assert store.list_recall_connections([restrictive], limit=1)[restrictive] == []
             assert load_supersedes_pairs(store.connection) == []
             assert snapshot_evidence(store.connection)(SCOPE)[1] is False
-            assert store._has_graph_evidence(store.connection, SCOPE) is False
+            assert store._has_graph_evidence(SCOPE) is False
             assert resolve_replacement(store, restrictive) is None
             assert soft_delete_superseded(store, scope=SCOPE) == []
             entry, response = await read(client, path, restrictive)
