@@ -12,11 +12,10 @@ Where the association lives
 ---------------------------
 The query side is the anchor machinery (``living_memory.query_anchors``): the
 event's query resolves to its anchor through the same identity a grounded
-consumption uses (fingerprint over (query, scope), then in-scope cosine at
-``ANCHOR_DEDUP_COSINE_THRESHOLD``), without reinforcing it. At retrieval time
-the incoming query is matched to anchors by ``match_anchors`` with the anchor
-channel's own floor and limit, so "the same question" means here exactly what
-it means to the anchor channel.
+consumption uses (fingerprint over the whitespace-normalized query and scope),
+without reinforcing it. At retrieval time the incoming query is matched to
+anchors by ``match_anchors`` with the anchor channel's own floor and limit.
+Similarity transfers ranking evidence between independent question identities.
 
 The (anchor, node) row cannot go into an existing table. ``query_anchor_edges``
 is read as positive evidence: its weight saturates upward and every edge is a

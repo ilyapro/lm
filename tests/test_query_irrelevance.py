@@ -37,7 +37,7 @@ from living_memory.storage import MemoryStore
 SCOPE = "project:query-irrelevance"
 QUERY = "kappa ledger"
 #: Hash-backend cosine to QUERY is ~0.79: over the anchor match floor (0.60),
-#: under the dedup cut (0.95) -- a paraphrase that matches the same anchor.
+#: so this distinct query receives a weaker signal from the matching anchor.
 PARAPHRASE = "kappa ledger please"
 #: Shares no token with QUERY (cosine 0.0) but finds the marked node lexically.
 UNRELATED = "redis eviction storm zset"

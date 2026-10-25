@@ -53,6 +53,8 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LM_HUB_MIN_QUERIES",
         "LM_EXPLICIT_FEEDBACK_POLICY",
         "LM_QUERY_IRRELEVANCE_FACTOR",
+        "LM_RECALL_MIN_SCORE",
+        "LM_RECALL_GATE_FORM",
     ):
         monkeypatch.delenv(name, raising=False)
 
