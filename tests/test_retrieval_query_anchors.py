@@ -41,8 +41,7 @@ from living_memory.retrieval import (
 SCOPE = "project:demo"
 OTHER_SCOPE = "project:other"
 
-#: The node the jargon query must find. English, about merge-request review,
-#: and invisible to both existing content channels for a Russian jargon query.
+#: English knowledge with low content similarity to the Russian jargon queries.
 REVIEW_NODE = (
     "Merge request review checklist: verify migration ordering, confirm the "
     "rollback path, and require a green pipeline before approval."
@@ -65,16 +64,12 @@ DECOYS = (
     "Реквест 9443 в трекере переведён в статус ожидания",
 )
 
-#: The pair the regression rests on: different verb *and* different ticket
-#: number. Measured query-to-anchor 0.916, query-to-content 0.172.
+#: Distinct queries: both the verb and ticket number differ.
 JARGON_QUERY = "посмотри мердж-реквест 9806"
 ANCHOR_QUERY = "глянь мердж-реквест 9443"
 
-#: A second pair whose query-to-content cosine (0.065) sits *below*
-#: :data:`VECTOR_MATCH_THRESHOLD`, so the vector channel cannot produce the node
-#: as a candidate at all and "no other channel found it" is literal rather than
-#: a matter of ranking. Same jargon verb, different ticket — the «поревьювь»
-#: class the goal names, measured at 0.960.
+#: This pair must stay below VECTOR_MATCH_THRESHOLD against the target's
+#: content, so the anchor is the only channel that can admit it as a candidate.
 INVISIBLE_QUERY = "поревьювь мердж-реквест 9806"
 INVISIBLE_ANCHOR = "поревьювь мердж-реквест 9443"
 
@@ -561,6 +556,9 @@ def run_probe() -> dict[str, Any]:
     # The whole point of the child: the real encoder, with nothing of it left
     # behind in this process.
     environment.pop("LIVING_MEMORY_EMBEDDING_BACKEND", None)
+    # Measure graph admission and ranking before the optional delivery gate;
+    # weak traversal results must remain visible regardless of the host setting.
+    environment["LM_RECALL_MIN_SCORE"] = "off"
     completed = subprocess.run(
         [sys.executable, "-c", PROBE],
         input=json.dumps(
