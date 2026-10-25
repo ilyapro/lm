@@ -54,6 +54,7 @@ retro-backfill and for repairing a database written before the hook existed.
 
 from __future__ import annotations
 
+from array import array
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -622,7 +623,7 @@ def _prepare_anchor_vectors(
             tuple(ids), matrix, _np.where(nonzero, norms, 1.0), nonzero,
             {scope: _np.asarray(indices, dtype=_np.intp) for scope, indices in by_scope.items()},
         )
-    matrix = tuple(tuple(unpack_chunk_embedding(blob, width)) for blob in blobs)
+    matrix = tuple(array("f", unpack_chunk_embedding(blob, width)) for blob in blobs)
     squared_norms = []
     for row in matrix:
         squared_norm = 0.0

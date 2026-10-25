@@ -43,6 +43,9 @@ def test_queries_reuse_preparation_until_vector_revision_changes(tmp_path, monke
         for query in ([0.0, 1.0], [1.0, 1.0], [1.0, 0.0]):
             assert match(service, query) == qa.match_anchors(store, query, "global")
         assert preparations == [("a", "b")]
+        if not numpy:
+            rows = service._anchor_vectors.by_width[2].matrix
+            assert sum(len(row) * row.itemsize for row in rows) == 4 * 4
         store.reinforce_query_anchor("a")
         node = store.create_node(level="concept", content="target")
         store.upsert_query_anchor_edge("a", node.id, weight=0.75)
