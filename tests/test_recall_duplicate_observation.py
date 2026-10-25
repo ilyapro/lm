@@ -15,7 +15,6 @@ from living_memory.storage import MemoryStore
 
 from test_lookup import FakeMCP
 
-
 SCOPE = "project:duplicate-observation"
 CONTENTS = (
     "The harbour survey runs at slack water; the office countersigns on Tuesday.",
@@ -24,11 +23,10 @@ CONTENTS = (
     "The quay gate closes at dusk; the night watch keeps the entrance clear.",
 )
 
-
 def configured_environment(monkeypatch):
     for name in (
-        "LM_RECALL_MIN_SCORE", "LM_RECALL_REPEAT_GATING",
-        "LM_RECALL_REPEAT_DROP_TRAILING_STUBS", "LM_DELIVERY_SESSION_DEDUP",
+        "LM_RECALL_MIN_SCORE",
+ "LM_DELIVERY_SESSION_DEDUP",
         "LM_RECALL_NEAR_DUP_COSINE", "LM_RECALL_NEAR_DUP_LENGTH_RATIO",
         "LM_NEAR_DUP_IDENTIFIER_VETO", "LM_RECALL_SCHEMA_DEDUP",
         "LM_RECALL_SCHEMA_TRIGGER",
@@ -39,11 +37,9 @@ def configured_environment(monkeypatch):
     monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
     monkeypatch.setattr(storage, "_utc_now", lambda: "2099-01-01T00:00:00Z")
 
-
 @pytest.fixture(autouse=True)
 def environment(monkeypatch):
     configured_environment(monkeypatch)
-
 
 def put_vector(store, node_id, degrees):
     angle = math.radians(degrees)
@@ -52,7 +48,6 @@ def put_vector(store, node_id, degrees):
                   char_start=0, char_end=len(node_id)),
         [math.cos(angle), math.sin(angle)],
     )])
-
 
 def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowledge"):
     """Freeze retrieval inputs; keep the service's selection and accounting real."""
@@ -110,7 +105,7 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
     monkeypatch.setattr(MemoryRecallService, "_collect_vector", lambda *a, **kw: [])
     monkeypatch.setattr(MemoryRecallService, "_collect_query_demotions", lambda *a, **kw: {})
     monkeypatch.setattr(MemoryRecallService, "_collect_hub_demotions", lambda *a, **kw: {})
-    if case in ("session", "repeat-gated"):
+    if case == "session":
         repeat = store.get_node("repeat")
         event = store.record_recall_event(
             query="harbour survey", scope=SCOPE,
@@ -120,10 +115,6 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
         store.record_recall_delivery(event.id, recall_delivery_records(ranked, [
             {"id": repeat.id, "content": repeat.content, "delivery": "full"},
         ]))
-    if case == "repeat-gated":
-        monkeypatch.setenv("LM_RECALL_REPEAT_GATING", "1")
-        monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
-        monkeypatch.setattr(server, "should_gate_fingerprint", lambda *a: True)
     reads, pools = [], []
     list_chunks, mean_pool = store.list_node_chunks, near_dup._mean_pool
 
@@ -180,7 +171,6 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
     run.store = store
     return run
 
-
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 def test_selection_and_delivery_observe_the_bounded_pool_once(tmp_path, monkeypatch, view):
     result = make_recall(tmp_path, monkeypatch, view=view)()
@@ -190,14 +180,12 @@ def test_selection_and_delivery_observe_the_bounded_pool_once(tmp_path, monkeypa
     assert result["pools"] == 4
     assert [row["delivery"] for row in result["results"]] == ["full", "full"]
 
-
 @pytest.mark.parametrize("case", ["unknown", "mixed", "zero", "identifier", "length"])
 def test_unknown_vectors_and_guards_keep_the_fact_without_rereading(tmp_path, monkeypatch, case):
     result = make_recall(tmp_path, monkeypatch, case=case)()
     assert result["selected"] == ["bearer", "repeat"]
     assert result["reads"] == ["bearer", "repeat", "distinct", "later"]
     assert [row["delivery"] for row in result["results"]] == ["full", "full"]
-
 
 def test_omitted_pool_bearer_is_replaced_in_answer_order(tmp_path, monkeypatch):
     result = make_recall(tmp_path, monkeypatch, case="omitted-bearer")()
@@ -207,7 +195,6 @@ def test_omitted_pool_bearer_is_replaced_in_answer_order(tmp_path, monkeypatch):
     assert result["results"][2]["content_ref"]["duplicate_of"] == "bearer"
     assert set(Counter(result["reads"]).values()) == {1}
     assert "outside" not in result["reads"]
-
 
 def test_next_recall_reads_changed_chunks(tmp_path, monkeypatch):
     run = make_recall(tmp_path, monkeypatch)
@@ -220,14 +207,12 @@ def test_next_recall_reads_changed_chunks(tmp_path, monkeypatch):
     assert after["selected"] == ["bearer", "repeat"]
     assert after["reads"] == ["bearer", "repeat", "distinct", "later"]
 
-
 def test_disabled_near_dup_never_reads_chunks(tmp_path, monkeypatch):
     monkeypatch.setenv("LM_RECALL_NEAR_DUP_COSINE", "0")
     result = make_recall(tmp_path, monkeypatch)()
     assert result["selected"] == ["bearer", "repeat"]
     assert result["reads"] == []
     assert result["pools"] == 0
-
 
 def test_score_gate_observes_only_delivery(tmp_path, monkeypatch):
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.1")
@@ -236,14 +221,11 @@ def test_score_gate_observes_only_delivery(tmp_path, monkeypatch):
     assert result["reads"] == ["bearer", "repeat"]
     assert result["results"][1]["delivery"] == "near_duplicate"
 
-
-@pytest.mark.parametrize("case", ["session", "repeat-gated"])
-def test_intentional_repeat_selection_keeps_session_delivery(tmp_path, monkeypatch, case):
-    result = make_recall(tmp_path, monkeypatch, case=case)()
+def test_intentional_repeat_selection_keeps_session_delivery(tmp_path, monkeypatch):
+    result = make_recall(tmp_path, monkeypatch, case="session")()
     assert result["selected"] == ["bearer", "repeat"]
     assert result["results"][1]["delivery"] == "session_duplicate"
     assert result["reads"] == ["bearer", "repeat", "distinct", "later"]
-
 
 @pytest.mark.parametrize("limit,expected", [(0, []), (8, ["bearer", "repeat", "distinct", "later"])])
 def test_empty_and_short_answers_read_only_delivered_nodes(tmp_path, monkeypatch, limit, expected):
@@ -251,7 +233,6 @@ def test_empty_and_short_answers_read_only_delivered_nodes(tmp_path, monkeypatch
     assert result["reads"] == expected
     if limit == 0:
         assert result["event_ids"] == [] and result["pools"] == 0
-
 
 def test_residual_beyond_the_selection_pool_is_not_observed(tmp_path, monkeypatch):
     result = make_recall(tmp_path, monkeypatch, case="bounded")()

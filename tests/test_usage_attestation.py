@@ -678,20 +678,14 @@ def test_reattesting_the_same_evidence_applies_nothing(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_trace_id_closes_the_event_and_credits_linkage_once(tmp_path: Path) -> None:
+def test_trace_id_closes_the_event_and_preserves_first_consuming_trace(tmp_path: Path) -> None:
     mcp, store, node_ids, event_id = _seed(tmp_path / "closure.sqlite3")
-    fingerprint = store.get_recall_event(event_id)
+    event_before = store.get_recall_event(event_id)
     extracted = store.append_trace(
         "extractor trace: the eviction fix landed in services/cache/eviction.py",
         {"scope": SCOPE, "agent": "extractor"},
     )
-    before = store.get_recall_fingerprint_stats(
-        store.connection.execute(
-            "SELECT fingerprint FROM recall_events WHERE id = ?", (event_id,)
-        ).fetchone()["fingerprint"]
-    )
-    assert fingerprint.feedback_applied is False
-    assert before.linked_count == 0
+    assert event_before.feedback_applied is False
 
     verdict = mcp.tools["memory_attest"](
         event_id, [EVICTION_DIFF], context=dict(EXTRACTOR_CONTEXT), trace_id=extracted.id
@@ -703,14 +697,9 @@ def test_trace_id_closes_the_event_and_credits_linkage_once(tmp_path: Path) -> N
     event = store.get_recall_event(event_id)
     assert event.feedback_applied is True
     assert event.feedback_trace_id == extracted.id
-    key = store.connection.execute(
-        "SELECT fingerprint FROM recall_events WHERE id = ?", (event_id,)
-    ).fetchone()["fingerprint"]
-    assert store.get_recall_fingerprint_stats(key).linked_count == before.linked_count + 1
 
     # A second attestation of the same event — different evidence, so not a
-    # replay — still credits, but must not re-close: re-marking would take the
-    # legacy overwrite branch and clobber the pointer above.
+    # replay — still credits, but must not re-close and replace the pointer above.
     other = store.append_trace("a second extractor trace", {"scope": SCOPE})
     again = mcp.tools["memory_attest"](
         event_id, [ALEMBIC_OUTPUT], context=dict(EXTRACTOR_CONTEXT), trace_id=other.id
@@ -722,7 +711,6 @@ def test_trace_id_closes_the_event_and_credits_linkage_once(tmp_path: Path) -> N
     assert again["closed_by_attestation"] is False
     assert again["feedback_trace_id"] == extracted.id
     assert store.get_recall_event(event_id).feedback_trace_id == extracted.id
-    assert store.get_recall_fingerprint_stats(key).linked_count == before.linked_count + 1
 
 
 def test_attestation_without_trace_id_credits_without_closing(tmp_path: Path) -> None:
@@ -730,15 +718,10 @@ def test_attestation_without_trace_id_credits_without_closing(tmp_path: Path) ->
 
     ``recall_events.feedback_trace_id`` references ``nodes(id)``, so a
     synthetic node would have to be written to close an event that produced no
-    trace — polluting ``nodes`` with non-knowledge and inflating
-    ``recall_fingerprints.linked_count``, the very measure this path exists to
-    make honest.
+    trace — polluting ``nodes`` with non-knowledge.
     """
 
     mcp, store, node_ids, event_id = _seed(tmp_path / "open.sqlite3")
-    key = store.connection.execute(
-        "SELECT fingerprint FROM recall_events WHERE id = ?", (event_id,)
-    ).fetchone()["fingerprint"]
 
     verdict = mcp.tools["memory_attest"](
         event_id, [EVICTION_DIFF], context=dict(EXTRACTOR_CONTEXT)
@@ -751,7 +734,6 @@ def test_attestation_without_trace_id_credits_without_closing(tmp_path: Path) ->
     event = store.get_recall_event(event_id)
     assert event.feedback_applied is False
     assert event.feedback_trace_id is None
-    assert store.get_recall_fingerprint_stats(key).linked_count == 0
     # Credit really was applied; only closure was withheld.
     assert store.get_node(node_ids[REDIS]).usefulness_score > 0.0
 

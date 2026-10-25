@@ -52,7 +52,6 @@ from living_memory.models import Node
 from living_memory.near_dup import IDENTIFIER_VETO_ENV
 from living_memory.retrieval import RecallResult
 from living_memory.server import (
-    _DROPPABLE_TRAILING_STUBS,
     _NearDuplicateObservation,
     create_mcp_server,
 )
@@ -78,12 +77,10 @@ _KNOBS = (
     "LM_RECALL_NEAR_DUP_COSINE",
     "LM_RECALL_NEAR_DUP_LENGTH_RATIO",
     "LM_NEAR_DUP_IDENTIFIER_VETO",
-    "LM_RECALL_REPEAT_GATING",
-    "LM_RECALL_REPEAT_DROP_TRAILING_STUBS",
+
     "LM_AUTO_CONSOLIDATE_POLICY",
     "LM_DECAY_SWEEP_INTERVAL_SEC",
 )
-
 
 @pytest.fixture(autouse=True)
 def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,11 +89,9 @@ def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
     for env in _KNOBS:
         monkeypatch.delenv(env, raising=False)
 
-
 # --------------------------------------------------------------------------
 # the pure renderer
 # --------------------------------------------------------------------------
-
 
 def make_node(node_id: str, content: str, **overrides: Any) -> Node:
     defaults: dict[str, Any] = {
@@ -114,7 +109,6 @@ def make_node(node_id: str, content: str, **overrides: Any) -> Node:
     defaults.update(overrides)
     return Node(**defaults)
 
-
 def make_result(node: Node, **overrides: Any) -> RecallResult:
     defaults: dict[str, Any] = {
         "node": node,
@@ -131,7 +125,6 @@ def make_result(node: Node, **overrides: Any) -> RecallResult:
     defaults.update(overrides)
     return RecallResult(**defaults)
 
-
 def shape(results: list[RecallResult], **overrides: Any) -> list[dict[str, Any]]:
     """The production defaults, so the wire shape under test is the shipped one."""
 
@@ -144,10 +137,8 @@ def shape(results: list[RecallResult], **overrides: Any) -> list[dict[str, Any]]
     kwargs.update(overrides)
     return shape_recall_results(results, **kwargs)
 
-
 def deliveries(shaped: list[dict[str, Any]]) -> list[str]:
     return [entry["delivery"] for entry in shaped]
-
 
 def test_paraphrase_of_a_higher_ranked_result_ships_as_a_stub() -> None:
     """The whole point: the repeat arrives as a preview plus a way back.
@@ -173,7 +164,6 @@ def test_paraphrase_of_a_higher_ranked_result_ships_as_a_stub() -> None:
         "duplicate_of": "bearer",
     }
 
-
 def test_stub_preview_is_one_bounded_line_like_every_other_stub() -> None:
     long_first_line = "ballast survey " * 40
     repeat = make_node("repeat", f"{long_first_line}\nsecond line")
@@ -187,7 +177,6 @@ def test_stub_preview_is_one_bounded_line_like_every_other_stub() -> None:
     assert "\n" not in preview
     assert len(preview) <= PREVIEW_MAX_CHARS
     assert preview.startswith("ballast survey")
-
 
 def test_no_map_reproduces_todays_answer_byte_for_byte() -> None:
     """The rollback path through the pure function: absent map, absent effect.
@@ -207,14 +196,12 @@ def test_no_map_reproduces_todays_answer_byte_for_byte() -> None:
     assert shape(results, duplicate_of={}) == legacy
     assert DELIVERY_NEAR_DUPLICATE not in deliveries(legacy)
 
-
 def test_map_naming_no_delivered_node_changes_nothing() -> None:
     """A bearer/duplicate pair from some other answer must not leak in."""
 
     results = [make_result(make_node("a", "a fact")), make_result(make_node("b", "b fact"))]
 
     assert shape(results, duplicate_of={"elsewhere": "a"}) == shape(results)
-
 
 def test_near_duplicate_stub_does_not_consume_a_ladder_position() -> None:
     """A stub is not a bearer, so the ladder must not advance past it.
@@ -246,7 +233,6 @@ def test_near_duplicate_stub_does_not_consume_a_ladder_position() -> None:
     ]
     assert with_stub[2] == without_the_repeat[1]
 
-
 def test_byte_twin_keeps_its_own_class_when_it_is_also_a_near_duplicate() -> None:
     """Byte equality is the more precise statement, so it stays the answer."""
 
@@ -257,7 +243,6 @@ def test_byte_twin_keeps_its_own_class_when_it_is_also_a_near_duplicate() -> Non
 
     assert deliveries(shaped) == [DELIVERY_FULL, DELIVERY_TWIN_DUPLICATE]
     assert shaped[1]["content_ref"]["duplicate_of"] == "a"
-
 
 def test_session_duplicate_keeps_its_own_class_and_its_own_content_ref() -> None:
     """The older class is untouched, down to the absence of ``duplicate_of``.
@@ -278,7 +263,6 @@ def test_session_duplicate_keeps_its_own_class_and_its_own_content_ref() -> None
     assert "duplicate_of" not in shaped[1]["content_ref"]
     assert shaped[1]["content_ref"]["node_id"] == "b"
 
-
 def test_shaping_mutates_neither_the_map_nor_the_results() -> None:
     """The purity claim in the docstring, checked rather than asserted."""
 
@@ -295,11 +279,9 @@ def test_shaping_mutates_neither_the_map_nor_the_results() -> None:
     assert [node.content for node in nodes] == before_contents
     assert first == second  # identical inputs, identical output
 
-
 # --------------------------------------------------------------------------
 # the env valves
 # --------------------------------------------------------------------------
-
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
@@ -322,7 +304,6 @@ def test_cosine_valve_parsing(
 
     assert near_dup_cosine_from_env() == pytest.approx(expected)
 
-
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -341,7 +322,6 @@ def test_length_ratio_valve_parsing(
 
     assert near_dup_length_ratio_from_env() == pytest.approx(expected)
 
-
 def test_shipped_default_sits_above_the_distinct_fact_band() -> None:
     """0.85-0.95 is where the live corpus keeps *different* facts.
 
@@ -351,24 +331,20 @@ def test_shipped_default_sits_above_the_distinct_fact_band() -> None:
 
     assert DEFAULT_NEAR_DUP_COSINE == 0.95
 
-
 # --------------------------------------------------------------------------
 # the call site: where the vectors are actually read
 # --------------------------------------------------------------------------
-
 
 @pytest.fixture
 def store(tmp_path: Path) -> Iterator[MemoryStore]:
     with MemoryStore(tmp_path / "memory.sqlite3") as opened:
         yield opened
 
-
 def unit(degrees: float) -> list[float]:
     """A unit vector at ``degrees`` from the x-axis, so cosines read as angles."""
 
     radians = math.radians(degrees)
     return [math.cos(radians), math.sin(radians), 0.0]
-
 
 def put_chunks(
     store: MemoryStore, node_id: str, vectors: Sequence[Sequence[float]]
@@ -393,7 +369,6 @@ def put_chunks(
         ],
     )
 
-
 def seed(store: MemoryStore, content: str, vector: Sequence[float] | None) -> Node:
     """One node, with the chunk vector the near-dup comparison will see.
 
@@ -413,12 +388,10 @@ def seed(store: MemoryStore, content: str, vector: Sequence[float] | None) -> No
         put_chunks(store, node.id, [vector])
     return node
 
-
 def results_for(nodes: Sequence[Node]) -> list[RecallResult]:
     """Wrap nodes as one answer, in the order given: rank is what bears."""
 
     return [make_result(node, score=1.0 - index / 10) for index, node in enumerate(nodes)]
-
 
 def test_call_site_maps_a_paraphrase_and_leaves_a_different_fact_alone(
     store: MemoryStore,
@@ -431,7 +404,6 @@ def test_call_site_maps_a_paraphrase_and_leaves_a_different_fact_alone(
 
     # 5 degrees is cosine 0.996 — above the shipped 0.95; 60 degrees is 0.5.
     assert mapped == {repeat.id: bearer.id}
-
 
 def test_call_site_never_collapses_a_materially_longer_candidate(
     store: MemoryStore,
@@ -447,7 +419,6 @@ def test_call_site_never_collapses_a_materially_longer_candidate(
     )
 
     assert _NearDuplicateObservation(store).map(results_for([bearer, longer])) is None
-
 
 def test_length_ratio_valve_reaches_the_call_site(
     store: MemoryStore, monkeypatch: pytest.MonkeyPatch
@@ -465,7 +436,6 @@ def test_length_ratio_valve_reaches_the_call_site(
     monkeypatch.setenv(NEAR_DUP_LENGTH_RATIO_ENV, "0")
     assert _NearDuplicateObservation(store).map(answer) is None
 
-
 def test_call_site_never_collapses_a_node_without_chunk_vectors(
     store: MemoryStore,
 ) -> None:
@@ -476,7 +446,6 @@ def test_call_site_never_collapses_a_node_without_chunk_vectors(
 
     assert store.list_node_chunks(unvectorized.id) == []
     assert _NearDuplicateObservation(store).map(results_for([bearer, unvectorized])) is None
-
 
 def test_cosine_zero_builds_no_map_and_reads_no_vectors(
     monkeypatch: pytest.MonkeyPatch,
@@ -497,10 +466,8 @@ def test_cosine_zero_builds_no_map_and_reads_no_vectors(
 
     assert _NearDuplicateObservation(RefusingStore()).map(answer) is None  # type: ignore[arg-type]
 
-
 def test_empty_answer_needs_no_map(store: MemoryStore) -> None:
     assert _NearDuplicateObservation(store).map([]) is None
-
 
 def test_call_site_refuses_a_repeat_that_names_what_its_bearer_does_not(
     store: MemoryStore, monkeypatch: pytest.MonkeyPatch
@@ -524,7 +491,6 @@ def test_call_site_refuses_a_repeat_that_names_what_its_bearer_does_not(
         repeat.id: bearer.id
     }
 
-
 def test_call_site_still_collapses_a_repeat_that_names_nothing_new(
     store: MemoryStore,
 ) -> None:
@@ -541,11 +507,9 @@ def test_call_site_still_collapses_a_repeat_that_names_nothing_new(
         repeat.id: bearer.id
     }
 
-
 # --------------------------------------------------------------------------
 # end to end, through memory_recall
 # --------------------------------------------------------------------------
-
 
 def _server(tmp_path: Path) -> tuple[Any, MemoryStore]:
     """A real server whose tools are called directly.
@@ -557,10 +521,8 @@ def _server(tmp_path: Path) -> tuple[Any, MemoryStore]:
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     return mcp, mcp.memory_store
 
-
 def _recall(mcp: Any, **arguments: Any) -> dict[str, Any]:
     return mcp.tools["memory_recall"](query=QUERY_STEM, scope=SCOPE, **arguments)
-
 
 def _seed_answer(mcp: Any, store: MemoryStore) -> tuple[str, str, str]:
     """Seed one answer: two nodes saying one thing, one saying another.
@@ -605,7 +567,6 @@ def _seed_answer(mcp: Any, store: MemoryStore) -> tuple[str, str, str]:
     put_chunks(store, ids[2], [wide(70)])  # cosine 0.342 — a different fact
     return ids[0], ids[1], ids[2]
 
-
 def test_recall_answer_collapses_a_repeat_and_lookup_still_returns_it(
     tmp_path: Path,
 ) -> None:
@@ -638,7 +599,6 @@ def test_recall_answer_collapses_a_repeat_and_lookup_still_returns_it(
     looked_up = mcp.tools["memory_lookup"](node_id=stub["id"])
     assert looked_up["results"][0]["content"] == stored.content
 
-
 def test_valve_at_zero_restores_the_byte_only_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -653,7 +613,6 @@ def test_valve_at_zero_restores_the_byte_only_answer(
     assert response["count"] == 3
     assert DELIVERY_NEAR_DUPLICATE not in deliveries(response["results"])
     assert all(entry["delivery"] == DELIVERY_FULL for entry in response["results"])
-
 
 def _seed_identifier_answer(mcp: Any, store: MemoryStore) -> tuple[str, str]:
     """Two results that repeat one template and name two different tree nodes.
@@ -696,7 +655,6 @@ def _seed_identifier_answer(mcp: Any, store: MemoryStore) -> tuple[str, str]:
     put_chunks(store, ids[1], [wide(4)])
     return ids[0], ids[1]
 
-
 def test_two_tree_nodes_both_reach_the_agent_and_the_valve_gives_that_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -726,32 +684,6 @@ def test_two_tree_nodes_both_reach_the_agent_and_the_valve_gives_that_back(
     hidden = " ".join(entry["content"] for entry in rolled_back["results"])
     assert ("layer-fauna" in hidden) != ("layer-actors" in hidden)
 
-
-# --------------------------------------------------------------------------
-# the gated trailing-stub drop
-# --------------------------------------------------------------------------
-
-
-def test_near_duplicate_joins_the_droppable_trailing_stub_classes() -> None:
-    """The decision the goal asked to make explicit, taken and wired.
-
-    A near-duplicate's text ships in full under a bearer in the very same
-    response, so a gated delivery that drops its trailing stub run loses
-    nothing the agent is not already reading — the same reasoning that put
-    ``twin_duplicate`` in this list, only stronger. What the drop then does
-    with the run is unchanged and stays covered by ``test_recall_gating``;
-    what is new is membership, and this is the tuple the handler pops against.
-    """
-
-    assert DELIVERY_NEAR_DUPLICATE in _DROPPABLE_TRAILING_STUBS
-    assert DELIVERY_SESSION_DUPLICATE in _DROPPABLE_TRAILING_STUBS
-    assert DELIVERY_TWIN_DUPLICATE in _DROPPABLE_TRAILING_STUBS
-    # Content-bearing classes must never be droppable: they are the only two
-    # carrying text nothing else within the agent's reach holds.
-    assert DELIVERY_FULL not in _DROPPABLE_TRAILING_STUBS
-    assert DELIVERY_SNIPPET not in _DROPPABLE_TRAILING_STUBS
-
-
 def test_preview_does_not_suppress_a_later_answer_to_its_missing_detail(tmp_path):
     mcp, store = _server(tmp_path)
     first, second, _ = _seed_answer(mcp, store)
@@ -769,7 +701,6 @@ def test_preview_does_not_suppress_a_later_answer_to_its_missing_detail(tmp_path
     assert answer["results"][0]["id"] == current.id
     assert answer["results"][0]["delivery"] == "full"
     assert day in answer["results"][0]["content"]
-
 
 def test_twin_preview_does_not_claim_full_delivery_for_its_id(tmp_path):
     mcp, store = _server(tmp_path)
