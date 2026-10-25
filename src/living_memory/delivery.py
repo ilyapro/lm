@@ -18,19 +18,7 @@ Rules, applied in this order per ranked result:
    excerpt about to be offered was shaped on this transport session, it becomes
    a ``delivery: "session_duplicate"`` stub. Only content-bearers are considered: a twin of a session-duplicate
    stays a twin stub, never re-classified or promoted to full.
-3. Near-duplicate dedup — a result that repeats the *meaning* of a
-   higher-ranked result of the same answer becomes a
-   ``delivery: "near_duplicate"`` stub, exactly as a byte twin does. Byte
-   equality finds almost none of these: on the live corpus (2026-08-23) 4
-   active nodes were byte-identical to another while 550 had a neighbour at
-   cosine >= 0.95. The ``duplicate_of`` map arrives READY-MADE — the caller
-   builds it with ``near_dup.mean_pooled_vectors``/``build_duplicate_map`` —
-   because this module computes no vectors and reads no database; that is
-   what keeps the function pure. Checked last of the three stub rules, so
-   the two older classes keep their exact meaning: a node both already
-   delivered this session and a paraphrase of a higher-ranked one stays
-   ``session_duplicate``.
-4. Snippeting — the content budget of a would-be-full result comes from the
+3. Snippeting — the content budget of a would-be-full result comes from the
    snippet ladder indexed by its content-bearer position (stubs of every
    class don't consume ladder slots): the first bearer has a finite 2400-char
    budget, lower-ranked bearers get descending budgets, and oversized content
@@ -39,9 +27,9 @@ Rules, applied in this order per ranked result:
    complete. With the ladder disabled (``snippet_ladder=None``) every bearer shares the
    uniform ``snippet_max_chars`` budget (``0`` disables snippeting) — the
    legacy contract.
-5. Otherwise ``delivery: "full"`` with complete ``content``.
+4. Otherwise ``delivery: "full"`` with complete ``content``.
 
-Before all five, a result the score gate marked ``withheld="below_threshold"``
+Before all four, a result the score gate marked ``withheld="below_threshold"``
 (``score_gate``, ``LM_RECALL_GATE_FORM=stub``) becomes a
 ``delivery: "below_threshold"`` stub: empty ``content`` (the key stays), a
 ``content_ref`` naming the node for ``memory_lookup``, no ladder slot, and it
@@ -104,19 +92,6 @@ Env knobs (read by the server wiring, not by the pure function):
   ``stats`` dicts (rollback valve).
 - ``LM_DELIVERY_SPARSE`` — default on; ``"0"`` restores zero/null/duplicate
   entry fields and full float precision (rollback valve).
-- ``LM_RECALL_NEAR_DUP_COSINE`` — cosine a result must exceed against a
-  higher-ranked result of the same answer to collapse into it (default 0.95).
-  ``"0"`` restores byte-only dedup byte-for-byte: the call site builds no map
-  at all, so not one chunk vector is read (rollback valve). A value above 1.0
-  is unreachable and therefore also disables the collapse.
-- ``LM_RECALL_NEAR_DUP_LENGTH_RATIO`` — the length guard (default 0.2): a
-  candidate longer than its bearer by more than this fraction is never
-  collapsed. That case is "the same fact plus a new detail", and the detail
-  has to reach the agent.
-
-The two near-dup knobs are ``LM_RECALL_*`` rather than ``LM_DELIVERY_*``
-because what they gate — pooling a node's chunk vectors — happens at the
-recall call site; this module only receives the finished map.
 """
 
 from __future__ import annotations
@@ -129,6 +104,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .resources import node_to_dict
+from .models import content_identity
 
 if TYPE_CHECKING:
     from .models import Node
@@ -138,7 +114,6 @@ DELIVERY_FULL = "full"
 DELIVERY_SNIPPET = "snippet"
 DELIVERY_SESSION_DUPLICATE = "session_duplicate"
 DELIVERY_TWIN_DUPLICATE = "twin_duplicate"
-DELIVERY_NEAR_DUPLICATE = "near_duplicate"
 # Same string as score_gate.WITHHELD_BELOW_THRESHOLD, the withheld reason.
 DELIVERY_BELOW_THRESHOLD = "below_threshold"
 
@@ -150,8 +125,6 @@ FULL_NODE_DIET_ENV = "LM_DELIVERY_FULL_NODE_DIET"
 PROVENANCE_VALUE_CHARS_ENV = "LM_DELIVERY_PROVENANCE_VALUE_CHARS"
 STATS_COMPACTION_ENV = "LM_DELIVERY_STATS_COMPACTION"
 SPARSE_ENV = "LM_DELIVERY_SPARSE"
-NEAR_DUP_COSINE_ENV = "LM_RECALL_NEAR_DUP_COSINE"
-NEAR_DUP_LENGTH_RATIO_ENV = "LM_RECALL_NEAR_DUP_LENGTH_RATIO"
 
 DEFAULT_SNIPPET_MAX_CHARS = 1200
 # 160 keeps short files/tags lists verbatim while collapsing longer lists and
@@ -165,14 +138,6 @@ DEFAULT_PROVENANCE_VALUE_MAX_CHARS = 160
 LADDER_COMPLETE = 0
 DEFAULT_SNIPPET_LADDER = (2400, 1000, 700, 500, 300, 200)
 PREVIEW_MAX_CHARS = 160
-# 0.95 is where the live corpus stops holding distinct facts: the 0.85-0.95
-# band is different facts said in similar words (median max-cosine between
-# active traces is 0.829, and a concept sits at 0.82-0.95 from its own
-# sources), while 550 of 12,874 nodes have a neighbour above 0.95.
-DEFAULT_NEAR_DUP_COSINE = 0.95
-# An excess fraction, not a factor: 0.2 protects any candidate more than 20%
-# longer than its bearer from being collapsed.
-DEFAULT_NEAR_DUP_LENGTH_RATIO = 0.2
 ELLIPSIS = "…"
 
 _DISABLED_FLAGS = frozenset({"0", "false", "no", "off"})
@@ -236,30 +201,6 @@ def snippet_ladder_from_env() -> tuple[int, ...] | None:
     return tuple(entries) if entries else DEFAULT_SNIPPET_LADDER
 
 
-def near_dup_cosine_from_env() -> float:
-    """Read ``LM_RECALL_NEAR_DUP_COSINE`` (0 disables collapse, invalid -> default).
-
-    The threshold the *caller* applies when it builds the duplicate map; this
-    module never reads it, so the pure function keeps taking its map as an
-    argument. Zero (or any negative) means "no near-dup map at all", which is
-    the rollback path to byte-only dedup.
-    """
-
-    return _float_from_env(NEAR_DUP_COSINE_ENV, DEFAULT_NEAR_DUP_COSINE)
-
-
-def near_dup_length_ratio_from_env() -> float:
-    """Read ``LM_RECALL_NEAR_DUP_LENGTH_RATIO`` (default 0.2, invalid -> default).
-
-    The excess fraction above which a candidate is too long to be a repeat of
-    its bearer. ``0`` protects anything longer at all; the value is floored at
-    0 because "collapse candidates that are shorter than the ratio allows" is
-    not something this guard can mean.
-    """
-
-    return _float_from_env(NEAR_DUP_LENGTH_RATIO_ENV, DEFAULT_NEAR_DUP_LENGTH_RATIO)
-
-
 def _chars_from_env(env_var: str, default: int) -> int:
     raw = os.environ.get(env_var, "").strip()
     if not raw:
@@ -269,19 +210,6 @@ def _chars_from_env(env_var: str, default: int) -> int:
     except ValueError:
         return default
     return max(0, value)
-
-
-def _float_from_env(env_var: str, default: float) -> float:
-    raw = os.environ.get(env_var, "").strip()
-    if not raw:
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        return default
-    if value != value:  # NaN compares false against every threshold
-        return default
-    return max(0.0, value)
 
 
 def _enabled_from_env(env_var: str) -> bool:
@@ -379,7 +307,6 @@ def shape_recall_results(
     provenance_value_max_chars: int = DEFAULT_PROVENANCE_VALUE_MAX_CHARS,
     stats_compaction: bool = True,
     sparse_entries: bool = True,
-    duplicate_of: Mapping[str, str] | None = None,
     correction_refs: Mapping[str, Sequence[str]] | None = None,
     query: str | None = None,
     view: str = "full",
@@ -395,30 +322,15 @@ def shape_recall_results(
     visibility by the caller. Both views retain ``result.superseded`` even
     when no correction is readable or present in this answer.
 
-    ``duplicate_of`` is the finished near-duplicate map — ``{duplicate node id:
-    bearer node id}`` — normally produced by
-    ``near_dup.build_duplicate_map`` over these same results in this same
-    order. ``None`` (the default) is byte-only dedup, unchanged. Bearers are
-    taken as given: the map's builder guarantees every value is a root, so
-    nothing here chases a chain, and a bearer that is itself a stub of another
-    class is left alone — the entry's ``content_ref`` is the honest re-fetch
-    either way. Reading the map is the only thing this function does with it;
-    the vectors, the threshold, and the database read that produced it all
-    happen at the call site, which is what keeps this function pure.
-
-    Pure: never mutates ``results``, their nodes, ``delivery_history``, or
-    ``duplicate_of``; identical inputs produce identical output. Output order
-    matches input order.
+    Pure: never mutates results, their nodes or delivery_history. Output order
+    matches input order. Only exact content with matching scope and source
+    identity shares a bearer; semantic similarity is solely retrieval evidence.
     """
 
     if view not in ("knowledge", "full"):
         raise ValueError("view must be 'knowledge' or 'full'")
 
-    bearer_by_content: dict[str, str] = {}
-    # A withheld result's text is not delivered, so it bears nothing.
-    withheld_ids = {
-        result.node.id for result in results if getattr(result, "withheld", None)
-    }
+    bearer_by_content: dict[tuple[Any, ...], str] = {}
     shaped: list[dict[str, Any]] = []
     bearer_position = 0
     for result in results:
@@ -436,14 +348,12 @@ def shape_recall_results(
         if withheld:
             pass  # content not delivered: neither a twin nor a bearer
         elif content:  # empty content carries nothing worth deduplicating
-            bearer_id = bearer_by_content.get(content)
-            if bearer_id is None:
-                bearer_by_content[content] = node_id
-            else:
+            identity = content_identity(result.node)
+            bearer_id = bearer_by_content.get(identity) if identity is not None else None
+            if bearer_id is not None:
                 twin_of = bearer_id
-        near_dup_of = duplicate_of.get(node_id) if duplicate_of else None
-        if near_dup_of in withheld_ids:
-            near_dup_of = None
+            elif identity is not None:
+                bearer_by_content[identity] = node_id
 
         # The bearer named on a stub's content_ref, if this result is one.
         stub_bearer: str | None = None
@@ -465,10 +375,6 @@ def shape_recall_results(
                 delivery = DELIVERY_FULL
             if session_dedup and delivery_history.covers(result.node, node_dict["content"]):
                 delivery = DELIVERY_SESSION_DUPLICATE
-                node_dict["content"] = _one_line_preview(content)
-            elif near_dup_of is not None:
-                delivery = DELIVERY_NEAR_DUPLICATE
-                stub_bearer = near_dup_of
                 node_dict["content"] = _one_line_preview(content)
             else:
                 bearer_position += 1

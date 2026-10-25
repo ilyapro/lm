@@ -45,8 +45,6 @@ from living_memory.delivery import (
     context_value_max_chars_from_env,
     full_node_diet_enabled_from_env,
     knowledge_node,
-    near_dup_cosine_from_env,
-    near_dup_length_ratio_from_env,
     provenance_value_max_chars_from_env,
     recall_delivery_records,
     session_dedup_enabled_from_env,
@@ -57,12 +55,7 @@ from living_memory.delivery import (
     stats_compaction_enabled_from_env,
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
-from living_memory.near_dup import (
-    DuplicateCandidate,
-    build_duplicate_map,
-    identifier_veto_enabled,
-    mean_pooled_vectors,
-)
+from living_memory.models import content_identity
 from living_memory.prompts import MEMORY_GUIDANCE, retrieval_context_prompt
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.resources import (
@@ -1210,7 +1203,7 @@ def _register_tools(
         Each result carries a ``delivery`` class: ``full``, ``snippet`` (long
         content truncated inline), ``session_duplicate`` (already delivered on
         this transport session), ``twin_duplicate`` (byte-identical to a
-        higher-ranked result), or ``near_duplicate`` (a paraphrase of a
+        higher-ranked result with the same scope and source identity).
         higher-ranked result of this same answer). Every class is on by
         default: twin and near-dup collapse unconditionally, the session class
         whenever a transport session id is stamped. The near-dup threshold is
@@ -1276,7 +1269,6 @@ def _register_tools(
                     "could not read recall delivery history", exc_info=True,
                 )
                 delivery_history = DeliveryHistory()
-            near_duplicates = _NearDuplicateObservation(store)
             results = recall_service.memory_recall(
                 query,
                 scope=scope,
@@ -1284,7 +1276,7 @@ def _register_tools(
                 depth=depth,
                 max_results=max_results,
                 select_results=lambda limited, residual, limit: _select_distinct_results(
-                    near_duplicates, limited, residual, limit, delivery_history
+                    limited, residual, limit, delivery_history
                 ),
             )
             shaped = shape_recall_results(
@@ -1305,9 +1297,6 @@ def _register_tools(
                 provenance_value_max_chars=provenance_value_max_chars_from_env(),
                 stats_compaction=stats_compaction_enabled_from_env(),
                 sparse_entries=sparse_entries_enabled_from_env(),
-                # Reclassify in answer order using the selection observation:
-                # a pool bearer may be absent from the selected answer.
-                duplicate_of=near_duplicates.map(results),
             )
             response: dict[str, Any] = {
                 "query": query,
@@ -1743,55 +1732,7 @@ def _recall_map_enabled() -> bool:
     return os.environ.get("LM_RECALL_MAP", "").strip() != "0"
 
 
-class _NearDuplicateObservation:
-    """Chunk directions observed by one recall's selection and delivery.
-
-    Read and mean-pool each requested id once, including unknown directions.
-    Selection observes only its bounded pool; delivery can also run alone when
-    the score gate bypasses selection. Maps are rebuilt in each result order
-    so every duplicate names a bearer present in that answer. Nothing survives
-    the recall, and disabling near-dup performs no chunk reads.
-    """
-
-    def __init__(self, store: MemoryStore) -> None:
-        self.store = store
-        self.observed: set[str] = set()
-        self.vectors: dict[str, list[float]] = {}
-        self.cosine_threshold = near_dup_cosine_from_env()
-        self.min_length_ratio = near_dup_length_ratio_from_env()
-        self.identifier_veto = identifier_veto_enabled()
-
-    def map(self, results: Sequence[Any]) -> dict[str, str] | None:
-        if not results or self.cosine_threshold <= 0.0:
-            return None
-        missing = list(dict.fromkeys(
-            result.node.id for result in results
-            if result.node.id not in self.observed
-        ))
-        if missing:
-            self.vectors.update(mean_pooled_vectors(self.store, missing))
-            self.observed.update(missing)
-        if not self.vectors:
-            return None
-        duplicate_of = build_duplicate_map(
-            [
-                DuplicateCandidate(
-                    node_id=result.node.id,
-                    content_length=len(result.node.content or ""),
-                    content=result.node.content or "",
-                )
-                for result in results
-            ],
-            self.vectors,
-            cosine_threshold=self.cosine_threshold,
-            min_length_ratio=self.min_length_ratio,
-            identifier_veto=self.identifier_veto,
-        )
-        return duplicate_of or None
-
-
 def _select_distinct_results(
-    near_duplicates: _NearDuplicateObservation,
     limited: list[Any],
     residual: list[Any],
     max_results: int,
@@ -1801,22 +1742,21 @@ def _select_distinct_results(
 
     Keep the ordinary cut unless a classified repeat can actually be replaced
     by a later independent result. Session repeats remain selectable: a caller
-    may intentionally ask again for the prior fact. The same near-duplicate
-    classifier and guards used by delivery make this decision.
+    may intentionally ask again for the prior fact. Only exact content with
+    matching scope and source identity can release a slot.
     """
 
     if len(limited) < max_results or not residual:
         return limited, residual
     pool = limited + residual[:max_results]
-    duplicate_of = near_duplicates.map(pool) or {}
-    seen_content: dict[str, str] = {}
+    seen_content: dict[tuple[Any, ...], str] = {}
     selected: list[Any] = []
     for result in pool:
         node = result.node
-        prior_twin = seen_content.get(node.content) if node.content else None
-        if node.content and prior_twin is None:
-            seen_content[node.content] = node.id
-        bearer = prior_twin or duplicate_of.get(node.id)
+        identity = content_identity(node) if node.content else None
+        bearer = seen_content.get(identity) if identity is not None else None
+        if identity is not None and bearer is None:
+            seen_content[identity] = node.id
         if (
             bearer in {item.node.id for item in selected}
             and not delivery_history.has_content(node)
