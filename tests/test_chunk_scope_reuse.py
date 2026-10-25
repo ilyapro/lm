@@ -212,6 +212,33 @@ def test_rollback_does_not_cache_a_revision_that_another_write_can_reuse(tmp_pat
         assert recall(warm, scope) == recall(service(store), scope)
 
 
+def test_scope_move_during_partition_read_keeps_one_version_per_node(tmp_path, monkeypatch):
+    path = tmp_path / "memory.sqlite3"
+    with MemoryStore(path) as reader, MemoryStore(path) as writer:
+        add(writer, "a")
+        add(writer, "b", "project:beta")
+        warm = service(reader)
+        recall(warm)
+        put_chunks(writer, "b", [[0.8, 0.6, 0.0]])
+        original = reader.iter_chunk_embedding_rows
+        moved = False
+
+        def move_during_read(**kwargs):
+            nonlocal moved
+            if kwargs.get("scope") == "project:beta" and not moved:
+                moved = True
+                writer.update_node("a", context={"scope": "project:beta"})
+            yield from original(**kwargs)
+
+        monkeypatch.setattr(reader, "iter_chunk_embedding_rows", move_during_read)
+        actual = recall(warm)
+        assert moved
+        assert [r.node.id for r in actual].count("a") == 1
+        assert not reader.connection.in_transaction
+        assert recall(warm) == recall(service(reader))
+        assert recall(warm, "project:alpha") == []
+
+
 def test_read_only_legacy_snapshot_does_not_cache_vectors(tmp_path, monkeypatch):
     path = tmp_path / "memory.sqlite3"
     with MemoryStore(path) as store:
