@@ -288,11 +288,13 @@ def test_memory_lookup_by_id_round_trips_full_content(tmp_path: Path) -> None:
     assert node["id"] == target_id
     assert node["content"] == long_content  # byte-identical, never snippeted
     assert set(node) == {
-        "id", "level", "content", "scope", "provenance", "decayed", "decay_reason"
+        "id", "level", "content", "scope", "provenance", "decayed", "decay_reason",
+        "superseded", "superseded_by",
     }
     assert node["provenance"] == {"corrections": []}
     assert mcp.tools["memory_lookup"](node_id=target_id, view="full")["results"][0] == (
         node_to_dict(mcp.memory_store.get_node(target_id))
+        | {"superseded": False, "superseded_by": []}
     )
 
     # `level` defaults to "trace" but is an exact-context concern; id fetch

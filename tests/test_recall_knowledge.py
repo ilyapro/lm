@@ -36,6 +36,7 @@ def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None
     nodes[1].decay_reason = "superseded"
     results = [
         RecallResult(node, 0.123456789, vector_score=0.234567891,
+                     superseded=True,
                      withheld="below_threshold" if node.id == "withheld" else None)
         for node in nodes
     ]
@@ -44,6 +45,7 @@ def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None
         delivery_history=delivered_history(results, {"session"}), snippet_max_chars=100,
         context_value_max_chars=160, session_dedup=True,
         snippet_ladder=(100,), duplicate_of={"near": "snippet"},
+        correction_refs={node.id: ["replacement"] for node in nodes},
     )
     diagnostic = shape_recall_results(results, **options, view="full")
     knowledge = shape_recall_results(results, **options, view="knowledge")
@@ -53,6 +55,8 @@ def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None
     ]
     for full, item, node in zip(diagnostic, knowledge, nodes):
         assert item["id"] == full["node"]["id"] == node.id
+        assert item["superseded"] is full["superseded"] is True
+        assert item["superseded_by"] == full["superseded_by"] == ["replacement"]
         assert item["content"] == full["node"]["content"]
         assert item["delivery"] == full["delivery"]
         assert item["content_ref"]["node_id"] == node.id
