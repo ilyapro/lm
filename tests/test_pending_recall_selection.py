@@ -58,6 +58,7 @@ def test_foreign_events_do_not_displace_current_work(context: dict[str, str]) ->
     ({"session_id": "s"}, {}, SCOPE, 0),
     ({}, {"session_id": "s"}, SCOPE, 0),
     ({"transport_session_id": "t"}, {"transport_session_id": "t"}, "global", 2),
+    ({"task": "a", "transport_session_id": "t"},
      {"task": "b", "transport_session_id": "t"}, "global", 0),
     ({"session_id": "s"}, {"session_id": "s"}, "global", 0),
     ({}, {}, "global", 0),
