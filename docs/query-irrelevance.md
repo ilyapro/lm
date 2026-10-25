@@ -31,8 +31,9 @@ behind for audit.
 
 The event's query resolves to its query anchor
 (`query_anchors.resolve_query_anchor`) through the same identity a grounded
-consumption uses: fingerprint over (query, scope) first, then in-scope cosine
-of at least `ANCHOR_DEDUP_COSINE_THRESHOLD` (0.95). Unlike `upsert_anchor`, the
+consumption uses: fingerprint over the whitespace-normalized query and scope.
+Case, word order, conditions and identifiers remain part of the identity;
+similar wording creates an independent anchor. Unlike `upsert_anchor`, the
 resolver neither reinforces the anchor nor writes an edge, because a negative
 signal must not count as a use. If no anchor exists, one is created with no
 edges, so it seeds nothing into the graph channel.
@@ -47,9 +48,9 @@ negative mark. Preparation is local to the operation.
 At retrieval, the incoming query vector is matched with `match_anchors` using
 the anchor channel's own floor and limit (`ANCHOR_MATCH_COSINE_THRESHOLD` =
 0.60, `ANCHOR_MATCH_LIMIT` = 5), served from the same cached anchor vectors.
-"Same question" therefore means here exactly what it means to the anchor
-channel. The match runs whatever the graph depth or `anchor_seeding` setting
-is: demotion is a score multiplier, not a graph seed.
+This transfers a ranking signal from related questions without merging their
+identities or changing a fact's validity. The match runs whatever the graph
+depth or `anchor_seeding` setting is: demotion is a score multiplier.
 
 ## Storage: one additive table (restart requirement)
 

@@ -31,55 +31,13 @@ restart instead of starting empty. `metadata.schema_version` becomes 7, which no
 code gates on (every migration is self-guarding on the actual DDL), so an
 old-code restart in between simply rewrites it to 6 and leaves the tables alone.
 
-## Measured numbers
+## Capacity planning
 
-Everything below was measured on 2026-08-18 against a `sqlite3`-backup-API
-snapshot of the live database (501 MB + a ~4 MB WAL, 16,7xx nodes, 143k
-connections, 54,820 recall events of which **9,117** are consumed), on this CPU
-box, by a full real run end to end.
-
-| Quantity | Value |
-| --- | --- |
-| snapshot copy (backup API, server live) | **0.83 s**, 501,157,888 bytes |
-| consumed recall events in range | 9,117 (**9,082** processed; 35 have no consuming trace left) |
-| grounded consumptions | **3,682** — 40.5% of processed |
-| events applied | 3,661 (21 had no live target left) |
-| **anchors written** | **3,337** (324 reinforcements, of which 101 merged by cosine) |
-| **anchor edges written** | **7,942** rows from 8,436 edge writes — 2.38 per anchor |
-| dry run (read-only rehearsal, no model load) | **41 s** (219 events/s) |
-| full run wall clock | **1 m 25 s** (106 events/s), model load included |
-| second pass over the same history | **57 s**, 0 events applied, 0 rows written |
-| edge-migration sweep | 2,111 distinct targets examined, 0 moved |
-| `verify` | exit 0 |
-
-The second pass is the evidence for two claims at once. It wrote nothing —
-3,661 events came back as `events_already_anchored`, and anchors, edges and the
-sum of `hits` were unchanged at 3,337 / 7,942 / 8,436 — so the resume predicate
-really is idempotent on real history, not only on fixtures. And a SHA-256 over
-every node, connection and recall event was **identical** between the
-pre-backfill backup and the database after both runs (16,726 nodes), so the
-authorizer's "anchor tables only" is observable from outside the process, not
-just asserted inside it.
-
-Against the feasibility estimate (~3,760 anchors, ~8,550 edges, 2.28 edges per
-anchor, extrapolated from a 600-event sample): anchors came in 11% low and edges
-7% low, with a slightly *higher* edge-per-anchor ratio. Both gaps are the two
-rules the estimate could not model — cosine dedup merged 101 near-identical
-questions into existing anchors, and 263 grounded targets plus 21 whole events
-were dropped because every node they used is gone with nothing replacing it.
-
-The **sweep moved zero edges**, and that is the expected result rather than a
-disappointment: `upsert_anchor` resolves a target through `supersedes` *before*
-writing the edge, so the 219 grounded targets that had been superseded since
-were already written as edges to their replacements. The sweep is the repair
-path for edges written before that resolution existed, and it runs at the end of
-every pass because "the write path resolved it" is a property worth verifying
-rather than assuming.
-
-Disk during the migration: one backup (501 MB) plus the database's own growth
-(the anchor tables are ~7 MB — 3,337 × 384 float32 vectors is 5.1 MB, the rest
-is rows and two indexes). Budget **550 MB**, of which 501 MB is the backup; put
-the backup on another filesystem and it is ~10 MB.
+Reserve space for a complete SQLite backup plus the anchor tables. Vector
+storage is approximately `anchors × dimensions × 4` bytes, with additional
+space for query text, weighted edges and indexes. Runtime depends on the
+number of consumed events, grounded queries and the selected local encoder;
+the command reports its measured rate and elapsed time.
 
 ## Preconditions
 
@@ -91,7 +49,7 @@ the backup on another filesystem and it is ~10 MB.
   load, rather than filling `query_anchors` with hash-fallback vectors from a
   different vector space — in which no anchor would ever match anything.
   (`--allow-fallback-embeddings` exists for fixtures; never use it here.)
-* ~550 MB free disk, most of it for the backup.
+* Free disk for a complete database backup and the projected anchor tables.
 * You can restart the server (`systemctl --user restart living-memory.service`,
   see [deployment.md](deployment.md)).
 
@@ -117,12 +75,10 @@ constructs a `MemoryStore` (whose constructor migrates), labels the whole histor
 for real, and reports the anchors and edges a real run would write. It needs no
 backup because it writes nothing, and it loads no model.
 
-Read `projected_anchors` and `projected_edges` against
-`artifacts/anchors/estimate.json`. They are an **upper bound**: the projection
-counts distinct `(scope, fingerprint)` identities, and cosine dedup can only
-merge further. A projection wildly below the estimate means the grounding
-threshold or the history is not what the estimate measured — stop and find out
-why before writing anything.
+`projected_anchors` counts distinct `(scope, fingerprint)` identities from
+grounded events. The real run uses that same identity, but can skip events
+whose vectors are unusable or whose grounded targets have no live replacement.
+`projected_edges` and the event counts describe the selected history and cutoff.
 
 ## 1. Backup — mandatory, and `cp` is not one
 
@@ -167,9 +123,8 @@ server serves reads and writes:
   500 MB database cannot cheaply rebuild — stays byte-identical, and nothing in
   the running old process reads the new tables.
 
-Expect **~1.5 minutes** and a progress line every `--progress-interval` seconds,
-then a summary of events, anchors, edges and elapsed time (also written to
-`--json`).
+A progress line appears every `--progress-interval` seconds, followed by a
+summary of events, anchors, edges and elapsed time (also written to `--json`).
 
 **If it is interrupted** (Ctrl-C, SIGKILL, machine reboot, disk full), re-run the
 same command with `--existing-backup` pointing at the backup you already took. It

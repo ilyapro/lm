@@ -59,37 +59,24 @@ Three things the sample could not show, and the store should act on:
   decayed nodes would point one scope's anchors at the past far more than the
   headline number suggests. Skip decayed targets at write time.
 
-## 2. Near-duplicate dedup threshold: 0.995, plus an identifier guard
+## 2. Query identity and semantic matching
 
-Cosine between every same-scope pair of the 3,450 anchor queries (1,482,384
-pairs). The median anchor already has a same-scope neighbour at **0.774**, so
-any threshold near that merges everything.
+An anchor is identified by `recall_fingerprint(query, scope)`: the exact query
+with whitespace collapsed, in its normalized scope. Case, word order,
+identifiers, permission and conditions remain significant. Both grounded use
+and explicit irrelevance resolve this same identity. Repeated exact queries
+reinforce their anchor; every other query keeps independent evidence.
 
-| threshold | pairs ≥ t | of those, with *different* identifiers | anchors absorbed by transitive merge |
-| --- | --- | --- | --- |
-| 0.90 | 664 | 241 (36%) | 299 (8.7%) |
-| 0.95 | 230 | 127 (**55%**) | 105 (3.0%) |
-| 0.97 | 94 | 56 (**60%**) | 55 (1.6%) |
-| 0.99 | 7 | 1 (14%) | 7 (0.2%) |
+Cosine similarity ranks anchors at retrieval time with
+`ANCHOR_MATCH_COSINE_THRESHOLD` and `ANCHOR_MATCH_LIMIT`. It does not merge
+questions, transfer ownership of grounded edges, or establish that assertions
+are equivalent. The backfill uses the same exact fingerprint identity for both
+writes and resumability.
 
-An *identifier* is a token containing a digit — `EZ-13871`, `9806`, `NW-7`.
-Above 0.95 the **majority** of merge candidates differ in exactly that: they
-are the same *class* of situation and a different ticket. Two failure modes are
-visible in the sampled pairs:
-
-- `task_pattern:a7c7530c40cc59c4` ↔ `task_pattern:5b492dddc439419d` = **0.979**.
-  Opaque hex lookups carry no signal for the model, so it maps all of them next
-  to each other. Merging these merges unrelated lookups.
-- `Изучи https://jira.2gis.ru/browse/EZ-13512 …` ↔ `… /EZ-13560 …` = **0.990**.
-  A long templated query differing only in the ticket still clears 0.99.
-
-**Decision.** Write-time near-duplicate merging uses **cosine ≥ 0.995 AND
-identical identifier-token sets**; below that, a similar query creates its own
-anchor. This costs almost nothing — at 0.99 only 7 pairs (0.2% of anchors)
-would have merged at all, so exact-fingerprint dedup plus reinforcement already
-does the work. Near-duplicate similarity belongs at *retrieval* time (matching
-an incoming query to an anchor), where a wrong match costs one bad seed, not at
-*write* time, where it destroys an anchor permanently.
+Anchor targets follow genuine corrections and compatible exact-copy
+bookkeeping separately. Historical heuristic supersedes edges cannot redirect
+an anchor. Exact-copy redirection checks current content, scope, level and
+source identity, including recorded derivation ownership.
 
 ## 3. The cutoff: `2026-07-15T00:00:00Z`
 

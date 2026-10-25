@@ -40,15 +40,13 @@ uses, trying each step in order:
 
 1. The exact `(normalize_scope(scope), recall_fingerprint(query, scope))` row
    in `query_anchors`.
-2. Otherwise, the `anchor_id` of the `query_irrelevance` row whose
-   `last_event_id` is that event. This is the cosine near-duplicate anchor that
-   the credit write path picked.
-3. Otherwise, the whitespace-collapsed query text in its scope, or the event id
+2. Otherwise, the whitespace-collapsed query text in its scope, or the event id
    when its query is unavailable.
 
 As a result, repeats of one question count once however many times it is
 marked, and the same text in two scopes counts as two questions. This matches
-the anchor channel's own rule.
+the anchor channel's own rule. Historical similarity-based anchor associations
+do not merge distinct questions for this count.
 
 ## Valves
 
