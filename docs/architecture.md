@@ -65,7 +65,10 @@ without changing the other surface.
    byte-identical to a higher-ranked one becomes a `twin_duplicate` stub, a
    current version whose complete content or offered excerpt was included in
    an earlier session response becomes a `session_duplicate` stub, and
-   oversized ordinary content becomes a bounded excerpt. Binding schemas
+   oversized ordinary content becomes a bounded excerpt selected at paragraph
+   and sentence boundaries within each evidence source. An indivisible passage
+   can contribute a marked prefix; arbitrary character offsets and soft line
+   wraps do not create independent candidates. Binding schemas
    remain complete instead of being snippeted. The bounded event history is
    read before retrieval, so a response never stubs itself.
    The default `view="knowledge"` serializes identity, content, validity,

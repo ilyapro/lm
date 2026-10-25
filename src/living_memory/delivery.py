@@ -34,7 +34,8 @@ Rules, applied in this order per ranked result:
    snippet ladder indexed by its content-bearer position (stubs of every
    class don't consume ladder slots): the first bearer has a finite 2400-char
    budget, lower-ranked bearers get descending budgets, and oversized content
-   is selected in task-relevant passages. Schema recipes ship complete. With
+   is selected at paragraph and sentence boundaries. Indivisible passages
+   exceeding the budget deliver only a marked prefix. Schema recipes ship complete. With
    the ladder disabled (``snippet_ladder=None``) every bearer shares the
    uniform ``snippet_max_chars`` budget (``0`` disables snippeting) — the
    legacy contract.
@@ -547,8 +548,10 @@ def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
 
     Case carriers use consolidation's ``- <source id>: <record>`` format. A
     selected passage retains both its source id and the evidence-only heading.
-    Other long text uses paragraphs. Ties retain original order; no match
-    falls back to the beginning and the content_ref exposes the full text.
+    Passages start at paragraph or sentence boundaries, including in long
+    single-line records. Soft line wraps stay within the passage. Ties retain
+    original order; content_ref exposes the full text, including any context
+    omitted by selection or marked prefix truncation.
     """
 
     if not query:
@@ -614,24 +617,20 @@ def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
         remaining -= len(picked[index]) + (1 if len(picked) > 1 else 0)
         if remaining < 80:
             break
+    if not picked:
+        return _truncate_at_boundary(content, budget)
     selected = "\n".join(picked[index] for index in sorted(picked))
     return f"{heading}\n{selected}" if heading else selected
 
 
 def _passages(text: str) -> list[str]:
-    """Split long records at readable boundaries, keeping short records whole."""
+    """Keep clauses together; size limits apply only after passage selection.
 
-    chunks = re.split(r"\n\s*\n", text)
-    passages: list[str] = []
-    for chunk in chunks:
-        chunk = chunk.strip()
-        if len(chunk) > 900:
-            for line in chunk.splitlines():
-                line = line.strip()
-                passages.extend(line[start : start + 700] for start in range(0, len(line), 700))
-        elif chunk:
-            passages.append(chunk)
-    return passages
+    Punctuation and blank lines are textual heuristics, not semantic parsing.
+    A passage without these boundaries stays whole even when it is oversized.
+    """
+
+    return [part.strip() for part in re.split(r"\n\s*\n|(?<=[.!?])\s+", text) if part.strip()]
 
 
 def _bearer_budget(

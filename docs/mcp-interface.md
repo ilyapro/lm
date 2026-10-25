@@ -356,8 +356,8 @@ content is not delivered again and again. Every result carries a `delivery`
 class:
 
 * `full` — complete `content`.
-* `snippet` — content longer than this bearer's ladder budget, truncated
-  inline at a clean boundary with a trailing `…`.
+* `snippet` — selected passages from content longer than this bearer's ladder
+  budget. A passage cut to fit ends with `…`.
 * `session_duplicate` — this version's complete content or the exact excerpt
   now offered was included in an earlier response on this transport session;
   `content` is a one-line preview (~160 chars).
@@ -380,8 +380,19 @@ class:
 Content budgets come from the snippet ladder, indexed by content-bearer
 position — stubs don't consume ladder slots. The default ladder
 `2400,1000,700,500,300,200` bounds ordinary content at each position
-(positions past the end reuse the last budget). Task-relevant passages can
-be selected from large evidence carriers; excerpts remain re-fetchable.
+(positions past the end reuse the last budget). Task-relevant passages start
+at paragraph breaks or sentence-ending punctuation followed by whitespace;
+soft line wraps stay within a passage. A long indivisible passage contributes
+only its beginning, marked with `…`, rather than an independently selected
+tail. Evidence carriers retain their heading and each selected passage's
+source label. If these cannot fit, delivery falls back to a bounded prefix
+of the original. `content_ref` always permits byte-complete lookup.
+
+These textual boundaries are heuristics: abbreviations and dependencies
+between sentences or paragraphs can require more context. Truncation can
+also omit a later condition. Use the full original when the excerpt is
+insufficient to establish a statement's qualifications; snippets do not
+guarantee interpretation of arbitrary text.
 Recipe `level="schema"` content is delivered complete instead of snippeted.
 This preserves its steps and conditions; the storage level grants no authority.
 
