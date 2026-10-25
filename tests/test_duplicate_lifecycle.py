@@ -63,7 +63,7 @@ def test_related_connection_has_duplicate_metadata(tmp_path: Path) -> None:
             "duplicate edge content"
         )
         assert store.list_connections(relation_type="supersedes") == []
-        assert store.list_superseding_nodes(first.id) == []
+        assert store.list_supersedes_pairs([first.id]) == []
         assert [node.id for node in store.list_duplicate_replacements(first.id)] == [second.id]
 
 
@@ -266,3 +266,81 @@ def test_memory_recall_returns_only_active_traces_after_dedup(tmp_path: Path) ->
         # Recall surfaces the active copy without a semantic correction flag.
         assert len(results) == 1
         assert results[0].superseded is False
+
+
+@pytest.mark.parametrize(
+    ("left_context", "right_context", "left_provenance", "right_provenance"),
+    [
+        ({"agent": "a"}, {"agent": "b"}, {}, {}),
+        ({"source": "public manual A"}, {"source": "public manual B"}, {}, {}),
+        ({}, {}, {"source": "public manual A"}, {"source": "public manual B"}),
+        ({}, {}, {"source_traces": ["source-a"]}, {"source_traces": ["source-b"]}),
+    ],
+)
+def test_equal_content_preserves_different_sources(
+    tmp_path, left_context, right_context, left_provenance, right_provenance
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        first = store.create_node(
+            level="trace", content="Restart only after approval.",
+            context={"scope": "project:demo", **left_context}, provenance=left_provenance,
+        )
+        second = store.create_node(
+            level="trace", content="Restart only after approval.",
+            context={"scope": "project:demo", **right_context}, provenance=right_provenance,
+        )
+
+        assert {node.id for node in store.list_nodes()} == {first.id, second.id}
+        assert store.list_connections() == []
+        assert store.list_duplicate_replacements(first.id) == []
+
+
+def test_repeat_ignores_timestamp_and_recall_bookkeeping(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        first = store.create_node(
+            level="trace", content="Restart only after approval.",
+            context={"scope": "project:demo", "timestamp": "2026-01-01T00:00:00Z"},
+            provenance={"source": "public manual", "prior_recalls": ["recall-a"]},
+        )
+        second = store.create_node(
+            level="trace", content="Restart only after approval.",
+            context={"scope": "project:demo", "timestamp": "2026-01-02T00:00:00Z"},
+            provenance={"source": "public manual", "prior_recalls": ["recall-b"]},
+        )
+
+        assert store.get_node(first.id).decayed is True
+        assert [node.id for node in store.list_nodes()] == [second.id]
+        assert [node.id for node in store.list_duplicate_replacements(first.id)] == [second.id]
+
+
+@pytest.mark.parametrize("relation_type", ["related", "supersedes"])
+@pytest.mark.parametrize("difference", [None, "content", "scope", "level", "source", "decayed"])
+def test_duplicate_replacement_requires_current_exact_identity(
+    tmp_path, relation_type, difference
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        original = store.create_node(
+            level="trace", content="Restart is allowed.",
+            context={"scope": "project:demo", "source": "public manual A"},
+        )
+        store.soft_delete_node(original.id, "duplicate_content")
+        replacement = store.create_node(
+            level="schema" if difference == "level" else "trace",
+            content="Restart is forbidden." if difference == "content" else original.content,
+            context={
+                "scope": "project:other" if difference == "scope" else "project:demo",
+                "source": "public manual B" if difference == "source" else "public manual A",
+            },
+        )
+        if difference == "decayed":
+            store.soft_delete_node(replacement.id, "manual")
+        store.create_connection(
+            replacement.id, original.id, relation_type,
+            metadata={"kind": "duplicate_content", "basis": "procedure_key",
+                      "collapsed_by": "lm_collapse_copies.py"},
+        )
+
+        expected = [replacement.id] if difference is None else []
+        assert [node.id for node in store.list_duplicate_replacements(original.id)] == expected
+        assert store.list_supersedes_pairs([original.id, replacement.id]) == []
+        assert store.get_node(original.id).content == "Restart is allowed."
