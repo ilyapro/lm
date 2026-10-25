@@ -67,6 +67,10 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src"
+sys.path.insert(0, str(SRC_ROOT))
+
+from living_memory.relations import is_correction  # noqa: E402
+
 DEFAULT_CORPUS_ROOT = REPO_ROOT / "artifacts" / "animal-planet" / "corpus"
 
 SPLIT_NAMES = ("dev", "eval", "holdout")
@@ -304,12 +308,12 @@ def in_window(created_at: str, window: dict[str, str]) -> bool:
 
 
 def supersedes_edges(nodes: dict[str, dict]) -> dict[tuple[str, str, str], None]:
-    """Deduped supersedes edges (source=superseding, target=superseded, created_at)."""
+    """Deduplicated corrections; snapshots without metadata retain unknown edges."""
 
     edges: dict[tuple[str, str, str], None] = {}
     for node in nodes.values():
         for relation in node.get("relations") or []:
-            if relation.get("type") != "supersedes":
+            if not is_correction(relation.get("type"), relation.get("metadata") or {}):
                 continue
             if relation["direction"] == "out":
                 source, target = node["id"], relation["other_id"]
