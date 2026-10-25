@@ -51,10 +51,7 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "backfill_query_anchors.py"
 
 SCOPE = "project:demo"
 
-#: Six distinct operator questions. Distinct in *tokens*, so the deterministic
-#: hash encoder the suite runs under keeps them far apart (measured: every
-#: off-diagonal cosine below 0.5, against a 0.95 dedup threshold) and dedup
-#: behaviour in these tests is the script's, not the fixture encoder's.
+#: Six distinct operator questions, each with independent grounded targets.
 QUERIES = (
     "как перезапустить сервер living memory",
     "поревьювь мердж реквест 9806",
@@ -460,6 +457,26 @@ def test_repeated_query_reinforces_one_anchor_instead_of_duplicating(
     ) == [(pytest.approx(ANCHOR_EDGE_WEIGHT), 1)]
 
 
+def test_backfill_preserves_distinct_queries_with_identical_vectors(source_db: Path) -> None:
+    db = fixture_copy(source_db, "same-vectors.sqlite3")
+    info = bf.EmbedderInfo(backend="fixture", model="identical-vectors", dimensions=2)
+    with MemoryStore(db) as store:
+        first = bf.run_backfill(
+            store, embedder=lambda queries: [[1.0, 0.0] for _ in queries], embedder_info=info,
+            summary=bf.BackfillSummary(mode="backfill", db=str(db), started_at="fixture"), quiet=True,
+        )
+        assert first.anchors_created == GROUNDED_EVENTS + 1
+        before = (anchor_state(db), edge_state(db))
+        repeated = bf.run_backfill(
+            store, embedder=lambda queries: [[1.0, 0.0] for _ in queries], embedder_info=info,
+            summary=bf.BackfillSummary(mode="backfill", db=str(db), started_at="fixture"), quiet=True,
+        )
+        assert repeated.events_applied == 0
+        assert (anchor_state(db), edge_state(db)) == before
+    for index, query in enumerate(QUERIES):
+        assert targets_of(db, query) == {node_id_of(db, _target_content(index))}
+
+
 def test_same_query_in_two_scopes_stays_two_anchors(source_db: Path) -> None:
     db = fixture_copy(source_db, "scopes.sqlite3")
     assert complete_run(db) == 0
@@ -852,9 +869,7 @@ def test_dry_run_writes_nothing_and_bounds_the_real_run(source_db: Path) -> None
 
     assert complete_run(db) == 0
     # The projection counts distinct (scope, fingerprint) identities, so it is
-    # an upper bound the real run meets exactly when cosine dedup merges
-    # nothing further — which is the case for these deliberately distinct
-    # queries.
+    # the real run meets it when every event has usable vectors and live targets.
     assert projection["projected_anchors"] == len(anchor_state(db))
     assert projection["projected_edges"] == len(edge_state(db))
 

@@ -455,10 +455,9 @@ def test_consolidation_near_identical_cluster_digest_stays_compact_and_distinct(
         concept = result.concepts_created[0]
         assert all(concept.content != trace.content for trace in traces)
         assert "\n• " in concept.content
-        # Index-only variants must not be echoed as a pile of bullets: the
-        # digest stays a hair longer than one trace, not proportional to 100.
-        longest = max(len(trace.content) for trace in traces)
-        assert len(concept.content) <= longest + 40
+        assert len(concept.content) <= DIGEST_MAX_CHARS
+        source_contents = {trace.content for trace in traces}
+        assert all(line.removeprefix("• ") in source_contents for line in concept.content.splitlines())
 
 
 def test_consolidation_preserves_legacy_copy_without_recorded_sources(
@@ -542,7 +541,7 @@ def test_synthesize_digest_identical_contents_keep_single_content(tmp_path: Path
         assert _synthesize_digest([first, second], best=first) == "same body of knowledge"
 
 
-def test_synthesize_digest_two_short_sources_stay_under_concatenation(
+def test_synthesize_digest_preserves_two_complete_short_sources(
     tmp_path: Path,
 ) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
@@ -560,9 +559,70 @@ def test_synthesize_digest_two_short_sources_stay_under_concatenation(
         digest = _synthesize_digest([first, second], best=first)
 
         assert digest not in {first.content, second.content}
-        assert len(digest) < len(first.content) + len(second.content)
-        assert "ledger" in digest
-        assert "audit" in digest
+        assert len(digest) <= DIGEST_MAX_CHARS
+        assert first.content in digest
+        assert second.content in digest
+
+
+@pytest.mark.parametrize("first_text,second_text", [
+    ("The operator permits dashboard restart before approval.",
+     "The operator does not permit dashboard restart before approval."),
+    ("Dashboard restart is allowed before approval.",
+     "Dashboard restart is forbidden before approval."),
+    ("Dashboard restart is allowed before approval.",
+     "Dashboard restart is allowed after approval."),
+    ("Alice authorizes Bob to restart the dashboard.",
+     "Bob authorizes Alice to restart the dashboard."),
+    ("Policy from source A permits dashboard restart.",
+     "Policy from source B permits dashboard restart."),
+])
+def test_synthesize_digest_keeps_similar_complete_assertions(
+    tmp_path: Path, first_text: str, second_text: str,
+) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        sources = [
+            store.append_trace(text, {"scope": "project:alpha", "agent": source})
+            for text, source in ((first_text, "first"), (second_text, "second"))
+        ]
+        digest = _synthesize_digest(sources, best=sources[0])
+        assert first_text in digest
+        assert second_text in digest
+        assert len(digest) <= DIGEST_MAX_CHARS
+
+
+def test_synthesize_digest_keeps_tail_conditions_without_partial_assertions(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        lead = "Dashboard restart is permitted during the maintenance window."
+        condition = "Dashboard restart is permitted " + "under the recorded operational policy " * 18
+        condition += "only after the operator approves the restart."
+        sources = [store.append_trace(text, {"scope": "project:alpha"}) for text in (lead, condition)]
+        digest = _synthesize_digest(sources, best=sources[0])
+        assert condition in digest
+        assert _synthesize_digest(sources, best=sources[1]).startswith(condition)
+        bounded = _synthesize_digest(sources, best=sources[1], max_chars=200)
+        assert bounded == lead
+        assert "…" not in bounded
+
+
+def test_synthesize_digest_deduplicates_exact_sentences_and_keeps_later_claims(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        common = "Deployment uses the dashboard."
+        contents = [common + " Restart is allowed.", common + " Restart is forbidden. Approval is required."]
+        sources = [store.append_trace(text, {"scope": "project:alpha"}) for text in contents]
+        digest = _synthesize_digest(sources, best=sources[0])
+        assert digest.count(common) == 1
+        assert "Restart is allowed." in digest
+        assert "Restart is forbidden." in digest
+        assert "Approval is required." in digest
+
+
+def test_synthesize_digest_oversized_assertion_requires_full_source_lookup(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        content = "Restart is allowed " + "under the documented policy " * 100 + "only after approval."
+        source = store.append_trace(content, {"scope": "project:alpha"})
+        digest = _synthesize_digest([source], best=source)
+        assert digest == "Full source lookup required."
+        assert store.get_node(source.id).content == content
 
 
 def test_synthesize_digest_caps_total_length(tmp_path: Path) -> None:

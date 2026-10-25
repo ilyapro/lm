@@ -10,10 +10,9 @@ table rebuild. ``_seed_v6_database`` writes the **verbatim** ``nodes`` and
 that previous additive migrations left behind), and the tests assert those two
 strings come back byte-identical after the v7 migration has run.
 
-*Anchors deduplicate and accumulate.* Cosine dedup is asserted against
-``ANCHOR_DEDUP_COSINE_THRESHOLD`` rather than against a literal, because the
-empirical value is due from ``artifacts/anchors/estimate.json`` and retuning it
-must not require editing a test. Edge weight accumulates, and one test pins the
+*Anchors preserve question identity and accumulate.* Exact (query, scope)
+repeats reinforce; similar questions retain independent grounded edges.
+Edge weight accumulates, and one test pins the
 downgrade that ``MemoryStore.create_connection`` exhibits, as the control that
 says why anchor edges do not reuse it.
 
@@ -34,7 +33,6 @@ from living_memory import query_anchors as qa
 from living_memory.consolidation import memory_teach
 from living_memory.edge_derivation import derive_edges_for_new_trace
 from living_memory.query_anchors import (
-    ANCHOR_DEDUP_COSINE_THRESHOLD,
     ANCHOR_EDGE_WEIGHT,
     ANCHOR_TTL_DAYS,
     ANCHOR_TTL_DECAY_REASON,
@@ -384,72 +382,48 @@ def test_exact_repeat_reinforces_the_same_anchor_by_fingerprint(tmp_path: Path) 
         assert list(second.anchor.embedding) == [1.0, 0.0]
 
 
-def test_near_identical_query_deduplicates_at_the_cosine_threshold(
-    tmp_path: Path,
+@pytest.mark.parametrize("queries", [
+    ("Restart is permitted before approval", "Restart is not permitted before approval"),
+    ("Restart is allowed before approval", "Restart is forbidden before approval"),
+    ("Restart is allowed before approval", "Restart is allowed after approval"),
+    ("Alice permits Bob to restart", "Bob permits Alice to restart"),
+    ("поревьювь EZ-13871", "поревьювь EZ-12826"),
+    ("Check PATH", "Check path"),
+])
+def test_similar_queries_keep_independent_anchors_and_semantic_matches(
+    tmp_path: Path, queries: tuple[str, str],
 ) -> None:
-    """Behaviour is pinned to the constant, not to its current numeric value."""
-
     with _store(tmp_path) as store:
-        used = _trace(store, "runbook")
-        base = qa.upsert_anchor(store, "первый запрос", SCOPE, [1.0, 0.0], [used.id])
+        nodes = [_trace(store, "First source policy"), _trace(store, "Second source policy")]
+        first, second = [
+            qa.upsert_anchor(store, query, SCOPE, [1.0, 0.0], [node.id])
+            for query, node in zip(queries, nodes)
+        ]
+        assert second.created
+        assert second.matched_by is None
+        assert first.anchor.id != second.anchor.id
+        for result, node in zip((first, second), nodes):
+            assert {edge.target_id for edge in result.edges} == {node.id}
 
-        # Comfortably above the threshold (float32 storage costs a little
-        # precision, so do not sit exactly on it).
-        above = qa.upsert_anchor(
-            store,
-            "первый запрос, чуть иначе",
-            SCOPE,
-            _unit_at_cosine(min(0.999, ANCHOR_DEDUP_COSINE_THRESHOLD + 0.01)),
-            [used.id],
-        )
-        assert above.created is False
-        assert above.matched_by == "cosine"
-        assert above.anchor.id == base.anchor.id
-        assert above.similarity >= ANCHOR_DEDUP_COSINE_THRESHOLD
-
-        # Clearly below it: a distinct situation earns its own anchor.
-        below = qa.upsert_anchor(
-            store,
-            "совсем другой запрос",
-            SCOPE,
-            _unit_at_cosine(ANCHOR_DEDUP_COSINE_THRESHOLD - 0.05),
-            [used.id],
-        )
-        assert below.created is True
-        assert below.anchor.id != base.anchor.id
-        assert store.count_query_anchors() == 2
+        matches = qa.match_anchors(store, [1.0, 0.0], SCOPE)
+        assert {match.anchor.id for match in matches} == {first.anchor.id, second.anchor.id}
+        assert all(match.similarity == pytest.approx(1.0) for match in matches)
 
 
-def test_dedup_threshold_keeps_same_jargon_different_object_apart(
-    tmp_path: Path,
-) -> None:
-    """0.931 is the measured «поревьювь EZ-13871» vs «поревьювь EZ-12826» pair.
-
-    Two different tickets are two different situations with two different sets
-    of useful nodes; merging them would leave one anchor answering neither.
-    """
-
-    assert ANCHOR_DEDUP_COSINE_THRESHOLD > 0.931
-
+def test_query_resolution_keeps_distinct_negative_feedback_identity(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
-        first_node = _trace(store, "EZ-13871 review notes")
-        second_node = _trace(store, "EZ-12826 review notes")
-        first = qa.upsert_anchor(
-            store, "поревьювь EZ-13871", SCOPE, [1.0, 0.0], [first_node.id]
+        first = qa.upsert_anchor(store, "Restart allowed before approval", SCOPE, [1.0, 0.0])
+        second = qa.resolve_query_anchor(
+            store, "Restart forbidden before approval", SCOPE, [1.0, 0.0],
         )
-        second = qa.upsert_anchor(
-            store, "поревьювь EZ-12826", SCOPE, _unit_at_cosine(0.931), [second_node.id]
+        repeated = qa.resolve_query_anchor(
+            store, "  Restart   forbidden before approval ", SCOPE, [0.0, 1.0],
         )
-
-        assert second.anchor.id != first.anchor.id
-        assert {
-            edge.target_id
-            for edge in store.list_query_anchor_edges(anchor_id=first.anchor.id)
-        } == {first_node.id}
-        assert {
-            edge.target_id
-            for edge in store.list_query_anchor_edges(anchor_id=second.anchor.id)
-        } == {second_node.id}
+        assert second.id != first.anchor.id
+        assert repeated == second
+        assert store.get_query_anchor(first.anchor.id).reinforcement_count == 0
+        assert second.reinforcement_count == 0
+        assert store.list_query_anchor_edges(anchor_id=second.id) == []
 
 
 def test_anchor_never_crosses_scope(tmp_path: Path) -> None:
@@ -463,7 +437,7 @@ def test_anchor_never_crosses_scope(tmp_path: Path) -> None:
         )
 
         # Identical text and identical vector, yet two anchors: the fingerprint
-        # carries the scope and the cosine scan is scoped.
+        # carries the scope.
         assert theirs.created is True
         assert theirs.anchor.id != mine.anchor.id
         assert store.count_query_anchors() == 2
