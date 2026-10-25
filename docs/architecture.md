@@ -192,6 +192,20 @@ Adjacency table for graph recall.
 | `type` | `related`, `caused`, `contradicts`, `supersedes`, or `requires`. |
 | `weight` | Traversal strength. |
 | `metadata` | JSON metadata about how the edge was created. |
+| `created_at`, `updated_at` | Row creation and last write timestamps, exposed by resources. |
+
+The storage writer owns edge update policy. `create_connection` replaces weight
+and metadata by default. Consolidation, teach and typed derivation pass
+`merge=True`: weight is the maximum of current and incoming values, clamped to
+[0, 1] and rounded to six decimals; incoming metadata keys overwrite existing
+keys shallowly, including nulls and whole nested objects. Identity, direction,
+type and creation time stay fixed. The read and write share a writer transaction.
+An unchanged contribution preserves the row, including `updated_at`; that field
+is not a contribution counter or a last-observed event. Replacement writes still
+refresh it. Every supersedes write, including an unchanged contribution, moves
+newly attached query anchors inside the same transaction. Query-anchor edges
+retain their separate additive weight/hits policy, and typed backfill inserts
+only absent edges.
 
 ### `recall_events`
 
