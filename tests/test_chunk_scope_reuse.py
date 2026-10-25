@@ -318,6 +318,50 @@ def test_partition_gather_preserves_order_width_and_normalization(tmp_path, monk
         assert recall(warm) == recall(service(store))
 
 
+@pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "python"])
+def test_broad_layout_survives_scope_switches_and_releases_replaced_blocks(stores, monkeypatch, numpy):
+    if not numpy:
+        monkeypatch.setattr(retrieval, "_np", None)
+    reader, writer = stores
+    for number in range(9):
+        add(writer, f"node-{number}", ("global", "project:alpha", "project:beta")[number % 3])
+    prepared = []
+    prepare = retrieval._prepare_chunk_gather
+
+    def counted(blocks):
+        result = prepare(blocks)
+        prepared.append(result)
+        return result
+
+    monkeypatch.setattr(retrieval, "_prepare_chunk_gather", counted)
+    warm = service(reader)
+    before = recall(warm)
+    layout = warm._chunk_gathers[3]
+    if numpy:
+        assert layout.template.rows is None
+    else:
+        assert all(any(row is original for block in layout.blocks for original in block.rows)
+                   for row in layout.template.rows)
+    reads = reads_from(reader, monkeypatch)
+    for scope in ("project:alpha", None, "global", "project:beta", None):
+        result = recall(warm, scope)
+        if scope is None:
+            assert result == before
+        assert warm._chunk_gathers[3] is layout
+    assert len(prepared) == 1
+    assert reads == {}
+
+    # A scoped refresh must release a layout retaining obsolete broad arrays.
+    writer.update_node("node-2", context={"scope": "project:gamma"})
+    recall(warm, "project:beta")
+    assert 3 not in warm._chunk_gathers
+    assert len(prepared) == 1
+    assert recall(warm) == before
+    assert len(prepared) == 2
+    assert warm._chunk_gathers[3] is not layout
+    assert all(block is not layout.blocks[-1] for block in warm._chunk_gathers[3].blocks)
+
+
 def test_nonfinite_norm_preserves_the_complete_blocks_normalization_rule(tmp_path):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         add(store, "a", vector=(3.0, 4.0, 0.0))
