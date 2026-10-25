@@ -556,9 +556,6 @@ def run_probe() -> dict[str, Any]:
     # The whole point of the child: the real encoder, with nothing of it left
     # behind in this process.
     environment.pop("LIVING_MEMORY_EMBEDDING_BACKEND", None)
-    # Measure graph admission and ranking before the optional delivery gate;
-    # weak traversal results must remain visible regardless of the host setting.
-    environment["LM_RECALL_MIN_SCORE"] = "off"
     completed = subprocess.run(
         [sys.executable, "-c", PROBE],
         input=json.dumps(

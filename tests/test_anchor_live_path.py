@@ -112,8 +112,6 @@ class FakeMCP:
 @pytest.fixture(autouse=True)
 def _hash_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
-    monkeypatch.delenv("LM_RETRIEVAL_TUNING_POLICY", raising=False)
-    monkeypatch.delenv("LM_RECALL_CREDIT_POLICY", raising=False)
 
 
 # ---------------------------------------------------------------------------

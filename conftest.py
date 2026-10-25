@@ -78,9 +78,14 @@ def pytest_configure(config: pytest.Config) -> None:
     config.args = kept
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def _clear_lm_policy_env() -> Iterator[None]:
-    """Keep ambient MCP server env vars from changing unit-test defaults."""
+    """Use built-in policy defaults before module fixtures start their probes.
+
+    Tests can select another policy with monkeypatch. Only these named settings
+    are isolated; encoder, offline, dependency and path settings stay with the
+    caller, and specialized delivery knobs stay with their tests.
+    """
 
     saved = {
         name: os.environ.pop(name, None)
@@ -88,6 +93,12 @@ def _clear_lm_policy_env() -> Iterator[None]:
             "LM_AUTH_TOKEN",
             "LM_AUTO_CONSOLIDATE_POLICY",
             "LM_RETRIEVAL_TUNING_POLICY",
+            "LM_RECALL_CREDIT_POLICY",
+            "LM_LOOKUP_CREDIT_POLICY",
+            "LM_EXPLICIT_FEEDBACK_POLICY",
+            "LM_IMPLICIT_LINK_POLICY",
+            "LM_RECALL_MIN_SCORE",
+            "LM_RECALL_GATE_FORM",
             "LM_DECAY_SWEEP_INTERVAL_SEC",
         )
     }
