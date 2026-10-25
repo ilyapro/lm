@@ -710,6 +710,7 @@ METRIC_FAMILIES = ("payload", "cross_scope", "correction_dominance", "auto_recal
 FIDELITY_LIMITS = [
     "BM25/vector/graph re-execution out of scope: reranks re-mix recorded candidate scores only",
     "node stats and supersedes edges are snapshot-time, not event-time",
+    "snapshots without relation metadata cannot distinguish historical technical supersedes from corrections",
     "content fields are surrogates: snippet boundaries and causal-query detection are approximate",
     "AFTER payload reconstructs the current server envelope (scope=requested_scope, auto_decay=null), ensure_ascii=False",
     "provenance is a shape-filler padded to recorded serialized_chars; small escape residuals counted",
