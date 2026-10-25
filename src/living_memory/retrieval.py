@@ -206,7 +206,7 @@ from __future__ import annotations
 import json
 import os
 from collections import deque
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from math import log2, sqrt
 from typing import Any, Callable

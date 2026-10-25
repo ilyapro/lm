@@ -40,7 +40,7 @@ def write(store, node, corpus):
 
 
 def revision(store, corpus):
-    return store.chunk_corpus_revision() if corpus == "chunks" else store.query_anchor_revision()
+    return sum(store.chunk_corpus_revisions().values()) if corpus == "chunks" else store.query_anchor_revision()
 
 
 def snapshot(store):
@@ -83,8 +83,8 @@ def test_writer_refreshes_warm_recall_and_preserves_knowledge(maintenance, secon
         after = snapshot(writer)
         for table in ("nodes", "connections", "recall_events"):
             assert after[table] == before[table]
-        other_key = "query_anchor_revision" if corpus == "chunks" else "chunk_corpus_revision"
-        assert dict(after["metadata"])[other_key] == dict(before["metadata"])[other_key]
+        other = "anchors" if corpus == "chunks" else "chunks"
+        assert revision_value(after, other) == revision_value(before, other)
         assert not writer.connection.in_transaction
 
 
@@ -109,8 +109,10 @@ def test_forbidden_write_rolls_back_derived_rows_and_revision(maintenance):
 
 
 def revision_value(state, corpus):
-    key = "chunk_corpus_revision" if corpus == "chunks" else "query_anchor_revision"
-    return int(dict(state["metadata"])[key])
+    if corpus == "chunks":
+        return sum(int(value) for key, value in state["metadata"]
+                   if key.startswith("chunk_scope_revision:"))
+    return int(dict(state["metadata"])["query_anchor_revision"])
 
 
 def test_direct_writes_stay_within_one_main_corpus(maintenance):
@@ -182,7 +184,7 @@ def test_trigger_identity_and_revision_are_required(maintenance, mutation):
         with store.connection:
             store.connection.execute(
                 "DELETE FROM metadata WHERE key=?",
-                ("chunk_corpus_revision" if corpus == "chunks" else "query_anchor_revision",),
+                ("chunk_scope_revision_format" if corpus == "chunks" else "query_anchor_revision",),
             )
     before = snapshot(store)
     install_derived_only_authorizer(store.connection, corpus=corpus)

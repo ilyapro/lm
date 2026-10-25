@@ -443,7 +443,7 @@ def test_numpy_and_pure_python_paths_agree(
     """The same corpus scores the same with and without numpy.
 
     The two implementations differ in more than speed: the numpy path unit-
-    normalizes the rows once at scan time and takes a dot product, the fallback
+    normalizes the selected block and takes a dot product, the fallback
     calls ``cosine_similarity`` per chunk. Vectors that are not already unit
     length are in the fixture on purpose, because that is where an unnormalized
     dot product and a real cosine part ways.

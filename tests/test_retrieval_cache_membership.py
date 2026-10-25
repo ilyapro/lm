@@ -136,11 +136,11 @@ def test_embedding_update_with_unchanged_chunk_ids(stores):
 def test_membership_revision_rolls_back_with_mutation(stores):
     reader, writer = stores
     node_id = add_node(writer, "cobalt prism")
-    before = reader.chunk_corpus_revision()
+    before = reader.chunk_corpus_revisions()
     writer.connection.execute("UPDATE nodes SET decayed = 1 WHERE id = ?", (node_id,))
-    assert writer.chunk_corpus_revision() > before
+    assert writer.chunk_corpus_revisions()["global"] > before["global"]
     writer.connection.rollback()
-    assert reader.chunk_corpus_revision() == writer.chunk_corpus_revision() == before
+    assert reader.chunk_corpus_revisions() == writer.chunk_corpus_revisions() == before
     assert not reader.get_node(node_id).decayed
 
 
@@ -150,31 +150,30 @@ def test_existing_database_gains_revision_without_changing_memory(tmp_path):
         node_id = add_node(store, "cobalt prism")
         # Model an existing file without the additive revision objects.
         with store.connection:
-            for name in ("insert", "delete", "update", "membership"):
+            for name in ("insert", "delete", "update", "membership", "node_insert", "node_delete"):
                 store.connection.execute(f"DROP TRIGGER chunk_corpus_{name}")
-            store.connection.execute("DELETE FROM metadata WHERE key = 'chunk_corpus_revision'")
+            store.connection.execute("DELETE FROM metadata WHERE key LIKE 'chunk_scope_revision%'")
         original = store.get_node(node_id)
         chunks = list(store.iter_chunk_embedding_rows())
 
     with ReadOnlyAuditStore.open_path(path) as reader:
-        assert reader.chunk_corpus_revision() is None
+        assert reader.chunk_corpus_revisions() is None
         warm = service(reader)
         assert_same_knowledge(
             recall(warm, log_access=False, log_event=False),
             recall(service(reader), log_access=False, log_event=False),
             [node_id],
         )
-        cached = warm._chunk_index["global"]
         recall(warm, log_access=False, log_event=False)
-        assert warm._chunk_index["global"] is not cached
+        assert warm._chunk_index == {}
 
     with MemoryStore(path) as migrated:
         assert migrated.get_node(node_id) == original
         assert list(migrated.iter_chunk_embedding_rows()) == chunks
-        before = migrated.chunk_corpus_revision()
+        before = migrated.chunk_corpus_revisions()
         assert before is not None
         memory_forget(migrated, node_id)
-        after = migrated.chunk_corpus_revision()
-        assert after > before
+        after = migrated.chunk_corpus_revisions()
+        assert after["global"] > before["global"]
     with MemoryStore(path) as reopened:
-        assert reopened.chunk_corpus_revision() == after
+        assert reopened.chunk_corpus_revisions() == after

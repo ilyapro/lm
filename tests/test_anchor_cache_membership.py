@@ -163,10 +163,10 @@ def test_bookkeeping_and_chunk_writes_preserve_anchor_cache(stores, monkeypatch)
         assert result[0].targets == ((node.id, 0.5),)
         assert warm._anchor_vectors is cached
     assert scans == []
-    chunk_revision = reader.chunk_corpus_revision()
+    chunk_revision = reader.chunk_corpus_revisions()
     writer.decay_query_anchor(a.id, "inactive")
     assert matches(warm, [1.0, 0.0]) == []
-    assert reader.chunk_corpus_revision() == chunk_revision
+    assert reader.chunk_corpus_revisions() == chunk_revision
     writer.reinforce_query_anchor(a.id)
     assert_parity(warm, [1.0, 0.0], [a.id])
 
