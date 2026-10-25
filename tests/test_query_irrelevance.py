@@ -102,6 +102,8 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LM_EXPLICIT_CREDIT_WEIGHT",
         "LM_IMPLICIT_LINK_POLICY",
         "LM_QUERY_IRRELEVANCE_FACTOR",
+        "LM_RECALL_MIN_SCORE",
+        "LM_RECALL_GATE_FORM",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(server_module, "_transport_session_id", lambda: TRANSPORT)
