@@ -760,7 +760,10 @@ def load_live_weights(connection: sqlite3.Connection) -> dict[str, RetrievalWeig
 
 
 def load_supersedes_pairs(connection: sqlite3.Connection) -> list[tuple[str, str]]:
-    rows = connection.execute(f"SELECT source_id, target_id FROM connections WHERE {correction_sql()}")
+    # Metadata-less snapshots cannot identify a historical producer.
+    columns = {str(row["name"]) for row in connection.execute("PRAGMA table_info(connections)")}
+    predicate = correction_sql() if "metadata" in columns else "type = 'supersedes'"
+    rows = connection.execute(f"SELECT source_id, target_id FROM connections WHERE {predicate}")
     return [(str(row["source_id"]), str(row["target_id"])) for row in rows]
 
 
@@ -795,6 +798,10 @@ def snapshot_evidence(connection: sqlite3.Connection) -> Callable[[str], tuple[b
         str(row["name"]) for row in connection.execute("PRAGMA table_info(nodes)")
     }
     embedding_column = "embedding" in node_columns
+    relation_columns = {
+        str(row["name"]) for row in connection.execute("PRAGMA table_info(connections)")
+    }
+    graph_relation = semantic_relation_sql("c") if "metadata" in relation_columns else "1"
     chunk_table = (
         connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -839,7 +846,7 @@ def snapshot_evidence(connection: sqlite3.Connection) -> Callable[[str], tuple[b
             JOIN nodes target ON target.id = c.target_id
             WHERE source.decayed = 0 AND target.decayed = 0
               AND (source.scope = ? OR target.scope = ?)
-              AND {semantic_relation_sql('c')}
+              AND {graph_relation}
             LIMIT 1
             """,
             (scope, scope),

@@ -227,16 +227,10 @@ _SAMPLEABLE_REASONS = frozenset({"fc", "ss", "sj", "lr", "pc", "uf", "nf"})
 # they saw before, and every new signal enters as a separate yes/no on a
 # candidate the frozen pipeline already judged.
 #
-# These gates control optional recall-map features.
-# There the flag is a whole env var — rather than a threshold of zero — because
-# turning the behaviour on has to be a sentence an operator said. Here the
-# *number* is a second env var with no shipped default at all, because unlike
-# the drain's cosine there is no measured value to ship: the field distribution
-# these thresholds come from is a sibling goal's artifact, and the operator
-# reads them off it. A valve that is on with no number is inert, which is the
-# only safe reading of "on, but at what?".
+# Optional recall-map features require both an enabled gate and an explicit
+# threshold. Enabling a gate without a configured number leaves it inert.
 
-#: ``1``/``true``/``yes``/``on``, exactly as the drain valve parses. Anything
+#: ``1``/``true``/``yes``/``on`` enables a gate. Anything
 #: else — unset, empty, ``0``, a typo — is off, because a misread flag here
 #: silently removes rows from the one channel that says what memory holds.
 _POOL_GATE_ON_FLAGS = frozenset({"1", "true", "yes", "on"})
