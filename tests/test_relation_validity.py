@@ -17,6 +17,13 @@ QUERY = "amber hatch pressure rule"
 ORIGINAL = "Amber hatch pressure rule: open first.\n\n  Исходник — сохранить.\t\n"
 
 
+@pytest.fixture(autouse=True)
+def deterministic_retrieval(monkeypatch):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", "off")
+    monkeypatch.setenv("LM_RECALL_NEAR_DUP_COSINE", "0")
+
+
 async def remember(client, content, scope=SCOPE):
     response = _structured(await client.call_tool("memory_remember", {
         "content": content, "context": {"scope": scope, "detail": "original context"},
