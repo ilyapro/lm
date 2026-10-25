@@ -65,13 +65,10 @@ Two live-path behaviours are deliberately *not* mirrored:
 anchors are applied and ``recall_events.feedback_applied`` stays 0. The column
 ``feedback_trace_id TEXT REFERENCES nodes(id)`` means closing an event requires
 pointing at a real node, and inventing a synthetic node to satisfy that foreign
-key would pollute ``nodes`` with non-knowledge and inflate
-``recall_fingerprints.linked_count`` for events that produced no trace at all —
-corrupting the very delivered-vs-linked measure this work exists to make
-honest. With a ``trace_id`` that resolves, :meth:`MemoryStore.
-mark_recall_event_feedback` runs so the 0 -> 1 flip credits ``linked_count``
-exactly once; on an already-closed event it is never called, because that would
-take the legacy overwrite branch and clobber an existing ``feedback_trace_id``.
+key would pollute ``nodes`` with non-knowledge. With a ``trace_id`` that resolves,
+:meth:`MemoryStore.mark_recall_event_feedback` records closure and its consuming
+trace; on an already-closed event it is never called, to preserve the existing
+``feedback_trace_id``.
 An unresolvable ``trace_id`` is an error, not a silent downgrade to
 credit-without-closure: a caller that believes it closed an event must not be
 told it did.

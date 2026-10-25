@@ -49,7 +49,7 @@ def reject_map(connection, stage):
 def knobs(monkeypatch):
     for name in (
         "LM_MAP_CURTAIL_DECAY", "LM_MAP_POOL_DEMOTION_GATE", "LM_MAP_POOL_DEMOTE_AFTER",
-        "LM_MAP_POOL_USEFULNESS_GATE", "LM_MAP_POOL_MIN_USEFULNESS", "LM_RECALL_REPEAT_GATING",
+        "LM_MAP_POOL_USEFULNESS_GATE", "LM_MAP_POOL_MIN_USEFULNESS",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")

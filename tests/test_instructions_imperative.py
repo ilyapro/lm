@@ -108,7 +108,7 @@ PLANTED_ADVERTS = {
     "opt-in": "Trailing-stub drop is a strict opt-in.",
     "beta": "The causal walker ships in beta.",
     "feature-flag": "Cross-scope admission sits behind a feature flag.",
-    "env-var machinery": "Set LM_RECALL_REPEAT_GATING=1 to enable gating.",
+    "env-var machinery": "Set LM_RECALL_MIN_SCORE=0.5 to enable gating.",
 }
 
 # Protocol wording that must NOT trip the scanner — a ban worded too widely

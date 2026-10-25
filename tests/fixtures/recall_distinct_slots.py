@@ -94,8 +94,8 @@ def _run(*, expect_baseline: bool) -> dict[str, Any]:
     # Ambient machine settings must not change the frozen comparison.
     for knob in (
         "LM_RECALL_NEAR_DUP_COSINE", "LM_RECALL_NEAR_DUP_LENGTH_RATIO",
-        "LM_NEAR_DUP_IDENTIFIER_VETO", "LM_RECALL_REPEAT_GATING",
-        "LM_RECALL_REPEAT_DROP_TRAILING_STUBS", "LM_AUTO_CONSOLIDATE_POLICY",
+        "LM_NEAR_DUP_IDENTIFIER_VETO",
+        "LM_AUTO_CONSOLIDATE_POLICY",
         "LM_DECAY_SWEEP_INTERVAL_SEC", "LM_DELIVERY_SESSION_DEDUP",
         "LM_SCORE_GATE_MIN_SCORE", "LM_RECALL_MIN_SCORE",
     ):

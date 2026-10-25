@@ -27,8 +27,8 @@ CONTENTS = (
 
 def configured_environment(monkeypatch):
     for name in (
-        "LM_RECALL_MIN_SCORE", "LM_RECALL_REPEAT_GATING",
-        "LM_RECALL_REPEAT_DROP_TRAILING_STUBS", "LM_DELIVERY_SESSION_DEDUP",
+        "LM_RECALL_MIN_SCORE",
+        "LM_DELIVERY_SESSION_DEDUP",
         "LM_RECALL_NEAR_DUP_COSINE", "LM_RECALL_NEAR_DUP_LENGTH_RATIO",
         "LM_NEAR_DUP_IDENTIFIER_VETO", "LM_RECALL_SCHEMA_DEDUP",
         "LM_RECALL_SCHEMA_TRIGGER",
@@ -110,7 +110,7 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
     monkeypatch.setattr(MemoryRecallService, "_collect_vector", lambda *a, **kw: [])
     monkeypatch.setattr(MemoryRecallService, "_collect_query_demotions", lambda *a, **kw: {})
     monkeypatch.setattr(MemoryRecallService, "_collect_hub_demotions", lambda *a, **kw: {})
-    if case in ("session", "repeat-gated"):
+    if case == "session":
         repeat = store.get_node("repeat")
         event = store.record_recall_event(
             query="harbour survey", scope=SCOPE,
@@ -120,10 +120,6 @@ def make_recall(tmp_path, monkeypatch, *, case="ordinary", limit=2, view="knowle
         store.record_recall_delivery(event.id, recall_delivery_records(ranked, [
             {"id": repeat.id, "content": repeat.content, "delivery": "full"},
         ]))
-    if case == "repeat-gated":
-        monkeypatch.setenv("LM_RECALL_REPEAT_GATING", "1")
-        monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
-        monkeypatch.setattr(server, "should_gate_fingerprint", lambda *a: True)
     reads, pools = [], []
     list_chunks, mean_pool = store.list_node_chunks, near_dup._mean_pool
 
@@ -237,9 +233,8 @@ def test_score_gate_observes_only_delivery(tmp_path, monkeypatch):
     assert result["results"][1]["delivery"] == "near_duplicate"
 
 
-@pytest.mark.parametrize("case", ["session", "repeat-gated"])
-def test_intentional_repeat_selection_keeps_session_delivery(tmp_path, monkeypatch, case):
-    result = make_recall(tmp_path, monkeypatch, case=case)()
+def test_intentional_repeat_selection_keeps_session_delivery(tmp_path, monkeypatch):
+    result = make_recall(tmp_path, monkeypatch, case="session")()
     assert result["selected"] == ["bearer", "repeat"]
     assert result["results"][1]["delivery"] == "session_duplicate"
     assert result["reads"] == ["bearer", "repeat", "distinct", "later"]

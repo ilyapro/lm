@@ -4,17 +4,10 @@ Phase 3 of the transcript-grounding goal ships exactly one schema change — a
 CREATE-only table plus one index — and an offline importer. What a live
 500 MB database must be able to rely on is pinned here:
 
-* **Byte-identity outside the explicit task-index migration.** A fresh database
-  created by this build carries, for every object master's build creates,
-  the byte-identical ``sqlite_master`` SQL, except for the six precisely
-  checked derived FTS definitions needed to index recorded tasks. The master build is loaded from
-  ``git show master:src/living_memory/storage.py`` and executed as a module,
-  so the comparison is against the code actually deployed, not a copy that
-  could drift.
-* **Reopening is the whole migration.** A database file created by master's
-  build gains exactly the two new objects when the new build opens it —
-  nothing else appears, unrelated DDL stays unchanged, ``schema_version``
-  stays at 8, and the data survives the task-index rebuild.
+* **Fresh databases contain the ledgers.** Current DDL includes every ledger
+  and its indexes without requiring historical experimental tables.
+* **Reopening preserves existing data and DDL** apart from the explicit
+  task-index migration and additive ledgers; ``schema_version`` stays at 8.
 * **Import replays instead of duplicating**, never updates an existing row,
   and reports same-key-different-numbers as the method_version discipline
   violation it is.
@@ -224,21 +217,14 @@ def _ledger_rows(db_path: Path) -> list[tuple[Any, ...]]:
 
 
 # ---------------------------------------------------------------------------
-# (a) Fresh-database DDL: preserve master apart from the task-index migration
+# (a) Fresh-database ledgers
 # ---------------------------------------------------------------------------
 
 
-def test_fresh_db_preserves_master_ddl_except_task_index(tmp_path: Path) -> None:
-    master = _master_storage()
-    with master.MemoryStore(tmp_path / "master.sqlite3"):
-        pass
+def test_fresh_db_creates_required_ledgers(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "current.sqlite3"):
         pass
-
-    _assert_only_ledger_added(
-        _schema_objects(tmp_path / "master.sqlite3"),
-        _schema_objects(tmp_path / "current.sqlite3"),
-    )
+    assert NEW_OBJECTS <= set(_schema_objects(tmp_path / "current.sqlite3"))
     assert _schema_version(tmp_path / "current.sqlite3") == "8"
 
 

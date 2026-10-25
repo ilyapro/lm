@@ -16,7 +16,7 @@ SCOPE = "project:consumption"
 QUERY = "cobalt routing"
 TABLES = (
     "nodes", "recall_events", "recall_history_events", "recall_history_result_nodes",
-    "recall_delivery_history", "recall_delivery_history_state", "recall_fingerprints",
+    "recall_delivery_history", "recall_delivery_history_state",
 )
 
 
@@ -149,8 +149,8 @@ def test_empty_request_has_no_consumption(store, query, limit):
     assert snapshot(store) == before
 
 
-@pytest.mark.parametrize("stage", ["event", "history", "fingerprint", "readback"])
-def test_failed_tail_rolls_back_access_event_history_and_fingerprint(store, monkeypatch, stage):
+@pytest.mark.parametrize("stage", ["event", "history", "readback"])
+def test_failed_tail_rolls_back_access_event_and_history(store, monkeypatch, stage):
     seed(store)
     retrieval = service(store)
     recall(retrieval)
@@ -163,7 +163,6 @@ def test_failed_tail_rolls_back_access_event_history_and_fingerprint(store, monk
         expected = sqlite3.IntegrityError
     else:
         method = {"history": "_record_recall_history_event",
-                  "fingerprint": "_apply_recall_fingerprint_delivery",
                   "readback": "get_recall_event"}[stage]
         original = getattr(store, method)
 

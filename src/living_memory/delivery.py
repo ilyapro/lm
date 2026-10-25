@@ -48,14 +48,6 @@ never becomes a twin bearer -- its text was not delivered, so a later twin
 must not point at it. Without the gate no result carries ``withheld`` and
 nothing below changes.
 
-``near_duplicate`` joins ``session_duplicate``/``twin_duplicate`` in the
-trailing stub run a gated recall may drop (``server.py``). It belongs there
-for a stronger reason than either: a near-duplicate's text ships in full
-under its bearer, higher up in the very same response, so dropping the run
-removes nothing the agent is not already holding — and the drop stays doubly
-opt-in behind ``LM_RECALL_REPEAT_GATING`` and
-``LM_RECALL_REPEAT_DROP_TRAILING_STUBS``.
-
 Diagnostic diet, applied per full-view entry (each lever has its own valve):
 
 * Stubs and snippets preserve every key of the full node dict

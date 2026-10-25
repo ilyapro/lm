@@ -52,7 +52,6 @@ from living_memory.models import Node
 from living_memory.near_dup import IDENTIFIER_VETO_ENV
 from living_memory.retrieval import RecallResult
 from living_memory.server import (
-    _DROPPABLE_TRAILING_STUBS,
     _NearDuplicateObservation,
     create_mcp_server,
 )
@@ -78,8 +77,6 @@ _KNOBS = (
     "LM_RECALL_NEAR_DUP_COSINE",
     "LM_RECALL_NEAR_DUP_LENGTH_RATIO",
     "LM_NEAR_DUP_IDENTIFIER_VETO",
-    "LM_RECALL_REPEAT_GATING",
-    "LM_RECALL_REPEAT_DROP_TRAILING_STUBS",
     "LM_AUTO_CONSOLIDATE_POLICY",
     "LM_DECAY_SWEEP_INTERVAL_SEC",
 )
@@ -725,31 +722,6 @@ def test_two_tree_nodes_both_reach_the_agent_and_the_valve_gives_that_back(
     assert DELIVERY_NEAR_DUPLICATE in deliveries(rolled_back["results"])
     hidden = " ".join(entry["content"] for entry in rolled_back["results"])
     assert ("layer-fauna" in hidden) != ("layer-actors" in hidden)
-
-
-# --------------------------------------------------------------------------
-# the gated trailing-stub drop
-# --------------------------------------------------------------------------
-
-
-def test_near_duplicate_joins_the_droppable_trailing_stub_classes() -> None:
-    """The decision the goal asked to make explicit, taken and wired.
-
-    A near-duplicate's text ships in full under a bearer in the very same
-    response, so a gated delivery that drops its trailing stub run loses
-    nothing the agent is not already reading — the same reasoning that put
-    ``twin_duplicate`` in this list, only stronger. What the drop then does
-    with the run is unchanged and stays covered by ``test_recall_gating``;
-    what is new is membership, and this is the tuple the handler pops against.
-    """
-
-    assert DELIVERY_NEAR_DUPLICATE in _DROPPABLE_TRAILING_STUBS
-    assert DELIVERY_SESSION_DUPLICATE in _DROPPABLE_TRAILING_STUBS
-    assert DELIVERY_TWIN_DUPLICATE in _DROPPABLE_TRAILING_STUBS
-    # Content-bearing classes must never be droppable: they are the only two
-    # carrying text nothing else within the agent's reach holds.
-    assert DELIVERY_FULL not in _DROPPABLE_TRAILING_STUBS
-    assert DELIVERY_SNIPPET not in _DROPPABLE_TRAILING_STUBS
 
 
 def test_preview_does_not_suppress_a_later_answer_to_its_missing_detail(tmp_path):

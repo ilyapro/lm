@@ -88,7 +88,6 @@ def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
     for env in (
         *OPERATOR_VALVES,
         "LM_RECALL_MAP",
-        "LM_RECALL_REPEAT_GATING",
         "LM_DELIVERY_SESSION_DEDUP",
         "LM_DELIVERY_SNIPPET_CHARS",
         "LM_AUTO_CONSOLIDATE_POLICY",

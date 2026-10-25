@@ -55,7 +55,7 @@ def test_selected_event_lookup_and_intentional_refetch(tmp_path, monkeypatch) ->
     for knob in (
         "LM_RECALL_NEAR_DUP_COSINE", "LM_RECALL_NEAR_DUP_LENGTH_RATIO",
         "LM_NEAR_DUP_IDENTIFIER_VETO", "LM_RECALL_MIN_SCORE",
-        "LM_DELIVERY_SESSION_DEDUP", "LM_RECALL_REPEAT_GATING",
+        "LM_DELIVERY_SESSION_DEDUP",
     ):
         monkeypatch.delenv(knob, raising=False)
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
