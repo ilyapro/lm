@@ -476,6 +476,26 @@ class _ScopeChunkIndex:
 
 
 @dataclass(frozen=True, slots=True)
+class _ChunkGatherPlan:
+    """Reusable row placement and pooling metadata, without a second matrix."""
+
+    blocks: tuple[_ChunkBlock, ...]
+    positions: tuple[Any, ...]
+    template: _ChunkBlock
+
+    def gather(self) -> _ChunkBlock:
+        if not self.positions:
+            # Scalar rows are references to the immutable per-scope tuples.
+            return self.template
+        rows = _np.empty(
+            (self.template.row_count, self.template.dimension), dtype=CHUNK_EMBEDDING_DTYPE,
+        )
+        for block, positions in zip(self.blocks, self.positions, strict=True):
+            rows[positions] = block.rows
+        return replace(self.template, rows=rows)
+
+
+@dataclass(frozen=True, slots=True)
 class _AnchorVectorCache:
     """The revision-guarded corpus, prepared once per embedding width.
 
@@ -529,6 +549,7 @@ class MemoryRecallService:
         # nothing but the graph channel's entry from query space.
         self.anchor_seeding = bool(anchor_seeding)
         self._chunk_index: dict[str, _ScopeChunkIndex] = {}
+        self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
         self._store_embedder_shared = False
 
@@ -967,7 +988,8 @@ class MemoryRecallService:
 
         Broad queries temporarily gather rows in node/chunk order. Keeping the
         full width block's normalization and matmul shape preserves scores and
-        stable candidate ties; there is no second persistent corpus matrix.
+        stable candidate ties. Row placement is retained until its source blocks
+        change; there is no second persistent corpus matrix.
         """
 
         cacheable = not self.store.connection.in_transaction
@@ -978,6 +1000,7 @@ class MemoryRecallService:
             if revisions is None:
                 # Old read-only snapshots have no trustworthy cache identity.
                 self._chunk_index.clear()
+                self._chunk_gathers.clear()
                 indexes = [self._build_chunk_index(scope, None) for scope in plan.search_scopes]
             else:
                 scopes = plan.scopes if plan.restricted else revisions
@@ -987,8 +1010,15 @@ class MemoryRecallService:
                 ]
         blocks = tuple(block for index in indexes for block in index.blocks
                        if block.dimension == dimension)
-        if blocks and not plan.restricted and revisions is not None:
-            return (_gather_chunk_blocks(blocks),)
+        if len(blocks) > 1 and not plan.restricted and revisions is not None:
+            gather = self._chunk_gathers.get(dimension) if cacheable else None
+            if gather is None or len(gather.blocks) != len(blocks) or any(
+                old is not new for old, new in zip(gather.blocks, blocks)
+            ):
+                gather = _prepare_chunk_gather(blocks)
+                if cacheable:
+                    self._chunk_gathers[dimension] = gather
+            return (gather.gather(),)
         return blocks
 
     def _scope_chunk_index(
@@ -1000,6 +1030,9 @@ class MemoryRecallService:
         if cached is not None and cached.revision == revision:
             return cached
         index = self._build_chunk_index(scope, revision)
+        # Release layouts referencing replaced arrays, even on scoped queries.
+        for block in (*cached.blocks, *index.blocks) if cached else index.blocks:
+            self._chunk_gathers.pop(block.dimension, None)
         self._chunk_index[scope] = index
         return index
 
@@ -2118,11 +2151,9 @@ class _BlockAccumulator:
         )
 
 
-def _gather_chunk_blocks(blocks: Sequence[_ChunkBlock]) -> _ChunkBlock:
-    """One temporary whole-width block in the storage scan's exact row order."""
+def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
+    """Prepare the storage scan's exact row order once for these source blocks."""
 
-    if len(blocks) == 1:
-        return blocks[0]
     runs = sorted(
         (node_id, block, index)
         for block in blocks for index, node_id in enumerate(block.node_ids)
@@ -2138,8 +2169,8 @@ def _gather_chunk_blocks(blocks: Sequence[_ChunkBlock]) -> _ChunkBlock:
     if _np is not None and isinstance(blocks[0].rows, _np.ndarray):
         starts = _np.cumsum([0, *counts[:-1]], dtype=_np.intp)
         destinations = dict(zip(node_ids, starts, strict=True))
-        rows = _np.empty((row_count, dimension), dtype=CHUNK_EMBEDDING_DTYPE)
         norms = _np.empty(row_count, dtype=_np.float32)
+        placements = []
         for block in blocks:
             offsets = _np.asarray([destinations[node_id] for node_id in block.node_ids])
             shifts = offsets - block.starts
@@ -2148,23 +2179,25 @@ def _gather_chunk_blocks(blocks: Sequence[_ChunkBlock]) -> _ChunkBlock:
             else:
                 lengths = _np.diff(_np.append(block.starts, block.row_count))
                 positions = _np.repeat(shifts, lengths) + _np.arange(block.row_count)
-            rows[positions] = block.rows
+            placements.append(positions)
             norms[positions] = block.norms
-        return _ChunkBlock(
-            dimension, node_ids, starts, rows, row_count,
+        template = _ChunkBlock(
+            dimension, node_ids, starts, None, row_count,
             _np.asarray([block.log2_chunk_counts[index] for _, block, index in runs]),
             norms, float(_np.max([block.norm_deviation for block in blocks])),
         )
+        return _ChunkGatherPlan(blocks, tuple(placements), template)
     starts_list = []
     scalar_rows = []
     for (_, block, index), count in zip(runs, counts, strict=True):
         starts_list.append(len(scalar_rows))
         start = block.starts[index]
         scalar_rows.extend(block.rows[start:start + count])
-    return _ChunkBlock(
+    template = _ChunkBlock(
         dimension, node_ids, tuple(starts_list), tuple(scalar_rows), row_count,
         tuple(block.log2_chunk_counts[index] for _, block, index in runs),
     )
+    return _ChunkGatherPlan(blocks, (), template)
 
 
 def _pooled_chunk_similarities(
