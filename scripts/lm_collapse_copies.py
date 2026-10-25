@@ -156,9 +156,13 @@ def apply_groups(connection: sqlite3.Connection, groups: list[dict]) -> int:
                 }
                 connection.execute(
                     """
-                    INSERT OR IGNORE INTO connections
+                    INSERT INTO connections
                         (id, source_id, target_id, type, weight, metadata, created_at, updated_at)
                     VALUES (?, ?, ?, 'related', 1.0, ?, ?, ?)
+                    ON CONFLICT (source_id, target_id, type) DO UPDATE SET
+                        metadata = json_patch(connections.metadata, excluded.metadata),
+                        weight = max(connections.weight, excluded.weight),
+                        updated_at = excluded.updated_at
                     """,
                     (_ulid(), keep["id"], copy["id"], json.dumps(metadata, sort_keys=True), now, now),
                 )
@@ -206,6 +210,7 @@ def _merge_anchor_edges(connection: sqlite3.Connection, copy_id: str, keep_id: s
             """,
             (edge[0], keep_id, edge[1], edge[2], edge[3], now),
         )
+    connection.execute("DELETE FROM query_anchor_edges WHERE target_id = ?", (copy_id,))
 
 
 def report(groups: list[dict], *, limit: int) -> dict:
