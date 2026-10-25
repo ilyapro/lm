@@ -85,35 +85,57 @@ def test_warm_queries_do_not_rebuild_matrix_or_anchor_norms(tmp_path, monkeypatc
         assert len(query_norms) == 3
 
 
-def test_scope_and_width_changes_replace_the_single_prepared_matrix(tmp_path):
+def test_scope_and_width_changes_reuse_one_corpus_without_sql(tmp_path, monkeypatch):
     np = pytest.importorskip("numpy")
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         anchor(store, "global", [1.0, 0.0])
         anchor(store, "project", [1.0, 0.0], "project:demo")
         anchor(store, "wide", [1.0, 0.0, 0.0], "project:demo")
         service = retrieval.MemoryRecallService(store)
-        for scopes, query, expected in (
-            (["project:demo", "global"], [1.0, 0.0], ("project", "global")),
-            (["global", "project:demo"], [1.0, 0.0], ("global", "project")),
-            (["project:demo", "project:demo"], [1.0, 0.0], ("project",)),
-            (["project:demo"], [1.0, 0.0, 0.0], ("wide",)),
-            (["project:absent"], [1.0, 0.0], ()),
-        ):
-            old = service._anchor_vectors
-            previous_matrix = (
-                weakref.ref(old.prepared.matrix) if old and old.prepared.ids else None
-            )
-            result = match(service, query, scopes)
-            assert {m.anchor.id for m in result} == set(expected)
-            prepared = service._anchor_vectors.prepared
-            assert prepared.ids == expected
-            if expected:
-                assert prepared.matrix.dtype == np.dtype("<f4")
-                assert prepared.matrix.nbytes == len(expected) * len(query) * 4
-            if previous_matrix:
-                assert previous_matrix() is None
-            # The local test reference must not keep the previous matrix alive.
-            del prepared
+        match(service, [1.0, 0.0])
+        cache = service._anchor_vectors
+        matrix = weakref.ref(cache.by_width[2].matrix)
+        assert sum(c.matrix.nbytes for c in cache.by_width.values()) == 7 * 4
+
+        def no_preparation(*args, **kwargs):
+            pytest.fail("scope or width selection must reuse the prepared corpus")
+
+        with monkeypatch.context() as guard:
+            guard.setattr(store, "iter_query_anchor_vectors", no_preparation)
+            guard.setattr(retrieval, "_prepare_anchor_vectors", no_preparation)
+            for scopes, query, expected in (
+                (["project:demo", "global"], [1.0, 0.0], {"project", "global"}),
+                (["global", "project:demo"], [1.0, 0.0], {"global", "project"}),
+                (["project:demo", "project:demo"], [1.0, 0.0], {"project"}),
+                (["project:demo"], [1.0, 0.0, 0.0], {"wide"}),
+                (["project:absent"], [1.0, 0.0], set()),
+                (None, [1.0, 0.0], {"global", "project"}),
+            ):
+                assert {m.anchor.id for m in match(service, query, scopes)} == expected
+                assert service._anchor_vectors is cache
+        assert cache.by_width[2].matrix.dtype == np.dtype("<f4")
+        del cache
+        store.decay_query_anchor("global", "inactive")
+        match(service, [1.0, 0.0])
+        assert matrix() is None
+
+
+def test_scope_selection_preserves_scan_order_and_uses_contiguous_views(tmp_path):
+    np = pytest.importorskip("numpy")
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for name, scope in (("a", "global"), ("b", "global"),
+                            ("c", "project:demo"), ("d", "project:other")):
+            anchor(store, name, [1.0, 0.0], scope)
+        service = retrieval.MemoryRecallService(store)
+        source = service._anchor_vector_source()
+        corpus = source.query_anchor_corpus(2)
+        assert corpus.ids == ("a", "b", "c", "d")
+        selected = corpus.select(["global", "project:demo"])
+        assert np.shares_memory(corpus.matrix[selected], corpus.matrix)
+        selected = corpus.select(["project:demo", "global"])
+        assert [corpus.ids[index] for index in selected] == ["c", "a", "b"]
+        assert not np.shares_memory(corpus.matrix[selected], corpus.matrix)
+        assert source.query_anchor_corpus(2) is corpus
 
 
 @pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "python"])
