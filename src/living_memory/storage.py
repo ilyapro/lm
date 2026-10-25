@@ -1794,7 +1794,9 @@ class MemoryStore:
         Contributions take the maximum weight, clamped to [0, 1] and rounded
         to six decimals, and shallow-merge metadata with incoming keys winning.
         An unchanged contribution retains the row and its updated_at; every
-        supersedes call still moves any anchors attached to the old target.
+        correction or verified exact-copy call still moves attached anchors.
+        A correction contribution replaces prior technical provenance on the
+        same pair instead of inheriting its duplicate marker or weight.
         """
 
         with self.transaction(immediate=True):
@@ -1834,8 +1836,14 @@ class MemoryStore:
             ).fetchone()
             if row is not None:
                 existing = _connection_from_row(row)
-                weight = max(float(weight), existing.weight)
-                metadata_data = {**existing.metadata, **metadata_data}
+                if (is_correction(relation_type, metadata_data)
+                        and not is_correction(existing.type, existing.metadata)):
+                    # A fresh correction contribution replaces prior technical
+                    # provenance; its obsolete marker must not veto correction.
+                    existing = None
+                else:
+                    weight = max(float(weight), existing.weight)
+                    metadata_data = {**existing.metadata, **metadata_data}
             weight = round(min(1.0, max(0.0, float(weight))), 6)
 
         # An existing edge's foreign keys already establish both endpoints.
@@ -1881,32 +1889,19 @@ class MemoryStore:
             and any(node.id == source_id for node in self.list_duplicate_replacements(target_id))
         )
         if is_correction(relation_type, metadata_data) or duplicate:
-            self._follow_supersedes_with_anchor_edges(source_id, target_id, now=now)
+            self._follow_replacement_with_anchor_edges(source_id, target_id, now=now)
         return connection
 
-    def _follow_supersedes_with_anchor_edges(
+    def _follow_replacement_with_anchor_edges(
         self, source_id: str, target_id: str, *, now: str
     ) -> int:
-        """Re-point anchor edges off a superseded node onto its replacement.
+        """Move anchors to an explicitly corrected or verified exact-copy target.
 
-        Hooked at the lowest write primitive on purpose: every path that
-        supersedes a node funnels through :meth:`_insert_connection` — teach
-        (``consolidation.memory_teach``), duplicate-content dedup
-        (:meth:`_insert_node`), and derived corrections
-        (``edge_derivation.rule_r1c_content_correction``, which persists via
-        :meth:`create_connection`) — so one hook covers all three and cannot be
-        forgotten by a fourth. It also runs inside the caller's transaction, so
-        an anchor never observes a node as superseded while its edges still
-        point at the old target.
-
-        Chains resolve incrementally rather than by walking: when B supersedes
-        A the edges land on B, so a later "C supersedes B" moves the same edges
-        to C. That is also the cycle guard — each step only ever follows the
-        edge being written, so a ``supersedes`` cycle cannot make this recurse.
-        A self-superseding edge is dropped outright.
-
-        Era displacement has no edge to hook and is handled explicitly by
-        :func:`living_memory.query_anchors.migrate_anchor_edges_for_exclusions`.
+        The shared writer calls this only after checking correction semantics
+        or exact duplicate identity. It runs inside that writer's transaction;
+        a repeated contribution can therefore move newly attached anchors too.
+        Each write moves one edge step, so cycles cannot recurse here. Era
+        displacement has no relation and migrates anchors explicitly.
         """
 
         if source_id == target_id:
@@ -4477,9 +4472,8 @@ class MemoryStore:
     # anchor an incoming query reinforces, how much weight one grounded
     # consumption is worth, and when an anchor has gone stale all live in
     # living_memory.query_anchors. The one exception is deliberate and is
-    # documented on _insert_connection: writing a `supersedes` edge re-points
-    # anchor edges in the same transaction, because a caller that forgets to
-    # would silently leave anchors pointing into the past.
+    # documented on _insert_connection: corrections and verified exact copies
+    # re-point anchor edges in the same transaction.
     # ------------------------------------------------------------------
 
     def get_query_anchor(self, anchor_id: str) -> QueryAnchor | None:

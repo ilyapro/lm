@@ -219,3 +219,26 @@ def test_unrecognized_metadata_does_not_cancel_supersedes(tmp_path, metadata):
         assert supersedes_sets(store, [old.id])[0] == {old.id: (new.id,)}
         assert load_supersedes_pairs(store.connection) == [(new.id, old.id)]
         assert [n.id for n in soft_delete_superseded(store, scope=SCOPE)] == [old.id]
+
+
+@pytest.mark.parametrize('historical', [
+    {'kind': 'drain_near_duplicate'},
+    {'by': 'lm_collapse_near_dups.py', 'reason': 'near-duplicate collapse'},
+])
+@pytest.mark.parametrize('correction', [
+    {'by': 'teacher', 'correction': 'Requires approval.'},
+    {'rule': 'R1c', 'kind': 'content_correction'},
+])
+def test_real_correction_contribution_replaces_historical_heuristic_provenance(tmp_path, historical, correction):
+    from living_memory.storage import MemoryStore
+    with MemoryStore(tmp_path / 'memory.sqlite3') as store:
+        old = store.append_trace('amber hatch allowed', {'scope': SCOPE})
+        new = store.append_trace('amber hatch forbidden', {'scope': SCOPE})
+        edge = store.create_connection(new.id, old.id, 'supersedes', metadata=historical)
+        assert store.list_supersedes_pairs([old.id]) == []
+        updated = store.create_connection(new.id, old.id, 'supersedes',
+                                          metadata=correction, weight=.9, merge=True)
+        assert updated.id == edge.id
+        assert updated.metadata == correction
+        assert updated.weight == .9
+        assert store.list_supersedes_pairs([old.id]) == [(new.id, old.id)]
