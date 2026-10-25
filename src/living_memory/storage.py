@@ -6175,10 +6175,6 @@ def duplicate_replacements(connection: sqlite3.Connection, node_id: str) -> list
 def _duplicate_nodes(
     connection: sqlite3.Connection, node_id: str, *, successors: bool,
 ) -> list[Node]:
-    row = connection.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
-    if row is None:
-        return []
-    original = _node_from_row(row)
     endpoint, peer = ("target_id", "source_id") if successors else ("source_id", "target_id")
     live = "AND n.decayed = 0" if successors else ""
     rows = connection.execute(
@@ -6191,8 +6187,18 @@ def _duplicate_nodes(
         """,
         (node_id, node_id),
     ).fetchall()
+    if not rows:
+        return []
+    row = connection.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
+    if row is None:
+        return []
+    original = _node_from_row(row)
+    # Correction history changes validity, not the source of an exact copy.
+    # Keep its lineage so a later teach can refresh owners of the prior copy.
+    identity = content_identity(replace(original, corrections=[]))
     return [node for row in rows if (node := _node_from_row(row)).level == original.level
-            and _same_content_identity(node, original)]
+            and identity is not None
+            and content_identity(replace(node, corrections=[])) == identity]
 
 
 def _node_from_row(row: sqlite3.Row) -> Node:

@@ -517,7 +517,7 @@ def test_prior_recalls_summarized_to_count_on_non_full_only() -> None:
             make_node("bearer", shared, provenance=dict(provenance), source_traces=["t1"]),
             score=0.9,
         ),
-        make_result(make_node("twin", shared, provenance=dict(provenance)), score=0.5),
+        make_result(make_node("twin", shared, provenance=dict(provenance), source_traces=["t1"]), score=0.5),
     ]
 
     shaped = shape(results)
@@ -599,7 +599,7 @@ def test_snippet_and_twin_compact_oversized_context_too() -> None:
     twin_content = "twin procedural content"
     results = [
         make_result(make_node("long", long_content, context=procedural_context()), score=0.9),
-        make_result(make_node("bearer", twin_content), score=0.8),
+        make_result(make_node("bearer", twin_content, context=procedural_context()), score=0.8),
         make_result(make_node("twin", twin_content, context=procedural_context()), score=0.7),
     ]
 
