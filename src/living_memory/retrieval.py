@@ -261,6 +261,7 @@ from living_memory.storage import (
     MemoryStore,
     unpack_chunk_embedding,
 )
+from living_memory.validity import supersedes_sets
 
 try:
     import numpy as _np  # type: ignore[import-not-found]
@@ -394,6 +395,8 @@ class RecallResult:
     # whether or not it qualified for this recall. Consumers get the staleness
     # signal even when the correction itself is decayed or absent.
     superseded: bool = False
+    # Direct relation endpoints, before the public reader's scope projection.
+    correction_ids: tuple[str, ...] = ()
     # Set by ``score_gate`` when a result is delivered as a stub instead of a
     # full slot (e.g. ``"below_threshold"``); ``None`` for a regular result.
     withheld: str | None = None
@@ -636,7 +639,7 @@ class MemoryRecallService:
             self._collect_query_demotions(plan, query_embedding, matches=anchor_matches),
             self._collect_hub_demotions(),
         )
-        supersedes = self._supersedes_sets(candidates)
+        supersedes = supersedes_sets(self.store, candidates)
         ranked = self.rank_candidates(
             candidates,
             plan,
@@ -734,7 +737,7 @@ class MemoryRecallService:
 
         results: list[RecallResult] = []
         corrections_by_superseded, superseding_ids = (
-            supersedes if supersedes is not None else self._supersedes_sets(candidates)
+            supersedes if supersedes is not None else supersedes_sets(self.store, candidates)
         )
         ungated_scopes = _ungated_scopes(plan)
         narrow_present, best_narrow_vector = _ungated_scope_profile(
@@ -850,6 +853,7 @@ class MemoryRecallService:
                     # graph route to report; with one, the walk recorded it.
                     path=candidate.path if effective_graph > 0.0 else (),
                     superseded=node.id in corrections_by_superseded,
+                    correction_ids=corrections_by_superseded.get(node.id, ()),
                 )
             )
 
@@ -1189,7 +1193,7 @@ class MemoryRecallService:
         # including links to nodes outside the scope's vector shortlist.
         correction_ids = {node.id for node in candidates}
         correction_ids.update(node_id for block in shortlist.values() for node_id in block.node_ids)
-        corrections_by_superseded, superseding = self._supersedes_sets(correction_ids)
+        corrections_by_superseded, superseding = supersedes_sets(self.store, correction_ids)
         protected = self._live_concept_source_traces()
         # This drain's own arrivals. They are in the matrix -- the index is
         # built after the drain wrote their chunks -- and they are searched
@@ -1782,32 +1786,6 @@ class MemoryRecallService:
         embedder = self.embedder
         batch = getattr(embedder, "embed_batch", None)
         share(batch if callable(batch) else lambda texts: [embedder.embed(text) for text in texts])
-
-    def _supersedes_sets(
-        self, node_ids: Iterable[str]
-    ) -> tuple[dict[str, tuple[str, ...]], set[str]]:
-        """Supersedes edges as (superseded -> corrections, superseding ids).
-
-        One observation feeds ranking and final selection: membership behind the soft
-        0.2x/1.2x prior and the ``RecallResult.superseded`` flag (mapping
-        keys / the superseding set), correction ordering, and gate eligibility.
-        Read either endpoint's links, without following absent intermediates.
-        Runtime storage and replay expose the same incident-pair reader.
-        """
-
-        corrections_by_superseded: dict[str, set[str]] = {}
-        superseding: set[str] = set()
-        for source, target in self.store.list_supersedes_pairs(node_ids):
-            superseding.add(source)
-            corrections_by_superseded.setdefault(target, set()).add(source)
-        return (
-            {
-                target: tuple(sorted(sources))
-                for target, sources in corrections_by_superseded.items()
-            },
-            superseding,
-        )
-
 
 MemoryRetrievalService = MemoryRecallService
 

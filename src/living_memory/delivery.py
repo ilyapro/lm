@@ -380,6 +380,7 @@ def shape_recall_results(
     stats_compaction: bool = True,
     sparse_entries: bool = True,
     duplicate_of: Mapping[str, str] | None = None,
+    correction_refs: Mapping[str, Sequence[str]] | None = None,
     query: str | None = None,
     view: str = "full",
 ) -> list[dict[str, Any]]:
@@ -389,6 +390,10 @@ def shape_recall_results(
     ``snippet_ladder=None, full_node_diet=False, provenance_value_max_chars=0,
     stats_compaction=False, sparse_entries=False`` retains diagnostic metadata
     and score precision without compaction.
+
+    ``correction_refs`` contains direct correction ids already checked for
+    visibility by the caller. Both views retain ``result.superseded`` even
+    when no correction is readable or present in this answer.
 
     ``duplicate_of`` is the finished near-duplicate map — ``{duplicate node id:
     bearer node id}`` — normally produced by
@@ -421,6 +426,10 @@ def shape_recall_results(
         node_id = node_dict["id"]
         content = node_dict["content"]
         full_chars = len(content)
+        validity = {
+            "superseded": result.superseded,
+            "superseded_by": list((correction_refs or {}).get(node_id, ())),
+        }
 
         withheld = getattr(result, "withheld", None)
         twin_of: str | None = None
@@ -466,6 +475,7 @@ def shape_recall_results(
 
         if view == "knowledge":
             entry = knowledge_node(node_dict)
+            entry.update(validity)
             entry["delivery"] = delivery
             entry["content_ref"] = {"node_id": node_id}
             if delivery != DELIVERY_FULL:
@@ -493,6 +503,7 @@ def shape_recall_results(
             node_dict["stats"] = _trim_stats(node_dict["stats"])
 
         entry: dict[str, Any] = {
+            **validity,
             "node": node_dict,
             "score": result.score,
             "bm25_score": result.bm25_score,

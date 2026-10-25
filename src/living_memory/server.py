@@ -88,6 +88,7 @@ from living_memory.feedback import (
 from living_memory import storage as storage_module
 from living_memory.storage import MemoryStore
 from living_memory.temporal import parse_timestamp
+from living_memory.validity import correction_references, supersedes_sets
 
 _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
@@ -1282,6 +1283,11 @@ def _register_tools(
             )
             shaped = shape_recall_results(
                 results,
+                correction_refs=correction_references(
+                    store,
+                    {result.node.id: result.correction_ids for result in results},
+                    resolve_scope(scope=scope, ambient_context=ambient_context, store=store),
+                ),
                 view=view,
                 query=query,
                 delivery_history=delivery_history,
@@ -1459,15 +1465,27 @@ def _register_tools(
                         "results": [],
                     }
                 found = store.get_nodes(requested_ids)
+                corrections, _ = supersedes_sets(store, found)
+                correction_refs = correction_references(
+                    store,
+                    {node_id: corrections.get(node_id, ()) for node_id in found},
+                    resolve_scope(scope=normalized_scope, store=store),
+                )
                 results = []
                 for requested in requested_ids:
                     if requested not in found:
                         continue
                     node = node_to_dict(found[requested])
+                    validity = {
+                        "superseded": requested in corrections,
+                        "superseded_by": correction_refs[requested],
+                    }
                     if view == "full":
+                        node.update(validity)
                         results.append(node)
                         continue
                     knowledge = knowledge_node(node)
+                    knowledge.update(validity)
                     if context_key is not None:
                         knowledge["context"] = (
                             {context_key: node["context"][context_key]}
