@@ -1,15 +1,12 @@
 # Global hub suppression
 
-Goal: recall-precision, item P2. Code: `src/living_memory/hubs.py`. Tests:
+Code: `src/living_memory/hubs.py`. Tests:
 `tests/test_hub_suppression.py`.
 
 ## What it does
 
 Some nodes get delivered for many unrelated questions and are marked
-`irrelevant` each time. On the held-out half of the sfx marks, the rule
-"irrelevant from 3 or more distinct queries, never `used`" flags 99 nodes. They
-hold 13% of top-3 slots and received 3 `used` marks against 247 `irrelevant`.
-Query-relative demotion (`docs/query-irrelevance.md`) can't remove such a node,
+`irrelevant` each time. Query-relative demotion (`docs/query-irrelevance.md`) can't remove such a node,
 because each new question starts at full strength. Hub suppression gives these
 nodes one global multiplier that applies to every query.
 
@@ -46,35 +43,12 @@ uses, trying each step in order:
 2. Otherwise, the `anchor_id` of the `query_irrelevance` row whose
    `last_event_id` is that event. This is the cosine near-duplicate anchor that
    the credit write path picked.
-3. Otherwise, the whitespace-collapsed query text in its scope.
+3. Otherwise, the whitespace-collapsed query text in its scope, or the event id
+   when its query is unavailable.
 
 As a result, repeats of one question count once however many times it is
 marked, and the same text in two scopes counts as two questions. This matches
 the anchor channel's own rule.
-
-**Historical measurement under the earlier lookup-credit rule:** Anchors
-against raw queries (sfx copy, 2026-09-29, all accepted marks
-through 2026-09-28T21:42Z):**
-
-| min distinct | hubs by anchors | hubs by raw queries |
-|---:|---:|---:|
-| 2 | 304 | 304 |
-| 3 | 146 | 146 |
-| 4 | 73 | 73 |
-| 5 | 40 | 40 |
-
-Only 1 of the 1,012 irrelevant-marked nodes has fewer distinct anchors than
-distinct raw queries, and that node sits below every threshold in the table.
-On this data the anchor identity changes no hub verdict. Raw-query counting
-would give the same set; anchors are used only because they match the
-query-relative path's definition of "the same question".
-
-Under that earlier rule, at `N = 3`, 256 nodes reach 3 distinct questions. 56 of them are lifted by a
-`used` mark and 54 more only by credit after their first complaint, which
-leaves **146 hubs** on the full data. The 99 in the goal text come from the
-held-out half only. The hub set that goes into the measurement is defined on
-train with `hub_counts(conn, before=<split>)`. These counts are historical;
-they have not been recomputed with the revised credit rule.
 
 ## Valves
 
@@ -87,8 +61,7 @@ When `LM_HUB_SUPPRESSION_FACTOR` is unset, blank, unparsable, non-finite or
 outside `[0, 1)` (so `1.0` also counts as off), `hub_demotions` returns `{}`
 without reading the store, and the ranking is byte-identical. The test
 `test_off_is_identity_on_ranking` checks this. An invalid
-`LM_HUB_MIN_QUERIES` falls back to 3. The factor value to switch on is chosen
-by the precision measurement (`artifacts/recall-precision/`), not here.
+`LM_HUB_MIN_QUERIES` falls back to 3.
 
 ## Absent tables
 
@@ -110,7 +83,8 @@ because nothing here writes to the store.
   node: `distinct_anchors`, `distinct_queries`, `irrelevant_marks`,
   `first_irrelevant_at`, `used_marks`, `credits_after_first` and the `hub`
   verdict. `before` drops every mark and credit row at or after that timestamp,
-  which defines hubs on a train split.
+  which defines hubs on a train split. Anchor identities and near-anchor
+  associations remain current; `before` does not filter their creation times.
 - `hub_ids(conn, ...) -> {node_id: distinct_anchors}` returns the hubs only.
 
 ## Cache and cost
@@ -131,22 +105,18 @@ changed key does not by itself trigger a recount:
   a minute. Replays open fresh stores, so they always count in full.
 - The cache is stored on the `MemoryStore` object and dies with it.
 
-**Historical overhead under the earlier rule, sfx store copy** (made with `retrieval_harness.backup_database`
-from the live DB opened `mode=ro`; 146 hubs; WSL2 laptop):
+Each full recount reads `(scope, fingerprint, id)` from `query_anchors` in one
+SQL statement and resolves every event against that observation. It reads no
+anchor vectors or metadata. The identity map is local to the count and uses
+memory proportional to the number of anchors; it is rebuilt at each full
+recount. Exact attribution therefore adds one SQL read regardless of the
+number of historical events. Absent anchors or events skip that read.
 
-| path | p50 | p95 |
-|---|---:|---:|
-| valve off | 0 (env read only) | — |
-| cache hit (inputs unchanged) | 0.037 ms | 0.082 ms |
-| rows appended (lift check) | 0.25 ms | 0.51 ms |
-| full recount (≤ once / 60 s) | 38.9 ms | 53.4 ms |
-
-End to end, 40 recent sfx queries through `MemoryRecallService.memory_recall`
-(hash embedding backend, warm cache) took 207 ms p50 with the valve off and
-209 ms p50 with it on. The difference is inside run-to-run noise. The same run
-showed hub slots in the top 5 falling from 20/200 to 2/200 at factor 0.1. This
-is an in-sample illustration only. The holdout evidence is the job of the
-precision measurement.
+Event identity uses the normalized effective scope and a recomputed fingerprint.
+The stored recall-request fingerprint can refer to a different requested scope.
+The event map shares normalization within the call; near-anchor fallback remains
+specific to both event and node. New anchor identities are visible at the next
+full recount under the same refresh rule.
 
 ## Why these choices
 
