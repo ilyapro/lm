@@ -7,7 +7,7 @@ Each group keeps one node; every other member is decayed with reason
 technical bookkeeping, not a semantic correction. The kept node absorbs usage:
 ``access_count`` is summed, ``last_accessed`` and ``usefulness_score`` take the
 maximum, and query-anchor edges are merged (hits summed, weight maximum). No
-row is deleted and no content is rewritten.
+memory node is deleted and no content is rewritten.
 
 The kept node is, in order: one that can still be updated (no ``corrections``,
 no incoming correction) -- a corrected or replaced node never comes back to

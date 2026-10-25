@@ -37,7 +37,12 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from itertools import combinations
+from pathlib import Path
 from typing import Any, Iterable
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from living_memory.relations import is_correction, semantic_relation_sql  # noqa: E402
 
 DEFAULT_DB = "/home/sfx/.local/share/living-memory/global.sqlite3"
 
@@ -217,7 +222,9 @@ def load_corpus(con: sqlite3.Connection) -> dict[str, NodeRow]:
 
 def load_edges(con: sqlite3.Connection) -> list[tuple[str, str, str, dict[str, Any]]]:
     edges = []
-    for row in con.execute("SELECT source_id, target_id, type, metadata FROM connections"):
+    for row in con.execute(
+        f"SELECT source_id, target_id, type, metadata FROM connections WHERE {semantic_relation_sql()}"
+    ):
         edges.append((row["source_id"], row["target_id"], row["type"], load_json(row["metadata"], {})))
     return edges
 
@@ -263,8 +270,8 @@ def rule_supersedes_transitive(
 
     adj: dict[str, set[str]] = defaultdict(set)
     direct = set()
-    for src, dst, etype, _ in edges:
-        if etype == "supersedes":
+    for src, dst, etype, metadata in edges:
+        if is_correction(etype, metadata):
             adj[src].add(dst)
             direct.add((src, dst))
     out: list[Candidate] = []
