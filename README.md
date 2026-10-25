@@ -53,6 +53,26 @@ preview is insufficient, pass `content_ref.node_id` to `memory_lookup` for
 complete content and current validity. Schema recipes retain complete content;
 duplicate previews still provide `content_ref` access to the whole recipe.
 
+Both recall views and exact-id lookup include `superseded` and `superseded_by`
+on each result (beside `node` in diagnostic recall). `superseded: true` means
+an existing `supersedes` relation targets this node, independently of
+`provenance.corrections`, decay, and whether the correction qualified for the
+answer. `superseded_by` lists direct correction ids for `memory_lookup`: only
+existing nodes admitted by the request's scope plan are linked. Decayed
+corrections remain addressable history with their own decay flags. An empty
+list never cancels known supersession; missing or out-of-scope corrections
+supply neither links nor text. Without a requested scope, links can cross scopes.
+
+Exact-id lookup preserves the complete original content. `context_key` adds
+one original context field; `view="full"` returns all stored node fields plus
+the same relation-derived validity. An explicit lookup scope restricts
+discovered correction links using recall's scope hierarchy. Explicitly requested
+ids still return regardless of scope, with differences in `scope_mismatches`.
+Neither supersession nor its absence establishes that a correction or original
+is correct. Chains and cycles expose direct links without chasing a final
+replacement; read each node's own validity. Links do not count as delivered
+results, lookups, or confirmed use for feedback attribution.
+
 Bounded excerpts select passages at paragraph breaks or sentence-ending
 punctuation followed by whitespace, preserving soft line wraps. Evidence
 passages retain their source labels. An indivisible passage that exceeds the

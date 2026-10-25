@@ -322,8 +322,6 @@ The default `view="knowledge"` returns each result directly:
   "provenance": {"corrections": []},
   "decayed": false,
   "decay_reason": null,
-  "superseded": false,
-  "superseded_by": [],
   "delivery": "full",
   "content_ref": {"node_id": "ulid"}
 }
@@ -345,25 +343,6 @@ This view includes compacted context, statistics, and provenance; it does
 not disable snippets or duplicate handling. For original metadata, request
 exact-id `memory_lookup(..., context_key="field")` or `view="full"`.
 Context-filter lookup continues to return complete matching nodes.
-
-Both recall views and exact-id lookup return `superseded` and `superseded_by`
-on each result (beside `node` in diagnostic recall). `superseded: true` means
-an existing `supersedes` relation targets this node, independently of stored
-`provenance.corrections`, decay, or whether a correction qualified for this
-answer. `superseded_by` contains direct correction ids for `memory_lookup`:
-only existing nodes admitted by the request's scope plan are linked. Decayed
-corrections remain addressable history and lookup returns their decay flags.
-An empty list never cancels `superseded: true`; unavailable or out-of-scope
-corrections supply neither links nor text. Without a requested scope, links
-can cross scopes. An explicit lookup scope restricts these discovered links
-using recall's scope hierarchy; explicitly requested ids still follow lookup's
-verification-only scope contract.
-
-These fields do not assert that a correction is itself current or that a node
-without a supersedes edge is correct. Follow a link to read its own validity.
-Chains and cycles expose direct links without chasing a final replacement;
-ranking and eligibility retain their existing rules. Links do not count as
-delivered results, lookups, or confirmed use for feedback attribution.
 
 Both views preserve the response envelope, including `recall_event_id`,
 `recall_map`, feedback summaries, decay summaries, warnings, and limitations
@@ -739,12 +718,10 @@ recall, and does not record a recall event.
 that recall stub and snippet `content_ref`s advertise. By default, id fetches
 return full, unchanged `content`, `id`, `level`, `scope`, `decayed`,
 `decay_reason`, and `provenance.corrections` (with correction links and bounded
-long text), plus relation-derived `superseded` and `superseded_by` as described
-above, in request order under `results`. They omit unrelated `context`,
+long text) in request order under `results`. They omit unrelated `context`,
 stats, and provenance history. `context_key="procedure"` adds only that
 original field under `context`; an absent key yields `{}`. `view="full"`
-returns the complete stored node with the same relation-derived fields, and
-cannot be combined with `context_key`.
+returns the complete stored node, and cannot be combined with `context_key`.
 Invalid selectors return an `error` without recording a lookup event. Id
 fetches list unknown ids under `missing`, ignore `level`, and include decayed
 nodes. A `scope` passed alongside ids verifies instead of filtering:

@@ -395,11 +395,11 @@ class RecallResult:
     # whether or not it qualified for this recall. Consumers get the staleness
     # signal even when the correction itself is decayed or absent.
     superseded: bool = False
-    # Direct relation endpoints, before the public reader's scope projection.
-    correction_ids: tuple[str, ...] = ()
     # Set by ``score_gate`` when a result is delivered as a stub instead of a
     # full slot (e.g. ``"below_threshold"``); ``None`` for a regular result.
     withheld: str | None = None
+    # Direct relation endpoints, before the public reader's scope projection.
+    correction_ids: tuple[str, ...] = ()
 
     @property
     def node_id(self) -> str:
@@ -1786,6 +1786,7 @@ class MemoryRecallService:
         embedder = self.embedder
         batch = getattr(embedder, "embed_batch", None)
         share(batch if callable(batch) else lambda texts: [embedder.embed(text) for text in texts])
+
 
 MemoryRetrievalService = MemoryRecallService
 

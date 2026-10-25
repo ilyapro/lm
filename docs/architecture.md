@@ -77,14 +77,7 @@ without changing the other surface.
    compacted metadata for diagnostic consumers. Both views point to
    `memory_lookup(node_id=...)` for complete content and current validity;
    `context_key` retrieves one original context field and lookup's
-   `view="full"` restores the complete stored node. Both public paths derive
-   `superseded` from incident supersedes relations through the shared reader,
-   without requiring duplicate node provenance. Recall carries its ranking
-   observation into delivery; a batch read supplies scope-visible direct
-   correction ids in `superseded_by`, including addressable decayed history.
-   Missing corrections never clear the original's supersession. Neither
-   relation projection nor correction references modify stored nodes or
-   count as feedback evidence. After shaping, an optional
+   `view="full"` restores the complete stored node. After shaping, an optional
    atomic event update records each selected result's delivery class and, for
    full/snippet bodies, source/body hashes. Selection IDs and scores retain their access and
    feedback roles. Missing delivery evidence permits re-delivery, including
