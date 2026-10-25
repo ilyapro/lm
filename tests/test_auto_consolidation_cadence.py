@@ -12,7 +12,7 @@ from test_lookup import FakeMCP
 
 
 SCOPE = "project:cadence"
-CONTEXT = {"scope": SCOPE, "agent": "fixture"}
+CONTEXT = {"scope": SCOPE, "agent": "fixture", "transport_session_id": "cadence-fixture"}
 TOPIC = "Harbor crane maintenance requires one recorded calibration check item"
 
 
