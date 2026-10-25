@@ -94,7 +94,7 @@ import os
 import sqlite3
 import subprocess
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -104,7 +104,6 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(ROOT / "src"))
 
 import usage_signal_replay as usr  # noqa: E402
-from living_memory import replay as lm_replay  # noqa: E402
 from living_memory.embeddings import cyrillic_stem_enabled  # noqa: E402
 from living_memory.grounding import (  # noqa: E402
     CALIBRATED_MIN_CONTAINMENT,
@@ -436,75 +435,6 @@ def anchor_change(sweep: dict[str, Any], old: float, new: float) -> dict[str, An
 # ---------------------------------------------------------------------------
 
 
-def _schema_aware_snapshot_evidence(
-    connection: sqlite3.Connection,
-) -> Callable[[str], tuple[bool, bool]]:
-    """``replay.snapshot_evidence`` for snapshots without ``nodes.embedding``.
-
-    ``replay.snapshot_evidence`` predates the chunked embedding store and asks
-    ``nodes.embedding``, which the 2026-09 snapshots no longer have, so the
-    A/B crashes on them. When the column exists the original is used
-    untouched; otherwise the vector gate mirrors
-    ``MemoryStore._has_vector_evidence`` (a live chunk embedding for a live
-    node of the scope) and the graph gate is the original query. This is the
-    evidence *gate* only — a per-scope boolean the weight floors consult — and
-    not the credit arithmetic. The lookup-credit branch carries the same fix
-    inside ``replay.snapshot_evidence`` itself; once it lands this shim is a
-    pass-through on every snapshot.
-    """
-
-    columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(nodes)")}
-    if "embedding" in columns:
-        return lm_replay.snapshot_evidence(connection)
-    from living_memory.storage import CHUNK_EMBEDDING_TABLE
-
-    chunk_table = (
-        connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            (CHUNK_EMBEDDING_TABLE,),
-        ).fetchone()
-        is not None
-    )
-    cache: dict[str, tuple[bool, bool]] = {}
-
-    def evidence(scope: str) -> tuple[bool, bool]:
-        cached = cache.get(scope)
-        if cached is not None:
-            return cached
-        vector = False
-        if chunk_table:
-            vector = (
-                connection.execute(
-                    f"""
-                    SELECT 1
-                    FROM {CHUNK_EMBEDDING_TABLE} c
-                    JOIN nodes n ON n.id = c.node_id
-                    WHERE n.scope = ? AND n.decayed = 0
-                    LIMIT 1
-                    """,
-                    (scope,),
-                ).fetchone()
-                is not None
-            )
-        graph_row = connection.execute(
-            """
-            SELECT 1
-            FROM connections c
-            JOIN nodes source ON source.id = c.source_id
-            JOIN nodes target ON target.id = c.target_id
-            WHERE source.decayed = 0 AND target.decayed = 0
-              AND (source.scope = ? OR target.scope = ?)
-            LIMIT 1
-            """,
-            (scope, scope),
-        ).fetchone()
-        result = (vector, graph_row is not None)
-        cache[scope] = result
-        return result
-
-    return evidence
-
-
 def _load_credit_rule_ab() -> Any:
     spec = importlib.util.spec_from_file_location("credit_rule_ab", SCRIPTS / "credit_rule_ab.py")
     assert spec is not None and spec.loader is not None
@@ -515,7 +445,7 @@ def _load_credit_rule_ab() -> Any:
 
 
 def credit_ab_worker(argv: Sequence[str]) -> int:
-    """Run ``credit_rule_ab.main`` in this process with the evidence shim applied.
+    """Run ``credit_rule_ab.main`` with the current shared evidence policy.
 
     The threshold is whatever ``LM_GROUNDING_MIN_CONTAINMENT`` said when this
     interpreter imported ``living_memory``; the parent sets it on the
@@ -523,7 +453,6 @@ def credit_ab_worker(argv: Sequence[str]) -> int:
     """
 
     credit_rule_ab = _load_credit_rule_ab()
-    credit_rule_ab.snapshot_evidence = _schema_aware_snapshot_evidence
     return int(credit_rule_ab.main(list(argv)))
 
 
@@ -1059,13 +988,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         }
 
     notes = result["notes"]
-    notes.append(
-        "Holdout evidence gate: `replay.snapshot_evidence` in this checkout asks `nodes.embedding`, "
-        "which the 2026-09 snapshots dropped for `node_chunk_embeddings`; the A/B was run through "
-        "`grounding_recalibration.credit_ab_worker`, which substitutes a gate that mirrors "
-        "`MemoryStore._has_vector_evidence` when the column is absent and leaves `credit_rule_ab.py` "
-        "and `replay.py` untouched (the lookup-credit branch carries the same fix inside replay.py)."
-    )
     notes.append(
         "Attestation coupling: `attestation.ATTESTATION_MIN_CONTAINMENT` binds "
         "`feedback.RECALL_CREDIT_MIN_CONTAINMENT`, so post-session attestation now grades at the "
