@@ -555,7 +555,9 @@ server-side policy, and it will not become one by re-tuning this gate.
 
 The evaluated source is revision
 `ee042335dbcd763054819def24e7e487de5d8f11` in the source repository retained at
-`/home/sfx/p/lm`. Its calculator has the SHA-256 recorded above. Read the
+`/home/sfx/p/lm`, retained by the local Git tag
+`archive/server-repeat-gating-evaluation`. Its calculator has the SHA-256
+recorded above. Read the
 unchanged evidence at `artifacts/animal-planet/evaluation/final-report.json`
 and `final-report.md`; the source revision also contains the experiment's
 implementation and tests. No production compatibility layer is required.
