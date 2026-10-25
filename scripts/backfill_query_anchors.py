@@ -1452,9 +1452,8 @@ def _scope_consistency(
     scope, so it cannot be in the set; an anchor whose query was never asked
     in its scope cannot either.
 
-    Cosine-merged anchors are safe here: a reinforcing upsert keeps the stored
-    query, fingerprint and scope of the anchor it matched, and that anchor was
-    born from an event of its own.
+    A reinforcing exact-identity upsert keeps the anchor's stored query,
+    fingerprint and scope.
     """
 
     identities: set[tuple[str, str]] = set()

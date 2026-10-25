@@ -37,47 +37,11 @@ except ImportError:  # pragma: no cover - numpy is a normal runtime dep
     _np = None  # type: ignore[assignment]
 
 
-#: Default floor for :func:`match_anchors`. **Measured, not chosen.**
-#:
-#: The scored holdout at a 0.80 floor found it admits almost nothing: 13 of 343
-#: queries, 0 of 38 ``cross_lingual``, 1 of 36 ``role_query`` (``result.md``
-#: §5). ``scripts/anchor_match_calibration.py`` then swept the floor on a
-#: calibration set built strictly *inside* that run's anchor training window --
-#: anchors from events before 2026-06-10, queries from grounded consumptions in
-#: [2026-06-10, 2026-07-15), so the calibration queries are the events that
-#: BUILD the scored corpus and are disjoint from the scored items by
-#: construction. 234 items, 1,607 anchors, 36 cells from no floor at all to
-#: 0.90 (``artifacts/anchors/calibration.json``).
-#:
-#: What the sweep found is that the floor is **not** what bounds retrieval
-#: quality. hit@1, hit@5 and hit@10 come back byte-identical to the anchors-off
-#: arm in *every one* of the 36 cells -- including at no floor, where all 234
-#: queries match. Zero items improved anywhere; the only rank changes below
-#: 0.55 are regressions. The funnel names why: at maximum firing only 23 of 234
-#: matched anchors carry an edge to a relevant node, and of the 8 items whose
-#: relevant node was both seeded and missing from the anchors-off top 5, none
-#: was rescued. The leak is anchor *edge coverage*, not the match floor.
-#:
-#: So the floor is set by coverage against cost, with quality flat across the
-#: range. 0.60 is the widest floor *certified* inside the hard +5 ms p50 budget.
-#: The paired delta is heavy-tailed, so cost was measured twice: 0.60 came back
-#: at +2.07 and +2.51 ms, inside on both replicates, while 0.55 gave +8.31 and
-#: +4.17 ms -- opposite sides of the budget, so it cannot be certified -- and no
-#: floor at all costs +25.93 ms. 0.60 lifts coverage 23x over 0.80 (1.3% ->
-#: 29.5%), which is what gives the scored run the power ``result.md`` §5 said it
-#: lacked, at 0 items improved and 0 regressed.
-#:
-#: Retrieval passes its own value; this is the default for callers that do not
-#: care. Retuning this against the scored goldset is what the calibration
-#: exists to prevent -- re-measure on a fresh in-window split instead.
+#: Retrieval-only cosine floor. Similarity ranks independent query anchors;
+#: it never changes their exact identities.
 ANCHOR_MATCH_COSINE_THRESHOLD = 0.60
 
-#: Default number of anchors :func:`match_anchors` returns. Swept over {3, 5,
-#: 10} beside the floor and left where it shipped: at 0.60 a limit of 3 buys
-#: identical coverage at lower precision (0.128 vs 0.133 anchor-precision), and
-#: 10 introduces a regression for no gain. Limit does not move coverage at all
-#: -- coverage asks whether *any* anchor clears the floor, which the first one
-#: already answers.
+#: Maximum number of anchors returned by default.
 ANCHOR_MATCH_LIMIT = 5
 
 #: Weight one grounded consumption contributes to an anchor -> node edge.
@@ -327,16 +291,10 @@ def match_anchors(
     different spaces (a corpus caught mid-re-embed, a fixture with 3-d vectors)
     and are skipped rather than silently truncated to a common prefix.
 
-    **Cost, measured at the projected corpus size** (4,000 anchors x 384 dims,
-    on-disk SQLite, this machine): ~12 ms p50 cold, of which ~6 ms is pulling
-    4,000 BLOBs through the sqlite3 driver and the rest is streaming a fresh
-    6.1 MB matrix past numpy twice. That is affordable on the write and
-    backfill paths, and it is *not* affordable once per recall against a
-    single-digit-millisecond latency budget. A caller on the read path must
-    cache the matrix and re-validate it with
+    Read-path callers cache the prepared matrix and re-validate it with
     :meth:`MemoryStore.query_anchor_revision`, a transactional SQLite counter
     covering membership and vector changes. Reinforcement of a live anchor
-    preserves this revision. Stores without it must use the uncached scan.
+    preserves this revision. Stores without it use the uncached scan.
 
     Ranked by descending similarity, ties broken by anchor id so the order is
     stable. ``targets`` holds live targets only, heaviest first; an anchor whose

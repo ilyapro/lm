@@ -1,330 +1,145 @@
-# Query-anchor migration runbook
+# Query-anchor backfill runbook
 
-Giving the memory graph an entry from query space on a live database, without an
-outage: the additive v6 → v7 schema (`query_anchors`, `query_anchor_edges`), the
-retro backfill that turns five months of consumed recall history into anchors,
-and the restart that puts the live write and read paths in service.
+`scripts/backfill_query_anchors.py` reconstructs grounded query evidence from
+consumed recall history. It uses the [current anchor identity and replacement
+contract](query-anchors.md). Every command requires an explicit `--db` path.
 
-The whole procedure is **additive first, destructive last** — and here there is
-no destructive step at all. Nothing is dropped, nothing is rewritten: two new
-tables appear and fill up, and every step before the restart is undone by
-restarting the previous release.
+Backfill is optional maintenance for an authorized database. It is not a
+prerequisite for loading the anchor implementation and does not deploy code or
+restart a service. Deployment and process uptake follow the applicable
+[deployment procedure](deployment.md) and current host permissions.
 
-Tool: `scripts/backfill_query_anchors.py` (`backfill`, `verify`). It never
-defaults to a database — `--db` is always explicit.
+## Preconditions and capacity
 
-## Why the order is what it is
-
-| Step | Server can be | Because |
-| --- | --- | --- |
-| preflight dry run | up | opens `mode=ro` with `PRAGMA query_only`, constructs no `MemoryStore`, writes nothing |
-| backup | up | the sqlite3 backup API is consistent under a concurrent writer |
-| backfill | up | it writes `query_anchors`/`query_anchor_edges` and their trigger-maintained cache revision; a SQLite authorizer denies other writes, so nodes, connections and recall history cannot change |
-| deploy + restart | restarting | the running process holds the old modules until it restarts |
-| catch-up backfill pass | up | consumptions between the backfill and the restart were handled by code that did not write anchors |
-| verify | up | read-only |
-
-**Why the backfill comes before the deploy.** It is the same reason as the chunk
-rollout: the old server ignores tables it has never heard of, so filling them
-early costs nothing and means the anchor channel is useful from the first
-restart instead of starting empty. `metadata.schema_version` becomes 7, which no
-code gates on (every migration is self-guarding on the actual DDL), so an
-old-code restart in between simply rewrites it to 6 and leaves the tables alone.
-
-## Capacity planning
+Use a checkout containing the current `storage.py`, `query_anchors.py` and
+backfill script. The configured embedding model must be available locally and
+match the vector space used by retrieval. The script refuses an unavailable
+model; `--allow-fallback-embeddings` is for deterministic fixtures.
 
 Reserve space for a complete SQLite backup plus the anchor tables. Vector
 storage is approximately `anchors × dimensions × 4` bytes, with additional
-space for query text, weighted edges and indexes. Runtime depends on the
-number of consumed events, grounded queries and the selected local encoder;
-the command reports its measured rate and elapsed time.
+space for query text, weighted edges and indexes. Runtime depends on consumed
+events, grounded queries and the encoder; the command reports its rate and
+elapsed time.
 
-## Preconditions
-
-* The anchor code (schema v7: `storage.py` + `query_anchors.py`, the retrieval
-  entry, the live write path in `feedback.py`) is merged into the checkout that
-  will be deployed.
-* `python3 -c "import sentence_transformers"` works and the model is in the local
-  HuggingFace cache. The backfill **refuses to start** if the model does not
-  load, rather than filling `query_anchors` with hash-fallback vectors from a
-  different vector space — in which no anchor would ever match anything.
-  (`--allow-fallback-embeddings` exists for fixtures; never use it here.)
-* Free disk for a complete database backup and the projected anchor tables.
-* You can restart the server (`systemctl --user restart living-memory.service`,
-  see [deployment.md](deployment.md)).
-
-**`alt` is not part of this procedure.** Nothing automated touches that host — no
-agent connects to it, deploys to it, restarts it, or runs this backfill against
-its database. When `alt` is to be updated, the operator does it by hand, and only
-on an explicit instruction.
-
-## 0. Preflight — rehearse, read-only
+## Read-only rehearsal
 
 ```sh
-DB=~/.local/share/living-memory/global.sqlite3
+DB=/path/to/memory.sqlite3
 
 python3 scripts/backfill_query_anchors.py verify --db "$DB"
 python3 scripts/backfill_query_anchors.py backfill --db "$DB" --dry-run \
     --json /tmp/anchor-dry-run.json --progress-interval 20
 ```
 
-`verify` before the migration exits **1** and reports
-`anchor_tables_present: false` — that is the expected pre-migration state, not a
-failure. `--dry-run` opens the database `mode=ro` with `PRAGMA query_only`, never
-constructs a `MemoryStore` (whose constructor migrates), labels the whole history
-for real, and reports the anchors and edges a real run would write. It needs no
-backup because it writes nothing, and it loads no model.
+These commands open `mode=ro` with `PRAGMA query_only`; they do not construct a
+`MemoryStore` or run migrations. A database without anchor tables reports
+`anchor_tables_present: false`, and `verify` exits 1.
 
+The dry run grounds the selected history without loading an embedding model.
 `projected_anchors` counts distinct `(scope, fingerprint)` identities from
-grounded events. The real run uses that same identity, but can skip events
-whose vectors are unusable or whose grounded targets have no live replacement.
-`projected_edges` and the event counts describe the selected history and cutoff.
+grounded events. The real run uses that identity but can skip queries with
+unusable vectors or no live grounded target. `projected_edges` and event counts
+describe the selected history and cutoff.
 
-## 1. Backup — mandatory, and `cp` is not one
+## Backup and write
+
+```sh
+BACKUP=/path/to/memory-pre-anchors.sqlite3
+
+python3 scripts/backfill_query_anchors.py backfill --db "$DB" \
+    --backup "$BACKUP" --json /tmp/anchor-backfill.json --progress-interval 30
+```
+
+The command takes a consistent backup with `sqlite3.Connection.backup()` before
+writing. This includes committed WAL contents while a server continues to use
+the database. Copying only the SQLite main file can omit WAL transactions.
+
+To reuse a backup, pass `--existing-backup "$BACKUP"`; the script checks its
+SQLite integrity and node-count coverage before writing. Neither write mode
+runs without a backup.
+
+Opening the store ensures its schema is present. The backfill then installs a
+SQLite authorizer that permits writes only to `query_anchors`,
+`query_anchor_edges` and their trigger-maintained cache revision. It reads
+nodes, connections and recall history without modifying them. Anchor and edge
+writes commit incrementally; busy writes retry with bounded backoff and a
+30-second SQLite busy timeout.
+
+The pass ends with an anchor-edge migration sweep. Genuine corrections and
+compatible exact-copy bookkeeping can supply replacements; heuristic
+similarity cannot. The sweep does not rewrite knowledge relations or repair
+historical side effects elsewhere in the corpus.
+
+## Resume or catch up
 
 ```sh
 python3 scripts/backfill_query_anchors.py backfill --db "$DB" \
-    --backup ~/.local/share/living-memory/global.pre-anchors-$(date +%Y%m%d).sqlite3 \
-    --json /tmp/anchor-backfill.json --progress-interval 30
+    --existing-backup "$BACKUP" --json /tmp/anchor-catchup.json
 ```
 
-The backup is taken by the same command that then does the work, through
-`sqlite3.Connection.backup()` from a read-only source connection. That API copies
-the committed database as one consistent snapshot **including everything sitting
-in the WAL**, while the server keeps writing.
+Rerun the same selection after an interruption or to process additional history.
+Progress is recorded by each exact anchor's clock and target coverage. Events
+are replayed oldest first using their own timestamps. An event is skipped when
+its anchor already has every live grounded target and is fresh as of that event.
+An anchor written by the live path keeps its newer freshness while missing
+historical edges are added.
 
-> `cp global.sqlite3 backup.sqlite3` is **not** a valid backup of this database.
-> The live file carries a large WAL holding the newest transactions; a copy
-> without the `-wal` is a valid SQLite file that is silently missing them. The
-> script rejects an `--existing-backup` holding less than 99% of the source's
-> nodes for exactly this reason (`--min-backup-fraction`).
+The same completed history is idempotent: it does not reinforce its anchors
+again. A resumed pass still examines the selected events, so elapsed time is
+not proportional only to the amount of new history. Review `events_applied`,
+`events_already_anchored`, skipped-target counts and the final verification.
 
-To reuse a backup you already have, pass `--existing-backup PATH` instead; it is
-validated (`PRAGMA quick_check` plus the node-count comparison) before any write.
+## Evaluation snapshots
 
-## 2. Backfill — with the server up
-
-The command in step 1 is the backfill. It is safe to leave running while the
-server serves reads and writes:
-
-* it writes rows of `query_anchors` and `query_anchor_edges` and their
-  trigger-maintained cache revision in `metadata`;
-  immediately after the migration a SQLite **authorizer** is installed that
-  denies writes outside those tables and revision triggers, so this process cannot
-  modify a node, a connection, or a recall event. It reads all three;
-* it commits **one anchor at a time**, so the write lock is held for
-  milliseconds at a time instead of for the whole run, and the WAL stays
-  checkpointable;
-* `PRAGMA busy_timeout` is raised to 30 s and each anchor write retries with
-  backoff on `SQLITE_BUSY`;
-* the first thing it does is the additive v6 → v7 migration: `CREATE TABLE
-  query_anchors` and `query_anchor_edges` plus their two indexes. The `nodes` and
-  `connections` DDL — with the baked-in `level` and `type` CHECK constraints a
-  500 MB database cannot cheaply rebuild — stays byte-identical, and nothing in
-  the running old process reads the new tables.
-
-A progress line appears every `--progress-interval` seconds, followed by a
-summary of events, anchors, edges and elapsed time (also written to `--json`).
-
-**If it is interrupted** (Ctrl-C, SIGKILL, machine reboot, disk full), re-run the
-same command with `--existing-backup` pointing at the backup you already took. It
-resumes: progress lives in the database, not in a state file. Anchors are stamped
-with their *source event's* `created_at` rather than the wall clock, and the loop
-replays history oldest-first, so an anchor's `last_matched_at` is the timestamp
-of the last event it absorbed. An event is skipped only when its anchor already
-carries an edge to every live node it grounded on *and* is already fresh as of
-that event. A resumed run therefore lands on exactly the anchors, weights and hit
-counts an uninterrupted run produces, and a re-run after a complete run writes
-nothing.
-
-Two consequences of the historical stamping worth knowing before you see them:
-
-* an anchor built from a May consumption looks like an anchor last used in May,
-  because it was. That is what makes `--until` produce exactly the anchor set
-  that existed at a cutoff, and it is why `ANCHOR_TTL_DAYS` (90) will eventually
-  age out the oldest of them once a decay sweep runs on anchors. Anchor decay is
-  soft — the row and its edges survive, and the next consumption of that question
-  revives it with everything it had learned;
-* where the live path has already anchored a question, the retro pass adds the
-  edges history knows about **without** moving that anchor's freshness backwards.
-
-### Building a leak-free evaluation set
-
-`--until CUTOFF` restricts the run to events with `created_at < CUTOFF`. That is
-not a convenience flag. Goldset queries are drawn from this same history, so
-anchors built from the very events being scored would show a fictitious gain; a
-scored run without the cutoff is not evidence. Evaluation builds run against a
-**snapshot**, never the live file:
+Use a SQLite backup snapshot for evaluation. Pass `--until CUTOFF` to include
+only events with `created_at < CUTOFF`; events exactly at the cutoff are excluded.
+Use an ISO-8601 timestamp or date in UTC.
 
 ```sh
-SNAPSHOT=/tmp/eval-snapshot.sqlite3
-python3 - "$DB" "$SNAPSHOT" <<'PY'
-import sqlite3, sys
-src = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
-src.execute("PRAGMA query_only = 1")
-src.backup(sqlite3.connect(sys.argv[2]))     # WAL-correct, server can stay up
-PY
 python3 scripts/backfill_query_anchors.py backfill --db "$SNAPSHOT" \
-    --until 2026-08-01T00:00:00Z --backup /tmp/eval-snapshot-pre.sqlite3
+    --until "$CUTOFF" --backup "$SNAPSHOT_BACKUP" --json /tmp/anchor-eval-build.json
 ```
 
-## 3. Deploy the new code
+Scored queries must be outside the building window. Freeze the snapshot and
+relevance labels for both evaluation arms, and report exact query repeats
+separately from unseen query identities. Backfill can reconstruct query evidence;
+it does not supply relevance ground truth.
+
+## Verification and limits
 
 ```sh
-git -C /home/sfx/p/lm fetch origin && git -C /home/sfx/p/lm pull --ff-only
+python3 scripts/backfill_query_anchors.py verify --db "$DB" \
+    --json /tmp/anchor-verify.json
 ```
 
-Nothing is served differently yet: the running process holds the old modules
-until it restarts. **Do not stop here.** The previous rollout on this system left
-the server three hours on old code with a merged, ready master — the anchors were
-in the database, the code was on disk, and every client kept getting the old
-behaviour because nobody restarted. A deploy without a restart is not a deploy.
+`verify` is a backfill diagnostic. Exit 0 requires zero duplicate identities,
+unusable vectors, edgeless anchors, missing targets, decayed targets with a live
+replacement, and anchors whose identity is absent from consumed history in the
+same scope. `edges_to_superseded_nodes` is the report's field for decayed targets
+with a known replacement, including exact-copy replacements.
 
-## 4. Restart the server, and smoke-test a WRITE
+Decayed targets without a replacement are reported separately and do not fail
+the check: those edges are inert at match time. A live corpus can also contain
+valid edgeless anchors created by negative feedback, or anchors from events that
+are not in the consumed-history selection. Consequently this diagnostic is not
+a general proof of corpus validity or a license to remove every reported row.
 
-```sh
-systemctl --user restart living-memory.service
-systemctl --user is-active living-memory.service living-memory-tls.service
-curl -fsS http://127.0.0.1:8765/health     # boot_id must differ from before
-```
+Investigate a reported scope mismatch at its writer. A further backfill pass can
+repair anchor edges with known replacements through its closing sweep. Do not
+infer a replacement from similar text or an embedding score.
 
-From here `memory_recall` matches the query against anchor vectors and injects
-the matched anchor's edges into the graph channel, and every content-grounded
-consumption creates or reinforces an anchor.
+Rollback of deployed code follows the deployment procedure. Keep the backup;
+do not drop anchor tables as a generic rollback step, because query feedback and
+other consumers use their identities.
 
-**The smoke test must be a write** — a `memory_remember` or a `memory_teach`, not
-a recall. This is the lesson the chunk rollout paid for and it applies unchanged
-here, because the cause is the same: `MemoryStore` resolves the shape of the
-schema **once per process** and caches it (`_node_embedding_column_cache`,
-`_chunk_table_cache`, `_anchor_tables_cache`). On that rollout a server that had
-started while `nodes.embedding` still existed kept `cached=True` after the column
-was dropped, and every `INSERT INTO nodes` failed — while reads kept working, so
-a recall-only smoke test passed with flying colours against a server whose writes
-were broken.
+## Fixture checks
 
-The anchor equivalent is quieter, which is worse: a `MemoryStore` that resolved
-`_anchor_tables_cache` to `False` against a pre-v7 file answers every anchor read
-with "no anchors" and raises on the write path — silently degrading recall to its
-four old channels rather than failing loudly. The order in this runbook keeps
-that from happening (the tables exist before the restart, and a restarting server
-runs the migration itself), but the check is a write, every time:
+`tests/test_backfill_query_anchors.py` uses temporary synthetic databases. It
+covers exact-identity replay, identical-vector distinct queries, scope isolation,
+actual subprocess interruption and resume, backup requirements, restricted
+writes, cutoff boundaries, read-only behavior and historical relation handling.
 
 ```sh
-# The real thing, through MCP — a write that also creates the first live anchor.
-curl -fsS -H "Authorization: Bearer $LM_AUTH_TOKEN" -H 'Content-Type: application/json' \
-     http://127.0.0.1:8765/mcp/ \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
-          "params":{"name":"memory_remember","arguments":{
-            "content":"query-anchor rollout smoke: writes work after the restart",
-            "context":{"scope":"project:lm"}}}}'
-```
-
-A `memory_remember` that returns a node id is the proof. Then confirm the process
-serves this checkout's protocol texts:
-
-```sh
-python3 /home/sfx/p/lm/scripts/check_deployed_protocol.py
-```
-
-## 5. Catch-up backfill pass — the window between steps 2 and 4
-
-Consumptions between the backfill and the restart were handled by code that did
-not write anchors, so their signal is missing. This pass picks it up:
-
-```sh
-python3 scripts/backfill_query_anchors.py backfill --db "$DB" \
-    --existing-backup ~/.local/share/living-memory/global.pre-anchors-YYYYMMDD.sqlite3 \
-    --json /tmp/anchor-catchup.json
-```
-
-It costs about as much as the first pass (**57 s** measured, against 1 m 25 s)
-whatever the size of the window: the pending predicate is per-event, so finding
-the tail means re-labeling the whole history. What it *writes* is only the tail —
-everything already anchored comes back as `events_already_anchored`, and
-`events_applied` is the size of the window. On the snapshot, where there was no
-window at all, it applied **0** events and wrote **0** rows.
-
-## 6. Verify
-
-```sh
-python3 scripts/backfill_query_anchors.py verify --db "$DB" --json /tmp/anchor-verify.json
-```
-
-Exit code 0 requires all of:
-
-* `edges_to_missing_nodes: 0` and `edges_to_superseded_nodes: 0` — no anchor edge
-  points at a node that is gone, or at a decayed node that has an active
-  replacement reachable through `supersedes`. An edge into a decayed node with
-  **nothing** replacing it is reported separately
-  (`edges_to_decayed_nodes_without_replacement`) and is *not* a failure: the node
-  simply aged out, the edge is inert, and the match offers one target fewer.
-  Treating ordinary decay as corruption would make this check unusable;
-* `anchors_outside_source_scope: 0` — every anchor's `(scope, fingerprint)` is
-  the identity of a consumed recall event *in that scope*. Since the fingerprint
-  is `recall_fingerprint(query, scope)`, that equality is exactly "no anchor
-  crosses the scope its question was asked in";
-* `anchors_without_edges: 0` and `anchors_with_unusable_embedding: 0` — every
-  anchor has a vector of its recorded width that is not all zeros, and at least
-  one edge. An anchor that matches queries and offers nothing is dead weight;
-* `duplicate_identities: 0` — one anchor per `(scope, fingerprint)`.
-
-Also worth reading: `edges_per_anchor` (2.38 on the snapshot run) and `scopes`,
-which shows the anchor corpus is dominated by the scopes the operator actually
-works in.
-
-Then check recall itself — the anchor entry is what this changes:
-
-```sh
-curl -fsS -H "Authorization: Bearer $LM_AUTH_TOKEN" -H 'Content-Type: application/json' \
-     http://127.0.0.1:8765/mcp/ \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
-          "params":{"name":"memory_recall","arguments":{"query":"поревьювь мердж-реквест"}}}'
-```
-
-A jargon query of that shape is the class anchors exist for: it should now reach
-nodes that its own words never matched.
-
-## Rollback
-
-| After step | How to roll back | Cost |
-| --- | --- | --- |
-| 1 (backup) | nothing to undo | — |
-| 2 (backfill) | nothing to undo: the old code ignores `query_anchors`/`query_anchor_edges` entirely. To reclaim the space, `DROP TABLE query_anchor_edges; DROP TABLE query_anchors;` — no other table references them. `metadata.schema_version` is 7, which no code gates on; an old-code restart rewrites it to 6 and leaves the tables alone. | seconds |
-| 3 (deploy) | `git -C /home/sfx/p/lm reset --hard <previous>` | seconds |
-| 4 (restart) | check out the previous revision and restart. The anchor tables stay; the old code cannot see them. | one restart |
-| 5–6 | same as 4 | one restart |
-
-There is no irreversible step in this migration. The anchors are a derived,
-rebuildable structure: with the history and this script they can be reconstructed
-from scratch at any time, which is the strongest rollback story any of these
-rollouts has had.
-
-## Failure modes seen or guarded against
-
-| Symptom | Cause | What to do |
-| --- | --- | --- |
-| `refusing to run without a backup` | neither `--backup` nor `--existing-backup` | pass one; `--dry-run` needs neither |
-| `backup … holds N nodes but the database has M` | the "backup" was a `cp` without the `-wal`, or is simply old | retake it with `--backup` |
-| `the embedding model … did not load` | model not in the local cache, or `LIVING_MEMORY_EMBEDDING_BACKEND=hash` in the environment | fix the model cache; never pass `--allow-fallback-embeddings` against a real database |
-| `--until is not a timestamp I can parse` | a cutoff like `last tuesday` | ISO-8601 instant or a bare date, UTC |
-| `database busy writing the anchor for event …, retrying` | the server holds the write lock | expected under load; it retries with backoff. Persistent failure means something holds a long write transaction |
-| `verify` reports `anchors_outside_source_scope > 0` | an anchor was written with a scope other than its event's | do not "fix" the anchors: find the writer. The scope is what keeps one project's questions out of another's answers |
-| `verify` reports `edges_to_superseded_nodes > 0` | edges written before the `supersedes` hook, or a supersede written by raw SQL | run one more `backfill` pass — its closing sweep re-points them |
-| recall returns no anchor-sourced results after the restart | a process cached `_anchor_tables_cache = False` against a pre-v7 file | restart it; check `verify` reports `anchor_tables_present: true` |
-
-## Tests
-
-`tests/test_backfill_query_anchors.py` covers this against temporary fixture
-databases only — never the live one. Notably: an interrupted run (a real
-`SIGKILL` of a real subprocess) plus a re-run produces anchor and edge state
-identical to an uninterrupted run, timestamps and hit counts included; re-running
-after a complete run writes nothing and rewrites no row; the authorizer refuses
-every write to `nodes`, `connections` and `recall_events`; `--until` excludes the
-event stamped exactly at the cutoff; `--dry-run` leaves the file byte-identical
-and runs no migration; the backup gate rejects a missing, truncated or
-self-referential backup; and `verify` fails on each defect it claims to catch and
-passes once the sweep repairs the repairable one.
-
-```sh
-bash scripts/test.sh tests/test_backfill_query_anchors.py
+python3 -m pytest tests/test_backfill_query_anchors.py
 ```
