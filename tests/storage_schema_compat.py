@@ -10,6 +10,8 @@ PENDING_RECALL_INDEXES = {
     "idx_recall_pending_session",
     "idx_recall_pending_task_session",
     "idx_recall_pending_transport",
+    "idx_recall_pending_transport_task_session",
+    "idx_recall_pending_transport_session",
     "idx_recall_events_requested_scope_pending_created",
 }
 

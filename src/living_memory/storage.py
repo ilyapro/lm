@@ -5148,6 +5148,16 @@ class MemoryStore:
                     ON recall_events(COALESCE(transport_session_id, ''), created_at DESC)
                     WHERE feedback_applied = 0;
 
+                CREATE INDEX IF NOT EXISTS idx_recall_pending_transport_task_session
+                    ON recall_events(COALESCE(transport_session_id, ''),
+                        COALESCE(task, ''), COALESCE(session_id, ''), created_at DESC)
+                    WHERE feedback_applied = 0;
+
+                CREATE INDEX IF NOT EXISTS idx_recall_pending_transport_session
+                    ON recall_events(COALESCE(transport_session_id, ''),
+                        COALESCE(session_id, ''), created_at DESC)
+                    WHERE feedback_applied = 0;
+
                 DROP INDEX IF EXISTS idx_recall_pending_agent;
 
                 CREATE INDEX IF NOT EXISTS idx_recall_events_requested_scope_pending_created
@@ -6268,7 +6278,10 @@ def _pending_recall_match_sql(context: Mapping[str, Any]) -> list[tuple[str, str
         clauses = [same("transport_session_id"), *missing]
         if context["agent"]:
             clauses.append(compatible("agent"))
-        matches.append(("idx_recall_pending_transport", " AND ".join(clauses)))
+        # On multiplexed connections, missing explicit fields are exact index
+        # keys too: another task/session on this transport must not widen work.
+        suffix = "_task_session" if "task" in explicit else "_session" if explicit else ""
+        matches.append((f"idx_recall_pending_transport{suffix}", " AND ".join(clauses)))
     return matches
 
 

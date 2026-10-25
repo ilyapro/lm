@@ -161,7 +161,7 @@ def test_remember_consumes_own_event_once_amid_foreign_events(
     ({"agent": "own"}, {"agent": "own"}, SCOPE),
 ])
 def test_pending_selection_reads_current_identity_without_materializing_foreign_rows(
-    monkeypatch: pytest.MonkeyPatch, context, foreign_context, foreign_scope,
+    monkeypatch: pytest.MonkeyPatch, record_property, context, foreign_context, foreign_scope,
 ) -> None:
     with MemoryStore(":memory:") as store:
         own = store.record_recall_event(query=TEXT, scope=SCOPE, ambient_context=context)
@@ -207,4 +207,6 @@ def test_pending_selection_reads_current_identity_without_materializing_foreign_
               "2099-01-01T00:00:00Z") for i in range(4000)],
         )
         large = select_steps()
+        record_property("small_vm_steps", small)
+        record_property("large_vm_steps", large)
         assert large <= small * 2 + 100
