@@ -95,6 +95,18 @@ def test_newest_first_limit_includes_only_one_weak_fallback() -> None:
             )] == [events[i].id for i in positions]
 
 
+def test_weak_population_does_not_hide_older_strong_events() -> None:
+    with MemoryStore(":memory:") as store:
+        strong = [store.record_recall_event(
+            query=TEXT, scope=SCOPE, ambient_context={"task": "own"},
+        ) for _ in range(8)]
+        weak = [store.record_recall_event(query=TEXT, scope=SCOPE) for _ in range(120)]
+        selected = store.pending_recall_events(
+            scope=SCOPE, context={"task": "own"}, content=TEXT, limit=5,
+        )
+        assert [event.id for event in selected] == [weak[-1].id, *(event.id for event in reversed(strong[-4:]))]
+
+
 def test_remember_consumes_own_event_once_amid_foreign_events(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
