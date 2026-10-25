@@ -41,6 +41,8 @@ def _word_overlap_excerpt(content: str, budget: int, query: str | None) -> str:
 def test_answer_survives_topical_decoys(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, control: str,
 ) -> None:
+    monkeypatch.delenv("LM_DELIVERY_SNIPPET_CHARS", raising=False)
+    monkeypatch.delenv("LM_DELIVERY_SNIPPET_LADDER", raising=False)
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     decoy = (
         "Opal records discuss the valve inventory and calibration schedule. "
@@ -68,7 +70,7 @@ def test_answer_survives_topical_decoys(
             ),
         )
 
-    async def read() -> tuple[dict, dict]:
+    async def read() -> dict:
         async with Client(mcp) as client:
             recall = (await client.call_tool("memory_recall", {
                 "query": QUERY, "scope": SCOPE, "max_results": 5,
@@ -97,9 +99,9 @@ def test_answer_survives_topical_decoys(
             lookup = (await client.call_tool("memory_lookup", {
                 "node_id": entry["content_ref"]["node_id"],
             })).structured_content
-            return recall, lookup
+            return lookup
 
-    _, lookup = asyncio.run(read())
+    lookup = asyncio.run(read())
     assert lookup is not None
     assert [item["id"] for item in lookup["results"]] == [carrier.id]
     assert lookup["results"][0]["content"] == content

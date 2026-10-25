@@ -27,6 +27,8 @@ def _assert_sourced_answer(content: str) -> None:
 def test_buried_rule_keeps_its_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, control: str,
 ) -> None:
+    monkeypatch.delenv("LM_DELIVERY_SNIPPET_CHARS", raising=False)
+    monkeypatch.delenv("LM_DELIVERY_SNIPPET_LADDER", raising=False)
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     target = (
         "Cedar vault relay rotation audit ledger covers the current archival runtime workflow. "
@@ -64,7 +66,7 @@ def test_buried_rule_keeps_its_source(
             ),
         )
 
-    async def read() -> tuple[dict, dict]:
+    async def read() -> dict:
         async with Client(mcp) as client:
             recall = (await client.call_tool("memory_recall", {
                 "query": QUERY, "scope": SCOPE, "max_results": 5,
@@ -93,9 +95,9 @@ def test_buried_rule_keeps_its_source(
             lookup = (await client.call_tool("memory_lookup", {
                 "node_id": entry["content_ref"]["node_id"],
             })).structured_content
-            return recall, lookup
+            return lookup
 
-    _, lookup = asyncio.run(read())
+    lookup = asyncio.run(read())
     assert lookup is not None
     assert [item["id"] for item in lookup["results"]] == [carrier.id]
     assert lookup["results"][0]["content"] == content
