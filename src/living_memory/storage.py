@@ -115,24 +115,24 @@ _CHUNK_CORPUS_TRIGGERS = (
         {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = OLD.node_id")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_update
-    AFTER UPDATE OF node_id, chunk_index, embedding ON node_chunk_embeddings
-    WHEN OLD.node_id IS NOT NEW.node_id
+    BEFORE UPDATE OF id, node_id, chunk_index, embedding ON node_chunk_embeddings
+    WHEN OLD.id IS NOT NEW.id OR OLD.node_id IS NOT NEW.node_id
         OR OLD.chunk_index IS NOT NEW.chunk_index
         OR OLD.embedding IS NOT NEW.embedding
     BEGIN
-        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id IN (OLD.node_id, NEW.node_id)")}
+        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id IN (OLD.node_id, NEW.node_id) OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id)")}
     END""",
 )
 
 _CHUNK_MEMBERSHIP_TRIGGERS = (
     f"""CREATE TRIGGER chunk_corpus_membership
-    AFTER UPDATE OF id, scope, decayed ON nodes
+    BEFORE UPDATE OF id, scope, decayed ON nodes
     WHEN (OLD.id IS NOT NEW.id OR OLD.scope IS NOT NEW.scope
           OR OLD.decayed IS NOT NEW.decayed)
         AND EXISTS (SELECT 1 FROM node_chunk_embeddings
                     WHERE node_id IN (OLD.id, NEW.id))
     BEGIN
-        {_chunk_scope_revision_write("SELECT OLD.scope AS scope UNION SELECT NEW.scope")}
+        {_chunk_scope_revision_write("SELECT OLD.scope AS scope UNION SELECT NEW.scope UNION SELECT scope FROM nodes WHERE id = NEW.id")}
     END""",
     f"""CREATE TRIGGER chunk_corpus_node_delete
     BEFORE DELETE ON nodes
@@ -230,7 +230,10 @@ def install_derived_only_authorizer(
         revision = conn.execute(
             "SELECT value FROM main.metadata WHERE key = ?", (revision_key,)
         ).fetchone()
-        return actual == expected and shadow is None and revision is not None
+        return (
+            actual == expected and shadow is None and revision is not None
+            and (corpus != "chunks" or revision[0] == "1")
+        )
 
     def authorizer(
         action: int,

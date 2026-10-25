@@ -911,9 +911,7 @@ class MemoryRecallService:
         q_arr = _as_query_array(query_embedding)
         # Resolve membership after the drain, which can write new chunks.
         scoped_scores: list[tuple[float, str]] = []
-        for block in self._chunk_blocks(plan):
-            if block.dimension != len(query_embedding):
-                continue
+        for block in self._chunk_blocks(plan, len(query_embedding)):
             for similarity, node_id in _pooled_chunk_similarities(
                 block, query_embedding, q_arr
             ):
@@ -954,7 +952,7 @@ class MemoryRecallService:
     # Chunk corpus cache
     # ------------------------------------------------------------------
 
-    def _chunk_blocks(self, plan: ScopePlan) -> Iterable[_ChunkBlock]:
+    def _chunk_blocks(self, plan: ScopePlan, dimension: int) -> Iterable[_ChunkBlock]:
         """Use the same scope partitions for restricted and whole-store recall.
 
         Broad queries temporarily gather rows in node/chunk order. Keeping the
@@ -968,19 +966,23 @@ class MemoryRecallService:
         )
         if revisions is None:
             # Old read-only snapshots have no trustworthy cache identity.
+            self._chunk_index.clear()
             for scope in plan.search_scopes:
-                yield from self._build_chunk_index(scope, None).blocks
+                yield from (block for block in self._build_chunk_index(scope, None).blocks
+                            if block.dimension == dimension)
             return
         if plan.restricted:
             for scope in plan.scopes:
-                yield from self._scope_chunk_index(scope, revisions[scope]).blocks
+                yield from (block for block in self._scope_chunk_index(scope, revisions[scope]).blocks
+                            if block.dimension == dimension)
             return
-        by_width: dict[int, list[_ChunkBlock]] = {}
-        for scope, revision in revisions.items():
-            for block in self._scope_chunk_index(scope, revision).blocks:
-                by_width.setdefault(block.dimension, []).append(block)
-        for width in sorted(by_width):
-            yield _gather_chunk_blocks(by_width[width])
+        blocks = [
+            block for scope, revision in revisions.items()
+            for block in self._scope_chunk_index(scope, revision).blocks
+            if block.dimension == dimension
+        ]
+        if blocks:
+            yield _gather_chunk_blocks(blocks)
 
     def _scope_chunk_index(self, scope: str, revision: int) -> _ScopeChunkIndex:
         # A rollback can reuse a revision for different data. Never retain
@@ -2135,8 +2137,12 @@ def _gather_chunk_blocks(blocks: list[_ChunkBlock]) -> _ChunkBlock:
         norms = _np.empty(row_count, dtype=_np.float32)
         for block in blocks:
             offsets = _np.asarray([destinations[node_id] for node_id in block.node_ids])
-            lengths = _np.diff(_np.append(block.starts, block.row_count))
-            positions = _np.repeat(offsets - block.starts, lengths) + _np.arange(block.row_count)
+            shifts = offsets - block.starts
+            if _np.all(shifts == shifts[0]):
+                positions = slice(int(shifts[0]), int(shifts[0]) + block.row_count)
+            else:
+                lengths = _np.diff(_np.append(block.starts, block.row_count))
+                positions = _np.repeat(shifts, lengths) + _np.arange(block.row_count)
             rows[positions] = block.rows
             norms[positions] = block.norms
         return _ChunkBlock(
