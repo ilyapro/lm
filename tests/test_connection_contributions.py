@@ -144,11 +144,11 @@ def test_repeated_supersedes_moves_new_anchors_atomically(graph, contribute, mon
     rows_before = [tuple(row) for row in store.connection.execute("SELECT * FROM connections")]
     revision = store.query_anchor_revision()
     if fail:
-        follow = store._follow_supersedes_with_anchor_edges
+        follow = store._follow_replacement_with_anchor_edges
         def failing_hook(*args, **kwargs):
             follow(*args, **kwargs)
             raise RuntimeError("anchor fault")
-        monkeypatch.setattr(store, "_follow_supersedes_with_anchor_edges", failing_hook)
+        monkeypatch.setattr(store, "_follow_replacement_with_anchor_edges", failing_hook)
         with pytest.raises(RuntimeError, match="anchor fault"):
             contribute(store, source, target, "supersedes")
         assert store.query_anchor_revision() == revision

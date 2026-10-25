@@ -203,8 +203,10 @@ The storage writer owns edge update policy. `create_connection` replaces weight
 and metadata by default. Consolidation, teach and typed derivation pass
 `merge=True`: weight is the maximum of current and incoming values, clamped to
 [0, 1] and rounded to six decimals; incoming metadata keys overwrite existing
-keys shallowly, including nulls and whole nested objects. Identity, direction,
-type and creation time stay fixed. The read and write share a writer transaction.
+keys shallowly, including nulls and whole nested objects. A new correction
+contribution replaces known technical provenance and its weight on the same
+pair, so obsolete duplicate markers cannot veto that explicit correction.
+Identity, direction, type and creation time stay fixed. The read and write share a writer transaction.
 An unchanged contribution preserves the row, including `updated_at`; that field
 is not a contribution counter or a last-observed event. Replacement writes still
 refresh it. Every genuine correction write, including an unchanged contribution, moves

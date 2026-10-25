@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from living_memory.relations import is_correction, semantic_relation_sql  # noqa: E402
 
-DEFAULT_DB = "/home/sfx/.local/share/living-memory/global.sqlite3"
+DEFAULT_DB = str(Path.home() / ".local/share/living-memory/global.sqlite3")
 
 # ULID node ids as they appear verbatim inside trace content (Crockford base32).
 ULID_RE = re.compile(r"\b01[0-9A-HJKMNP-TV-Z]{24}\b")

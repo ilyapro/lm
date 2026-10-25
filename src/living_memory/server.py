@@ -1218,7 +1218,7 @@ def _register_tools(
         metadata is available through exact-id lookup's ``context_key`` or
         ``view="full"``. Both recall views use the same retrieval and delivery
         selection and keep all envelope fields, including warnings and maps.
-        ``superseded`` reports an incoming supersedes relation independently
+        ``superseded`` reports an incoming correction relation independently
         of correction availability; ``superseded_by`` lists scope-visible ids
         for exact lookup, including decayed history. Neither asserts that a
         correction is itself current. Chains and cycles retain direct links.

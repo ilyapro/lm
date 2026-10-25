@@ -300,8 +300,8 @@ def soft_delete_expired(
 def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> list[Node]:
     """Decay active nodes that have been replaced by a superseding node.
 
-    Concept coverage does not guard this path and must not: a supersedes edge
-    is somebody's explicit correction, and a corrected trace that stays live
+    Only genuine correction relations enter this path. Concept coverage must
+    not guard it: a corrected trace that stays live
     because a concept cites it keeps outranking the correction in recall.
     """
 

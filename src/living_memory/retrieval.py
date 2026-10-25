@@ -344,7 +344,7 @@ class RecallResult:
     methods: tuple[str, ...] = ()
     path: tuple[str, ...] = ()
     recall_event_id: str | None = None
-    # True when some supersedes edge targets this node: a correction exists,
+    # True when a genuine correction edge targets this node: a correction exists,
     # whether or not it qualified for this recall. Consumers get the staleness
     # signal even when the correction itself is decayed or absent.
     superseded: bool = False

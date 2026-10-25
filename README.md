@@ -55,13 +55,30 @@ duplicate previews still provide `content_ref` access to the whole recipe.
 
 Both recall views and exact-id lookup include `superseded` and `superseded_by`
 on each result (beside `node` in diagnostic recall). `superseded: true` means
-an existing `supersedes` relation targets this node, independently of
+an existing correction relation targets this node, independently of
 `provenance.corrections`, decay, and whether the correction qualified for the
 answer. `superseded_by` lists direct correction ids for `memory_lookup`: only
 existing nodes admitted by the request's scope plan are linked. Decayed
 corrections remain addressable history with their own decay flags. An empty
 list never cancels known supersession; missing or out-of-scope corrections
 supply neither links nor text. Without a requested scope, links can cross scopes.
+
+Semantic similarity retrieves and ranks knowledge; it does not establish that
+claims are identical or corrected. Duplicate selection and delivery require
+exact content with matching scope and recorded source identity. A different
+condition, prohibition, source or derivation remains independent. The bounded
+top-k may still omit a candidate by rank; its omission is not a duplicate claim.
+
+Exact-copy lifecycle bookkeeping uses `related(kind=duplicate_content)` rather
+than correction semantics. Known historical `supersedes` rows from the drain
+(`kind=drain_near_duplicate`), offline cosine collapse
+(`by=lm_collapse_near_dups.py`, `reason=near-duplicate collapse`) and technical
+copies (`kind=duplicate_content`) confer no correction validity, rank priority,
+semantic graph traversal or decay authority. Real corrections, including
+`memory_teach`, and unknown supersedes metadata retain their meaning. Exact
+copies can redirect anchors and source lineage only after checking their
+current content and source identity. Historical rows and stored decay flags
+remain intact; this policy does not reconstruct prior lifecycle side effects.
 
 Exact-id lookup preserves the complete original content. `context_key` adds
 one original context field; `view="full"` returns all stored node fields plus
