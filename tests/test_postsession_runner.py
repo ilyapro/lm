@@ -34,7 +34,7 @@ from typing import Any, Iterator
 
 import pytest
 
-from living_memory.postsession.client import LiveMemoryClient
+from living_memory.postsession.client import ClientError, LiveMemoryClient, McpMemoryIndex
 from living_memory.postsession.judge import FakeJudge
 from living_memory.postsession.runner import (
     DEFAULT_BOOTSTRAP_ALLOWANCE,
@@ -808,3 +808,76 @@ def test_live_client_error_is_a_failed_decision_not_a_crash(
     assert decisions[0].reason == "client_error"
     # A failed write never lands in the ledger, so a retry is possible.
     assert len(runner.ledger) == 0
+
+
+@pytest.mark.parametrize("content", [
+    "src/app.py restart is forbidden before approval.",
+    "src/app.py restart is allowed after approval.",
+    "src/app.py restart is not allowed before approval.",
+])
+def test_lm_duplicate_preserves_distinct_claims_from_the_same_span(
+    tmp_path: Path, content: str,
+) -> None:
+    record = make_record()
+    op = make_remember(record, content)
+    existing = {
+        "id": "prior", "scope": "project:demo",
+        "content": "src/app.py restart is allowed before approval.",
+        "context": {
+            "source_transcript_sha256": record.transcript_sha256,
+            "source_span": op.provenance.source_span,
+        },
+    }
+
+    class Client:
+        def recall(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"results": [{"node": existing, "delivery": "full"}]}
+
+    runner = ExtractionRunner(config=RunnerConfig(), ledger=Ledger(tmp_path), client=Client())
+    reason, _ = runner._lm_duplicate(op)
+    assert reason == ""
+
+
+@pytest.mark.parametrize("change, expected", [
+    ({}, "lm_prior_extraction"),
+    ({"scope": "global"}, ""),
+    ({"context": {"source_transcript_sha256": "other", "source_span": "same"}}, ""),
+    ({"context": {}}, ""),
+])
+def test_lm_duplicate_requires_exact_content_scope_and_source(
+    tmp_path: Path, change: dict[str, Any], expected: str,
+) -> None:
+    record = make_record()
+    op = make_remember(record, "src/app.py restart is forbidden before approval.")
+    existing = {
+        "id": "prior", "scope": "project:demo", "content": op.payload["content"],
+        "context": {
+            "source_transcript_sha256": record.transcript_sha256,
+            "source_span": op.provenance.source_span,
+        },
+        **change,
+    }
+
+    class Client:
+        def recall(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"results": [{"node": existing, "delivery": "full"}]}
+
+    runner = ExtractionRunner(config=RunnerConfig(), ledger=Ledger(tmp_path), client=Client())
+    reason, _ = runner._lm_duplicate(op)
+    assert reason == expected
+
+
+def test_mcp_index_never_compares_a_preview_when_full_lookup_is_unavailable() -> None:
+    class Client:
+        def recall(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"results": [{
+                "node": {"id": "partial", "scope": "project:demo", "content": "same preview"},
+                "delivery": "snippet",
+            }]}
+
+        def lookup_nodes(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise ClientError("unavailable")
+
+    index = McpMemoryIndex(Client())
+    assert index.candidates("same preview", scope="project:demo") == []
+    assert index.last_contexts == {}
