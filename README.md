@@ -53,6 +53,15 @@ preview is insufficient, pass `content_ref.node_id` to `memory_lookup` for
 complete content and current validity. Schema recipes retain complete content;
 duplicate previews still provide `content_ref` access to the whole recipe.
 
+Bounded excerpts select passages at paragraph breaks or sentence-ending
+punctuation followed by whitespace, preserving soft line wraps. Evidence
+passages retain their source labels. An indivisible passage that exceeds the
+budget contributes only a prefix marked with `…`; when the evidence heading
+and label cannot fit, the whole excerpt falls back to a bounded prefix of the
+original. These boundaries are textual heuristics: abbreviations, context
+in other sentences, and conditions beyond a truncated prefix may require the
+full original via `content_ref`.
+
 Recall before acting and at every new turn of thought, including mid-work.
 Use relevant knowledge and applicable complete recipes under current system
 and operator instructions and the actual task conditions. Those instructions
