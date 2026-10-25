@@ -529,10 +529,11 @@ def shape_recall_results(
 
 
 def knowledge_node(node: dict[str, Any]) -> dict[str, Any]:
-    """Content, identity and validity shared by recall and exact-id lookup.
+    """Stored content, identity and provenance shared by recall and id lookup.
 
     Correction entries retain their keys and short values; long correction
     texts carry a bounded gist. Lookup's full view restores stored details.
+    Callers add relation-derived supersession independently of this projection.
     """
 
     provenance = node["provenance"]

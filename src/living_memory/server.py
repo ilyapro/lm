@@ -1199,7 +1199,9 @@ def _register_tools(
                 "knowledge returns flat content, identity, validity, delivery and "
                 "content_ref. full returns diagnostic node wrappers, context and "
                 "ranking scores with delivery compaction; memory_lookup by id "
-                "with context_key or view='full' restores original metadata."
+                "with context_key or view='full' restores original metadata. "
+                "Both views include superseded and scope-visible direct correction "
+                "ids in superseded_by, even when corrections are not in results."
             )),
         ] = "knowledge",
     ) -> dict[str, Any]:
@@ -1225,6 +1227,10 @@ def _register_tools(
         metadata is available through exact-id lookup's ``context_key`` or
         ``view="full"``. Both recall views use the same retrieval and delivery
         selection and keep all envelope fields, including warnings and maps.
+        ``superseded`` reports an incoming supersedes relation independently
+        of correction availability; ``superseded_by`` lists scope-visible ids
+        for exact lookup, including decayed history. Neither asserts that a
+        correction is itself current. Chains and cycles retain direct links.
 
         When the ranked candidate pool holds more than the delivered results,
         an additive top-level ``recall_map`` describes the *residual*: a
@@ -1424,6 +1430,9 @@ def _register_tools(
         ``decayed`` flag set; ``level`` is ignored for id fetches. A ``scope``
         passed alongside ids verifies instead of filtering: mismatching nodes
         stay in ``results`` and are reported in ``scope_mismatches``.
+        ``superseded`` reports known replacement even without a readable
+        correction; ``superseded_by`` lists direct correction ids allowed by
+        scope (including decayed history). These fields accompany both views.
         """
 
         with runtime_lock:
