@@ -1154,7 +1154,7 @@ class MemoryStore:
 
     @contextmanager
     def transaction(self, *, immediate: bool = False) -> Iterator[None]:
-        """Compose writes; reserve an outer writer before read/modify/write work."""
+        """Compose reads/writes; optionally reserve an outer writer."""
 
         if immediate and not self._conn.in_transaction:
             self._conn.execute("BEGIN IMMEDIATE")
@@ -1166,7 +1166,7 @@ class MemoryStore:
                 raise
             return
 
-        self._savepoint_serial += 1
+        self._savepoint_serial = getattr(self, "_savepoint_serial", 0) + 1
         name = f"memory_write_{self._savepoint_serial}"
         self._conn.execute(f"SAVEPOINT {name}")
         try:

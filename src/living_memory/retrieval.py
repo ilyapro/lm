@@ -206,7 +206,7 @@ from __future__ import annotations
 import json
 import os
 from collections import deque
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from math import log2, sqrt
 from typing import Any, Callable
@@ -952,42 +952,45 @@ class MemoryRecallService:
     # Chunk corpus cache
     # ------------------------------------------------------------------
 
-    def _chunk_blocks(self, plan: ScopePlan, dimension: int) -> Iterable[_ChunkBlock]:
-        """Use the same scope partitions for restricted and whole-store recall.
+    def _chunk_blocks(self, plan: ScopePlan, dimension: int) -> tuple[_ChunkBlock, ...]:
+        """Share scope partitions, reading revisions and rows in one snapshot.
+
+        The existing deferred transaction helper reserves no writer. Its read
+        snapshot prevents a concurrent move from appearing in two partitions.
+        An outer caller transaction may contain writes that roll back, so its
+        rows are never retained. This snapshot covers only the vector read;
+        metadata, corrections and source validity remain live recall inputs.
 
         Broad queries temporarily gather rows in node/chunk order. Keeping the
         full width block's normalization and matmul shape preserves scores and
         stable candidate ties; there is no second persistent corpus matrix.
-        Metadata, corrections and source validity are read outside this cache.
         """
 
-        revisions = self.store.chunk_corpus_revisions(
-            plan.scopes if plan.restricted else None,
-        )
-        if revisions is None:
-            # Old read-only snapshots have no trustworthy cache identity.
-            self._chunk_index.clear()
-            for scope in plan.search_scopes:
-                yield from (block for block in self._build_chunk_index(scope, None).blocks
-                            if block.dimension == dimension)
-            return
-        if plan.restricted:
-            for scope in plan.scopes:
-                yield from (block for block in self._scope_chunk_index(scope, revisions[scope]).blocks
-                            if block.dimension == dimension)
-            return
-        blocks = [
-            block for scope, revision in revisions.items()
-            for block in self._scope_chunk_index(scope, revision).blocks
-            if block.dimension == dimension
-        ]
-        if blocks:
-            yield _gather_chunk_blocks(blocks)
+        cacheable = not self.store.connection.in_transaction
+        with self.store.transaction():
+            revisions = self.store.chunk_corpus_revisions(
+                plan.scopes if plan.restricted else None,
+            )
+            if revisions is None:
+                # Old read-only snapshots have no trustworthy cache identity.
+                self._chunk_index.clear()
+                indexes = [self._build_chunk_index(scope, None) for scope in plan.search_scopes]
+            else:
+                scopes = plan.scopes if plan.restricted else revisions
+                indexes = [
+                    self._scope_chunk_index(scope, revisions[scope], cacheable=cacheable)
+                    for scope in scopes
+                ]
+        blocks = tuple(block for index in indexes for block in index.blocks
+                       if block.dimension == dimension)
+        if blocks and not plan.restricted and revisions is not None:
+            return (_gather_chunk_blocks(blocks),)
+        return blocks
 
-    def _scope_chunk_index(self, scope: str, revision: int) -> _ScopeChunkIndex:
-        # A rollback can reuse a revision for different data. Never retain
-        # uncommitted rows, including reads inside an outer caller transaction.
-        if self.store.connection.in_transaction:
+    def _scope_chunk_index(
+        self, scope: str, revision: int, *, cacheable: bool,
+    ) -> _ScopeChunkIndex:
+        if not cacheable:
             return self._build_chunk_index(scope, None)
         cached = self._chunk_index.get(scope)
         if cached is not None and cached.revision == revision:
@@ -2113,7 +2116,7 @@ class _BlockAccumulator:
         )
 
 
-def _gather_chunk_blocks(blocks: list[_ChunkBlock]) -> _ChunkBlock:
+def _gather_chunk_blocks(blocks: Sequence[_ChunkBlock]) -> _ChunkBlock:
     """One temporary whole-width block in the storage scan's exact row order."""
 
     if len(blocks) == 1:
