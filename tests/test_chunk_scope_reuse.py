@@ -356,7 +356,9 @@ def test_broad_layout_survives_scope_switches_and_releases_replaced_blocks(store
     recall(warm, "project:beta")
     assert 3 not in warm._chunk_gathers
     assert len(prepared) == 1
-    assert recall(warm) == before
+    after = recall(warm)
+    assert [(r.node.id, r.score) for r in after] == [(r.node.id, r.score) for r in before]
+    assert next(r.node.scope for r in after if r.node.id == "node-2") == "project:gamma"
     assert len(prepared) == 2
     assert warm._chunk_gathers[3] is not layout
     assert all(block is not layout.blocks[-1] for block in warm._chunk_gathers[3].blocks)
