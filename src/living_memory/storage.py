@@ -6256,7 +6256,10 @@ def _pending_recall_match_sql(context: Mapping[str, Any]) -> tuple[str, str]:
         return f"COALESCE({field}, '') IN ('', :{field})" if context[field] else "1"
 
     transport_equal = same("transport_session_id")
-    clauses = [f"(scope = :scope OR requested_scope = :scope OR {transport_equal})"]
+    scopes = ["scope = :scope", "requested_scope = :scope"]
+    if context["transport_session_id"]:
+        scopes.append(transport_equal)
+    clauses = [f"({' OR '.join(scopes)})"]
     explicit = []
     for field in ("session_id", "task"):
         if context[field]:

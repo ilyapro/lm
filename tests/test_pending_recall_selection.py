@@ -128,11 +128,19 @@ def test_remember_consumes_own_event_once_amid_foreign_events(
         store.close()
 
 
+@pytest.mark.parametrize("context,foreign_context,foreign_scope", [
+    ({"session_id": "own"}, {"session_id": "other"}, SCOPE),
+    ({"task": "own"}, {"task": "other"}, SCOPE),
+    ({"transport_session_id": "own"}, {"transport_session_id": "other"}, SCOPE),
+    ({"agent": "own"}, {"agent": "other"}, SCOPE),
+    ({"task": "own", "session_id": "own"}, {"task": "own", "session_id": "other"}, SCOPE),
+    ({"task": "own", "session_id": "own"}, {"task": "other", "session_id": "own"}, SCOPE),
+    ({}, {}, "project:other"),
+])
 def test_pending_selection_reads_current_identity_without_materializing_foreign_rows(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, context, foreign_context, foreign_scope,
 ) -> None:
     with MemoryStore(":memory:") as store:
-        context = {"task": "own", "session_id": "own", "transport_session_id": "own"}
         own = store.record_recall_event(query=TEXT, scope=SCOPE, ambient_context=context)
         decoded = []
         original = storage_module._recall_event_from_row
@@ -166,9 +174,10 @@ def test_pending_selection_reads_current_identity_without_materializing_foreign_
         # identity read; compare VM work, not a timing-sensitive speed claim.
         store.connection.executemany(
             """INSERT INTO recall_events(id, query, scope, requested_scope,
-                   session_id, task, transport_session_id, feedback_applied, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            [(f"foreign-{i}", TEXT, SCOPE, SCOPE, f"other-{i}", "other", "other", i % 2,
+                   session_id, task, transport_session_id, agent, feedback_applied, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(f"foreign-{i}", TEXT, foreign_scope, foreign_scope,
+              *(foreign_context.get(field) for field in ("session_id", "task", "transport_session_id", "agent")), i % 2,
               "2099-01-01T00:00:00Z") for i in range(4000)],
         )
         large = select_steps()
