@@ -121,16 +121,25 @@ op failed to write (safe to re-run: writes are idempotent). Because AE
 swallows hook failures, the hook should record non-zero outcomes in its own
 log/queue if anyone needs to notice them.
 
-**Idempotency guarantee.** Re-invoking the stage on the same transcript writes
-nothing twice, regardless of how many times the hook fires: every executed op
-is keyed `(transcript sha256, op fingerprint)` in the ledger at
-`~/.local/state/living-memory/postsession/ledger.jsonl`, and even with the
-ledger lost the write path re-checks the live server (extraction identity by
-transcript sha + source span, IDF-containment near-duplicate check;
-`memory_attest` is idempotent per (event, evidence) on the server's own
-ledger). AE adds its own once-per-goal sentinel (§1). Concurrent hook firings
-for different transcripts are safe; for the same transcript they are safe but
-wasteful.
+**Idempotency.** Every executed op is keyed by `(transcript sha256, op
+fingerprint)` in `~/.local/state/living-memory/postsession/ledger.jsonl`.
+Replaying that operation with the ledger present produces no second write.
+When the ledger is lost, the runner retrieves bounded candidates through
+`memory_recall` and restores complete content and provenance through
+`memory_lookup`. It suppresses a remember proposal only when content, scope,
+transcript hash and source span match a prior remember. A teach proposal also
+requires the same corrected node: an earlier remember cannot stand in for its
+correction edge. Missing provenance, unavailable full content and similarity
+alone do not establish a prior extraction. Bounded retrieval can miss a repeat,
+so the fallback does not guarantee exhaustive detection after ledger loss.
+`memory_attest` retains its server-side `(event, evidence)` replay identity.
+
+The proposal stage uses the same exact content, scope and transcript/span
+identity within a run and against existing memory. Semantic retrieval finds
+candidates; the semantic judge assesses proposed knowledge. Token overlap and
+embedding similarity never veto a proposal as already known. The deterministic
+quality gate still checks content shape, journal phrasing, speculation, fact
+count, concrete identifiers and grounding in the mined evidence.
 
 **Budget flags.** `--max-ops-per-session` (default 3), `--max-total-ops` (24),
 `--max-attests-per-session` (8), `--max-total-attests` (64),

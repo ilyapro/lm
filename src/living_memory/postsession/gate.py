@@ -339,7 +339,7 @@ class Gate:
     """Applies :data:`REJECTION_CODES` in a fixed order; first hit wins.
 
     Fixed order matters for the report: a fact that is both a journal entry and
-    re-derivable from the diff must always be counted under the same code, or
+    speculative must always be counted under the same code, or
     the per-reason breakdown drifts with unrelated changes.
     """
 

@@ -188,7 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
     write.add_argument(
         "--lm-dedup",
         action="store_true",
-        help="also consult the live server for near-duplicates during a dry run "
+        help="also consult the live server for exact prior extractions during a dry run "
         "(a write run always does)",
     )
     write.add_argument(

@@ -382,8 +382,8 @@ def _fingerprint_neighbourhood(
 ) -> dict[str, tuple[Any, ...]]:
     """Decay state of every node sharing a cohort content fingerprint.
 
-    ``MemoryStore._insert_node`` supersedes-and-decays any live trace with the
-    same ``(scope, content_fingerprint)`` as the row being written. Re-inserting
+    ``MemoryStore._insert_node`` records duplicate bookkeeping and decays live
+    nodes with matching level, scope, content and compatible derivation identity. Re-inserting
     the cohort can therefore fire that rule against a bystander, or against an
     earlier cohort member, which would perturb the very corpus the replay is
     measured on. This is the bounded set where that can happen, so it is the set
@@ -533,7 +533,7 @@ def reinsert_cohort(
     content fingerprint is recomputed rather than trusted. Two of its documented
     side effects have to be undone afterwards, and both are counted rather than
     hidden: it stamps ``created_at``/``updated_at`` with *now*, and it
-    supersedes-and-decays any live trace sharing the fingerprint it is writing.
+    records duplicate bookkeeping and decays matching content identities.
     """
 
     if mode not in REINSERT_MODES:
@@ -605,9 +605,9 @@ def _repair_write_path_side_effects(
     *,
     mode: str,
 ) -> None:
-    """Undo the supersedes-and-decay the write path fires on duplicate content.
+    """Undo duplicate bookkeeping and decay from the content identity write path.
 
-    A duplicate-content supersedes edge always has the row being written as its
+    A duplicate-content edge always has the row being written as its
     source, so every edge this rule can mint touches a cohort id — which bounds
     the repair to the cohort's own connection neighbourhood.
     """
