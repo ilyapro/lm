@@ -154,7 +154,8 @@ def test_fresh_db_creates_required_ledgers(tmp_path: Path) -> None:
 def test_reopening_pre_ledger_schema_preserves_data_and_builds_task_index(tmp_path: Path) -> None:
     db = tmp_path / "existing.sqlite3"
     with MemoryStore(db) as store:
-        node = store.append_trace("ledger fixture trace body", {"scope": SCOPE, **AMBIENT})
+        # The task phrase must be absent from content to prove task indexing.
+        node = store.append_trace("preserved transcript body", {"scope": SCOPE, **AMBIENT})
         store.record_recall_event(
             query="ledger fixture",
             scope=SCOPE,
