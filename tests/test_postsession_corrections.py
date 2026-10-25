@@ -827,6 +827,32 @@ def test_veto_no_shared_anchor_when_the_quote_is_about_another_fact():
     assert verdict.reason == "no_shared_anchor"
 
 
+@pytest.mark.parametrize("change", [
+    ("allowed before approval", "forbidden before approval"),
+    ("allowed before approval", "allowed only after approval"),
+    ("allowed before approval", "not allowed before approval"),
+])
+def test_semantic_correction_survives_similar_wording(change: tuple[str, str]) -> None:
+    claim = (
+        "src/dashboard.py --restart is allowed before approval for the operator "
+        "maintenance procedure; the service restart leaves dashboard state intact."
+    )
+    correction = claim.replace(*change)
+    record = make_record(
+        nodes=((NODE_ID, claim),),
+        extra_outputs=(("check src/dashboard.py --restart", correction, 16),),
+    )
+    result, _ = judged(record, answer(
+        contradicted_claim=claim,
+        observation_locator=f"{SOURCE}:{PATH}#16:tool_calls[2].result_text",
+        observation_quote=correction,
+        correction=correction,
+    ))
+    assert len(result.ops) == 1, result.rejections
+    assert result.ops[0].payload["trace_id"] == NODE_ID
+    assert result.ops[0].payload["correction"] == correction
+
+
 def test_veto_rephrasing():
     verdict = rejection(
         make_record(),
