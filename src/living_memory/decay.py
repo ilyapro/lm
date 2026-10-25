@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Iterable
 
+from living_memory.relations import correction_sql
 from living_memory.models import NODE_LEVELS, Node
 from living_memory.storage import MemoryStore
 from living_memory.temporal import parse_timestamp
@@ -305,7 +306,7 @@ def soft_delete_superseded(store: MemoryStore, *, scope: str | None = None) -> l
     """
 
     clauses = [
-        "c.type = 'supersedes'",
+        correction_sql("c"),
         "target.decayed = 0",
         "source.decayed = 0",
     ]

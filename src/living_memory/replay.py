@@ -58,6 +58,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from living_memory.relations import correction_sql
 from living_memory.config import MemoryConfig
 from living_memory.feedback import _method_signals, ungrounded_negative_signals
 from living_memory.grounding import (
@@ -759,7 +760,7 @@ def load_live_weights(connection: sqlite3.Connection) -> dict[str, RetrievalWeig
 
 
 def load_supersedes_pairs(connection: sqlite3.Connection) -> list[tuple[str, str]]:
-    rows = connection.execute("SELECT source_id, target_id FROM connections WHERE type = 'supersedes'")
+    rows = connection.execute(f"SELECT source_id, target_id FROM connections WHERE {correction_sql()}")
     return [(str(row["source_id"]), str(row["target_id"])) for row in rows]
 
 

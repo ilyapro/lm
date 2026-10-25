@@ -25,6 +25,7 @@ from living_memory.embeddings import (
     fts_prefix_term_allowed,
 )
 from living_memory.models import (
+    content_identity,
     CONNECTION_TYPES,
     NODE_LEVELS,
     REJECTED_ALTERNATIVE_KIND,
@@ -36,6 +37,7 @@ from living_memory.models import (
     RecallEvent,
     RetrievalWeights,
 )
+from living_memory.relations import correction_sql, is_correction, semantic_relation_sql
 from living_memory.phase import PhaseManager
 from living_memory.scope import normalize_scope
 from living_memory.temporal import parse_timestamp
@@ -1351,6 +1353,7 @@ class MemoryStore:
         candidate = Node(
             id=new_id, level=level, content=content, context=context_data,
             provenance=provenance_data, source_traces=source_traces,
+            corrections=corrections, scope=scope,
         )
         duplicate_ids = [
             str(row["id"])
@@ -1423,7 +1426,7 @@ class MemoryStore:
             self._insert_connection(
                 new_id,
                 old_id,
-                "supersedes",
+                "related",
                 weight=1.0,
                 metadata={
                     "kind": _DUPLICATE_CONTENT_KIND,
@@ -1872,7 +1875,12 @@ class MemoryStore:
                 ),
             ).fetchone()
             connection = _connection_from_row(row)
-        if relation_type == "supersedes":
+        duplicate = (
+            relation_type in ("related", "supersedes")
+            and metadata_data.get("kind") == _DUPLICATE_CONTENT_KIND
+            and any(node.id == source_id for node in self.list_duplicate_replacements(target_id))
+        )
+        if is_correction(relation_type, metadata_data) or duplicate:
             self._follow_supersedes_with_anchor_edges(source_id, target_id, now=now)
         return connection
 
@@ -1976,7 +1984,7 @@ class MemoryStore:
         target_id: str | None = None,
         relation_type: ConnectionType | None = None,
     ) -> list[Connection]:
-        clauses: list[str] = []
+        clauses: list[str] = [semantic_relation_sql()]
         params: list[Any] = []
         if node_id is not None:
             clauses.append("(source_id = ? OR target_id = ?)")
@@ -2003,7 +2011,7 @@ class MemoryStore:
 
         Both directions matter even when the counterpart is decayed or outside
         the caller's scope. Endpoint indexes keep a small selection from walking
-        the type-wide covering index; no node or connection metadata is needed.
+        the type-wide covering index. Known duplicate bookkeeping is excluded.
         """
 
         ids = sorted(set(node_ids))
@@ -2015,16 +2023,20 @@ class MemoryStore:
                 f"""
                 SELECT source_id, target_id
                 FROM connections INDEXED BY idx_connections_source_type
-                WHERE source_id IN ({placeholders}) AND type = 'supersedes'
+                WHERE source_id IN ({placeholders}) AND {correction_sql()}
                 UNION
                 SELECT source_id, target_id
                 FROM connections INDEXED BY idx_connections_target_type
-                WHERE target_id IN ({placeholders}) AND type = 'supersedes'
+                WHERE target_id IN ({placeholders}) AND {correction_sql()}
                 """,
                 batch + batch,
             )
             pairs.update((str(row["source_id"]), str(row["target_id"])) for row in rows)
         return sorted(pairs)
+
+    def list_duplicate_replacements(self, node_id: str) -> list[Node]:
+        """Live exact copies, separately from semantic corrections."""
+        return duplicate_replacements(self._conn, node_id)
 
     def list_connections_for_nodes(self, node_ids: Iterable[str]) -> dict[str, list[Connection]]:
         ids = list(set(node_ids))
@@ -2036,7 +2048,7 @@ class MemoryStore:
             chunk = ids[i : i + 400]
             placeholders = ",".join("?" for _ in chunk)
             rows = self._conn.execute(
-                f"SELECT * FROM connections WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders}) ORDER BY weight DESC, created_at DESC",
+                f"SELECT * FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()} ORDER BY weight DESC, created_at DESC",
                 chunk + chunk
             ).fetchall()
             connections.extend([_connection_from_row(row) for row in rows])
@@ -2073,7 +2085,7 @@ class MemoryStore:
             chunk = ids[i : i + 400]
             placeholders = ",".join("?" for _ in chunk)
             cursor = self._conn.execute(
-                f"SELECT * FROM connections WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders}) ORDER BY weight DESC, created_at DESC",
+                f"SELECT * FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()} ORDER BY weight DESC, created_at DESC",
                 chunk + chunk,
             )
             try:
@@ -4439,7 +4451,7 @@ class MemoryStore:
 
     def _has_graph_evidence(self, scope: str) -> bool:
         row = self._conn.execute(
-            """
+            f"""
             SELECT 1
             FROM connections c
             JOIN nodes source ON source.id = c.source_id
@@ -4447,6 +4459,7 @@ class MemoryStore:
             WHERE source.decayed = 0
               AND target.decayed = 0
               AND (source.scope = ? OR target.scope = ?)
+              AND {semantic_relation_sql("c")}
             LIMIT 1
             """,
             (scope, scope),
@@ -6141,12 +6154,33 @@ def _row_value(row: sqlite3.Row, column: str, default: Any = None) -> Any:
 
 
 def _same_content_identity(left: Node, right: Node) -> bool:
-    """Equal bytes cannot supersede a different recorded derivation."""
+    identity = content_identity(left)
+    return identity is not None and identity == content_identity(right)
 
-    if left.materializer is None and right.materializer is None:
-        return True
-    identity = left.derivation_identity
-    return identity is not None and identity == right.derivation_identity
+
+def duplicate_replacements(connection: sqlite3.Connection, node_id: str) -> list[Node]:
+    """Read exact duplicate successors without opening or migrating a store.
+
+    Historical duplicate_content rows can have a procedure-key-only basis.
+    Current bytes, level, scope and source identity must establish a true copy
+    before bookkeeping can redirect an anchor. It never establishes correction.
+    """
+    row = connection.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
+    if row is None:
+        return []
+    original = _node_from_row(row)
+    rows = connection.execute(
+        """
+        SELECT n.* FROM connections c JOIN nodes n ON n.id = c.source_id
+        WHERE c.target_id = ? AND c.source_id <> ? AND n.decayed = 0
+          AND c.type IN ('related', 'supersedes')
+          AND json_extract(c.metadata, '$.kind') = 'duplicate_content'
+        ORDER BY c.weight DESC, c.created_at DESC
+        """,
+        (node_id, node_id),
+    ).fetchall()
+    return [node for row in rows if (node := _node_from_row(row)).level == original.level
+            and _same_content_identity(node, original)]
 
 
 def _node_from_row(row: sqlite3.Row) -> Node:

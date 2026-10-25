@@ -1204,10 +1204,8 @@ def _register_tools(
         content truncated inline), ``session_duplicate`` (already delivered on
         this transport session), ``twin_duplicate`` (byte-identical to a
         higher-ranked result with the same scope and source identity).
-        higher-ranked result of this same answer). Every class is on by
-        default: twin and near-dup collapse unconditionally, the session class
-        whenever a transport session id is stamped. The near-dup threshold is
-        ``LM_RECALL_NEAR_DUP_COSINE`` (0 restores byte-only dedup).
+        Session dedup requires a transport session id and recorded delivery.
+        Similarity ranks candidates without declaring them duplicates.
         The top-ranked content-bearer has a bounded default budget;
         lower-ranked bearers get descending budgets. Oversized content is
         selected for the query, while short content and complete schema recipes stay
