@@ -1,9 +1,7 @@
-"""Contract tests for content-fingerprint dedup of identical traces.
+"""Exact content and source identity share one active copy per scope and level.
 
-Covers the write-path dedup behavior introduced for schema v3: identical
-``content`` in the same scope/level collapses to one active trace plus an
-append-only chain of decayed older copies linked by ``supersedes`` edges.
-History remains queryable via ``get_node`` and the supersedes edges.
+Older copies remain queryable and linked by technical ``related`` edges.
+Duplicate bookkeeping carries no semantic correction authority.
 """
 
 from __future__ import annotations
@@ -22,7 +20,7 @@ def _fingerprint(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def test_same_scope_identical_content_supersedes_older_trace(tmp_path: Path) -> None:
+def test_same_scope_and_source_identical_content_retires_older_copy(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         first = store.append_trace(
             "bootstrap chunk hello",
@@ -30,7 +28,7 @@ def test_same_scope_identical_content_supersedes_older_trace(tmp_path: Path) -> 
         )
         second = store.append_trace(
             "bootstrap chunk hello",
-            {"scope": "project:demo", "agent": "b"},
+            {"scope": "project:demo", "agent": "a"},
         )
 
         refetched_first = store.get_node(first.id)
@@ -45,25 +43,28 @@ def test_same_scope_identical_content_supersedes_older_trace(tmp_path: Path) -> 
         assert [n.id for n in active] == [second.id]
 
 
-def test_supersedes_connection_has_dedup_metadata(tmp_path: Path) -> None:
+def test_related_connection_has_duplicate_metadata(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         first = store.append_trace(
-            "supersede edge content",
+            "duplicate edge content",
             {"scope": "project:demo"},
         )
         second = store.append_trace(
-            "supersede edge content",
+            "duplicate edge content",
             {"scope": "project:demo"},
         )
 
-        edges = store.list_connections(source_id=second.id, relation_type="supersedes")
+        edges = store.list_connections(source_id=second.id, relation_type="related")
         assert len(edges) == 1
         edge = edges[0]
         assert edge.target_id == first.id
         assert edge.metadata.get("kind") == "duplicate_content"
         assert edge.metadata.get("fingerprint") == _fingerprint(
-            "supersede edge content"
+            "duplicate edge content"
         )
+        assert store.list_connections(relation_type="supersedes") == []
+        assert store.list_superseding_nodes(first.id) == []
+        assert [node.id for node in store.list_duplicate_replacements(first.id)] == [second.id]
 
 
 def test_cross_scope_identical_content_is_not_deduped(tmp_path: Path) -> None:
@@ -79,7 +80,7 @@ def test_cross_scope_identical_content_is_not_deduped(tmp_path: Path) -> None:
 
         assert store.get_node(a.id).decayed is False
         assert store.get_node(b.id).decayed is False
-        assert store.list_connections(source_id=b.id, relation_type="supersedes") == []
+        assert store.list_connections(source_id=b.id) == []
 
 
 def test_cross_level_identical_content_is_not_deduped(tmp_path: Path) -> None:
@@ -97,8 +98,7 @@ def test_cross_level_identical_content_is_not_deduped(tmp_path: Path) -> None:
 
         assert store.get_node(trace.id).decayed is False
         assert store.get_node(concept.id).decayed is False
-        # No supersedes edge should be created across levels.
-        edges = store.list_connections(source_id=concept.id, relation_type="supersedes")
+        edges = store.list_connections(source_id=concept.id)
         assert edges == []
 
 
@@ -123,7 +123,7 @@ def test_dedup_handles_file_chunk_shaped_content(tmp_path: Path) -> None:
 
         assert store.get_node(first.id).decayed is True
         assert store.get_node(second.id).decayed is False
-        edges = store.list_connections(source_id=second.id, relation_type="supersedes")
+        edges = store.list_connections(source_id=second.id, relation_type="related")
         assert [e.target_id for e in edges] == [first.id]
 
 
@@ -170,9 +170,9 @@ def test_n_repeated_inserts_yield_one_active_n_minus_one_decayed(
         nodes = [
             store.append_trace(
                 "repeated bootstrap content",
-                {"scope": "project:demo", "agent": f"agent-{i}"},
+                {"scope": "project:demo", "agent": "same-source"},
             )
-            for i in range(10)
+            for _ in range(10)
         ]
 
         active = store.list_nodes(
@@ -185,16 +185,16 @@ def test_n_repeated_inserts_yield_one_active_n_minus_one_decayed(
             assert refetched.decayed is True
             assert refetched.decay_reason == "duplicate_content"
 
-        # 9 supersedes edges total: one from each new insert to every still-
-        # active older trace at the moment of insertion.
+        # Each new copy links to the previous active copy.
         edge_count = store.connection.execute(
-            "SELECT COUNT(*) AS c FROM connections WHERE type = 'supersedes'"
+            "SELECT COUNT(*) AS c FROM connections WHERE type = 'related'"
         ).fetchone()["c"]
         assert int(edge_count) == 9
+        assert store.list_connections(relation_type="supersedes") == []
 
 
 def test_dedup_preserves_original_content_in_store(tmp_path: Path) -> None:
-    """History is preserved: superseded rows remain queryable with original content."""
+    """Retired copies remain queryable with their original content."""
 
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         original = store.append_trace(
@@ -203,7 +203,7 @@ def test_dedup_preserves_original_content_in_store(tmp_path: Path) -> None:
         )
         replacement = store.append_trace(
             "history-preservation payload",
-            {"scope": "project:demo", "agent": "b"},
+            {"scope": "project:demo", "agent": "a"},
         )
 
         # Raw id-based fetch still returns the row with its original content.
@@ -218,9 +218,9 @@ def test_dedup_preserves_original_content_in_store(tmp_path: Path) -> None:
         )
         assert {n.id for n in history} == {original.id, replacement.id}
 
-        # The supersedes edge traversal recovers the chain.
+        # The technical relation records the copy's replacement.
         edges = store.list_connections(
-            source_id=replacement.id, relation_type="supersedes"
+            source_id=replacement.id, relation_type="related"
         )
         assert [e.target_id for e in edges] == [original.id]
 
@@ -238,13 +238,12 @@ def test_dedup_excludes_already_decayed_traces(tmp_path: Path) -> None:
             {"scope": "project:demo"},
         )
 
-        # The manually-decayed trace stays decayed with its original reason,
-        # and the new trace must NOT create a supersedes edge to it.
+        # Manual decay is preserved and creates no duplicate relationship.
         old = store.get_node(original.id)
         assert old.decayed is True
         assert old.decay_reason == "manual"
         edges = store.list_connections(
-            source_id=replacement.id, relation_type="supersedes"
+            source_id=replacement.id
         )
         assert edges == []
         assert store.get_node(replacement.id).decayed is False
@@ -264,9 +263,6 @@ def test_memory_recall_returns_only_active_traces_after_dedup(tmp_path: Path) ->
             scope="project:demo",
             max_results=10,
         )
-        # Recall surfaces the active trace only; the four superseded copies are
-        # decayed and excluded from active retrieval. The dedup chain's active
-        # head is the superseding end of its edges, never a supersedes target,
-        # so it must not carry the superseded flag.
+        # Recall surfaces the active copy without a semantic correction flag.
         assert len(results) == 1
         assert results[0].superseded is False
