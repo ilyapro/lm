@@ -100,14 +100,11 @@ event therefore requires pointing at a **real node**.
 * **Without `trace_id`** (the default): grounded results earn credit and anchor
   reinforcement, and `recall_events.feedback_applied` stays 0. Inventing a
   synthetic node to satisfy the foreign key would pollute `nodes` with
-  non-knowledge and inflate `recall_fingerprints.linked_count` for events that
-  produced no trace at all — corrupting the very delivered-versus-linked measure
-  this work exists to make honest.
+  non-knowledge.
 * **With a `trace_id` that resolves** — in practice the trace the same
   extraction wrote for that session — `MemoryStore.mark_recall_event_feedback`
-  runs, so the 0 → 1 flip credits `linked_count` exactly once. On an
-  already-closed event it is never called, because that path would take the
-  legacy overwrite branch and clobber an existing `feedback_trace_id`.
+  records closure and the consuming trace. On an already-closed event it is
+  never called, preserving the existing `feedback_trace_id`.
 * **An unresolvable `trace_id` is an error**, not a silent downgrade to
   credit-without-closure. A caller that believes it closed an event must not be
   told it did.

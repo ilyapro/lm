@@ -488,10 +488,11 @@ context compaction, and closure invariance — over a
 real MCP client; `tests/test_delivery_shaping.py` pins each lever and its
 valve at the unit level.
 
-#### Repeat-recall gating — a refuted hypothesis, kept only as an instrument
+#### Historical repeat-recall gating result
 
-The separate repeat path gates a recall whose `(query, requested_scope)`
-fingerprint keeps being delivered without earning feedback links. The
+Ordinary recall, delivery and feedback do not maintain repeat-gating state.
+The historical experiment gated a recall whose `(query, requested_scope)`
+fingerprint kept being delivered without earning feedback links. The
 hypothesis was that gating such repeats would compact repeated *automatic*
 recall while leaving organic, agent-triggered recall intact. **That hypothesis
 was measured on sealed data and refuted.** It is not deferred, not pending,
@@ -550,64 +551,37 @@ session history, and dedupes there today — demonstrably, and without touching
 organic recall. That is where repeat suppression belongs. It is not a
 server-side policy, and it will not become one by re-tuning this gate.
 
-##### Why the mechanism is nevertheless kept
+##### Offline source and evidence
 
-It stays in the tree as an instrument, not as a feature.
-`scripts/ap_baseline.py` — the frozen calculator that produced the refutation
-above, and whose SHA-256 is recorded in `final-report.json` — depends on all
-five moving parts of the mechanism. It imports `FingerprintGatePolicy`,
-`should_gate_fingerprint` and `recall_fingerprint` from
-`living_memory.storage`, and reaches the remaining two through the store API,
-as `store.get_recall_fingerprint_stats(...)` and
-`store.mark_recall_event_gated(...)`. Deleting any of the five would delete
-the instrument that reproduces its own refutation and leave the sealed report
-unverifiable. Removing a negative result's evidence is strictly worse than
-carrying a dormant code path.
+The evaluated source is revision
+`ee042335dbcd763054819def24e7e487de5d8f11` in the source repository retained at
+`/home/sfx/p/lm`. Its calculator has the SHA-256 recorded above. Read the
+unchanged evidence at `artifacts/animal-planet/evaluation/final-report.json`
+and `final-report.md`; the source revision also contains the experiment's
+implementation and tests. No production compatibility layer is required.
 
-The schema-v5 columns stay for the same reason and for backward
-compatibility. `recall_events.fingerprint`, `recall_events.gated` and the
-`recall_fingerprints` aggregate are written by recall accounting that runs
-unconditionally inside `record_recall_event`, independent of both valves below.
-Accounting is not gating: stamping a fingerprint costs one hash and changes no
-response.
+For an isolated offline source inspection on the source host:
 
-##### Both valves, strictly opt-in
+```sh
+history_dir=$(mktemp -d)
+git -C /home/sfx/p/lm archive ee042335dbcd763054819def24e7e487de5d8f11 \
+  src scripts/ap_baseline.py pyproject.toml | tar -x -C "$history_dir"
+sha256sum "$history_dir/scripts/ap_baseline.py"
+python3 "$history_dir/scripts/ap_baseline.py" --help
+```
 
-* `LM_RECALL_REPEAT_GATING` enables history-based fingerprint gating.
-* `LM_RECALL_REPEAT_DROP_TRAILING_STUBS` permits a gated response's trailing
-  run of `session_duplicate`/`twin_duplicate`/`near_duplicate` stubs to be
-  removed; setting it alone neither enables gating nor changes an ungated
-  response.
+This extracts source only and does not run the sealed holdout. Its one-shot
+permission remains consumed; source availability grants no permission to
+repeat or tune that evaluation. The current `scripts/ap_baseline.py` retains
+baseline report/verification, ordinary delivery metrics and recorded-candidate
+ranking comparisons. It does not evaluate repeat gating.
 
-`FingerprintGatePolicy` defaults both fields to `False`, so a clean
-environment resolves both off and the repeat path never runs. For either
-valve, only a whitespace-trimmed, case-insensitive `1`, `true`, `yes`, or `on`
-enables it; unset, empty, known-false (`0`, `false`, `no`, `off`), and
-malformed values are off. Consequently a fully repeated response can become
-empty only when both valves are explicitly enabled and the fingerprint gate
-fires. With gating alone the ranked response retains re-fetchable stubs; with
-trailing-drop alone that valve removes nothing from a nonempty ranking. The
-remaining `LM_RECALL_REPEAT_MIN_UNLINKED`, `LM_RECALL_REPEAT_MAX_LINK_RATE`,
-`LM_RECALL_REPEAT_MIN_SESSIONS` and `LM_RECALL_REPEAT_PROBE_EVERY` knobs only
-shift thresholds inside an already-enabled gate; they cannot enable it.
-
-##### Never advertised in the protocol channel
-
-This section is the only place the repeat path is documented, and that is
-deliberate. It MUST NOT be mentioned in any protocol-bearing text — tool
-descriptions, server instructions, or the `memory://prompt/retrieval_context`
-prompt. Those channels are paid for by every connected client on every
-request and are hard-capped by clients (1024 characters per function
-description for OpenAI-compatible clients); an agent following the protocol
-gains nothing from a refuted, default-off mechanism it will never enable, and
-every character spent on it is taken from the protocol itself. Re-adding it
-there is a regression, not a documentation improvement.
-
-This refuted class-blind gate is distinct from the class-agnostic
-`LM_DELIVERY_*` diet described above. The diet intentionally shapes every
-caller class the same way, preserves direct access through `memory_lookup`,
-passed its generalization gates, and remains enabled by default; its
-documented rollback valves do not opt the repeat path in.
+Existing `recall_events.fingerprint`/`gated` columns and `recall_fingerprints`
+rows remain untouched when a database is opened. New events do not populate
+them, and fresh databases do not create them. The independent
+`recall_fingerprint()` query identity remains in use by query anchors and hubs.
+Session content receipts, body/near-duplicate delivery shaping and explicit
+mandatory/credit feedback operate independently of this historical experiment.
 
 ### `memory_attest`
 

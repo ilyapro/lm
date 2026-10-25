@@ -235,7 +235,7 @@ def upsert_anchor(
 
     1. exact identity — :func:`storage.recall_fingerprint` over
        (whitespace-collapsed query, scope), the same key ``recall_events``
-       already stamps, resolved by an indexed ``UNIQUE(scope, fingerprint)``
+       uses for query identity, resolved by an indexed ``UNIQUE(scope, fingerprint)``
        probe;
     2. near-identity — cosine at or above ``dedup_threshold`` against the live
        in-scope anchors, highest first.

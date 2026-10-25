@@ -227,33 +227,17 @@ windowed closure ratio per identity class (`explicit`, `transport_only`,
 The same column also feeds recall delivery shaping: an idempotent
 `idx_recall_events_transport_created` index supports
 `MemoryStore.recall_delivery_history`, which reads content receipts from the
-200 most recent events of a transport session. Session and experimental
-fingerprint repeat controls compare the same receipts against current source
-content and the proposed excerpt; selected IDs alone do not prove delivery.
+200 most recent events of a transport session. The delivery shaper compares
+these receipts against current source content and the proposed excerpt;
+selected IDs alone do not prove delivery.
 
-`fingerprint` and `gated` (schema v5) are recall *accounting*, not a delivery
-policy. `record_recall_event` unconditionally stamps every event with
-`recall_fingerprint(query, requested_scope)` and rolls it into the
-`recall_fingerprints` aggregate below; nothing about the response changes.
-Pre-v5 databases are upgraded by the same idempotent additive
-`ALTER TABLE ... ADD COLUMN` migration style, then `recall_fingerprints` is
-rebuilt once from the stamped events.
-
-### `recall_fingerprints`
-
-Per-fingerprint delivered-versus-linked signal, maintained online by
-`record_recall_event` and `mark_recall_event_feedback`: delivery and link
-counts, deliveries since the last link, transport-session spread, and
-first/last timestamps. It answers "how often was this exact request served
-without ever earning feedback?" and is the substrate the repeat-recall gate
-was built on.
-
-That gate is a refuted hypothesis and is default-off — it failed both of its
-thresholds on sealed data (see *Repeat-recall gating* in
-`docs/mcp-interface.md`). This table nevertheless stays populated: it is
-written by default-on accounting rather than by the gate, it is the measured
-signal the refutation rests on, and `scripts/ap_baseline.py` reads it to
-reproduce that result. Do not drop it as gate leftovers.
+Existing schema-v5 `fingerprint`/`gated` columns and the `recall_fingerprints`
+table are preserved as historical data. Opening a database, recording a recall
+and applying feedback neither populate nor rebuild that experimental state.
+Fresh databases do not create it. Query anchors and hubs independently use
+`recall_fingerprint(query, scope)` for stable query identity. The refuted
+repeat-gating result and its offline source address are documented in
+[mcp-interface.md](mcp-interface.md#historical-repeat-recall-gating-result).
 
 ### `recall_attestations`
 
