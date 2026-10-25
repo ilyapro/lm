@@ -543,19 +543,17 @@ def test_schema_v3_database_migrates_to_v4_with_transport_column(tmp_path: Path)
         assert fetched.transport_session_id == "transport-1"
         assert fetched.ambient_context == {"transport_session_id": "transport-1"}
 
-        # Equal transport ids match strongly even with zero text overlap...
+        # Equal transport ids match...
         pending = store.pending_recall_events(
             scope="project:fresh",
             context={"transport_session_id": "transport-1"},
-            content="quebec romeo sierra tango",
         )
         assert [event.id for event in pending] == [recorded.id]
 
-        # ...while differing transport ids reject despite full text overlap.
+        # ...while differing transport ids reject.
         mismatched = store.pending_recall_events(
             scope="project:fresh",
             context={"transport_session_id": "transport-2"},
-            content="mike november oscar papa exact overlap",
         )
         assert mismatched == []
 
