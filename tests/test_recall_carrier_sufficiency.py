@@ -18,7 +18,9 @@ SCOPE = "project:synthetic-opal"
 
 
 def _assert_sourced_answer(content: str) -> None:
-    assert f"- {SOURCE}: {FACT}" in content, "recall must contain the sourced pressure answer"
+    assert any(
+        line.startswith(f"- {SOURCE}: {FACT}") for line in content.splitlines()
+    ), "recall must contain the sourced pressure answer"
 
 
 def _word_overlap_excerpt(content: str, budget: int, query: str | None) -> str:
@@ -66,7 +68,7 @@ def test_answer_survives_topical_decoys(
         monkeypatch.setattr(
             delivery, "_relevant_excerpt",
             lambda body, budget, query: excerpt(body, budget, query).replace(
-                f"- {SOURCE}: ", "- 01SYNTH00000000000000000: "
+                f"- {SOURCE}: ", f"- 01SYNTH{0:020d}: "
             ),
         )
 
@@ -90,7 +92,7 @@ def test_answer_survives_topical_decoys(
             else:
                 if control == "word_overlap":
                     assert FACT not in snippet
-                    assert "- 01SYNTH00000000000000000: " in snippet
+                    assert f"- 01SYNTH{0:020d}: " in snippet
                 else:
                     assert FACT in snippet
                     assert f"- {SOURCE}: " not in snippet
