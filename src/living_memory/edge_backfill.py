@@ -114,7 +114,7 @@ DEFAULT_SAMPLE_SIZE = 5
 
 @dataclass(frozen=True, slots=True)
 class BackfillEdge:
-    """One merged, ready-to-insert edge (post dedup, marker already stamped)."""
+    """One merged, ready-to-record derived relation."""
 
     source_id: str
     target_id: str
@@ -134,6 +134,7 @@ class RuleAudit:
     ``(source, target, type)`` novelty, what actually gets inserted) is larger
     because same-type edges are also added on pairs already connected in the
     reverse direction or by another type, exactly as the write path does.
+    Explicit corrections replacing technical rows count as ``correction_updates``.
     """
 
     type: str
@@ -302,7 +303,7 @@ def _stamp_backfill_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
 def _existing_edges(
     store: MemoryStore,
 ) -> tuple[set[tuple[str, str, str]], set[frozenset[str]], set[tuple[str, str, str]]]:
-    """Return the exact ``(source, target, type)`` keys and undirected pairs.
+    """Return stored keys, undirected pairs and keys of technical supersedes.
 
     The exact keys drive additive/idempotent insertion; the undirected pairs
     (any type, either direction) drive the ``net_new_pairs`` connectivity
@@ -617,7 +618,7 @@ def _build_report(
             f"WHERE json_extract(metadata,'$.basis')='{BACKFILL_BASIS}';"
         ),
         "guarantees": {
-            "additive_only": "existing semantic edges preserved; explicit corrections replace only known technical supersedes",
+            "existing_semantics_preserved": "explicit corrections replace only known technical supersedes",
             "idempotent": "second run inserts 0 new rows (pairs already connected)",
             "marker": {"metadata.basis": BACKFILL_BASIS},
             "rollback_scope": "new rows only; correction updates and optional R5a annotations are retained",
