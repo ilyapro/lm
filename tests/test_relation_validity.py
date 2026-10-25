@@ -48,7 +48,7 @@ async def read(client, path, node_id, *, scope=SCOPE):
 @pytest.mark.parametrize("path", [
     "recall:knowledge", "recall:full", "lookup:knowledge", "lookup:full",
 ])
-@pytest.mark.parametrize("correction_state", ["active", "decayed", "foreign", "missing"])
+@pytest.mark.parametrize("correction_state", ["active", "decayed", "foreign", "missing", "ineligible"])
 def test_relation_only_correction_validity(tmp_path, monkeypatch, path, correction_state):
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     store = mcp.memory_store
@@ -69,6 +69,8 @@ def test_relation_only_correction_validity(tmp_path, monkeypatch, path, correcti
             assert store.get_node(original).corrections == []
             if correction_state == "decayed":
                 store.soft_delete_node(correction, "expired correction")
+            elif correction_state == "ineligible":
+                store.update_node(correction, context={"is_rejected_alternative": True})
             elif correction_state == "missing":
                 # Model an unreadable counterpart while retaining its known relation.
                 get_nodes = store.get_nodes
@@ -78,7 +80,7 @@ def test_relation_only_correction_validity(tmp_path, monkeypatch, path, correcti
 
             entry, response = await read(client, path, original)
             assert entry["superseded"] is True
-            expected = [correction] if correction_state in ("active", "decayed") else []
+            expected = [correction] if correction_state in ("active", "decayed", "ineligible") else []
             assert entry["superseded_by"] == expected
             body = entry.get("node", entry)
             assert body["provenance"]["corrections"] == []
@@ -86,8 +88,11 @@ def test_relation_only_correction_validity(tmp_path, monkeypatch, path, correcti
             if correction_state == "foreign":
                 assert correction not in json.dumps(response)
                 assert "CORRECTION_BODY_SENTINEL" not in json.dumps(response)
-            if correction_state == "decayed" and path.startswith("recall"):
+            if correction_state in ("decayed", "ineligible") and path.startswith("recall"):
                 assert all(e.get("node", e)["id"] != correction for e in response["results"])
+                event = store.get_recall_event(response["recall_event_id"])
+                assert correction not in event.result_ids
+                assert store.connection.execute("SELECT count(*) FROM recall_lookup_events").fetchone()[0] == 0
             if expected:
                 fetched = _structured(await client.call_tool("memory_lookup", {
                     "node_id": expected[0], "scope": SCOPE,
@@ -95,6 +100,15 @@ def test_relation_only_correction_validity(tmp_path, monkeypatch, path, correcti
                 assert fetched["id"] == correction
                 assert fetched["decayed"] is (correction_state == "decayed")
                 assert fetched["superseded"] is False
+            if correction_state == "ineligible" and path.startswith("recall"):
+                marked = _structured(await client.call_tool("memory_recall", {
+                    "query": QUERY, "scope": SCOPE, "depth": 0, "used": [correction],
+                }))
+                assert marked["feedback_marks"]["accepted"] == 0
+                assert marked["feedback_marks"]["dropped"] == 1
+                assert store.connection.execute(
+                    "SELECT count(*) FROM recall_credit_ledger WHERE node_id = ?", (correction,),
+                ).fetchone()[0] == 0
             assert store.get_node(original).content == ORIGINAL
             assert store.get_node(original).corrections == []
 
