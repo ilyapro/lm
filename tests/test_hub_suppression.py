@@ -25,6 +25,7 @@ import pytest
 import living_memory.hubs as hubs
 from living_memory.hubs import (
     DEFAULT_HUB_MIN_QUERIES,
+    HubCount,
     hub_counts,
     hub_demotions,
     hub_ids,
@@ -32,7 +33,7 @@ from living_memory.hubs import (
     hub_suppression_factor,
 )
 from living_memory.retrieval import MemoryRecallService, _merge_demotions
-from living_memory.storage import MemoryStore
+from living_memory.storage import MemoryStore, recall_fingerprint
 
 SCOPE = "project:hubs"
 BODIES = [
@@ -269,6 +270,77 @@ def test_exact_anchor_is_the_identity(tmp_path: Path) -> None:
         assert anchor.id
 
 
+def test_current_anchor_identities_on_partial_read_only_schema(tmp_path: Path) -> None:
+    """Exact identity wins over node-specific near identity, then scoped raw/event keys."""
+
+    db = tmp_path / "identities.sqlite3"
+    with sqlite3.connect(db) as conn:
+        conn.executescript("""
+            CREATE TABLE recall_feedback_marks (
+                recall_event_id TEXT, node_id TEXT, mark TEXT, accepted INTEGER, marked_at TEXT
+            );
+            CREATE TABLE recall_events (id TEXT PRIMARY KEY, query TEXT, scope TEXT);
+            CREATE TABLE query_anchors (
+                id TEXT PRIMARY KEY, scope TEXT, fingerprint TEXT, UNIQUE(scope, fingerprint)
+            );
+            CREATE TABLE query_irrelevance (anchor_id TEXT, node_id TEXT, last_event_id TEXT);
+        """)
+        conn.executemany("INSERT INTO recall_events VALUES (?, ?, ?)", [
+            ("e1", " Shared\t Query ", " repo:one "),
+            ("e2", "Shared Query", "project:one"),
+            ("e3", "Shared Query", "project:other"),
+            ("e4", "near one", "project:one"),
+            ("e5", "near two", "project:one"),
+            ("e6", "raw question", None),
+        ])
+        for scope, anchor in (("project:one", "a1"), ("project:other", "a2")):
+            conn.execute("INSERT INTO query_anchors VALUES (?, ?, ?)",
+                         (anchor, scope, recall_fingerprint("Shared Query", scope)))
+        # A fingerprint without its scope does not identify an anchor.
+        conn.execute("INSERT INTO query_anchors VALUES (?, ?, ?)",
+                     ("wrong-scope", "project:elsewhere",
+                      recall_fingerprint("near two", "project:one")))
+        for node in ("n1", "n2"):
+            for event in ("e1", "e1", "e2", "e3", "e4", "e5", "e6", "missing"):
+                conn.execute("INSERT INTO recall_feedback_marks VALUES (?, ?, 'irrelevant', 1, ?)",
+                             (event, node, "2026-09-01T00:00:00Z"))
+            for event in ("e1", "e2", "e4", "e5"):
+                anchor = "different" if node == "n2" and event == "e5" else "shared"
+                conn.execute("INSERT INTO query_irrelevance VALUES (?, ?, ?)", (anchor, node, event))
+
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as ro:
+        statements: list[str] = []
+        ro.set_trace_callback(statements.append)
+        assert hub_counts(ro, min_queries=6) == [
+            HubCount("n2", 6, 6, 8, "2026-09-01T00:00:00Z", 0, 0, True),
+            HubCount("n1", 5, 6, 8, "2026-09-01T00:00:00Z", 0, 0, False),
+        ]
+        assert len([sql for sql in statements if "FROM query_anchors" in sql]) == 1
+        assert not ro.in_transaction
+        with sqlite3.connect(db) as writer:
+            writer.execute("INSERT INTO query_anchors VALUES (?, ?, ?)",
+                           ("new", "project:one", recall_fingerprint("near one", "project:one")))
+        # The next count observes new identities even through the same read-only connection.
+        assert hub_ids(ro, min_queries=6) == {"n1": 6, "n2": 6}
+
+
+@pytest.mark.parametrize("events", [1, 50])
+def test_exact_anchor_read_count_is_independent_of_events(tmp_path: Path, events: int) -> None:
+    with MemoryStore(tmp_path / "m.sqlite3") as store:
+        [node, *_] = _seed(store)
+        store.insert_query_anchor(
+            scope=SCOPE, query=QUERIES[0], fingerprint=recall_fingerprint(QUERIES[0], SCOPE),
+            embedding=[1.0, 0.0],
+        )
+        for _ in range(events):
+            _mark(store, _event(store, QUERIES[0]), node)
+        statements: list[str] = []
+        store.connection.set_trace_callback(statements.append)
+        [row] = hub_counts(store.connection)
+        assert (row.irrelevant_marks, row.distinct_anchors) == (events, 1)
+        assert len([sql for sql in statements if "FROM query_anchors" in sql]) == 1
+
+
 def test_before_cutoff(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "m.sqlite3") as store:
         ids = _seed(store)
@@ -377,6 +449,52 @@ def test_cache_serves_unchanged_store(tmp_path: Path, monkeypatch: pytest.Monkey
         assert hub_demotions(store) == {ids[0]: 0.3}
         assert hub_demotions(store) == {ids[0]: 0.3}
         assert len(calls) == 1
+
+
+@pytest.mark.parametrize("positive", ["used", "grounded", "explicit"])
+def test_recall_lift_and_next_recount_observe_feedback_and_anchors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, positive: str,
+) -> None:
+    now = 1000.0
+    monkeypatch.setattr(hubs.time, "monotonic", lambda: now)
+    with MemoryStore(tmp_path / "m.sqlite3") as store:
+        ids = _seed(store)
+        _recall(store)
+        baseline = dict(_recall(store))
+        monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.1")
+        _mark_distinct(store, ids[0], QUERIES[:3])
+        events = [_event(store, query) for query in QUERIES[:3]]
+        with store.connection as conn:
+            conn.execute("CREATE TABLE query_irrelevance (anchor_id TEXT, node_id TEXT, last_event_id TEXT)")
+            for event in events:
+                conn.execute("INSERT INTO query_irrelevance VALUES ('shared', ?, ?)", (ids[1], event))
+        for event in events:
+            _mark(store, event, ids[1])
+        assert hub_demotions(store) == {ids[0]: 0.1}
+        assert dict(_recall(store))[ids[0]] == pytest.approx(baseline[ids[0]] * 0.1)
+
+        _credit(store, ids[0], "lookup", "2026-09-28T11:00:00Z")
+        assert hub_demotions(store) == {ids[0]: 0.1}
+        if positive == "used":
+            _mark(store, _event(store, "confirmed useful"), ids[0], "used")
+        else:
+            _credit(store, ids[0], positive, "2026-09-28T12:00:00Z")
+        assert dict(_recall(store))[ids[0]] == pytest.approx(baseline[ids[0]])
+        assert hub_demotions(store) == {}
+
+        for query in QUERIES[:3]:
+            store.insert_query_anchor(
+                scope=SCOPE, query=query, fingerprint=recall_fingerprint(query, SCOPE),
+                embedding=[1.0, 0.0],
+            )
+        _mark(store, events[0], ids[1])
+        now += hubs.HUB_REFRESH_SECONDS - 1
+        assert hub_demotions(store) == {}
+        assert dict(_recall(store))[ids[1]] == pytest.approx(baseline[ids[1]])
+        now += 1
+        assert dict(_recall(store))[ids[1]] == pytest.approx(baseline[ids[1]] * 0.1)
+        assert hub_demotions(store) == {ids[1]: 0.1}
+        assert set(hub_demotions(store)) == set(hub_ids(store.connection))
 
 
 # ---------------------------------------------------------------------------
