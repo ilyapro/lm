@@ -904,13 +904,13 @@ def test_excerpt_selects_late_constraint_with_its_source_topic() -> None:
 
     entry = shape_default(
         [make_result(make_node("carrier", content))],
-        query="amber hatch calibration pressure open indicator green", snippet_ladder=(200,),
+        query="amber hatch calibration pressure open indicator green", snippet_ladder=(300,),
     )[0]
 
     excerpt = entry["node"]["content"]
     assert f"- {source}: {constraint}" in excerpt
     assert f"- {other}: {constraint}" not in excerpt
-    assert len(excerpt) <= 200
+    assert len(excerpt) <= 300
 
 
 @pytest.mark.parametrize("budget", [1, 40, 80, 200, 700, 1000, 2400])

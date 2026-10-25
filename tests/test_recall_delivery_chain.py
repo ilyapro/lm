@@ -22,6 +22,73 @@ from living_memory.server import create_mcp_server
 from test_transport_identity import _structured
 
 
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("evidence", [False, True])
+@pytest.mark.parametrize("qualifier", ["Do not", "Only if the indicator is green,"])
+def test_mcp_excerpt_keeps_qualifier_and_lookup_restores_original(
+    tmp_path, monkeypatch, view, evidence, qualifier,
+):
+    monkeypatch.setenv("LM_DELIVERY_SNIPPET_LADDER", "200")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    statement = qualifier + " open the amber hatch."
+    lead = "Archive " + "x" * (700 - len(qualifier) - len("Archive . ")) + ". "
+    heading = "Evidence: hatch cases (case records, not steps)\n" if evidence else ""
+    prefix = "- 01SYNTHETICSOURCE0000000001: " if evidence else ""
+    content = heading + prefix + lead + statement + " Routine background." * 100
+    scope = "project:synthetic-excerpt"
+    node = mcp.memory_store.append_trace(content, {"scope": scope})
+
+    async def scenario():
+        async with Client(mcp) as client:
+            answer = _structured(await client.call_tool("memory_recall", {
+                "query": "open amber hatch", "scope": scope, "max_results": 1,
+                "depth": 0, "view": view,
+            }))
+            entry = answer["results"][0]
+            body = entry.get("node", entry)
+            assert body["id"] == node.id
+            assert heading + prefix + statement in body["content"]
+            assert len(body["content"]) <= 200
+            assert entry["delivery"] == "snippet"
+            assert entry["content_ref"] == {"node_id": node.id, "full_content_chars": len(content)}
+            lookup = _structured(await client.call_tool("memory_lookup", {
+                "node_id": entry["content_ref"]["node_id"],
+            }))
+            assert lookup["results"][0]["content"] == content
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+def test_mcp_indivisible_excerpt_is_marked_and_refetchable(tmp_path, monkeypatch, view):
+    monkeypatch.setenv("LM_DELIVERY_SNIPPET_LADDER", "200")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    content = "x" * 694 + "do not open the amber hatch" + " background" * 1000
+    scope = "project:synthetic-indivisible"
+    node = mcp.memory_store.append_trace(content, {"scope": scope})
+
+    async def scenario():
+        async with Client(mcp) as client:
+            answer = _structured(await client.call_tool("memory_recall", {
+                "query": "open amber hatch", "scope": scope, "max_results": 1,
+                "depth": 0, "view": view,
+            }))
+            entry = answer["results"][0]
+            excerpt = entry.get("node", entry)["content"]
+            assert entry["delivery"] == "snippet"
+            assert len(excerpt) <= 200 and excerpt.endswith("…")
+            assert content.startswith(excerpt[:-1])
+            assert "open the amber hatch" not in excerpt
+            assert entry["content_ref"]["full_content_chars"] == len(content)
+            lookup = _structured(await client.call_tool("memory_lookup", {
+                "node_id": entry["content_ref"]["node_id"],
+            }))
+            assert lookup["results"][0]["id"] == node.id
+            assert lookup["results"][0]["content"] == content
+
+    asyncio.run(scenario())
+
+
 @dataclass
 class Reading:
     responses: list[dict[str, Any]]
