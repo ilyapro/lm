@@ -90,44 +90,62 @@ CHUNK_EMBEDDING_ITEMSIZE = 4
 #: one-argument TRIM strips spaces and nothing else.
 _SQL_WHITESPACE = "' ' || CHAR(9) || CHAR(10) || CHAR(11) || CHAR(12) || CHAR(13)"
 
-# One transactional revision covers the rows and node membership used by
-# iter_chunk_embedding_rows. Triggers also cover other connections and SQL
-# maintenance; access, feedback and provenance writes leave it unchanged.
+# Revisions share metadata's transaction with the chunk rows. Empty scopes keep
+# their revision so deleting and repopulating a scope cannot reuse an identity.
+_CHUNK_SCOPE_REVISION_PREFIX = "chunk_scope_revision:"
+_CHUNK_SCOPE_REVISION_FORMAT = "chunk_scope_revision_format"
+
+
+def _chunk_scope_revision_write(scopes: str) -> str:
+    return f"""INSERT INTO metadata (key, value)
+        SELECT '{_CHUNK_SCOPE_REVISION_PREFIX}' || scope, 1 FROM ({scopes})
+        WHERE scope IS NOT NULL GROUP BY scope
+        ON CONFLICT(key) DO UPDATE SET value = value + 1;"""
+
+
+# BEFORE INSERT also observes a row displaced by REPLACE: SQLite need not run
+# its DELETE triggers when recursive_triggers is off. Both scopes must advance.
 _CHUNK_CORPUS_TRIGGERS = (
-    """CREATE TRIGGER chunk_corpus_insert
-    AFTER INSERT ON node_chunk_embeddings BEGIN
-        UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
-    END
-    """.strip(),
-    """CREATE TRIGGER chunk_corpus_delete
+    f"""CREATE TRIGGER chunk_corpus_insert
+    BEFORE INSERT ON node_chunk_embeddings BEGIN
+        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = NEW.node_id OR id IN (SELECT node_id FROM node_chunk_embeddings WHERE id = NEW.id)")}
+    END""",
+    f"""CREATE TRIGGER chunk_corpus_delete
     AFTER DELETE ON node_chunk_embeddings BEGIN
-        UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
-    END
-    """.strip(),
-    """CREATE TRIGGER chunk_corpus_update
+        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = OLD.node_id")}
+    END""",
+    f"""CREATE TRIGGER chunk_corpus_update
     AFTER UPDATE OF node_id, chunk_index, embedding ON node_chunk_embeddings
     WHEN OLD.node_id IS NOT NEW.node_id
         OR OLD.chunk_index IS NOT NEW.chunk_index
         OR OLD.embedding IS NOT NEW.embedding
     BEGIN
-        UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
-    END
-    """.strip(),
+        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id IN (OLD.node_id, NEW.node_id)")}
+    END""",
 )
 
-_CHUNK_CORPUS_REVISION_SQL = """
-    INSERT OR IGNORE INTO metadata (key, value) VALUES ('chunk_corpus_revision', '0');
-
-    CREATE TRIGGER IF NOT EXISTS chunk_corpus_membership
-    AFTER UPDATE OF scope, decayed ON nodes
-    WHEN (OLD.scope IS NOT NEW.scope OR OLD.decayed IS NOT NEW.decayed)
-        AND EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = NEW.id)
+_CHUNK_MEMBERSHIP_TRIGGERS = (
+    f"""CREATE TRIGGER chunk_corpus_membership
+    AFTER UPDATE OF id, scope, decayed ON nodes
+    WHEN (OLD.id IS NOT NEW.id OR OLD.scope IS NOT NEW.scope
+          OR OLD.decayed IS NOT NEW.decayed)
+        AND EXISTS (SELECT 1 FROM node_chunk_embeddings
+                    WHERE node_id IN (OLD.id, NEW.id))
     BEGIN
-        UPDATE metadata SET value = value + 1 WHERE key = 'chunk_corpus_revision';
-    END;
-""" + "\n".join(
-    sql.replace("CREATE TRIGGER ", "CREATE TRIGGER IF NOT EXISTS ", 1) + ";"
-    for sql in _CHUNK_CORPUS_TRIGGERS
+        {_chunk_scope_revision_write("SELECT OLD.scope AS scope UNION SELECT NEW.scope")}
+    END""",
+    f"""CREATE TRIGGER chunk_corpus_node_delete
+    BEFORE DELETE ON nodes
+    WHEN EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = OLD.id)
+    BEGIN
+        {_chunk_scope_revision_write("SELECT OLD.scope AS scope")}
+    END""",
+    f"""CREATE TRIGGER chunk_corpus_node_insert
+    BEFORE INSERT ON nodes
+    WHEN EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = NEW.id)
+    BEGIN
+        {_chunk_scope_revision_write("SELECT scope FROM nodes WHERE id = NEW.id UNION SELECT NEW.scope")}
+    END""",
 )
 
 # Independent of chunks: anchor membership and vectors have their own revision.
@@ -181,7 +199,7 @@ def install_derived_only_authorizer(
     if corpus == "chunks":
         tables = {CHUNK_EMBEDDING_TABLE}
         triggers = _CHUNK_CORPUS_TRIGGERS
-        revision_key = "chunk_corpus_revision"
+        revision_key = _CHUNK_SCOPE_REVISION_FORMAT
     elif corpus == "anchors":
         tables = {QUERY_ANCHOR_TABLE, QUERY_ANCHOR_EDGE_TABLE}
         triggers = _QUERY_ANCHOR_CORPUS_TRIGGERS
@@ -226,9 +244,11 @@ def install_derived_only_authorizer(
                 if table in tables and source is None and revision_schema_matches():
                     return sqlite3.SQLITE_OK
                 if (
-                    action == sqlite3.SQLITE_UPDATE
-                    and table == "metadata" and column == "value"
-                    and source in expected
+                    table == "metadata" and source in expected
+                    and (
+                        (action == sqlite3.SQLITE_UPDATE and column == "value")
+                        or (corpus == "chunks" and action == sqlite3.SQLITE_INSERT)
+                    )
                 ):
                     return sqlite3.SQLITE_OK
             return sqlite3.SQLITE_DENY
@@ -3729,19 +3749,41 @@ class MemoryStore:
             for node_id, chunk_index, blob in batch:
                 yield str(node_id), int(chunk_index), memoryview(blob)
 
-    def chunk_corpus_revision(self) -> int | None:
-        """Revision of chunk vectors and their scope/liveness membership.
+    def chunk_corpus_revisions(
+        self, scopes: Sequence[str] | None = None,
+    ) -> dict[str, int] | None:
+        """Transactional revisions for the requested scopes, or every scope.
 
-        The revision changes in the writing transaction, including writes from
-        other connections. It excludes bookkeeping that cannot change a chunk
-        matrix. Unmigrated read-only snapshots have no revision; callers must
-        rebuild instead of treating their missing key as a stable identity.
+        Membership and vector changes advance only the affected scopes. A
+        missing scope is empty at revision zero; retained empty-scope revisions
+        prevent delete/reinsert aliasing. Read-only snapshots without this
+        format return None, requiring uncached reads. This is one SQL snapshot,
+        not a transaction around the caller's subsequent reads.
         """
 
-        row = self._conn.execute(
-            "SELECT value FROM metadata WHERE key = 'chunk_corpus_revision'"
-        ).fetchone()
-        return int(row[0]) if row is not None else None
+        if scopes is None:
+            rows = self._conn.execute(
+                "SELECT key, value FROM metadata WHERE key = ? "
+                "OR (key >= ? AND key < ?)",
+                (_CHUNK_SCOPE_REVISION_FORMAT, _CHUNK_SCOPE_REVISION_PREFIX,
+                 "chunk_scope_revision;"),
+            ).fetchall()
+        else:
+            keys = [_CHUNK_SCOPE_REVISION_FORMAT,
+                    *(_CHUNK_SCOPE_REVISION_PREFIX + scope for scope in scopes)]
+            rows = self._conn.execute(
+                f"SELECT key, value FROM metadata WHERE key IN ({','.join('?' for _ in keys)})",
+                keys,
+            ).fetchall()
+        values = dict(rows)
+        if values.pop(_CHUNK_SCOPE_REVISION_FORMAT, None) != "1":
+            return None
+        revisions = {key[len(_CHUNK_SCOPE_REVISION_PREFIX):]: int(value)
+                     for key, value in values.items()}
+        if scopes is not None:
+            for scope in scopes:
+                revisions.setdefault(scope, 0)
+        return revisions
 
     def chunk_embedding_dimensions(
         self,
@@ -4882,6 +4924,32 @@ class MemoryStore:
         ).fetchall()
         return [str(row["target_id"]) for row in rows]
 
+    def _initialize_chunk_revisions(self) -> None:
+        """Install scope revisions atomically, including existing membership."""
+
+        with self.transaction(immediate=True):
+            row = self._conn.execute(
+                "SELECT value FROM metadata WHERE key = ?",
+                (_CHUNK_SCOPE_REVISION_FORMAT,),
+            ).fetchone()
+            if row is not None and row[0] == "1":
+                return
+            for sql in (*_CHUNK_CORPUS_TRIGGERS, *_CHUNK_MEMBERSHIP_TRIGGERS):
+                name = sql.split()[2]
+                self._conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+                self._conn.execute(sql)
+            self._conn.execute(
+                "INSERT OR IGNORE INTO metadata (key, value) "
+                "SELECT DISTINCT ? || scope, '0' FROM nodes "
+                "WHERE EXISTS (SELECT 1 FROM node_chunk_embeddings WHERE node_id = nodes.id)",
+                (_CHUNK_SCOPE_REVISION_PREFIX,),
+            )
+            self._conn.execute("DELETE FROM metadata WHERE key = 'chunk_corpus_revision'")
+            self._conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, '1')",
+                (_CHUNK_SCOPE_REVISION_FORMAT,),
+            )
+
     def _initialize_schema(self) -> None:
         with self._conn:
             self._migrate_pre_v3_schema()
@@ -5199,7 +5267,7 @@ class MemoryStore:
                     ON recall_events(scope, task_pattern, created_at DESC);
                 """
             )
-            self._conn.executescript(_CHUNK_CORPUS_REVISION_SQL)
+            self._initialize_chunk_revisions()
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
             self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)
