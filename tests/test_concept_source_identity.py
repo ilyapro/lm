@@ -207,6 +207,41 @@ def test_stale_pass_resolves_corrections_even_before_first_materialization(store
     assert_sources(store, repeated, [final.corrective_trace.id, b.id])
 
 
+def test_legacy_owner_follows_recorded_ancestor_and_drops_deleted_inputs(store):
+    original, removed = [trace(store, text) for text in TEXTS[:2]]
+    intermediate = c.memory_teach(store, original.id, CORRECTION).corrective_trace
+    current = c.memory_teach(store, intermediate.id, "Deploy release uses the electronic archive.").corrective_trace
+    store.delete_node(removed.id)
+    owner = store.create_node(
+        level="concept", content="Recorded archive evidence.", context={"scope": SCOPE},
+        provenance={"cluster_key": "archive", "source_traces": [original.id, removed.id, "missing-source"]},
+    )
+    (updated, created), = materialize(store, [current])
+    assert not created and updated.id == owner.id
+    assert_sources(store, updated, [current.id])
+
+
+@pytest.mark.parametrize("invalid", ["decayed", "corrected", "superseded"])
+def test_invalid_recorded_owner_does_not_claim_current_inputs(store, invalid):
+    members = [trace(store, text) for text in TEXTS[:2]]
+    owner = store.create_node(
+        level="concept", content="Retired release evidence.", context={"scope": SCOPE},
+        provenance={"strategy": "token-jaccard", "source_traces": [member.id for member in members]},
+    )
+    if invalid == "decayed":
+        store.soft_delete_node(owner.id)
+    elif invalid == "corrected":
+        store.update_node(owner.id, provenance={**owner.provenance, "corrections": [{"reason": "rejected"}]})
+    else:
+        replacement = trace(store, "Retired release evidence was rejected.")
+        store.create_connection(replacement.id, owner.id, "supersedes")
+    before = asdict(store.get_node(owner.id))
+    (current, created), = materialize(store, members)
+    assert created and current.id != owner.id
+    assert_sources(store, current, [member.id for member in members])
+    assert asdict(store.get_node(owner.id)) == before
+
+
 @pytest.mark.parametrize("existing", [False, True])
 def test_ordinary_materialization_edge_failure_rolls_back_sources_digest_and_chunks(store, monkeypatch, existing):
     a, b, fresh = [trace(store, text) for text in TEXTS]
@@ -302,6 +337,32 @@ def test_promotions_use_recorded_owners_and_keep_other_global_knowledge(store):
     assert updated.id == north.id
     assert set(updated.provenance["source_concepts"]) == {node.id for node in groups["north"]} | {fourth.id}
     assert store.get_node(south.id).source_traces == south.source_traces
+
+
+def test_overlapping_promotions_follow_ancestors_without_broadcasting_new_sources(store):
+    sources = [
+        store.create_node(level="concept", content=f"Release evidence from {scope}.",
+                          context={"scope": f"project:{scope}"}, embedding=[1.0, 0.0])
+        for scope in ("alpha", "beta", "gamma", "delta")
+    ]
+    left = c._write_global_promotion(store, sources[:3])
+    right = c._write_global_promotion(store, sources[1:])
+    replacement = store.create_node(
+        level="concept", content="Release alpha uses the electronic archive.",
+        context={"scope": sources[0].scope}, embedding=[1.0, 0.0],
+    )
+    store.create_connection(replacement.id, sources[0].id, "supersedes")
+    fresh = store.create_node(
+        level="concept", content="Release epsilon verifies the signature.",
+        context={"scope": "project:epsilon"}, embedding=[1.0, 0.0],
+    )
+    c._cross_scope_promotion(store, fresh, phase_number=4)
+    assert {node.id for node in store.list_nodes(level="concept", scope="global")} == {left.id, right.id}
+    current = store.get_node(left.id)
+    assert set(current.materializer_sources) == {replacement.id, sources[1].id, sources[2].id}
+    assert "electronic archive" in current.content
+    assert set(store.get_node(right.id).materializer_sources) == {node.id for node in sources[1:]}
+    assert c._cross_scope_promotion(store, fresh, phase_number=4) == []
 
 
 def test_promotion_edge_failure_is_atomic(store, monkeypatch):

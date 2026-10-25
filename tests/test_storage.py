@@ -25,6 +25,42 @@ from living_memory.storage import (
 )
 
 
+def test_list_nodes_filters_source_citations_with_scope_level_and_pagination(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        source = store.append_trace("Harbor inspection evidence.")
+        trace_owner = store.create_node(
+            level="concept", content="Harbor inspection digest.", context={"scope": "project:harbor"},
+            provenance={"source_traces": [source.id]},
+        )
+        concept_owner = store.create_node(
+            level="concept", content="Harbor project synthesis.", context={"scope": "project:harbor"},
+            provenance={"source_concepts": [source.id]},
+        )
+        edge_only = store.create_node(
+            level="concept", content="Harbor related policy.", context={"scope": "project:harbor"},
+        )
+        store.create_connection(edge_only.id, source.id, "related", metadata={"kind": "derived_from"})
+        for scope, level in (("project:other", "concept"), ("project:harbor", "schema")):
+            store.create_node(level=level, content=f"Other citation {scope} {level}.",
+                              context={"scope": scope}, provenance={"source_traces": [source.id]})
+        retired = store.create_node(
+            level="concept", content="Retired harbor digest.", context={"scope": "project:harbor"},
+            provenance={"source_traces": [source.id]},
+        )
+        store.soft_delete_node(retired.id)
+        selection = {"scope": "project:harbor", "level": "concept"}
+        expected = sorted([trace_owner.id, concept_owner.id], reverse=True)
+        # Source sets can include long replacement chains without SQL variable limits.
+        ids = [f"missing-{i}" for i in range(1100)] + [source.id, source.id]
+        assert [node.id for node in store.list_nodes(**selection, source_ids=iter(ids))] == expected
+        assert [node.id for node in store.list_nodes(**selection, source_ids=ids, limit=1, offset=1)] == expected[1:]
+        assert store.list_nodes(**selection, source_ids=[]) == []
+        assert {node.id for node in store.list_nodes(**selection, source_ids=ids, include_decayed=True)} == {
+            *expected, retired.id,
+        }
+        assert edge_only.id in {node.id for node in store.list_nodes(**selection)}
+
+
 def test_storage_schema_has_uniform_nodes_fts_edges_indexes_and_weights(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path / "memory.sqlite3")
     try:
