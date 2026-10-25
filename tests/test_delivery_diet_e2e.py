@@ -296,7 +296,8 @@ def test_long_content_top_bounded_by_default_then_tighter_snippet_and_refetch(
     snippet = entry["content"]
     assert snippet != long_content
     assert len(snippet) <= SNIPPET_LIMIT
-    assert snippet.endswith("…")
+    assert snippet.endswith((".", "…"))
+    assert all(passage.removesuffix("…") in long_content for passage in snippet.splitlines())
     assert "glacier archive manifest" in snippet
     assert entry["content_ref"] == {
         "node_id": node_id,
