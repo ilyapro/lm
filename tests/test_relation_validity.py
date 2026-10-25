@@ -155,3 +155,67 @@ def test_direct_correction_links_preserve_chains_cycles_and_unaffected_nodes(tmp
         asyncio.run(scenario())
     finally:
         store.close()
+
+
+@pytest.mark.parametrize('metadata', [
+    {'kind': 'drain_near_duplicate', 'cosine': .9993, 'threshold': .99},
+    {'by': 'lm_collapse_near_dups.py', 'reason': 'near-duplicate collapse', 'cosine': 1.0},
+    {'kind': 'duplicate_content'},
+    {'kind': 'duplicate_content', 'collapsed_by': 'lm_collapse_copies.py', 'basis': 'procedure_key'},
+])
+@pytest.mark.parametrize('path', ['recall:knowledge', 'recall:full', 'lookup:knowledge', 'lookup:full'])
+def test_historical_bookkeeping_never_corrects_distinct_knowledge(tmp_path, metadata, path):
+    from living_memory.decay import soft_delete_superseded
+    from living_memory.replay import load_supersedes_pairs
+    from living_memory.query_anchors import resolve_replacement
+
+    mcp = create_mcp_server(tmp_path / 'memory.sqlite3')
+    store = mcp.memory_store
+
+    async def scenario():
+        async with Client(mcp) as client:
+            permissive = await remember(client, 'Amber hatch pressure rule: opening is allowed before approval.')
+            restrictive = await remember(client, 'Amber hatch pressure rule: opening is forbidden before approval.')
+            edge = store.create_connection(permissive, restrictive, 'supersedes', metadata=metadata)
+            # Retain the historical row without granting its semantic assertion.
+            assert store.get_connection(edge.id).metadata == metadata
+            assert store.list_supersedes_pairs([restrictive]) == []
+            assert store.list_connections(node_id=restrictive) == []
+            assert store.list_connections_for_nodes([restrictive])[restrictive] == []
+            assert store.list_recall_connections([restrictive], limit=1)[restrictive] == []
+            assert load_supersedes_pairs(store.connection) == []
+            assert resolve_replacement(store, restrictive) is None
+            assert soft_delete_superseded(store, scope=SCOPE) == []
+            entry, response = await read(client, path, restrictive)
+            assert entry['superseded'] is False
+            assert entry['superseded_by'] == []
+            assert 'forbidden before approval' in entry.get('node', entry)['content']
+            assert entry['delivery'] == 'full' if path.startswith('recall') else True
+            if path.startswith('recall'):
+                assert {e.get('node', e)['id'] for e in response['results']} == {permissive, restrictive}
+            assert not store.get_node(restrictive).decayed
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize('metadata', [
+    {}, {'kind': 'manual_correction'}, {'kind': 'unknown'},
+    {'by': 'lm_collapse_near_dups.py'},
+    {'by': 'another_producer', 'reason': 'near-duplicate collapse'},
+])
+def test_unrecognized_metadata_does_not_cancel_supersedes(tmp_path, metadata):
+    from living_memory.storage import MemoryStore
+    from living_memory.validity import supersedes_sets
+    from living_memory.replay import load_supersedes_pairs
+    from living_memory.decay import soft_delete_superseded
+
+    with MemoryStore(tmp_path / 'memory.sqlite3') as store:
+        old = store.append_trace('amber hatch allowed', {'scope': SCOPE})
+        new = store.append_trace('amber hatch forbidden', {'scope': SCOPE})
+        store.create_connection(new.id, old.id, 'supersedes', metadata=metadata)
+        assert supersedes_sets(store, [old.id])[0] == {old.id: (new.id,)}
+        assert load_supersedes_pairs(store.connection) == [(new.id, old.id)]
+        assert [n.id for n in soft_delete_superseded(store, scope=SCOPE)] == [old.id]
