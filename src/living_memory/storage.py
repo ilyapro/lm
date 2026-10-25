@@ -4865,19 +4865,9 @@ class MemoryStore:
     ) -> QueryAnchorEdge:
         """Accumulate weight onto an anchor -> node edge; never clobber it.
 
-        Read-modify-write in one statement, the contract
-        ``consolidation._upsert_weighted_connection`` exists to provide and
-        that :meth:`create_connection` does *not*: its
-        ``ON CONFLICT ... DO UPDATE SET weight = excluded.weight`` overwrites,
-        so a re-derivation at a lower weight silently downgrades an edge that
-        repeated use had strengthened.
-
-        Anchor edges go one step further than that mirror's ``max()``: weight
-        *adds*, saturating at 1.0. An anchor edge is a repetition signal — the
-        same question grounding on the same node again is new evidence, not a
-        restatement of the old one-shot structural score that ``max()`` is
-        right for. ``hits`` keeps counting after the weight saturates, so the
-        evidence stays legible.
+        Anchor weight adds, saturating at 1.0, while structural contributions
+        use a maximum. Grounding the same question on the same node again is
+        new evidence. ``hits`` keeps counting after weight saturates.
         """
 
         if not self._anchor_tables_present():

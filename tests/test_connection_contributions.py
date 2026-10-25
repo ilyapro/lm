@@ -137,7 +137,7 @@ def test_repeated_supersedes_moves_new_anchors_atomically(graph, contribute, mon
     store, source, target = graph
     original = contribute(store, source, target, "supersedes")
     anchor = query_anchors.upsert_anchor(store, "where is the marker", "global", [1., 0.], []).anchor
-    store.upsert_query_anchor_edge(anchor.id, target, weight_delta=.2)
+    store.upsert_query_anchor_edge(anchor.id, target, weight=.2)
     assert [e.target_id for e in store.list_query_anchor_edges(anchor_id=anchor.id)] == [target]
     rows_before = [tuple(row) for row in store.connection.execute("SELECT * FROM connections")]
     revision = store.query_anchor_revision()
