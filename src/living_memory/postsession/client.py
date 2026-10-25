@@ -21,11 +21,8 @@ Two things live here:
     the :class:`~living_memory.postsession.dedup.MemoryIndex` protocol served
     over MCP — ``memory_recall`` finds lexically/semantically plausible
     neighbours and ``memory_lookup`` re-fetches full contents for entries the
-    delivery diet snippeted. This is what makes the runner's near-duplicate
-    check work even when its local ledger is lost: the server itself is asked
-    what already exists. There is no embedding channel over MCP, so
-    ``embedding()`` returns ``None`` and the containment channel carries the
-    verdict.
+    delivery diet snippeted. Complete content and recorded provenance let
+    the runner recognize an exact prior extraction when its local ledger is lost.
 """
 
 from __future__ import annotations
@@ -36,7 +33,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from .dedup import NodeSnapshot
+from .dedup import NodeSnapshot, extraction_identity
 
 __all__ = [
     "DEFAULT_ENV_FILE",
@@ -220,12 +217,12 @@ def _entry_node(entry: Any) -> dict[str, Any] | None:
 
 
 class McpMemoryIndex:
-    """Near-duplicate candidates served by the live host over MCP.
+    """Candidate contents and provenance served by the live host over MCP.
 
     ``candidates`` returns *full* node contents: the delivery diet may snippet
-    or stub a recall result, and grading containment against a snippet would
-    under-count exactly the long traces most worth deduplicating, so anything
-    not delivered ``full`` is re-fetched through ``memory_lookup``. Diagnostic
+    or stub a recall result, so anything not delivered ``full`` is re-fetched
+    through ``memory_lookup``. An unavailable full result cannot establish
+    content identity and is omitted. Diagnostic
     recall supplies timestamps and context; a content_ref also requests the
     original metadata, since compacted source spans cannot identify an extraction.
 
@@ -270,6 +267,8 @@ class McpMemoryIndex:
                 fetched = self.client.lookup_nodes(needs_full, view="full")
             except ClientError:
                 fetched = {}
+            for node_id in needs_full:
+                by_id.pop(node_id, None)
             for full in fetched.get("results") or []:
                 if isinstance(full, dict) and full.get("id"):
                     by_id[str(full["id"])] = full
@@ -282,20 +281,9 @@ class McpMemoryIndex:
                 content=str(node.get("content") or ""),
                 scope=node.get("scope"),
                 created_at=node.get("created_at"),
+                source_identity=extraction_identity(node.get("context") or {}),
             )
             for node_id, node in by_id.items()
             if node.get("content")
         ]
 
-    def embedding(self, content: str) -> Sequence[float] | None:
-        return None
-
-    def similar_by_embedding(
-        self,
-        embedding: Sequence[float],
-        *,
-        scope: str | None = None,
-        threshold: float = 0.95,
-        limit: int = 10,
-    ) -> Sequence[tuple[NodeSnapshot, float]]:
-        return ()

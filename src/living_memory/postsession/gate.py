@@ -12,8 +12,8 @@ the last word: every fact it produces is re-checked here by rules that do not
 negotiate, and every rejection records a machine-readable code so the run
 report says *why* rather than *how many*.
 
-The nine rules, in the order they fire
---------------------------------------
+The rules, in the order they fire
+--------------------------------
 ``context_leak``
     The content carries a serialized context blob. This is a *measured* live
     defect (107 nodes affected, 2026-08-17), so it is checked first and is the
@@ -35,11 +35,6 @@ The nine rules, in the order they fire
     A hard identifier the mined evidence does not contain. This is the
     anti-hallucination rule: the judge saw only the evidence span, so an
     identifier that is not in it was invented.
-``rederivable_from_diff``
-    Re-derivable from what the session already changed, i.e. from ``git log``.
-``restates_recalled_node``
-    The session was already shown this. Re-storing it is a near-duplicate the
-    server's byte-identity dedup will not catch.
 
 What is deliberately absent
 ---------------------------
@@ -65,8 +60,6 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from living_memory.grounding import ground_results
-
 from .judge import default_redactor
 from .mining import (
     Candidate,
@@ -75,16 +68,13 @@ from .mining import (
     paragraphs,
     sentences,
 )
-from .session import SessionRecord
 
 __all__ = [
     "REJECTION_CODES",
     "GateConfig",
     "DEFAULT_GATE",
     "GateVerdict",
-    "SessionContext",
     "Gate",
-    "containment_of",
     "rejection_breakdown",
 ]
 
@@ -100,8 +90,6 @@ REJECTION_CODES: tuple[str, ...] = (
     "multi_fact",
     "no_concrete_anchor",
     "ungrounded_identifier",
-    "rederivable_from_diff",
-    "restates_recalled_node",
     "judge_refused",
     "judge_invalid",
     "judge_unavailable",
@@ -316,11 +304,6 @@ class GateConfig:
     #: Hard identifiers absent from the mined evidence. Zero: the judge saw
     #: only the evidence, so anything else came from nowhere.
     max_ungrounded_identifiers: int = 0
-    #: IDF containment in the session's own diff above which the fact is just
-    #: the diff restated.
-    diff_containment_max: float = 0.60
-    #: IDF containment in any single node the session already recalled.
-    recalled_containment_max: float = 0.70
     #: Journal tier 2 needs a mechanism to survive; set False to disable the
     #: appeal entirely (stricter, used by the calibration sweep).
     allow_mechanism_appeal: bool = True
@@ -345,69 +328,6 @@ class GateVerdict:
             "detail": self.detail,
             "signals": dict(self.signals),
         }
-
-
-@dataclass(frozen=True, slots=True)
-class SessionContext:
-    """What the gate needs to know about the session behind a fact.
-
-    Built once per session: tokenizing a 200 kB diff per candidate would
-    dominate the run, and both corpora are identical for every candidate of
-    the same session.
-    """
-
-    diff_text: str = ""
-    recalled: Mapping[str, str] = field(default_factory=dict)
-
-    @classmethod
-    def from_record(cls, record: SessionRecord, *, max_diff_chars: int = 400_000) -> "SessionContext":
-        """Collect the session's own diff and the nodes it was actually shown.
-
-        Only *added* diff lines count as "already in the diff": a fact about
-        code the session deleted is still worth keeping, and context lines
-        belong to neither side.
-        """
-
-        chunks: list[str] = []
-        size = 0
-        for mutation in record.file_mutations:
-            piece = mutation.path
-            body = mutation.unified_diff or mutation.post_image or ""
-            if mutation.unified_diff:
-                body = "\n".join(
-                    line[1:]
-                    for line in body.splitlines()
-                    if line.startswith("+") and not line.startswith("+++")
-                )
-            piece = f"{piece}\n{body}"
-            if size + len(piece) > max_diff_chars:
-                break
-            chunks.append(piece)
-            size += len(piece)
-        recalled = {
-            node.node_id: node.content
-            for recall in record.recalls
-            for node in recall.delivered
-            if node.content
-        }
-        return cls(diff_text="\n".join(chunks), recalled=recalled)
-
-
-def containment_of(fact: str, corpus: str) -> float:
-    """IDF-weighted share of ``fact``'s tokens that ``corpus`` already carries.
-
-    Reuses :mod:`living_memory.grounding` rather than re-implementing the
-    arithmetic, so "this fact is contained in that text" means exactly what the
-    live credit-assignment loop means by it. The fact plays the *result* role
-    and the corpus plays the *trace* role, which is the direction that answers
-    "is this fact already there".
-    """
-
-    if not fact.strip() or not corpus.strip():
-        return 0.0
-    graded = ground_results(corpus, {"fact": fact}, min_containment=1.1)
-    verdict = graded.get("fact")
-    return round(verdict.containment, 6) if verdict else 0.0
 
 
 # --------------------------------------------------------------------------
@@ -626,35 +546,6 @@ class Gate:
             )
         return None
 
-    def _rederivable(self, fact: str, context: SessionContext) -> GateVerdict | None:
-        if not context.diff_text:
-            return None
-        value = containment_of(fact, context.diff_text)
-        if value >= self.config.diff_containment_max:
-            return GateVerdict(
-                False,
-                "rederivable_from_diff",
-                f"containment {value:.2f} >= {self.config.diff_containment_max:.2f}",
-                {"diff_containment": value},
-            )
-        return None
-
-    def _restates_recalled(self, fact: str, context: SessionContext) -> GateVerdict | None:
-        worst = 0.0
-        worst_id = ""
-        for node_id, content in context.recalled.items():
-            value = containment_of(fact, content)
-            if value > worst:
-                worst, worst_id = value, node_id
-        if worst >= self.config.recalled_containment_max:
-            return GateVerdict(
-                False,
-                "restates_recalled_node",
-                f"restates node {worst_id} (containment {worst:.2f})",
-                {"recalled_containment": worst, "node_id": worst_id},
-            )
-        return None
-
     # -- entry point ------------------------------------------------------
 
     def check(
@@ -662,7 +553,6 @@ class Gate:
         fact: str,
         *,
         candidate: Candidate,
-        context: SessionContext,
     ) -> GateVerdict:
         """Verdict on one judge-produced fact. Never raises."""
 
@@ -681,8 +571,6 @@ class Gate:
             return anchor_verdict
         for verdict in (
             self._grounded(found, candidate),
-            self._rederivable(fact, context),
-            self._restates_recalled(fact, context),
         ):
             if verdict is not None:
                 return verdict

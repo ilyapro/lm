@@ -22,8 +22,8 @@ The pipeline, and why each stage cannot be merged into its neighbour
 3. :mod:`.gate` -- deterministic, and it can veto the judge. A model asked
    "is this an insight?" says yes far too often, and says it in execution-
    journal prose.
-4. :mod:`.dedup` -- against memory that already exists, because the server's
-   only write-time dedup is exact byte identity inside one scope.
+4. :mod:`.dedup` -- exact repeats of the same recorded extraction, preserving
+   content, scope and source identity.
 
 Attribution, and the defect it has to avoid
 -------------------------------------------
@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Any
 
 from .dedup import DEFAULT_DEDUP, Deduper
-from .gate import DEFAULT_GATE, Gate, GateVerdict, SessionContext
+from .gate import DEFAULT_GATE, Gate, GateVerdict
 from .judge import (
     Judge,
     JudgeError,
@@ -439,7 +439,6 @@ def extract_session(
     if not mined:
         return result
 
-    context = SessionContext.from_record(record)
     resolved_scope = scope or scope_for(record)
 
     for candidate in mined:
@@ -491,7 +490,7 @@ def extract_session(
 
         fact = str(answer.get("fact") or "").strip()
         why = str(answer.get("why_durable") or "").strip()
-        verdict: GateVerdict = gate.check(fact, candidate=candidate, context=context)
+        verdict: GateVerdict = gate.check(fact, candidate=candidate)
         if not verdict.accepted:
             result.outcomes.append(
                 Outcome(
@@ -508,9 +507,11 @@ def extract_session(
             )
             continue
 
-        seen = deduper.check_within_run(fact)
+        source_identity = (record.transcript_sha256, candidate.span.locator()) if record.transcript_sha256 else None
+        identity = {"scope": resolved_scope, "source_identity": source_identity}
+        seen = deduper.check_within_run(fact, **identity)
         if not seen.duplicate:
-            seen = deduper.check(fact, scope=resolved_scope)
+            seen = deduper.check(fact, **identity)
         if seen.duplicate:
             result.outcomes.append(
                 Outcome(
@@ -544,7 +545,7 @@ def extract_session(
             )
             continue
 
-        deduper.remember_proposal(f"{record.session_key}#{candidate.ordinal}", fact)
+        deduper.remember_proposal(f"{record.session_key}#{candidate.ordinal}", fact, **identity)
         result.ops.append(op)
         result.outcomes.append(
             Outcome(

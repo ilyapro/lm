@@ -41,9 +41,8 @@ proof: if it is lost, the write path still asks the *server* what exists —
 ``memory_attest`` is idempotent per (event, evidence) on the server's own
 ledger, and remember/teach proposals are checked against live memory through
 :class:`~.client.McpMemoryIndex` (recall + full-content lookup), by extraction
-identity (same transcript sha + source span) and by IDF containment. Exact
-content dedup on the server is byte-identity within one scope only, which is
-why the runner does its own near-duplicate check before every write.
+identity (transcript sha plus source span or corrected node), equal scope and
+exact content. Similarity only finds candidates for this identity check.
 
 **Attribution.** :func:`enforce_attribution` stamps every write context with
 ``agent="extractor:<cli>"``, ``task``, ``session_id``,
@@ -71,7 +70,7 @@ from .corrections import (
     DetectorConfig,
     detect_corrections,
 )
-from .dedup import DEFAULT_DEDUP, DedupConfig, Deduper, NullMemoryIndex, _containment
+from .dedup import DEFAULT_DEDUP, Deduper, NullMemoryIndex
 from .evidence import proposed_attestations
 from .gate import DEFAULT_GATE, Gate
 from .insights import (
@@ -643,7 +642,6 @@ class RunnerConfig:
     max_attests_per_session: int = 8
     max_total_attests: int = 64
     #: Containment at which the LM-side pre-write check calls it a duplicate.
-    lm_dup_containment: float = 0.75
     insights: ExtractionConfig = DEFAULT_EXTRACTION
     corrections: DetectorConfig = DEFAULT_CORRECTIONS
 
@@ -738,15 +736,7 @@ class ExtractionRunner:
         if deduper is not None:
             self.deduper = deduper
         elif client is not None:
-            # cross_scope=False ON PURPOSE for the MCP index: the server
-            # resolves a scope-less recall to global only, so searching "every
-            # scope" is not a capability this transport has. Passing the write's
-            # target scope makes the server search that scope PLUS global —
-            # exactly the view a reader recalling in that project would get.
-            self.deduper = Deduper(
-                McpMemoryIndex(client),
-                config=DedupConfig(cross_scope=False),
-            )
+            self.deduper = Deduper(McpMemoryIndex(client))
         else:
             self.deduper = Deduper(NullMemoryIndex(), config=DEFAULT_DEDUP)
         self.judge_stats: list[Any] = []
@@ -855,9 +845,9 @@ class ExtractionRunner:
             snapshots = index.candidates(fact, scope=scope, limit=8)
         except ClientError as exc:
             return "", {"checked": 0, "error": str(exc)[:200]}
-        best = 0.0
-        best_id = ""
         for snapshot in snapshots:
+            if snapshot.scope != scope or snapshot.content != fact:
+                continue
             context = index.last_contexts.get(snapshot.node_id, {})
             same_transcript = op.provenance.transcript_sha256 and (
                 context.get("source_transcript_sha256") == op.provenance.transcript_sha256
@@ -873,16 +863,7 @@ class ExtractionRunner:
                     "node_id": snapshot.node_id,
                     "checked": len(snapshots),
                 }
-            value = _containment(fact, snapshot.content)
-            if value > best:
-                best, best_id = value, snapshot.node_id
-        if best >= self.config.lm_dup_containment:
-            return "lm_duplicate", {
-                "node_id": best_id,
-                "containment": round(best, 4),
-                "checked": len(snapshots),
-            }
-        return "", {"checked": len(snapshots), "best_containment": round(best, 4)}
+        return "", {"checked": len(snapshots)}
 
     def _execute(self, op: ProposedOp, decision: OpDecision) -> None:
         """One write through the live MCP interface. Client must be present."""
