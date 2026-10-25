@@ -378,8 +378,7 @@ def load_store(connection: sqlite3.Connection, since: str | None) -> Store:
 class VectorIndex:
     """Mean-pooled unit vectors of every node with usable chunk rows.
 
-    Pooling follows ``living_memory.near_dup.mean_pooled_vectors``: each chunk
-    is unit-normalized before averaging, rows disagreeing on ``dimensions``
+    Each chunk is unit-normalized before averaging; rows disagreeing on ``dimensions``
     make the node unusable, and a missing node is "unknown", never "far".
     """
 

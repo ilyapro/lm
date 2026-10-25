@@ -13,9 +13,8 @@ reading it.  ``lookup_consumed`` resolves to *somebody fetched this exact ULID*,
 which only a reader who was handed the ULID does.
 
 How strongly the second should count against the first is the question the
-pool-gate valves need answered, and the project's rule (the same one
-``LM_DRAIN_NEAR_DUP_SUPERSEDES`` was fixed under) is that it gets answered by
-measurement over accrued windows, not by intuition.  This script produces the
+pool-gate valves need answered with measurement over accrued windows.
+This script produces the
 measurement; ``artifacts/recall-map/follow-signal/procedure.md`` turns a
 distribution into thresholds.  Neither sets a default: turning a valve on stays
 the operator's decision.

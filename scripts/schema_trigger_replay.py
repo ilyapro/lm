@@ -67,7 +67,6 @@ FRESH_HOLDOUT_END = "2026-09-29T16:26:00Z"
 FIELD_ENV: dict[str, dict[str, str]] = {
     "sfx": {
         "LM_EXPLICIT_FEEDBACK_POLICY": "credit",
-        "LM_RECALL_NEAR_DUP_COSINE": "0.97",
         "LM_QUERY_IRRELEVANCE_FULL_COSINE": "0.80",
         "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": "1.0",
         "LM_RECALL_SCHEMA_DEDUP": "1",
@@ -77,7 +76,6 @@ FIELD_ENV: dict[str, dict[str, str]] = {
     },
     "alt": {
         "LM_EXPLICIT_FEEDBACK_POLICY": "credit",
-        "LM_RECALL_NEAR_DUP_COSINE": "0.97",
         "LM_QUERY_IRRELEVANCE_FULL_COSINE": "0.80",
         "LM_QUERY_IRRELEVANCE_MARK_WEIGHT": "1.0",
         "LM_RECALL_SCHEMA_DEDUP": "1",

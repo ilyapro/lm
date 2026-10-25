@@ -103,7 +103,7 @@ def check_report(report: dict, *, baseline: str, candidate: str, rejected: bool)
 def replay(packet: Path, packet_hash: str, hashes: dict[str, str], candidate: str, out: Path) -> dict:
     env = os.environ.copy()
     for key in list(env):
-        if key.startswith("LM_DELIVERY_") or key.startswith(("LM_RECALL_NEAR_DUP_", "LM_RECALL_GATE_")):
+        if key.startswith(("LM_DELIVERY_", "LM_RECALL_GATE_")):
             env.pop(key)
     command = [sys.executable, str(ROOT / "scripts/recall_needed_cost.py"), "run",
                "--packet", str(packet), "--packet-sha256", packet_hash,
