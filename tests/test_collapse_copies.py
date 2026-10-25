@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from living_memory.consolidation import _normalize_trigger, _schema_group_id
 from living_memory.storage import MemoryStore
 
 _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "lm_collapse_copies.py"
@@ -39,7 +38,7 @@ def _schema(store: MemoryStore, content: str, key: str, *, scope: str = SCOPE, a
 
 
 def _make_identical(db: Path, content: str, *node_ids: str) -> None:
-    """Rewrite nodes to the same bytes, the way the live copies look."""
+    """Construct historical copies without exercising write-time deduplication."""
 
     fingerprint = hashlib.sha256(content.encode("utf-8")).hexdigest()
     with sqlite3.connect(db) as connection:
@@ -62,7 +61,7 @@ def copies_db(tmp_path: Path):
         a = _schema(store, body + " a", "dashboard goal api supervision", access=3)
         b = _schema(store, body + " b", "dashboard goal api supervision", access=7)
         c = _schema(store, body + " c", "dashboard goal api supervision", access=1)
-        # Same procedure key, different content: still a copy of the group.
+        # A shared procedure key does not make different content a copy.
         d = _schema(store, body + "\n2. newer step", "dashboard_goal_api_supervision", access=2)
         # A corrected schema is never kept, however used it is.
         corrected = _schema(store, body + " e", "dashboard goal api supervision", access=50)
@@ -104,7 +103,7 @@ def test_dry_run_changes_nothing(copies_db, capsys) -> None:
     assert collapse.main([str(db)]) == 0
 
     assert _dump(db) == before
-    assert "2 groups, 5 copies to decay" in capsys.readouterr().out
+    assert "2 groups, 4 copies to decay" in capsys.readouterr().out
 
 
 def test_apply_keeps_one_node_per_group_and_rerun_is_a_no_op(copies_db) -> None:
@@ -114,32 +113,30 @@ def test_apply_keeps_one_node_per_group_and_rerun_is_a_no_op(copies_db) -> None:
 
     with MemoryStore(db) as store:
         schemas = store.list_nodes(level="schema", scope=SCOPE)
-        by_key: dict[str, list] = {}
-        for schema in schemas:
-            by_key.setdefault(_schema_group_id(schema), []).append(schema)
-        assert {key: len(nodes) for key, nodes in by_key.items()} == {
-            "dashboard goal api supervision": 1,
-            "active goal supervision": 1,
+        assert {schema.id for schema in schemas} == {
+            ids["b"], ids["d"], ids["other_group"]
         }
-        keeper = by_key["dashboard goal api supervision"][0]
+        keeper = store.get_node(ids["b"])
+        assert keeper is not None
         # Most accessed among the updatable ones; the corrected node stays down.
         assert keeper.id == ids["b"]
-        assert keeper.access_count == 3 + 7 + 1 + 2 + 50
-        for name in ("a", "c", "d", "corrected"):
+        assert keeper.access_count == 3 + 7 + 1 + 50
+        assert keeper.usefulness_score == 5.0
+        for name in ("a", "c", "corrected"):
             node = store.get_node(ids[name])
             assert node is not None and node.decayed is True
             assert node.decay_reason == "duplicate_content"
-            edges = store.list_connections(source_id=keeper.id, relation_type="supersedes")
+            edges = store.list_connections(source_id=keeper.id, relation_type="related")
             assert ids[name] in {edge.target_id for edge in edges}
         edge_meta = {
             edge.target_id: edge.metadata
-            for edge in store.list_connections(source_id=keeper.id, relation_type="supersedes")
+            for edge in store.list_connections(source_id=keeper.id, relation_type="related")
         }
         assert edge_meta[ids["a"]]["kind"] == "duplicate_content"
         assert edge_meta[ids["a"]]["basis"] == "content"
-        assert edge_meta[ids["d"]]["basis"] == "procedure_key"
+        assert not store.list_connections(relation_type="supersedes")
 
-        for name in ("other_group", "other_scope", "lone"):
+        for name in ("d", "other_group", "other_scope", "lone"):
             node = store.get_node(ids[name])
             assert node is not None and node.decayed is False
 
@@ -155,22 +152,137 @@ def test_apply_keeps_one_node_per_group_and_rerun_is_a_no_op(copies_db) -> None:
     assert _dump(db) == after_first
 
 
-def test_group_key_mirrors_consolidation() -> None:
-    for raw in ("dashboard_goal_api_supervision", " Tree-Decomposition/Build ", "208b33b1"):
-        assert collapse.normalize_trigger(raw) == _normalize_trigger(raw)
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        ("Dashboard restart is permitted.", "Dashboard restart is not permitted."),
+        ("Dashboard restart is allowed.", "Dashboard restart is forbidden."),
+        ("Restart after approval.", "Restart after approval and after all work has stopped."),
+    ],
+)
+def test_same_procedure_key_preserves_distinct_statements(tmp_path, left, right) -> None:
+    db = tmp_path / "different.sqlite3"
+    with MemoryStore(db) as store:
+        first = _schema(store, left, "dashboard restart")
+        second = _schema(store, right, "dashboard restart")
 
-    class _Schema:
-        def __init__(self, context, provenance):
-            self.context = context
-            self.provenance = provenance
+    assert collapse.main([str(db), "--apply"]) == 0
 
-    shapes = (
-        ({"procedure_key": "a b", "procedure_id": "c"}, {}),
-        ({"task_pattern": "task_x", "procedure_id": "proc_y"}, {}),
-        ({"procedure_id": "proc_y"}, {}),
-        ({}, {"procedure_key": "from provenance"}),
-    )
-    for context, provenance in shapes:
-        assert collapse.schema_group_id(context, provenance) == _schema_group_id(
-            _Schema(context, provenance)
+    with MemoryStore(db) as store:
+        assert {node.id for node in store.list_nodes()} == {first.id, second.id}
+        assert store.list_connections() == []
+
+
+@pytest.mark.parametrize(
+    ("left_context", "right_context", "left_provenance", "right_provenance", "collapse_expected"),
+    [
+        ({}, {}, {"strategy": "procedural", "source_traces": ["source-a"]},
+         {"strategy": "procedural", "source_traces": ["source-b"]}, False),
+        ({"procedure_key": "one"}, {"procedure_key": "two"},
+         {"strategy": "procedural", "source_traces": ["source-a"]},
+         {"strategy": "procedural", "source_traces": ["source-a"]}, False),
+        ({}, {}, {"strategy": "procedural", "source_traces": ["source-a"]}, {}, False),
+        ({}, {}, {"strategy": "procedural"}, {"strategy": "procedural"}, False),
+        ({"procedure_key": "one_group"}, {"procedure_key": "one group"},
+         {"strategy": "procedural", "source_traces": ["source-a", "source-b"]},
+         {"strategy": "procedural", "source_traces": ["source-b", "source-a"]}, True),
+    ],
+)
+def test_exact_content_requires_matching_derivation(
+    tmp_path, left_context, right_context, left_provenance, right_provenance, collapse_expected
+) -> None:
+    db = tmp_path / "derivations.sqlite3"
+    with MemoryStore(db) as store:
+        first = store.create_node(
+            level="schema", content="first", context={"scope": SCOPE, **left_context},
+            provenance=left_provenance,
         )
+        second = store.create_node(
+            level="schema", content="second", context={"scope": SCOPE, **right_context},
+            provenance=right_provenance,
+        )
+    _make_identical(db, "Restart only after approval.", first.id, second.id)
+
+    assert collapse.main([str(db), "--apply"]) == 0
+
+    with MemoryStore(db) as store:
+        assert len(store.list_nodes()) == (1 if collapse_expected else 2)
+        assert len(store.list_connections(relation_type="related")) == int(collapse_expected)
+        assert not store.list_connections(relation_type="supersedes")
+
+
+@pytest.mark.parametrize("difference", ["scope", "level"])
+def test_exact_content_preserves_scope_and_level(tmp_path, difference) -> None:
+    db = tmp_path / "boundaries.sqlite3"
+    with MemoryStore(db) as store:
+        first = store.create_node(level="trace", content="first", context={"scope": SCOPE})
+        second = store.create_node(
+            level="concept" if difference == "level" else "trace", content="second",
+            context={"scope": "project:other" if difference == "scope" else SCOPE},
+        )
+    _make_identical(db, "Shared bytes", first.id, second.id)
+
+    assert collapse.main([str(db), "--apply"]) == 0
+
+    with MemoryStore(db) as store:
+        assert len(store.list_nodes()) == 2
+        assert store.list_connections() == []
+
+
+@pytest.mark.parametrize(
+    ("metadata", "is_correction"),
+    [
+        ({"kind": "drain_near_duplicate"}, False),
+        ({"kind": "duplicate_content", "basis": "procedure_key"}, False),
+        ({"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"}, False),
+        ({"kind": "teach"}, True),
+        ({"kind": "unknown"}, True),
+        ({}, True),
+    ],
+)
+def test_keeper_ranking_uses_genuine_corrections(tmp_path, metadata, is_correction) -> None:
+    db = tmp_path / "correction.sqlite3"
+    with MemoryStore(db) as store:
+        popular = _schema(store, "popular", "restart", access=10)
+        alternative = _schema(store, "alternative", "restart", access=1)
+        replacement = _schema(store, "Correction: stop before restart.", "restart")
+        store.create_connection(replacement.id, popular.id, "supersedes", metadata=metadata)
+    _make_identical(db, "Restart only after approval.", popular.id, alternative.id)
+
+    assert collapse.main([str(db), "--apply"]) == 0
+
+    with MemoryStore(db) as store:
+        kept = alternative.id if is_correction else popular.id
+        assert {node.id for node in store.list_nodes()} == {kept, replacement.id}
+
+
+def test_anchor_stats_and_existing_relation_metadata_are_merged(copies_db) -> None:
+    db, ids = copies_db
+    with MemoryStore(db) as store:
+        store.create_connection(ids["b"], ids["a"], "related", metadata={"note": "retained"})
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            """INSERT INTO query_anchors
+               (id, scope, query, fingerprint, dimensions, embedding, first_seen, created_at, updated_at)
+               VALUES ('anchor', ?, 'restart approval', 'query-fingerprint', 1, ?, 'now', 'now', 'now')""",
+            (SCOPE, bytes(4)),
+        )
+        connection.executemany(
+            """INSERT INTO query_anchor_edges
+               (anchor_id, target_id, weight, hits, created_at, updated_at)
+               VALUES ('anchor', ?, ?, ?, 'now', 'now')""",
+            [(ids["a"], 0.8, 3), (ids["b"], 0.2, 7)],
+        )
+
+    assert collapse.main([str(db), "--apply"]) == 0
+
+    with MemoryStore(db) as store:
+        anchors = store.list_query_anchor_edges(anchor_id="anchor")
+        assert len(anchors) == 1
+        assert anchors[0].target_id == ids["b"]
+        assert anchors[0].hits == 10
+        assert anchors[0].weight == 0.8
+        edge = next(edge for edge in store.list_connections(source_id=ids["b"], relation_type="related")
+                    if edge.target_id == ids["a"])
+        assert edge.metadata["kind"] == "duplicate_content"
+        assert edge.metadata["note"] == "retained"
