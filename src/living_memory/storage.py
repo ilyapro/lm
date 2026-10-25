@@ -3647,7 +3647,7 @@ class MemoryStore:
     def _resolve_chunk_embedder(self) -> ChunkEmbedder:
         if self._chunk_embedder is None:
             model = LocalEmbeddingModel(model_name=self.config.embedding_model)
-            self._chunk_embedder = lambda texts: [model.embed(text) for text in texts]
+            self._chunk_embedder = model.embed_batch
         return self._chunk_embedder
 
     def iter_chunk_embedding_rows(

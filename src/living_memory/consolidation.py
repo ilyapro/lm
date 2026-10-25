@@ -576,8 +576,7 @@ def memory_consolidate(
             # through create_node/update_node with an embedding, and those chunk the
             # content — without this the store would load a second copy of the same
             # model to do it.
-            model = embedder
-            store.set_chunk_embedder(lambda texts: [model.embed(text) for text in texts])
+            store.set_chunk_embedder(embedder.embed_batch)
     embeddings = _trace_embeddings(store, traces, embedder, step)
     clusters = _cluster_traces(traces, embedder=embedder, embeddings=embeddings)
     result = ConsolidationResult(
@@ -1394,8 +1393,9 @@ def _trace_embeddings(
     fresh: list[tuple[Node, list[float]]] = []
     for start in range(0, len(to_encode), _ENCODE_BATCH):
         with step():
-            for trace in to_encode[start : start + _ENCODE_BATCH]:
-                vector = embedder.embed(trace.content)
+            batch = to_encode[start : start + _ENCODE_BATCH]
+            encoded = embedder.embed_batch([trace.content for trace in batch])
+            for trace, vector in zip(batch, encoded, strict=True):
                 vectors[trace.id] = vector
                 fresh.append((trace, vector))
     if fresh:

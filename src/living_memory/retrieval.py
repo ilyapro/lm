@@ -1780,7 +1780,8 @@ class MemoryRecallService:
         if share is None:
             return
         embedder = self.embedder
-        share(lambda texts: [embedder.embed(text) for text in texts])
+        batch = getattr(embedder, "embed_batch", None)
+        share(batch if callable(batch) else lambda texts: [embedder.embed(text) for text in texts])
 
     def _supersedes_sets(
         self, node_ids: Iterable[str]

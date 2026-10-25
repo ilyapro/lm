@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from hashlib import blake2b
 import importlib.util
@@ -611,6 +611,28 @@ class LocalEmbeddingModel:
             self._backend = "hash"
             return _embed_hash(text, self.dimensions)
 
+        return self._normalize_embedding(vector)
+
+    def embed_batch(self, texts: Sequence[str]) -> list[list[float]]:
+        """Embed one operation's texts in order, using the encoder's batch size.
+
+        An empty batch does not load the model. Backends that reject batches
+        use the scalar path, including its transition to hash on encode failure.
+        """
+
+        if not texts:
+            return []
+        model = self._sentence_transformer()
+        if model is not None:
+            try:
+                vectors = _encode_sentence_transformer(model, list(texts))
+            except Exception:
+                _LOG.debug("batch encode unavailable; using scalar encoding", exc_info=True)
+            else:
+                return [self._normalize_embedding(vector) for vector in vectors]
+        return [self.embed(text) for text in texts]
+
+    def _normalize_embedding(self, vector: list[float]) -> list[float]:
         if vector:
             self.dimensions = len(vector)
             return _normalize(vector)
@@ -867,12 +889,18 @@ def cosine_similarity(left: Iterable[float] | None, right: Iterable[float] | Non
     return dot / math.sqrt(left_norm * right_norm)
 
 
-def _encode_sentence_transformer(model: Any, text: str) -> list[float]:
+def _encode_sentence_transformer(
+    model: Any, text: str | list[str]
+) -> list[float] | list[list[float]]:
     try:
         vector = model.encode(text, normalize_embeddings=True)
     except TypeError:
         vector = model.encode(text)
     values = vector.tolist() if hasattr(vector, "tolist") else vector
+    if isinstance(text, list):
+        if len(values) != len(text):
+            raise ValueError("batch encoder must return one vector per text")
+        return [[float(value) for value in row] for row in values]
     if values and isinstance(values[0], list):
         values = values[0]
     return [float(value) for value in values]
