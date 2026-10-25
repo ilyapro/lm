@@ -1663,12 +1663,14 @@ def _materialize_cluster(
         members = {member.id: member for member in current.live}
         if not members:
             return []
+        ancestors = _source_ancestors(store, current.live)
         owners = [
-            node for node in store.list_nodes(level="concept", scope=cluster.scope, limit=100_000)
+            node for node in store.list_nodes(
+                level="concept", scope=cluster.scope, source_ids=ancestors, limit=100_000,
+            )
             if node.materializer == "cluster" and node.source_traces
             and not node.corrections and not _is_superseded(store, node.id)
         ]
-        ancestors = _source_ancestors(store, current.live)
         assigned, unowned = _partition_sources(owners, current.live, ancestors)
 
         fresh = _assess_cluster_eras(store, cluster.traces)
@@ -2053,13 +2055,16 @@ def _cross_scope_promotion(
         if len(_source_scopes(members.values())) < 3:
             return []
         similarities = {source.id: similarity for source, similarity in sources_by_scope.values()}
+        sources = list(members.values())
+        ancestors = _source_ancestors(store, sources)
         owners = [
-            node for node in store.list_nodes(level="concept", scope="global", limit=100_000)
+            node for node in store.list_nodes(
+                level="concept", scope="global", source_ids=ancestors, limit=100_000,
+            )
             if node.materializer == "cross-scope-promotion"
             and not node.corrections and not _is_superseded(store, node.id)
         ]
-        sources = list(members.values())
-        assigned, unowned = _partition_sources(owners, sources, _source_ancestors(store, sources))
+        assigned, unowned = _partition_sources(owners, sources, ancestors)
         if len(assigned) == 1:
             owner = next(owner for owner in owners if owner.id in assigned)
             if _cluster_group(owner)[1] == group:

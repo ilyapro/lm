@@ -1656,10 +1656,16 @@ class MemoryStore:
         *,
         level: NodeLevel | None = None,
         scope: str | None = None,
+        source_ids: Iterable[str] | None = None,
         include_decayed: bool = False,
         limit: int = 100,
         offset: int = 0,
     ) -> list[Node]:
+        """List nodes, optionally citing any of the given source identities.
+
+        Source traces and source concepts are citations; callers still verify
+        materializer ownership. Related edges alone are not recorded inputs.
+        """
         clauses: list[str] = []
         params: list[Any] = []
         if level is not None:
@@ -1671,6 +1677,18 @@ class MemoryStore:
             params.append(scope)
         if not include_decayed:
             clauses.append("decayed = 0")
+        if source_ids is not None:
+            sources = _json_dumps(list(source_ids))
+            clauses.append("""(
+                EXISTS (
+                    SELECT 1 FROM json_each(source_traces)
+                    WHERE value IN (SELECT value FROM json_each(?))
+                ) OR EXISTS (
+                    SELECT 1 FROM json_each(provenance, '$.source_concepts')
+                    WHERE value IN (SELECT value FROM json_each(?))
+                )
+            )""")
+            params.extend([sources, sources])
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.extend([int(limit), int(offset)])
