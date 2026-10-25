@@ -5157,9 +5157,8 @@ class MemoryStore:
                     ON recall_events(COALESCE(agent, ''), created_at DESC)
                     WHERE feedback_applied = 0;
 
-                CREATE INDEX IF NOT EXISTS idx_recall_pending_requested_scope
-                    ON recall_events(requested_scope, created_at DESC)
-                    WHERE feedback_applied = 0;
+                CREATE INDEX IF NOT EXISTS idx_recall_events_requested_scope_pending_created
+                    ON recall_events(requested_scope, feedback_applied, created_at DESC);
 
                 -- Session content delivery history: equality probe
                 -- on transport_session_id plus the most-recent-events window,
