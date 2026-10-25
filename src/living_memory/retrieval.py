@@ -458,7 +458,11 @@ class _ChunkBlock:
     #: subtracts, on every query, from every node.
     log2_chunk_counts: Any
     norms: Any = None
-    needs_normalization: bool = False
+    norm_deviation: float = 0.0
+
+    @property
+    def needs_normalization(self) -> bool:
+        return self.norm_deviation > UNIT_NORM_TOLERANCE
 
 
 @dataclass(frozen=True, slots=True)
@@ -2081,9 +2085,7 @@ class _BlockAccumulator:
             # einsum here is a fused row-wise self-dot: the row norms without a
             # temporary copy of the matrix.
             norms = _np.sqrt(_np.einsum("ij,ij->i", matrix, matrix))
-            needs_normalization = bool(
-                self.rows and float(_np.abs(norms - 1.0).max()) > UNIT_NORM_TOLERANCE
-            )
+            norm_deviation = float(_np.abs(norms - 1.0).max()) if self.rows else 0.0
             norms[norms == 0.0] = 1.0
             starts = _np.asarray(self.starts, dtype=_np.intp)
             counts = _np.diff(_np.append(starts, self.rows)).astype(_np.float32)
@@ -2095,7 +2097,7 @@ class _BlockAccumulator:
                 row_count=self.rows,
                 log2_chunk_counts=_np.log2(counts),
                 norms=norms,
-                needs_normalization=needs_normalization,
+                norm_deviation=norm_deviation,
             )
         payload = bytes(self.payload)
         stride = dimension * CHUNK_EMBEDDING_ITEMSIZE
@@ -2151,7 +2153,7 @@ def _gather_chunk_blocks(blocks: Sequence[_ChunkBlock]) -> _ChunkBlock:
         return _ChunkBlock(
             dimension, node_ids, starts, rows, row_count,
             _np.asarray([block.log2_chunk_counts[index] for _, block, index in runs]),
-            norms, any(block.needs_normalization for block in blocks),
+            norms, float(_np.max([block.norm_deviation for block in blocks])),
         )
     starts_list = []
     scalar_rows = []

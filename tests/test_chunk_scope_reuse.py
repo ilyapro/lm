@@ -316,3 +316,24 @@ def test_partition_gather_preserves_order_width_and_normalization(tmp_path, monk
                 retrieval._pooled_chunk_similarities(scanned[0], query, query_array)
             )
         assert recall(warm) == recall(service(store))
+
+
+def test_nonfinite_norm_preserves_the_complete_blocks_normalization_rule(tmp_path):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        add(store, "a", vector=(3.0, 4.0, 0.0))
+        add(store, "b", "project:beta")
+        with store.connection:
+            store.connection.execute(
+                "UPDATE node_chunk_embeddings SET embedding=? WHERE node_id='b'",
+                (pack_chunk_embedding([float("nan"), 0.0, 0.0]),),
+            )
+        warm = service(store)
+        plan = warm.scope_resolver.resolve(store=store)
+        gathered, = warm._chunk_blocks(plan, 3)
+        scanned, = warm._build_chunk_index(None, None).blocks
+        assert not gathered.needs_normalization and not scanned.needs_normalization
+        query = [1.0, 0.0, 0.0]
+        q_arr = retrieval._as_query_array(query)
+        actual = dict((node_id, score) for score, node_id in retrieval._pooled_chunk_similarities(gathered, query, q_arr))
+        expected = dict((node_id, score) for score, node_id in retrieval._pooled_chunk_similarities(scanned, query, q_arr))
+        assert actual["a"] == expected["a"] == 3.0
