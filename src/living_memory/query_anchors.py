@@ -60,7 +60,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple, Protocol
 import math
 
-from living_memory.embeddings import cosine_similarity
 from living_memory.models import Connection, ConnectionType, Node
 from living_memory.scope import ScopePlan, normalize_scope
 from living_memory.storage import (
