@@ -101,7 +101,7 @@ MAX_SUPERSEDES_CHAIN_DEPTH = 32
 
 #: Exclusion-reason prefixes ``consolidation._assess_cluster_eras`` emits that
 #: name the node that replaced the excluded member.
-_SUPERSEDED_BY_PREFIX = "superseded-by:"
+_DIRECT_REPLACEMENT_PREFIXES = ("superseded-by:", "replaced-by:")
 _DISPLACED_VIA_PREFIX = "displaced-via:"
 
 
@@ -725,7 +725,8 @@ def migrate_anchor_edges_for_exclusions(
     takes its exclusion mapping — ``{node_id: reason}`` — and moves the anchor
     edges of the members whose reason names a replacement:
 
-    * ``superseded-by:<id>`` — the named node is the replacement;
+    * ``superseded-by:<id>`` or ``replaced-by:<id>`` — the named node is
+      the replacement, with exact-copy bookkeeping included only in the latter;
     * ``displaced-via:<id>`` — the member was folded into a consolidated node
       that has since been superseded, so the replacement is whatever now
       replaces that consolidated node.
@@ -742,8 +743,8 @@ def migrate_anchor_edges_for_exclusions(
     moved = 0
     for node_id, reason in excluded.items():
         text = str(reason)
-        if text.startswith(_SUPERSEDED_BY_PREFIX):
-            destination = text[len(_SUPERSEDED_BY_PREFIX) :].strip()
+        if text.startswith(_DIRECT_REPLACEMENT_PREFIXES):
+            destination = text.partition(":")[2].strip()
         elif text.startswith(_DISPLACED_VIA_PREFIX):
             via = text[len(_DISPLACED_VIA_PREFIX) :].strip()
             destination = resolve_replacement(store, via) or ""

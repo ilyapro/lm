@@ -254,8 +254,8 @@ class _EraAssessment:
 
     ``live`` holds the members a schema/concept may be derived from;
     ``excluded`` maps every dropped member to the structural reason
-    (``corrected``, ``superseded-by:<id>``, ``displaced-via:<id>``,
-    ``obsolete-era``). ``conflict`` is set only when contradiction evidence
+    (``corrected``, ``superseded-by:<id>``, ``replaced-by:<id>``,
+    ``displaced-via:<id>``, ``obsolete-era``). ``conflict`` is set only when contradiction evidence
     crosses a regime boundary — a temporal split alone never filters anything.
     """
 
@@ -866,7 +866,7 @@ def _current_sources(
         replacement_id = resolve_replacement(reader, member.id)
         current = reader.get_node(replacement_id) if replacement_id else member
         if replacement_id:
-            excluded[member.id] = f"superseded-by:{replacement_id}"
+            excluded[member.id] = f"replaced-by:{replacement_id}"
         if current is not None and not current.decayed and not current.corrections:
             live[current.id] = current
         else:

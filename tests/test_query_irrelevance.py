@@ -102,6 +102,11 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LM_EXPLICIT_CREDIT_WEIGHT",
         "LM_IMPLICIT_LINK_POLICY",
         "LM_QUERY_IRRELEVANCE_FACTOR",
+        "LM_QUERY_IRRELEVANCE_FULL_COSINE",
+        "LM_QUERY_IRRELEVANCE_MARK_WEIGHT",
+        "LM_QUERY_IRRELEVANCE_MIN_COSINE",
+        "LM_HUB_SUPPRESSION_FACTOR",
+        "LM_HUB_MIN_QUERIES",
         "LM_RECALL_MIN_SCORE",
         "LM_RECALL_GATE_FORM",
     ):

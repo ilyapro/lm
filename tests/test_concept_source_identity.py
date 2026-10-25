@@ -108,7 +108,11 @@ def test_teach_refreshes_derivation_recorded_before_exact_source_repeat(store):
     assert store.get_node(original.id).decayed
     assert store.list_connections(target_id=original.id, relation_type="supersedes") == []
     taught = c.memory_teach(store, duplicate.id, CORRECTION)
-    assert_sources(store, store.get_node(owner.id), [taught.corrective_trace.id, independent.id])
+    refreshed = store.get_node(owner.id)
+    assert set(refreshed.source_traces) == {taught.corrective_trace.id, independent.id}
+    assert CORRECTION in refreshed.content
+    assert "Restore transaction records before validation." in refreshed.content
+    assert not refreshed.decayed
 
 
 def test_ordinary_consolidate_teach_repeat_and_new_knowledge(tmp_path):
