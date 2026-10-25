@@ -78,30 +78,9 @@ except ImportError:  # pragma: no cover - numpy is a normal runtime dep
     _np = None  # type: ignore[assignment]
 
 
-#: Cosine at or above which an incoming query reinforces an existing in-scope
-#: anchor instead of creating a new one.
-#:
-#: Deliberately *high*, and the reason is the same measurement that motivates
-#: anchors at all: two genuinely different situations phrased in the operator's
-#: house style score 0.916–0.931 («поревьювь EZ-13871» vs «поревьювь
-#: EZ-12826»; «мердж-реквест 9806» vs «мердж-реквест 9443»). Those must stay
-#: two anchors — each one's edges point at the nodes that *its* ticket needed,
-#: and merging them would blur both into a generic "review something" anchor
-#: whose edges answer neither. A dedup cut above that band merges only trivial
-#: rewordings, while retrieval still reaches the sibling anchor at match time,
-#: where the threshold is lower on purpose.
-#:
-#: This is a documented default, not a measured constant. The empirical value
-#: is due from ``artifacts/anchors/estimate.json``; when it lands, change this
-#: number. ``tests/test_query_anchors.py`` pins the *behaviour* — that a pair
-#: at or above the constant merges and a pair below it does not — by reading
-#: the constant, so retuning it does not require editing a test.
-ANCHOR_DEDUP_COSINE_THRESHOLD = 0.95
-
 #: Default floor for :func:`match_anchors`. **Measured, not chosen.**
 #:
-#: 0.80 shipped as a documented default picked to sit under the 0.95 dedup
-#: constant, and the scored holdout found it admits almost nothing: 13 of 343
+#: The scored holdout at a 0.80 floor found it admits almost nothing: 13 of 343
 #: queries, 0 of 38 ``cross_lingual``, 1 of 36 ``role_query`` (``result.md``
 #: §5). ``scripts/anchor_match_calibration.py`` then swept the floor on a
 #: calibration set built strictly *inside* that run's anchor training window --
@@ -185,8 +164,7 @@ class AnchorUpsert:
     """Outcome of one :func:`upsert_anchor` call.
 
     ``matched_by`` is ``"fingerprint"`` when the exact (query, scope) identity
-    already existed, ``"cosine"`` when a near-identical in-scope anchor
-    absorbed it, and ``None`` when the anchor is new — which is also exactly
+    already existed, and ``None`` when the anchor is new — which is exactly
     when ``created`` is true.
     """
 
@@ -227,26 +205,16 @@ def upsert_anchor(
     now: str | datetime | None = None,
     *,
     edge_weight: float = ANCHOR_EDGE_WEIGHT,
-    dedup_threshold: float = ANCHOR_DEDUP_COSINE_THRESHOLD,
 ) -> AnchorUpsert:
     """Create or reinforce the anchor for ``query`` in ``scope``, with edges.
 
-    Dedup runs in two stages, cheapest first:
+    Identity is :func:`storage.recall_fingerprint` over the whitespace-collapsed
+    query and scope, resolved by an indexed ``UNIQUE(scope, fingerprint)``
+    probe. Case, token order, conditions and identifiers remain significant.
+    Similarity is used only by :func:`match_anchors` to rank retrieval seeds.
 
-    1. exact identity — :func:`storage.recall_fingerprint` over
-       (whitespace-collapsed query, scope), resolved by an indexed
-       ``UNIQUE(scope, fingerprint)`` probe;
-    2. near-identity — cosine at or above ``dedup_threshold`` against the live
-       in-scope anchors, highest first.
-
-    An anchor never crosses scope: the fingerprint includes the scope and the
-    cosine scan is scoped, so the same question asked in two scopes stays two
-    anchors with two sets of edges.
-
-    A reinforcing upsert keeps the stored query text, vector, and fingerprint of
-    the anchor it matched. Rewriting them to the newest phrasing would let an
-    anchor drift across a long tail of near-misses until it no longer matches
-    the question it was built from.
+    A reinforcing upsert keeps the stored query text, vector, and fingerprint.
+    The same question in two scopes keeps independent anchors and edges.
 
     ``targets`` accepts node ids, ``(node_id, weight)`` pairs, or mappings with
     a ``node_id``/``id`` key and an optional ``weight``. Targets are resolved
@@ -271,11 +239,6 @@ def upsert_anchor(
     if anchor is not None:
         matched_by = "fingerprint"
         similarity = 1.0
-    else:
-        near = _nearest_anchor(store, vector, anchor_scope, dedup_threshold)
-        if near is not None:
-            anchor, similarity = near
-            matched_by = "cosine"
 
     if anchor is None:
         anchor = store.insert_query_anchor(
@@ -344,15 +307,12 @@ def resolve_query_anchor(
     scope: str,
     embedding: Sequence[float],
     now: str | datetime | None = None,
-    *,
-    dedup_threshold: float = ANCHOR_DEDUP_COSINE_THRESHOLD,
 ) -> QueryAnchor:
     """The anchor ``query`` in ``scope`` belongs to, created if absent.
 
-    The same two-stage identity :func:`upsert_anchor` uses — fingerprint, then
-    in-scope cosine at or above ``dedup_threshold`` — so a caller keying data
-    on the returned id lands on exactly the anchor a grounded consumption of
-    the same question reinforces. Unlike :func:`upsert_anchor` it neither
+    Uses the same exact (query, scope) fingerprint as :func:`upsert_anchor`,
+    so a caller keying data on the returned id lands on exactly the anchor a
+    grounded consumption of the same question reinforces. Unlike :func:`upsert_anchor` it neither
     reinforces an existing anchor nor writes an edge: a negative signal
     (``living_memory.irrelevance``) must not count as a use of the anchor.
     A new anchor is born with no edges, so it seeds nothing.
@@ -366,9 +326,6 @@ def resolve_query_anchor(
     anchor = store.find_query_anchor(anchor_scope, fingerprint)
     if anchor is not None:
         return anchor
-    near = _nearest_anchor(store, vector, anchor_scope, dedup_threshold)
-    if near is not None:
-        return near[0]
     return store.insert_query_anchor(
         scope=anchor_scope,
         query=query,
@@ -633,21 +590,6 @@ def _prepare_anchor_vectors(
         tuple(ids), matrix, tuple(squared_norms), (),
         {scope: tuple(indices) for scope, indices in by_scope.items()},
     )
-
-
-def _nearest_anchor(
-    store: MemoryStore, vector: Sequence[float], scope: str, threshold: float
-) -> tuple[QueryAnchor, float] | None:
-    """Best live in-scope anchor at or above ``threshold``, if any."""
-
-    ranked = _rank_anchors(
-        store, vector, [scope], min_similarity=threshold, limit=1
-    )
-    if not ranked:
-        return None
-    anchor_id, similarity = ranked[0]
-    anchor = store.get_query_anchor(anchor_id)
-    return None if anchor is None else (anchor, similarity)
 
 
 def _scope_list(

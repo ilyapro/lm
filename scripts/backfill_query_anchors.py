@@ -51,7 +51,7 @@ last used in May — so replaying history oldest-first makes an anchor's
 ``last_matched_at`` the timestamp of the last event it absorbed.
 
 An event is therefore *pending* unless the anchor its (query, scope) resolves
-to — by fingerprint first, then by the same cosine dedup the write path uses —
+to by its exact fingerprint
 already carries an edge to every live node the event grounded on **and** is
 already fresh as of that event. Both halves are needed: the edge test alone
 would re-reinforce every repeat on every re-run, and the clock test alone would
@@ -128,7 +128,6 @@ from living_memory.embeddings import (  # noqa: E402
 )
 from living_memory.grounding import ground_results  # noqa: E402
 from living_memory.query_anchors import (  # noqa: E402
-    ANCHOR_DEDUP_COSINE_THRESHOLD,
     ANCHOR_EDGE_WEIGHT,
     MAX_SUPERSEDES_CHAIN_DEPTH,
     # Private on purpose: "where does an edge to this node actually go" is
@@ -774,7 +773,6 @@ class BackfillSummary:
     results_without_node: int = 0
     anchors_created: int = 0
     anchors_reinforced: int = 0
-    anchors_merged_by_cosine: int = 0
     edge_writes: int = 0
     grounded_targets: int = 0
     targets_skipped_dead: int = 0
@@ -844,10 +842,9 @@ def dry_run(
 
     Grounds every event for real — the labeling is the cheap half and the whole
     projection depends on it — and projects the anchor count as the number of
-    distinct ``(scope, fingerprint)`` identities among grounded events. That is
-    an *upper* bound: cosine dedup can only merge further, and it cannot be
-    evaluated without the encoder (which would need a model load and, on a
-    pre-v7 file, an anchor table to scan).
+    distinct ``(scope, fingerprint)`` identities among grounded events. The
+    encoder is unnecessary for identity; the real run can still skip queries
+    with unusable vectors or no live target.
     """
 
     summary = BackfillSummary(
@@ -997,38 +994,6 @@ def _with_busy_retry(
     raise AssertionError("unreachable")  # pragma: no cover
 
 
-def _resolve_anchor(
-    store: MemoryStore,
-    *,
-    anchor_scope: str,
-    fingerprint: str,
-    vector: Sequence[float],
-    dedup_threshold: float,
-) -> Any:
-    """The anchor ``upsert_anchor`` would land on, without writing anything.
-
-    The two stages of ``query_anchors.upsert_anchor``'s dedup, asked as a
-    question instead of as a write: the indexed ``UNIQUE(scope, fingerprint)``
-    probe first, then the scoped cosine scan at the same threshold. The resume
-    predicate has to be the write path's own idea of identity — a predicate
-    that only knew about fingerprints would re-apply every cosine-merged event
-    on every re-run.
-    """
-
-    anchor = store.find_query_anchor(anchor_scope, fingerprint)
-    if anchor is not None:
-        return anchor
-    matches = qa.match_anchors(
-        store,
-        vector,
-        anchor_scope,
-        limit=1,
-        min_similarity=dedup_threshold,
-        include_targets=False,
-    )
-    return matches[0].anchor if matches else None
-
-
 def run_backfill(
     store: MemoryStore,
     *,
@@ -1041,16 +1006,13 @@ def run_backfill(
     page_size: int = DEFAULT_BATCH_EVENTS,
     min_containment: float = RECALL_CREDIT_MIN_CONTAINMENT,
     edge_weight: float = ANCHOR_EDGE_WEIGHT,
-    dedup_threshold: float = ANCHOR_DEDUP_COSINE_THRESHOLD,
     progress_interval: float = DEFAULT_PROGRESS_INTERVAL,
     quiet: bool = False,
 ) -> BackfillSummary:
     """Build anchors from every grounded consumption in range, oldest first.
 
-    Oldest first is not cosmetic: an anchor's identity is the first phrasing
-    that created it and every later near-miss reinforces that one, so replaying
-    history in its own order reproduces the anchor set the live path would have
-    grown, rather than an order-dependent variant of it.
+    Exact query repeats reinforce their own in-scope anchor. Oldest-first
+    replay keeps each anchor's clock usable as an idempotent progress marker.
 
     Raises whatever the encoder or the database raises: an interrupted run is a
     supported state, not an error to swallow, and the caller reports what was
@@ -1159,12 +1121,8 @@ def run_backfill(
                     summary.targets_skipped_dead += len(grounded)
                     continue
 
-                anchor = _resolve_anchor(
-                    store,
-                    anchor_scope=anchor_scope,
-                    fingerprint=recall_fingerprint(event.query, anchor_scope),
-                    vector=vector,
-                    dedup_threshold=dedup_threshold,
+                anchor = store.find_query_anchor(
+                    anchor_scope, recall_fingerprint(event.query, anchor_scope),
                 )
                 stamp = event.created_at
                 if anchor is not None:
@@ -1202,7 +1160,6 @@ def run_backfill(
                         grounded,
                         stamp,
                         edge_weight=edge_weight,
-                        dedup_threshold=dedup_threshold,
                     ),
                 )
                 summary.events_applied += 1
@@ -1210,8 +1167,6 @@ def run_backfill(
                     summary.anchors_created += 1
                 else:
                     summary.anchors_reinforced += 1
-                    if result.matched_by == "cosine":
-                        summary.anchors_merged_by_cosine += 1
                 summary.edge_writes += len(result.edges)
                 summary.targets_skipped_dead += len(result.skipped_targets)
                 reporter.update(
@@ -1580,10 +1535,7 @@ def _print_summary(summary: BackfillSummary) -> None:
     else:
         print(f"  events applied       {summary.events_applied}")
         print(f"  anchors created      {summary.anchors_created}")
-        print(
-            f"  anchors reinforced   {summary.anchors_reinforced} "
-            f"({summary.anchors_merged_by_cosine} merged by cosine)"
-        )
+        print(f"  anchors reinforced   {summary.anchors_reinforced}")
         print(f"  edge writes          {summary.edge_writes}")
     for label, value in (
         ("ungrounded (no credit)", summary.events_ungrounded),

@@ -70,10 +70,7 @@ PROCEDURAL_MIN_CLUSTER_SIZE = 3
 _STEP_TEXT_KEYS = ("step_description", "step_content")
 DIGEST_MAX_CHARS = 1200
 DIGEST_LEAD_MAX_CHARS = 600
-DIGEST_FACT_MAX_CHARS = 280
 DIGEST_FACT_PREFIX = "• "
-DIGEST_NEAR_DUPLICATE_JACCARD = 0.75
-DIGEST_FRAGMENT_MAX_TOKENS = 12
 
 _STOP_WORDS = {
     "a",
@@ -1857,88 +1854,73 @@ def _synthesize_digest(
     max_chars: int = DIGEST_MAX_CHARS,
     prepared_sources: Sequence[_DigestSource] | None = None,
 ) -> str:
-    """Build a deterministic extractive digest of the sources' contents.
+    """Select complete source sentences within a deterministic digest budget.
 
-    Leads with the best source's opening sentences, then folds in the most
-    distinctive sentence of each remaining source in cluster-centrality order,
-    skipping near-duplicate sentences. Single-source and all-identical-content
-    inputs keep the sole content — that already is the digest. For inputs with
-    two or more distinct contents the result is byte-distinct from every
-    source content and strictly shorter than their concatenation, except for
-    degenerate corners (formatting-only variants with no novel token, or
-    sources too tiny to fit any distinctive line) where the strongest single
-    content is kept.
+    Exact repeated sentences share a slot. Token novelty ranks the remaining
+    sentences but never establishes identity; conditions and contrasting claims
+    remain eligible even when their token sets or embeddings are identical.
+    Source identities and complete contents remain available through provenance.
     """
 
-    distinct_contents = {source.content for source in sources}
-    if len(distinct_contents) <= 1:
-        return best.content
-
-    budget = min(max_chars, sum(len(content) for content in distinct_contents) - 1)
-    lead = _digest_lead(best.content)
-    if len(lead) + len(DIGEST_FACT_PREFIX) + 2 > budget:
+    if max_chars <= 0:
+        return ""
+    if len({source.content for source in sources}) <= 1 and len(best.content) <= max_chars:
         return best.content
 
     prepared = prepared_sources if prepared_sources is not None else _prepare_digest_sources(sources)
     token_counts: Counter[str] = Counter()
     for source in prepared:
         token_counts.update(source.tokens)
-
+    lead = _digest_lead(best.content, max_chars=max_chars)
     covered_significant = _significant_tokens(lead)
     covered_raw = set(_raw_tokens(lead))
-    included_sentences = [frozenset(_raw_tokens(part)) for part in _split_sentences(lead)]
-    ordered_others = sorted(
-        (source for source in prepared if source.id != best.id),
-        key=lambda source: (-_token_centrality(source.tokens, token_counts), source.id),
+    included_sentences = set(_split_sentences(lead))
+    ordered = sorted(
+        prepared,
+        key=lambda source: (
+            source.id == best.id, -_token_centrality(source.tokens, token_counts), source.id,
+        ),
     )
 
-    lines = [lead]
+    lines = [lead] if lead else []
     length = len(lead)
-    for source in ordered_others:
-        sentence = _most_distinctive_sentence(
-            source.sentences, covered_significant, covered_raw, included_sentences
-        )
-        if sentence is None:
-            continue
-        line = DIGEST_FACT_PREFIX + sentence
-        if length + 1 + len(line) > budget:
-            continue
-        lines.append(line)
-        length += 1 + len(line)
-        covered_significant |= _significant_tokens(sentence)
-        raw = frozenset(_raw_tokens(sentence))
-        covered_raw |= raw
-        included_sentences.append(raw)
-
-    if len(lines) == 1:
-        # Every non-lead sentence was redundant (near-identical cluster). A
-        # novel-token fragment keeps the digest byte-distinct from each source
-        # and covering more than one of them without echoing whole variants.
-        fragment = _novel_fragment_line(
-            ordered_others, covered_raw, budget - length - 1,
-        )
-        if fragment is None:
-            return best.content
-        lines.append(fragment)
-
-    digest = "\n".join(lines)
-    if digest in distinct_contents:
-        # A source already contains these exact bytes (e.g. a re-remembered
-        # digest); byte-distinctness is unattainable without fabricating text.
-        return best.content
-    return digest
+    while True:
+        added = False
+        for source in ordered:
+            prefix = DIGEST_FACT_PREFIX if lines else ""
+            separator_length = 1 if lines else 0
+            sentence = _most_distinctive_sentence(
+                source.sentences, covered_significant, covered_raw, included_sentences,
+                max_chars=max_chars - length - separator_length - len(prefix),
+            )
+            if sentence is None:
+                continue
+            line = prefix + sentence
+            lines.append(line)
+            length += separator_length + len(line)
+            covered_significant |= _significant_tokens(sentence)
+            covered_raw.update(_raw_tokens(sentence))
+            included_sentences.add(sentence)
+            added = True
+        if not added:
+            break
+    if lines:
+        return "\n".join(lines)
+    notice = "Full source lookup required."
+    return notice if len(notice) <= max_chars else ""
 
 
-def _digest_lead(content: str) -> str:
+def _digest_lead(content: str, *, max_chars: int = DIGEST_MAX_CHARS) -> str:
     text = content.strip()
-    if len(text) <= DIGEST_LEAD_MAX_CHARS:
+    lead_limit = min(DIGEST_LEAD_MAX_CHARS, max_chars)
+    if len(text) <= lead_limit:
         return text
     sentences = _split_sentences(text)
+    if not sentences or len(sentences[0]) > max_chars:
+        return ""
     lead = sentences[0]
-    if len(lead) > DIGEST_LEAD_MAX_CHARS:
-        return lead[: DIGEST_LEAD_MAX_CHARS - 1].rstrip() + "…"
     for sentence in sentences[1:]:
-        if len(lead) + 1 + len(sentence) > DIGEST_LEAD_MAX_CHARS:
+        if len(lead) + 1 + len(sentence) > lead_limit:
             break
         lead = f"{lead} {sentence}"
     return lead
@@ -1948,63 +1930,21 @@ def _most_distinctive_sentence(
     sentences: Sequence[tuple[str, set[str]]],
     covered_significant: set[str],
     covered_raw: set[str],
-    included_sentences: list[frozenset[str]],
+    included_sentences: set[str],
+    *,
+    max_chars: int,
 ) -> str | None:
     best_sentence: str | None = None
     best_rank: tuple[int, int, int] | None = None
     for index, (sentence, tokens) in enumerate(sentences):
-        significant_novelty = len(tokens - covered_significant)
-        if significant_novelty < 1:
+        if sentence in included_sentences or len(sentence) > max_chars:
             continue
-        raw = frozenset(_raw_tokens(sentence))
-        if any(
-            _jaccard(raw, included) >= DIGEST_NEAR_DUPLICATE_JACCARD
-            for included in included_sentences
-        ):
-            continue
-        rank = (-significant_novelty, -len(raw - covered_raw), index)
+        raw = set(_raw_tokens(sentence))
+        rank = (-len(tokens - covered_significant), -len(raw - covered_raw), index)
         if best_rank is None or rank < best_rank:
             best_rank = rank
             best_sentence = sentence
-    if best_sentence is not None and len(best_sentence) > DIGEST_FACT_MAX_CHARS:
-        best_sentence = best_sentence[: DIGEST_FACT_MAX_CHARS - 1].rstrip() + "…"
     return best_sentence
-
-
-def _novel_fragment_line(
-    ordered_others: Sequence[_DigestSource],
-    covered_raw: set[str],
-    budget_left: int,
-) -> str | None:
-    for source in ordered_others:
-        novel = _novel_tokens_in_order(source.content, covered_raw)
-        if not novel:
-            continue
-        line = DIGEST_FACT_PREFIX + " ".join(novel)
-        while novel and len(line) > budget_left:
-            novel.pop()
-            line = DIGEST_FACT_PREFIX + " ".join(novel)
-        if novel:
-            return line
-    return None
-
-
-def _novel_tokens_in_order(content: str, covered_raw: set[str]) -> list[str]:
-    preferred: list[str] = []
-    fallback: list[str] = []
-    for token in _raw_tokens(content):
-        if token in covered_raw:
-            continue
-        bucket = (
-            preferred
-            if len(token) >= 3 and not token.isdigit() and token not in _STOP_WORDS
-            else fallback
-        )
-        if len(bucket) < DIGEST_FRAGMENT_MAX_TOKENS and token not in bucket:
-            bucket.append(token)
-        if len(preferred) >= DIGEST_FRAGMENT_MAX_TOKENS:
-            break
-    return preferred or fallback
 
 
 def _token_centrality(tokens: set[str], token_counts: Counter[str]) -> float:
