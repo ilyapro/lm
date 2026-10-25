@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 import re
+import json
 
 NodeLevel = Literal["trace", "concept", "schema"]
 ConnectionType = Literal["related", "caused", "contradicts", "supersedes", "requires"]
@@ -18,6 +19,29 @@ CONNECTION_TYPES: tuple[str, ...] = (
     "requires",
 )
 REJECTED_ALTERNATIVE_KIND = "rejected_alternative"
+
+
+def content_identity(node: Node) -> tuple[Any, ...] | None:
+    """Exact content within its scope and recorded source identity.
+
+    Materialized knowledge needs known inputs and group. For ordinary nodes,
+    source context and provenance stay part of identity; timestamps and recall
+    bookkeeping do not make a repeated write a new source. Level is a separate
+    storage lifecycle boundary; delivery may share identical ordinary content.
+    """
+    if node.materializer is not None:
+        source = node.derivation_identity
+        return (node.scope, node.content, source) if source is not None else None
+    context = {key: value for key, value in node.context.items() if key != "timestamp"}
+    # Scope is represented by node.scope, including on in-memory callers.
+    context.pop("scope", None)
+    provenance = {key: value for key, value in node.provenance.items()
+                  if key not in ("prior_recalls", "source_traces", "corrections")}
+    source = json.dumps(
+        [context, provenance, sorted(node.source_traces), node.corrections],
+        sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+    )
+    return node.scope, node.content, source
 
 
 @dataclass(slots=True)
