@@ -41,9 +41,6 @@ from living_memory.consolidation import (
 )
 from living_memory.decay import apply_decay
 from living_memory.delivery import (
-    DELIVERY_NEAR_DUPLICATE,
-    DELIVERY_SESSION_DUPLICATE,
-    DELIVERY_TWIN_DUPLICATE,
     DeliveryHistory,
     context_value_max_chars_from_env,
     full_node_diet_enabled_from_env,
@@ -89,12 +86,7 @@ from living_memory.feedback import (
     resolve_explicit_marks,
 )
 from living_memory import storage as storage_module
-from living_memory.storage import (
-    FingerprintGatePolicy,
-    MemoryStore,
-    recall_fingerprint,
-    should_gate_fingerprint,
-)
+from living_memory.storage import MemoryStore
 from living_memory.temporal import parse_timestamp
 
 _BOOT_ID = uuid4().hex
@@ -199,20 +191,6 @@ def _loaded_code_identity(
     except (AttributeError, TypeError, ValueError, OverflowError):
         pass
     return identity
-
-#: Delivery classes a gated response may drop from its trailing run.
-#:
-#: Every class here is one whose text the agent can already reach without the
-#: entry: a session duplicate and a fingerprint repeat were delivered under
-#: this same session or this same request moments ago, a twin's bytes ship
-#: under a bearer in this very response, and a near-duplicate's meaning does
-#: too. ``full`` and ``snippet`` are absent by construction — they are the
-#: only classes that carry content nothing else in reach holds.
-_DROPPABLE_TRAILING_STUBS = (
-    DELIVERY_SESSION_DUPLICATE,
-    DELIVERY_TWIN_DUPLICATE,
-    DELIVERY_NEAR_DUPLICATE,
-)
 
 # Server-wide KV key holding the persisted (rotated) bearer token. A value here
 # takes precedence over the LM_AUTH_TOKEN env seed at startup, so a rotation via
@@ -1280,31 +1258,11 @@ def _register_tools(
                 if has_explicit_marks(used, irrelevant)
                 else None
             )
-            # Experimental repeat gating is a strict opt-in via
-            # LM_RECALL_REPEAT_GATING=1. resolve_scope runs the same resolver
-            # retrieval will, so the fingerprint equals the one
-            # record_recall_event stamps on this event; stats are read before
-            # the service records this delivery — the decision sees only the
-            # accounting accumulated by prior requests.
-            gate_policy = FingerprintGatePolicy.from_env()
-            gated = False
-            fingerprint = None
-            if gate_policy.enabled:
-                plan = resolve_scope(
-                    scope=scope,
-                    ambient_context=ambient_context,
-                    store=store,
-                )
-                fingerprint = recall_fingerprint(query, plan.requested_scope)
-                gated = should_gate_fingerprint(
-                    store.get_recall_fingerprint_stats(fingerprint), gate_policy
-                )
             # Read only prior formed responses. Selection and shaping share
             # this bounded observation; recording the current event adds no proof.
             try:
                 delivery_history = DeliveryHistory(store.recall_delivery_history(
                     transport_session_id if session_dedup else None,
-                    fingerprint=fingerprint if gated else None,
                 ))
             except Exception:
                 logging.getLogger(__name__).warning(
@@ -1322,8 +1280,6 @@ def _register_tools(
                     near_duplicates, limited, residual, limit, delivery_history
                 ),
             )
-            if gated and recall_service.last_recall_event_id is not None:
-                store.mark_recall_event_gated(recall_service.last_recall_event_id)
             shaped = shape_recall_results(
                 results,
                 view=view,
@@ -1331,7 +1287,7 @@ def _register_tools(
                 delivery_history=delivery_history,
                 snippet_max_chars=snippet_max_chars_from_env(),
                 context_value_max_chars=context_value_max_chars_from_env(),
-                session_dedup=session_dedup or gated,
+                session_dedup=session_dedup,
                 snippet_ladder=snippet_ladder_from_env(),
                 full_node_diet=full_node_diet_enabled_from_env(),
                 provenance_value_max_chars=provenance_value_max_chars_from_env(),
@@ -1341,17 +1297,6 @@ def _register_tools(
                 # a pool bearer may be absent from the selected answer.
                 duplicate_of=near_duplicates.map(results),
             )
-            if gated and gate_policy.drop_trailing_stubs:
-                # The trailing all-stub run of a gated delivery carries no
-                # content the agent is not already holding, yet stub entries
-                # still cost ~1.1k chars each, so the gate drops the run (the
-                # reduced-result-count form of compaction). The independent
-                # LM_RECALL_REPEAT_DROP_TRAILING_STUBS=1 opt-in enables this;
-                # otherwise the stub list remains. Content-bearers and stubs
-                # ranked above them survive, and the recorded recall_event
-                # keeps every result id.
-                while shaped and shaped[-1]["delivery"] in _DROPPABLE_TRAILING_STUBS:
-                    shaped.pop()
             response: dict[str, Any] = {
                 "query": query,
                 "scope": scope,

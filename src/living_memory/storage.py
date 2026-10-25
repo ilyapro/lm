@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Literal
 import hashlib
 import json
-import os
 import re
 import secrets
 import sqlite3
@@ -765,13 +764,6 @@ _FTS_TERM_TOKENIZER_SQL = (
 #: so a caller that already holds a loaded model does not pay for a second one.
 ChunkEmbedder = Callable[[Sequence[str]], Sequence[Sequence[float]]]
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-_RECALL_REPEAT_GATING_ENV = "LM_RECALL_REPEAT_GATING"
-_RECALL_REPEAT_MIN_UNLINKED_ENV = "LM_RECALL_REPEAT_MIN_UNLINKED"
-_RECALL_REPEAT_MAX_LINK_RATE_ENV = "LM_RECALL_REPEAT_MAX_LINK_RATE"
-_RECALL_REPEAT_MIN_SESSIONS_ENV = "LM_RECALL_REPEAT_MIN_SESSIONS"
-_RECALL_REPEAT_PROBE_EVERY_ENV = "LM_RECALL_REPEAT_PROBE_EVERY"
-_RECALL_REPEAT_DROP_TRAILING_STUBS_ENV = "LM_RECALL_REPEAT_DROP_TRAILING_STUBS"
-_ENABLED_ENV_FLAGS = frozenset({"1", "true", "yes", "on"})
 _RECALL_TEXT_SIMILARITY_THRESHOLD = 0.55
 _DUPLICATE_CONTENT_DECAY_REASON = "duplicate_content"
 _DUPLICATE_CONTENT_KIND = "duplicate_content"
@@ -862,8 +854,8 @@ def unpack_chunk_embedding(blob: bytes | memoryview, dimensions: int) -> list[fl
 def recall_fingerprint(query: str, requested_scope: str | None) -> str:
     """Stable identity for one exact recall request: (query, requested scope).
 
-    SHA-256 over the whitespace-collapsed query plus the requested scope as
-    stamped on ``recall_events.requested_scope``. Exact-match only: no
+    SHA-256 over the whitespace-collapsed query plus the requested scope.
+    Query anchors and hubs share this identity. Exact-match only: no
     semantic clustering and no content inspection beyond whitespace
     normalization, so stored fingerprints stay stable across releases.
     """
@@ -1022,104 +1014,6 @@ class MaturedRecallHistory:
     @property
     def k(self) -> int | None:
         return self.trailing_nonconsumed
-
-
-@dataclass(frozen=True)
-class RecallFingerprintStats:
-    """Delivered-vs-linked signal aggregated per recall fingerprint."""
-
-    fingerprint: str
-    first_seen: str
-    last_seen: str
-    delivery_count: int
-    linked_count: int
-    deliveries_since_link: int
-    last_linked_at: str | None
-    transport_session_count: int
-    last_transport_session_id: str | None
-    updated_at: str
-
-    @property
-    def smoothed_link_rate(self) -> float:
-        """Laplace-smoothed linked/delivered rate: (linked+1) / (delivered+2)."""
-
-        return (self.linked_count + 1) / (self.delivery_count + 2)
-
-
-@dataclass(frozen=True)
-class FingerprintGatePolicy:
-    """Pure thresholds for gating repeated low-signal recall fingerprints.
-
-    Threshold defaults were derived from the frozen animal-planet dev split only
-    (repeated fingerprints there show 7/352 feedback linkage); never tune
-    them against the eval or holdout splits. Both legacy repeat controls are
-    strict opt-ins and therefore default off.
-
-    When explicitly enabled, ``drop_trailing_stubs`` controls how compact a
-    gated delivery gets: the trailing run of stub entries
-    (``session_duplicate``/``twin_duplicate``/``near_duplicate``) is dropped
-    from a gated response entirely, because no node in it is telling the agent
-    anything new — it was already delivered under this exact fingerprint's
-    recent history, or its content ships under a bearer in this very response
-    — and even stub entries cost ~1.1k chars each on the wire (dev-split
-    measurement: fully-stubbed gated deliveries otherwise keep ~65% of their
-    ungated size). Content-bearing entries and anything ranked above them
-    survive.
-    """
-
-    enabled: bool = False
-    min_unlinked: int = 5
-    max_link_rate: float = 0.2
-    min_sessions: int = 2
-    probe_every: int = 25
-    drop_trailing_stubs: bool = False
-
-    @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> "FingerprintGatePolicy":
-        """Read ``LM_RECALL_REPEAT_*`` knobs with strict opt-in repeat flags."""
-
-        source: Mapping[str, str] = os.environ if env is None else env
-        return cls(
-            enabled=_env_flag_enabled(source, _RECALL_REPEAT_GATING_ENV),
-            min_unlinked=_env_int(source, _RECALL_REPEAT_MIN_UNLINKED_ENV, cls.min_unlinked),
-            max_link_rate=_env_rate(source, _RECALL_REPEAT_MAX_LINK_RATE_ENV, cls.max_link_rate),
-            min_sessions=_env_int(source, _RECALL_REPEAT_MIN_SESSIONS_ENV, cls.min_sessions),
-            probe_every=_env_int(source, _RECALL_REPEAT_PROBE_EVERY_ENV, cls.probe_every),
-            drop_trailing_stubs=_env_flag_enabled(
-                source, _RECALL_REPEAT_DROP_TRAILING_STUBS_ENV
-            ),
-        )
-
-
-def should_gate_fingerprint(
-    stats: RecallFingerprintStats | None,
-    policy: FingerprintGatePolicy,
-) -> bool:
-    """Decide whether the next delivery for this fingerprint gets gated.
-
-    Evaluated against the aggregate as it stands before the delivery is
-    recorded. Gate iff the fingerprint accumulated ``min_unlinked``
-    deliveries since its last feedback link, its Laplace-smoothed link rate
-    is at most ``max_link_rate``, and it repeated across ``min_sessions``
-    transport sessions. A deterministic probe forces one full delivery
-    within every ``probe_every`` consecutive gate-eligible deliveries so a
-    fingerprint that turns useful again can re-earn links (0 disables
-    probing). Unknown fingerprints (``stats is None``) never gate.
-    """
-
-    if not policy.enabled or stats is None:
-        return False
-    if stats.deliveries_since_link < policy.min_unlinked:
-        return False
-    if stats.smoothed_link_rate > policy.max_link_rate:
-        return False
-    if stats.transport_session_count < policy.min_sessions:
-        return False
-    if policy.probe_every > 0 and (
-        (stats.deliveries_since_link - policy.min_unlinked) % policy.probe_every == 0
-    ):
-        return False
-    return True
 
 
 @dataclass(frozen=True)
@@ -2271,7 +2165,7 @@ class MemoryStore:
 
         Return the selected nodes in order with access metadata from SQLite's
         increments, preserving their selected content and validity. Missing
-        nodes or event/history/fingerprint failures roll back the entire write.
+        nodes or event/history failures roll back the entire write.
         Access and event logging can be disabled independently. This records
         the retrieval tail; response shaping and network delivery are outside
         the transaction.
@@ -2303,10 +2197,6 @@ class MemoryStore:
         session_id = _optional_str(ambient.get("session_id") or ambient.get("session"))
         transport_session_id = _optional_str(ambient.get("transport_session_id"))
         encoded_recall_map = _encode_recall_map(recall_map)
-        # Stamped from the same value the requested_scope column stores, so
-        # callers can reproduce the fingerprint from (query, requested scope)
-        # without any storage round-trip.
-        fingerprint = recall_fingerprint(query, requested_scope or scope)
         with self.transaction():
             if log_access and selected:
                 # JSON keeps this one bounded-parameter batch even for large
@@ -2346,11 +2236,11 @@ class MemoryStore:
                 INSERT INTO recall_events (
                     id, query, scope, requested_scope, resolved_scopes, ambient_context,
                     depth, max_results, results, agent, task, session_id,
-                    transport_session_id, fingerprint, gated, feedback_applied,
+                    transport_session_id, feedback_applied,
                     feedback_trace_id, feedback_applied_at, created_at, recall_map,
                     task_pattern
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?)
                 """,
                 (
                     event_id,
@@ -2366,7 +2256,6 @@ class MemoryStore:
                     task,
                     session_id,
                     transport_session_id,
-                    fingerprint,
                     now,
                     encoded_recall_map,
                     task_pattern,
@@ -2381,7 +2270,6 @@ class MemoryStore:
                 results=normalized_results,
                 recall_map=recall_map,
             )
-            self._apply_recall_fingerprint_delivery(fingerprint, transport_session_id, now)
             event = self.get_recall_event(event_id)
         return selected, event
 
@@ -3273,43 +3161,6 @@ class MemoryStore:
         )
         return evidence
 
-    def _apply_recall_fingerprint_delivery(
-        self,
-        fingerprint: str,
-        transport_session_id: str | None,
-        now: str,
-    ) -> None:
-        """O(1) per-fingerprint aggregate upsert for one recorded delivery.
-
-        A transport session counts as new unless it matches the previous
-        delivery's stored id exactly; a missing transport id always counts
-        as a distinct session (NULL never equals the previous stamp).
-        """
-
-        self._conn.execute(
-            """
-            INSERT INTO recall_fingerprints (
-                fingerprint, first_seen, last_seen, delivery_count, linked_count,
-                deliveries_since_link, last_linked_at, transport_session_count,
-                last_transport_session_id, updated_at
-            )
-            VALUES (?, ?, ?, 1, 0, 1, NULL, 1, ?, ?)
-            ON CONFLICT(fingerprint) DO UPDATE SET
-                last_seen = excluded.last_seen,
-                delivery_count = delivery_count + 1,
-                deliveries_since_link = deliveries_since_link + 1,
-                transport_session_count = transport_session_count + CASE
-                    WHEN excluded.last_transport_session_id IS NOT NULL
-                     AND recall_fingerprints.last_transport_session_id IS NOT NULL
-                     AND excluded.last_transport_session_id
-                         = recall_fingerprints.last_transport_session_id
-                    THEN 0 ELSE 1 END,
-                last_transport_session_id = excluded.last_transport_session_id,
-                updated_at = excluded.updated_at
-            """,
-            (fingerprint, now, now, transport_session_id, now),
-        )
-
     def get_recall_event(self, event_id: str) -> RecallEvent | None:
         row = self._conn.execute(
             "SELECT * FROM recall_events WHERE id = ?",
@@ -3345,37 +3196,27 @@ class MemoryStore:
         self,
         transport_session_id: str | None = None,
         *,
-        fingerprint: str | None = None,
         max_events: int = 200,
     ) -> list[dict[str, Any]]:
-        """Read shaped-content evidence from bounded, indexed event windows.
+        """Read shaped-content evidence from a bounded session event window.
 
-        Each selector has its own most-recent-event horizon. Legacy results
-        remain readable but carry no evidence of delivered content. The caller
-        compares the recorded bodies with the current candidate, not node ids.
+        Legacy results remain readable but carry no evidence of delivered
+        content. The caller compares recorded bodies with the current candidate,
+        not node ids.
         """
-        results: list[dict[str, Any]] = []
-        if max_events <= 0:
-            return results
-        for column, value in (
-            ("transport_session_id", transport_session_id),
-            ("fingerprint", fingerprint),
-        ):
-            if not value:
-                continue
-            rows = self._conn.execute(
-                f"""
-                SELECT results FROM recall_events WHERE {column} = ?
-                ORDER BY created_at DESC, rowid DESC LIMIT ?
-                """,
-                (value, int(max_events)),
-            ).fetchall()
-            for row in rows:
-                results.extend(
-                    item for item in _json_loads(row["results"], [])
-                    if isinstance(item, dict) and isinstance(item.get("delivery"), dict)
-                )
-        return results
+        if not transport_session_id or max_events <= 0:
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT results FROM recall_events WHERE transport_session_id = ?
+            ORDER BY created_at DESC, rowid DESC LIMIT ?
+            """,
+            (transport_session_id, int(max_events)),
+        ).fetchall()
+        return [
+            item for row in rows for item in _json_loads(row["results"], [])
+            if isinstance(item, dict) and isinstance(item.get("delivery"), dict)
+        ]
 
     def record_recall_delivery(
         self, event_id: str, deliveries: Mapping[str, Mapping[str, str]],
@@ -3401,19 +3242,6 @@ class MemoryStore:
                 "UPDATE recall_events SET results = ? WHERE id = ?",
                 (_json_dumps(results), event_id),
             )
-
-    def get_recall_fingerprint_stats(
-        self, fingerprint: str | None
-    ) -> RecallFingerprintStats | None:
-        """Aggregate recall signal for one fingerprint, None when never seen."""
-
-        if not fingerprint:
-            return None
-        row = self._conn.execute(
-            "SELECT * FROM recall_fingerprints WHERE fingerprint = ?",
-            (fingerprint,),
-        ).fetchone()
-        return None if row is None else _recall_fingerprint_stats_from_row(row)
 
     def pending_recall_events(
         self,
@@ -3470,63 +3298,19 @@ class MemoryStore:
     def mark_recall_event_feedback(self, event_id: str, trace_id: str) -> RecallEvent:
         if self.get_node(trace_id) is None:
             raise KeyError(trace_id)
-        event_row = self._conn.execute(
-            "SELECT fingerprint FROM recall_events WHERE id = ?",
-            (event_id,),
-        ).fetchone()
-        if event_row is None:
-            raise KeyError(event_id)
-        fingerprint = _optional_str(event_row["fingerprint"])
-        now = _utc_now()
         with self.transaction():
-            flipped = self._conn.execute(
+            updated = self._conn.execute(
                 """
                 UPDATE recall_events
                 SET feedback_applied = 1,
                     feedback_trace_id = ?,
                     feedback_applied_at = ?
-                WHERE id = ? AND feedback_applied = 0
+                WHERE id = ?
                 """,
-                (trace_id, now, event_id),
+                (trace_id, _utc_now(), event_id),
             ).rowcount
-            if flipped:
-                # Credit the fingerprint aggregate only on the 0 -> 1 flip so
-                # re-marking one event can never inflate linked_count.
-                if fingerprint:
-                    self._conn.execute(
-                        """
-                        UPDATE recall_fingerprints
-                        SET linked_count = linked_count + 1,
-                            deliveries_since_link = 0,
-                            last_linked_at = ?,
-                            updated_at = ?
-                        WHERE fingerprint = ?
-                        """,
-                        (now, now, fingerprint),
-                    )
-            else:
-                # Already applied: keep the legacy overwrite of the trace
-                # pointer without re-crediting the aggregate.
-                self._conn.execute(
-                    """
-                    UPDATE recall_events
-                    SET feedback_trace_id = ?, feedback_applied_at = ?
-                    WHERE id = ?
-                    """,
-                    (trace_id, now, event_id),
-                )
-        return self.get_recall_event(event_id)  # type: ignore[return-value]
-
-    def mark_recall_event_gated(self, event_id: str) -> RecallEvent:
-        """Flag one recall event as served with a gated (compact) delivery."""
-
-        if self.get_recall_event(event_id) is None:
-            raise KeyError(event_id)
-        with self.transaction():
-            self._conn.execute(
-                "UPDATE recall_events SET gated = 1 WHERE id = ?",
-                (event_id,),
-            )
+            if not updated:
+                raise KeyError(event_id)
         return self.get_recall_event(event_id)  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
@@ -5100,7 +4884,6 @@ class MemoryStore:
         with self._conn:
             self._migrate_pre_v3_schema()
             self._migrate_pre_v4_schema()
-            self._migrate_pre_v5_schema()
             self._migrate_pre_v6_schema()
             self._migrate_pre_v7_schema()
             self._migrate_recall_map_column()
@@ -5267,32 +5050,12 @@ class MemoryStore:
                     task TEXT,
                     session_id TEXT,
                     transport_session_id TEXT,
-                    fingerprint TEXT,
-                    gated INTEGER NOT NULL DEFAULT 0,
                     feedback_applied INTEGER NOT NULL DEFAULT 0 CHECK (feedback_applied IN (0, 1)),
                     feedback_trace_id TEXT REFERENCES nodes(id),
                     feedback_applied_at TEXT,
                     created_at TEXT NOT NULL,
                     recall_map TEXT,
                     task_pattern TEXT
-                );
-
-                -- Per-fingerprint recall-signal accounting (schema v5):
-                -- delivered-vs-linked aggregates for exact repeated
-                -- (query, requested_scope) recall requests. Maintained online
-                -- by record_recall_event / mark_recall_event_feedback and
-                -- rebuilt from stamped recall_events on migration.
-                CREATE TABLE IF NOT EXISTS recall_fingerprints (
-                    fingerprint TEXT PRIMARY KEY,
-                    first_seen TEXT NOT NULL,
-                    last_seen TEXT NOT NULL,
-                    delivery_count INTEGER NOT NULL DEFAULT 0,
-                    linked_count INTEGER NOT NULL DEFAULT 0,
-                    deliveries_since_link INTEGER NOT NULL DEFAULT 0,
-                    last_linked_at TEXT,
-                    transport_session_count INTEGER NOT NULL DEFAULT 0,
-                    last_transport_session_id TEXT,
-                    updated_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS retrieval_weights (
@@ -5387,13 +5150,6 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_recall_events_transport_created
                     ON recall_events(transport_session_id, created_at DESC);
 
-                -- Fingerprint delivery history (recall_delivery_history
-                -- and gating reads): equality probe on the request fingerprint
-                -- plus the most-recent-events window. Runs after
-                -- _migrate_pre_v5_schema, so the column exists on legacy DBs.
-                CREATE INDEX IF NOT EXISTS idx_recall_events_fingerprint_created
-                    ON recall_events(fingerprint, created_at DESC);
-
                 -- The curtail rule's delivery window, keyed the way the map
                 -- itself is keyed: equality on (scope, task_pattern), so
                 -- recent_recall_map_history sorts two bounded ranges of this
@@ -5451,7 +5207,6 @@ class MemoryStore:
             self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
             self._invalidate_derived_proxy_chunks()
-            self._backfill_recall_fingerprint_signal()
             self._backfill_recall_events_task_pattern()
             self._conn.execute(
                 """
@@ -5569,25 +5324,6 @@ class MemoryStore:
         if "transport_session_id" not in columns:
             self._conn.execute(
                 "ALTER TABLE recall_events ADD COLUMN transport_session_id TEXT"
-            )
-
-    def _migrate_pre_v5_schema(self) -> None:
-        """Add fingerprint + gated to recall_events for DBs created at schema_version <= 4."""
-
-        row = self._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='recall_events'"
-        ).fetchone()
-        if row is None:
-            return
-        columns = {
-            r["name"]
-            for r in self._conn.execute("PRAGMA table_info(recall_events)").fetchall()
-        }
-        if "fingerprint" not in columns:
-            self._conn.execute("ALTER TABLE recall_events ADD COLUMN fingerprint TEXT")
-        if "gated" not in columns:
-            self._conn.execute(
-                "ALTER TABLE recall_events ADD COLUMN gated INTEGER NOT NULL DEFAULT 0"
             )
 
     def _migrate_pre_v6_schema(self) -> None:
@@ -5938,135 +5674,6 @@ class MemoryStore:
             updates,
         )
 
-    def _backfill_recall_fingerprint_signal(self) -> None:
-        """Stamp fingerprints on legacy recall_events and rebuild aggregates.
-
-        Idempotent: fires only while rows still have ``fingerprint IS NULL``
-        (fresh inserts stamp the column directly, so after the schema-v5
-        migration runs once this is a no-op and never clobbers the online
-        aggregates). Rebuilding ``recall_fingerprints`` from the stamped
-        events lets gating activate from historical evidence on live DBs
-        instead of starting cold.
-        """
-
-        rows = self._conn.execute(
-            """
-            SELECT id, query, requested_scope
-            FROM recall_events
-            WHERE fingerprint IS NULL
-            """
-        ).fetchall()
-        if not rows:
-            return
-        self._conn.executemany(
-            "UPDATE recall_events SET fingerprint = ? WHERE id = ?",
-            [
-                (
-                    recall_fingerprint(
-                        str(r["query"]), _optional_str(r["requested_scope"])
-                    ),
-                    str(r["id"]),
-                )
-                for r in rows
-            ],
-        )
-        self._rebuild_recall_fingerprint_aggregates()
-
-    def _rebuild_recall_fingerprint_aggregates(self) -> None:
-        """Recompute ``recall_fingerprints`` from stamped recall_events.
-
-        Replays deliveries in recorded order (created_at, rowid — the house
-        recall_events ordering) interleaved with feedback links at their
-        applied-at time, applying the same per-delivery / per-link rules as
-        ``record_recall_event`` and ``mark_recall_event_feedback``, so a
-        migrated DB gates exactly like one that accumulated the signal
-        online. Within one timestamp deliveries sort before links.
-        """
-
-        self._conn.execute("DELETE FROM recall_fingerprints")
-        actions: list[tuple[str, int, int, str, str | None]] = []
-        for row in self._conn.execute(
-            """
-            SELECT rowid, fingerprint, transport_session_id, feedback_applied,
-                   feedback_applied_at, created_at
-            FROM recall_events
-            WHERE fingerprint IS NOT NULL
-            """
-        ):
-            fingerprint = str(row["fingerprint"])
-            created_at = str(row["created_at"])
-            order = int(row["rowid"])
-            actions.append(
-                (
-                    created_at,
-                    0,
-                    order,
-                    fingerprint,
-                    _optional_str(row["transport_session_id"]),
-                )
-            )
-            if row["feedback_applied"]:
-                linked_at = _optional_str(row["feedback_applied_at"]) or created_at
-                # A link can never precede its own delivery: clamp malformed
-                # applied-at stamps to the event's created_at.
-                actions.append((max(linked_at, created_at), 1, order, fingerprint, None))
-        if not actions:
-            return
-        actions.sort(key=lambda item: (item[0], item[1], item[2]))
-        aggregates: dict[str, dict[str, Any]] = {}
-        for at, kind, _order, fingerprint, transport_id in actions:
-            state = aggregates.get(fingerprint)
-            if kind == 0:
-                if state is None:
-                    aggregates[fingerprint] = {
-                        "first_seen": at,
-                        "last_seen": at,
-                        "delivery_count": 1,
-                        "linked_count": 0,
-                        "deliveries_since_link": 1,
-                        "last_linked_at": None,
-                        "transport_session_count": 1,
-                        "last_transport_session_id": transport_id,
-                    }
-                    continue
-                state["delivery_count"] += 1
-                state["deliveries_since_link"] += 1
-                state["last_seen"] = at
-                previous = state["last_transport_session_id"]
-                if transport_id is None or previous is None or transport_id != previous:
-                    state["transport_session_count"] += 1
-                state["last_transport_session_id"] = transport_id
-            elif state is not None:
-                state["linked_count"] += 1
-                state["deliveries_since_link"] = 0
-                state["last_linked_at"] = at
-        now = _utc_now()
-        self._conn.executemany(
-            """
-            INSERT INTO recall_fingerprints (
-                fingerprint, first_seen, last_seen, delivery_count, linked_count,
-                deliveries_since_link, last_linked_at, transport_session_count,
-                last_transport_session_id, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    fingerprint,
-                    state["first_seen"],
-                    state["last_seen"],
-                    state["delivery_count"],
-                    state["linked_count"],
-                    state["deliveries_since_link"],
-                    state["last_linked_at"],
-                    state["transport_session_count"],
-                    state["last_transport_session_id"],
-                    now,
-                )
-                for fingerprint, state in aggregates.items()
-            ],
-        )
-
     def get_consolidation_embeddings(
         self, nodes: Sequence[Node], encoder: str
     ) -> dict[str, list[float]]:
@@ -6215,33 +5822,6 @@ def _optional_str(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
-
-
-def _env_flag_enabled(env: Mapping[str, str], name: str) -> bool:
-    raw = str(env.get(name) or "").strip().lower()
-    return raw in _ENABLED_ENV_FLAGS
-
-
-def _env_int(env: Mapping[str, str], name: str, default: int) -> int:
-    raw = str(env.get(name) or "").strip()
-    if not raw:
-        return default
-    try:
-        value = int(raw)
-    except ValueError:
-        return default
-    return max(0, value)
-
-
-def _env_rate(env: Mapping[str, str], name: str, default: float) -> float:
-    raw = str(env.get(name) or "").strip()
-    if not raw:
-        return default
-    try:
-        value = float(raw)
-    except ValueError:
-        return default
-    return min(1.0, max(0.0, value))
 
 
 def _scope_family(scope: str) -> str:
@@ -6638,21 +6218,6 @@ def _recall_attestation_from_row(row: sqlite3.Row) -> RecallAttestation:
         transport_session_id=row["transport_session_id"],
         source_session_key=row["source_session_key"],
         created_at=str(row["created_at"]),
-    )
-
-
-def _recall_fingerprint_stats_from_row(row: sqlite3.Row) -> RecallFingerprintStats:
-    return RecallFingerprintStats(
-        fingerprint=str(row["fingerprint"]),
-        first_seen=str(row["first_seen"]),
-        last_seen=str(row["last_seen"]),
-        delivery_count=int(row["delivery_count"]),
-        linked_count=int(row["linked_count"]),
-        deliveries_since_link=int(row["deliveries_since_link"]),
-        last_linked_at=row["last_linked_at"],
-        transport_session_count=int(row["transport_session_count"]),
-        last_transport_session_id=row["last_transport_session_id"],
-        updated_at=str(row["updated_at"]),
     )
 
 
