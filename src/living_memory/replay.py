@@ -58,7 +58,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from living_memory.relations import correction_sql
+from living_memory.relations import correction_sql, semantic_relation_sql
 from living_memory.config import MemoryConfig
 from living_memory.feedback import _method_signals, ungrounded_negative_signals
 from living_memory.grounding import (
@@ -832,13 +832,14 @@ def snapshot_evidence(connection: sqlite3.Connection) -> Callable[[str], tuple[b
             return cached
         vector_row = has_vector(scope)
         graph_row = connection.execute(
-            """
+            f"""
             SELECT 1
             FROM connections c
             JOIN nodes source ON source.id = c.source_id
             JOIN nodes target ON target.id = c.target_id
             WHERE source.decayed = 0 AND target.decayed = 0
               AND (source.scope = ? OR target.scope = ?)
+              AND {semantic_relation_sql('c')}
             LIMIT 1
             """,
             (scope, scope),

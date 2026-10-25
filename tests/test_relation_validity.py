@@ -166,7 +166,7 @@ def test_direct_correction_links_preserve_chains_cycles_and_unaffected_nodes(tmp
 @pytest.mark.parametrize('path', ['recall:knowledge', 'recall:full', 'lookup:knowledge', 'lookup:full'])
 def test_historical_bookkeeping_never_corrects_distinct_knowledge(tmp_path, metadata, path):
     from living_memory.decay import soft_delete_superseded
-    from living_memory.replay import load_supersedes_pairs
+    from living_memory.replay import load_supersedes_pairs, snapshot_evidence
     from living_memory.query_anchors import resolve_replacement
 
     mcp = create_mcp_server(tmp_path / 'memory.sqlite3')
@@ -184,6 +184,8 @@ def test_historical_bookkeeping_never_corrects_distinct_knowledge(tmp_path, meta
             assert store.list_connections_for_nodes([restrictive])[restrictive] == []
             assert store.list_recall_connections([restrictive], limit=1)[restrictive] == []
             assert load_supersedes_pairs(store.connection) == []
+            assert snapshot_evidence(store.connection)(SCOPE)[1] is False
+            assert store._has_graph_evidence(store.connection, SCOPE) is False
             assert resolve_replacement(store, restrictive) is None
             assert soft_delete_superseded(store, scope=SCOPE) == []
             entry, response = await read(client, path, restrictive)
