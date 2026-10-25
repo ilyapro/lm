@@ -139,6 +139,8 @@ def test_repeated_supersedes_moves_new_anchors_atomically(graph, contribute, mon
     anchor = query_anchors.upsert_anchor(store, "where is the marker", "global", [1., 0.], []).anchor
     store.upsert_query_anchor_edge(anchor.id, target, weight=.2)
     assert [e.target_id for e in store.list_query_anchor_edges(anchor_id=anchor.id)] == [target]
+    store.upsert_query_anchor_edge(anchor.id, source, weight=.4)
+    anchors_before = store.list_query_anchor_edges(anchor_id=anchor.id)
     rows_before = [tuple(row) for row in store.connection.execute("SELECT * FROM connections")]
     revision = store.query_anchor_revision()
     if fail:
@@ -150,14 +152,15 @@ def test_repeated_supersedes_moves_new_anchors_atomically(graph, contribute, mon
         with pytest.raises(RuntimeError, match="anchor fault"):
             contribute(store, source, target, "supersedes")
         assert store.query_anchor_revision() == revision
-        assert [e.target_id for e in store.list_query_anchor_edges(anchor_id=anchor.id)] == [target]
+        assert store.list_query_anchor_edges(anchor_id=anchor.id) == anchors_before
     else:
         result = contribute(store, source, target, "supersedes")
         assert result == original
-        assert store.query_anchor_revision() > revision
+        assert store.query_anchor_revision() == revision
         edges = store.list_query_anchor_edges(anchor_id=anchor.id)
         assert [e.target_id for e in edges] == [source]
-        assert edges[0].hits == 1
+        assert edges[0].hits == 2
+        assert edges[0].weight == pytest.approx(.6)
     assert [tuple(row) for row in store.connection.execute("SELECT * FROM connections")] == rows_before
     assert not store.connection.in_transaction
 

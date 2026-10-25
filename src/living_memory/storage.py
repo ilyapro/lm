@@ -1892,6 +1892,7 @@ class MemoryStore:
                 weight=weight,
                 metadata=metadata,
                 merge=merge,
+                validate_endpoints=True,
             )
 
     def _insert_connection(
@@ -1903,6 +1904,7 @@ class MemoryStore:
         weight: float = 1.0,
         metadata: Mapping[str, Any] | None = None,
         merge: bool = False,
+        validate_endpoints: bool = False,
     ) -> Connection:
         """Apply one edge write inside the caller's transaction."""
 
@@ -1925,7 +1927,7 @@ class MemoryStore:
 
         # An existing edge's foreign keys already establish both endpoints.
         # New edges and replacement writes validate identity without node payloads.
-        if existing is None:
+        if validate_endpoints and existing is None:
             for node_id in (source_id, target_id):
                 if self._conn.execute("SELECT 1 FROM nodes WHERE id = ?", (node_id,)).fetchone() is None:
                     raise KeyError(node_id)
