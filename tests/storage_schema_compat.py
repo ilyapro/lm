@@ -1,4 +1,4 @@
-"""Schema compatibility for additive indexes and the task-search migration.
+"""Schema compatibility for pending identity indexes and task search.
 
 Ledger compatibility still requires byte identity for every unrelated object.
 For the six rebuilt FTS objects, accept only the known old-to-new definitions
@@ -10,7 +10,8 @@ PENDING_RECALL_INDEXES = {
     "idx_recall_pending_session",
     "idx_recall_pending_task_session",
     "idx_recall_pending_transport",
-    "idx_recall_pending_agent",
+    "idx_recall_pending_transport_task_session",
+    "idx_recall_pending_transport_session",
     "idx_recall_events_requested_scope_pending_created",
 }
 
@@ -55,9 +56,12 @@ _TASK_FTS = {
 
 
 def assert_preserved_schema(before: dict[str, str], after: dict[str, str]) -> None:
-    """Preserve all existing DDL except the exact task-FTS migration delta."""
+    """Preserve DDL except task FTS and the unused agent-only pending index."""
 
     for name, sql in before.items():
+        if name == "idx_recall_pending_agent":
+            assert name not in after
+            continue
         assert name in after, f"{name} disappeared"
         if after[name] == sql:
             continue

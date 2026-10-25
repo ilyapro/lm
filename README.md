@@ -75,6 +75,17 @@ The mandatory feedback arm requires those marks on the next call. Both arms,
 server instructions and `memory://prompt/retrieval_context` share the same
 knowledge and authority contract.
 
+Implicit recall attribution requires compatible shared `task`, `session_id`,
+or MCP transport identity. A conflicting task or session prevents attribution;
+an equal task or session can continue work after reconnect within the recall's
+scope. Equal transport can also bridge scope-less recall/ingest defaults.
+Similar text and equal agent names alone never establish that a recall was
+shown to this work. Without a compatible recall, new knowledge is still saved
+without implicit provenance, credit or query anchors. `memory_teach` takes
+identity from the current call, preserving the source's subject and step
+location without inheriting its author/session/task. Explicit `used` and
+`irrelevant` marks retain their same-transport delivery contract.
+
 Request `memory_recall(..., view="full")` to inspect ranked entries with their
 `node`, scores, and compacted metadata. For original metadata, use exact-id
 `memory_lookup(..., context_key="field")` or `view="full"`. The

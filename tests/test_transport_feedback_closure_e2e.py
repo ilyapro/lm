@@ -10,9 +10,8 @@ only that connection's.
 Falsifiability controls:
 
 * Every remember content shares **zero** tokens with every recall query
-  (asserted with the production tokenizer), so the legacy text-similarity
-  fallback cannot close anything — transport identity is the only available
-  matching rule.
+  (asserted with the production tokenizer), so closure must depend on
+  transport identity independently of content.
 * Two clients are connected concurrently and the second client's recall event
   is *newer* than the first client's remember. Without the
   both-present-differing reject, the first remember would consume the newest
@@ -45,7 +44,6 @@ from fastmcp.client.transports import StdioTransport
 
 from living_memory.embeddings import tokenize
 from living_memory.server import create_mcp_server
-from living_memory.storage import _RECALL_TEXT_SIMILARITY_THRESHOLD
 
 from test_tls_transport import (
     DEFAULT_SCOPE,
@@ -58,8 +56,7 @@ from test_tls_transport import (
 )
 
 # Pairwise-disjoint vocabularies: no remember content overlaps any recall
-# query, so text similarity is exactly 0.0 for every (event, trace) pair and
-# the weak/strong text fallbacks are unreachable.
+# query, exercising transport attribution independently of content.
 QUERY_A = "boreal auroral quasar lattice drift"
 QUERY_B = "zephyr mangrove citadel prism ember"
 CONTENT_A = "carbide flywheel torque manifold spline"
@@ -70,7 +67,6 @@ CONTENT_C = "quartz harbor sable ridge acorn"
 def test_control_texts_share_no_tokens_with_queries() -> None:
     """Pin the dissimilar-text control the closure tests rely on."""
 
-    assert _RECALL_TEXT_SIMILARITY_THRESHOLD > 0.0
     for content in (CONTENT_A, CONTENT_B, CONTENT_C):
         for query in (QUERY_A, QUERY_B):
             assert not set(tokenize(content)) & set(tokenize(query))

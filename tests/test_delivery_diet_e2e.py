@@ -507,9 +507,7 @@ CLOSURE_REMEMBER = "carbide flywheel gearset manifold spline"
 def test_closure_links_recall_to_remember_despite_stub_delivery(
     tmp_path: Path,
 ) -> None:
-    # Zero token overlap between remember content and recall query: the
-    # text-similarity fallback cannot close anything, so transport identity
-    # is the only matching rule in play.
+    # Dissimilar content must still close through transport identity.
     assert not set(tokenize(CLOSURE_REMEMBER)) & set(tokenize(CLOSURE_QUERY))
     scope = "project:dietclosure"
 

@@ -18,7 +18,6 @@ TEXT = "cobalt routing uses stable endpoint ownership"
     {"session_id": "own"},
     {"task": "own"},
     {"transport_session_id": "own"},
-    {"agent": "own"},
     {"session_id": "own", "task": "own", "transport_session_id": "own"},
 ])
 def test_foreign_events_do_not_displace_current_work(context: dict[str, str]) -> None:
@@ -30,45 +29,42 @@ def test_foreign_events_do_not_displace_current_work(context: dict[str, str]) ->
                 ambient_context={key: f"foreign-{i}" for key in context},
             )
         assert [event.id for event in store.pending_recall_events(
-            scope=SCOPE, context=context, content=TEXT, limit=5,
+            scope=SCOPE, context=context, limit=5,
         )] == [own.id]
 
 
-@pytest.mark.parametrize("event_context,context,content,scope,expected", [
-    ({"session_id": "s"}, {"session": "s"}, "unrelated", SCOPE, 2),
-    ({"task": "t"}, {"task": "t"}, "unrelated", SCOPE, 2),
-    ({"session_id": "s", "task": "a"}, {"session_id": "s", "task": "b"}, TEXT, SCOPE, 0),
-    ({"session_id": "a", "task": "t"}, {"session_id": "b", "task": "t"}, TEXT, SCOPE, 0),
+@pytest.mark.parametrize("event_context,context,scope,expected", [
+    ({"session_id": "s"}, {"session": "s"}, SCOPE, 2),
+    ({"task": "t"}, {"task": "t"}, SCOPE, 2),
+    ({"session_id": "s", "task": "a"}, {"session_id": "s", "task": "b"}, SCOPE, 0),
+    ({"session_id": "a", "task": "t"}, {"session_id": "b", "task": "t"}, SCOPE, 0),
     ({"session_id": "s", "agent": "a", "transport_session_id": "a"},
-     {"session_id": "s", "agent": "b", "transport_session_id": "b"}, "unrelated", SCOPE, 2),
+     {"session_id": "s", "agent": "b", "transport_session_id": "b"}, SCOPE, 2),
     ({"task": "t", "transport_session_id": "a"},
-     {"task": "t", "transport_session_id": "b"}, "unrelated", SCOPE, 2),
+     {"task": "t", "transport_session_id": "b"}, SCOPE, 2),
     ({"session_id": "a", "transport_session_id": "t"},
-     {"session_id": "b", "transport_session_id": "t"}, TEXT, SCOPE, 0),
+     {"session_id": "b", "transport_session_id": "t"}, SCOPE, 0),
     ({"task": "a", "transport_session_id": "t"},
-     {"task": "b", "transport_session_id": "t"}, TEXT, SCOPE, 0),
+     {"task": "b", "transport_session_id": "t"}, SCOPE, 0),
     ({"agent": "a", "transport_session_id": "t"},
-     {"agent": "b", "transport_session_id": "t"}, TEXT, SCOPE, 0),
-    ({"transport_session_id": "t"}, {"transport_session_id": "t"}, "unrelated", SCOPE, 2),
-    ({"transport_session_id": "a"}, {"transport_session_id": "b"}, TEXT, SCOPE, 0),
-    ({"transport_session_id": "t"}, {}, TEXT, SCOPE, 1),
-    ({}, {"transport_session_id": "t"}, TEXT, SCOPE, 1),
-    ({}, {}, TEXT, SCOPE, 1),
-    ({}, {}, None, SCOPE, 1),
-    ({}, {}, "unrelated", SCOPE, 0),
-    ({"agent": "a"}, {"agent": "a"}, TEXT, SCOPE, 2),
-    ({"agent": "a"}, {"agent": "a"}, "unrelated", SCOPE, 0),
-    ({"agent": "a"}, {"agent": "b"}, TEXT, SCOPE, 0),
-    ({"session_id": "s"}, {}, TEXT, SCOPE, 1),
-    ({}, {"session_id": "s"}, TEXT, SCOPE, 1),
-    ({"transport_session_id": "t"}, {"transport_session_id": "t"}, "unrelated", "global", 2),
+     {"agent": "b", "transport_session_id": "t"}, SCOPE, 0),
+    ({"transport_session_id": "t"}, {"transport_session_id": "t"}, SCOPE, 2),
+    ({"transport_session_id": "a"}, {"transport_session_id": "b"}, SCOPE, 0),
+    ({"transport_session_id": "t"}, {}, SCOPE, 0),
+    ({}, {"transport_session_id": "t"}, SCOPE, 0),
+    ({}, {}, SCOPE, 0),
+    ({"agent": "a"}, {"agent": "a"}, SCOPE, 0),
+    ({"agent": "a"}, {"agent": "b"}, SCOPE, 0),
+    ({"session_id": "s"}, {}, SCOPE, 0),
+    ({}, {"session_id": "s"}, SCOPE, 0),
+    ({"transport_session_id": "t"}, {"transport_session_id": "t"}, "global", 2),
     ({"task": "a", "transport_session_id": "t"},
-     {"task": "b", "transport_session_id": "t"}, TEXT, "global", 0),
-    ({"session_id": "s"}, {"session_id": "s"}, TEXT, "global", 0),
-    ({}, {}, TEXT, "global", 0),
+     {"task": "b", "transport_session_id": "t"}, "global", 0),
+    ({"session_id": "s"}, {"session_id": "s"}, "global", 0),
+    ({}, {}, "global", 0),
 ])
-def test_identity_precedence_and_legacy_fallback(
-    event_context, context, content, scope, expected,
+def test_shared_identity_and_conflict_precedence(
+    event_context, context, scope, expected,
 ) -> None:
     with MemoryStore(":memory:") as store:
         events = [store.record_recall_event(
@@ -76,12 +72,12 @@ def test_identity_precedence_and_legacy_fallback(
             resolved_scopes=[SCOPE],
         ) for _ in range(2)]
         selected = store.pending_recall_events(
-            scope=SCOPE, context=context, content=content, limit=5,
+            scope=SCOPE, context=context, limit=5,
         )
         assert [event.id for event in selected] == [event.id for event in reversed(events)][:expected]
 
 
-def test_newest_first_limit_includes_only_one_weak_fallback() -> None:
+def test_newest_first_limit_includes_only_shared_identity() -> None:
     with MemoryStore(":memory:") as store:
         contexts = [{"task": "own"}, {}, {}, {"task": "own"}, {}, {"task": "foreign"}]
         events = [store.record_recall_event(
@@ -89,22 +85,23 @@ def test_newest_first_limit_includes_only_one_weak_fallback() -> None:
         ) for context in contexts]
         # Equal timestamps still use descending insertion order.
         store.connection.execute("UPDATE recall_events SET created_at = '2026-01-01T00:00:00Z'")
-        for limit, positions in [(1, [4]), (2, [4, 3]), (5, [4, 3, 0])]:
+        for limit, positions in [(1, [3]), (2, [3, 0]), (5, [3, 0])]:
             assert [event.id for event in store.pending_recall_events(
-                scope=SCOPE, context={"task": "own"}, content=TEXT, limit=limit,
+                scope=SCOPE, context={"task": "own"}, limit=limit,
             )] == [events[i].id for i in positions]
 
 
-def test_weak_population_does_not_hide_older_strong_events() -> None:
+def test_anonymous_population_does_not_hide_older_compatible_events() -> None:
     with MemoryStore(":memory:") as store:
         strong = [store.record_recall_event(
             query=TEXT, scope=SCOPE, ambient_context={"task": "own"},
         ) for _ in range(8)]
-        weak = [store.record_recall_event(query=TEXT, scope=SCOPE) for _ in range(120)]
+        for _ in range(120):
+            store.record_recall_event(query=TEXT, scope=SCOPE)
         selected = store.pending_recall_events(
-            scope=SCOPE, context={"task": "own"}, content=TEXT, limit=5,
+            scope=SCOPE, context={"task": "own"}, limit=5,
         )
-        assert [event.id for event in selected] == [weak[-1].id, *(event.id for event in reversed(strong[-4:]))]
+        assert [event.id for event in selected] == [event.id for event in reversed(strong[-5:])]
 
 
 def test_remember_consumes_own_event_once_amid_foreign_events(
@@ -144,13 +141,27 @@ def test_remember_consumes_own_event_once_amid_foreign_events(
     ({"session_id": "own"}, {"session_id": "other"}, SCOPE),
     ({"task": "own"}, {"task": "other"}, SCOPE),
     ({"transport_session_id": "own"}, {"transport_session_id": "other"}, SCOPE),
-    ({"agent": "own"}, {"agent": "other"}, SCOPE),
+    ({"session_id": "own"}, {}, SCOPE),
+    ({"task": "own"}, {}, SCOPE),
+    ({"transport_session_id": "own"}, {}, SCOPE),
     ({"task": "own", "session_id": "own"}, {"task": "own", "session_id": "other"}, SCOPE),
     ({"task": "own", "session_id": "own"}, {"task": "other", "session_id": "own"}, SCOPE),
+    ({"task": "own", "session_id": "own", "transport_session_id": "own"},
+     {"task": "own", "session_id": "other", "transport_session_id": "other"}, SCOPE),
+    ({"task": "own", "session_id": "own", "transport_session_id": "own"},
+     {"task": "other", "session_id": "own", "transport_session_id": "other"}, SCOPE),
+    ({"task": "own", "session_id": "own", "transport_session_id": "own"}, {}, SCOPE),
+    ({"task": "own", "session_id": "own", "transport_session_id": "own"},
+     {"task": "other", "session_id": "own", "transport_session_id": "own"}, SCOPE),
+    ({"task": "own", "transport_session_id": "own"},
+     {"task": "other", "transport_session_id": "own"}, SCOPE),
+    ({"session_id": "own", "transport_session_id": "own"},
+     {"session_id": "other", "transport_session_id": "own"}, SCOPE),
     ({}, {}, "project:other"),
+    ({"agent": "own"}, {"agent": "own"}, SCOPE),
 ])
 def test_pending_selection_reads_current_identity_without_materializing_foreign_rows(
-    monkeypatch: pytest.MonkeyPatch, context, foreign_context, foreign_scope,
+    monkeypatch: pytest.MonkeyPatch, record_property, context, foreign_context, foreign_scope,
 ) -> None:
     with MemoryStore(":memory:") as store:
         own = store.record_recall_event(query=TEXT, scope=SCOPE, ambient_context=context)
@@ -174,11 +185,14 @@ def test_pending_selection_reads_current_identity_without_materializing_foreign_
 
             store.connection.set_progress_handler(progress, 1)
             try:
-                result = store.pending_recall_events(scope=SCOPE, context=context, content=TEXT, limit=5)
+                result = store.pending_recall_events(scope=SCOPE, context=context, limit=5)
             finally:
                 store.connection.set_progress_handler(None, 0)
-            assert [event.id for event in result] == [own.id]
-            assert decoded == [own.id]
+            expected = [own.id] if any(context.get(key) for key in (
+                "task", "session_id", "transport_session_id",
+            )) else []
+            assert [event.id for event in result] == expected
+            assert decoded == expected
             return steps
 
         small = select_steps()
@@ -193,4 +207,6 @@ def test_pending_selection_reads_current_identity_without_materializing_foreign_
               "2099-01-01T00:00:00Z") for i in range(4000)],
         )
         large = select_steps()
+        record_property("small_vm_steps", small)
+        record_property("large_vm_steps", large)
         assert large <= small * 2 + 100

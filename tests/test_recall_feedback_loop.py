@@ -128,13 +128,14 @@ def test_mcp_teach_links_correction_to_prior_recall_without_reinforcing_original
         "payment retry limit attempts",
         scope="project:billing",
         max_results=2,
+        ambient_context={"session_id": "billing-session"},
     )
     event_id = recalled["recall_event_id"]
 
     taught = mcp.tools["memory_teach"](
         original_id,
         "payment retry limit is 5 attempts",
-        context={"agent": "agent-b"},
+        context={"agent": "agent-b", "session_id": "billing-session"},
     )
     corrective_id = taught["corrective_trace"]["id"]
     corrective = store.get_node(corrective_id)
@@ -199,7 +200,7 @@ def test_mcp_remember_consumes_multiple_same_context_recalls(tmp_path: Path) -> 
     assert {store.get_recall_event(event_id).feedback_trace_id for event_id in event_ids} == {new_id}
 
 
-def test_mcp_remember_links_partial_metadata_with_same_agent_and_high_similarity(
+def test_mcp_remember_does_not_attribute_same_agent_and_similar_text(
     tmp_path: Path,
 ) -> None:
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
@@ -228,11 +229,11 @@ def test_mcp_remember_links_partial_metadata_with_same_agent_and_high_similarity
         {"scope": "project:inventory", "agent": "agent-a"},
     )
 
-    assert set(remembered["implicit_feedback"]["recall_event_ids"]) == set(event_ids)
-    assert all(store.get_recall_event(event_id).feedback_applied for event_id in event_ids)
+    assert remembered["implicit_feedback"]["recall_event_ids"] == []
+    assert all(not store.get_recall_event(event_id).feedback_applied for event_id in event_ids)
 
 
-def test_mcp_remember_caps_unqualified_exact_scope_fallback_at_one(
+def test_mcp_remember_does_not_attribute_anonymous_recalls(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     monkeypatch.setattr(storage_module, "_utc_now", lambda: "2026-05-22T09:00:00Z")
@@ -260,8 +261,8 @@ def test_mcp_remember_caps_unqualified_exact_scope_fallback_at_one(
     )
     applied = set(remembered["implicit_feedback"]["recall_event_ids"])
 
-    assert applied == {second_recall["recall_event_id"]}
-    assert store.get_recall_event(second_recall["recall_event_id"]).feedback_applied is True
+    assert applied == set()
+    assert store.get_recall_event(second_recall["recall_event_id"]).feedback_applied is False
     assert store.get_recall_event(first_recall["recall_event_id"]).feedback_applied is False
 
 
@@ -516,10 +517,10 @@ def test_mcp_remember_explicit_session_or_task_match_overrides_differing_transpo
     assert store.get_recall_event(task_recall["recall_event_id"]).feedback_applied is True
 
 
-def test_mcp_remember_event_only_transport_stamp_keeps_weak_text_fallback(
+def test_mcp_remember_does_not_attribute_event_only_transport_stamp(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    """Events stamped but trace unstamped: legacy weak fallback, still capped at one."""
+    """An unstamped writer has no evidence it received these recalls."""
 
     monkeypatch.setattr(storage_module, "_utc_now", lambda: "2026-05-22T09:00:00Z")
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
@@ -548,15 +549,15 @@ def test_mcp_remember_event_only_transport_stamp_keeps_weak_text_fallback(
     )
     applied = set(remembered["implicit_feedback"]["recall_event_ids"])
 
-    assert applied == {second_recall["recall_event_id"]}
-    assert store.get_recall_event(second_recall["recall_event_id"]).feedback_applied is True
+    assert applied == set()
+    assert store.get_recall_event(second_recall["recall_event_id"]).feedback_applied is False
     assert store.get_recall_event(first_recall["recall_event_id"]).feedback_applied is False
 
 
-def test_mcp_remember_trace_only_transport_stamp_keeps_weak_text_fallback(
+def test_mcp_remember_does_not_attribute_trace_only_transport_stamp(
     tmp_path: Path,
 ) -> None:
-    """Trace stamped but event unstamped: legacy text-similarity fallback still links."""
+    """A current connection cannot claim an anonymous recall."""
 
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     store: MemoryStore = mcp.memory_store
@@ -578,8 +579,8 @@ def test_mcp_remember_trace_only_transport_stamp_keeps_weak_text_fallback(
         {"scope": "project:inventory", "transport_session_id": "mcp-b"},
     )
 
-    assert remembered["implicit_feedback"]["recall_event_ids"] == [event_id]
-    assert store.get_recall_event(event_id).feedback_applied is True
+    assert remembered["implicit_feedback"]["recall_event_ids"] == []
+    assert store.get_recall_event(event_id).feedback_applied is False
 
 
 def test_mcp_remember_explicit_mismatch_rejects_despite_equal_transport_ids(

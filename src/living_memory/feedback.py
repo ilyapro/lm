@@ -422,7 +422,7 @@ def apply_pending_recall_feedback(
     limit: int = _DEFAULT_PENDING_RECALL_LIMIT,
     reinforce_results: bool = True,
 ) -> ImplicitRecallFeedback:
-    """Attach recent recall provenance to a new trace and reinforce what it used.
+    """Attach recalls from compatible work and reinforce what the trace used.
 
     Provenance is exhaustive: every resolvable result of every consumed event
     lands in ``recalled_nodes``/``source_traces``, because provenance must
@@ -442,7 +442,6 @@ def apply_pending_recall_feedback(
     events = store.pending_recall_events(
         scope=trace.scope,
         context=trace.context,
-        content=trace.content,
         limit=limit,
     )
     if not events:

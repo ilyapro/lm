@@ -40,8 +40,9 @@ CORRECTION = "harbor gauge uses the local tide datum " + "c" * 1961
 def _teach(tmp_path: Path) -> tuple[Any, dict[str, Any], str]:
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     original_id = mcp.tools["memory_remember"](ORIGINAL, {"scope": "project:tide"})["node"]["id"]
-    mcp.tools["memory_recall"]("harbor gauge datum", scope="project:tide")
-    taught = mcp.tools["memory_teach"](original_id, CORRECTION, context={"agent": "a"})
+    mcp.tools["memory_recall"]("harbor gauge datum", scope="project:tide",
+                               ambient_context={"session_id": "tide-session"})
+    taught = mcp.tools["memory_teach"](original_id, CORRECTION, context={"agent": "a", "session_id": "tide-session"})
     return mcp.memory_store, taught, original_id
 
 
