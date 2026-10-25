@@ -695,28 +695,6 @@ class _NullEmbedder:
         raise RuntimeError("replay harness must not compute embeddings")
 
 
-class _ShimCursor:
-    def __init__(self, rows: list[Mapping[str, str]]) -> None:
-        self._rows = rows
-
-    def fetchall(self) -> list[Mapping[str, str]]:
-        return self._rows
-
-
-class _ShimConnection:
-    """Serves the single supersedes query issued by ``rank_candidates``."""
-
-    def __init__(self, supersedes_pairs: Iterable[tuple[str, str]]) -> None:
-        self._rows = [
-            {"source_id": source, "target_id": target} for source, target in supersedes_pairs
-        ]
-
-    def execute(self, sql: str, *params: Any) -> _ShimCursor:
-        if "supersedes" not in sql:  # pragma: no cover - guard only
-            raise RuntimeError(f"unexpected query through replay shim: {sql}")
-        return _ShimCursor(self._rows)
-
-
 class _SchemeStore:
     """Duck-typed ``MemoryStore`` face used by ``MemoryRecallService.rank_candidates``."""
 
@@ -726,7 +704,16 @@ class _SchemeStore:
         supersedes_pairs: Iterable[tuple[str, str]] = (),
     ) -> None:
         self._resolver = resolver
-        self.connection = _ShimConnection(supersedes_pairs)
+        self._supersedes_pairs = tuple(supersedes_pairs)
+
+    def list_supersedes_pairs(self, node_ids: Iterable[str]) -> list[tuple[str, str]]:
+        ids = set(node_ids)
+        if not ids:
+            return []
+        return sorted({
+            (source, target) for source, target in self._supersedes_pairs
+            if source in ids or target in ids
+        })
 
     def get_retrieval_weights(self, scope: str) -> RetrievalWeights:
         return self._resolver(scope)
