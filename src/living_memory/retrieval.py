@@ -167,12 +167,13 @@ Cost, measured
 chunk corpus's 60k), and its own docstring measures that scan at ~12 ms cold
 and instructs read-path callers to cache the vectors and re-validate with
 ``MemoryStore.query_anchor_revision``. That is what :class:`_AnchorVectorCache`
-below provides: policy stays in ``match_anchors``, while its ordered matrix
-and norms are prepared once for the current scopes and vector width. A change
-of scopes or width replaces that single representation; new query vectors
-reuse it. Its transactional SQLite revision covers anchor membership and
-vectors across all writers. Reinforcement of a live anchor never rewrites a
-stored vector, so it preserves the cache.
+below provides: policy stays in ``match_anchors``, while matrices, norms and
+scope row indices are prepared once per embedding width. Each query selects
+its scopes in their original order; contiguous selections use matrix views,
+and disjoint selections use temporary gathers. The transactional SQLite
+revision covers anchor membership and vectors across all writers.
+Reinforcement of a live anchor never rewrites a stored vector, so it preserves
+the cache.
 
 End to end, on a snapshot of the live database (12,901 active nodes, 143,285
 connections, 60,636 chunk vectors) carrying 3,760 anchors and 10,716 edges
@@ -512,39 +513,21 @@ class _ScopeChunkIndex:
     row_count: int
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class _AnchorVectorCache:
-    """One revision-guarded prepared corpus for the current scopes and width.
+    """The revision-guarded corpus, prepared once per embedding width.
 
-    The matrix replaces the source BLOB rows. Changing scopes or width replaces
-    this single entry, keeping memory bounded without overlapping corpus copies.
-    Preserving one ordered matrix also preserves matmul rounding and tie choices.
-    Metadata and targets always read through to the store.
+    Scope row indices select from these matrices in the matcher's query path.
+    Source BLOBs and selected matrices are not retained. Metadata and targets
+    always read through to the store.
     """
 
     revision: int
     store: MemoryStore
-    has_anchors: bool
-    key: tuple[int, tuple[str, ...] | None] | None = None
-    prepared: _PreparedAnchorVectors | None = None
+    by_width: dict[int, _PreparedAnchorVectors]
 
-    def prepare_query_anchor_vectors(
-        self, width: int, scopes: Sequence[str] | None,
-    ) -> _PreparedAnchorVectors:
-        scope_order = (
-            tuple(dict.fromkeys(normalize_scope(scope) for scope in scopes))
-            if scopes is not None else None
-        )
-        key = (width, scope_order)
-        if self.prepared is None or self.key != key:
-            # Release the previous matrix before preparing its replacement.
-            self.prepared = None
-            self.key = None
-            self.prepared = _prepare_anchor_vectors(
-                self.store.iter_query_anchor_vectors(), width, scope_order=scope_order,
-            )
-            self.key = key
-        return self.prepared
+    def query_anchor_corpus(self, width: int) -> _PreparedAnchorVectors | None:
+        return self.by_width.get(width)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.store, name)
@@ -1430,13 +1413,18 @@ class MemoryRecallService:
         cached = self._anchor_vectors
         if cached is None or cached.revision != revision:
             self._anchor_vectors = None
-            cached = _AnchorVectorCache(
-                revision=revision,
-                store=self.store,
-                has_anchors=bool(self.store.count_query_anchors(include_decayed=False)),
-            )
+            cached = None
+            grouped: dict[int, list[tuple[str, str, int, Any]]] = {}
+            if self.store.count_query_anchors(include_decayed=False):
+                for row in self.store.iter_query_anchor_vectors():
+                    grouped.setdefault(row[2], []).append(row)
+            by_width = {}
+            while grouped:
+                width, rows = grouped.popitem()
+                by_width[width] = _prepare_anchor_vectors(rows, width, index_scopes=True)
+            cached = _AnchorVectorCache(revision, self.store, by_width)
             self._anchor_vectors = cached
-        return cached if cached.has_anchors else None
+        return cached if cached.by_width else None
 
     def _admit_anchor_seeds(
         self,
