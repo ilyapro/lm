@@ -739,11 +739,9 @@ def _import_living_memory() -> dict[str, Any]:
         _parse_depth,
     )
     from living_memory.scope import ScopePlan
-    from living_memory.storage import MemoryStore
 
     return {
         "MemoryConfig": MemoryConfig,
-        "MemoryStore": MemoryStore,
         "node_to_dict": node_to_dict,
         "shape_recall_results": shape_recall_results,
         "DeliveryHistory": DeliveryHistory,

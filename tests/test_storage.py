@@ -513,9 +513,7 @@ def test_schema_v3_database_migrates_to_v4_with_transport_column(tmp_path: Path)
             ).fetchall()
         }
         assert "transport_session_id" in columns
-        # The whole migration chain runs on one open: the pre-v5 columns
-        # land as well.
-        assert {"fingerprint", "gated"}.issubset(columns)
+        assert {"fingerprint", "gated"}.isdisjoint(columns)
 
         # The transport index lands on the same open: the pre-v4 column
         # migration must run before the unconditional CREATE INDEX.

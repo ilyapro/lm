@@ -14,6 +14,7 @@ from living_memory.server import create_mcp_server
 from living_memory.storage import MemoryStore
 from test_transport_identity import FakeMCP
 
+
 MAP_SCOPE = "project:mapdelivery"
 MAP_QUERY = "deployment failure database migration rollback"
 MAP_FAULTS = {
@@ -22,6 +23,7 @@ MAP_FAULTS = {
         WHEN (SELECT recall_map FROM recall_events
               WHERE id=NEW.delivery_event_id) IS NOT NULL""",
 }
+
 
 def _seed(store):
     for index in range(40):
@@ -37,9 +39,11 @@ def _seed(store):
                 {"scope": MAP_SCOPE, "procedure_id": procedure},
             )
 
+
 def reject_map(connection, stage):
     connection.execute(f"""CREATE TRIGGER reject_map {MAP_FAULTS[stage]}
         BEGIN SELECT RAISE(ABORT, 'optional map unavailable'); END""")
+
 
 @pytest.fixture(autouse=True)
 def knobs(monkeypatch):
@@ -55,6 +59,7 @@ def knobs(monkeypatch):
     monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
     monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
     monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "1")
+
 
 @pytest.mark.parametrize("stage", ["build", "serialization", *MAP_FAULTS])
 @pytest.mark.parametrize("view", ["knowledge", "full"])
@@ -142,6 +147,7 @@ def test_map_failure_preserves_selected_response_and_feedback(
             mcp.auto_consolidation.close()
             mcp.memory_store.close()
 
+
 @pytest.mark.parametrize("stage", ["validation", "retrieval", "access", "event"])
 def test_required_failures_remain_errors(tmp_path, stage):
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
@@ -170,6 +176,7 @@ def test_required_failures_remain_errors(tmp_path, stage):
         store.connection.set_authorizer(None)
         mcp.auto_consolidation.close()
         store.close()
+
 
 def test_stdio_returns_knowledge_on_map_failure_and_preserves_required_errors(tmp_path):
     from fastmcp import Client

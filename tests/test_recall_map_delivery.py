@@ -75,9 +75,11 @@ SEED_LABELS = {
 #: leave margin over that no matter which procedure the delivered cut removes.
 SEED_CORPUS_DOCUMENTS = 40
 
+
 #: Captured before the autouse fixture below replaces it, so the one test that
 #: needs the real ledger reader can put it back.
 _REAL_MATURED_RECALL_HISTORY = MemoryStore.matured_recall_history
+
 
 @pytest.fixture(autouse=True)
 def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -86,7 +88,6 @@ def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
     for env in (
         *OPERATOR_VALVES,
         "LM_RECALL_MAP",
-
         "LM_DELIVERY_SESSION_DEDUP",
         "LM_DELIVERY_SNIPPET_CHARS",
         "LM_AUTO_CONSOLIDATE_POLICY",
@@ -102,12 +103,14 @@ def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(MemoryStore, "matured_recall_history", eligible_history)
 
+
 def _seed_corpus(store: MemoryStore, count: int = SEED_CORPUS_DOCUMENTS) -> None:
     for index in range(count):
         store.append_trace(
             f"quarterly ledger reconciliation entry {index}",
             {"scope": "project:mapdelivery-elsewhere"},
         )
+
 
 def _seed(store: MemoryStore) -> None:
     _seed_corpus(store)
@@ -119,13 +122,17 @@ def _seed(store: MemoryStore) -> None:
                 {"scope": MAP_SCOPE, "procedure_id": procedure},
             )
 
+
 def _server(db_path: Path) -> Any:
     return create_mcp_server(db_path, mcp_factory=FakeMCP)
+
 
 def _recall(mcp: Any, **arguments: Any) -> dict[str, Any]:
     return mcp.tools["memory_recall"](MAP_QUERY, scope=MAP_SCOPE, **arguments)
 
+
 # --- (a) The key is there when there is a residual to describe ---------------
+
 
 def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
     tmp_path: Path,
@@ -168,7 +175,9 @@ def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
     history = mcp.memory_store.recent_recall_map_history()
     assert [row["recall_map"] for row in history] == [payload]
 
+
 # --- (b) ... and absent when there is not ------------------------------------
+
 
 def test_no_residual_means_no_recall_map_key(tmp_path: Path) -> None:
     mcp = _server(tmp_path / "memory.sqlite3")
@@ -179,6 +188,7 @@ def test_no_residual_means_no_recall_map_key(tmp_path: Path) -> None:
     assert 0 < response["count"] < 50  # the whole pool fit inside the cut
     assert "recall_map" not in response
     assert mcp.memory_store.recent_recall_map_history() == []
+
 
 def test_builder_returning_none_omits_the_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -201,7 +211,9 @@ def test_builder_returning_none_omits_the_key(
     assert "recall_map" not in response
     assert mcp.memory_store.recent_recall_map_history() == []
 
+
 # --- (c) Whatever the builder says is what ships -----------------------------
+
 
 def test_the_builders_output_is_attached_and_recorded_verbatim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -242,7 +254,9 @@ def test_the_builders_output_is_attached_and_recorded_verbatim(
     assert [row["recall_map"] for row in history] == [sentinel]
     assert history[0]["id"] == response["recall_event_id"]
 
+
 # --- (d) Everything else on the response is untouched ------------------------
+
 
 def test_results_and_envelope_byte_identical_with_the_map_on_and_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -296,7 +310,9 @@ def test_results_and_envelope_byte_identical_with_the_map_on_and_off(
     with MemoryStore(twins[0]) as store:
         assert len(store.recent_recall_map_history()) == 1
 
+
 # --- (e) The delivered map is queryable history ------------------------------
+
 
 def test_recent_recall_map_history_filters_and_orders(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
@@ -358,6 +374,7 @@ def test_recent_recall_map_history_filters_and_orders(tmp_path: Path) -> None:
         assert store.recent_recall_map_history(limit=0) == []
         assert store.recent_recall_map_history(scope="project:nobody") == []
 
+
 def test_attach_recall_map_overwrites_and_rejects_unknown_events(
     tmp_path: Path,
 ) -> None:
@@ -382,7 +399,9 @@ def test_attach_recall_map_overwrites_and_rejects_unknown_events(
         with pytest.raises(KeyError):
             store.attach_recall_map("01NOSUCHEVENT", {"clusters": []})
 
+
 # --- (e2) A card that was offered, and actually read --------------------------
+
 
 def test_a_lookup_of_a_delivered_medoid_is_the_only_outcome_that_moves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -460,7 +479,9 @@ def test_a_lookup_of_a_delivered_medoid_is_the_only_outcome_that_moves(
     assert (history.lookup_known, history.lookup_consumed) == (1, 1)
     assert history.lookup_trailing_absent == 0
 
+
 # --- (f) The column arrives on databases that predate it ---------------------
+
 
 def test_recall_map_column_migration_is_idempotent(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.sqlite3"
@@ -497,6 +518,7 @@ def test_recall_map_column_migration_is_idempotent(tmp_path: Path) -> None:
                 "SELECT value FROM metadata WHERE key = 'schema_version'"
             ).fetchone()
             assert version["value"] == str(SCHEMA_VERSION)
+
 
 @pytest.mark.parametrize("decay", [False, True])
 def test_skipped_recall_preserves_results_and_persists_unmeasured_pool(

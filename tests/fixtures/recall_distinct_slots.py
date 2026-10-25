@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from living_memory.chunking import TextChunk
 from living_memory.server import create_mcp_server
 
+
 SCOPE = "project:synthetic-distinct-slots"
 STEM = "quillon vantrex ballast survey"
 # key, content, pooled-vector angle. The first two state exactly the same
@@ -54,6 +55,7 @@ CORPUS_SHA256 = hashlib.sha256(
     json.dumps((SCOPE, CORPUS, QUERIES), ensure_ascii=False, separators=(",", ":")).encode()
 ).hexdigest()
 
+
 class FakeMCP:
     def __init__(self, name: str, instructions: str | None = None) -> None:
         self.tools: dict[str, Any] = {}
@@ -70,11 +72,13 @@ class FakeMCP:
     def prompt(self, func: Any = None, **_kwargs: Any) -> Any:
         return (lambda inner: inner) if func is None else func
 
+
 def _vector(width: int, angle: int) -> list[float]:
     result = [0.0] * width
     result[0] = math.cos(math.radians(angle))
     result[1] = math.sin(math.radians(angle))
     return result
+
 
 @contextmanager
 def _fixture_environment():
@@ -85,12 +89,13 @@ def _fixture_environment():
         with patch("living_memory.storage._utc_now", side_effect=lambda: clock[0]):
             yield lambda: clock.__setitem__(0, "2099-01-01T00:00:01Z")
 
+
 def _run(*, expect_baseline: bool) -> dict[str, Any]:
     # Ambient machine settings must not change the frozen comparison.
     for knob in (
         "LM_RECALL_NEAR_DUP_COSINE", "LM_RECALL_NEAR_DUP_LENGTH_RATIO",
         "LM_NEAR_DUP_IDENTIFIER_VETO",
- "LM_AUTO_CONSOLIDATE_POLICY",
+        "LM_AUTO_CONSOLIDATE_POLICY",
         "LM_DECAY_SWEEP_INTERVAL_SEC", "LM_DELIVERY_SESSION_DEDUP",
         "LM_SCORE_GATE_MIN_SCORE", "LM_RECALL_MIN_SCORE",
     ):
@@ -176,6 +181,7 @@ def _run(*, expect_baseline: bool) -> dict[str, Any]:
                 ["old_rule", "new_rule", "current correction"],
             ],
         }
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

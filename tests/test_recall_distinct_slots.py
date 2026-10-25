@@ -13,6 +13,7 @@ from fixtures.recall_distinct_slots import (
     CORPUS, CORPUS_SHA256, FakeMCP, SCOPE, STEM, _run, _vector,
 )
 
+
 def test_frozen_paired_answer_preserves_distinct_facts() -> None:
     result = _run(expect_baseline=False)
     assert result["corpus_sha256"] == CORPUS_SHA256
@@ -25,6 +26,7 @@ def test_frozen_paired_answer_preserves_distinct_facts() -> None:
     assert result["queries"]["distinctions"]["keys"] == [
         "new_rule", "positive", "negative", "id_alpha", "id_beta"
     ]
+
 
 def test_candidate_wire_bytes_ignore_ambient_encoder_and_second(monkeypatch) -> None:
     recorded = json.loads(Path("artifacts/recall-distinct-slots/candidate.json").read_text())
@@ -47,6 +49,7 @@ def test_candidate_wire_bytes_ignore_ambient_encoder_and_second(monkeypatch) -> 
         assert result["necessary_response_bytes"] == recorded["necessary_response_bytes"]
         assert result["necessary_lookup_bytes"] == recorded["necessary_lookup_bytes"]
     assert observed[0]["queries"]["distinctions"]["response_bytes"] == 3734
+
 
 def test_selected_event_lookup_and_intentional_refetch(tmp_path, monkeypatch) -> None:
     for knob in (

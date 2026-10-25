@@ -77,8 +77,7 @@ every other rule:
   own terms.
 
 This is an added delivery class, and the existing classes keep their meaning.
-Without the gate, nothing changes. `below_threshold` is not in the server's
-`_DROPPABLE_TRAILING_STUBS`, so the repeat-gating trailing drop leaves it alone.
+Without the gate, nothing changes.
 
 A withheld node retains its selected event entry and lookup reference, but its
 empty response body does not establish content delivery. If a later recall
