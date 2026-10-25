@@ -267,10 +267,9 @@ def soft_delete_expired(
             f"""
             SELECT id, timestamp, created_at, last_accessed FROM nodes
             WHERE {' AND '.join(clauses)}
-            ORDER BY timestamp DESC, id DESC LIMIT 100000
             """,
             params,
-        ).fetchall()
+        )
         for row in rows:
             node_id = str(row["id"])
             reference = _ttl_reference(row, anchor)
