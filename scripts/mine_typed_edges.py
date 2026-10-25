@@ -7,8 +7,7 @@ procedure groups, shared commit/files, concept/schema source_traces) and
 measures, per rule:
 
   * derivable candidate count (directed) and unique undirected pairs,
-  * both-active pair count (graph traversal skips decayed nodes,
-    src/living_memory/retrieval.py:525, so only both-active edges add reach),
+  * both-active pair count (graph traversal skips decayed nodes),
   * overlap with the existing edge inventory (any type, either direction) ->
     new-information fraction,
   * co-retrieval redundancy: fraction of pairs that already co-occurred in a
@@ -17,8 +16,9 @@ measures, per rule:
   * a seeded random sample of pairs for manual precision inspection.
 
 The DB is opened strictly read-only (sqlite URI mode=ro + PRAGMA query_only).
-No writes are performed anywhere. Findings are consumed by
-artifacts/discovery/typed-edge-rules.md.
+The requested report and samples files are written, and the report is also
+printed to stdout. These outputs contain private memory-derived counts,
+identifiers, context and text excerpts; they are not public source artifacts.
 
 Usage:
   python3 scripts/mine_typed_edges.py --db /path/to/global.sqlite3 \
@@ -51,15 +51,13 @@ ULID_RE = re.compile(r"\b01[0-9A-HJKMNP-TV-Z]{24}\b")
 
 # Adjacent correction/update phrasing shortly before a named node ULID.
 # Catches "Correction for trace 01K...", "UPDATE/correction to node 01K...",
-# "corrects/supersedes the leading hypothesis in 01K...". A loose 80-char
-# any-correction-word window scored 8-9/12 sampled precision; the adjacent
-# form below drops the pairs where the trigger word referred to a third node.
+# "corrects/supersedes the leading hypothesis in 01K...".
 CORRECTION_NEAR_ULID_RE = re.compile(
     r"(?i)(?:\b(?:correction|update)s?(?:/\w+)?[-\s]+(?:to|of|for)\b|\b(?:corrects|supersedes)\b)"
     r"[^\n]{0,60}?\b(01[0-9A-HJKMNP-TV-Z]{24})\b"
 )
 
-# --- rule label sets (grounded in observed context values on the live corpus) ---
+# --- context label sets ------------------------------------------------------
 
 CORRECTION_CONTEXT_TYPES = {"correction", "memory_correction", "decomposition_correction"}
 CORRECTION_CONTENT_PREFIXES = ("Correction:", "CORRECTION:", "Correction ")
@@ -304,8 +302,7 @@ def rule_correction_lineage(nodes: dict[str, NodeRow]) -> list[Candidate]:
     """R1b: correction-marked remember-trace supersedes a same-task recalled node.
 
     memory_teach already writes supersedes edges, but corrections written via
-    memory_remember get only generic implicit 'related' edges. Sampling showed
-    latest-recall fallbacks are noise, so targets are restricted to recalled
+    memory_remember get only generic implicit 'related' edges. Targets are recalled
     nodes (provenance.prior_recalls result ids) sharing the same (scope, task).
     Corrections that name their target ULID in content are handled by R1c.
     """
@@ -403,22 +400,10 @@ def _is_tight_problem(node: NodeRow) -> bool:
 def rule_failure_resolution(nodes: dict[str, NodeRow]) -> list[Candidate]:
     """R2a: root-cause trace 'caused'-links to the resolution written just after it.
 
-    Sampling the loose variant (any problem label, any gap, same task) gave
-    ~0.2 precision: positive-polarity verification_finding and self-contained
-    implementation_bug lessons leaked in, and recurring umbrella tasks paired
-    unrelated incidents. All true pairs sat <=4 minutes apart and the one
-    false pair at a 6h window sat 287 minutes out, so the tight rule keeps
-    root_cause-typed (or structural_fail/reopened-outcome) problems only,
-    pairs within task OR session groups, requires the resolution to follow
-    within RESOLUTION_WINDOW_SECONDS, and links the nearest one.
-
-    Direction root_cause -> resolution as 'caused': backward traversal from a
-    resolution finds its cause (0.85 / 1.0 causal), forward from a matched
-    root-cause text surfaces the fix (0.75), and the pair becomes reachable in
-    causal mode, which follows only caused/requires — a channel that currently
-    has zero edges. 'supersedes' was rejected: causal mode skips it and the
-    superseded rank penalty would wrongly punish still-valid root-cause
-    knowledge.
+    Select root_cause-typed or structural_fail/reopened-outcome problems in
+    the same task or session. Each resolution links to its nearest preceding
+    problem within RESOLUTION_WINDOW_SECONDS. A caused edge connects the
+    resolution with its cause while preserving the validity of both nodes.
     """
 
     best: dict[tuple[str, str], tuple[float, Candidate]] = {}
@@ -574,14 +559,7 @@ def rule_shared_files(nodes: dict[str, NodeRow], max_fanout: int = 20) -> list[C
 
 
 def rule_derived_from(nodes: dict[str, NodeRow]) -> list[Candidate]:
-    """R5a: schema -> member source trace (provenance ground truth).
-
-    Schemas group traces by exact task_pattern/procedure_id fields, so the
-    derived-from relation is coherent at any size. Concepts are excluded:
-    similarity clustering produced mega-clusters (up to 2,209 sources) whose
-    representative content is not an abstraction of arbitrary members —
-    sampled concept pairs scored 0/16 as derived-from.
-    """
+    """R5a: active schema -> recorded source trace present in the corpus."""
 
     out: list[Candidate] = []
     for node in nodes.values():
