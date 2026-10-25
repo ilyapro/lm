@@ -455,13 +455,13 @@ def test_cache_serves_unchanged_store(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_recall_lift_and_next_recount_observe_feedback_and_anchors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, positive: str,
 ) -> None:
-    monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.1")
     now = 1000.0
     monkeypatch.setattr(hubs.time, "monotonic", lambda: now)
     with MemoryStore(tmp_path / "m.sqlite3") as store:
         ids = _seed(store)
         _recall(store)
         baseline = dict(_recall(store))
+        monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.1")
         _mark_distinct(store, ids[0], QUERIES[:3])
         events = [_event(store, query) for query in QUERIES[:3]]
         with store.connection as conn:
