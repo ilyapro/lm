@@ -286,4 +286,3 @@ class McpMemoryIndex:
             for node_id, node in by_id.items()
             if node.get("content")
         ]
-

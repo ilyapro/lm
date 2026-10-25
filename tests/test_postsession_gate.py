@@ -26,11 +26,7 @@ from living_memory.postsession.gate import (
 )
 from living_memory.postsession.mining import Candidate
 from living_memory.postsession.session import (
-    DeliveredNode,
     Evidence,
-    FileMutation,
-    RecallInteraction,
-    SessionRecord,
     SourceSpan,
 )
 
@@ -282,7 +278,7 @@ def test_rejection_breakdown_lists_every_known_code() -> None:
     assert breakdown["too_short"] == 1
 
 
-def test_check_text_skips_the_session_rules_only() -> None:
+def test_check_text_skips_the_evidence_rules_only() -> None:
     """The calibration path applies text rules without mined evidence."""
 
     gate = Gate()

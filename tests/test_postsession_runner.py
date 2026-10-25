@@ -881,3 +881,30 @@ def test_mcp_index_never_compares_a_preview_when_full_lookup_is_unavailable() ->
     index = McpMemoryIndex(Client())
     assert index.candidates("same preview", scope="project:demo") == []
     assert index.last_contexts == {}
+
+
+@pytest.mark.parametrize("corrected_node_id, expected", [(None, ""), ("other", ""), ("original", "lm_prior_extraction")])
+def test_plain_remember_does_not_replace_a_teach_operation(
+    tmp_path: Path, corrected_node_id: str | None, expected: str,
+) -> None:
+    record = make_record()
+    op = make_teach(record, "original", "src/app.py restart is forbidden before approval.")
+    existing = {
+        "id": "prior", "scope": "project:demo", "content": op.payload["correction"],
+        "context": {
+            "source_transcript_sha256": record.transcript_sha256,
+            "source_span": op.provenance.source_span,
+            "corrected_node_id": corrected_node_id,
+        },
+    }
+
+    class Client:
+        def recall(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"results": [{"node": existing, "delivery": "full"}]}
+
+        def lookup_nodes(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"results": [{"id": "original", "scope": "project:demo"}]}
+
+    runner = ExtractionRunner(config=RunnerConfig(), ledger=Ledger(tmp_path), client=Client())
+    reason, _ = runner._lm_duplicate(op)
+    assert reason == expected

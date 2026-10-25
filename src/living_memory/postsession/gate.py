@@ -578,7 +578,7 @@ class Gate:
         return GateVerdict(True, "", "", {"identifiers": list(found[:10])})
 
     def check_text(self, fact: str) -> GateVerdict:
-        """Text-only rules, for calibrating against a corpus with no session.
+        """Text-only rules, for calibrating against a corpus without mined evidence.
 
         Used by ``--calibrate``: the journal / speculation / multi-fact /
         anchor rules are properties of the text alone, and they are the ones

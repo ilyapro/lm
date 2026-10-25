@@ -45,6 +45,7 @@ class MemoryIndex(Protocol):
     ) -> Sequence[NodeSnapshot]:
         """Lexically plausible neighbours of ``content``."""
 
+
 @dataclass(frozen=True, slots=True)
 class DedupConfig:
     """Bounded candidate retrieval."""
@@ -57,7 +58,7 @@ DEFAULT_DEDUP = DedupConfig()
 
 @dataclass(frozen=True, slots=True)
 class DedupVerdict:
-    """Whether a proposal survives, and which channel killed it."""
+    """Whether an exact repeat was found."""
 
     duplicate: bool
     channel: str = ""
@@ -106,6 +107,7 @@ class NullMemoryIndex:
     ) -> Sequence[NodeSnapshot]:
         return ()
 
+
 class StaticMemoryIndex:
     """An in-memory node set. Deterministic, no database, no model.
 
@@ -132,6 +134,7 @@ class StaticMemoryIndex:
                 scored.append((-overlap, node.node_id, node))
         scored.sort()
         return [node for _, _, node in scored[:limit]]
+
 
 class StoreMemoryIndex:
     """Bounded FTS candidates from a caller-owned store."""
@@ -161,10 +164,13 @@ class StoreMemoryIndex:
             for node, _score in rows
         ]
 
+
 class Deduper:
     """Suppress exact repeats with the same scope and extraction provenance."""
 
-    def __init__(self, index: MemoryIndex | None = None, *, config: DedupConfig = DEFAULT_DEDUP) -> None:
+    def __init__(
+        self, index: MemoryIndex | None = None, *, config: DedupConfig = DEFAULT_DEDUP,
+    ) -> None:
         self.index = index if index is not None else NullMemoryIndex()
         self.config = config
         self._proposed: dict[tuple[str, str, SourceIdentity], str] = {}
@@ -201,7 +207,9 @@ class Deduper:
         if not self.available:
             return DedupVerdict(False, available=False)
         with self._lock:
-            neighbours = list(self.index.candidates(fact, scope=scope, limit=self.config.candidate_limit))
+            neighbours = list(self.index.candidates(
+                fact, scope=scope, limit=self.config.candidate_limit,
+            ))
         for node in neighbours:
             if (fact and node.content == fact and node.scope == scope
                     and source_identity is not None and node.source_identity == source_identity):
@@ -214,6 +222,9 @@ def dedup_breakdown(verdicts: Iterable[DedupVerdict]) -> dict[str, Any]:
 
     counts = {"unique": 0, "exact": 0, "within_run": 0, "unavailable": 0}
     for verdict in verdicts:
-        channel = "unavailable" if not verdict.available else verdict.channel if verdict.duplicate else "unique"
+        channel = (
+            "unavailable" if not verdict.available
+            else verdict.channel if verdict.duplicate else "unique"
+        )
         counts[channel] = counts.get(channel, 0) + 1
     return counts

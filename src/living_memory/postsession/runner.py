@@ -857,7 +857,10 @@ class ExtractionRunner:
                 op.kind == "teach"
                 and context.get("corrected_node_id") == payload.get("trace_id")
             )
-            if same_transcript and (same_span or same_correction):
+            same_operation = same_correction if op.kind == "teach" else (
+                same_span and not context.get("corrected_node_id")
+            )
+            if same_transcript and same_operation:
                 return "lm_prior_extraction", {
                     "node_id": snapshot.node_id,
                     "checked": len(snapshots),

@@ -24,7 +24,7 @@ from living_memory.postsession.dedup import (
     StaticMemoryIndex,
     dedup_breakdown,
 )
-from living_memory.postsession.gate import DEFAULT_GATE, REJECTION_CODES, Gate
+from living_memory.postsession.gate import DEFAULT_GATE, Gate
 from living_memory.postsession.insights import (
     INSIGHT_SCHEMA,
     PROMPT_DIR,
