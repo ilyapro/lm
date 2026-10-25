@@ -747,6 +747,34 @@ def test_duplicate_content_dedup_moves_the_anchor_edge(tmp_path: Path) -> None:
         ]
 
 
+@pytest.mark.parametrize("metadata", [
+    {"kind": "drain_near_duplicate", "threshold": 0.99},
+    {"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"},
+    {"kind": "duplicate_content"},
+])
+def test_heuristic_or_inexact_bookkeeping_does_not_redirect_an_anchor(
+    tmp_path: Path, metadata: dict,
+) -> None:
+    with _store(tmp_path) as store:
+        old = _trace(store, "Dashboard restart is allowed before approval.")
+        distinct = _trace(store, "Dashboard restart is forbidden before approval.")
+        anchor = qa.upsert_anchor(store, "Restart policy", SCOPE, [1.0, 0.0], [old.id]).anchor
+        store.create_connection(distinct.id, old.id, "supersedes", metadata=metadata)
+        assert qa.resolve_replacement(store, old.id) is None
+        assert qa.sweep_anchor_edge_migration(store).edges_moved == 0
+        assert [edge.target_id for edge in store.list_query_anchor_edges(anchor_id=anchor.id)] == [old.id]
+
+
+def test_anchor_on_repeated_content_resolves_through_exact_copy_bookkeeping(tmp_path: Path) -> None:
+    with _store(tmp_path) as store:
+        old = _trace(store, "Dashboard restart requires operator approval.")
+        current = _trace(store, old.content)
+        assert qa.resolve_replacement(store, old.id) == current.id
+        anchor = qa.upsert_anchor(store, "Restart policy", SCOPE, [1.0, 0.0], [old.id])
+        assert [edge.target_id for edge in anchor.edges] == [current.id]
+        assert store.list_connections(target_id=old.id, relation_type="supersedes") == []
+
+
 def test_derived_r1c_correction_moves_the_anchor_edge(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
         stale = _trace(store, "The runner lock file lives in /tmp/runner.lock")

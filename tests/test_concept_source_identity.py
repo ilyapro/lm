@@ -94,11 +94,21 @@ def test_recorded_union_keeps_all_sources_and_owner_after_teach_and_subset_repea
     assert not created and repeated.id == owner.id
     assert [node.id for node in active(store)] == [owner.id]
     assert_sources(store, repeated, [taught.corrective_trace.id, b.id, reflected.id, fresh.id])
-    # Re-remembering a source uses the existing duplicate-content supersedes chain.
+    # Re-remembering follows the exact-copy bookkeeping chain.
     replacement = trace(store, fresh.content)
     (again, created), = materialize(store, [reflected, replacement])
     assert not created and again.id == owner.id
     assert_sources(store, again, [taught.corrective_trace.id, b.id, reflected.id, replacement.id])
+
+
+def test_teach_refreshes_derivation_recorded_before_exact_source_repeat(store):
+    original, independent = [trace(store, text) for text in TEXTS[:2]]
+    (owner, _), = materialize(store, [original, independent])
+    duplicate = trace(store, original.content)
+    assert store.get_node(original.id).decayed
+    assert store.list_connections(target_id=original.id, relation_type="supersedes") == []
+    taught = c.memory_teach(store, duplicate.id, CORRECTION)
+    assert_sources(store, store.get_node(owner.id), [taught.corrective_trace.id, independent.id])
 
 
 def test_ordinary_consolidate_teach_repeat_and_new_knowledge(tmp_path):

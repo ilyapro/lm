@@ -902,6 +902,7 @@ def _affected_derivatives(store: MemoryStore, source_id: str) -> dict[str, Node]
             edge.target_id
             for edge in store.list_connections(source_id=changed, relation_type="supersedes")
         )
+        pending.extend(node.id for node in store.list_duplicate_predecessors(changed))
         for node in store.nodes_referencing_source(changed):
             if node.id == source_id or node.id in affected:
                 continue
@@ -1620,6 +1621,7 @@ def _source_ancestors(store: MemoryStore, members: Sequence[Node]) -> dict[str, 
                     source_id=source_id, relation_type="supersedes",
                 )
             )
+            pending.extend(node.id for node in store.list_duplicate_predecessors(source_id))
     return ancestors
 
 

@@ -6,8 +6,8 @@ distinct query anchors and without positive evidence gets the
 
 * valve unset or invalid: ``{}`` and a byte-identical ranking;
 * the threshold counts distinct questions, not marks: repeats of one query
-  (whitespace variants included) count once, a shared near-duplicate anchor
-  counts once;
+  (whitespace variants included) count once; historical similarity associations
+  cannot merge distinct query identities;
 * an accepted ``used`` mark ever, or grounded / explicit credit at or after
   the first irrelevant mark, lifts it (also through the cache); lookup does not;
 * absent tables are tolerated;
@@ -227,8 +227,8 @@ def test_rejected_marks_do_not_count(tmp_path: Path) -> None:
         assert hub_counts(store.connection) == []
 
 
-def test_near_duplicate_anchor_counts_once(tmp_path: Path) -> None:
-    """Two raw queries the write path resolved to one anchor are one question."""
+def test_historical_near_duplicate_anchor_does_not_merge_distinct_questions(tmp_path: Path) -> None:
+    """A shared historical similarity association does not prove question identity."""
 
     with MemoryStore(tmp_path / "m.sqlite3") as store:
         ids = _seed(store)
@@ -248,7 +248,7 @@ def test_near_duplicate_anchor_counts_once(tmp_path: Path) -> None:
                     (ids[0], event_id),
                 )
         [row] = hub_counts(conn)
-        assert (row.distinct_queries, row.distinct_anchors, row.hub) == (3, 2, False)
+        assert (row.distinct_queries, row.distinct_anchors, row.hub) == (3, 3, True)
 
 
 def test_exact_anchor_is_the_identity(tmp_path: Path) -> None:
@@ -271,7 +271,7 @@ def test_exact_anchor_is_the_identity(tmp_path: Path) -> None:
 
 
 def test_current_anchor_identities_on_partial_read_only_schema(tmp_path: Path) -> None:
-    """Exact identity wins over node-specific near identity, then scoped raw/event keys."""
+    """Exact scoped query identity is independent of historical similarity links."""
 
     db = tmp_path / "identities.sqlite3"
     with sqlite3.connect(db) as conn:
@@ -312,8 +312,8 @@ def test_current_anchor_identities_on_partial_read_only_schema(tmp_path: Path) -
         statements: list[str] = []
         ro.set_trace_callback(statements.append)
         assert hub_counts(ro, min_queries=6) == [
+            HubCount("n1", 6, 6, 8, "2026-09-01T00:00:00Z", 0, 0, True),
             HubCount("n2", 6, 6, 8, "2026-09-01T00:00:00Z", 0, 0, True),
-            HubCount("n1", 5, 6, 8, "2026-09-01T00:00:00Z", 0, 0, False),
         ]
         assert len([sql for sql in statements if "FROM query_anchors" in sql]) == 1
         assert not ro.in_transaction
@@ -468,7 +468,7 @@ def test_recall_lift_and_next_recount_observe_feedback_and_anchors(
             conn.execute("CREATE TABLE query_irrelevance (anchor_id TEXT, node_id TEXT, last_event_id TEXT)")
             for event in events:
                 conn.execute("INSERT INTO query_irrelevance VALUES ('shared', ?, ?)", (ids[1], event))
-        for event in events:
+        for event in events[:2]:
             _mark(store, event, ids[1])
         assert hub_demotions(store) == {ids[0]: 0.1}
         assert dict(_recall(store))[ids[0]] == pytest.approx(baseline[ids[0]] * 0.1)
@@ -487,7 +487,7 @@ def test_recall_lift_and_next_recount_observe_feedback_and_anchors(
                 scope=SCOPE, query=query, fingerprint=recall_fingerprint(query, SCOPE),
                 embedding=[1.0, 0.0],
             )
-        _mark(store, events[0], ids[1])
+        _mark(store, events[2], ids[1])
         now += hubs.HUB_REFRESH_SECONDS - 1
         assert hub_demotions(store) == {}
         assert dict(_recall(store))[ids[1]] == pytest.approx(baseline[ids[1]])

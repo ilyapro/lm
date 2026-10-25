@@ -917,6 +917,41 @@ def _supersede_without_the_hook(
         conn.close()
 
 
+@pytest.mark.parametrize("metadata", [
+    {"kind": "drain_near_duplicate", "threshold": 0.99},
+    {"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"},
+    {"kind": "duplicate_content"},
+])
+def test_read_only_replacement_ignores_heuristic_and_inexact_history(tmp_path: Path, metadata: dict) -> None:
+    db = tmp_path / "historical.sqlite3"
+    with MemoryStore(db) as store:
+        old = store.append_trace("Dashboard restart is allowed before approval.", {"scope": SCOPE})
+        distinct = store.append_trace("Dashboard restart is forbidden before approval.", {"scope": SCOPE})
+        store.create_connection(distinct.id, old.id, "supersedes", metadata=metadata)
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        conn.row_factory = sqlite3.Row
+        assert bf.read_only_replacement(conn, old.id, cache={}) is None
+        assert not conn.in_transaction
+
+
+@pytest.mark.parametrize("historical", [False, True])
+def test_read_only_replacement_follows_exact_duplicate_bookkeeping(tmp_path: Path, historical: bool) -> None:
+    db = tmp_path / "duplicate.sqlite3"
+    with MemoryStore(db) as store:
+        old = store.append_trace("Dashboard restart requires approval.", {"scope": SCOPE})
+        current = store.append_trace(old.content, {"scope": SCOPE})
+        if historical:
+            with store.connection:
+                store.connection.execute(
+                    "UPDATE connections SET type = 'supersedes' WHERE source_id = ? AND target_id = ?",
+                    (current.id, old.id),
+                )
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+        conn.row_factory = sqlite3.Row
+        assert bf.read_only_replacement(conn, old.id, cache={}) == current.id
+        assert not conn.in_transaction
+
+
 def test_verify_fails_on_an_edge_into_a_superseded_node_and_the_sweep_fixes_it(
     source_db: Path,
 ) -> None:
