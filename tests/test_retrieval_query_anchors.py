@@ -1,53 +1,20 @@
-"""The graph channel's entry from query space, at the retrieval boundary.
+"""Query anchors at the retrieval boundary, using the shipped implementation.
 
-Five contracts are under test here, and they are the five the mechanism can
-fail at.
+The real multilingual encoder must match distinct jargon queries to anchors
+more closely than to the English knowledge they name. Anchors must open the
+graph, preserve scores of existing candidates and stay out of answers and
+unrelated scopes. Cold and unrelated anchors must leave complete recall output
+unchanged; disabling anchors must do the same even when an anchor matches.
 
-*A jargon query reaches an anchor-only node.* The falsifiable one. The node's
-content is English, the query is the operator's Russian jargon, and the measured
-cosine between them is 0.17 — under the decoys, which is why it sits outside the
-top 5. It becomes reachable through an anchor written from a *different* past
-query («глянь мердж-реквест 9443» for «посмотри мердж-реквест 9806», measured
-0.916 with the shipped encoder): different verb, different ticket number, so the
-anchor is not a copy of the query under test and nothing in the store contains
-the evaluated query's words.
+Anchor-on/off comparisons keep the current trigger and tokenizer semantics.
+Small mutants inject spurious seeds or conflate anchor and traversal evidence,
+so the same fixtures must also expose violations of neutrality and monotonicity.
+An arithmetic score-ratio oracle checks the ordinary traversal's graph floor
+independently of the ranker, without duplicating feedback or scope weighting.
 
-*Cold start is free.* With no anchors — or on a query class no anchor
-resembles — anchors cannot change ranking. The independent pre-anchor
-implementation at :data:`REFERENCE_COMMIT` checks the unchanged query matrix
-with trigger collection disabled in both arms. That isolation matters because
-the later applicability repair intentionally changed trigger ranking. A second
-comparison keeps current trigger semantics enabled and checks anchors on/off;
-an injected spurious anchor seed proves the comparison catches anchor effects.
-
-*An anchor never demotes the node it seeds.* Extra evidence must not cost a
-candidate anything. It used to: an anchor seed was a new way for an
-already-strong candidate to acquire a *small* graph score, which tripped the
-graph-weight floor and moved up to a quarter of the per-scope weight off the
-lexical/vector evidence carrying it. That arm is pinned against the code that
-had the defect (:data:`PRE_FIX_COMMIT`), so the fixture has to keep provoking it
-for the invariant to mean anything — and the floor itself has to keep firing
-unchanged for a graph score that came from an ordinary traversal.
-
-*An anchor is never an answer.* Anchors are query text, not knowledge. No anchor
-id and no anchor's query text may appear anywhere a caller can read.
-
-*An anchor never crosses scope.* An anchor seeds only where its own scope is
-admitted by the ``ScopePlan``, and the nodes it names are filtered by that same
-plan.
-
-Why a subprocess
-----------------
-
-Every claim here is a claim about what the shipped multilingual encoder does to
-the operator's jargon, and ``scripts/test.sh`` exports
-``LIVING_MEMORY_EMBEDDING_BACKEND=hash`` so the suite does not load torch. Under
-the hash fallback the premise does not exist. Clearing the variable in-process
-is not enough — ``embeddings._MODEL_CACHE`` would then hand the real model to
-later tests that mock ``sentence_transformers``, and ``torch`` would stay in
-``sys.modules`` for tests that assert it was never imported. Both were observed
-failing that way for ``test_chunk_tail_regression``, whose shape this follows:
-one child process measures, and every assertion lives here, in the parent.
+Encoder measurements run in a child process: the parent suite uses the hash
+backend, and loading torch or populating the model cache there would affect
+other tests. The child returns measurements; assertions stay in this module.
 """
 
 from __future__ import annotations
@@ -65,30 +32,16 @@ from living_memory.query_anchors import (
     ANCHOR_EDGE_WEIGHT,
     ANCHOR_MATCH_COSINE_THRESHOLD,
 )
-from living_memory.retrieval import GRAPH_SEED_LIMIT, VECTOR_MATCH_THRESHOLD
-
-#: The commit whose ``retrieval.py`` is the independent pre-anchor reference —
-#: the anchor-store-edges merge, the last state of the file before the graph
-#: channel gained an entry from query space. Pinned rather than ``HEAD`` on
-#: purpose: once this node's work is committed, ``HEAD`` is the *new* code and
-#: comparing against it would silently become a comparison of the change with
-#: itself.
-REFERENCE_COMMIT = "ed20653"
-
-#: The commit that first gave the graph channel an entry from query space, and
-#: with it the demotion this node fixes: an anchor seed handed an already-strong
-#: candidate a small graph score, which tripped the graph-weight floor and moved
-#: up to a quarter of the per-scope weight off the evidence that was carrying it
-#: (``result.md`` section 6). Pinned so the monotonicity tests below have an arm
-#: that still *has* the defect — without it "anchors never lower a score" could
-#: pass on a fixture that never provoked one.
-PRE_FIX_COMMIT = "71d4005"
+from living_memory.retrieval import (
+    GRAPH_SEED_LIMIT,
+    STRONG_VECTOR_MATCH,
+    VECTOR_MATCH_THRESHOLD,
+)
 
 SCOPE = "project:demo"
 OTHER_SCOPE = "project:other"
 
-#: The node the jargon query must find. English, about merge-request review,
-#: and invisible to both existing content channels for a Russian jargon query.
+#: English knowledge with low content similarity to the Russian jargon queries.
 REVIEW_NODE = (
     "Merge request review checklist: verify migration ordering, confirm the "
     "rollback path, and require a green pipeline before approval."
@@ -111,16 +64,12 @@ DECOYS = (
     "Реквест 9443 в трекере переведён в статус ожидания",
 )
 
-#: The pair the regression rests on: different verb *and* different ticket
-#: number. Measured query-to-anchor 0.916, query-to-content 0.172.
+#: Distinct queries: both the verb and ticket number differ.
 JARGON_QUERY = "посмотри мердж-реквест 9806"
 ANCHOR_QUERY = "глянь мердж-реквест 9443"
 
-#: A second pair whose query-to-content cosine (0.065) sits *below*
-#: :data:`VECTOR_MATCH_THRESHOLD`, so the vector channel cannot produce the node
-#: as a candidate at all and "no other channel found it" is literal rather than
-#: a matter of ranking. Same jargon verb, different ticket — the «поревьювь»
-#: class the goal names, measured at 0.960.
+#: This pair must stay below VECTOR_MATCH_THRESHOLD against the target's
+#: content, so the anchor is the only channel that can admit it as a candidate.
 INVISIBLE_QUERY = "поревьювь мердж-реквест 9806"
 INVISIBLE_ANCHOR = "поревьювь мердж-реквест 9443"
 
@@ -159,7 +108,7 @@ MAX_RESULTS = 10
 #: JSON on stdin and writes one JSON object to stdout, so the corpus above is
 #: defined exactly once.
 PROBE = r"""
-import json, subprocess, sys, tempfile, types
+import json, sys, tempfile
 from pathlib import Path
 
 payload = json.load(sys.stdin)
@@ -167,7 +116,6 @@ payload = json.load(sys.stdin)
 from living_memory import query_anchors as qa
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.retrieval import MemoryRecallService
-from living_memory.scope import ScopeResolver
 from living_memory.storage import MemoryStore
 
 SCOPE = payload["scope"]
@@ -208,7 +156,7 @@ def ids(results):
 
 
 def blob(results):
-    return json.dumps([r.to_dict() for r in results], sort_keys=True)
+    return json.dumps([r.to_dict() for r in results], sort_keys=True, ensure_ascii=False)
 
 
 def warm(svc):
@@ -227,46 +175,6 @@ def anchor(store, query, targets, scope=SCOPE, consumptions=1):
     return out
 
 
-def module_at(commit, name):
-    source = subprocess.run(
-        ["git", "-C", payload["repo_root"], "show",
-         commit + ":src/living_memory/retrieval.py"],
-        capture_output=True, text=True, check=True,
-    ).stdout
-    module = types.ModuleType(name)
-    sys.modules[name] = module
-    exec(compile(source, "<retrieval@" + commit + ">", "exec"), module.__dict__)
-    # The frozen file still passes ``query`` to the resolver, which no longer
-    # reads it. Every comparison names its scope, so the plans it gets are the
-    # restricted ones it was written against.
-    module.ScopeResolver = QueryTolerantResolver
-    return module
-
-
-class QueryTolerantResolver(ScopeResolver):
-    def resolve(self, *, query="", **kwargs):
-        return super().resolve(**kwargs)
-
-
-_reference_module = module_at(payload["reference_commit"], "living_memory._retrieval_pre_anchor")
-_pre_fix_module = module_at(payload["pre_fix_commit"], "living_memory._retrieval_pre_floor_fix")
-
-
-def reference_service(store):
-    # No relative imports in that file, so it binds to the same storage,
-    # feedback and scope modules this process already imported: the code under
-    # test is the only difference between the two services.
-    return _reference_module.MemoryRecallService(store, embedder=model)
-
-
-def without_schema_trigger_collection(svc):
-    # Hold one deliberate non-anchor change constant when comparing the
-    # historical and current rankers. Schema nodes remain in BM25/vector/graph;
-    # only the changed trigger evidence is absent in both arms.
-    svc._collect_schema_triggers = lambda query, plan, candidates: None
-    return svc
-
-
 class SpuriousAnchorSeedService(MemoryRecallService):
     def __init__(self, store, target):
         super().__init__(store, embedder=model)
@@ -277,12 +185,36 @@ class SpuriousAnchorSeedService(MemoryRecallService):
         return {self.target: 1.0}
 
 
-def pre_fix_service(store, anchors=True):
-    svc = _pre_fix_module.MemoryRecallService(store, embedder=model, anchor_seeding=anchors)
-    # This score oracle uses the frozen matcher with live storage. Read vectors
-    # directly: its historical cache expects a different revision API.
-    svc._anchor_vector_source = lambda: store
-    return svc
+class ConflatedGraphEvidenceService(MemoryRecallService):
+    def rank_candidates(self, candidates, plan, **kwargs):
+        # Mutant: treating anchor evidence as ordinary traversal erases the
+        # anchors-off score and lets the graph floor demote a strong candidate.
+        for candidate in candidates.values():
+            candidate.graph_score = candidate.combined_graph_score
+            candidate.anchor_score = 0.0
+        return super().rank_candidates(candidates, plan, **kwargs)
+
+
+def neutrality(store, nodes, scopes):
+    off = service(store, anchors=False)
+    on = service(store)
+    warm(off)
+    divergences = []
+    for query, depth in payload["cold_start_matrix"]:
+        for scope in scopes:
+            expected = blob(recall(off, query, scope=scope, depth=depth))
+            actual = blob(recall(on, query, scope=scope, depth=depth))
+            if actual != expected:
+                divergences.append(f"{query!r} depth={depth!r} scope={scope}")
+    mutant = SpuriousAnchorSeedService(store, nodes["review"])
+    query, depth = payload["cold_start_matrix"][0]
+    return {
+        "anchor_count": store.count_query_anchors(),
+        "divergences": divergences,
+        "comparisons": len(payload["cold_start_matrix"]) * len(scopes),
+        "mutant_differs": blob(recall(mutant, query, depth=depth))
+            != blob(recall(off, query, depth=depth)),
+    }
 
 
 def jargon_corpus(store):
@@ -336,25 +268,22 @@ result["cosines"] = {
     "invisible_to_anchor": cosine_similarity(invisible_vector, model.embed(INVISIBLE_A)),
 }
 
-# --- the regression: outside top 5 on the old code, inside it with anchors ---
+# --- jargon: outside top 5 with anchors off, inside it with anchors on ---
 with tempfile.TemporaryDirectory(prefix="lm-anchor-jargon-") as directory:
     with store_at(directory) as store:
         target_id, neighbour_id = jargon_corpus(store)
         anchor(store, ANCHOR_Q, [target_id], consumptions=4)
-        reference = reference_service(store)
-        warm(reference)
-        before = recall(reference, JARGON)
-        without = recall(service(store, anchors=False), JARGON)
+        off = service(store, anchors=False)
+        warm(off)
+        without = recall(off, JARGON)
         with_anchors = recall(service(store, anchors=True), JARGON)
         matched = next((r for r in with_anchors if r.node.id == target_id), None)
         hopped = next((r for r in with_anchors if r.node.id == neighbour_id), None)
         result["jargon"] = {
             "target": target_id,
             "neighbour": neighbour_id,
-            "before_ids": ids(before),
             "without_ids": ids(without),
             "with_ids": ids(with_anchors),
-            "without_matches_reference": blob(without) == blob(before),
             "target_graph_score": None if matched is None else matched.graph_score,
             "target_vector_score": None if matched is None else matched.vector_score,
             "target_bm25_score": None if matched is None else matched.bm25_score,
@@ -363,7 +292,7 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-jargon-") as directory:
             "neighbour_methods": [] if hopped is None else list(hopped.methods),
         }
 
-# --- the blind spot: BFS used to need another channel to seed it ---
+# --- the blind spot: the anchor is the only graph seed ---
 with tempfile.TemporaryDirectory(prefix="lm-anchor-blind-") as directory:
     with store_at(directory) as store:
         target = store.append_trace(REVIEW, {"scope": SCOPE})
@@ -404,35 +333,7 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-activation-") as directory:
 with tempfile.TemporaryDirectory(prefix="lm-anchor-cold-") as directory:
     with store_at(directory) as store:
         nodes = mixed_corpus(store)
-        reference = without_schema_trigger_collection(reference_service(store))
-        current = without_schema_trigger_collection(service(store))
-        trigger_on = service(store)
-        trigger_off = service(store, anchors=False)
-        warm(reference)
-        divergences = []
-        trigger_divergences = []
-        for query, depth in payload["cold_start_matrix"]:
-            for scope in (SCOPE, "global"):
-                expected = blob(recall(reference, query, scope=scope, depth=depth))
-                actual = blob(recall(current, query, scope=scope, depth=depth))
-                if actual != expected:
-                    divergences.append(f"{query!r} depth={depth!r} scope={scope}")
-                if blob(recall(trigger_on, query, scope=scope, depth=depth)) != blob(
-                    recall(trigger_off, query, scope=scope, depth=depth)
-                ):
-                    trigger_divergences.append(f"{query!r} depth={depth!r} scope={scope}")
-        mutant = without_schema_trigger_collection(
-            SpuriousAnchorSeedService(store, nodes["review"])
-        )
-        mutant_query, mutant_depth = payload["cold_start_matrix"][0]
-        result["cold_start"] = {
-            "anchor_count": store.count_query_anchors(),
-            "divergences": divergences,
-            "trigger_divergences": trigger_divergences,
-            "comparisons": len(payload["cold_start_matrix"]) * 2,
-            "mutant_differs": blob(recall(mutant, mutant_query, depth=mutant_depth))
-                != blob(recall(reference, mutant_query, depth=mutant_depth)),
-        }
+        result["cold_start"] = neutrality(store, nodes, (SCOPE, "global"))
 
 # --- anchors present, none close enough ---
 with tempfile.TemporaryDirectory(prefix="lm-anchor-unrelated-") as directory:
@@ -440,34 +341,12 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-unrelated-") as directory:
         nodes = mixed_corpus(store)
         for query in payload["unrelated_anchor_queries"]:
             anchor(store, query, [nodes["review"]], consumptions=4)
-        reference = without_schema_trigger_collection(reference_service(store))
-        current = without_schema_trigger_collection(service(store))
-        trigger_on = service(store)
-        trigger_off = service(store, anchors=False)
-        warm(reference)
-        divergences = []
-        trigger_divergences = []
-        for query, depth in payload["cold_start_matrix"]:
-            expected = blob(recall(reference, query, depth=depth))
-            actual = blob(recall(current, query, depth=depth))
-            if actual != expected:
-                divergences.append(f"{query!r} depth={depth!r}")
-            if blob(recall(trigger_on, query, depth=depth)) != blob(
-                recall(trigger_off, query, depth=depth)
-            ):
-                trigger_divergences.append(f"{query!r} depth={depth!r}")
-        mutant = without_schema_trigger_collection(
-            SpuriousAnchorSeedService(store, nodes["review"])
+        result["unresembled"] = neutrality(store, nodes, (SCOPE,))
+        result["unresembled"]["max_anchor_similarity"] = max(
+            cosine_similarity(model.embed(query), model.embed(anchor_query))
+            for query, _depth in payload["cold_start_matrix"]
+            for anchor_query in payload["unrelated_anchor_queries"]
         )
-        mutant_query, mutant_depth = payload["cold_start_matrix"][0]
-        result["unresembled"] = {
-            "anchor_count": store.count_query_anchors(),
-            "divergences": divergences,
-            "trigger_divergences": trigger_divergences,
-            "comparisons": len(payload["cold_start_matrix"]),
-            "mutant_differs": blob(recall(mutant, mutant_query, depth=mutant_depth))
-                != blob(recall(reference, mutant_query, depth=mutant_depth)),
-        }
 
 # --- the scan itself: skipped when there is nothing to scan, cached when not ---
 with tempfile.TemporaryDirectory(prefix="lm-anchor-scan-") as directory:
@@ -516,7 +395,6 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-depth0-") as directory:
 # --- an anchor seed must never cost the node it seeds ---
 with tempfile.TemporaryDirectory(prefix="lm-anchor-monotone-") as directory:
     with store_at(directory) as store:
-        seeded = None
         nodes = {}
         for index, text in enumerate(DECOYS):
             nodes["d%d" % index] = store.append_trace(
@@ -526,19 +404,17 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-monotone-") as directory:
         # A real edge out of the seeded node, so the same recall also carries a
         # candidate whose graph score comes from the ordinary traversal.
         store.create_connection(nodes["d0"], nodes["review"], "related", weight=0.9)
-        # The live regime, where the floor's deficit is largest: online weight
-        # learning drives bm25 to ~0 and leaves graph at a few percent, so
-        # lifting graph to 0.25 takes almost a quarter of the weight off the
-        # vector channel that is actually carrying every candidate.
+        # Vector-dominant weights make lifting graph from 0.02 to 0.25
+        # materially reduce the lexical/vector contribution.
         store.set_retrieval_weights(SCOPE, bm25=0.05, vector=0.93, graph=0.02)
         seeded = nodes["d0"]
-        # One consumption, so the edge sits at ANCHOR_EDGE_WEIGHT and the
-        # activation is small -- which is the case that used to lose score.
-        anchor(store, ANCHOR_Q, [seeded], consumptions=1)
         weights = store.get_retrieval_weights(SCOPE).normalized()
-        # Four arms compare byte for byte below, so the lazy embedding backfill
-        # has to be drained before the first of them rather than by it.
-        warm(service(store, anchors=False))
+        off = service(store, anchors=False)
+        warm(off)
+        without_anchor = recall(off, JARGON)
+        graph_disabled = recall(off, JARGON, depth=0)
+        # One consumption gives a weak activation on a strong content match.
+        anchor(store, ANCHOR_Q, [seeded], consumptions=1)
 
         def arm(results):
             return {
@@ -547,16 +423,18 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-monotone-") as directory:
                     "bm25": r.bm25_score,
                     "vector": r.vector_score,
                     "graph": r.graph_score,
+                    "trigger": r.trigger_score,
                     "methods": list(r.methods),
                 }
                 for r in results
             }
 
-        old_off = recall(pre_fix_service(store, anchors=False), JARGON)
-        old_on = recall(pre_fix_service(store, anchors=True), JARGON)
-        new_off = recall(service(store, anchors=False), JARGON)
-        new_on = recall(service(store, anchors=True), JARGON)
-        pre_anchor = recall(reference_service(store), JARGON)
+        mutant_off = recall(
+            ConflatedGraphEvidenceService(store, embedder=model, anchor_seeding=False), JARGON
+        )
+        mutant_on = recall(ConflatedGraphEvidenceService(store, embedder=model), JARGON)
+        anchors_off = recall(off, JARGON)
+        anchors_on = recall(service(store), JARGON)
         result["monotonicity"] = {
             "seeded": seeded,
             "traversed": nodes["review"],
@@ -565,16 +443,17 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-monotone-") as directory:
                 "vector": weights.vector,
                 "graph": weights.graph,
             },
-            "old_off": arm(old_off),
-            "old_on": arm(old_on),
-            "new_off": arm(new_off),
-            "new_on": arm(new_on),
-            "old_off_ids": ids(old_off),
-            "old_on_ids": ids(old_on),
-            "new_off_ids": ids(new_off),
-            "new_on_ids": ids(new_on),
-            "new_off_matches_pre_fix": blob(new_off) == blob(old_off),
-            "new_off_matches_pre_anchor": blob(new_off) == blob(pre_anchor),
+            "mutant_off": arm(mutant_off),
+            "mutant_on": arm(mutant_on),
+            "off": arm(anchors_off),
+            "on": arm(anchors_on),
+            "graph_disabled": arm(graph_disabled),
+            "mutant_off_ids": ids(mutant_off),
+            "mutant_on_ids": ids(mutant_on),
+            "off_ids": ids(anchors_off),
+            "on_ids": ids(anchors_on),
+            "off_ignores_matching_anchor": blob(anchors_off) == blob(without_anchor),
+            "mutant_off_matches_off": blob(mutant_off) == blob(anchors_off),
         }
 
 # --- an anchor is never an answer ---
@@ -587,7 +466,7 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-leak-") as directory:
         results = svc.memory_recall(JARGON, scope=SCOPE, max_results=MAX_RESULTS)
         payload_blob = blob(results)
         event = store.get_recall_event(svc.last_recall_event_id)
-        event_blob = json.dumps(event.to_dict(), sort_keys=True)
+        event_blob = json.dumps(event.to_dict(), sort_keys=True, ensure_ascii=False)
         result["leak"] = {
             "anchor_id": anchor_id,
             "anchor_query": ANCHOR_Q,
@@ -677,23 +556,13 @@ def run_probe() -> dict[str, Any]:
     # The whole point of the child: the real encoder, with nothing of it left
     # behind in this process.
     environment.pop("LIVING_MEMORY_EMBEDDING_BACKEND", None)
-    # The reference and pre-fix services are retrieval.py frozen at older
-    # commits, bound to the live storage and embeddings modules. Their BM25
-    # expansion predates the Cyrillic prefix terms the current
-    # ``_expanded_query`` emits, so with Russian stemming on the two services
-    # would differ in the BM25 query of every Cyrillic probe query -- a
-    # tokenizer difference, not the anchor difference these comparisons
-    # isolate. Hold the switch at its pre-stemming behaviour for the whole
-    # probe so the code under test stays the only difference.
-    environment["LM_TOKENIZE_CYRILLIC_STEM"] = "off"
-
+    # Measure graph admission and ranking before the optional delivery gate;
+    # weak traversal results must remain visible regardless of the host setting.
+    environment["LM_RECALL_MIN_SCORE"] = "off"
     completed = subprocess.run(
         [sys.executable, "-c", PROBE],
         input=json.dumps(
             {
-                "repo_root": str(root),
-                "reference_commit": REFERENCE_COMMIT,
-                "pre_fix_commit": PRE_FIX_COMMIT,
                 "scope": SCOPE,
                 "other_scope": OTHER_SCOPE,
                 "review_node": REVIEW_NODE,
@@ -760,27 +629,20 @@ def test_encoder_puts_query_to_query_far_above_query_to_content(
 
 
 def test_jargon_query_reaches_anchor_only_node(probe: dict[str, Any]) -> None:
-    """Outside the top 5 on the pre-anchor code, inside it with anchors."""
+    """An anchor lifts the target into the top 5 above same-language decoys."""
 
     jargon = probe["jargon"]
     target = jargon["target"]
-
-    assert jargon["without_matches_reference"], (
-        "the anchors-off arm no longer reproduces the pre-anchor implementation, "
-        "so 'fails on the old code' is not what is being demonstrated"
-    )
-    assert target not in jargon["before_ids"][:TOP_K], (
-        f"the pre-anchor code already had the target in its top {TOP_K}: "
-        f"{jargon['before_ids'][:TOP_K]}"
+    assert target not in jargon["without_ids"][:TOP_K], (
+        f"anchors off already found the target in the top {TOP_K}: "
+        f"{jargon['without_ids'][:TOP_K]}"
     )
     assert target in jargon["with_ids"][:TOP_K], (
         f"target missing from the anchored top {TOP_K}: {jargon['with_ids'][:TOP_K]}"
     )
-    # Measured 8 -> 5 against seven same-language decoys. Stated as a rank move
-    # rather than only a membership flip so a failure says how far it slipped,
-    # and so a version that lands the target at 5 by accident rather than by
-    # lift cannot pass.
-    before_rank = jargon["before_ids"].index(target) + 1 if target in jargon["before_ids"] else None
+    before_rank = (
+        jargon["without_ids"].index(target) + 1 if target in jargon["without_ids"] else None
+    )
     after_rank = jargon["with_ids"].index(target) + 1
     assert before_rank is None or after_rank < before_rank, (
         f"anchors did not lift the target: {before_rank} -> {after_rank}"
@@ -814,12 +676,7 @@ def test_anchor_seed_opens_one_hop(probe: dict[str, Any]) -> None:
 def test_anchor_seed_opens_the_graph_with_no_other_candidate(
     probe: dict[str, Any]
 ) -> None:
-    """The blind spot itself: BFS used to need another channel to seed it.
-
-    The store holds one node the query matches on no channel at all — so with
-    anchors off the recall is empty, and the old guard (``candidates`` alone)
-    could never have run the graph.
-    """
+    """An anchor opens the graph when no content channel supplies a candidate."""
 
     blind = probe["blind_spot"]
     assert blind["without_ids"] == []
@@ -855,95 +712,88 @@ def test_anchor_activation_is_cosine_times_edge_weight(probe: dict[str, Any]) ->
 # an anchor never demotes the node it seeds
 # ---------------------------------------------------------------------------
 #
-# Three invariants, on one fixture that provokes the defect on the pre-fix
-# code: the anchored node is a strong vector candidate the anchor also names,
-# under live-shaped weights (bm25 ~0, graph a few percent) where lifting the
-# graph weight to its 0.25 floor is a ~23-point tax on the vector channel.
+# A weak anchor on a strong content match must preserve the content score,
+# while the neighbouring node reached by a real edge keeps the graph floor.
 
 
-def test_the_fixture_still_provokes_the_demotion_on_the_pre_fix_code(
+def test_conflating_anchor_and_traversal_evidence_demotes_the_seed(
     probe: dict[str, Any]
 ) -> None:
-    """Guard: without this the monotonicity test could pass on a flat fixture.
-
-    On :data:`PRE_FIX_COMMIT` the anchor hands its own target a small graph
-    score, the floor moves weight off the vector evidence carrying it, and the
-    node the anchor was seeding loses score and rank.
-    """
+    """The same fixture must violate monotonicity when its protection is removed."""
 
     monotone = probe["monotonicity"]
     seeded = monotone["seeded"]
-    # The floor is live: the learned graph weight is below the 0.25 it is
-    # lifted to, so crossing graph_score > 0 really does re-weight the blend.
     assert monotone["weights"]["graph"] < 0.25
-
-    before = monotone["old_off"][seeded]
-    after = monotone["old_on"][seeded]
-    # The anchor gave it graph evidence...
+    assert monotone["mutant_off_matches_off"]
+    before = monotone["mutant_off"][seeded]
+    after = monotone["mutant_on"][seeded]
     assert before["graph"] == 0.0
     assert after["graph"] > 0.0
-    # ...and that cost it score, and a rank.
     assert after["score"] < before["score"]
     assert (before["score"] - after["score"]) / before["score"] > 0.05
-    assert monotone["old_on_ids"].index(seeded) > monotone["old_off_ids"].index(seeded)
+    assert monotone["mutant_on_ids"].index(seeded) > monotone["mutant_off_ids"].index(seeded)
 
 
 def test_an_anchor_seed_never_lowers_a_candidates_score(probe: dict[str, Any]) -> None:
-    """MONOTONICITY. Anchors on scores no candidate below anchors off."""
+    """Anchors on scores no candidate below anchors off."""
 
     monotone = probe["monotonicity"]
-    off = monotone["new_off"]
-    on = monotone["new_on"]
-
-    # Nothing the anchors-off arm returned may go missing, which is how the
-    # two items of ``result.md`` section 6 were lost.
+    off = monotone["off"]
+    on = monotone["on"]
     assert set(off) <= set(on)
     for node_id, before in off.items():
         assert on[node_id]["score"] >= before["score"], node_id
 
-    # And specifically the node the anchor seeded, which is the one that lost.
     seeded = monotone["seeded"]
     assert on[seeded]["score"] >= off[seeded]["score"]
-    assert monotone["new_on_ids"].index(seeded) <= monotone["new_off_ids"].index(seeded)
+    assert monotone["on_ids"].index(seeded) <= monotone["off_ids"].index(seeded)
 
 
 def test_anchors_off_is_byte_identical_with_a_matching_anchor_present(
     probe: dict[str, Any]
 ) -> None:
-    """BASELINE UNTOUCHED, on the corpus where anchors actually fire.
+    """Adding a matching anchor cannot affect a service with anchors disabled."""
 
-    The other byte-identity tests switch anchors off where no anchor matches.
-    Here one does, and the anchors-off arm must still be exactly the pre-fix
-    and pre-anchor ranking — that is what keeps the published 0.5769 / 0.3540
-    baseline a valid comparison for the anchors-on arm.
-    """
-
-    monotone = probe["monotonicity"]
-    assert monotone["new_off_matches_pre_fix"]
-    assert monotone["new_off_matches_pre_anchor"]
+    assert probe["monotonicity"]["off_ignores_matching_anchor"]
 
 
 def test_a_traversal_graph_score_still_triggers_the_floor(
     probe: dict[str, Any]
 ) -> None:
-    """BASELINE UNTOUCHED, part two: only *anchor*-derived activation changed.
+    """Ordinary graph evidence uses the 0.25 floor and proportional reweighting.
 
-    The node at the far end of a real edge is scored through the floored blend
-    in every arm, identically. A fix that took the better of the floored and
-    unfloored blends for every graph candidate — rather than only where an
-    anchor moved the activation — would raise this node's score here and
-    quietly retune the floor for the whole corpus.
+    Divide out the same node's graph-disabled score to cancel scope/feedback
+    multipliers. Only a linear blend is left: this trace has no trigger and
+    lies below the strong-vector override. The expected floor is arithmetic,
+    independent of the production blend and of the anchor counterfactual.
     """
 
     monotone = probe["monotonicity"]
     traversed = monotone["traversed"]
-    for arm in ("old_off", "old_on", "new_off", "new_on"):
-        assert monotone[arm][traversed]["graph"] > 0.0, arm
-        assert "graph" in monotone[arm][traversed]["methods"], arm
-    baseline = monotone["old_off"][traversed]["score"]
-    assert monotone["new_off"][traversed]["score"] == baseline
-    assert monotone["new_on"][traversed]["score"] == baseline
-    assert monotone["old_on"][traversed]["score"] == baseline
+    weights = monotone["weights"]
+    plain = monotone["graph_disabled"][traversed]
+    assert plain["graph"] == plain["trigger"] == 0.0
+    assert 0.0 < plain["vector"] < STRONG_VECTOR_MATCH
+    assert weights["graph"] < 0.25
+    content_blend = weights["bm25"] * plain["bm25"] + weights["vector"] * plain["vector"]
+    assert content_blend > 0.0
+    scale = (1.0 - 0.25) / (weights["bm25"] + weights["vector"])
+    for arm in ("mutant_off", "mutant_on", "off", "on"):
+        reached = monotone[arm][traversed]
+        assert reached["graph"] > 0.0, arm
+        assert "graph" in reached["methods"], arm
+        assert reached["bm25"] == plain["bm25"], arm
+        assert reached["vector"] == plain["vector"], arm
+        assert reached["trigger"] == 0.0, arm
+        floored_blend = scale * content_blend + 0.25 * reached["graph"]
+        unfloored_blend = content_blend + weights["graph"] * reached["graph"]
+        assert floored_blend != pytest.approx(unfloored_blend), arm
+        assert reached["score"] / plain["score"] == pytest.approx(
+            floored_blend / content_blend
+        ), arm
+    baseline = monotone["off"][traversed]["score"]
+    assert monotone["on"][traversed]["score"] == baseline
+    assert monotone["mutant_on"][traversed]["score"] == baseline
 
 
 # ---------------------------------------------------------------------------
@@ -951,20 +801,19 @@ def test_a_traversal_graph_score_still_triggers_the_floor(
 # ---------------------------------------------------------------------------
 
 
-def test_cold_start_ranking_is_anchor_neutral_against_historical_reference(
+def test_cold_start_ranking_is_anchor_neutral(
     probe: dict[str, Any]
 ) -> None:
-    """No anchors: historical neutral-trigger and current full-trigger arms agree."""
+    """No anchors: full recall output agrees with anchors enabled or disabled."""
 
     cold = probe["cold_start"]
     assert cold["anchor_count"] == 0
     assert cold["comparisons"] == len(COLD_START_MATRIX) * 2
     assert cold["divergences"] == []
-    assert cold["trigger_divergences"] == []
     assert cold["mutant_differs"] is True
 
 
-def test_unresembled_query_class_is_anchor_neutral_against_historical_reference(
+def test_unresembled_query_class_is_anchor_neutral(
     probe: dict[str, Any]
 ) -> None:
     """Anchors present, none close enough: ranking stays anchor neutral.
@@ -977,7 +826,7 @@ def test_unresembled_query_class_is_anchor_neutral_against_historical_reference(
     assert unresembled["anchor_count"] == len(UNRELATED_ANCHOR_QUERIES)
     assert unresembled["comparisons"] == len(COLD_START_MATRIX)
     assert unresembled["divergences"] == []
-    assert unresembled["trigger_divergences"] == []
+    assert unresembled["max_anchor_similarity"] < ANCHOR_MATCH_COSINE_THRESHOLD
     assert unresembled["mutant_differs"] is True
 
 
