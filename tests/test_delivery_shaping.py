@@ -64,6 +64,8 @@ BASELINE_RESULT_KEYS = {
     "methods",
     "path",
     "recall_event_id",
+    "superseded",
+    "superseded_by",
 }
 
 PRIOR_RECALLS = [

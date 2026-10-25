@@ -119,7 +119,7 @@ def test_direct_correction_links_preserve_chains_cycles_and_unaffected_nodes(tmp
             latest = await remember(client, f"Correction to {middle}: amber hatch pressure rule C.")
             untouched = await remember(client, "Amber hatch pressure rule: inspect the seal.")
             if cycle:
-                store.add_connection(original, latest, "supersedes")
+                store.create_connection(original, latest, "supersedes")
             expected = {original: [middle], middle: [latest], latest: [original] if cycle else [], untouched: []}
             for node_id, correction_ids in expected.items():
                 entry, _ = await read(client, path, node_id)
