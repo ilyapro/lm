@@ -211,8 +211,9 @@ An unchanged contribution preserves the row, including `updated_at`; that field
 is not a contribution counter or a last-observed event. Replacement writes still
 refresh it. Every genuine correction write, including an unchanged contribution, moves
 newly attached query anchors inside the same transaction. Query-anchor edges
-retain their separate additive weight/hits policy, and typed backfill inserts
-only absent edges.
+retain their separate additive weight/hits policy. Typed backfill inserts absent
+edges and can replace a known technical supersedes row with a derived explicit
+correction; existing genuine relations retain their fields.
 
 Exact copies use `related` edges with `kind=duplicate_content`, retaining their
 rows and source identities separately from correction validity. Anchor and

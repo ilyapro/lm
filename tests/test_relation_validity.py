@@ -244,3 +244,19 @@ def test_real_correction_contribution_replaces_historical_heuristic_provenance(t
         assert updated.metadata == correction
         assert updated.weight == .9
         assert store.list_supersedes_pairs([old.id]) == [(new.id, old.id)]
+
+
+def test_metadata_less_snapshot_preserves_unknown_supersedes():
+    import sqlite3
+    from living_memory.replay import load_supersedes_pairs, snapshot_evidence
+
+    with sqlite3.connect(':memory:') as connection:
+        connection.row_factory = sqlite3.Row
+        connection.executescript("""
+            CREATE TABLE nodes (id TEXT, scope TEXT, decayed INTEGER);
+            CREATE TABLE connections (source_id TEXT, target_id TEXT, type TEXT);
+            INSERT INTO nodes VALUES ('new', 'global', 0), ('old', 'global', 0);
+            INSERT INTO connections VALUES ('new', 'old', 'supersedes');
+        """)
+        assert load_supersedes_pairs(connection) == [('new', 'old')]
+        assert snapshot_evidence(connection)('global') == (False, True)
