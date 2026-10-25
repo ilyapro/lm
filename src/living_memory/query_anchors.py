@@ -486,6 +486,17 @@ def _rank_anchors(
     only ever runs over the handful of survivors.
     """
 
+    if _np is not None:
+        query = _np.asarray(vector, dtype="<f4")
+        query_norm = float(_np.linalg.norm(query))
+    else:
+        query_squared_norm = 0.0
+        for value in vector:
+            query_squared_norm += float(value) * float(value)
+        query_norm = math.sqrt(query_squared_norm)
+    if query_norm <= 0.0:
+        return []
+
     prepare = getattr(store, "prepare_query_anchor_vectors", None)
     corpus = (
         prepare(len(vector), scopes) if prepare is not None else
@@ -496,10 +507,6 @@ def _rank_anchors(
         return []
 
     if _np is not None:
-        query = _np.asarray(vector, dtype="<f4")
-        query_norm = float(_np.linalg.norm(query))
-        if query_norm <= 0.0:
-            return []
         # A zero-norm anchor has no direction to compare; scoring it 0.0 keeps
         # the numpy path agreeing with cosine_similarity instead of producing
         # nan, which would sort unpredictably.
@@ -519,15 +526,14 @@ def _rank_anchors(
             kept = surviving
         candidates = [(ids[index], float(scores[index])) for index in kept]
     else:
-        query_squared_norm = sum(value * value for value in vector)
-        if query_squared_norm <= 0.0:
-            return []
         candidates = []
         for anchor_id, row, squared_norm in zip(ids, corpus.matrix, corpus.safe_norms):
-            dot = sum(left * right for left, right in zip(vector, row))
+            dot = 0.0
+            for left, right in zip(vector, row):
+                dot += float(left) * right
             similarity = (
+                0.0 if squared_norm <= 0.0 else
                 dot / math.sqrt(query_squared_norm * squared_norm)
-                if squared_norm > 0.0 else 0.0
             )
             if similarity >= min_similarity:
                 candidates.append((anchor_id, similarity))
@@ -582,8 +588,13 @@ def _prepare_anchor_vectors(
         nonzero = norms > 0.0
         return _PreparedAnchorVectors(ids, matrix, _np.where(nonzero, norms, 1.0), nonzero)
     matrix = tuple(tuple(unpack_chunk_embedding(blob, width)) for _id, blob in selected)
-    squared_norms = tuple(sum(value * value for value in row) for row in matrix)
-    return _PreparedAnchorVectors(ids, matrix, squared_norms, ())
+    squared_norms = []
+    for row in matrix:
+        squared_norm = 0.0
+        for value in row:
+            squared_norm += value * value
+        squared_norms.append(squared_norm)
+    return _PreparedAnchorVectors(ids, matrix, tuple(squared_norms), ())
 
 
 def _nearest_anchor(
