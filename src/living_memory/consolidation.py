@@ -40,7 +40,7 @@ from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
 from living_memory.models import Connection, ConnectionType, Node, string_list
 from living_memory.query_anchors import resolve_replacement
-from living_memory.storage import _DUPLICATE_CONTENT_KIND, MemoryStore, _node_read_batches, new_ulid
+from living_memory.storage import MemoryStore, _node_read_batches, new_ulid
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
 _LOG = logging.getLogger(__name__)
@@ -346,10 +346,6 @@ def _assess_cluster_eras(store: MemoryStore, members: Sequence[Node]) -> _EraAss
             if edge.id in seen_edges or edge.type not in ("supersedes", "contradicts"):
                 continue
             seen_edges.add(edge.id)
-            if edge.metadata.get("kind") == _DUPLICATE_CONTENT_KIND:
-                # Re-remembered identical content affirms the fact; it is not
-                # a correction and must not read as era conflict.
-                continue
             source_moment = _moment_of(edge.source_id, edge.created_at)
             target_moment = _moment_of(edge.target_id, edge.created_at)
             if edge.type == "supersedes":
@@ -420,10 +416,7 @@ def _assess_cluster_eras(store: MemoryStore, members: Sequence[Node]) -> _EraAss
 
 
 def _is_superseded(store: MemoryStore, node_id: str) -> bool:
-    return any(
-        edge.metadata.get("kind") != _DUPLICATE_CONTENT_KIND
-        for edge in store.list_connections(target_id=node_id, relation_type="supersedes")
-    )
+    return bool(store.list_connections(target_id=node_id, relation_type="supersedes"))
 
 
 def adaptive_merge_floor(trace_count: int) -> int:
@@ -836,6 +829,9 @@ class _SourceObservation:
             )
         return self.edges[key]
 
+    def list_duplicate_replacements(self, node_id: str) -> list[Node]:
+        return self.store.list_duplicate_replacements(node_id)
+
     def updated(self, node: Node) -> None:
         self.changing.discard(node.id)
         self.nodes[node.id] = node
@@ -881,8 +877,6 @@ def _current_sources(
     displaced: dict[str, str] = {}
     for member in live.values():
         for edge in reader.list_connections(source_id=member.id, relation_type="supersedes"):
-            if edge.metadata.get("kind") == _DUPLICATE_CONTENT_KIND:
-                continue
             target = reader.get_node(edge.target_id)
             if target is not None:
                 for source in set(_derivation_sources(reader, target)) & live.keys() - {member.id}:

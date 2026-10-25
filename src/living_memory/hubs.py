@@ -19,10 +19,8 @@ The rule
   recall event it was passed on, resolved the way
   ``query_anchors.resolve_query_anchor`` resolves identity: exact
   ``(normalize_scope(scope), recall_fingerprint(query, scope))`` in
-  ``query_anchors``; failing that, the ``anchor_id`` of the
-  ``query_irrelevance`` row whose ``last_event_id`` is that event (the
-  cosine-near-duplicate anchor the write path chose); failing that, the
-  whitespace-collapsed query in its scope. Repeats of one question therefore
+  ``query_anchors``; otherwise the whitespace-collapsed query in its scope.
+  Historical similarity-based anchor associations do not establish identity. Repeats of one question therefore
   count once however often they are marked.
 * **Positive evidence lifts.** An accepted ``used`` mark at any time, or a
   ``recall_credit_ledger`` row with ``basis='grounded'`` or a
@@ -73,7 +71,6 @@ _MARKS = "recall_feedback_marks"
 _LEDGER = "recall_credit_ledger"
 _EXPLICIT = "recall_explicit_credit"
 _ANCHORS = "query_anchors"
-_IRRELEVANCE = "query_irrelevance"
 _EVENTS = "recall_events"
 _REVISION_TABLES = (_MARKS, _LEDGER, _EXPLICIT, _ANCHORS)
 # Shared by the full recount and appended-row lift. Lookup ledger rows stay in
@@ -125,8 +122,8 @@ class HubCount:
 
 def _present(conn: sqlite3.Connection) -> set[str]:
     rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?, ?, ?, ?)",
-        (_MARKS, _LEDGER, _EXPLICIT, _ANCHORS, _IRRELEVANCE, _EVENTS),
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?, ?, ?, ?)",
+        (_MARKS, _LEDGER, _EXPLICIT, _ANCHORS, _EVENTS),
     ).fetchall()
     return {str(row[0]) for row in rows}
 
@@ -180,13 +177,6 @@ def hub_counts(
     if not rows:
         return []
 
-    near_anchor: dict[tuple[str, str], str] = {}
-    if _IRRELEVANCE in present:
-        for anchor_id, node_id, event_id in conn.execute(
-            f"SELECT anchor_id, node_id, last_event_id FROM {_IRRELEVANCE}"
-            " WHERE last_event_id IS NOT NULL"
-        ):
-            near_anchor[(str(event_id), str(node_id))] = str(anchor_id)
     exact_anchors = (
         {
             (scope, fingerprint): f"anchor:{anchor_id}"
@@ -215,10 +205,7 @@ def hub_counts(
             raw_key = f"query:{anchor_scope}\n{' '.join(str(query).split())}"
             exact = exact_anchors.get((anchor_scope, recall_fingerprint(query, anchor_scope)))
             anchor_by_event[event_id] = (raw_key, exact)
-        anchor_key = exact
-        if anchor_key is None:
-            near = near_anchor.get((event_id, node_id))
-            anchor_key = f"anchor:{near}" if near else raw_key
+        anchor_key = exact or raw_key
         anchors.setdefault(node_id, set()).add(anchor_key)
         queries.setdefault(node_id, set()).add(raw_key)
         marks[node_id] = marks.get(node_id, 0) + int(count)

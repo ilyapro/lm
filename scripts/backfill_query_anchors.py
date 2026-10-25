@@ -136,11 +136,13 @@ from living_memory.query_anchors import (  # noqa: E402
     # answers. A second copy here would drift from it silently.
     _live_target,
 )
+from living_memory.relations import correction_sql  # noqa: E402
 from living_memory.scope import normalize_scope  # noqa: E402
 from living_memory.storage import (  # noqa: E402
     QUERY_ANCHOR_EDGE_TABLE,
     QUERY_ANCHOR_TABLE,
     MemoryStore,
+    duplicate_replacements,
     install_derived_only_authorizer,
     recall_fingerprint,
 )
@@ -573,9 +575,8 @@ def ensure_backup(
 # `query_anchors.resolve_replacement` needs a MemoryStore, whose constructor
 # migrates — i.e. writes. `--dry-run` and `verify` must be safe against the
 # live database, so they walk the same `supersedes` chain over a read-only
-# connection instead. The contract is that walk's, restated in SQL: climb from
-# target to source, only through *live* superseders, stop on a cycle or at
-# MAX_SUPERSEDES_CHAIN_DEPTH, and return nothing when nothing supersedes.
+# connection instead. Genuine corrections and exact compatible copies use
+# the shared relation predicates, with the same cycle and depth bounds.
 # ---------------------------------------------------------------------------
 
 
@@ -590,10 +591,10 @@ def read_only_replacement(
     seen = {current}
     for _ in range(MAX_SUPERSEDES_CHAIN_DEPTH):
         row = conn.execute(
-            """
+            f"""
             SELECT c.source_id FROM connections c
             JOIN nodes n ON n.id = c.source_id
-            WHERE c.target_id = ? AND c.type = 'supersedes'
+            WHERE c.target_id = ? AND {correction_sql("c")}
               AND c.source_id != ? AND n.decayed = 0
             ORDER BY c.weight DESC, c.created_at DESC
             LIMIT 1
@@ -601,8 +602,12 @@ def read_only_replacement(
             (current, current),
         ).fetchone()
         if row is None:
-            break
-        successor = str(row[0])
+            copies = duplicate_replacements(conn, current)
+            if not copies:
+                break
+            successor = copies[0].id
+        else:
+            successor = str(row[0])
         if successor in seen:
             break
         seen.add(successor)

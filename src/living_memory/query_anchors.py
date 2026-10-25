@@ -1,55 +1,14 @@
-"""Query anchors: the memory graph's entry from query space.
+"""Query anchors connect remembered questions to their grounded memory sources.
 
-Retrieval seeds its graph walk only from nodes that BM25, the vector channel,
-or a schema trigger already found, so the graph has no entry of its own from
-the space of *questions*. Anchors add one. An anchor is a remembered query —
-the operator's own words, embedded by the same model as node content — carrying
-weighted edges to the nodes that a grounded consumption of that query actually
-used. A repeat of a situation is then found by "query <-> past query" plus one
-hop, instead of by "query <-> node content".
+An anchor's identity is its exact whitespace-normalized query and scope.
+Semantic matching ranks independent anchors at retrieval time. Positive
+consumptions reinforce weighted edges; negative feedback resolves the same
+identity without reinforcing it.
 
-Why that direction works is measured, not assumed (2026-08-18, live system):
-one operator's queries share a language and a jargon, so
-«поревьювь EZ-13871» ↔ «поревьювь EZ-12826» sits at 0.931 and
-«посмотри мердж-реквест 9806» ↔ «глянь мердж-реквест 9443» at 0.916, while the
-same queries against the English content of the node they should find sit at
-0.100–0.269. «реквест» meets «реквест»; nothing has to be translated.
-
-What lives here and what does not
----------------------------------
-This module owns anchor *policy*: which anchor an incoming query reinforces,
-how much one grounded consumption is worth, which anchors a query matches, when
-an anchor has gone stale, and where an anchor edge goes when its target is
-replaced. ``storage.py`` owns only the v7 migration and thin table access.
-
-Anchors are not nodes and anchor edges are not connections. Both existing
-tables carry baked-in CHECK constraints — ``nodes.level`` and
-``connections.type`` — on a 500 MB live database, so a new level or edge type
-would mean a table rebuild rather than an additive migration. Two new tables
-cost one ``CREATE`` each and leave the existing DDL byte-identical. The
-bipartite split is also what makes an anchor edge structurally incapable of
-being a self-loop or of closing a cycle.
-
-Edge migration
---------------
-Nothing in this repository rewires edges when a node is superseded: the node is
-soft-deleted and retrieval treats inbound edges as dead ends. That is tolerable
-for node-to-node edges, which are read as evidence; it is not tolerable for an
-anchor edge, which is read as an *answer* — a stale one would keep steering a
-repeated question into the past. Observed live: a schema collapsing 5 sources
-into 1. So anchor edges follow their target, through both routes a target can
-be replaced:
-
-* an inbound active ``supersedes`` edge — hooked in
-  ``MemoryStore._insert_connection``, so ``memory_teach``, duplicate-content
-  dedup, and ``edge_derivation.rule_r1c_content_correction`` are all covered in
-  the same transaction that writes the edge;
-* era displacement by consolidation — no edge exists to hook, so
-  :func:`migrate_anchor_edges_for_exclusions` takes
-  ``consolidation._assess_cluster_eras``'s exclusion mapping directly.
-
-:func:`sweep_anchor_edge_migration` is the batch form of both, for the
-retro-backfill and for repairing a database written before the hook existed.
+Edges follow genuine corrections and exact compatible duplicate replacements.
+Consolidation can also supply an explicit source displacement. The batch sweep
+uses the same resolution for existing anchor edges and historical backfills.
+Storage owns the additive anchor tables and transactional edge migration hooks.
 """
 
 from __future__ import annotations
@@ -656,16 +615,18 @@ class _ReplacementReader(Protocol):
         self, *, target_id: str, relation_type: ConnectionType,
     ) -> list[Connection]: ...
 
+    def list_duplicate_replacements(self, node_id: str) -> list[Node]: ...
+
 
 def resolve_replacement(
     store: _ReplacementReader, node_id: str, *, max_depth: int = MAX_SUPERSEDES_CHAIN_DEPTH
 ) -> str | None:
-    """Follow ``supersedes`` upward to the node that currently replaces ``node_id``.
+    """Follow corrections and exact copies to the current replacement of ``node_id``.
 
     An edge ``S -supersedes-> T`` means S replaces T, so the walk climbs from
     target to source and repeats: A superseded by B superseded by C resolves to
-    C in one call. Only live superseders are followed — a replacement that has
-    itself been forgotten is not an improvement on what it replaced.
+    C in one call. If no live correction exists, compatible exact-copy
+    bookkeeping can supply a replacement. Only live replacements are followed.
 
     Returns ``None`` when nothing supersedes ``node_id``, and stops (returning
     the last live node reached) on a ``supersedes`` cycle or at ``max_depth``.
@@ -676,7 +637,7 @@ def resolve_replacement(
     current = str(node_id)
     seen = {current}
     for _ in range(max_depth):
-        successor = _direct_superseder(store, current)
+        successor = _direct_replacement(store, current)
         if successor is None or successor in seen:
             break
         seen.add(successor)
@@ -684,8 +645,8 @@ def resolve_replacement(
     return None if current == str(node_id) else current
 
 
-def _direct_superseder(store: _ReplacementReader, node_id: str) -> str | None:
-    """The live node that most strongly supersedes ``node_id``, if any."""
+def _direct_replacement(store: _ReplacementReader, node_id: str) -> str | None:
+    """The strongest live correction, otherwise an exact compatible copy."""
 
     edges = store.list_connections(target_id=node_id, relation_type="supersedes")
     for edge in edges:  # already ordered by weight DESC, created_at DESC
@@ -694,7 +655,8 @@ def _direct_superseder(store: _ReplacementReader, node_id: str) -> str | None:
         source = store.get_node(edge.source_id)
         if source is not None and not source.decayed:
             return source.id
-    return None
+    replacements = store.list_duplicate_replacements(node_id)
+    return replacements[0].id if replacements else None
 
 
 def migrate_anchor_edges(
@@ -742,7 +704,7 @@ def _reaches(store: MemoryStore, start: str, goal: str) -> bool:
     for _ in range(MAX_SUPERSEDES_CHAIN_DEPTH):
         if current == str(goal):
             return True
-        successor = _direct_superseder(store, current)
+        successor = _direct_replacement(store, current)
         if successor is None or successor in seen:
             return False
         seen.add(successor)
