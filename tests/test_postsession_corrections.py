@@ -853,15 +853,11 @@ def test_semantic_correction_survives_similar_wording(change: tuple[str, str]) -
     assert result.ops[0].payload["correction"] == correction
 
 
-def test_veto_rephrasing():
+def test_veto_exact_unchanged_correction():
     verdict = rejection(
-        make_record(),
-        correction=(
-            "scripts/postsession_corpus.py --build refuses to run when "
-            "artifacts/post-session/corpus-index.jsonl already exists on disk."
-        ),
+        make_record(), contradicted_claim=NODE_CONTENT, correction=NODE_CONTENT,
     )
-    assert verdict.reason == "rephrasing"
+    assert verdict.reason == "unchanged_correction"
 
 
 @pytest.mark.parametrize(

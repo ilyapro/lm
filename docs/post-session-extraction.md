@@ -139,7 +139,9 @@ identity within a run and against existing memory. Semantic retrieval finds
 candidates; the semantic judge assesses proposed knowledge. Token overlap and
 embedding similarity never veto a proposal as already known. The deterministic
 quality gate still checks content shape, journal phrasing, speculation, fact
-count, concrete identifiers and grounding in the mined evidence.
+count, concrete identifiers and grounding in the mined evidence. Correction
+proposals still require a judged contradiction, the recorded target and a later
+verbatim observation; only an exact unchanged claim is rejected as unchanged.
 
 **Budget flags.** `--max-ops-per-session` (default 3), `--max-total-ops` (24),
 `--max-attests-per-session` (8), `--max-total-attests` (64),

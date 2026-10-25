@@ -1,145 +1,31 @@
-"""Turn "a recalled fact contradicted reality" into proposed ``memory_teach`` ops.
+"""Propose ``memory_teach`` when later evidence contradicts a recalled claim.
 
-Why this module exists
-----------------------
-``memory_teach`` is nearly dead in the field: 2 calls across 30 goal-tree
-sessions, and the whole database holds 434 ``supersedes`` edges against 139,696
-``related`` ones. Only :func:`living_memory.consolidation.memory_teach` creates
-the ``supersedes`` edge, downgrades the original's confidence to ``≤0.25`` and
-its usefulness to ``≤-0.25`` (``consolidation.py:516``); a ``memory_remember``
-trace whose text merely *says* "CORRECTION" creates nothing of the sort, and the
-stale node keeps outranking reality in every future recall.
+The detector consumes a finished ``SessionRecord`` and writes nothing itself.
+Delivered content, observation text and provenance come from that record; the
+runner executes accepted ``ProposedOp`` values through the ordinary MCP client.
 
-So a stale node only stops winning if somebody calls teach. Agents in-session
-mostly do not. This module does it offline, from the transcript.
+Each delivered node is paired with later command outputs, test results, file
+changes and operator messages. Assistant prose and memory round trips are not
+observations. Shared concrete anchors rank and bound the candidate pairs; this
+retrieval score does not establish contradiction or claim identity.
 
-No database access is needed
-----------------------------
-The delivered node **content** is already in the transcript --
-``mcpMeta.structuredContent.results[].node.content`` for Claude,
-``result.Ok.structuredContent`` for codex -- and
-:mod:`living_memory.postsession.transcripts` has already lifted it into
-:class:`~living_memory.postsession.session.DeliveredNode`. Contradiction
-detection therefore reads one :class:`SessionRecord` and nothing else. This
-module opens no socket, no database and no file outside the transcript the
-caller hands it, and it **writes nothing to Living Memory**: it emits
-:class:`~living_memory.postsession.session.ProposedOp` values with
-``kind="teach"`` and stops there.
+The existing semantic judge decides whether a concrete observation contradicts
+the recalled claim and supplies a claim, observation quote, source locator and
+self-contained correction. ``validate_verdict`` verifies the recorded node,
+chronology, verbatim evidence, subject grounding, correction shape and confidence.
+Exact unchanged claims cannot be corrections. Similar vocabulary, equal anchor
+sets, negation counts and substring overlap do not establish unchanged meaning.
 
-The pipeline
-------------
-1. **Pair.** For every :class:`RecallInteraction`, pair each delivered node with
-   the session's *later* observations -- command outputs, test results, file
-   diffs, operator messages. Assistant prose is deliberately **not** an
-   observation: an agent's own narration is a claim, not reality, and letting it
-   contradict memory is how a confident-but-wrong agent would overwrite a
-   correct node. See :func:`observations`.
-2. **Rank and bound.** Score each pairing by shared *anchors* (paths,
-   identifiers, numbers, flags -- see :func:`anchors`) with a session-local
-   inverse-frequency weight, keep the top ``max_observations_per_node``, and
-   drop pairs below ``min_pair_score``. This is a cost bound, not a verdict; the
-   run report records every pair it dropped and why.
-3. **Judge.** One narrow question per (recall, node): *does a concrete
-   observation in this session contradict this recalled fact?* Not "is it
-   incomplete", not "does it sound stale". The judge must return the
-   contradicted claim, the contradicting observation quote and its locator, or
-   answer ``contradicted: false``. See :data:`TASK` and :data:`SCHEMA`.
-4. **Veto.** :func:`validate_verdict` can overrule the judge and does so on
-   purely mechanical grounds. Every rejection carries a machine-readable reason
-   (:data:`REASONS`), so a run report says *why* the detector stayed silent
-   instead of only that it did.
-5. **Emit.** :func:`teach_op` builds the ``ProposedOp`` whose payload is exactly
-   the ``memory_teach(store, trace_id, correction, confidence=None,
-   context=None)`` call the runner will make.
+The judge sees redacted text. Verbatim evidence may match the original bytes or
+lossless home-path elision (``/home/<user>`` or ``/root`` becomes ``~``); a quote
+that matches only after secret redaction is rejected. Evidence remains traceable
+to the original observation and the resulting proposal records its source.
 
-What the veto actually enforces
--------------------------------
-``trace_id`` names a node this session was really shown; ``contradicted_claim``
-occurs verbatim in that node's delivered content; ``observation_quote`` occurs
-verbatim in the session record at the stated locator, in an observation that
-came *after* the recall; claim and quote share at least one anchor (a fact about
-X can only be contradicted by an observation about X); the quote is not an
-absence of evidence; the correction is not a rephrasing of the claim; the
-correction is self-contained; and the context carries
-``lesson_kind="correction"``.
-
-Verbatim, precisely
--------------------
-The judge is shown redacted text -- :func:`living_memory.postsession.judge.
-default_redactor` rewrites ``/home/<user>`` to ``~`` and blanks secret-shaped
-substrings -- so a returned quote is verbatim with respect to *that* rendering.
-The validator classifies every quote and keeps only two modes:
-
-``exact``
-    the quote occurs byte-for-byte in the session record;
-``home_path_normalized``
-    it occurs byte-for-byte once ``/home/<user>`` (and ``/root``) is rewritten
-    to ``~``. Path elision is lossless for the claim and never invents content.
-
-A quote that only matches after *secret* redaction is rejected
-(``quote_touches_redacted_secret``): evidence next to a credential is evidence
-this stage should not be quoting into a tracked artifact anyway.
-
-What was tuned, and on what
----------------------------
-Thresholds, the prompt and the veto set were tuned on the ``train`` split only.
-The measurement that made tuning possible is the corpus's own labelled
-positives: 58 train sessions in which the working agent was delivered a node,
-found it wrong, and called ``memory_teach`` on it (:func:`taught_delivered_nodes`),
-73 corrected nodes in all. What the tuning rounds found:
-
-* every judge-confirmed contradiction was being thrown away as
-  ``unknown_locator``, because the judge correctly echoed the *redacted*
-  locator it had been shown and the validator compared it to the unredacted key
-  (:func:`resolve_locator`);
-* quotes were failing the verbatim check because the payload had grown past the
-  prompt builder's byte budget and been truncated mid-excerpt
-  (``max_node_content_chars``);
-* the aboutness veto was killing true findings whose *claim clause* named
-  nothing concrete, so the prompt now requires the claim and the quote to carry
-  a shared concrete token, and a claim that names nothing is reported as
-  ``claim_has_no_anchor`` rather than silently as a mismatch;
-* and then the finding that invalidated the three above -- **the detector was
-  being scored on its own input**. 110 of the 249 observations it put in front
-  of the judge on those labelled positives, 44%, were Living Memory round trips
-  rather than observed reality, because a large part of this corpus calls the
-  memory server from *inside* a script tool and only the script call carries the
-  result text (:func:`is_memory_roundtrip`). The worst shape was the exact one
-  this module exists to prevent: a session's own ``memory_teach`` payload,
-  echoed back in the tool result, quoted as the evidence that the taught node
-  was wrong. Every headline number measured before that exclusion was inflated
-  by it, so none of them are quoted here;
-* and, once the echoes were gone, the judge was still being shown windows that
-  could not answer the question. 24% of the observations reaching it carried
-  *none* of the anchors that had earned the pairing, because a codex ``exec``
-  result is a single JSON line and the line-aligned excerpt scan degenerated to
-  the host's ``Script completed / Warning: truncated output`` header
-  (:func:`_character_window`). Fixing the excerpt alone took grounded recovery
-  on the train positives from 2 of 55 to 6 of 55.
-
-Honest numbers, after both fixes, on ``train``: 55 of 73 labelled-positive
-nodes reach the judge (51 of 58 sessions; the misses have no *real* observation
-sharing an anchor with the node), 3% of shown observations are anchor-blind,
-and 6 of those 55 survive the judge and the whole veto layer. That rate is low
-and is meant to be: most
-in-session corrections are an agent's synthesis across many signals, not a
-single quotable observation that mechanically contradicts a stored claim, and
-this module only emits the latter. A wrong ``supersedes`` edge costs more than a
-missed one -- teach drops the target's confidence to ``<=0.25`` -- so every
-ambiguous case is spent on silence.
-
-The ``eval`` split was read with those values frozen; the reserved split was
-never read, and :func:`_load_entries` excludes any union-find group that could
-belong to it.
-
-Negative controls travel with the detector
-------------------------------------------
-:data:`NEGATIVE_CONTROLS` holds three synthetic sessions -- the recalled fact
-matched reality, the session never touched the fact, and the session corrected a
-*different* fact that was never recalled. They live here rather than in the test
-file because they are part of the published behaviour: the eval run replays them
-through the same real judge and records the outcome next to the eval numbers.
-All three must yield zero teach ops.
+``NEGATIVE_CONTROLS`` supplies three synthetic sessions for the ordinary
+judging path: a fact that matches reality, an untouched fact, and a correction
+to another fact. The report records these controls separately from corpus
+measurements. Evaluation excludes the reserved split unless its caller explicitly
+selects the corresponding measurement workflow.
 """
 
 from __future__ import annotations
@@ -424,21 +310,6 @@ def _anchor_weights(documents: Sequence[set[str]]) -> dict[str, float]:
         for token in document:
             total[token] = total.get(token, 0) + 1
     return {token: 1.0 / (1.0 + math.log(count)) for token, count in total.items()}
-
-
-_WORD_RE = re.compile(r"[\w']+")
-
-
-def _words(text: str) -> list[str]:
-    return _WORD_RE.findall(text.lower())
-
-
-def _jaccard(left: Iterable[str], right: Iterable[str]) -> float:
-    a, b = set(left), set(right)
-    if not a and not b:
-        return 1.0
-    union = a | b
-    return len(a & b) / len(union) if union else 0.0
 
 
 # --------------------------------------------------------------------------
@@ -1017,7 +888,7 @@ REASONS: tuple[str, ...] = (
     "absence_of_evidence",
     "claim_has_no_anchor",
     "no_shared_anchor",
-    "rephrasing",
+    "unchanged_correction",
     "correction_not_self_contained",
     "better_matched_by_another_node",
     "low_confidence",
@@ -1054,12 +925,6 @@ _OUTWARD_REFERENCE = re.compile(
     r"|this (?:session|transcript|trace|node|excerpt)"
     r"|the (?:session|transcript) (?:above|below)"
     r"|per the previous|contrary to (?:the )?(?:above|memory|the stored))\b",
-    re.IGNORECASE,
-)
-
-_NEGATION_RE = re.compile(
-    r"\b(?:not|no|never|cannot|can't|isn't|aren't|wasn't|weren't|doesn't|don't|didn't|"
-    r"without|fails?|failed|missing|absent|unsupported|removed|neither|nor)\b",
     re.IGNORECASE,
 )
 
@@ -1271,10 +1136,10 @@ def validate_verdict(
     # -- the quote must assert something the claim does not already say -----
     # A bare path lifted out of a file listing is a mention, not a measurement:
     # `rg -l foo` naming a file cannot contradict a claim about what that file
-    # does. Likewise a quote already contained in the claim contradicts nothing.
+    # does. An exact repetition of the claim provides no contrary assertion.
     if len(quote.split()) < 3:
         return _reject(candidate, session_key, "quote_asserts_nothing", quote[:120])
-    if _collapse(quote).lower() in _collapse(claim).lower():
+    if quote == claim:
         return _reject(candidate, session_key, "quote_asserts_nothing", "quote repeats the claim")
 
     # -- aboutness: a fact about X is only contradicted by an observation about X
@@ -1296,17 +1161,8 @@ def validate_verdict(
     if problem:
         return _reject(candidate, session_key, "correction_not_self_contained", problem)
 
-    # -- not a rephrasing ----------------------------------------------------
-    correction_anchors = anchors(correction)
-    added = correction_anchors - claim_anchors
-    dropped = claim_anchors - correction_anchors
-    polarity = len(_NEGATION_RE.findall(correction)) != len(_NEGATION_RE.findall(claim))
-    if not added and not dropped and not polarity:
-        return _reject(candidate, session_key, "rephrasing", "correction asserts nothing new")
-    if _jaccard(_words(correction), _words(claim)) >= 0.9:
-        return _reject(candidate, session_key, "rephrasing", "correction is a paraphrase of the claim")
-    if not polarity and _collapse(claim).lower() in _collapse(correction).lower():
-        return _reject(candidate, session_key, "rephrasing", "correction restates the claim unchanged")
+    if correction == claim:
+        return _reject(candidate, session_key, "unchanged_correction", "correction repeats the exact claim")
 
     # -- the correction must belong to *this* node --------------------------
     rival = _better_matching_node(record, node, correction, claim)
