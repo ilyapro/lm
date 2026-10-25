@@ -45,7 +45,7 @@ Strength, accumulation, cancellation
   marking one node keep the strongest claim, not the product.
 * Confirmed usefulness for the same (anchor, node) **cancels** the row:
   grounded consumption or an explicit ``used`` mark calls
-  :func:`cancel_query_irrelevance` through ``feedback._reinforce_query_anchors``.
+  :func:`cancel_query_irrelevance` through ``feedback._apply_query_feedback``.
   Lookup alone earns numeric credit but does not cancel. Confirmation still
   cancels when lookup already claimed that credit, without reinforcing twice.
   The weight goes to 0 (the row stays, with ``cancels`` counted, for audit);
@@ -82,7 +82,6 @@ from living_memory.query_anchors import (
     ANCHOR_MATCH_LIMIT,
     AnchorMatch,
     match_anchors,
-    resolve_query_anchor,
 )
 from living_memory.storage import MemoryStore
 
@@ -218,29 +217,23 @@ def _now() -> str:
 
 def record_query_irrelevance(
     store: MemoryStore,
-    event: Any,
+    anchor_id: str,
+    event_id: str,
     node_ids: Sequence[str],
-    embedder: Any,
     *,
     now: str | None = None,
 ) -> str | None:
-    """Accumulate one irrelevance mark per node on ``event``'s query anchor.
+    """Accumulate marks on the anchor prepared by the feedback operation.
 
-    ``embedder`` is the store's chunk encoder (``feedback._anchor_embedder``):
-    a list of texts in, a list of vectors out. Returns the anchor id, or
-    ``None`` when nothing was written — blank query, no encoder, no anchor
-    tables, no nodes. Never lowers anything global.
+    Returns the anchor id, or ``None`` without targets or anchor tables.
+    Query preparation belongs to the caller; this write never reinforces the
+    anchor or lowers global usefulness, confidence or retrieval weights.
     """
 
-    query = str(getattr(event, "query", "") or "").strip()
     targets = list(dict.fromkeys(str(node_id) for node_id in node_ids if node_id))
-    if not query or not targets or embedder is None or not _anchor_tables_present(store):
-        return None
-    vectors = embedder([query])
-    if not vectors or not vectors[0]:
+    if not targets or not _anchor_tables_present(store):
         return None
     stamp = now or _now()
-    anchor = resolve_query_anchor(store, query, event.scope, vectors[0], stamp)
     conn = store.connection
     with store.transaction():
         conn.execute(QUERY_IRRELEVANCE_SCHEMA_SQL)
@@ -258,9 +251,9 @@ def record_query_irrelevance(
                     last_event_id = excluded.last_event_id,
                     updated_at = excluded.updated_at
                 """,
-                (anchor.id, node_id, IRRELEVANCE_MARK_WEIGHT, event.id, stamp, stamp),
+                (anchor_id, node_id, IRRELEVANCE_MARK_WEIGHT, event_id, stamp, stamp),
             )
-    return anchor.id
+    return anchor_id
 
 
 def cancel_query_irrelevance(

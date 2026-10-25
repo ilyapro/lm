@@ -579,8 +579,8 @@ def test_irrelevance_hook_runs_only_under_credit_and_never_lowers_usefulness(
     calls: list[tuple[str, list[str]]] = []
     monkeypatch.setattr(
         feedback_module,
-        "_apply_query_irrelevance",
-        lambda store, event, node_ids: calls.append((event.id, list(node_ids))),
+        "record_query_irrelevance",
+        lambda store, anchor_id, event_id, node_ids: calls.append((event_id, list(node_ids))),
     )
     mcp, store, node_ids, event_id = _seed(tmp_path / "hook-audit.sqlite3", monkeypatch)
     _remember(mcp, UNRELATED_TRACE, irrelevant=[node_ids[2]])

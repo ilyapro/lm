@@ -42,7 +42,7 @@ tenfold separation instead of a threefold one. See
 Credit mirrors the live path exactly — same
 :func:`feedback.apply_retrieval_feedback` call, same
 ``max(0.2, 1 / (rank + 1))`` rank decay, same
-:func:`feedback._reinforce_query_anchors` for the anchor write, all under the
+:func:`feedback._apply_query_feedback` for the anchor write, all under the
 **event's** scope rather than the attesting client's. Nothing about the
 arithmetic is reimplemented here.
 
@@ -375,7 +375,7 @@ def attest_recall_usage(
     # anchor: an anchor with no honest target would answer its question with
     # whatever the event happened to deliver.
     anchor_ids = (
-        feedback._reinforce_query_anchors(
+        feedback._apply_query_feedback(
             store, [(event, tuple(grounded_ids), tuple(grounded_ids))]
         )
         if grounded_ids

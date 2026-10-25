@@ -71,7 +71,7 @@ _LOOKUP_CREDIT_EVENT_LIMIT = 200
 #   credit (basis ``explicit``, once per (event, node) across all three
 #   bases) with the grounded assignment scaled by
 #   ``LM_EXPLICIT_CREDIT_WEIGHT``, and hand accepted ``irrelevant`` marks to
-#   ``_apply_query_irrelevance``.
+#   ``_apply_query_feedback``.
 # * ``off`` — accept the fields, ignore them, record nothing, no hygiene.
 #
 # An unknown policy or an unparsable weight falls back to the default, like
@@ -597,7 +597,7 @@ def apply_pending_recall_feedback(
     provenance["source_traces"] = source_traces
     updated = store.update_node(trace.id, provenance=provenance)
     # Anchor reinforcement is nonfatal; the caller owns the trace transaction.
-    anchor_ids = _reinforce_query_anchors(store, anchor_work)
+    anchor_ids = _apply_query_feedback(store, anchor_work)
     return ImplicitRecallFeedback(
         trace=updated,
         events=events,
@@ -721,7 +721,7 @@ def apply_lookup_credit(
 
         if anchor_work:
             outcome.anchor_ids.extend(
-                _reinforce_query_anchors(
+                _apply_query_feedback(
                     store,
                     [(event, tuple(targets), ()) for event, targets in anchor_work.values()],
                 )
@@ -896,7 +896,7 @@ def apply_explicit_marks(
     per event to the marked nodes. A ``used`` mark cancels query-relative
     irrelevance even when an earlier lookup claimed its numeric credit;
     accepted ``irrelevant`` marks go to
-    ``_apply_query_irrelevance`` per event. Global usefulness never moves
+    ``_apply_query_feedback`` per event. Global usefulness never moves
     down for an irrelevant mark.
 
     A failure is logged and swallowed: marks are derived from the call and
@@ -975,18 +975,16 @@ def apply_explicit_marks(
                     scope=event.scope,
                 )
                 entry[1].append(mark.node_id)
-        if anchor_work:
-            outcome.anchor_ids.extend(
-                _reinforce_query_anchors(
-                    store,
-                    [
-                        (event, tuple(targets), tuple(confirmed))
-                        for event, targets, confirmed in anchor_work.values()
-                    ],
-                )
+        outcome.anchor_ids.extend(
+            _apply_query_feedback(
+                store,
+                [
+                    (event, tuple(targets), tuple(confirmed))
+                    for event, targets, confirmed in anchor_work.values()
+                ],
+                irrelevant_work=list(irrelevant_by_event.values()),
             )
-        for event, node_ids in irrelevant_by_event.values():
-            _apply_query_irrelevance(store, event, node_ids)
+        )
     except Exception:
         _LOG.warning(
             "explicit feedback marks failed for %s %s", via_tool, source_id, exc_info=True
@@ -1025,28 +1023,6 @@ def _unlink_irrelevant(
     return removed
 
 
-def _apply_query_irrelevance(
-    store: MemoryStore, event: RecallEvent, node_ids: Sequence[str]
-) -> None:
-    """Demote ``node_ids`` for ``event``'s query only. Never raises.
-
-    Called under ``LM_EXPLICIT_FEEDBACK_POLICY=credit`` once per recall event
-    with that event's accepted ``irrelevant`` marks (deduplicated, in mark
-    order). Records one (query anchor, node) irrelevance row per node via
-    ``living_memory.irrelevance``; retrieval demotes the node only for queries
-    matching that anchor. It never lowers a node's global
-    ``usefulness_score``, confidence or retrieval weights: an irrelevant mark
-    says "not for this query", not "wrong". See docs/query-irrelevance.md.
-    """
-
-    try:
-        record_query_irrelevance(store, event, node_ids, _anchor_embedder(store))
-    except Exception:
-        _LOG.warning(
-            "query irrelevance write failed for event %s", event.id, exc_info=True
-        )
-
-
 def _lookup_instant(value: str | datetime | Any) -> datetime | None:
     """A UTC instant at second precision for the lookup-credit join."""
 
@@ -1060,24 +1036,26 @@ def _lookup_instant(value: str | datetime | Any) -> datetime | None:
     return parsed.replace(microsecond=0)
 
 
-def _reinforce_query_anchors(
+def _apply_query_feedback(
     store: MemoryStore,
     work: Sequence[tuple[RecallEvent, tuple[str, ...], tuple[str, ...]]],
+    *,
+    irrelevant_work: Sequence[tuple[RecallEvent, Sequence[str]]] = (),
 ) -> list[str]:
-    """Reinforce credited targets and cancel negatives for confirmed ones. Never raises.
+    """Share query preparation across independent feedback effects. Never raises.
 
-    Every query is embedded in one batched call, before any anchor is written,
-    so a consuming ``memory_remember`` pays one encoder round trip no matter
-    how many pending events it closed. A blank query is skipped rather than
-    anchored: its fingerprint would be the same for every blank query in the
-    scope, so it would collect edges from unrelated consumptions.
+    Embed each nonblank event query once in one batch for this operation.
+    Credited targets reinforce the anchor; confirmed targets cancel negatives
+    even when their numeric credit was already claimed. Irrelevant targets
+    reuse that anchor without reinforcing it. Optional writes fail separately,
+    so a failed positive edge or cancellation cannot suppress a negative mark.
     """
 
-    items = [
-        (event, targets, confirmed)
-        for event, targets, confirmed in work
-        if event.query.strip()
-    ]
+    events = {event.id: (event, targets, confirmed, ()) for event, targets, confirmed in work}
+    for event, node_ids in irrelevant_work:
+        _, targets, confirmed, _ = events.get(event.id, (event, (), (), ()))
+        events[event.id] = (event, targets, confirmed, node_ids)
+    items = [item for item in events.values() if item[0].query.strip()]
     if not items:
         return []
     anchor_ids: list[str] = []
@@ -1085,22 +1063,49 @@ def _reinforce_query_anchors(
         embedder = _anchor_embedder(store)
         if embedder is None:
             return []
-        vectors = embedder([event.query for event, _targets, _confirmed in items])
-        for (event, targets, confirmed), vector in zip(items, vectors, strict=True):
+        # Positive feedback keeps the delivered query text; negative-only
+        # feedback uses its stripped form, as its anchor identity always did.
+        queries = [
+            event.query if targets or confirmed else event.query.strip()
+            for event, targets, confirmed, _irrelevant in items
+        ]
+        vectors = embedder(queries)
+        for (event, targets, confirmed, irrelevant), query, vector in zip(
+            items, queries, vectors, strict=True
+        ):
             if not vector:
                 continue
+            anchor = None
             if targets:
-                anchor = upsert_anchor(store, event.query, event.scope, vector, targets).anchor
-                if anchor.id not in anchor_ids:
-                    anchor_ids.append(anchor.id)
-            else:
-                anchor = resolve_query_anchor(store, event.query, event.scope, vector)
-            cancel_query_irrelevance(store, anchor.id, confirmed)
+                try:
+                    anchor = upsert_anchor(store, query, event.scope, vector, targets).anchor
+                    if anchor.id not in anchor_ids:
+                        anchor_ids.append(anchor.id)
+                except Exception:
+                    _LOG.warning("query anchor write failed for event %s", event.id, exc_info=True)
+            if anchor is None and (confirmed or irrelevant):
+                try:
+                    # Resolve-only also recovers identity after a partial
+                    # upsert failure, without repeating inference or credit.
+                    anchor = resolve_query_anchor(store, query, event.scope, vector)
+                except Exception:
+                    _LOG.warning("query anchor resolve failed for event %s", event.id, exc_info=True)
+                    continue
+            if anchor is None:
+                continue
+            if confirmed:
+                try:
+                    cancel_query_irrelevance(store, anchor.id, confirmed)
+                except Exception:
+                    _LOG.warning("query irrelevance cancellation failed for event %s", event.id, exc_info=True)
+            if irrelevant:
+                try:
+                    record_query_irrelevance(store, anchor.id, event.id, irrelevant)
+                except Exception:
+                    _LOG.warning("query irrelevance write failed for event %s", event.id, exc_info=True)
     except Exception:
         _LOG.warning(
-            "query anchor write failed for %d feedback event(s)",
-            len(items),
-            exc_info=True,
+            "query feedback preparation failed for %d event(s)", len(items), exc_info=True
         )
     return anchor_ids
 
