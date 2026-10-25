@@ -339,6 +339,32 @@ def test_promotions_use_recorded_owners_and_keep_other_global_knowledge(store):
     assert store.get_node(south.id).source_traces == south.source_traces
 
 
+def test_overlapping_promotions_follow_ancestors_without_broadcasting_new_sources(store):
+    sources = [
+        store.create_node(level="concept", content=f"Release evidence from {scope}.",
+                          context={"scope": f"project:{scope}"}, embedding=[1.0, 0.0])
+        for scope in ("alpha", "beta", "gamma", "delta")
+    ]
+    left = c._write_global_promotion(store, sources[:3])
+    right = c._write_global_promotion(store, sources[1:])
+    replacement = store.create_node(
+        level="concept", content="Release alpha uses the electronic archive.",
+        context={"scope": sources[0].scope}, embedding=[1.0, 0.0],
+    )
+    store.create_connection(replacement.id, sources[0].id, "supersedes")
+    fresh = store.create_node(
+        level="concept", content="Release epsilon verifies the signature.",
+        context={"scope": "project:epsilon"}, embedding=[1.0, 0.0],
+    )
+    c._cross_scope_promotion(store, fresh, phase_number=4)
+    assert {node.id for node in store.list_nodes(level="concept", scope="global")} == {left.id, right.id}
+    current = store.get_node(left.id)
+    assert set(current.materializer_sources) == {replacement.id, sources[1].id, sources[2].id}
+    assert "electronic archive" in current.content
+    assert set(store.get_node(right.id).materializer_sources) == {node.id for node in sources[1:]}
+    assert c._cross_scope_promotion(store, fresh, phase_number=4) == []
+
+
 def test_promotion_edge_failure_is_atomic(store, monkeypatch):
     sources = [store.create_node(level="concept", content=f"Release evidence {scope}.",
                                  context={"scope": f"project:{scope}"}, embedding=[1.0, 0.0])
