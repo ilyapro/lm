@@ -1,13 +1,12 @@
 """The transcript-grounding verdict ledger is additive, idempotent, and dead to the live path.
 
-Phase 3 of the transcript-grounding goal ships exactly one schema change — a
-CREATE-only table plus one index — and an offline importer. What a live
-500 MB database must be able to rely on is pinned here:
+The offline importer and additive storage objects preserve these invariants:
 
 * **Fresh databases contain the ledgers.** Current DDL includes every ledger
   and its indexes without requiring historical experimental tables.
 * **Reopening preserves existing data and DDL** apart from the explicit
-  task-index migration and additive ledgers; ``schema_version`` stays at 8.
+  task-index migration, additive ledgers and pending-work indexes;
+  ``schema_version`` stays at 8.
 * **Import replays instead of duplicating**, never updates an existing row,
   and reports same-key-different-numbers as the method_version discipline
   violation it is.
@@ -29,7 +28,7 @@ import types
 
 import pytest
 
-from storage_schema_compat import assert_preserved_schema
+from storage_schema_compat import PENDING_RECALL_INDEXES, assert_preserved_schema
 
 from living_memory.server import create_mcp_server
 from living_memory.storage import (
@@ -48,15 +47,7 @@ from living_memory.transcript_ledger import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LEDGER_INDEX = "idx_transcript_grounding_node_graded"
-#: The only objects this release may add to a database: the transcript
-#: grounding ledger and its index, and the recall credit ledger
-#: (feedback-usage-signal), which is created the same way — on every open,
-#: additive, no SCHEMA_VERSION bump — and whose UNIQUE constraint leaves no
-#: named index in sqlite_master (autoindexes carry NULL sql).
-#: The explicit-feedback tables (goal explicit-recall-feedback) join them on
-#: the same terms: explicit credit side table, mark audit and its index.
-#: The consolidation vector cache (goal remember-returns-before-consolidation)
-#: is created on every open too, additive, no SCHEMA_VERSION bump.
+#: Objects created additively on open, without changing existing ledgers.
 NEW_OBJECTS = {
     TRANSCRIPT_GROUNDING_TABLE,
     LEDGER_INDEX,
@@ -65,7 +56,7 @@ NEW_OBJECTS = {
     "recall_feedback_marks",
     "idx_recall_feedback_marks_event",
     CONSOLIDATION_EMBEDDING_TABLE,
-}
+} | PENDING_RECALL_INDEXES
 
 SCOPE = "project:ledger"
 AMBIENT = {"agent": "seeder", "task": "ledger-fixture", "session_id": "seed-session"}
