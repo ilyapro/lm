@@ -23,7 +23,6 @@ from living_memory.embeddings import (
     LocalEmbeddingModel,
     cosine_similarity,
     fts_prefix_term_allowed,
-    tokenize,
 )
 from living_memory.models import (
     CONNECTION_TYPES,
@@ -764,7 +763,6 @@ _FTS_TERM_TOKENIZER_SQL = (
 #: so a caller that already holds a loaded model does not pay for a second one.
 ChunkEmbedder = Callable[[Sequence[str]], Sequence[Sequence[float]]]
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-_RECALL_TEXT_SIMILARITY_THRESHOLD = 0.55
 _DUPLICATE_CONTENT_DECAY_REASON = "duplicate_content"
 _DUPLICATE_CONTENT_KIND = "duplicate_content"
 _WEIGHT_EPSILON = 1e-12
@@ -1105,7 +1103,6 @@ class MemoryStore:
 
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.create_function("recall_text_similarity", 2, _recall_text_similarity, deterministic=True)
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = NORMAL")
@@ -3249,10 +3246,9 @@ class MemoryStore:
         *,
         scope: str,
         context: Mapping[str, Any] | None = None,
-        content: str | None = None,
         limit: int = 1,
     ) -> list[RecallEvent]:
-        """Return recent unconsumed recalls compatible with a new ingest trace."""
+        """Return bounded pending recalls with compatible work or transport identity."""
 
         context_data = dict(context or {})
         params = {
@@ -3261,30 +3257,16 @@ class MemoryStore:
             "task": _optional_str(context_data.get("task")),
             "agent": _optional_str(context_data.get("agent")),
             "transport_session_id": _optional_str(context_data.get("transport_session_id")),
-            "content": content,
-            "threshold": _RECALL_TEXT_SIMILARITY_THRESHOLD,
             "limit": max(1, int(limit)),
         }
-        predicate, strength = _pending_recall_match_sql(params)
+        predicate = _pending_recall_match_sql(params)
+        if predicate is None:
+            return []
         rows = self._conn.execute(
             f"""
-            WITH matched AS NOT MATERIALIZED (
-                SELECT rowid AS event_rowid, created_at, {strength} AS strength
-                FROM recall_events
-                WHERE feedback_applied = 0 AND {predicate}
-            ), strong AS (
-                SELECT event_rowid, created_at FROM matched WHERE strength = 2
-                ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
-            ), weak AS (
-                SELECT event_rowid, created_at FROM matched WHERE strength = 1
-                ORDER BY created_at DESC, event_rowid DESC LIMIT 1
-            ), selected AS (
-                SELECT * FROM strong UNION ALL SELECT * FROM weak
-                ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
-            )
-            SELECT event.* FROM selected
-            JOIN recall_events AS event ON event.rowid = selected.event_rowid
-            ORDER BY selected.created_at DESC, selected.event_rowid DESC
+            SELECT * FROM recall_events
+            WHERE feedback_applied = 0 AND {predicate}
+            ORDER BY created_at DESC, rowid DESC LIMIT :limit
             """,
             params,
         ).fetchall()
@@ -5138,9 +5120,8 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_recall_events_session_pending_created
                     ON recall_events(session_id, feedback_applied, created_at DESC);
 
-                -- Pending feedback probes current identity, including unstamped
-                -- legacy rows, before its result cap. COALESCE matches the
-                -- nullable identity predicates in _pending_recall_match_sql.
+                -- Pending feedback requires a shared work or transport identity.
+                -- COALESCE also serves compatibility checks on the other fields.
                 CREATE INDEX IF NOT EXISTS idx_recall_pending_session
                     ON recall_events(COALESCE(session_id, ''), created_at DESC)
                     WHERE feedback_applied = 0;
@@ -5153,9 +5134,7 @@ class MemoryStore:
                     ON recall_events(COALESCE(transport_session_id, ''), created_at DESC)
                     WHERE feedback_applied = 0;
 
-                CREATE INDEX IF NOT EXISTS idx_recall_pending_agent
-                    ON recall_events(COALESCE(agent, ''), created_at DESC)
-                    WHERE feedback_applied = 0;
+                DROP INDEX IF EXISTS idx_recall_pending_agent;
 
                 CREATE INDEX IF NOT EXISTS idx_recall_events_requested_scope_pending_created
                     ON recall_events(requested_scope, feedback_applied, created_at DESC);
@@ -6238,56 +6217,37 @@ def _recall_attestation_from_row(row: sqlite3.Row) -> RecallAttestation:
     )
 
 
-def _pending_recall_match_sql(context: Mapping[str, Any]) -> tuple[str, str]:
-    """One compatibility definition for SQL selection and strength.
+def _pending_recall_match_sql(context: Mapping[str, Any]) -> str | None:
+    """Require a shared work/session identity or a compatible equal transport.
 
-    Explicit session/task conflicts reject first; either explicit match then
-    wins over agent/transport differences. Otherwise agent and transport must
-    be compatible, and one-sided/absent transport stamps need text overlap.
-    Only equal transport can span scopes. Missing identities remain eligible
-    through the same expression-index ranges as their present counterparts.
+    Explicit session/task conflicts reject even on the same transport. An
+    explicit match permits reconnects and agent handoffs within the recall's
+    scope. Equal transport also permits scope-less recall/ingest divergence.
+    Missing identity and matching agent names are never positive evidence.
     """
 
     def same(field: str) -> str:
-        return f"{field} = :{field}" if context[field] else "0"
+        return f"COALESCE({field}, '') = :{field}"
 
     def compatible(field: str) -> str:
-        return f"COALESCE({field}, '') IN ('', :{field})" if context[field] else "1"
+        return f"COALESCE({field}, '') IN ('', :{field})"
 
-    transport_equal = same("transport_session_id")
+    explicit = [field for field in ("session_id", "task") if context[field]]
+    matches = [same(field) for field in explicit]
     scopes = ["scope = :scope", "requested_scope = :scope"]
     if context["transport_session_id"]:
-        scopes.append(transport_equal)
-    clauses = [f"({' OR '.join(scopes)})"]
-    explicit = []
-    for field in ("session_id", "task"):
-        if context[field]:
-            clauses.append(compatible(field))
-            explicit.append(same(field))
-    explicit_match = " OR ".join(explicit) or "0"
-    fallback = (
-        f"({compatible('agent')} AND {compatible('transport_session_id')} AND "
-        f"({transport_equal} OR :content IS NULL OR "
-        "recall_text_similarity(query, :content) >= :threshold))"
-    )
-    # Keep identity predicates visible to the planner when no explicit match
-    # can bypass them. The text function sees only fallback query strings;
-    # event payloads are decoded after both the weak and total caps.
-    clauses.append(f"(({explicit_match}) OR {fallback})" if explicit else fallback)
-    strength = (
-        f"CASE WHEN ({explicit_match}) OR {transport_equal} OR {same('agent')} "
-        "THEN 2 ELSE 1 END"
-    )
-    return " AND ".join(clauses), strength
-
-
-def _recall_text_similarity(query: str, content: str) -> float:
-    query_tokens = set(tokenize(query))
-    content_tokens = set(tokenize(content))
-    if not query_tokens or not content_tokens:
-        return 0.0
-    overlap = len(query_tokens & content_tokens)
-    return overlap / max(1, min(len(query_tokens), len(content_tokens)))
+        transport = same("transport_session_id")
+        scopes.append(transport)
+        if context["agent"]:
+            transport = f"({transport} AND {compatible('agent')})"
+        matches.append(transport)
+    if not matches:
+        return None
+    return " AND ".join([
+        f"({' OR '.join(matches)})",
+        *(compatible(field) for field in explicit),
+        f"({' OR '.join(scopes)})",
+    ])
 
 
 def _weights_from_row(row: sqlite3.Row) -> RetrievalWeights:

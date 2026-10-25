@@ -718,8 +718,13 @@ def memory_teach(
         if not correction_text:
             raise ValueError("correction must be non-empty")
 
-        # The correction replaces the step text, not its place.
-        context_data = {key: value for key, value in original.context.items() if key not in _STEP_TEXT_KEYS}
+        # Preserve the subject and step location, but identity belongs to the
+        # current correction call, never to the author of the corrected source.
+        current_identity = {"agent", "task", "session_id", "session", "transport_session_id"}
+        context_data = {
+            key: value for key, value in original.context.items()
+            if key not in _STEP_TEXT_KEYS and key not in current_identity
+        }
         context_data.update(dict(context or {}))
         context_data.setdefault("scope", original.scope)
         context_data["timestamp"] = _utc_now()

@@ -12,9 +12,8 @@ Before/after evidence for Cyrillic stemming in ``embeddings.tokenize``:
 * retrieval non-regression: ``living_memory.retrieval_harness run`` reports
   for master and for the branch (stemming on, and off as a control), overall
   and on the goldset items whose query contains Cyrillic;
-* index-consistency evidence computed here from the snapshot and the corpora:
-  the recall-map term verdicts that change, the pending-recall text-similarity
-  verdicts that flip, the schema-trigger pairs that flip, the derived
+* index-consistency evidence computed here from the snapshot:
+  the recall-map term verdicts that change, the schema-trigger pairs that flip, the derived
   stem->canonical synonym entries.
 """
 
@@ -45,7 +44,6 @@ from living_memory.embeddings import (  # noqa: E402
     tokenize,
 )
 from living_memory.retrieval import SCHEMA_TRIGGER_OVERLAP_THRESHOLD  # noqa: E402
-from living_memory.storage import _RECALL_TEXT_SIMILARITY_THRESHOLD  # noqa: E402
 
 CYRILLIC_RE = re.compile(r"[Ѐ-ӿ]")
 
@@ -301,7 +299,7 @@ def prefix_breadth(vocab: list[tuple[str, int]], goldset: Path) -> dict[str, Any
     return {"min_prefix": _RU_MIN_PREFIX, "distinct_stems": len(stems), "by_stem_length": summary}
 
 
-def consistency_evidence(snapshot: Path, corpora: list[Path], goldset: Path) -> dict[str, Any]:
+def consistency_evidence(snapshot: Path, goldset: Path) -> dict[str, Any]:
     connection = sqlite3.connect(f"file:{snapshot.resolve()}?mode=ro", uri=True)
     try:
         connection.execute("CREATE VIRTUAL TABLE temp.vocab USING fts5vocab(main, 'nodes_fts', 'row')")
@@ -336,39 +334,6 @@ def consistency_evidence(snapshot: Path, corpora: list[Path], goldset: Path) -> 
         if tokens:
             stems[tokens[0]] = stems.get(tokens[0], 0) + 1
 
-    records: list[dict[str, Any]] = []
-    for corpus in corpora:
-        with corpus.open(encoding="utf-8") as handle:
-            records += [json.loads(line) for line in handle if line.strip()]
-
-    def similarity(record: dict[str, Any]) -> float:
-        query_tokens = set(tokenize(record["event"]["query"]))
-        content_tokens = set(tokenize(record["trace"]["content"]))
-        if not query_tokens or not content_tokens:
-            return 0.0
-        return len(query_tokens & content_tokens) / max(1, min(len(query_tokens), len(content_tokens)))
-
-    text: dict[str, Any] = {}
-    for state in ("off", "on"):
-        _switch(state)
-        text[state] = {record["event"]["id"]: similarity(record) for record in records}
-    by_script: dict[str, Any] = {}
-    for script in sorted({record["trace"]["script"] for record in records}):
-        ids = [record["event"]["id"] for record in records if record["trace"]["script"] == script]
-        above = {
-            state: sum(text[state][event_id] >= _RECALL_TEXT_SIMILARITY_THRESHOLD for event_id in ids)
-            for state in ("off", "on")
-        }
-        by_script[script] = {
-            "closures": len(ids),
-            "mean_similarity": {state: round(statistics.fmean(text[state][i] for i in ids), 4) for state in ("off", "on")},
-            "above_threshold": above,
-            "verdict_flips": sum(
-                (text["off"][i] >= _RECALL_TEXT_SIMILARITY_THRESHOLD) != (text["on"][i] >= _RECALL_TEXT_SIMILARITY_THRESHOLD)
-                for i in ids
-            ),
-        }
-
     schemas = [(node_id, trigger) for node_id, trigger in schemas if trigger]
 
     def firing() -> set[tuple[str, str]]:
@@ -393,11 +358,6 @@ def consistency_evidence(snapshot: Path, corpora: list[Path], goldset: Path) -> 
             "distinct_tokens_on": len(stems),
             "stop_word_verdict_changes": len(changed),
             "stop_word_verdict_changed_terms": changed,
-        },
-        "recall_event_text_similarity": {
-            "threshold": _RECALL_TEXT_SIMILARITY_THRESHOLD,
-            "closures": len(records),
-            "by_trace_script": by_script,
         },
         "schema_triggers": {
             "threshold": SCHEMA_TRIGGER_OVERLAP_THRESHOLD,
@@ -459,7 +419,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--goldset", required=True)
     parser.add_argument("--snapshot", required=True, help="sfx snapshot (read-only) for the consistency evidence")
-    parser.add_argument("--corpus", action="append", required=True)
     parser.add_argument("--out-md", required=True)
     parser.add_argument("--out-json", required=True)
     args = parser.parse_args(argv)
@@ -475,7 +434,6 @@ def main(argv: list[str] | None = None) -> int:
     latency_lines, latency_data = latency_section(_load(args.latency) or {})
     evidence = consistency_evidence(
         Path(args.snapshot).expanduser(),
-        [Path(p).expanduser() for p in args.corpus],
         Path(args.goldset).expanduser(),
     )
     harness_lines: list[str] = ["Harness reports not supplied."]
@@ -584,17 +542,7 @@ def main(argv: list[str] | None = None) -> int:
         f"stop word ({', '.join(evidence['fts_vocabulary']['stop_word_verdict_changed_terms'][:12])}"
         f"{', ...' if evidence['fts_vocabulary']['stop_word_verdict_changes'] > 12 else ''}); "
         "these stop being label candidates. Labels are computed at recall time, nothing stored.",
-        "- **live consumers whose overlap values shift** (both tokenize both sides at call time, nothing stored):",
-        f"  - `storage._recall_event_text_similarity` (pending-event matching, threshold "
-        f"{evidence['recall_event_text_similarity']['threshold']}): over the {evidence['recall_event_text_similarity']['closures']} "
-        "corpus closures, "
-        + "; ".join(
-            f"{script} traces n={block['closures']}: mean {block['mean_similarity']['off']} -> {block['mean_similarity']['on']}, "
-            f"above threshold {block['above_threshold']['off']} -> {block['above_threshold']['on']}, verdict flips {block['verdict_flips']}"
-            for script, block in evidence["recall_event_text_similarity"]["by_trace_script"].items()
-        )
-        + ".",
-        f"  - `retrieval._collect_schema_triggers` (overlap threshold {evidence['schema_triggers']['threshold']}): "
+        f"- `retrieval._collect_schema_triggers` (overlap threshold {evidence['schema_triggers']['threshold']}): "
         f"{evidence['schema_triggers']['schemas_with_trigger']} sfx schemas with a trigger × "
         f"{evidence['schema_triggers']['russian_queries']} recorded Russian queries: pairs firing "
         f"{evidence['schema_triggers']['pairs_firing']['off']} -> {evidence['schema_triggers']['pairs_firing']['on']} "

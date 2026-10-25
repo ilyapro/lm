@@ -93,17 +93,21 @@ stdio, SSE, and in-memory transports).
 * Tool schemas are unchanged and the key is deliberately *not* `session_id`:
   scope resolution derives a `session:<id>` scope from `session_id`, and the
   transport stamp never perturbs scope resolution.
-* Pending-recall matching uses identity precedence: explicit
-  `session_id`/`task` matches and mismatches always decide first; equal
-  transport ids link strongly — including across the divergence between
-  scope-less recalls (whose requested scope is `global`) and scope-less traces
-  (which land on the configured default scope); differing transport ids
-  reject; with a stamp on only one side, the legacy text-similarity fallback
-  applies, and only within the exact scope.
+* Pending-recall matching requires a shared identity. Conflicting explicit
+  `session_id`/`task` values reject attribution. An equal session or task
+  permits continuation after reconnect within the recall's scope, even when
+  agent or transport changes. Otherwise transport ids must be equal and
+  agent values compatible. Equal transport also spans the divergence between
+  scope-less recalls (`global`) and the configured default ingest scope.
+* Similar text and equal agent names never establish that a recall was shown
+  to the current work. Missing or one-sided identity alone cannot close an
+  event. Without a compatible event, remember still saves the new knowledge,
+  without implicit recall provenance, credit or query anchors.
 * Outside a request context (direct tool-function calls, embedding servers
-  without FastMCP) nothing is stamped and behaviour degrades to the legacy
-  rules. Explicit `agent`/`task`/`session_id` remain recommended: they link
-  work across reconnects, beyond one transport session.
+  without FastMCP) nothing is stamped. Supply a stable `task` or `session_id`
+  on recall and subsequent writes for attribution, including across reconnects.
+  `memory_teach` uses only the current call's identity; it preserves the
+  source's subject context, but does not inherit its author/session/task.
 
 The effect is that an identity-less client gets its recall events closed by
 its own subsequent remembers — and never by another connection's — with no

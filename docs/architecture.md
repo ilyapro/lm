@@ -84,11 +84,14 @@ without changing the other surface.
    records it in the new trace provenance, creates `related` edges to recalled
    nodes, and applies implicit positive feedback to the recalled results and
    retrieval weights. Compatibility follows identity precedence: explicit
-   `session_id`/`task` matches and mismatches always decide first, equal
-   transport session ids link strongly — including across the divergence
-   between scope-less recalls (which plan `global`) and scope-less traces
-   (which land on the configured default scope) — and the legacy
-   text-similarity fallbacks apply only within the exact scope. Positive
+   conflicting `session_id`/`task` values reject attribution; an equal
+   session or task permits continuation across reconnects within the recall's
+   scope. Otherwise an equal transport id and compatible agent are required,
+   including across scope-less recall/ingest default-scope divergence.
+   Similar text, an agent name, or missing identity alone supplies no causal
+   link. A trace without a compatible recall is still saved, without recall
+   provenance, credit or anchors. Corrections use the current call's identity,
+   while retaining the corrected source's subject and step location. Positive
    usefulness reinforcement carries diminishing returns: each increment is
    scaled by the node's remaining usefulness headroom (floored, never
    zeroed) and divided by a logarithm of its access count, so entrenched,
@@ -274,8 +277,7 @@ tokens are never stemmed. `LM_TOKENIZE_CYRILLIC_STEM=off` disables the Russian
 stemmer and the prefix terms together and restores the surface-form behaviour;
 the setting is read once per process (`embeddings.reset_cyrillic_stem_cache`
 re-reads it). The same `tokenize` feeds IDF containment in `grounding.py`, the
-schema-trigger overlap and the pending-recall text match, so those see one
-token per Russian lemma too; recall-map labels keep their own unstemmed term
+schema-trigger overlap, so those see one token per Russian lemma too; recall-map labels keep their own unstemmed term
 extraction (`recall_map._terms`) because they are looked up in
 `nodes_fts_vocab`.
 
