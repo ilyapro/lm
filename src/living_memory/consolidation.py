@@ -1393,8 +1393,9 @@ def _trace_embeddings(
     fresh: list[tuple[Node, list[float]]] = []
     for start in range(0, len(to_encode), _ENCODE_BATCH):
         with step():
-            for trace in to_encode[start : start + _ENCODE_BATCH]:
-                vector = embedder.embed(trace.content)
+            batch = to_encode[start : start + _ENCODE_BATCH]
+            encoded = embedder.embed_batch([trace.content for trace in batch])
+            for trace, vector in zip(batch, encoded, strict=True):
                 vectors[trace.id] = vector
                 fresh.append((trace, vector))
     if fresh:
