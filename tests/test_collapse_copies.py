@@ -63,7 +63,7 @@ def copies_db(tmp_path: Path):
         c = _schema(store, body + " c", "dashboard goal api supervision", access=1)
         # A shared procedure key does not make different content a copy.
         d = _schema(store, body + "\n2. newer step", "dashboard_goal_api_supervision", access=2)
-        # A corrected schema is never kept, however used it is.
+        # Correction history is part of the unowned node's identity.
         corrected = _schema(store, body + " e", "dashboard goal api supervision", access=50)
         other_group = _schema(store, body + " f", "active goal supervision", access=4)
         other_scope = _schema(store, body, "dashboard goal api supervision", scope="project:x")
@@ -103,7 +103,7 @@ def test_dry_run_changes_nothing(copies_db, capsys) -> None:
     assert collapse.main([str(db)]) == 0
 
     assert _dump(db) == before
-    assert "2 groups, 4 copies to decay" in capsys.readouterr().out
+    assert "2 groups, 3 copies to decay" in capsys.readouterr().out
 
 
 def test_apply_keeps_one_node_per_group_and_rerun_is_a_no_op(copies_db) -> None:
@@ -114,15 +114,15 @@ def test_apply_keeps_one_node_per_group_and_rerun_is_a_no_op(copies_db) -> None:
     with MemoryStore(db) as store:
         schemas = store.list_nodes(level="schema", scope=SCOPE)
         assert {schema.id for schema in schemas} == {
-            ids["b"], ids["d"], ids["other_group"]
+            ids["b"], ids["d"], ids["corrected"], ids["other_group"]
         }
         keeper = store.get_node(ids["b"])
         assert keeper is not None
-        # Most accessed among the updatable ones; the corrected node stays down.
+        # Most accessed among exact copies, excluding distinct correction history.
         assert keeper.id == ids["b"]
-        assert keeper.access_count == 3 + 7 + 1 + 50
-        assert keeper.usefulness_score == 5.0
-        for name in ("a", "c", "corrected"):
+        assert keeper.access_count == 3 + 7 + 1
+        assert keeper.usefulness_score == pytest.approx(0.7)
+        for name in ("a", "c"):
             node = store.get_node(ids[name])
             assert node is not None and node.decayed is True
             assert node.decay_reason == "duplicate_content"
@@ -136,7 +136,7 @@ def test_apply_keeps_one_node_per_group_and_rerun_is_a_no_op(copies_db) -> None:
         assert edge_meta[ids["a"]]["basis"] == "content"
         assert not store.list_connections(relation_type="supersedes")
 
-        for name in ("d", "other_group", "other_scope", "lone"):
+        for name in ("d", "corrected", "other_group", "other_scope", "lone"):
             node = store.get_node(ids[name])
             assert node is not None and node.decayed is False
 

@@ -107,6 +107,7 @@ def find_groups(connection: sqlite3.Connection) -> list[dict]:
             context=_json(row["context"], {}),
             provenance=_json(row["provenance"], {}),
             source_traces=_json(row["source_traces"], []),
+            corrections=_json(row["corrections"], []),
         )
         identity = content_identity(node)
         if identity is not None:
