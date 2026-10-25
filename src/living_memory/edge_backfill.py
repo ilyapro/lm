@@ -1,4 +1,4 @@
-"""Additive-only, idempotent, audited typed-edge backfill for the corpus.
+"""Idempotent, audited typed-edge backfill for the corpus.
 
 The write-path engine (:mod:`living_memory.edge_derivation`) types edges for
 *new* traces as they are written. This module applies the very same go-rules
@@ -8,14 +8,14 @@ the same typed, directional edges.
 
 Design guarantees (see ``derive-edges`` CLI below):
 
-* **Additive-only** — the backfill never deletes, retypes, or reweights an
-  existing edge. It inserts brand-new ``(source_id, target_id, type)`` rows
-  only; a pair already connected with the same type is skipped, not merged
-  (so an existing edge's weight/metadata/timestamps stay byte-identical). The
+* **Existing semantics preserved** — a pair already connected with the same
+  semantic type is skipped, keeping its weight/metadata/timestamps unchanged.
+  An explicit R1c correction can replace a known technical ``supersedes`` row;
+  these updates are reported separately from new rows and use storage's
+  correction hook. They do not carry the new-row rollback marker. The
   optional R5a pass merges the ``{kind: derived_from, rule: R5a}`` annotation
   onto existing schema→trace ``related`` edges — additive metadata keys only,
-  weight and type unchanged — and is off by default so the default run keeps
-  every existing edge byte-identical and a single ``DELETE`` reverts it.
+  weight and type unchanged — and is off by default.
 * **Idempotent** — every inserted row carries ``metadata.basis =
   "provenance_derivation"``; a second run finds all its pairs already
   connected and inserts zero. R5a re-runs are no-ops because
@@ -53,7 +53,7 @@ import json
 import sys
 from argparse import ArgumentParser
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -76,6 +76,7 @@ from living_memory.edge_derivation import (
     rule_r6_content_reference,
 )
 from living_memory.models import Connection, Node
+from living_memory.relations import is_correction
 from living_memory.storage import (
     MemoryStore,
     _json_dumps,
@@ -140,6 +141,7 @@ class RuleAudit:
     new: int = 0
     net_new_pairs: int = 0
     existing_skipped: int = 0
+    correction_updates: int = 0
     samples: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -149,6 +151,7 @@ class RuleAudit:
             "new": self.new,
             "net_new_pairs": self.net_new_pairs,
             "existing_skipped": self.existing_skipped,
+            "correction_updates": self.correction_updates,
             "samples": self.samples,
         }
 
@@ -298,7 +301,7 @@ def _stamp_backfill_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
 
 def _existing_edges(
     store: MemoryStore,
-) -> tuple[set[tuple[str, str, str]], set[frozenset[str]]]:
+) -> tuple[set[tuple[str, str, str]], set[frozenset[str]], set[tuple[str, str, str]]]:
     """Return the exact ``(source, target, type)`` keys and undirected pairs.
 
     The exact keys drive additive/idempotent insertion; the undirected pairs
@@ -307,15 +310,20 @@ def _existing_edges(
     """
 
     rows = store.connection.execute(
-        "SELECT source_id, target_id, type FROM connections"
+        "SELECT source_id, target_id, type, metadata FROM connections"
     ).fetchall()
     keys: set[tuple[str, str, str]] = set()
     pairs: set[frozenset[str]] = set()
+    technical: set[tuple[str, str, str]] = set()
     for row in rows:
         source, target = str(row["source_id"]), str(row["target_id"])
-        keys.add((source, target, str(row["type"])))
+        relation_type = str(row["type"])
+        key = (source, target, relation_type)
+        keys.add(key)
         pairs.add(frozenset((source, target)))
-    return keys, pairs
+        if relation_type == "supersedes" and not is_correction(relation_type, json.loads(row["metadata"])):
+            technical.add(key)
+    return keys, pairs, technical
 
 
 def _r5a_eligible(
@@ -426,9 +434,8 @@ def backfill_edges(
 ) -> dict[str, Any]:
     """Plan (and optionally apply) the corpus backfill, returning the audit.
 
-    Read-only until ``apply`` is set; then inserts new edge rows and, when
-    ``annotate_derived_from`` is set, merges the R5a annotation — both inside a
-    single transaction. The returned report is JSON-serializable.
+    Read-only until ``apply`` is set; writes new edges, explicit correction
+    updates and optional R5a annotations inside one transaction.
     """
 
     before_types = _type_counts(store)
@@ -447,14 +454,19 @@ def backfill_edges(
         derived.extend(_derived_edges_for_trace(store, node, prefix_groups, file_postings))
 
     merged = _merge_derived(derived)
-    existing_keys, existing_pairs = _existing_edges(store)
+    existing_keys, existing_pairs, technical_keys = _existing_edges(store)
 
     rule_audits: dict[str, RuleAudit] = {}
     to_insert: list[BackfillEdge] = []
+    to_correct: list[BackfillEdge] = []
     net_new_rows = 0
     for key in sorted(merged):
         edge = merged[key]
         is_new = key not in existing_keys
+        correction_update = key in technical_keys and is_correction(edge.type, edge.metadata)
+        if correction_update:
+            edge = replace(edge, metadata={key: value for key, value in edge.metadata.items()
+                                           if key != "basis"})
         net_new = is_new and frozenset((edge.source_id, edge.target_id)) not in existing_pairs
         if net_new:
             net_new_rows += 1
@@ -467,10 +479,16 @@ def backfill_edges(
                     audit.net_new_pairs += 1
                 if len(audit.samples) < sample_size:
                     audit.samples.append(_edge_sample(edge))
+            elif correction_update:
+                audit.correction_updates += 1
+                if len(audit.samples) < sample_size:
+                    audit.samples.append(_edge_sample(edge))
             else:
                 audit.existing_skipped += 1
         if is_new:
             to_insert.append(edge)
+        elif correction_update:
+            to_correct.append(edge)
 
     r5a_eligible = _r5a_eligible(store, active_nodes) if annotate_derived_from else []
 
@@ -478,6 +496,11 @@ def backfill_edges(
         with store.connection:
             for edge in to_insert:
                 _insert_edge(store, edge)
+            for edge in to_correct:
+                store._insert_connection(
+                    edge.source_id, edge.target_id, edge.type,
+                    weight=edge.weight, metadata=edge.metadata, merge=True,
+                )
             for connection in r5a_eligible:
                 store.update_connection(
                     connection.id,
@@ -499,6 +522,7 @@ def backfill_edges(
         before_share=before_share,
         after_share=after_share,
         to_insert=to_insert,
+        to_correct=to_correct,
         net_new_rows=net_new_rows,
         rule_audits=rule_audits,
         r5a_eligible=r5a_eligible,
@@ -549,6 +573,7 @@ def _build_report(
     before_share: Mapping[str, Any],
     after_share: Mapping[str, Any],
     to_insert: Sequence[BackfillEdge],
+    to_correct: Sequence[BackfillEdge],
     net_new_rows: int,
     rule_audits: Mapping[str, RuleAudit],
     r5a_eligible: Sequence[Connection],
@@ -592,12 +617,14 @@ def _build_report(
             f"WHERE json_extract(metadata,'$.basis')='{BACKFILL_BASIS}';"
         ),
         "guarantees": {
-            "additive_only": "no existing edge deleted, retyped, or reweighted",
+            "additive_only": "existing semantic edges preserved; explicit corrections replace only known technical supersedes",
             "idempotent": "second run inserts 0 new rows (pairs already connected)",
             "marker": {"metadata.basis": BACKFILL_BASIS},
+            "rollback_scope": "new rows only; correction updates and optional R5a annotations are retained",
         },
         "totals": {
             "new_rows": len(to_insert),
+            "correction_updates": len(to_correct),
             "new_rows_by_type": {t: new_by_type[t] for t in ALL_TYPES if new_by_type[t]},
             "net_new_connectivity": net_new_rows,
             "multi_rule_rows": multi_rule_rows,
@@ -631,7 +658,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Guarantees")
     lines.append("")
-    lines.append("- **Additive-only**: no existing edge is deleted, retyped, or reweighted.")
+    lines.append("- **Existing semantic edges preserved**: only known technical supersedes can receive an explicit correction.")
     lines.append(
         "- **Idempotent**: a second run inserts 0 new rows (all pairs already connected)."
     )
@@ -639,11 +666,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- **Rollback**: `{report['rollback']}` (marker `metadata.basis = "
         f"\"{BACKFILL_BASIS}\"`, a namespace no other edge uses)."
     )
+    lines.append("  This removes new rows only; correction updates and optional R5a annotations remain.")
     lines.append("")
     totals = report["totals"]
     lines.append("## Totals")
     lines.append("")
     lines.append(f"- New edge rows inserted: **{totals['new_rows']}**")
+    lines.append(f"- Explicit corrections replacing technical supersedes: **{totals['correction_updates']}**")
     by_type = ", ".join(f"{t}={n}" for t, n in totals["new_rows_by_type"].items()) or "none"
     lines.append(f"- New rows by type: {by_type}")
     lines.append(
@@ -695,18 +724,18 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Per-rule counts")
     lines.append("")
-    lines.append("| rule | type | derived | new rows | net-new pairs | existing skipped |")
-    lines.append("|---|---|---|---|---|---|")
+    lines.append("| rule | type | derived | new rows | correction updates | net-new pairs | existing skipped |")
+    lines.append("|---|---|---|---|---|---|---|")
     for rule, data in report["rules"].items():
         if rule == "R5a":
             lines.append(
                 f"| R5a | {data['type']} | {data['eligible']} | "
-                f"{data['eligible'] if data['applied'] else 0} | - | - |"
+                f"{data['eligible'] if data['applied'] else 0} | - | - | - |"
             )
             continue
         lines.append(
             f"| {rule} | {data['type']} | {data['derived']} | {data['new']} "
-            f"| {data['net_new_pairs']} | {data['existing_skipped']} |"
+            f"| {data['correction_updates']} | {data['net_new_pairs']} | {data['existing_skipped']} |"
         )
     lines.append("")
     lines.append(
@@ -770,7 +799,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"[{report['mode']}] {report['totals']['new_rows']} new edges "
-        f"({report['totals']['r5a_annotations']} R5a annotations) on {report['db_path']}",
+        f"({report['totals']['correction_updates']} correction updates, "
+        f"{report['totals']['r5a_annotations']} R5a annotations) on {report['db_path']}",
         file=sys.stderr,
     )
     return 0
