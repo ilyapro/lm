@@ -3259,14 +3259,28 @@ class MemoryStore:
             "transport_session_id": _optional_str(context_data.get("transport_session_id")),
             "limit": max(1, int(limit)),
         }
-        predicate = _pending_recall_match_sql(params)
-        if predicate is None:
+        matches = _pending_recall_match_sql(params)
+        if not matches:
             return []
+        # Each positive identity has its own indexed, capped probe. Combining
+        # them as an OR lets SQLite choose missing-identity ranges instead.
+        probes = " UNION ALL ".join(
+            f"""SELECT * FROM (
+                SELECT rowid AS event_rowid, created_at FROM recall_events INDEXED BY {index}
+                WHERE feedback_applied = 0 AND {predicate}
+                ORDER BY created_at DESC, rowid DESC LIMIT :limit
+            )"""
+            for index, predicate in matches
+        )
         rows = self._conn.execute(
             f"""
-            SELECT * FROM recall_events
-            WHERE feedback_applied = 0 AND {predicate}
-            ORDER BY created_at DESC, rowid DESC LIMIT :limit
+            WITH selected AS (
+                SELECT * FROM ({probes})
+                ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
+            )
+            SELECT event.* FROM selected
+            JOIN recall_events AS event ON event.rowid = selected.event_rowid
+            ORDER BY selected.created_at DESC, selected.event_rowid DESC
             """,
             params,
         ).fetchall()
@@ -6217,7 +6231,7 @@ def _recall_attestation_from_row(row: sqlite3.Row) -> RecallAttestation:
     )
 
 
-def _pending_recall_match_sql(context: Mapping[str, Any]) -> str | None:
+def _pending_recall_match_sql(context: Mapping[str, Any]) -> list[tuple[str, str]]:
     """Require a shared work/session identity or a compatible equal transport.
 
     Explicit session/task conflicts reject even on the same transport. An
@@ -6232,22 +6246,30 @@ def _pending_recall_match_sql(context: Mapping[str, Any]) -> str | None:
     def compatible(field: str) -> str:
         return f"COALESCE({field}, '') IN ('', :{field})"
 
-    explicit = [field for field in ("session_id", "task") if context[field]]
-    matches = [same(field) for field in explicit]
+    explicit = [field for field in ("task", "session_id") if context[field]]
     scopes = ["scope = :scope", "requested_scope = :scope"]
     if context["transport_session_id"]:
-        transport = same("transport_session_id")
-        scopes.append(transport)
+        scopes.append(same("transport_session_id"))
+    scope_match = f"({' OR '.join(scopes)})"
+    matches = []
+    missing = []
+    for position, field in enumerate(explicit):
+        # Disjoint work matches: an equal task, then an equal session when
+        # the supplied task was absent on the event. Both-present conflicts
+        # remain vetoes; neither agent nor transport overrides them.
+        index = "idx_recall_pending_task_session" if "task" in explicit else "idx_recall_pending_session"
+        matches.append((index, " AND ".join([
+            *missing, same(field),
+            *(compatible(other) for other in explicit[position + 1:]),
+            scope_match,
+        ])))
+        missing.append(f"COALESCE({field}, '') = ''")
+    if context["transport_session_id"]:
+        clauses = [same("transport_session_id"), *missing]
         if context["agent"]:
-            transport = f"({transport} AND {compatible('agent')})"
-        matches.append(transport)
-    if not matches:
-        return None
-    return " AND ".join([
-        f"({' OR '.join(matches)})",
-        *(compatible(field) for field in explicit),
-        f"({' OR '.join(scopes)})",
-    ])
+            clauses.append(compatible("agent"))
+        matches.append(("idx_recall_pending_transport", " AND ".join(clauses)))
+    return matches
 
 
 def _weights_from_row(row: sqlite3.Row) -> RetrievalWeights:
