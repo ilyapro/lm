@@ -2038,6 +2038,10 @@ class MemoryStore:
         """Live exact copies, separately from semantic corrections."""
         return duplicate_replacements(self._conn, node_id)
 
+    def list_duplicate_predecessors(self, node_id: str) -> list[Node]:
+        """Exact prior copies for source lineage, including retained history."""
+        return _duplicate_nodes(self._conn, node_id, successors=False)
+
     def list_connections_for_nodes(self, node_ids: Iterable[str]) -> dict[str, list[Connection]]:
         ids = list(set(node_ids))
         if not ids:
@@ -6165,14 +6169,22 @@ def duplicate_replacements(connection: sqlite3.Connection, node_id: str) -> list
     Current bytes, level, scope and source identity must establish a true copy
     before bookkeeping can redirect an anchor. It never establishes correction.
     """
+    return _duplicate_nodes(connection, node_id, successors=True)
+
+
+def _duplicate_nodes(
+    connection: sqlite3.Connection, node_id: str, *, successors: bool,
+) -> list[Node]:
     row = connection.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
     if row is None:
         return []
     original = _node_from_row(row)
+    endpoint, peer = ("target_id", "source_id") if successors else ("source_id", "target_id")
+    live = "AND n.decayed = 0" if successors else ""
     rows = connection.execute(
-        """
-        SELECT n.* FROM connections c JOIN nodes n ON n.id = c.source_id
-        WHERE c.target_id = ? AND c.source_id <> ? AND n.decayed = 0
+        f"""
+        SELECT n.* FROM connections c JOIN nodes n ON n.id = c.{peer}
+        WHERE c.{endpoint} = ? AND c.{peer} <> ? {live}
           AND c.type IN ('related', 'supersedes')
           AND json_extract(c.metadata, '$.kind') = 'duplicate_content'
         ORDER BY c.weight DESC, c.created_at DESC
