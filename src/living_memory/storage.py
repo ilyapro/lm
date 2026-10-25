@@ -2106,6 +2106,34 @@ class MemoryStore:
         ).fetchall()
         return [_connection_from_row(row) for row in rows]
 
+    def list_supersedes_pairs(self, node_ids: Iterable[str]) -> list[tuple[str, str]]:
+        """Return unique (correction, original) pairs touching any requested id.
+
+        Both directions matter even when the counterpart is decayed or outside
+        the caller's scope. Endpoint indexes keep a small selection from walking
+        the type-wide covering index; no node or connection metadata is needed.
+        """
+
+        ids = sorted(set(node_ids))
+        pairs: set[tuple[str, str]] = set()
+        for offset in range(0, len(ids), 400):
+            batch = ids[offset : offset + 400]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(
+                f"""
+                SELECT source_id, target_id
+                FROM connections INDEXED BY idx_connections_source_type
+                WHERE source_id IN ({placeholders}) AND type = 'supersedes'
+                UNION
+                SELECT source_id, target_id
+                FROM connections INDEXED BY idx_connections_target_type
+                WHERE target_id IN ({placeholders}) AND type = 'supersedes'
+                """,
+                batch + batch,
+            )
+            pairs.update((str(row["source_id"]), str(row["target_id"])) for row in rows)
+        return sorted(pairs)
+
     def list_connections_for_nodes(self, node_ids: Iterable[str]) -> dict[str, list[Connection]]:
         ids = list(set(node_ids))
         if not ids:
@@ -5329,12 +5357,7 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_connections_target_type
                     ON connections(target_id, type);
 
-                -- Type-leading index for the per-recall supersedes scan
-                -- (retrieval._supersedes_sets: SELECT source_id, target_id WHERE
-                -- type = 'supersedes'). The source/target-leading indexes above
-                -- cannot serve a type-only filter, so without this the query is a
-                -- full table scan. Carrying source_id/target_id makes it a
-                -- covering, index-only scan with no per-row table lookups.
+                -- Covering index for type-wide graph readers.
                 CREATE INDEX IF NOT EXISTS idx_connections_type
                     ON connections(type, source_id, target_id);
 

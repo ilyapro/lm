@@ -636,7 +636,7 @@ class MemoryRecallService:
             self._collect_query_demotions(plan, query_embedding, matches=anchor_matches),
             self._collect_hub_demotions(),
         )
-        supersedes = self._supersedes_sets()
+        supersedes = self._supersedes_sets(candidates)
         ranked = self.rank_candidates(
             candidates,
             plan,
@@ -734,7 +734,7 @@ class MemoryRecallService:
 
         results: list[RecallResult] = []
         corrections_by_superseded, superseding_ids = (
-            supersedes if supersedes is not None else self._supersedes_sets()
+            supersedes if supersedes is not None else self._supersedes_sets(candidates)
         )
         ungated_scopes = _ungated_scopes(plan)
         narrow_present, best_narrow_vector = _ungated_scope_profile(
@@ -1185,7 +1185,11 @@ class MemoryRecallService:
         if not shortlist:
             return []
 
-        corrections_by_superseded, superseding = self._supersedes_sets()
+        # Arrivals and every possible bearer need their correction status,
+        # including links to nodes outside the scope's vector shortlist.
+        correction_ids = {node.id for node in candidates}
+        correction_ids.update(node_id for block in shortlist.values() for node_id in block.node_ids)
+        corrections_by_superseded, superseding = self._supersedes_sets(correction_ids)
         protected = self._live_concept_source_traces()
         # This drain's own arrivals. They are in the matrix -- the index is
         # built after the drain wrote their chunks -- and they are searched
@@ -1778,27 +1782,21 @@ class MemoryRecallService:
         embedder = self.embedder
         share(lambda texts: [embedder.embed(text) for text in texts])
 
-    def _supersedes_sets(self) -> tuple[dict[str, tuple[str, ...]], set[str]]:
+    def _supersedes_sets(
+        self, node_ids: Iterable[str]
+    ) -> tuple[dict[str, tuple[str, ...]], set[str]]:
         """Supersedes edges as (superseded -> corrections, superseding ids).
 
-        One query feeds ranking and final selection: membership behind the soft
+        One observation feeds ranking and final selection: membership behind the soft
         0.2x/1.2x prior and the ``RecallResult.superseded`` flag (mapping
         keys / the superseding set), correction ordering, and gate eligibility.
-        The SQL text is a load-bearing contract — the replay shim
-        (``replay._SchemeStore``) recognizes and serves exactly this
-        statement with exactly these columns, which is how replay reranks
-        recorded candidates through this same code path — so consume richer
-        structure from the same rows rather than issuing new queries here.
+        Read either endpoint's links, without following absent intermediates.
+        Runtime storage and replay expose the same incident-pair reader.
         """
 
-        rows = self.store.connection.execute(
-            "SELECT source_id, target_id FROM connections WHERE type = 'supersedes'"
-        ).fetchall()
         corrections_by_superseded: dict[str, set[str]] = {}
         superseding: set[str] = set()
-        for row in rows:
-            source = str(row["source_id"])
-            target = str(row["target_id"])
+        for source, target in self.store.list_supersedes_pairs(node_ids):
             superseding.add(source)
             corrections_by_superseded.setdefault(target, set()).add(source)
         return (

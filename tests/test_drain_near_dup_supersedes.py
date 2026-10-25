@@ -525,8 +525,9 @@ def test_a_correction_is_never_demoted_as_a_repeat(
     assert store.get_node(twin).decayed is False
 
 
+@pytest.mark.parametrize("correction_state", ["present", "outside", "decayed"])
 def test_a_bearer_that_is_itself_superseded_bears_nothing(
-    store: MemoryStore, collapse_on: None
+    store: MemoryStore, collapse_on: None, correction_state: str
 ) -> None:
     """Nothing is demoted *under* a stale node.
 
@@ -540,6 +541,10 @@ def test_a_bearer_that_is_itself_superseded_bears_nothing(
     stale = established(store, "alpha drift measured at three units")
     correction = established(store, "beta reading unrelated to the query")
     store.create_connection(correction, stale, "supersedes", weight=1.0)
+    if correction_state == "outside":
+        store.update_node(correction, context={"scope": "project:outside"})
+    elif correction_state == "decayed":
+        store.soft_delete_node(correction)
     repeat = unvectorized(store, "alpha drift measured at 3 units")
 
     recall(store)

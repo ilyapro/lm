@@ -20,8 +20,7 @@ sweep and the deterministic at-risk regressions below are the real proof.
 
 The property sweep runs through ``replay.make_ranking_service`` on purpose:
 it proves the invariant on the exact code path the replay harness measures,
-and its shim store raises on any SQL beyond the pinned supersedes query, so
-a regression that adds store calls to ``rank_candidates`` fails here too.
+whose store exposes retrieval weights and incident correction pairs.
 """
 
 from __future__ import annotations
