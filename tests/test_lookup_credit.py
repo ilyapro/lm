@@ -2,12 +2,9 @@
 
 Reading alone does not confirm the node's relevance to the delivering query.
 
-Grounding credits a delivered result only when the closing trace quotes it,
-and on the 2026-09-07 snapshots that is 19.0% of closures. An id-fetch of a
-node that a recall on the *same transport* delivered is the other honest "I
-used this" the server can see, and it names a delivered node in 26.2% of
-closures with almost no overlap. This module pins how that fetch becomes
-credit and, above all, how it is kept from double-counting:
+Grounding credits a delivered result when the closing trace quotes it. Fetching
+a node delivered on the same transport is another usage signal. This module
+pins how that fetch becomes credit and how it is kept from double-counting:
 
 * **Same assignment as a grounded result.** The looked-up node's usefulness
   moves by exactly what a grounded closure of the same delivery would move

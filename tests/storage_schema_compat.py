@@ -6,6 +6,7 @@ For the six rebuilt FTS objects, accept only the known old-to-new definitions
 This is deliberately not a blanket exemption for ``nodes_fts*``.
 """
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 from typing import Any
@@ -75,14 +76,14 @@ _TASK_FTS = {
 def schema_objects(db_path: Path) -> dict[str, str]:
     """Named SQLite objects with their verbatim DDL."""
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         return dict(conn.execute(
             "SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL"
         ).fetchall())
 
 
 def schema_version(db_path: Path) -> str:
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         return conn.execute(
             "SELECT value FROM metadata WHERE key = 'schema_version'"
         ).fetchone()[0]
@@ -105,7 +106,7 @@ def prepare_pre_ledger_schema(db_path: Path) -> dict[str, str]:
     until the caller exercises the migration.
     """
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         rows = memory_rows(conn)
         for name in sorted(_ADDITIVE_TABLES):
             conn.execute(f"DROP TABLE {name}")
