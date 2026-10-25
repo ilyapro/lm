@@ -123,6 +123,8 @@ def test_changed_scope_is_fresh_without_reloading_other_scopes(stores, monkeypat
     add(writer, "a")
     add(writer, "b", "project:beta")
     add(writer, "c", "project:gamma", (0.0, 1.0, 0.0))
+    if mutation == "decay-revival":
+        writer.soft_delete_node("c")
     warm = service(reader)
     recall(warm)
     alpha = warm._chunk_index["project:alpha"]
@@ -139,6 +141,7 @@ def test_changed_scope_is_fresh_without_reloading_other_scopes(stores, monkeypat
             writer.delete_node_chunks("b")
             # The ordinary bounded lazy repair supplies the next chunk set.
         elif mutation == "node-delete":
+            writer.connection.execute("PRAGMA foreign_keys=OFF")
             writer.connection.execute("DELETE FROM nodes WHERE id='b'")
         elif mutation == "decay-revival":
             writer.connection.execute("UPDATE nodes SET decayed=1 WHERE id='b'")
@@ -153,7 +156,7 @@ def test_changed_scope_is_fresh_without_reloading_other_scopes(stores, monkeypat
                     "INSERT OR REPLACE INTO node_chunk_embeddings "
                     "SELECT (SELECT id FROM node_chunk_embeddings WHERE node_id='b'), "
                     "node_id, chunk_index, dimensions, embedding, token_start, token_end, "
-                    "char_start, char_end, content_fingerprint, created_at, updated_at "
+                    "content_fingerprint, created_at, updated_at "
                     "FROM node_chunk_embeddings WHERE node_id='c'"
                 )
             else:
