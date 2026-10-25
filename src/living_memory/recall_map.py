@@ -227,7 +227,7 @@ _SAMPLEABLE_REASONS = frozenset({"fc", "ss", "sj", "lr", "pc", "uf", "nf"})
 # they saw before, and every new signal enters as a separate yes/no on a
 # candidate the frozen pipeline already judged.
 #
-# Both follow ``retrieval.DRAIN_NEAR_DUP_ENV`` and take it one step further.
+# These gates control optional recall-map features.
 # There the flag is a whole env var — rather than a threshold of zero — because
 # turning the behaviour on has to be a sentence an operator said. Here the
 # *number* is a second env var with no shipped default at all, because unlike
@@ -4545,9 +4545,10 @@ class RecallMapBuilder:
         total and deterministic. Two per-candidate guards run at delivery
         time, each skipping to the next-ranked candidate: the same
         deliverable-label gate every warm cluster passes, and the inter-slot
-        near-duplicate guard at :data:`EMBEDDING_CLUSTER_COSINE`, which
-        abstains (delivers) when either embedding is unavailable — absence of
-        a verdict is not a duplicate verdict.
+        diversity preference at :data:`EMBEDDING_CLUSTER_COSINE`. Similar
+        directions compete for suggestion slots; this neither declares their
+        claims identical nor changes content delivery or validity. Missing
+        embeddings leave a candidate eligible.
 
         ``candidates`` is the eligible list a caller already computed through
         :meth:`_cold_candidates`; absent, the lane computes it here.

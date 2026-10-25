@@ -529,7 +529,7 @@ def test_prior_recalls_summarized_to_count_on_non_full_only() -> None:
     stub_prov = shaped[1]["node"]["provenance"]
     assert stub_prov["prior_recalls"] == {"count": 3}
     assert stub_prov["recalled_nodes"] == ["r1"]
-    assert stub_prov["source_traces"] == []
+    assert stub_prov["source_traces"] == ["t1"]
     assert stub_prov["corrections"] == []
 
 

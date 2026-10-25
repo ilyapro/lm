@@ -11,9 +11,9 @@ projection and restores original metadata with ``context_key`` or ``view="full"`
 
 Rules, applied in this order per ranked result:
 
-1. Twin dedup — among results whose ``node.content`` are byte-identical (e.g.
-   a concept and its verbatim source trace), the highest-ranked result is the
-   content-bearer; the rest become ``delivery: "twin_duplicate"`` stubs.
+1. Twin dedup — byte-identical content within the same scope and recorded
+   source identity shares the highest-ranked content-bearer. Other copies
+   become ``delivery: "twin_duplicate"`` stubs; independent sources stay distinct.
 2. Session dedup — when enabled and this version's complete content or the
    excerpt about to be offered was shaped on this transport session, it becomes
    a ``delivery: "session_duplicate"`` stub. Only content-bearers are considered: a twin of a session-duplicate

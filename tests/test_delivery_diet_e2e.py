@@ -10,10 +10,8 @@ them on the wire:
   serialized response; a fresh connection gets full content again, and calls
   without any transport identity (direct tool-function calls, the degradation
   control) never stub.
-* Twin dedup — a legacy byte-identical concept+trace pair, seeded through
-  direct store writes exactly as pre-digest consolidation used to persist
-  them, yields exactly one content-bearer per response; the twin stub points
-  at it via ``content_ref.duplicate_of``.
+* Source identity — a concept and a trace with identical bytes retain their
+  own content when their recorded sources differ.
 * Snippet ladder — the top-ranked content-bearer has a finite default budget;
   a configured ``LM_DELIVERY_SNIPPET_LADDER`` can tighten it further, and
   ``memory_lookup(node_id=...)`` returns the stored bytes unchanged (the
@@ -202,10 +200,10 @@ def test_direct_calls_without_transport_identity_never_stub(tmp_path: Path) -> N
     assert all(event.transport_session_id is None for event in events)
 
 
-# --- Twin dedup: a legacy byte-identical concept+trace pair -----------------
+# --- Source identity: identical content with different provenance ----------
 
 
-def test_twin_dedup_delivers_exactly_one_content_bearer(tmp_path: Path) -> None:
+def test_different_sources_deliver_their_own_content(tmp_path: Path) -> None:
     scope = "project:dietwin"
     body = (
         "obsidian relay charter checklist\n"
@@ -234,22 +232,9 @@ def test_twin_dedup_delivers_exactly_one_content_bearer(tmp_path: Path) -> None:
     by_id = _by_id(response)
     assert set(by_id) == {trace_id, concept_id}
 
-    deliveries = {node_id: entry["delivery"] for node_id, entry in by_id.items()}
-    bearers = [nid for nid, delivery in deliveries.items() if delivery == "full"]
-    stubs = [nid for nid, delivery in deliveries.items() if delivery == "twin_duplicate"]
-    assert len(bearers) == 1 and len(stubs) == 1  # never both full
-    bearer_id, stub_id = bearers[0], stubs[0]
-
-    assert by_id[bearer_id]["content"] == body
-    assert by_id[bearer_id]["content_ref"] == {"node_id": bearer_id}
-
-    stub = by_id[stub_id]
-    assert stub["content"] != body
-    assert body.startswith(stub["content"])  # one-line preview
-    ref = stub["content_ref"]
-    assert ref["duplicate_of"] == bearer_id
-    assert ref["node_id"] == stub_id
-    assert ref["full_content_chars"] == len(body)
+    assert all(entry["delivery"] == "full" for entry in by_id.values())
+    assert all(entry["content"] == body for entry in by_id.values())
+    assert all("duplicate_of" not in entry["content_ref"] for entry in by_id.values())
 
 
 # --- Snippet ladder: bounded default, tighter budget + refetch --------------
@@ -444,7 +429,7 @@ def test_exact_ref_growth_keeps_knowledge_and_validity_but_not_history(tmp_path:
     assert selected["results"][0]["context"] == {"procedure": procedure * 6}
     assert selected["results"][0]["content"] == body
     assert "neighbor" not in selected["results"][0]["context"]
-    assert full["results"][0] == node_to_dict(node)
+    assert full["results"][0] == {**node_to_dict(node), "superseded": False, "superseded_by": []}
     assert missing["missing"] == ["01MISSINGEXACTREF"]
     assert missing["scope_mismatches"] == [{"id": node.id, "scope": scope}]
     assert missing["results"][0] == knowledge

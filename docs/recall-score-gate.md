@@ -71,10 +71,9 @@ every other rule:
   is not sparse. `memory_lookup(node_id=…)` returns the whole node.
 - Provenance and context are dieted the same way as on any other non-full entry.
 - Every score field stays.
-- It takes no snippet-ladder slot, and it never counts as a twin or
-  near-duplicate bearer. Its text was not delivered, so a later result with the
-  same content, or one that the near-dup map maps onto it, is delivered on its
-  own terms.
+- It takes no snippet-ladder slot and never counts as a twin bearer. Its text
+  was not delivered, so a later result with the same content is delivered on
+  its own terms.
 
 This is an added delivery class, and the existing classes keep their meaning.
 Without the gate, nothing changes.

@@ -242,6 +242,16 @@ corrective trace to the original, and records the correction in provenance. If
 the correction follows a compatible recall, the corrective trace records that
 recall in provenance without reinforcing the incorrect original fact.
 
+`supersedes` denotes a correction with a source, independently of whether its
+replacement can currently be delivered. Exact-copy bookkeeping uses
+`related(kind=duplicate_content)` and does not mark a fact corrected. Relation
+readers exclude known historical duplicate bookkeeping (`kind=duplicate_content`),
+drain heuristics (`kind=drain_near_duplicate`), and the offline heuristic producer
+(`by=lm_collapse_near_dups.py`, `reason=near-duplicate collapse`) from correction
+semantics. Unknown supersedes metadata keeps its meaning. Historical rows and
+stored lifecycle flags remain intact; this is not a corpus restoration pass.
+
+
 ### `memory_connect`
 
 Core operation: ingest graph relation.
@@ -361,21 +371,16 @@ class:
 * `session_duplicate` — this version's complete content or the exact excerpt
   now offered was included in an earlier response on this transport session;
   `content` is a one-line preview (~160 chars).
-* `twin_duplicate` — the content is byte-identical to a higher-ranked result
-  in the same response (typically a legacy concept and its verbatim source
-  trace): exactly one twin bears the content, the rest are stubs.
-* `near_duplicate` — the content repeats the *meaning* of a higher-ranked
-  result in the same response (cosine over mean-pooled chunk vectors above
-  `LM_RECALL_NEAR_DUP_COSINE`, default 0.95): the higher-ranked result bears
-  the content, this one is a stub whose `content_ref.duplicate_of` names the
-  bearer. Byte equality finds almost none of these — on the live corpus 4
-  active nodes were byte-identical to another while 550 had a neighbour above
-  0.95 — so this is the class that keeps five recall slots holding five facts
-  rather than one fact five ways. Two guards bound it: a candidate more than
-  `LM_RECALL_NEAR_DUP_LENGTH_RATIO` (default 0.2 = 20%) longer than its bearer
-  is never collapsed (that is "the same fact plus a new detail"), and a node
-  with no chunk vectors is never collapsed at all. `LM_RECALL_NEAR_DUP_COSINE=0`
-  restores byte-only dedup without a revert.
+* `twin_duplicate` — byte-identical content with the same scope and recorded
+  source identity as a higher-ranked result. One twin bears the content;
+  the others carry a preview and `content_ref.duplicate_of`.
+
+Similarity helps retrieve and rank candidates. It does not establish that two
+claims are identical, release a result slot as a duplicate, or create a
+correction. Different assertions can compete for the bounded top-k without
+being labeled repeats. Exact duplicate selection uses the same content/source
+identity as delivery; independent derivations and different sources remain
+separate even when their text matches.
 
 Content budgets come from the snippet ladder, indexed by content-bearer
 position — stubs don't consume ladder slots. The default ladder
@@ -423,14 +428,14 @@ Every removal is wire-only: `memory_lookup(node_id=...)` returns full content
 and validity; `memory_lookup(..., view="full")` returns the complete stored
 node. Non-full content deliveries in either view carry a `content_ref` with the
 `node_id` to pass to that lookup (plus `full_content_chars`, and
-`duplicate_of` on twin or near-duplicate stubs; diagnostic results with
+`duplicate_of` on twin stubs; diagnostic results with
 `LM_DELIVERY_SPARSE=0` also include the literal `fetch` call string):
 
 ```json
 {
   "node_id": "ulid",
   "full_content_chars": 5120,
-  "duplicate_of": "bearer ulid — twin or near-duplicate stubs"
+  "duplicate_of": "bearer ulid — twin stubs"
 }
 ```
 
@@ -597,7 +602,7 @@ Existing `recall_events.fingerprint`/`gated` columns and `recall_fingerprints`
 rows remain untouched when a database is opened. New events do not populate
 them, and fresh databases do not create them. The independent
 `recall_fingerprint()` query identity remains in use by query anchors and hubs.
-Session content receipts, body/near-duplicate delivery shaping and explicit
+Session content receipts, exact-content delivery shaping and explicit
 mandatory/credit feedback operate independently of this historical experiment.
 
 ### `memory_attest`
@@ -758,11 +763,12 @@ Input:
 The tool clusters similar recent traces, creates or updates concept nodes,
 records source trace IDs, computes consensus confidence and weekly temporal
 hints, updates related-edge weights, and applies decay. Concept content is a
-deterministic extractive digest of the cluster — the strongest source's lead
-plus the most distinctive sentence from each remaining source, capped at
-1200 chars — not a verbatim copy of one trace: whenever the cluster holds
-two or more distinct contents, the digest is byte-distinct from every source
-trace. The direct `memory_consolidate` response reports created/updated
+deterministic extractive digest of the cluster. It selects complete source
+sentences within a 1200-character budget, using token novelty to rank sentences
+and exact equality to skip repeats. Distinct conditions are never replaced by
+novel-token fragments. A source that cannot fit remains available by its
+recorded id; the budget does not guarantee that every claim appears in the
+digest. The direct `memory_consolidate` response reports created/updated
 nodes as full node dicts (the automatic pass a write schedules keeps only an
 id-only summary). A pass encodes through the model only traces it has not
 seen: whole-content trace vectors are cached in `consolidation_embeddings`

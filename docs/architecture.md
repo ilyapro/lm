@@ -62,7 +62,8 @@ without changing the other surface.
    own column.
 5. The ranked results then pass through the pure delivery-shaping stage
    (`delivery.shape_recall_results`) on their way to the wire: a result
-   byte-identical to a higher-ranked one becomes a `twin_duplicate` stub, a
+   byte-identical to a higher-ranked one with the same scope and recorded source
+   identity becomes a `twin_duplicate` stub, a
    current version whose complete content or offered excerpt was included in
    an earlier session response becomes a `session_duplicate` stub, and
    oversized ordinary content becomes a bounded excerpt selected at paragraph
@@ -140,14 +141,12 @@ without changing the other surface.
 9. `memory_consolidate` clusters recent active traces, creates or updates
    concept nodes, computes consensus confidence and weekly temporal hints,
    refreshes related-edge weights, and applies decay. Concept content is a
-   deterministic extractive digest — the strongest source's lead sentences
-   plus the most distinctive sentence of each remaining source in
-   cluster-centrality order, capped at 1200 chars — rather than a verbatim
-   copy of one trace: for clusters holding two or more distinct contents the
-   digest is byte-distinct from every source, and it is idempotent across
-   passes (an unchanged cluster re-digests to the same bytes, and the
-   duplicate-concept guard merges byte-identical twins instead of creating
-   copies). It additionally groups
+   deterministic extractive digest of complete source sentences, capped at
+   1200 characters. Token novelty ranks sentences; only exact sentence repeats
+   are omitted as duplicates. A source that cannot fit remains addressable by
+   its recorded id. Source membership and group identify a derived owner;
+   similarity and equal digest text do not merge independent derivations.
+   It additionally groups
    traces by normalized `context.procedure_id` (or `context.task_pattern`) and
    materializes one `level='schema'` node per group of three or more
    procedural traces, storing the normalized trigger and ordered procedure
@@ -208,10 +207,20 @@ keys shallowly, including nulls and whole nested objects. Identity, direction,
 type and creation time stay fixed. The read and write share a writer transaction.
 An unchanged contribution preserves the row, including `updated_at`; that field
 is not a contribution counter or a last-observed event. Replacement writes still
-refresh it. Every supersedes write, including an unchanged contribution, moves
+refresh it. Every genuine correction write, including an unchanged contribution, moves
 newly attached query anchors inside the same transaction. Query-anchor edges
 retain their separate additive weight/hits policy, and typed backfill inserts
 only absent edges.
+
+Exact copies use `related` edges with `kind=duplicate_content`, retaining their
+rows and source identities separately from correction validity. Anchor and
+source-lineage traversal follows such bookkeeping only after checking current
+bytes, scope, level and recorded source identity. The shared `relations` policy
+excludes known historical heuristic and duplicate supersedes rows from semantic
+adjacency, correction ranking/lookup, decay and replay. Unknown correction
+metadata remains valid. No startup corpus rewrite or inferred restoration of
+old decay/usage/anchor state is performed.
+
 
 ### `recall_events`
 
