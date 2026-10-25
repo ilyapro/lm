@@ -488,5 +488,5 @@ def test_anchor_failure_leaves_the_trace_and_its_credit_intact(
     assert store.get_node(node_ids[USED_INDEX]).usefulness_score > before
     assert consumed["implicit_feedback"]["feedback_applied"] is True
     assert store.list_query_anchor_edges() == []
-    assert consumed["implicit_feedback"]["anchor_ids"] == []
+    assert all(anchor.reinforcement_count == 0 for anchor in _anchors(store))
     assert any("query anchor write failed" in record.message for record in caplog.records)

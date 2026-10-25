@@ -1051,7 +1051,10 @@ def _apply_query_feedback(
     so a failed positive edge or cancellation cannot suppress a negative mark.
     """
 
-    events = {event.id: (event, targets, confirmed, ()) for event, targets, confirmed in work}
+    events = {
+        event.id: (event, targets, confirmed, ())
+        for event, targets, confirmed in work
+    }
     for event, node_ids in irrelevant_work:
         _, targets, confirmed, _ = events.get(event.id, (event, (), (), ()))
         events[event.id] = (event, targets, confirmed, node_ids)
@@ -1064,7 +1067,7 @@ def _apply_query_feedback(
         if embedder is None:
             return []
         # Positive feedback keeps the delivered query text; negative-only
-        # feedback uses its stripped form, as its anchor identity always did.
+        # feedback uses its stripped form.
         queries = [
             event.query if targets or confirmed else event.query.strip()
             for event, targets, confirmed, _irrelevant in items
@@ -1082,14 +1085,18 @@ def _apply_query_feedback(
                     if anchor.id not in anchor_ids:
                         anchor_ids.append(anchor.id)
                 except Exception:
-                    _LOG.warning("query anchor write failed for event %s", event.id, exc_info=True)
+                    _LOG.warning(
+                        "query anchor write failed for event %s", event.id, exc_info=True
+                    )
             if anchor is None and (confirmed or irrelevant):
                 try:
                     # Resolve-only also recovers identity after a partial
                     # upsert failure, without repeating inference or credit.
                     anchor = resolve_query_anchor(store, query, event.scope, vector)
                 except Exception:
-                    _LOG.warning("query anchor resolve failed for event %s", event.id, exc_info=True)
+                    _LOG.warning(
+                        "query anchor resolve failed for event %s", event.id, exc_info=True
+                    )
                     continue
             if anchor is None:
                 continue
@@ -1097,12 +1104,16 @@ def _apply_query_feedback(
                 try:
                     cancel_query_irrelevance(store, anchor.id, confirmed)
                 except Exception:
-                    _LOG.warning("query irrelevance cancellation failed for event %s", event.id, exc_info=True)
+                    _LOG.warning(
+                        "query irrelevance cancellation failed for event %s", event.id, exc_info=True
+                    )
             if irrelevant:
                 try:
                     record_query_irrelevance(store, anchor.id, event.id, irrelevant)
                 except Exception:
-                    _LOG.warning("query irrelevance write failed for event %s", event.id, exc_info=True)
+                    _LOG.warning(
+                        "query irrelevance write failed for event %s", event.id, exc_info=True
+                    )
     except Exception:
         _LOG.warning(
             "query feedback preparation failed for %d event(s)", len(items), exc_info=True

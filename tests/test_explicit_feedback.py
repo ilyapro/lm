@@ -625,8 +625,14 @@ def test_mixed_feedback_prepares_query_once_and_preserves_credit_and_cancellatio
     assert {row["anchor_id"] for row in rows.values()} == {anchor.id}
     after = _usefulness(store, nodes)
     assert after[1:] == before[1:]
-    assert after[0] == before[0] if lookup_first else after[0] > before[0]
-    assert _ledger(store) == [(event_id, used, "lookup" if lookup_first else "explicit")]
+    if lookup_first:
+        assert after[0] == before[0]
+        assert _ledger(store) == [(event_id, used, "lookup")]
+        assert _explicit(store) == []
+    else:
+        assert after[0] > before[0]
+        assert [row[:2] for row in _explicit(store)] == [(event_id, used)]
+    assert store.credited_node_ids(event_id) == {used}
 
     _apply_marks(store, [used], [])
     assert calls == [[QUERY], [QUERY]]
@@ -725,10 +731,52 @@ def test_unavailable_query_preparation_preserves_explicit_credit_and_audit(
 
     assert result.summary()["accepted"] == 2
     assert result.credited == [(event_id, nodes[0])]
-    assert _ledger(store) == [(event_id, nodes[0], "explicit")]
+    assert [row[:2] for row in _explicit(store)] == [(event_id, nodes[0])]
     assert calls == ([] if preparation in {"blank", "no_encoder"} else [[QUERY]])
     assert result.anchor_ids == [] and store.list_query_anchors(scope=SCOPE) == []
     assert list_query_irrelevance(store) == []
+
+
+@pytest.mark.parametrize("failure", ["empty_vector", "anchor_write"])
+def test_failed_event_does_not_suppress_other_events_in_the_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    _mcp, store, nodes, event_id = _seed(tmp_path / "batch-failure.sqlite3", monkeypatch)
+    other = store.record_recall_event(
+        query="coral reef", scope=SCOPE,
+        ambient_context={"transport_session_id": TRANSPORT},
+        results=[{"node_id": node_id} for node_id in nodes[2:4]],
+    )
+    calls: list[list[str]] = []
+    embedder = store._resolve_chunk_embedder()
+    insert = store.insert_query_anchor
+
+    def encode(texts: Any) -> Any:
+        calls.append(list(texts))
+        vectors = embedder(texts)
+        if failure == "empty_vector":
+            vectors[0] = []
+        return vectors
+
+    def insert_anchor(**kwargs: Any) -> Any:
+        if kwargs["query"] == QUERY:
+            raise RuntimeError("one anchor unavailable")
+        return insert(**kwargs)
+
+    store.set_chunk_embedder(encode)
+    if failure == "anchor_write":
+        monkeypatch.setattr(store, "insert_query_anchor", insert_anchor)
+    result = _apply_marks(store, [nodes[0], nodes[2]], [nodes[1], nodes[3]])
+
+    assert calls == [[QUERY, other.query]]
+    assert result.summary()["accepted"] == 4
+    assert result.credited == [(event_id, nodes[0]), (other.id, nodes[2])]
+    anchor, = store.list_query_anchors(scope=SCOPE)
+    assert anchor.query == other.query
+    assert store.list_query_anchor_edges(anchor_id=anchor.id)[0].target_id == nodes[2]
+    row, = list_query_irrelevance(store)
+    assert row["last_event_id"] == other.id and row["node_id"] == nodes[3]
 
 
 def test_zero_weight_credit_still_cancels_and_records_negatives_once_prepared(
