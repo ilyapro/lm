@@ -94,13 +94,12 @@ ANCHOR_TTL_DAYS = 90
 
 ANCHOR_TTL_DECAY_REASON = "anchor_ttl_expired"
 
-#: Hard stop when walking a ``supersedes`` chain. Cycles are already impossible
+#: Hard stop when walking a replacement chain. Cycles are already impossible
 #: to loop on (the walk carries a visited set); this only bounds a pathological
 #: chain length.
 MAX_SUPERSEDES_CHAIN_DEPTH = 32
 
-#: Exclusion-reason prefixes ``consolidation._assess_cluster_eras`` emits that
-#: name the node that replaced the excluded member.
+#: Consolidation exclusion reasons that name a replacement for a source.
 _DIRECT_REPLACEMENT_PREFIXES = ("superseded-by:", "replaced-by:")
 _DISPLACED_VIA_PREFIX = "displaced-via:"
 
@@ -271,8 +270,8 @@ def resolve_query_anchor(
 
     Uses the same exact (query, scope) fingerprint as :func:`upsert_anchor`,
     so a caller keying data on the returned id lands on exactly the anchor a
-    grounded consumption of the same question reinforces. Unlike :func:`upsert_anchor` it neither
-    reinforces an existing anchor nor writes an edge: a negative signal
+    grounded consumption of the same question reinforces. Unlike
+    :func:`upsert_anchor` it neither reinforces an existing anchor nor writes an edge: a negative signal
     (``living_memory.irrelevance``) must not count as a use of the anchor.
     A new anchor is born with no edges, so it seeds nothing.
     """
@@ -628,8 +627,8 @@ def resolve_replacement(
     C in one call. If no live correction exists, compatible exact-copy
     bookkeeping can supply a replacement. Only live replacements are followed.
 
-    Returns ``None`` when nothing supersedes ``node_id``, and stops (returning
-    the last live node reached) on a ``supersedes`` cycle or at ``max_depth``.
+    Returns ``None`` when nothing replaces ``node_id``, and stops (returning
+    the last live node reached) on a replacement cycle or at ``max_depth``.
     A cycle cannot be resolved into a "latest" node, so the walk refuses to
     guess rather than looping.
     """
@@ -697,7 +696,7 @@ def migrate_anchor_edges(
 
 
 def _reaches(store: MemoryStore, start: str, goal: str) -> bool:
-    """Whether climbing ``supersedes`` from ``start`` arrives at ``goal``."""
+    """Whether following replacements from ``start`` arrives at ``goal``."""
 
     current = str(start)
     seen = {current}
