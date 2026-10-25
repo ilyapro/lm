@@ -416,12 +416,15 @@ def test_memory_remember_confirmation_stays_small_under_auto_consolidation(
             {"scope": scope, "agent": f"agent-{index % 2}", "task_pattern": "diet-ritual"},
         )
 
-    mcp.tools["memory_recall"]("meridian array recalibration dossier", scope=scope)
+    identity = {"agent": "agent-a", "session_id": "diet-receipt"}
+    mcp.tools["memory_recall"](
+        "meridian array recalibration dossier", scope=scope, ambient_context=identity,
+    )
 
     final_content = f"{body} copy final"
     response = mcp.tools["memory_remember"](
         final_content,
-        {"scope": scope, "agent": "agent-a", "task_pattern": "diet-ritual"},
+        {"scope": scope, **identity, "task_pattern": "diet-ritual"},
     )
 
     assert len(json.dumps(response)) <= 4096
