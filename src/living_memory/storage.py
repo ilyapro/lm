@@ -1105,6 +1105,7 @@ class MemoryStore:
 
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._conn.create_function("recall_text_similarity", 2, _recall_text_similarity, deterministic=True)
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA synchronous = NORMAL")
@@ -3254,46 +3255,40 @@ class MemoryStore:
         """Return recent unconsumed recalls compatible with a new ingest trace."""
 
         context_data = dict(context or {})
-        # Same-transport events are candidates regardless of scope so equal
-        # stamps can close across the recall/ingest default-scope divergence;
-        # `transport_session_id = NULL` never matches, so unstamped traces
-        # keep the exact-scope candidate set.
-        context_transport = _optional_str(context_data.get("transport_session_id"))
+        params = {
+            "scope": scope,
+            "session_id": _optional_str(context_data.get("session_id") or context_data.get("session")),
+            "task": _optional_str(context_data.get("task")),
+            "agent": _optional_str(context_data.get("agent")),
+            "transport_session_id": _optional_str(context_data.get("transport_session_id")),
+            "content": content,
+            "threshold": _RECALL_TEXT_SIMILARITY_THRESHOLD,
+            "limit": max(1, int(limit)),
+        }
+        predicate, strength = _pending_recall_match_sql(params)
         rows = self._conn.execute(
-            """
-            SELECT *
-            FROM recall_events
-            WHERE feedback_applied = 0
-              AND (
-                scope = ? OR requested_scope = ? OR resolved_scopes LIKE ?
-                OR transport_session_id = ?
-              )
-            ORDER BY created_at DESC, rowid DESC
-            LIMIT ?
+            f"""
+            WITH matched AS NOT MATERIALIZED (
+                SELECT rowid AS event_rowid, created_at, {strength} AS strength
+                FROM recall_events
+                WHERE feedback_applied = 0 AND {predicate}
+            ), strong AS (
+                SELECT event_rowid, created_at FROM matched WHERE strength = 2
+                ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
+            ), weak AS (
+                SELECT event_rowid, created_at FROM matched WHERE strength = 1
+                ORDER BY created_at DESC, event_rowid DESC LIMIT 1
+            ), selected AS (
+                SELECT * FROM strong UNION ALL SELECT * FROM weak
+                ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
+            )
+            SELECT event.* FROM selected
+            JOIN recall_events AS event ON event.rowid = selected.event_rowid
+            ORDER BY selected.created_at DESC, selected.event_rowid DESC
             """,
-            (
-                scope,
-                scope,
-                f"%{_json_dumps(scope)}%",
-                context_transport,
-                max(1, int(limit) * 20),
-            ),
+            params,
         ).fetchall()
-        events: list[RecallEvent] = []
-        weak_fallbacks = 0
-        for row in rows:
-            event = _recall_event_from_row(row)
-            match_strength = _recall_event_match_strength(event, scope, context_data, content)
-            if match_strength is None:
-                continue
-            if match_strength == "weak":
-                if weak_fallbacks >= 1:
-                    continue
-                weak_fallbacks += 1
-            events.append(event)
-            if len(events) >= limit:
-                break
-        return events
+        return [_recall_event_from_row(row) for row in rows]
 
     def mark_recall_event_feedback(self, event_id: str, trace_id: str) -> RecallEvent:
         if self.get_node(trace_id) is None:
@@ -5143,6 +5138,28 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_recall_events_session_pending_created
                     ON recall_events(session_id, feedback_applied, created_at DESC);
 
+                -- Pending feedback probes current identity, including unstamped
+                -- legacy rows, before its result cap. COALESCE matches the
+                -- nullable identity predicates in _pending_recall_match_sql.
+                CREATE INDEX IF NOT EXISTS idx_recall_pending_session
+                    ON recall_events(COALESCE(session_id, ''), created_at DESC)
+                    WHERE feedback_applied = 0;
+
+                CREATE INDEX IF NOT EXISTS idx_recall_pending_task_session
+                    ON recall_events(COALESCE(task, ''), COALESCE(session_id, ''), created_at DESC)
+                    WHERE feedback_applied = 0;
+
+                CREATE INDEX IF NOT EXISTS idx_recall_pending_transport
+                    ON recall_events(COALESCE(transport_session_id, ''), created_at DESC)
+                    WHERE feedback_applied = 0;
+
+                CREATE INDEX IF NOT EXISTS idx_recall_pending_agent
+                    ON recall_events(COALESCE(agent, ''), created_at DESC)
+                    WHERE feedback_applied = 0;
+
+                CREATE INDEX IF NOT EXISTS idx_recall_events_requested_scope_pending_created
+                    ON recall_events(requested_scope, feedback_applied, created_at DESC);
+
                 -- Session content delivery history: equality probe
                 -- on transport_session_id plus the most-recent-events window,
                 -- instead of scanning every session's events. Runs after
@@ -6221,74 +6238,51 @@ def _recall_attestation_from_row(row: sqlite3.Row) -> RecallAttestation:
     )
 
 
-def _recall_event_matches(
-    event: RecallEvent,
-    scope: str,
-    context: Mapping[str, Any],
-    content: str | None = None,
-) -> bool:
-    return _recall_event_match_strength(event, scope, context, content) is not None
+def _pending_recall_match_sql(context: Mapping[str, Any]) -> tuple[str, str]:
+    """One compatibility definition for SQL selection and strength.
 
+    Explicit session/task conflicts reject first; either explicit match then
+    wins over agent/transport differences. Otherwise agent and transport must
+    be compatible, and one-sided/absent transport stamps need text overlap.
+    Only equal transport can span scopes. Missing identities remain eligible
+    through the same expression-index ranges as their present counterparts.
+    """
 
-def _recall_event_match_strength(
-    event: RecallEvent,
-    scope: str,
-    context: Mapping[str, Any],
-    content: str | None,
-) -> str | None:
-    context_session = _optional_str(context.get("session_id") or context.get("session"))
-    context_task = _optional_str(context.get("task"))
-    context_agent = _optional_str(context.get("agent"))
-    context_transport = _optional_str(context.get("transport_session_id"))
+    def same(field: str) -> str:
+        return f"{field} = :{field}" if context[field] else "0"
 
-    # Equal transport ids are same-connection evidence strong enough to span
-    # the recall/ingest default-scope divergence (a scope-less recall plans
-    # requested_scope='global' while a scope-less trace lands on the
-    # configured default scope). The text fallbacks below never gain that
-    # bypass: without both transport ids present, candidacy still requires
-    # the exact scope match.
-    transport_equal = bool(
-        event.transport_session_id
-        and context_transport
-        and event.transport_session_id == context_transport
+    def compatible(field: str) -> str:
+        return f"COALESCE({field}, '') IN ('', :{field})" if context[field] else "1"
+
+    transport_equal = same("transport_session_id")
+    scopes = ["scope = :scope", "requested_scope = :scope"]
+    if context["transport_session_id"]:
+        scopes.append(transport_equal)
+    clauses = [f"({' OR '.join(scopes)})"]
+    explicit = []
+    for field in ("session_id", "task"):
+        if context[field]:
+            clauses.append(compatible(field))
+            explicit.append(same(field))
+    explicit_match = " OR ".join(explicit) or "0"
+    fallback = (
+        f"({compatible('agent')} AND {compatible('transport_session_id')} AND "
+        f"({transport_equal} OR :content IS NULL OR "
+        "recall_text_similarity(query, :content) >= :threshold))"
     )
-    exact_scope_match = scope == event.scope or scope == event.requested_scope
-    if not exact_scope_match and not transport_equal:
-        return None
-
-    if event.session_id and context_session and event.session_id != context_session:
-        return None
-    if event.task and context_task and event.task != context_task:
-        return None
-
-    same_session = bool(event.session_id and context_session and event.session_id == context_session)
-    same_task = bool(event.task and context_task and event.task == context_task)
-    if same_session or same_task:
-        return "strong"
-
-    same_agent = bool(event.agent and context_agent and event.agent == context_agent)
-    if event.agent and context_agent and event.agent != context_agent:
-        return None
-
-    # Transport identity ranks below explicit context (the rejects/strongs
-    # above) but above the text fallbacks; one-sided stamping falls through
-    # to the legacy rules unchanged.
-    if event.transport_session_id and context_transport:
-        if transport_equal:
-            return "strong"
-        return None
-
-    text_match = content is None or _recall_event_text_similarity(event, content) >= _RECALL_TEXT_SIMILARITY_THRESHOLD
-    if same_agent and text_match:
-        return "strong"
-    if text_match:
-        return "weak"
-
-    return None
+    # Keep identity predicates visible to the planner when no explicit match
+    # can bypass them. The text function sees only fallback query strings;
+    # event payloads are decoded after both the weak and total caps.
+    clauses.append(f"(({explicit_match}) OR {fallback})" if explicit else fallback)
+    strength = (
+        f"CASE WHEN ({explicit_match}) OR {transport_equal} OR {same('agent')} "
+        "THEN 2 ELSE 1 END"
+    )
+    return " AND ".join(clauses), strength
 
 
-def _recall_event_text_similarity(event: RecallEvent, content: str) -> float:
-    query_tokens = set(tokenize(event.query))
+def _recall_text_similarity(query: str, content: str) -> float:
+    query_tokens = set(tokenize(query))
     content_tokens = set(tokenize(content))
     if not query_tokens or not content_tokens:
         return 0.0

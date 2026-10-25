@@ -1,10 +1,19 @@
-"""Narrow DDL allowance for the derived task-search index migration.
+"""Schema compatibility for additive indexes and the task-search migration.
 
 Ledger compatibility still requires byte identity for every unrelated object.
 For the six rebuilt FTS objects, accept only the known old-to-new definitions
 (or formatting of the new definition after master has received the migration).
 This is deliberately not a blanket exemption for ``nodes_fts*``.
 """
+
+PENDING_RECALL_INDEXES = {
+    "idx_recall_pending_session",
+    "idx_recall_pending_task_session",
+    "idx_recall_pending_transport",
+    "idx_recall_pending_agent",
+    "idx_recall_events_requested_scope_pending_created",
+}
+
 
 _LEGACY_FTS = {
     "nodes_fts": """CREATE VIRTUAL TABLE nodes_fts USING fts5(

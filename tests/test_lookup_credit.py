@@ -42,7 +42,7 @@ import types
 
 import pytest
 
-from storage_schema_compat import assert_preserved_schema
+from storage_schema_compat import PENDING_RECALL_INDEXES, assert_preserved_schema
 
 import living_memory.feedback as feedback_module
 import living_memory.server as server_module
@@ -890,18 +890,15 @@ def test_ledger_is_created_on_a_master_built_database_on_reopen(tmp_path: Path) 
 
     after = _schema_objects(db)
     assert_preserved_schema(before, after)
-    # Subset, not equality: once this lands on master, master's build creates
-    # the ledger too and the difference legitimately collapses to nothing.
-    # The explicit-feedback tables (recall_explicit_credit, the mark audit and
-    # its index) and the consolidation vector cache are created the same
-    # additive way on the same open.
+    # Reopening may add the ledgers, derived cache and pending-work indexes;
+    # existing objects and their data remain intact.
     assert set(after) - set(before) <= {
         RECALL_CREDIT_LEDGER_TABLE,
         "recall_explicit_credit",
         "recall_feedback_marks",
         "idx_recall_feedback_marks_event",
         CONSOLIDATION_EMBEDDING_TABLE,
-    }
+    } | PENDING_RECALL_INDEXES
     assert RECALL_CREDIT_LEDGER_TABLE in after
     assert _schema_version(db) == "8"
 
