@@ -60,7 +60,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple, Protocol
 import math
 
-from living_memory.embeddings import cosine_similarity
 from living_memory.models import Connection, ConnectionType, Node
 from living_memory.scope import ScopePlan, normalize_scope
 from living_memory.storage import (
@@ -486,29 +485,35 @@ def _rank_anchors(
     only ever runs over the handful of survivors.
     """
 
-    width = len(vector)
-    ids: list[str] = []
-    blobs: list[memoryview] = []
-    for anchor_id, _scope, dimensions, blob in store.iter_query_anchor_vectors(scopes):
-        if dimensions != width:
-            continue
-        ids.append(anchor_id)
-        blobs.append(blob)
+    if _np is not None:
+        query = _np.asarray(vector, dtype="<f4")
+        query_norm = float(_np.linalg.norm(query))
+    else:
+        query_squared_norm = 0.0
+        for value in vector:
+            query_squared_norm += float(value) * float(value)
+        query_norm = math.sqrt(query_squared_norm)
+    if query_norm <= 0.0:
+        return []
+
+    prepare = getattr(store, "prepare_query_anchor_vectors", None)
+    corpus = (
+        prepare(len(vector), scopes) if prepare is not None else
+        _prepare_anchor_vectors(store.iter_query_anchor_vectors(scopes), len(vector))
+    )
+    ids = corpus.ids
     if not ids:
         return []
 
     if _np is not None:
-        query = _np.asarray(vector, dtype="<f4")
-        query_norm = float(_np.linalg.norm(query))
-        if query_norm <= 0.0:
-            return []
-        matrix = _np.frombuffer(b"".join(blobs), dtype="<f4").reshape(len(ids), width)
-        norms = _np.linalg.norm(matrix, axis=1)
         # A zero-norm anchor has no direction to compare; scoring it 0.0 keeps
         # the numpy path agreeing with cosine_similarity instead of producing
         # nan, which would sort unpredictably.
-        safe = _np.where(norms > 0.0, norms, 1.0)
-        scores = _np.where(norms > 0.0, (matrix @ query) / (safe * query_norm), 0.0)
+        scores = _np.where(
+            corpus.nonzero,
+            (corpus.matrix @ query) / (corpus.safe_norms * query_norm),
+            0.0,
+        )
         surviving = _np.flatnonzero(scores >= min_similarity)
         if surviving.size == 0:
             return []
@@ -520,17 +525,75 @@ def _rank_anchors(
             kept = surviving
         candidates = [(ids[index], float(scores[index])) for index in kept]
     else:
-        query_norm = math.sqrt(sum(value * value for value in vector))
-        if query_norm <= 0.0:
-            return []
         candidates = []
-        for anchor_id, blob in zip(ids, blobs):
-            similarity = cosine_similarity(vector, unpack_chunk_embedding(blob, width))
+        for anchor_id, row, squared_norm in zip(ids, corpus.matrix, corpus.safe_norms):
+            dot = 0.0
+            for left, right in zip(vector, row):
+                dot += float(left) * right
+            similarity = (
+                0.0 if squared_norm <= 0.0 else
+                dot / math.sqrt(query_squared_norm * squared_norm)
+            )
             if similarity >= min_similarity:
                 candidates.append((anchor_id, similarity))
 
     candidates.sort(key=lambda item: (-item[1], item[0]))
     return candidates[:limit]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedAnchorVectors:
+    """One ordered, width-compatible corpus; no source BLOBs are retained."""
+
+    ids: tuple[str, ...]
+    matrix: Any
+    safe_norms: Any
+    nonzero: Any
+
+
+def _prepare_anchor_vectors(
+    rows: Iterable[tuple[str, str, int, Any]],
+    width: int,
+    *,
+    scope_order: tuple[str, ...] | None = None,
+) -> _PreparedAnchorVectors:
+    """Prepare once, keeping the reader's row order within each scope.
+
+    A cached reader supplies its scope order; a direct scan keeps SQL order.
+    One matrix spans the selected scopes: splitting matmul into scope blocks
+    can change float32 rounding and therefore exact threshold decisions.
+    """
+
+    selected: list[tuple[str, Any]] = []
+    groups: dict[str, list[tuple[str, Any]]] = {
+        scope: [] for scope in scope_order or ()
+    }
+    for anchor_id, scope, dimensions, blob in rows:
+        if dimensions == width:
+            if scope_order is None:
+                selected.append((anchor_id, blob))
+            elif scope in groups:
+                groups[scope].append((anchor_id, blob))
+    if scope_order is not None:
+        selected = [row for scope in scope_order for row in groups[scope]]
+    ids = tuple(anchor_id for anchor_id, _blob in selected)
+    if not ids:
+        return _PreparedAnchorVectors(ids, (), (), ())
+    if _np is not None:
+        matrix = _np.frombuffer(
+            b"".join(blob for _anchor_id, blob in selected), dtype="<f4"
+        ).reshape(len(ids), width)
+        norms = _np.linalg.norm(matrix, axis=1)
+        nonzero = norms > 0.0
+        return _PreparedAnchorVectors(ids, matrix, _np.where(nonzero, norms, 1.0), nonzero)
+    matrix = tuple(tuple(unpack_chunk_embedding(blob, width)) for _id, blob in selected)
+    squared_norms = []
+    for row in matrix:
+        squared_norm = 0.0
+        for value in row:
+            squared_norm += value * value
+        squared_norms.append(squared_norm)
+    return _PreparedAnchorVectors(ids, matrix, tuple(squared_norms), ())
 
 
 def _nearest_anchor(

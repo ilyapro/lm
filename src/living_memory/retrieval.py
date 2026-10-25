@@ -167,12 +167,12 @@ Cost, measured
 chunk corpus's 60k), and its own docstring measures that scan at ~12 ms cold
 and instructs read-path callers to cache the vectors and re-validate with
 ``MemoryStore.query_anchor_revision``. That is what :class:`_AnchorVectorCache`
-and :class:`_CachedAnchorVectors` below are: the policy stays in
-``match_anchors``, only its input is cached. At 4,000 anchors x 384 dims on
-this machine the scan costs 5.9 ms p50 uncached and 0.9 ms over the cache, and
-the cache is served by scope. Its transactional SQLite revision covers anchor
-membership and vectors across all writers. Reinforcement of a live anchor
-never rewrites a stored vector, so it preserves the cache.
+below provides: policy stays in ``match_anchors``, while its ordered matrix
+and norms are prepared once for the current scopes and vector width. A change
+of scopes or width replaces that single representation; new query vectors
+reuse it. Its transactional SQLite revision covers anchor membership and
+vectors across all writers. Reinforcement of a live anchor never rewrites a
+stored vector, so it preserves the cache.
 
 End to end, on a snapshot of the live database (12,901 active nodes, 143,285
 connections, 60,636 chunk vectors) carrying 3,760 anchors and 10,716 edges
@@ -242,6 +242,8 @@ from living_memory.query_anchors import (
     ANCHOR_MATCH_COSINE_THRESHOLD,
     ANCHOR_MATCH_LIMIT,
     AnchorMatch,
+    _PreparedAnchorVectors,
+    _prepare_anchor_vectors,
     match_anchors,
 )
 from living_memory.schema_dedup import collapse_schema_duplicates
@@ -510,85 +512,42 @@ class _ScopeChunkIndex:
     row_count: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _AnchorVectorCache:
-    """Every live anchor's vector, reusable until ``revision`` moves.
+    """One revision-guarded prepared corpus for the current scopes and width.
 
-    Built and invalidated whole-corpus, unlike ``_ScopeChunkIndex``, because the
-    revision that validates it (``MemoryStore.query_anchor_revision``) is itself
-    whole-corpus: keying the *cache* per scope would rebuild every scope on any
-    anchor write and buy nothing.
-
-    Served per scope, though, and that part is not cosmetic. A real anchor
-    corpus is strongly partitioned by scope -- 3,760 anchors of a live snapshot
-    split 1322/1151/829/177/75/74 across the six scopes that hold all but 132 of
-    them -- and the matcher's cost is linear in the rows it is handed, since it
-    concatenates them into one matrix and takes their norms. Handing a
-    ``project:lm`` plan the whole corpus would mean 3,760 rows of work for the
-    251 it may look at. Rows keep the shape ``iter_query_anchor_vectors``
-    yields -- ``(id, scope, dimensions, bytes)`` -- and their scan order within
-    each scope, so the matcher reading them is the one that reads the database.
+    The matrix replaces the source BLOB rows. Changing scopes or width replaces
+    this single entry, keeping memory bounded without overlapping corpus copies.
+    Preserving one ordered matrix also preserves matmul rounding and tie choices.
+    Metadata and targets always read through to the store.
     """
 
     revision: int
-    rows: tuple[tuple[str, str, int, Any], ...]
-    by_scope: dict[str, tuple[tuple[str, str, int, Any], ...]]
+    store: MemoryStore
+    has_anchors: bool
+    key: tuple[int, tuple[str, ...] | None] | None = None
+    prepared: _PreparedAnchorVectors | None = None
 
-
-class _CachedAnchorVectors:
-    """A ``MemoryStore`` face whose anchor vectors come from a cache.
-
-    Exists so the read path can reuse ``query_anchors.match_anchors`` verbatim
-    -- the single owner of match policy: the similarity floor, the width guard
-    that refuses to compare vectors from two different spaces, the stable tie
-    break, and the live-target filter -- without paying that function's
-    deliberate full scan on every recall. Only the vector scan is served from
-    cache; anchor rows and edges are read through, because they are small,
-    indexed, and (unlike a vector) may have changed under a revision that did
-    not move.
-    """
-
-    __slots__ = ("_store", "_cache")
-
-    def __init__(self, store: MemoryStore, cache: _AnchorVectorCache) -> None:
-        self._store = store
-        self._cache = cache
-
-    def iter_query_anchor_vectors(
-        self,
-        scopes: Any = None,
-        *,
-        include_decayed: bool = False,
-        limit: int | None = None,
-    ) -> Iterator[tuple[str, str, int, Any]]:
-        if include_decayed:
-            # The cache holds live anchors only, which is the whole of what a
-            # match may see; a caller asking for more is asking a different
-            # question and gets the database's answer.
-            yield from self._store.iter_query_anchor_vectors(
-                scopes, include_decayed=True, limit=limit
+    def prepare_query_anchor_vectors(
+        self, width: int, scopes: Sequence[str] | None,
+    ) -> _PreparedAnchorVectors:
+        scope_order = (
+            tuple(dict.fromkeys(normalize_scope(scope) for scope in scopes))
+            if scopes is not None else None
+        )
+        key = (width, scope_order)
+        if self.prepared is None or self.key != key:
+            # Release the previous matrix before preparing its replacement.
+            self.prepared = None
+            self.key = None
+            self.prepared = _prepare_anchor_vectors(
+                self.store.iter_query_anchor_vectors(), width, scope_order=scope_order,
             )
-            return
-        if scopes is None:
-            groups: tuple[tuple[tuple[str, str, int, Any], ...], ...] = (self._cache.rows,)
-        else:
-            # ``dict.fromkeys`` rather than a set: a plan that names one scope
-            # twice must yield its anchors once, as ``scope IN (...)`` would,
-            # and the plan's own order is worth keeping.
-            groups = tuple(
-                self._cache.by_scope.get(normalize_scope(scope), ())
-                for scope in dict.fromkeys(scopes)
-            )
-        emitted = 0
-        for group in groups:
-            for row in group:
-                yield row
-                emitted += 1
-                if limit is not None and emitted >= int(limit):
-                    return
+            self.key = key
+        return self.prepared
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._store, name)
+        return getattr(self.store, name)
 
 
 class MemoryRecallService:
@@ -1454,8 +1413,8 @@ class MemoryRecallService:
         except Exception:  # pragma: no cover - derived signal, never fatal
             return {}
 
-    def _anchor_vector_source(self) -> _CachedAnchorVectors | MemoryStore | None:
-        """The live anchor vectors, cached until ``query_anchor_revision`` moves.
+    def _anchor_vector_source(self) -> _AnchorVectorCache | MemoryStore | None:
+        """The live anchor corpus, cached until ``query_anchor_revision`` moves.
 
         One indexed revision lookup guards reuse, including an empty cache.
         The live count is checked only on rebuild, so an empty corpus never
@@ -1470,24 +1429,14 @@ class MemoryRecallService:
             return self.store
         cached = self._anchor_vectors
         if cached is None or cached.revision != revision:
-            rows = (
-                tuple(
-                    (anchor_id, scope, dimensions, bytes(blob))
-                    for anchor_id, scope, dimensions, blob in
-                    self.store.iter_query_anchor_vectors()
-                )
-                if self.store.count_query_anchors(include_decayed=False) else ()
-            )
-            grouped: dict[str, list[tuple[str, str, int, Any]]] = {}
-            for row in rows:
-                grouped.setdefault(row[1], []).append(row)
+            self._anchor_vectors = None
             cached = _AnchorVectorCache(
                 revision=revision,
-                rows=rows,
-                by_scope={scope: tuple(group) for scope, group in grouped.items()},
+                store=self.store,
+                has_anchors=bool(self.store.count_query_anchors(include_decayed=False)),
             )
             self._anchor_vectors = cached
-        return _CachedAnchorVectors(self.store, cached) if cached.rows else None
+        return cached if cached.has_anchors else None
 
     def _admit_anchor_seeds(
         self,
