@@ -44,14 +44,14 @@ def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None
     options = dict(
         delivery_history=delivered_history(results, {"session"}), snippet_max_chars=100,
         context_value_max_chars=160, session_dedup=True,
-        snippet_ladder=(100,), duplicate_of={"near": "snippet"},
+        snippet_ladder=(100,),
         correction_refs={node.id: ["replacement"] for node in nodes},
     )
     diagnostic = shape_recall_results(results, **options, view="full")
     knowledge = shape_recall_results(results, **options, view="knowledge")
     assert results == original
     assert [entry["delivery"] for entry in knowledge] == [
-        "full", "snippet", "twin_duplicate", "session_duplicate", "near_duplicate", "below_threshold",
+        "full", "snippet", "twin_duplicate", "session_duplicate", "full", "below_threshold",
     ]
     for full, item, node in zip(diagnostic, knowledge, nodes):
         assert item["id"] == full["node"]["id"] == node.id
@@ -69,7 +69,7 @@ def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None
         assert full["vector_score"] == pytest.approx(0.234567891, abs=1e-6)
     assert knowledge[0]["content"] == nodes[0].content
     assert knowledge[2]["content_ref"]["duplicate_of"] == "snippet"
-    assert knowledge[4]["content_ref"]["duplicate_of"] == "snippet"
+    assert "duplicate_of" not in knowledge[4]["content_ref"]
     assert knowledge[5]["content"] == ""
 
 

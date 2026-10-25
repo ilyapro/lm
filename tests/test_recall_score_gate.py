@@ -208,7 +208,6 @@ def test_withheld_result_is_not_a_twin_bearer() -> None:
         snippet_max_chars=1200,
         context_value_max_chars=160,
         session_dedup=False,
-        duplicate_of={"twin": "held"},
     )
     assert [entry["delivery"] for entry in shaped] == ["full", DELIVERY_BELOW_THRESHOLD, "full"]
     assert shaped[2]["node"]["content"] == text
