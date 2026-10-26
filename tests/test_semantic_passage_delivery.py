@@ -219,3 +219,112 @@ def test_scoped_gather_keeps_winning_address(tmp_path, monkeypatch, scope, numpy
             assert FACT in shape([result])[0]["content"]
             if scope is not None:
                 assert result.node.scope != "project:hidden"
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("budget", [350, 2400])
+@pytest.mark.parametrize("case", [
+    "long_predecessor", "short_condition", "long_successor", "paragraph_break",
+    "overlapped_paragraphs", "evidence_records", "oversized_sentence",
+    "oversized_overlap", "lexical_only",
+])
+def test_source_aware_budget_through_mcp(tmp_path, monkeypatch, view, budget, case):
+    import asyncio
+
+    from fastmcp import Client
+    from living_memory import server
+    from test_transport_identity import _structured
+
+    statement = "Do not open the amber hatch unless the indicator is green."
+    condition = "Only during maintenance."
+    caveat = "Never bypass the pressure interlock."
+    long_sentence = "The archive records " + "ordinary maintenance context " * 105 + "before proceeding."
+    heading = "Evidence: hatch cases (case records, not steps)\n"
+    source_a = "- 01SEMANTICSOURCE0000000001: "
+    source_b = "- 01SEMANTICSOURCE0000000002: "
+    partial = case in {"oversized_sentence", "oversized_overlap"}
+    required = [statement]
+    if case == "long_predecessor":
+        content = long_sentence + " " + statement + " Routine closing notes."
+    elif case in {"short_condition", "lexical_only"}:
+        content = long_sentence + " " + condition + " " + statement + " " + caveat
+        required = [condition, statement, caveat]
+    elif case == "long_successor":
+        content = condition + " " + statement + " " + long_sentence
+        required = [condition, statement]
+    elif case == "paragraph_break":
+        content = long_sentence + "\n\n" + statement
+    elif case == "overlapped_paragraphs":
+        content = long_sentence + "\n\n" + condition + "\n\n" + statement + "\n\n" + caveat
+        required = [condition, statement, caveat]
+    elif case == "evidence_records":
+        content = heading + source_a + long_sentence + "\n\n" + condition + "\n" + source_b + statement + " " + caveat
+        required = [source_a + condition, source_b + statement, caveat]
+    elif case == "oversized_sentence":
+        content = "Do not " + "while inspection is still pending " * 105 + statement.removeprefix("Do not ")
+    else:
+        content = condition + " " + statement + " " + long_sentence
+
+    start = content.index("open the amber")
+    end = start + len("open the amber hatch")
+    if case in {"overlapped_paragraphs", "evidence_records", "oversized_overlap"}:
+        start = content.index(condition)
+        end = len(content) - 1
+
+    class LexicalEmbedder(QueryEmbedder):
+        def embed(self, text):
+            return [0.0, 0.0, 0.0]
+
+    embedder = LexicalEmbedder() if case == "lexical_only" else QueryEmbedder()
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.delenv("LM_DELIVERY_SNIPPET_CHARS", raising=False)
+    if budget == 2400:
+        monkeypatch.delenv("LM_DELIVERY_SNIPPET_LADDER", raising=False)
+    else:
+        monkeypatch.setenv("LM_DELIVERY_SNIPPET_LADDER", str(budget))
+    monkeypatch.setattr(server, "MemoryRecallService", lambda store: MemoryRecallService(store, embedder=embedder))
+    mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
+    node = put_match(mcp.memory_store, content, start, end)
+    query = "open amber hatch indicator green" if case == "lexical_only" else QUERY
+    direct = MemoryRecallService(mcp.memory_store, embedder=embedder).memory_recall(
+        query, scope=SCOPE, depth=0, max_results=1, log_access=False, log_event=False,
+    )[0]
+    if case == "lexical_only":
+        assert direct.semantic_passage is None and direct.bm25_score > 0
+    else:
+        assert direct.bm25_score == 0 and direct.vector_score > 0
+        assert direct.semantic_passage.char_start == start
+        assert direct.semantic_passage.char_end == end
+
+    async def scenario():
+        async with Client(mcp) as client:
+            recalled = _structured(await client.call_tool("memory_recall", {
+                "query": query, "scope": SCOPE, "depth": 0, "max_results": 1, "view": view,
+            }))
+            entry = recalled["results"][0]
+            body = entry.get("node", entry)["content"]
+            assert entry["delivery"] == "snippet"
+            assert len(body) <= budget
+            if partial:
+                assert body.endswith("…\n[Incomplete passage]")
+                prefix = body.removesuffix("\n[Incomplete passage]")[:-1]
+                assert content.startswith(prefix)
+                if case == "oversized_sentence":
+                    assert body.startswith("Do not ")
+                    assert "open the amber hatch" not in body
+            else:
+                assert all(text in body for text in required)
+                assert body.endswith("\n[Context omitted]")
+                assert "[Incomplete passage]" not in body
+                if case == "evidence_records":
+                    assert body.startswith(heading)
+                    assert source_a + statement not in body
+            assert entry["content_ref"] == {"node_id": node.id, "full_content_chars": len(content)}
+            lookup = _structured(await client.call_tool("memory_lookup", {"node_id": node.id}))
+            assert lookup["results"][0]["content"] == content
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        mcp.memory_store.close()
