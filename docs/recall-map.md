@@ -113,29 +113,40 @@ other projects; work identity does not narrow that search.
 
 ## 4. Selection and labeling
 
-The warm selector uses the published `directional-zsum-r1` corpus policy. Its
-node-level and matured delivery-history features, fitted constants and admission
-threshold are shared corpus-quality evidence. They are distinct from whether
-the current consumer has ignored its own maps. The selector's policy digest and
-calibration artifacts describe that ranking policy.
+`QueryRelevance` shares the recall quality gate's evidence with the map. It
+keeps the full ranked set, scope plan, causal mode, query demotions and correction
+edges for this call. With `LM_RECALL_MIN_SCORE` configured, candidates must pass
+that same threshold or the existing trigger-availability rule. A present
+correction can inherit its original's relevance through the ranked correction
+chain. The main answer's rank-one exception does not qualify a map suggestion.
+Without a configured threshold, positive channel evidence or a qualifying
+trigger suffices; residual membership alone does not.
 
-The optional usefulness floor rejects candidates below
-`LM_MAP_POOL_MIN_USEFULNESS` when `LM_MAP_POOL_USEFULNESS_GATE` is enabled. Both
-a valid numeric floor and an enabled valve are required. The check occurs before
-history reads and records exclusion code `uf`. A node's stored zero usefulness
-is a value; a malformed or unavailable score supplies no exclusion evidence.
+The evidence is evaluated lazily inside the optional-map failure boundary when
+the main gate is disabled. Map construction never changes the main selection,
+its ranking, scope resolution, decay or correction validity. Explicit id lookup
+remains available for full knowledge, including entries the map does not offer.
 
-Repeated nonuse is handled by the current-work curtail rule in §6. There is no
-per-node exclusion based on a global run of other consumers' absent lookups.
-The first seven selection reason positions remain `iv`, `du`, `fc`, `ss`,
-`sj`, `lr`, `pc`; additive reasons do not change those positions. Trailing empty
-positions are omitted.
+All candidates use the same query qualification regardless of their age or
+exposure history. A never-shown or rarely used entry needs no separate quota.
+No corpus delivery count, consumed ratio or nonuse streak admits or orders a
+candidate. The optional stored-usefulness floor rejects values below
+`LM_MAP_POOL_MIN_USEFULNESS` only when `LM_MAP_POOL_USEFULNESS_GATE` is enabled.
+Malformed or unavailable usefulness supplies no exclusion evidence.
 
-The cold lane retains its own published selection policy and calibration. It
-is enabled only by `LM_MAP_POOL_COLD_QUOTA_GATE` together with a valid
-`LM_MAP_POOL_COLD_SLOTS` count. It shares the current-work curtail decision and
-pool-digest retry behavior with the warm map. It does not create another work
-identity or another nonuse counter.
+After identity, ballast and query checks, the bounded pool shares capacity
+round-robin among structural and path groups, with an additional bucket for
+members awaiting anchor/vector grouping. Groups and members enter in retrieval
+order. This keeps a large known topic from taking every slot before a relevant
+minority topic is considered. Anchor and vector work runs only on the admitted
+pool. Unstructured members share one capacity bucket; the later cascade can
+separate them into multiple anchor or embedding clusters.
+
+Repeated map nonuse belongs to the current-work curtail rule in §6. The selection
+journal retains positional reasons `iv`, `du`, `fc`, `ss`, `sj`, `lr`, `pc`;
+`lr` means the candidate lacks this query's qualifying evidence. Optional `uf`
+records the usefulness floor, and `nf` is reserved for stored journal readers.
+Trailing empty positions are omitted.
 
 No model call occurs while building a map. The builder uses structural context,
 query anchors, stored chunk vectors and FTS document frequencies. Offline
@@ -162,8 +173,8 @@ the same document-frequency evidence.
 Identical input and policy produce deterministic groups. Every sort has a
 tie-break and each stage receives only members unclaimed by earlier stages.
 Label disambiguation preserves distinct groups and makes their displayed names
-unique after truncation. Display order follows maximum member relevance, mean
-member relevance, then original residual ordinal. Embedding groups choose the
+unique after truncation. Display order follows each cluster's best original retrieval ordinal. Cluster
+size and corpus exposure do not determine its position. Embedding groups choose the
 most central member; other groups use the best original residual ordinal.
 Representatives and presentation order are recomputed from the current pool.
 
@@ -178,8 +189,7 @@ and the current ranked pool before cached labels are reused. Scores, order and
 representative identity do not survive as cached decisions.
 
 Corpus revision probes use `connection.total_changes` and `PRAGMA data_version`
-before checking chunk and query-anchor revisions. Corpus or policy changes
-invalidate dependent structure. There is no timer-based expiry. Up to 32 work
+before checking chunk and query-anchor revisions. Corpus changes invalidate dependent structure. There is no timer-based expiry. Up to 32 work
 entries are retained per builder, with insertion-order eviction.
 
 The cache is not persisted or shared between processes. A cold process rebuilds
@@ -220,7 +230,7 @@ possible, the lookup is not attributed to one of them.
 The lookup window uses the existing delivery ledger's boundaries, including the
 24-hour `RECALL_DELIVERY_HISTORY_HORIZON_HOURS`. This attribution requires no
 new persistent registry, counter table or migration. The shared corpus ledger
-continues to serve its own ranking and measurement consumers.
+continues to serve its measurement and attribution consumers.
 
 Unreadable history and unknown work do not justify curtailment. The memo can
 delay a history read while the current builder's known offers remain below the
@@ -230,10 +240,10 @@ collapse is rechecked so new follow evidence can reopen the channel.
 Without decay, offers eventually leave the 24-delivery history window and allow
 a retry. With `LM_MAP_CURTAIL_DECAY` enabled, the skip allowance is
 `min(2**(N-1), 8)` for N unaccepted offers. Pool-aware retries compare a digest
-of admitted members, anchor assignments and eligible cold candidates. An
+of query-qualified admitted members and their anchor assignments. An
 unchanged pool extends the skip run; a changed pool can produce a full map.
 Empty retries persist their digest too. Intermediate skips perform no pool
-construction, matured-history read, scoring or selection accounting.
+construction, query qualification or selection accounting.
 
 The digest and markers live in the same persisted history, so cold continuation
 retains retry state. Neither cadence changes the main recall or blocks access

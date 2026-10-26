@@ -33,7 +33,10 @@ duplicates, and then calls
 `apply_score_gate(ranked, max_results, plan=, demotions=, causal_mode=,
 corrections_by_superseded=)`, which
 returns `(delivered, residual)`. `delivered` is what the recall returns and
-records in its event. `residual` is what `recall_map` describes.
+records in its event. `residual` includes both passing overflow and rejected
+entries. The optional map uses the same `QueryRelevance` object to qualify that
+residual, with the full ranking available for correction inheritance. It never
+uses residual membership alone as evidence of applicability.
 
 ## Forms
 

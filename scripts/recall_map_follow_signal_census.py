@@ -12,12 +12,9 @@ trigger boost mixes into nearly every recall satisfies forever without anybody
 reading it.  ``lookup_consumed`` resolves to *somebody fetched this exact ULID*,
 which only a reader who was handed the ULID does.
 
-How strongly the second should count against the first is the question the
-pool-gate valves need answered with measurement over accrued windows.
-This script produces the
-measurement; ``artifacts/recall-map/follow-signal/procedure.md`` turns a
-distribution into thresholds.  Neither sets a default: turning a valve on stays
-the operator's decision.
+This script describes accrued delivery outcomes. These corpus-wide statistics
+do not qualify or order ordinary map candidates. Current-work curtailment uses
+its own attributed delivery and follow evidence.
 
 The four classes, in the priority order they are assigned
 ---------------------------------------------------------
@@ -131,16 +128,6 @@ CLASSES: tuple[str, ...] = (CLASS_LOOKUP, CLASS_ASK, CLASS_REDELIVERED, CLASS_NO
 #: justified here.  ``same_transport`` is the conservative reading, and the
 #: distance between the two is the artifact's honest error bar on this probe.
 ASK_CORRELATIONS: tuple[str, ...] = ("any_transport", "same_transport")
-
-#: Names for the five frozen relevance features, in ``_relevance_features``
-#: order.  Names only — the means, scales and arithmetic stay where they are.
-RELEVANCE_FEATURE_NAMES: tuple[str, ...] = (
-    "level_is_schema",
-    "log1p_matured",
-    "log1p_unconsumed",
-    "log1p_trailing_nonconsumed",
-    "consumed_ratio",
-)
 
 #: Half-width a rate must reach before this artifact calls it decided.  Not a
 #: statistical law — a pre-registration, so "under-powered" is a verdict the
@@ -903,129 +890,10 @@ def _rank(
     )
 
 
-class _NodeShim:
-    """The only attribute ``_relevance_features`` reads off a node.
-
-    Deserializing whole :class:`~living_memory.models.Node` objects to ask the
-    scorer one question would make the census depend on the node table's shape
-    for no gain; the frozen feature vector reads ``level`` and nothing else.
-    """
-
-    __slots__ = ("level",)
-
-    def __init__(self, level: Any) -> None:
-        self.level = level
 
 
-def frozen_relevance(level: Any, triple: Mapping[str, Any]) -> dict[str, Any]:
-    """What the untouched relevance evaluator sees for one node, today.
-
-    Computed through ``recall_map.relevance_score`` on a
-    :class:`MaturedRecallHistory` rebuilt from this census's own triple, so the
-    artifact reports the frozen scorer's actual view rather than a paraphrase
-    of it.  This is the number the pool gates would sit beside, and the reason
-    the sticky rows carry it: the goal's premise is that hub schemas ride on
-    ``consumed = 1, K = 0`` forever, and that premise is checkable here.
-    """
-
-    from living_memory.recall_map import (  # local: keep the module header short
-        RELEVANCE_FEATURE_MEANS,
-        RELEVANCE_FEATURE_SCALES,
-        _relevance_features,
-        relevance_score,
-    )
-    from living_memory.storage import MaturedRecallHistory
-
-    if triple.get("available"):
-        history = MaturedRecallHistory.known(
-            matured=int(triple["matured"]),
-            consumed=int(triple["consumed"]),
-            trailing_nonconsumed=int(triple["trailing_nonconsumed"]),
-            lookup_consumed=int(triple.get("lookup_consumed") or 0),
-            lookup_known=int(triple.get("lookup_known") or 0),
-            lookup_trailing_absent=int(triple.get("lookup_trailing_absent") or 0),
-        )
-    else:
-        history = MaturedRecallHistory.unavailable(
-            str(triple.get("unavailable_reason") or "history_ledger_unavailable")
-        )
-
-    consumed_ratio = None
-    if triple.get("available") and triple.get("matured"):
-        consumed_ratio = round(int(triple["consumed"]) / int(triple["matured"]), 6)
-    features = _relevance_features(_NodeShim(level), history)
-    return {
-        "level": level,
-        "consumed_ratio": consumed_ratio,
-        "trailing_nonconsumed": triple.get("trailing_nonconsumed"),
-        "score": round(relevance_score(_NodeShim(level), history), 6),
-        # Per-feature z-contributions to that sum.  The premise this artifact
-        # was asked to check is that hub schemas survive on ``consumed = 1,
-        # K = 0``; the contributions say which term actually carries them, and
-        # a claim about the wrong term would send the valves after the wrong
-        # thing.
-        "contributions": {
-            name: round((float(value) - mean) / scale, 6)
-            for name, value, mean, scale in zip(
-                RELEVANCE_FEATURE_NAMES,
-                features,
-                RELEVANCE_FEATURE_MEANS,
-                RELEVANCE_FEATURE_SCALES,
-                strict=True,
-            )
-        },
-    }
 
 
-def frozen_scorer_probe() -> dict[str, Any]:
-    """Which way the frozen relevance score moves as the K tail grows.
-
-    Corpus-independent and deliberately so: it interrogates the frozen
-    evaluator, not a database.  It is in the census because the demotion valve
-    is specified as "N known windows without exogenous follow demotes the row",
-    and whether that can be expressed *through* ``trailing_nonconsumed`` or has
-    to be a gate *outside* the zsum depends entirely on this sign.  Nothing
-    here changes the scorer; it only asks it.
-    """
-
-    from living_memory.recall_map import (
-        RELEVANCE_THRESHOLD,
-        relevance_score,
-    )
-    from living_memory.storage import MaturedRecallHistory
-
-    curves: dict[str, Any] = {}
-    for level in ("schema", "trace"):
-        points = []
-        for streak in (0, 1, 3, 5, 10, 20):
-            history = MaturedRecallHistory.known(
-                matured=20, consumed=0, trailing_nonconsumed=streak
-            )
-            points.append(
-                {
-                    "trailing_nonconsumed": streak,
-                    "score": round(relevance_score(_NodeShim(level), history), 6),
-                }
-            )
-        curves[level] = points
-    schema_curve = [point["score"] for point in curves["schema"]]
-    return {
-        "question": (
-            "with matured = 20 and consumed = 0, does a longer unfollowed tail "
-            "lower the frozen relevance score?"
-        ),
-        "admission_threshold": RELEVANCE_THRESHOLD,
-        "curves": curves,
-        "k_tail_is_demoting": schema_curve[-1] < schema_curve[0],
-        "finding": (
-            "the K term is monotonically increasing: a row delivered twenty "
-            "times and consumed none of them scores higher the longer it has "
-            "gone unconsumed. Demotion therefore cannot be obtained by feeding "
-            "a better signal into trailing_nonconsumed; it has to be a gate "
-            "applied outside the frozen zsum, which is also the only shape the "
-            "frozen-evaluator boundary permits."
-        ),
-    }
 
 
 def node_metadata(
@@ -1285,9 +1153,6 @@ def census_corpus(
                     "pinned": node_id in pinned,
                     "node": meta.get(node_id, {}),
                     "matured_history": triple,
-                    "frozen_relevance": frozen_relevance(
-                        meta.get(node_id, {}).get("level"), triple
-                    ),
                     "windows": per_node[node_id].to_dict(),
                 }
             )
@@ -1420,7 +1285,6 @@ def build_census(
                 - 1,
             ],
         },
-        "frozen_scorer_probe": frozen_scorer_probe(),
         "field_known_windows": field_known,
         "arms": arms,
     }

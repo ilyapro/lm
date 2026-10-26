@@ -281,18 +281,6 @@ def test_run_reports_zero_echo_disagreements(arm: dict[str, Any]) -> None:
     assert agreement["disagreements"] == 0
 
 
-def test_frozen_scorer_probe_records_that_the_k_tail_does_not_demote() -> None:
-    """A measured claim the demotion valve's design rests on.
-
-    If a future refit of the frozen evaluator ever gives K a demoting sign,
-    this test fails and the procedure's section 2.2 has to be rewritten — which
-    is the point of pinning it.
-    """
-
-    result = census.frozen_scorer_probe()
-    scores = [point["score"] for point in result["curves"]["schema"]]
-    assert scores == sorted(scores), "K is expected to be monotonically increasing"
-    assert result["k_tail_is_demoting"] is False
 
 
 # ----------------------------------------------------------------------
@@ -418,7 +406,6 @@ def test_procedure_pins_the_thresholds_the_census_reports(
     procedure = (ARTIFACT_DIR / "procedure.md").read_text(encoding="utf-8")
     assert str(census.windows_for_half_width(0.10)) in procedure
     assert str(census.windows_for_half_width(0.10, 0.1)) in procedure
-    assert str(committed["frozen_scorer_probe"]["admission_threshold"]) in procedure
     for arm in committed["arms"]:
         if arm["provenance"] == "field" and arm.get("usable"):
             assert f"{arm['volume']['matured_windows']:,}".replace(",", " ") in (
