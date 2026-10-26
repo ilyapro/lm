@@ -35,10 +35,12 @@ class Encoder:
 
 
 def legacy(store, content=CONTENT, *, level="concept", materializer=None):
+    provenance = ({"cluster_key": "fixture"} if materializer == "cluster" else
+                  {"strategy": materializer} if materializer else None)
     node = store.create_node(
         level=level, content=content, context={"scope": SCOPE},
         representative_embedding=[0.0, 0.0, 1.0],
-        provenance={"materializer": materializer} if materializer else None,
+        provenance=provenance,
     )
     with store.transaction():
         store.connection.execute(
@@ -192,6 +194,7 @@ def test_chunk_only_write_preserves_whole_node(tmp_path, materializer):
     encoder = Encoder()
     with MemoryStore(tmp_path / "memory.sqlite3", chunk_embedder=encoder.embed_batch) as store:
         node = legacy(store, materializer=materializer)
+        assert node.materializer == materializer
         before = store.get_node(node.id).to_dict()
         assert refresh(store, node)
         assert store.get_node(node.id).to_dict() == before
