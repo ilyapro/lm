@@ -110,7 +110,7 @@ def test_first_fallback_next_passage_one_query_search_and_no_repeated_encoding(a
         return pool(*args, **kwargs)
 
     def counted_scan(**kwargs):
-        scans.append(1)
+        scans.append(kwargs.get("scope"))
         return scan(**kwargs)
 
     monkeypatch.setattr(retrieval, "_pooled_chunk_similarities", counted_pool)
@@ -131,7 +131,9 @@ def test_first_fallback_next_passage_one_query_search_and_no_repeated_encoding(a
     third = call(mcp)["results"][0]
     assert FACT in third["content"]
     assert encoder.queries == [QUERY] * 3 and len(searches) == 3
-    assert len(scans) == 2  # one initial scan, one invalidation; then warm reuse
+    # The plan also initializes its empty global scope. Only the changed scope
+    # is rescanned after refresh; the third recall reuses both cached scopes.
+    assert scans.count(SCOPE) == 2 and scans.count("global") == 1
     assert len(encoder.batches) == 1 and rows(store, node.id) == refreshed
     assert rows(store, untouched.id) == untouched_rows
     assert mcp.tools["memory_lookup"](node_id=node.id)["results"][0]["content"] == CONTENT
