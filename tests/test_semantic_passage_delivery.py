@@ -146,6 +146,25 @@ def test_cross_paragraph_condition_precedes_remote_context(tmp_path, condition_b
         assert store.get_node(node.id).content == content
 
 
+@pytest.mark.parametrize("condition_before", [False, True])
+@pytest.mark.parametrize("budget", [300, 500])
+def test_large_adjacent_paragraph_does_not_displace_smaller_context(tmp_path, condition_before, budget):
+    permission = "The dashboard may restart automatically after maintenance."
+    condition = ("On the operator workstation, this permission requires an explicit operator "
+                 "request; otherwise the dashboard must remain running.")
+    larger = "Routine dashboard maintenance reports describe the archive. " * 6
+    nearby = [condition, permission, larger] if condition_before else [larger, permission, condition]
+    content = "\n\n".join([BACKGROUND, *nearby, BACKGROUND])
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        start = content.index(permission)
+        put_match(store, content, start, start + len(permission))
+        results = recall(MemoryRecallService(store, embedder=QueryEmbedder()))
+        body = shape(results, budget)[0]["content"]
+        assert permission in body and condition in body
+        assert len(body) <= budget
+        assert body.endswith("\n[Incomplete source context]")
+
+
 def test_exact_generation_and_content_binding(tmp_path, monkeypatch):
     content = BACKGROUND + "\n\n" + FACT
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
