@@ -271,7 +271,9 @@ def test_positive_history_cannot_qualify_fixed_channel_or_trigger_evidence(stats
 
     channel = make_result("x", 0.75)
     trigger = make_result("x", 0, node=make_node("x", level="schema"), trigger_score=0.975)
-    for result, demotions in ((channel, {}), (trigger, {"x": 0.4})):
+    carrier = make_result("x", 0, node=make_node("x", level="concept"),
+                          trigger_score=0.975, trigger_coverage=0.65)
+    for result, demotions in ((channel, {}), (trigger, {"x": 0.4}), (carrier, {})):
         reinforced = replace(result, node=replace(result.node, **stats))
         assert gate_score(reinforced, demotions) == gate_score(result, demotions)
         assert trigger_gate_score(reinforced, demotions) == trigger_gate_score(result, demotions)
@@ -289,8 +291,8 @@ def test_historical_graph_is_not_source_evidence():
     assert passes_gate(sourced, 0.35)
 
 
-@pytest.mark.parametrize("negative", [{"usefulness_score": -1}, {"confidence": 0.1}])
-def test_positive_history_does_not_offset_negative_source_restrictions(negative):
+def test_positive_history_does_not_offset_negative_source_restrictions():
+    negative = {"confidence": 0.1}
     channel = make_result("x", 1, node=make_node("x", **negative))
     trigger = make_result("x", 0, node=make_node("x", level="schema", **negative), trigger_score=0.975)
     positive = {"access_count": 1000, "confidence": 1, "usefulness_score": 1, **negative}
@@ -299,6 +301,38 @@ def test_positive_history_does_not_offset_negative_source_restrictions(negative)
         assert gate_score(reinforced) == gate_score(result)
         assert trigger_gate_score(reinforced) == trigger_gate_score(result)
         assert gate_score(result) < gate_score(replace(result, node=make_node("x", level=result.node.level)))
+
+
+@pytest.mark.parametrize("level", ["trace", "schema", "concept"])
+def test_net_usefulness_history_is_not_qualification_evidence(level):
+    base = make_result("x", 0.9, node=make_node("x", level=level),
+                       trigger_score=0.975, trigger_coverage=0.65)
+    for usefulness in (-1, -0.1, 0, 0.1, 1):
+        changed = replace(base, node=replace(base.node, usefulness_score=usefulness))
+        assert gate_score(changed) == gate_score(base)
+        assert trigger_gate_score(changed) == trigger_gate_score(base)
+        assert not passes_gate(changed, 0.35, {"x": 0.1})
+
+
+def test_lookup_cannot_erase_query_restrictions_via_net_usefulness(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+    from living_memory.feedback import apply_lookup_credit
+
+    monkeypatch.setenv("LM_LOOKUP_CREDIT_POLICY", "delivered")
+    with MemoryStore(tmp_path / "negative.sqlite3") as store:
+        node = store.append_trace("Current source", {"scope": SCOPE})
+        store.update_node(node.id, stats={"usefulness_score": -0.1})
+        before = make_result(node.id, 0.9, node=store.get_node(node.id))
+        event = store.record_recall_event(query="Current query", scope=SCOPE,
+                    ambient_context={"transport_session_id": "one"},
+                    results=[{"node_id": node.id, "bm25_score": 0.9}])
+        credit = apply_lookup_credit(store, "lookup", [node.id], "one", datetime.now(UTC))
+        assert credit.credited and store.credited_node_ids(event.id) == {node.id}
+        after = replace(before, node=store.get_node(node.id))
+        assert after.node.usefulness_score > before.node.usefulness_score
+        for demotions in ({}, {node.id: 0.5}):
+            assert gate_score(after, demotions) == gate_score(before, demotions)
+            assert passes_gate(after, 0.35, demotions) == passes_gate(before, 0.35, demotions)
 
 
 def _fields(result: RecallResult) -> dict[str, Any]:

@@ -290,3 +290,40 @@ def test_anchor_only_discovery_does_not_become_source_evidence(tmp_path, monkeyp
         assert delivered[0]["source_graph_score"] == 0
         assert delivered[0]["withheld"] == "below_threshold"
         assert service.last_query_relevance.eligible_ids() == set()
+
+
+@pytest.mark.parametrize("causal", [False, True])
+def test_source_adjacency_bound_is_independent_of_history_weights(tmp_path, causal):
+    from living_memory.scope import ScopePlan
+    from living_memory.score_gate import gate_score, passes_gate
+
+    with MemoryStore(tmp_path / "bound.sqlite3") as store:
+        for name in ("root", "target", *(f"history-{i}" for i in range(200))):
+            node(store, name)
+        source = store.create_connection("root", "target", "requires" if causal else "related",
+                    weight=0.9, metadata={"kind": "content_reference", "rule": "R6"})
+        history = [store.create_connection("root", f"history-{i}", "related", weight=0.25,
+                                           metadata={"basis": "co_access"}) for i in range(200)]
+        service = MemoryRecallService(store, embedder=Encoder())
+        plan = ScopePlan("project:graph", ("project:graph",))
+
+        def snapshot():
+            candidates = {key: retrieval._Candidate(node=store.get_node(key), vector_score=score)
+                          for key, score in (("root", 1), ("target", 0.6))}
+            service._collect_graph(plan, candidates, max_depth=1, causal_mode=causal)
+            target = candidates["target"]
+            return retrieval.RecallResult(target.node, score=0, vector_score=target.vector_score,
+                        graph_score=target.graph_score, source_graph_score=target.source_graph_score)
+
+        before = snapshot()
+        for edge in history:
+            store.update_connection(edge.id, weight=1)
+        after = snapshot()
+        assert before.source_graph_score == after.source_graph_score > 0
+        assert gate_score(before, causal_mode=causal) == gate_score(after, causal_mode=causal)
+        assert passes_gate(before, 0.35, causal_mode=causal)
+        assert passes_gate(after, 0.35, causal_mode=causal)
+        ordinary = store.list_recall_connections(["root"], limit=200)["root"]
+        sourced = store.list_recall_connections(["root"], limit=200, source_only=True)["root"]
+        assert len(ordinary) == 200 and source.id not in {c.id for c in ordinary}
+        assert [c.id for c in sourced] == [source.id]

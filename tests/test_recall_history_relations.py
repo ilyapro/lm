@@ -1,6 +1,8 @@
 """Recall history is observable without becoming evidence between topics."""
 
 import asyncio
+import json
+import sqlite3
 
 import pytest
 
@@ -9,7 +11,9 @@ from fastmcp import Client
 
 import living_memory.server as server
 from living_memory.edge_derivation import derive_edges_for_new_trace
-from living_memory.relations import is_semantic_relation, semantic_relation_sql, source_relation_weight
+from living_memory.relations import (
+    is_semantic_relation, semantic_relation_sql, source_relation_weight, source_relation_weight_sql,
+)
 from living_memory.replay import snapshot_evidence
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
@@ -189,6 +193,13 @@ def test_historical_edges_do_not_spend_adjacency_limit(tmp_path):
 def test_source_contribution_keeps_independent_and_unknown_relations(relation_type, metadata, expected):
     assert source_relation_weight(relation_type, 1, metadata) == pytest.approx(expected)
     assert source_relation_weight(relation_type, 0.1, metadata) == pytest.approx(min(0.1, expected))
+    with sqlite3.connect(":memory:") as conn:
+        for weight in (0, 0.1, 1):
+            projected = conn.execute(
+                f"SELECT {source_relation_weight_sql('c')} FROM (SELECT ? AS type, ? AS weight, ? AS metadata) c",
+                (relation_type, weight, json.dumps(metadata)),
+            ).fetchone()[0]
+            assert projected == pytest.approx(source_relation_weight(relation_type, weight, metadata))
 
 
 def test_content_reference_replaces_technical_history_in_shared_writer(tmp_path):
