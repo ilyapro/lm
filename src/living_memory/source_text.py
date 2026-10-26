@@ -1,4 +1,4 @@
-"""Conservative source passage boundaries shared by derivation and delivery."""
+"""Conservative source boundaries shared by chunking, derivation and delivery."""
 
 from __future__ import annotations
 

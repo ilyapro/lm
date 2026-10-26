@@ -449,6 +449,9 @@ def test_model_tokenizer_chunks_fit_the_encoder_sequence_limit(
     for chunk in chunks:
         standalone = count_tokens(chunk.text, tokenizer=model_tokenizer)
         assert standalone + ENCODER_SPECIAL_TOKENS <= MODEL_MAX_SEQ_LENGTH, chunk
+        # Count actual encoder ids as well as normalized character spans.
+        encoded = model_tokenizer._tokenizer.encode(chunk.text, add_special_tokens=True)
+        assert len(encoded.ids) <= MODEL_MAX_SEQ_LENGTH, chunk
 
 
 def test_heuristic_tokenizer_approximates_the_model_tokenizer(

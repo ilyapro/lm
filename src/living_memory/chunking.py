@@ -1,16 +1,9 @@
 """Deterministic, boundary-aware text chunking for embedding windows.
 
-Why this module exists
----------------------
 The recall encoder is ``paraphrase-multilingual-MiniLM-L12-v2`` configured with
-``max_seq_length = 128``. Everything past token 128 of a node is invisible to
-its vector: measured on the live database on 2026-08-17, 67% of active nodes are
-longer than that (median 235 tokens), and
-``cos(vector(full node), vector(first 128 tokens)) == 1.000``. Raising the limit
-to 512 was measured and rejected (mean cos 0.479 versus 0.489, and 5x slower
-encoding); splitting a node into overlapping ~128-token windows scored 0.954 on
-the same probe. This module is only the splitter: it never embeds, stores, or
-retrieves anything.
+``max_seq_length = 128``. Search windows cover the source within that budget,
+using the paragraph and passage boundaries shared by derivation and delivery.
+This module only splits text; it never embeds, stores, or retrieves anything.
 
 Token accounting
 ----------------
@@ -277,9 +270,9 @@ def chunk_text(
     standalone statements; delivery resolves their coordinates in the source.
 
     A text with no tokens at all (empty or whitespace-only) yields no chunks:
-    there is nothing to embed. Chunk text carries no trailing whitespace, so with
-    ``overlap_tokens == 0`` the whitespace at a seam belongs to no chunk; the
-    token stream itself is always covered completely.
+    there is nothing to embed. Interior chunks end on their last token, so seam
+    whitespace may belong to no chunk; the token stream is covered completely.
+    The first and last chunks retain the input's outer whitespace.
 
     Raises:
         ValueError: on arguments that would produce empty windows or a

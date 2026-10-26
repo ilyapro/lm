@@ -76,8 +76,10 @@ without changing the other surface.
    ambiguous boundary hints stay inside a candidate; this heuristic does not parse arbitrary
    abbreviations or preserve all context across sentences. All passages overlapped
    by a verified semantic source address are budgeted together before optional
-   context. Omitted context is marked; an oversized anchor contributes an explicitly
-   incomplete source prefix. Arbitrary character offsets and soft line wraps do not
+   context. Complete adjacent paragraphs from the same source precede distant
+   lexical context. Missing adjacent context is explicitly marked incomplete;
+   other omitted context is marked, and an oversized anchor contributes an
+   explicitly incomplete source prefix. Arbitrary character offsets and soft line wraps do not
    create independent candidates. Binding schemas
    remain complete instead of being snippeted. The bounded event history is
    read before retrieval, so a response never stubs itself.

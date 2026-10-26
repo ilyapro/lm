@@ -200,9 +200,14 @@ with conservative passage cuts. Adjacent paragraphs are never combined merely
 to fill a vector window. This can increase the number of vectors and storage;
 it is not a general speed or recall guarantee. Each window retains its global
 source token and character coordinates. Delivery uses that source address,
-not the window as an independent assertion. A condition in another paragraph
-can still be outside a bounded excerpt: omission notices and `content_ref`
-remain necessary, and exact lookup returns the complete source.
+not the window as an independent assertion. After the mandatory source, it
+prefers complete adjacent paragraphs from that same source before distant
+lexical matches, following context before preceding context. If adjacent source
+context cannot fit, the excerpt says `[Incomplete source context]`; if the
+mandatory passage itself cannot fit, it says `[Incomplete passage]`. Other
+omissions use `[Context omitted]`. Neither adjacency nor these textual boundaries
+prove semantic completeness. Conditions can still be omitted; `content_ref`
+and exact lookup retain access to the complete source.
 
 The splitter applies when chunks are written or replaced. Opening a database
 does not reindex existing chunks: freshness is based on the source content
