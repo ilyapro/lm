@@ -143,7 +143,7 @@ def test_disabled_and_empty_paths_do_not_gain_work(tmp_path, monkeypatch, case, 
         elif case == "no-match":
             query = "unrelated"
         elif case == "empty-vector":
-            monkeypatch.setattr(MemoryRecallService, "_collect_vector", lambda *a, **k: [])
+            monkeypatch.setattr(Encoder, "embed", lambda self, text: [])
         counts = count_work(monkeypatch, store)
         control = IndependentMatches(store, embedder=Encoder())
         expected = recall(control, query=query, depth=int(graph))
