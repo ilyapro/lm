@@ -455,6 +455,15 @@ def test_same_session_delivers_current_content_and_preserves_feedback(tmp_path, 
 
 
 def test_new_query_can_deliver_a_previously_unseen_excerpt(tmp_path, monkeypatch):
+    from living_memory.retrieval import MemoryRecallService
+
+    class LexicalEmbedder:
+        def embed(self, text):
+            return [0.0, 0.0, 0.0]
+
+    monkeypatch.setattr("living_memory.server.MemoryRecallService", lambda store: MemoryRecallService(
+        store, embedder=LexicalEmbedder(),
+    ))
     monkeypatch.setenv("LM_RECALL_MAP", "0")
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     scope = "project:synthetic-new-excerpt"

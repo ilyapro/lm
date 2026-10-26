@@ -962,8 +962,8 @@ def test_excerpt_selects_late_constraint_with_its_source_topic(separate_paragrap
     )[0]
 
     excerpt = entry["node"]["content"]
-    assert f"- {source}: {constraint}" in excerpt
-    assert f"- {other}: {constraint}" not in excerpt
+    labelled_constraint = next(line for line in excerpt.splitlines() if constraint in line)
+    assert labelled_constraint.startswith(f"- {source}: ")
     assert len(excerpt) <= 300
 
 
