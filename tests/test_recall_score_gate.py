@@ -1,9 +1,9 @@
 """Recall quality gate (``score_gate``): weak results do not take a full slot.
 
 Pins docs/recall-score-gate.md: off is the plain cut; ``drop`` fills from
-below with passing results and keeps everything else in the residual;
+below with passing results, then bounded references in spare slots;
 ``stub`` marks failing results inside the cut and ``delivery`` renders them
-content-less; rank 1 always ships in full; the gate score ignores the store's
+content-less; every rank needs qualifying evidence; the gate score ignores the store's
 retrieval weights; trigger-found schemas are gated on their own scale.
 """
 
@@ -127,21 +127,33 @@ def test_drop_fills_from_below_and_residual_keeps_the_rest(
     assert sorted(ids(delivered) + ids(residual)) == sorted(ids(RANKED))
 
 
-def test_drop_shortens_the_answer_when_too_few_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_drop_fills_spare_slots_with_withheld_sources(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(MIN_SCORE_ENV, "0.3")
-    delivered, residual = apply_score_gate(RANKED, 10)
-    assert ids(delivered) == ["a", "b", "d"]
-    assert ids(residual) == ["c", "e", "f"]
+    delivered, residual = apply_score_gate(RANKED, 5)
+    assert ids(delivered) == ["a", "b", "d", "c", "e"]
+    assert [r.withheld for r in delivered] == [None] * 3 + [WITHHELD_BELOW_THRESHOLD] * 2
+    assert ids(residual) == ["f"]
 
 
-def test_rank_one_always_delivered_in_full(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("form", ["drop", "stub"])
+def test_all_weak_results_are_bounded_references(monkeypatch: pytest.MonkeyPatch, form) -> None:
     weak = [make_result("w1", 0.05), make_result("w2", 0.9), make_result("w3", 0.01)]
     monkeypatch.setenv(MIN_SCORE_ENV, "0.99")
-    for form in ("drop", "stub"):
-        monkeypatch.setenv(GATE_FORM_ENV, form)
-        delivered, _ = apply_score_gate(weak, 3)
-        assert delivered[0] is weak[0]
-        assert delivered[0].withheld is None
+    monkeypatch.setenv(GATE_FORM_ENV, form)
+    delivered, residual = apply_score_gate(weak, 2)
+    assert ids(delivered) == ["w1", "w2"]
+    assert all(r.withheld == WITHHELD_BELOW_THRESHOLD for r in delivered)
+    assert residual == weak[2:]
+    assert all(r.withheld is None for r in weak)
+
+
+def test_weak_rank_one_cannot_displace_passing_result(monkeypatch):
+    monkeypatch.setenv(MIN_SCORE_ENV, "0.35")
+    weak = make_result("weak", 0.05)
+    passing = make_result("passing", 1.0)
+    delivered, residual = apply_score_gate([weak, passing], 1)
+    assert delivered == [passing]
+    assert residual == [weak]
 
 
 def test_empty_ranked_and_zero_max(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -284,7 +296,9 @@ def test_gate_score_does_not_read_the_store_weights(tmp_path: Path, monkeypatch:
                 log_event=False,
             )
             everything = delivered + service.last_residual
-            return set(ids(delivered)), {r.node.id: gate_score(r) for r in everything}
+            return {r.node.id for r in delivered if not r.withheld}, {
+                r.node.id: gate_score(r) for r in everything
+            }
 
         store.set_retrieval_weights(SCOPE, bm25=0.9, vector=0.1, graph=0.0)
         passed_a, scores_a = run()
@@ -292,15 +306,9 @@ def test_gate_score_does_not_read_the_store_weights(tmp_path: Path, monkeypatch:
         passed_b, scores_b = run()
 
     assert scores_a == pytest.approx(scores_b)
-    # Rank 1 may differ between the two weightings (it always ships); every
-    # other slot is decided by the weight-free gate score alone.
-    assert passed_a - _rank_one_only(passed_a, scores_a) == passed_b - _rank_one_only(passed_b, scores_b)
+    assert passed_a == passed_b
     assert any(score < 0.2 for score in scores_a.values())
     assert any(score >= 0.2 for score in scores_a.values())
-
-
-def _rank_one_only(passed: set[str], scores: dict[str, float]) -> set[str]:
-    return {node_id for node_id in passed if scores[node_id] < 0.2}
 
 
 def _seed_corpus(store: MemoryStore) -> None:
@@ -399,20 +407,24 @@ def test_live_path_drop_and_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         stub_delivered, stub_residual = _recall_snapshot(store)
 
     off_ids = [entry["node"]["id"] for entry in off_delivered]
-    assert [entry["node"]["id"] for entry in drop_delivered] == off_ids[:1]
-    assert drop_residual == off_ids[1:] + off_residual
-    assert [entry["node"]["id"] for entry in stub_delivered] == off_ids
-    assert [entry.get("withheld") for entry in stub_delivered] == [None] + [
+    assert [entry["node"]["id"] for entry in drop_delivered] == off_ids
+    assert [entry.get("withheld") for entry in drop_delivered] == [
         WITHHELD_BELOW_THRESHOLD
-    ] * (len(off_ids) - 1)
+    ] * len(off_ids)
+    assert drop_residual == off_residual
+    assert [entry["node"]["id"] for entry in stub_delivered] == off_ids
+    assert [entry.get("withheld") for entry in stub_delivered] == [
+        WITHHELD_BELOW_THRESHOLD
+    ] * len(off_ids)
     assert stub_residual == off_residual
 
 
-def test_withheld_content_reaches_same_session_when_it_becomes_relevant(tmp_path, monkeypatch):
+@pytest.mark.parametrize("form", ["drop", "stub"])
+def test_withheld_content_reaches_same_session_when_it_becomes_relevant(tmp_path, monkeypatch, form):
     from living_memory.server import create_mcp_server
     from test_lookup import FakeMCP
     monkeypatch.setenv(MIN_SCORE_ENV, "5")
-    monkeypatch.setenv(GATE_FORM_ENV, "stub")
+    monkeypatch.setenv(GATE_FORM_ENV, form)
     monkeypatch.setenv("LM_RECALL_MAP", "0")
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     store = mcp.memory_store
@@ -428,6 +440,7 @@ def test_withheld_content_reaches_same_session_when_it_becomes_relevant(tmp_path
     first = recall("Harbour ALPHA KESTREL")
     withheld = next(item for item in first["results"] if item["id"] == target.id)
     assert withheld["delivery"] == "below_threshold" and withheld["content"] == ""
+    monkeypatch.setenv(MIN_SCORE_ENV, "0.35")
     second = recall("Harbour OMEGA NIGHTJAR")
     assert second["results"][0]["id"] == target.id
     assert second["results"][0]["delivery"] == "full"
@@ -442,8 +455,12 @@ def test_unused_tail_qualification_stays_outside_required_selection(monkeypatch)
     monkeypatch.setenv(GATE_FORM_ENV, "drop")
     evidence = score_gate.QueryRelevance(ranked)
 
-    def unavailable(*args, **kwargs):
-        raise ValueError("query qualification unavailable")
+    ordinary = score_gate.passes_gate
+
+    def unavailable(result, *args, **kwargs):
+        if result.node.id == "tail":
+            raise ValueError("query qualification unavailable")
+        return ordinary(result, *args, **kwargs)
 
     monkeypatch.setattr(score_gate, "passes_gate", unavailable)
     selected, residual = apply_score_gate(ranked, 1, relevance=evidence)
