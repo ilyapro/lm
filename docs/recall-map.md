@@ -131,8 +131,9 @@ All candidates use the same query qualification regardless of their age or
 exposure history. A never-shown or rarely used entry needs no separate quota.
 Query anchors, positive feedback and history-derived graph weights can aid
 retrieval and its order; they do not qualify a map suggestion. The shared
-qualifier uses transient source graph evidence and retains negative restrictions
-on both channel and trigger scales. No map-specific corpus delivery count,
+qualifier uses transient source graph evidence and retains source confidence,
+correction and query-relative/hub restrictions on both channel and trigger
+scales. The net usefulness accumulator does not enter either scale. No map-specific corpus delivery count,
 consumed ratio or nonuse streak admits or orders a candidate.
 The optional stored-usefulness floor rejects values below
 `LM_MAP_POOL_MIN_USEFULNESS` only when `LM_MAP_POOL_USEFULNESS_GATE` is enabled.

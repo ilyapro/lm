@@ -84,88 +84,104 @@ empty response body does not establish content delivery. If a later recall
 selects it above the gate, session dedup permits its current text unless a
 separate full/snippet response already supplied that content.
 
-## Gate score
+## Qualification evidence
 
-The ranker's `score` uses the store's per-scope retrieval weights
-(`store.get_retrieval_weights`). These act like a moving average of the last
-~100 credits, so a threshold on `score` would mean something different next
-week. The gate therefore computes its own score:
+Ranking and qualification share `_blend_candidate_score`, with different inputs
+and feedback treatment. Ranking keeps learned scope weights, query anchors and
+historical feedback. `QueryRelevance` uses the fixed `REFERENCE_WEIGHTS`
+(BM25 0.4, vector 0.4, graph 0.2) and current query/source evidence:
 
 ```
 gate_score(result, demotions, *, plan=None, causal_mode=False)
-  = _blend_candidate_score(bm25, vector, graph of the result,
+  = _blend_candidate_score(bm25, vector, source_graph_score, trigger,
                            REFERENCE_WEIGHTS, plan, causal_mode,
-                           superseded=result.superseded, superseding=False)
+                           superseded=result.superseded, superseding=False,
+                           qualification=True)
     * demotions.get(node_id, 1.0)
 ```
 
-- `REFERENCE_WEIGHTS = bm25 0.4, vector 0.4, graph 0.2` is a fixed module
-  constant: the seeded `global` family weights, the only default that gives
-  every channel weight. It never reads the store.
-- It calls the ranker's own blend function, so it applies the same multipliers
-  as the ranker:
-  - the strong-vector floor (`vector ≥ 0.65` → base ≥ vector)
-  - the graph-weight floor (0.25, or 0.75 in causal mode)
-  - the scope boost (`1 + 0.2 · (len(plan.scopes) − rank − 1)`)
-  - the node feedback multiplier (confidence × usefulness × access, capped at 1.4)
-  - the superseded penalty 0.2×
-  - the causal boost 1.5× with graph evidence
-  - the per-node demotion from `demotions` (query-relative irrelevance and hub
-    suppression, merged by the service)
-- `graph_score` is the one the ranker kept (`effective_graph`), so the
-  anchors-off fallback is respected.
-- The trigger channel is left out of this blend. See the next section.
-- The 1.2× boost for a node that *corrects* another is not included in its
-  individual gate score. A present correction can also qualify through the
-  passing score of the original it supersedes.
-- Without `plan` (offline), the scope boost is 1.0.
+The same calculation retains the strong-vector floor (`vector >= 0.65`),
+graph-weight floor (0.25, or 0.75 in causal mode), scope boost and causal boost.
+Ordinary trigger overlap contributes with its existing content support and
+query coverage. The individual score excludes the correction's ranking boost;
+a present correction can also inherit its original's qualifying evidence.
 
-**Offline use:** `gate_score`, `trigger_gate_score` and `passes_gate` take a
-`RecallResult` (or any object with `node`, `bm25_score`, `vector_score`,
-`graph_score`, `trigger_score`, `superseded`) and a demotions mapping. They have
-no store and no env, so a harness can score snapshot results at any threshold.
-Note that the node's feedback fields (`confidence`, `usefulness_score`,
-`access_count`) are read from `result.node`, so replay against the snapshot's
-nodes.
+Qualification keeps low source confidence, the superseded penalty (0.2), and
+query-relative/hub demotions. It ignores access and the **entire** net usefulness
+accumulator, including negative values: lookup credit can raise that accumulator
+without adding source evidence or cancelling confirmed query-relative
+irrelevance. Positive confidence does not lift the score. These restrictions
+apply to both qualification scales; positive ranking history cannot offset them.
+Confirmed `used` and grounded consumption retain their existing effects on
+query-relative negative evidence. Lookup retains once-per-event/node credit
+and anchors without acquiring those cancellation effects.
 
-## Trigger-found schemas
+`RecallResult.source_graph_score` is transient evidence, separate from the
+ranker's effective `graph_score`. It starts from the current lexical/vector
+seeds, excludes anchor activation, and uses genuine source relations:
 
-A schema reached by its `context.trigger` gets
-`trigger_score = 0.95 + 0.05·overlap`. It has already cleared the 0.5 overlap
-threshold, and the ranker scores it as `max(base, trigger_score) · 1.8`, which
-is a different scale from the channel blend. On the channel scale such a
-schema often has little or no bm25/vector evidence, so a threshold tuned for
-traces would cut useful procedures.
+- Pure `co_access` edges contribute no source evidence.
+- Cluster membership retains its fixed membership contribution, without
+  access/usefulness/confidence reinforcement of that edge.
+- Known content-reference, derivation and shared-source annotations retain
+  their writer's source contribution, capped by the stored weight. A merged
+  historical `basis` does not discard independent `content_reference` or
+  `derived_from` evidence or turn the row's historical maximum into evidence.
+- Unrecognized metadata keeps its ordinary relation semantics. Corrections,
+  explicit relations and scope/decay restrictions remain effective.
 
-Such schemas are gated on their own scale:
+The existing bounded graph reader applies source projection **before** ordering
+and its per-node adjacency limit. Historical edges therefore cannot spend source
+slots or displace a genuine source relation merely by gaining weight. When a
+walk encounters historical contributions, the same walker computes source paths
+with independent best-path state; a stronger historical path cannot hide a
+weaker genuine path. Pure-source walks reuse their ordinary activation. Ranking
+keeps its own traversal, bounded neighbors, anchors and order.
+
+**Offline use:** `gate_score`, `trigger_gate_score` and `passes_gate` accept a
+`RecallResult` and recall demotions without a store. Supply the scope plan for
+its boost; without one it is 1.0. An old effective graph score does not establish
+source evidence: absent `source_graph_score` means zero source graph contribution.
+The transient field is not added to the wire or recall-event history. Diagnostic
+ranking scores continue to describe discovery, not qualification.
+
+## Trigger qualification
+
+An ordinary trigger match has `trigger_score = 0.95 + 0.05 * overlap` after
+clearing the existing overlap requirement. Its separate availability scale is:
 
 ```
 trigger_gate_score = feedback_weighted_score(node, trigger_score / 0.95,
-                                              superseded=…) · demotion
-passes if trigger_gate_score ≥ SCHEMA_TRIGGER_GATE_MIN (0.5)
-       or gate_score ≥ LM_RECALL_MIN_SCORE
+                                             superseded=..., qualification=True)
+                    * coverage_factor * demotion
+passes if trigger_gate_score >= 0.5 or gate_score >= LM_RECALL_MIN_SCORE
 ```
 
-A clean trigger hit reads about 1.0, so it passes regardless of
-`LM_RECALL_MIN_SCORE`. The trigger match is the relevance evidence, and
-trigger results are as useful as bm25 ones (a non-goal of this project
-leaves them alone). Only negative evidence that at least halves the schema
-takes it out: a hub or query demotion, negative usefulness, or a correction.
-The scope and causal boosts do not enter, because a trigger match depends on
-neither. Results that are not schemas, or have `trigger_score == 0`, are gated
-on the channel scale only.
+For schema recipes, `coverage_factor` is 1: a short instruction can remain
+available as one clause of a larger query. For other procedural carriers it is
+squared query coverage. Traces and results without a trigger have no separate
+trigger scale. The scale retains low source confidence, correction penalties
+and query/hub demotions; global usefulness and access do not affect it.
+Scope and causal boosts belong only to the channel scale.
+
+Under `LM_RECALL_SCHEMA_TRIGGER=name`, there is no trigger scale. Every result
+uses the channel qualifier; a recognized schema name supplies lexical evidence.
+See [schema trigger behavior](recall-schema-trigger.md).
 
 ## Invariants
 
-- Valve off: output is byte-identical to the plain cut
-  (`test_off_is_identical_output`, `test_invalid_or_zero_threshold_is_off`).
+- With the main gate off, main selection is the plain cut. The optional map
+  still qualifies its residual through the shared evidence object.
 - Every inline content bearer qualifies, regardless of rank.
-- `delivered + residual` is a partition of `ranked` in drop form. In stub form,
-  `delivered` is the old cut.
-- Changing store retrieval weights does not change any gate score
-  (`test_gate_score_does_not_read_the_store_weights`).
-- Both forms use the same `below_threshold` delivery class and exact lookup.
-  Source references count toward `max_results`; qualified residuals alone
-  enter the optional map. Lookup is optional, returns complete source content,
-  and does not resolve contradictions or promise usefulness. Consumers can
-  narrow a query or stop when only weak sources were found.
+- Unchanged current query/source evidence has unchanged qualification after
+  inspection or changes in access, usefulness or anchor reinforcement.
+- Source changes, genuine relations/corrections and confirmed negative
+  applicability affect qualification through their own evidence.
+- `delivered + residual` partitions `ranked`; both gate forms preserve bounded
+  references and exact lookup. Only qualified residuals enter the map.
+- Lookup is optional and returns complete source content. It does not resolve
+  contradictions, certify relevance or promise usefulness. Consumers can narrow
+  a query or stop when only weak sources were found.
+
+These are eligibility and source-access guarantees. They do not establish
+semantic precision, autonomous source selection or total token savings.

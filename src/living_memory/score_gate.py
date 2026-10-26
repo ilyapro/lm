@@ -26,13 +26,13 @@ store's per-scope retrieval weights, which move with every ~100 credits; a
 threshold on that number would mean something different next week. The gate
 re-blends the result's current source channels with the fixed
 :data:`REFERENCE_WEIGHTS`, through the ranker's own blend function. The
-strong-vector floor, graph-weight floor, scope boost, negative feedback,
+strong-vector floor, graph-weight floor, scope boost, source confidence restrictions,
 superseded penalty, causal boost, and per-node ``demotions`` apply here. The
 ranker's correction boost does not enter an individual gate score; a present
 correction instead qualifies when its original passes the gate.
 Transient ``source_graph_score`` excludes query anchors and historical edge
-reinforcement. Positive confidence/usefulness and access never lift either
-qualification scale; they retain their ranking and discovery roles.
+reinforcement. Access and the entire net usefulness accumulator stay outside both
+qualification scales; positive confidence never lifts them. They retain their ranking and discovery roles.
 
 Trigger-found instructions retain a separate availability scale based on
 trigger overlap, query coverage and negative restrictions:
@@ -76,7 +76,7 @@ REFERENCE_WEIGHTS = RetrievalWeights(scope="score_gate", bm25=0.4, vector=0.4, g
 #: ``trigger_gate_score >= SCHEMA_TRIGGER_GATE_MIN``. The trigger scale is
 #: normalised so that a clean trigger hit (base score, neutral feedback, no
 #: demotion) reads 1.0; the trigger already cleared the overlap threshold to
-#: exist at all, so only negative evidence -- a demotion, negative usefulness,
+#: exist at all, so only negative evidence -- a demotion, low confidence,
 #: a correction -- that at least halves it takes the schema out.
 SCHEMA_TRIGGER_GATE_MIN = 0.5
 #: ``retrieval.SCHEMA_TRIGGER_BASE_SCORE`` (not imported: retrieval imports
@@ -157,7 +157,7 @@ def trigger_gate_score(
 ) -> float | None:
     """Score of a trigger-found schema on the trigger scale; ``None`` otherwise.
 
-    ``trigger_score / SCHEMA_TRIGGER_SCALE`` times negative feedback and demotion.
+    ``trigger_score / SCHEMA_TRIGGER_SCALE`` times source restrictions and demotion.
     Case-evidence carriers also need query coverage; a schema recipe retains
     its short-instruction availability when its trigger is one clause of a
     longer question. Scope and causal boosts are left out.

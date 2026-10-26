@@ -354,8 +354,13 @@ BM25, local vector, and graph scores, reranks by feedback/confidence/access,
 logs access for returned nodes, and persists a recall event containing the
 query, scope plan, result IDs, and component scores. Causal queries such as
 "why did B happen" traverse `caused` and `requires` edges. Queries whose
-tokens cover a `level='schema'` node's `context.trigger` apply an explicit
-trigger-match boost so the schema outranks its connected source traces.
+tokens cover a saved `context.trigger` can discover an instruction; content
+support and query coverage contribute to ranking. Main content and optional
+map qualification share current source evidence. Access, net usefulness and
+query anchors retain their discovery/ranking roles without qualifying unchanged
+content. Low source confidence, corrections and confirmed query-relative/hub
+restrictions remain effective on both channel and trigger qualification scales.
+See [recall qualification](recall-score-gate.md).
 Decision recall (`depth: "decision"`) returns matching primary traces plus
 their rejected alternatives by following only `contradicts` edges with
 `metadata.kind == "rejected_alternative"`. Shallow and numeric graph depths

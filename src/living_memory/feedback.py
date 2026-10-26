@@ -1054,8 +1054,10 @@ def feedback_weighted_score(
 ) -> float:
     """Apply feedback, retaining only restrictions for source qualification.
 
-    Ranking can reward confidence, usefulness and access. Qualification uses
-    the same negative factors without letting positive history offset them.
+    Ranking can reward confidence, usefulness and access. Qualification keeps
+    low source confidence and correction penalties, but excludes access and
+    all net usefulness: lookup can erase even its negative part. Query-relative
+    restrictions are applied separately by the caller.
     """
 
     confidence = max(0.0, min(node.confidence, 1.0))

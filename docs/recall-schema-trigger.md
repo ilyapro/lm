@@ -1,143 +1,58 @@
-# Recall: a schema is ranked by meaning, not by trigger words
+# Recall schema triggers
 
-Goal `schema-ranks-by-meaning`. Code: `src/living_memory/retrieval.py`
-(`schema_trigger_by_name`, `MemoryRecallService._named_schemas_first`),
-`src/living_memory/score_gate.py` (`trigger_gate_score`),
-`src/living_memory/storage.py` (`MemoryStore.schema_triggers`).
-Measurement: `scripts/schema_trigger_replay.py`, `artifacts/schema-trigger/`.
+Code: `retrieval.py` (`schema_trigger_by_name`, `_collect_schema_triggers`,
+`_named_schemas_first`) and `score_gate.py` (`QueryRelevance`,
+`trigger_gate_score`).
 
-## Why
+## Ordinary trigger discovery
 
-Before this change, a schema whose `context.trigger` shared at least half its
-words with the query got three things of its own, whatever the query meant:
+With `LM_RECALL_SCHEMA_TRIGGER` unset or any value other than `name`, trigger
+collection requires half of a saved trigger's terms, including for a short
+instruction within a compound query. A trigger adds a candidate and can admit
+it across scopes. Ranking retains the content's vector similarity and the
+existing graph weight as a small discovery floor. There is no unconditional
+trigger multiplier.
 
-1. a near-constant base score, `0.95 + 0.05 * overlap`;
-2. a `1.8x` multiplier on the final score;
-3. its own scale in the quality gate (`trigger_gate_score` ≥ 0.5), which a
-   clean word match always passes.
+The collector also records the fraction of meaningful query terms covered by
+the trigger. A schema recipe or procedural carrier citing source records gets
+a channel contribution proportional to squared query coverage. An arbitrary
+concept with only a trigger does not get that contribution. Vector, BM25,
+graph, scope, feedback and corrections retain their ranking roles.
 
-On the field marks (sfx, from 2026-09-27) these schemas were 72% `irrelevant`,
-no better than the rest of the delivery, yet they took the top slots and
-shipped their full text. The overlap geometry did not separate useful from
-useless; agreement of the meaning channels (vector, bm25) did.
+## Qualification
 
-## Valve
+Main recall and the optional map share `QueryRelevance`. The channel scale
+uses current query/source evidence with fixed weights. The separate trigger
+scale divides trigger overlap by 0.95 and uses squared query coverage for
+case-evidence carriers. Schema recipes retain short-instruction availability
+with a coverage factor of 1. A result qualifies if either scale passes.
 
-`LM_RECALL_SCHEMA_TRIGGER=name` (case-insensitive). Any other value, or unset,
-uses the ordinary trigger channel. Ordinary recall keeps the half-of-trigger
-overlap requirement, including for a short instruction embedded in a compound
-question. A trigger adds a candidate and can admit it across scopes. Its rank
-contribution now follows the content's vector similarity, with the existing
-graph weight providing a small discovery floor. The unconditional 1.8x rank
-multiplier is gone. The separate trigger gate still keeps applicable instructions
-available when their content has little lexical or vector support; feedback,
-irrelevance demotion, and supersedes still apply. No scope is removed from
-search. The `name` valve remains disabled by default.
+Both scales preserve low source confidence, superseded penalties and
+query-relative/hub restrictions. Access, the net usefulness accumulator and
+anchors affect discovery and ranking, not content qualification. A lookup
+cannot qualify unchanged content by reinforcing those historical signals.
+See the [shared qualification contract](recall-score-gate.md).
 
-Under `name`:
+## Name mode
 
-- The trigger finds nothing and scores nothing. A schema enters the recall
-  only through bm25/vector/graph, is scored by the same blend as every other
-  node, and passes the quality gate (`LM_RECALL_MIN_SCORE`) on that score.
-  There is no trigger scale in the gate.
-- Every node, schema or not, is ranked on the gate's own score
-  (`score_gate.gate_score`). The weights are the fixed `REFERENCE_WEIGHTS`,
-  not the store's learned per-scope weights, and there is no 1.2x prior for
-  corrections. Order and gate therefore read one score, the same for every
-  node whatever its origin or project. A result that passes the gate is no
-  longer outranked by one that the gate scores lower. Before this, a useful
-  procedure at gate 0.46 lost its slot to traces at gate 0.38 that
-  `project:lm`'s vector-heavy weights lifted. Corrections still outrank what
-  they correct (`_enforce_correction_dominance`).
-- A query that **is** the procedure's name (its token set equals the trigger's
-  token set, so `lm recall map curtail`, `lm_recall_map_curtail` and
-  `LM recall-map curtail` all name the same schema) is that schema's best
-  lexical match: the whole query is its title, so its bm25 is 1.0 (the
-  channel's rank 1) instead of wherever word frequencies over longer texts put
-  it. It moves to rank 1 if it passes the quality gate on that score; the
-  query's demotion, feedback and the threshold still apply. Rank 1 always
-  ships in full.
-  With the gate off it moves to rank 1 unconditionally. Only schemas the
-  meaning channels already ranked can be named; a named schema is marked with
-  `trigger_score = 1.0` and `"trigger"` in `methods` for the wire.
-- The trigger scan reads two columns (`id`, `context.trigger`) instead of up
-  to 1000 whole schema nodes per scope, and only after ranking.
+`LM_RECALL_SCHEMA_TRIGGER=name` is case-insensitive and disabled by default.
+It changes no provider, model or threshold.
 
-What is left of the trigger once the valve is the only path: the name match,
-ordered by the same gate as everything else. The constant score, the
-multiplier and the gate scale are gone.
+- Trigger overlap neither discovers nor scores candidates. Every node enters
+  through BM25/vector/graph and uses the channel qualifier.
+- Ranking uses the fixed `REFERENCE_WEIGHTS` rather than learned scope weights,
+  and omits the positive correction prior. Historical ranking feedback and
+  anchor discovery remain; sharing weights does not make ranking history
+  qualification evidence. Corrections retain structural precedence.
+- If the query's token set equals a ranked schema's trigger token set, the
+  schema receives BM25 1.0: the whole query names its title. It moves first if
+  that current evidence passes the channel qualifier, or unconditionally when
+  the main gate is off. Named schemas retain their relative ranking order.
+- The name match is reported as `trigger_score=1.0` and `trigger` in diagnostic
+  methods. This marker does not restore the separate trigger scale.
+- The trigger scan reads `id` and `context.trigger` after ranking. Search scope,
+  source identity, feedback attribution and exact lookup remain unchanged.
 
-## Ordinary recall after the applicability repair
-
-The ordinary trigger path remains enabled. Trigger collection still requires
-half of a saved trigger's terms, including for a short instruction within a
-compound question. Ranking now also records how much of the *query* those
-matched terms cover after tokenization removes procedural filler. A carrier's
-trigger contributes through the existing blend only in proportion to the
-square of that coverage when it cites procedural source records; an arbitrary
-concept with only a trigger gets no new rank claim. Its vector, bm25, graph,
-scope, feedback and correction evidence keep their existing roles. The score gate uses the same
-coverage for case-evidence carriers. Schema recipes keep their trigger
-availability scale, so an applicable short instruction can survive a
-compound query even without a strong content vector. The `name` valve stays
-disabled by default.
-
-The square makes an unrelated single-label match weak in a compound query,
-while a preserved legacy carrier whose trigger describes the whole query can
-still reach the result slots and offer its full current group evidence through
-`content_ref`. Discovery scores do not establish procedure authority or current applicability. See
-`artifacts/recall-applicability/candidate-v3.md` for the synthetic retention
-checks and the frozen development comparison.
-
-## Measurement
-
-`artifacts/schema-trigger/prereg.md` (lines, committed before the holdout run),
-`artifacts/schema-trigger/report.md` (numbers and verdicts per host),
-`holdout-{sfx,alt}.json`, `names-{sfx,alt}.json`. Goal
-`useful-schema-survives-ranking`: `prereg-2.md` (committed before the change),
-`report-2.md`, `v2/` — counts per procedure (duplicates of one procedure
-counted once), a new holdout, names holdout, and where each lost useful
-procedure is lost. Reopened: `prereg-3.md` (committed before the change),
-`report-3.md` — one score for order and gate, a fresh holdout.
-
-## Rollout
-
-Per the project's order: the code lands with the valve unset (no behaviour
-change); the operator adds the line to the host's `EnvironmentFile` and
-restarts. Holdout verdict (report): on sfx the irrelevant, text and latency
-lines pass but the pre-registered "keep ≥ 50% of used schemas" line fails at
-46% (and one of 109 agreeing name queries fails the gate), so the rule does not
-recommend it; alt's holdout is too small to judge. After the bm25-by-name
-change (report-2): every agreeing name query is at rank 1 on sfx (dev 80/80,
-holdout 219/219) and alt (47/47); per procedure the original corpus keeps 61%
-of used, but the new sfx holdout keeps 10 of 21 (47.6%), one short of the
-line. After order and gate were put on one score (report-3), every judged
-line passes on sfx, on both data sets: used procedures 20/31 and 12/21,
-irrelevant 93 → 24 and 32 → 5, schema text −78% / −86%, latency not higher,
-names 80/80 and 218/218. On alt, names 47/47 pass, and the field sets are too
-small to judge. The value, for the operator to switch on per host:
-
-```
-LM_RECALL_SCHEMA_TRIGGER=name
-```
-
-## Removing the valve and the legacy path
-
-Remove once, on each host that runs `name`, at least 7 days of field marks
-after enabling show both of these on `recall_feedback_marks` joined to
-`recall_events.results`:
-
-- the `irrelevant` share of delivered schemas is below the legacy share
-  (72% on sfx before the change), and
-- no regression in named lookups: every event whose query is a schema's name
-  and whose schema was ranked has that schema at rank 1.
-
-Then delete, in one commit: `SCHEMA_TRIGGER_OVERLAP_THRESHOLD`,
-`SCHEMA_TRIGGER_BASE_SCORE`, `SCHEMA_TRIGGER_BOOST`,
-`MemoryRecallService._collect_schema_triggers`, the two `trigger_score`
-branches in `_blend_candidate_score`, the `trigger_score` branch of
-`_cross_scope_admissible`, `score_gate.trigger_gate_score` with
-`SCHEMA_TRIGGER_GATE_MIN`/`SCHEMA_TRIGGER_SCALE`, `SCHEMA_TRIGGER_ENV` and
-`schema_trigger_by_name` (call `_named_schemas_first` unconditionally), and the
-legacy trigger tests in `tests/test_recall_score_gate.py` and
-`tests/test_retrieval_cross_scope_gate.py`.
+In both modes, a source that fails qualification can remain a bounded
+`below_threshold` reference. Rank or a matching label alone does not establish
+procedure authority or semantic applicability.
