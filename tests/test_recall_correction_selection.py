@@ -102,26 +102,30 @@ def test_correction_selection_respects_cap_and_stub_form(
 def test_unavailable_correction_does_not_change_original(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
-    delivered, residual, _ = _recall(
+    delivered, residual, withheld = _recall(
         tmp_path,
         monkeypatch,
         edge=case != "absent_edge",
         correction_scope="project:elsewhere" if case == "outside_scope" else "project:app",
         decayed=case == "decayed",
     )
-    assert set(delivered) == {"bystander", "stale"}
-    if case != "absent_edge":
-        assert delivered == ["bystander", "stale"]
-    assert "correction" not in delivered
+    assert {node_id for node_id, reason in zip(delivered, withheld) if not reason} == {
+        "bystander", "stale",
+    }
     if case == "absent_edge":
-        assert "correction" in residual
+        assert delivered[-1] == "correction"
+        assert withheld[-1] == "below_threshold"
+    else:
+        assert delivered == ["bystander", "stale"]
+        assert "correction" not in residual
 
 
-def test_gate_still_rejects_weak_connected_pair(
+def test_gate_withholds_weak_connected_pair_but_keeps_references(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert _recall(tmp_path, monkeypatch, threshold="0.6") == (
-        ["bystander"], ["correction", "stale"], [None]
+        ["bystander", "correction", "stale"], [],
+        [None, "below_threshold", "below_threshold"],
     )
 
 
