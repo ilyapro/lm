@@ -954,8 +954,8 @@ class MemoryRecallService:
         per_scope_limit = max(25, max_results * 8)
         expanded_query = _expanded_query(query)
         # Reciprocal FTS rank is a discovery score, not lexical support.
-        # The named scopes keep their
-        # own ranking, as a restricted plan ranks them; a whole-store plan adds
+        # Named scopes keep their own ranking, as a restricted plan ranks
+        # them; a whole-store plan adds
         # one pass over everything, where an unnamed scope competes on the
         # corpus-wide ranking instead of getting a rank 1 of its own.
         scopes = plan.search_scopes if plan.restricted else (*plan.named_scopes, None)

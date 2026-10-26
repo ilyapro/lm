@@ -33,8 +33,8 @@ correction instead qualifies when its original passes the gate.
 Transient ``source_graph_score`` excludes query anchors and historical edge
 reinforcement; its seeds use current lexical/vector support. ``lexical_score``
 measures query-term coverage in source text, while reciprocal FTS rank remains
-discovery evidence only. Access and the entire net usefulness accumulator stay outside both
-qualification scales; positive confidence never lifts them. Historical signals
+discovery evidence only. Access and the entire net usefulness accumulator stay
+outside both qualification scales; positive confidence never lifts them. Historical signals
 retain their ranking and discovery roles.
 
 Trigger-found instructions retain a separate availability scale based on

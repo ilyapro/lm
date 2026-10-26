@@ -3,7 +3,7 @@
 Pins docs/recall-schema-trigger.md: under the valve the trigger finds nothing
 and scores nothing; words shared with a trigger neither raise a schema nor
 carry it past the quality gate; a query that *is* the procedure's name is
-that schema's best lexical match (bm25 1.0) and puts it first (so it ships in
+that schema's complete lexical match and puts it first (so it ships in
 full) when it passes the gate on that score. Unset, ordinary trigger recall
 uses query applicability (tests/test_recall_applicability.py).
 """
@@ -150,7 +150,7 @@ def test_a_named_schema_must_pass_the_gate_to_go_first(
                 "rotate vault keys", plan, [strong, weak], demotions={schema.id: demotion}, causal_mode=False
             )
 
-        # The name is the best lexical match: bm25 1.0 on the reference blend
+        # The name is complete lexical support: 1.0 on the reference blend
         # is 0.4, so a 0.3 gate passes it on the same scale as everyone.
         gated = reorder("0.3")
         assert [r.node.id for r in gated] == [schema.id, other.id]
