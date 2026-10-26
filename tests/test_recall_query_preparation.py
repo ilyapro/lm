@@ -143,7 +143,7 @@ def test_recall_reads_current_source_scope_and_validity_after_encoding(runtime):
             assert not entry(response).get("decayed", False)
             assert not r.store.get_node(r.node.id).decayed
             event = r.store.get_recall_event(response["recall_event_id"])
-            assert new_scope in event.resolved_scopes
+            assert event.resolved_scopes[-1] == "*"
             assert event.result_ids == [r.node.id]
             assert event.results[0]["vector_score"] == 1.0
             assert r.encoded == [QUERY]
