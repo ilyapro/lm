@@ -72,15 +72,21 @@ def test_failed_a_preserves_independent_b_and_bounds_repeated_work(monkeypatch, 
             store.connection.execute("UPDATE node_chunk_embeddings SET char_start=NULL, char_end=NULL")
         before = {label: chunk_rows(store, node.id) for label, node in nodes.items()}
         foreign_before = chunk_rows(store, foreign.id)
-        attempts, batches, inserts = [], [], []
+        attempts, batches, inserts, refreshing = [], [], [], []
         original_refresh = store.refresh_legacy_chunks
 
         def refresh(node_id, *args, **kwargs):
             attempts.append(next(label for label, node in nodes.items() if node.id == node_id))
-            return original_refresh(node_id, *args, **kwargs)
+            refreshing.append(attempts[-1])
+            try:
+                return original_refresh(node_id, *args, **kwargs)
+            finally:
+                refreshing.pop()
 
         def encode(texts):
-            label = "A" if any("amber" in text for text in texts) else "B"
+            if not refreshing:
+                return encoder.embed_batch(texts)
+            label = refreshing[-1]
             batches.append({"source": label, "chunks": len(texts)})
             if fault == "common" or (fault == "encoder" and label == "A"):
                 raise RuntimeError("synthetic encoder failure")
