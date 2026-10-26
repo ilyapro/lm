@@ -219,6 +219,7 @@ def test_shared_encoder_serializes_loading_inference_and_fallback(tmp_path, monk
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event, RLock
     from types import SimpleNamespace
+    import os
     import sys
 
     from living_memory import embeddings
@@ -294,5 +295,5 @@ def test_shared_encoder_serializes_loading_inference_and_fallback(tmp_path, monk
         assert vectors == [[1 / 3, 2 / 3, 2 / 3]] * 2
         assert vector == [1 / 3, 2 / 3, 2 / 3]
         assert first.encoder_id() == second.encoder_id()
-    assert "HF_HUB_OFFLINE" not in __import__("os").environ
-    assert "TRANSFORMERS_OFFLINE" not in __import__("os").environ
+    assert "HF_HUB_OFFLINE" not in os.environ
+    assert "TRANSFORMERS_OFFLINE" not in os.environ

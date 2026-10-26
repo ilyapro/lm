@@ -198,7 +198,10 @@ def test_apply_uses_current_feedback_and_scope_after_preparation(mcp, monkeypatc
                     current = writer.get_node(original)
                     writer.update_node(original, context={**current.context, "scope": "project:current"},
                                        stats={"usefulness_score": 9.0})
-                    concurrent = writer.append_trace(CONTENT, {"scope": "global"})
+                    concurrent = writer.append_trace(CONTENT, {
+                        "scope": "global",
+                        "transport_session_id": current.context["transport_session_id"],
+                    })
                 assert not pending.done()
             finally:
                 release.set()
@@ -210,7 +213,9 @@ def test_apply_uses_current_feedback_and_scope_after_preparation(mcp, monkeypatc
             assert result["feedback_marks"]["accepted"] == 1
             if operation == "teach":
                 assert current.scope == "project:current"
-                assert current.usefulness_score == 10.0
+                # Accepted used credit clamps the current original score to 1
+                # before teach derives the corrective score.
+                assert current.usefulness_score == 2.0
                 old = await call(peer, "memory_lookup", node_id=original)
                 assert old["results"][0]["superseded"]
             else:
