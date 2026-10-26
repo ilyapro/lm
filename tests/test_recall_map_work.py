@@ -8,6 +8,7 @@ import pytest
 from fastmcp import Client
 
 from living_memory import storage as storage_module
+from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.recall_map import RecallMapBuilder, cache_key
 from living_memory.server import create_mcp_server
 from living_memory.storage import MaturedRecallHistory, MemoryStore, RecallWork
@@ -265,6 +266,8 @@ def test_mcp_map_preserves_scopes_corrections_decay_and_main_results(tmp_path, i
     async def run():
         mcp = create_mcp_server(tmp_path / "map.sqlite3")
         store = mcp.memory_store
+        encoder = LocalEmbeddingModel(backend="hash")
+        store.set_chunk_embedder(encoder.embed_batch)
         seed(store)
         old = store.append_trace(
             "cobalt backup recovery: trust snapshot marker.",
