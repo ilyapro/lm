@@ -469,3 +469,57 @@ def test_unused_tail_qualification_stays_outside_required_selection(monkeypatch)
         evidence.eligible_ids()
     with pytest.raises(ValueError, match="query qualification unavailable"):
         apply_score_gate(ranked, 2, relevance=evidence)
+
+
+@pytest.mark.parametrize("form", ["drop", "stub"])
+def test_mcp_withheld_lookup_is_bounded_and_keeps_session_feedback(tmp_path, monkeypatch, form):
+    import asyncio
+    from fastmcp import Client
+    from living_memory.server import create_mcp_server
+
+    monkeypatch.setenv(MIN_SCORE_ENV, "5")
+    monkeypatch.setenv(GATE_FORM_ENV, form)
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    private = "INTERNAL_PROCEDURE_FIELD"
+
+    async def scenario():
+        async with Client(mcp) as client:
+            params = {"query": "Cobalt harbor maintenance rules", "scope": SCOPE, "max_results": 2}
+            empty = (await client.call_tool("memory_recall", params)).data
+            assert empty["results"] == []
+            sources = {}
+            for detail in ("Inspect the latch.", "Keep the inlet open.", "Verify the pressure.", "Record the tide."):
+                content = "Cobalt harbor maintenance rules: " + detail
+                saved = (await client.call_tool("memory_remember", {
+                    "content": content, "context": {"scope": SCOPE, "procedure": private},
+                })).data
+                sources[saved["node"]["id"]] = content
+
+            first = (await client.call_tool("memory_recall", params)).data
+            assert first["count"] == 2
+            refs = [entry["content_ref"]["node_id"] for entry in first["results"]]
+            assert len(set(refs)) == 2
+            assert all(entry["delivery"] == "below_threshold" and entry["content"] == ""
+                       for entry in first["results"])
+            event = mcp.memory_store.get_recall_event(first["recall_event_id"])
+            assert [entry["node_id"] for entry in event.results] == refs
+            assert all(entry["withheld"] == "below_threshold" for entry in event.results)
+            assert all(entry["delivery"] == {"kind": "below_threshold"} for entry in event.results)
+
+            looked = (await client.call_tool("memory_lookup", {"node_ids": refs})).data
+            assert looked["count"] == 2 and looked["missing"] == []
+            assert {entry["id"]: entry["content"] for entry in looked["results"]} == {
+                node_id: sources[node_id] for node_id in refs
+            }
+            assert all("context" not in entry for entry in first["results"] + looked["results"])
+            again = (await client.call_tool("memory_recall", {
+                **params, "used": [refs[0]], "irrelevant": [refs[1]],
+            })).data
+            assert again["feedback_marks"] == {"accepted": 2, "dropped": 0, "by_reason": {}}
+            assert all(entry["delivery"] == "below_threshold" for entry in again["results"])
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        mcp.memory_store.close()
