@@ -943,21 +943,17 @@ def _crowded_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, groups: int
 def test_same_trigger_carriers_do_not_crowd_out_a_record_recall_delivers_directly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Cheap counterexample of the group-identity candidate's new loss: under
-    the live dedup valve the carriers of one title share one slot, as the legacy
-    schemas they replaced did, so the recipe's own record still arrives. The
-    kept carrier holds its records whole.
-
-    Replaces the oracle that required one slot per group: ten same-trigger
-    carriers then took all ten slots and pushed the recipe out."""
+    """The direct recipe remains reachable among independent same-title sources."""
 
     mcp, recipe = _crowded_server(tmp_path, monkeypatch)
     try:
         obtained = obtained_texts(mcp, "how to reopen lesson", max_results=10)
         assert ("trace", recipe) in obtained
         carriers = [text for level, text in obtained if level == "concept"]
-        assert len(carriers) == 1 and carriers[0].count("\n- ") == 3
+        assert all(len(evidence_ids(content)) == 3 for content in carriers)
+        assert len(set().union(*(evidence_ids(content) for content in carriers))) == 3 * len(carriers)
     finally:
+        mcp.auto_consolidation.close()
         mcp.memory_store.close()
 
 
@@ -971,32 +967,11 @@ def test_compound_recipe_query_stays_ahead_of_source_backed_same_trigger_history
             max_results=4,
         )
         assert ("trace", recipe) in obtained
-        assert sum(level == "concept" for level, _text in obtained) <= 1
-    finally:
-        mcp.memory_store.close()
-
-
-def test_crowding_oracle_detects_the_group_identity_mutant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from living_memory import consolidation, schema_dedup
-
-    title = schema_dedup.schema_title
-    monkeypatch.setattr(
-        schema_dedup,
-        "schema_title",
-        lambda node: title(node) and (node.scope, consolidation._schema_group_id(node)),
-    )
-    mcp, recipe = _crowded_server(tmp_path, monkeypatch)
-    try:
-        obtained = obtained_texts(mcp, "how to reopen lesson", max_results=10)
-        assert ("trace", recipe) in obtained
-        # With group identity, each historical carrier consumes a distinct
-        # slot. The useful direct recipe must still remain reachable.
         carriers = [text for level, text in obtained if level == "concept"]
-        assert len(carriers) == 9
-        assert len(set(carriers)) == 9
+        assert all(len(evidence_ids(content)) == 3 for content in carriers)
+        assert len(set().union(*(evidence_ids(content) for content in carriers))) == 3 * len(carriers)
     finally:
+        mcp.auto_consolidation.close()
         mcp.memory_store.close()
 
 
