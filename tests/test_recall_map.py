@@ -1790,8 +1790,7 @@ def test_module_imports_nothing_that_calls_a_model_or_the_network() -> None:
 # `tests/test_recall_map_pool.py` guards the same contract one layer down, on
 # the tuples and on `_SelectionLedger.freeze`. These guard what a *reader*
 # actually receives: the `sel` block of `to_dict()`, which is what the server
-# persists into `recall_events.recall_map` and what the field measurement read
-# to conclude that no live server has either pool valve charged.
+# persists into `recall_events.recall_map`.
 #
 # A build is the only place the two halves meet -- a ledger that trims
 # correctly still says nothing if the payload is assembled from somewhere else
