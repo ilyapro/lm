@@ -9,7 +9,7 @@ from fastmcp import Client
 
 import living_memory.server as server
 from living_memory.edge_derivation import derive_edges_for_new_trace
-from living_memory.relations import is_semantic_relation, semantic_relation_sql
+from living_memory.relations import is_semantic_relation, semantic_relation_sql, source_relation_weight
 from living_memory.replay import snapshot_evidence
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
@@ -171,6 +171,24 @@ def test_historical_edges_do_not_spend_adjacency_limit(tmp_path):
         genuine = store.create_connection(a.id, c.id, "requires", weight=.5)
         assert store.list_recall_connections([a.id], limit=1)[a.id] == [genuine]
         assert store.get_connection(history.id) == history
+
+
+@pytest.mark.parametrize("relation_type,metadata,expected", [
+    ("related", {}, 1),
+    ("related", {"basis": "unknown", "kind": "unknown"}, 1),
+    ("related", {"basis": "co_access"}, 0),
+    ("related", {"basis": "cluster", "co_access": 1000}, 0.2),
+    ("related", {**IMPLICIT, "kind": "content_reference"}, 0.9),
+    ("related", {**IMPLICIT, "kind": "derived_from"}, 0.6),
+    ("related", {"rule": "R4a", "basis": "same_commit", "left": 1000, "right": 1000}, 0.9),
+    ("related", {"rule": "R4b", "basis": "shared_files", "files": ["a.py"]}, 0.65),
+    ("requires", {"basis": "co_access"}, 1),
+    ("supersedes", {"basis": "co_access"}, 1),
+    ("supersedes", {"kind": "duplicate_content"}, 0),
+])
+def test_source_contribution_keeps_independent_and_unknown_relations(relation_type, metadata, expected):
+    assert source_relation_weight(relation_type, 1, metadata) == pytest.approx(expected)
+    assert source_relation_weight(relation_type, 0.1, metadata) == pytest.approx(min(0.1, expected))
 
 
 def test_content_reference_replaces_technical_history_in_shared_writer(tmp_path):

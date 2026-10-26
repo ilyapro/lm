@@ -220,3 +220,73 @@ def test_missing_neighbor_after_observation_is_filtered(tmp_path, monkeypatch):
         monkeypatch.setattr(store, "list_recall_connections", read)
         delivered, residual = recall(MemoryRecallService(store, embedder=Encoder()))
         assert [r["node"]["id"] for r in delivered + residual] == ["root"]
+
+
+@pytest.mark.parametrize("basis,source_weight", [("co_access", 0), ("cluster", 0.2)])
+def test_historical_edge_weights_change_discovery_but_not_source_activation(tmp_path, basis, source_weight):
+    with MemoryStore(tmp_path / "history.sqlite3") as store:
+        node(store, "root", content="needle")
+        node(store, "leaf")
+        edge = store.create_connection("root", "leaf", "related", weight=0.25,
+                                       metadata={"basis": basis})
+        service = MemoryRecallService(store, embedder=Encoder())
+        recall(service)
+        before = {r.node_id: r for r in service.last_query_relevance.ranked}["leaf"]
+        store.update_connection(edge.id, weight=1)
+        recall(service)
+        after = {r.node_id: r for r in service.last_query_relevance.ranked}["leaf"]
+        assert after.graph_score > before.graph_score
+        assert after.score > before.score
+        assert before.source_graph_score == after.source_graph_score == pytest.approx(source_weight * 0.65)
+
+
+def test_source_walk_keeps_weaker_genuine_path_beside_stronger_history(tmp_path):
+    with MemoryStore(tmp_path / "paths.sqlite3") as store:
+        for name in ("root", "history", "source", "shared", "tail"):
+            node(store, name, content="needle" if name == "root" else name)
+        store.create_connection("root", "history", "related", metadata={"basis": "co_access"})
+        store.create_connection("root", "source", "requires", weight=0.5)
+        for a, b in (("history", "shared"), ("source", "shared"), ("shared", "tail")):
+            store.create_connection(a, b, "requires")
+        anchor(store, "history")
+        service = MemoryRecallService(store, embedder=Encoder())
+        recall(service, depth=3)
+        results = {r.node_id: r for r in service.last_query_relevance.ranked}
+        assert results["shared"].graph_score > results["shared"].source_graph_score
+        assert results["shared"].source_graph_score == pytest.approx(0.5 * 0.85**2 * 0.72)
+        assert results["tail"].source_graph_score == pytest.approx(0.5 * 0.85**3 * 0.72**3)
+
+
+@pytest.mark.parametrize("kind,rule,source_weight,factor", [
+    ("content_reference", "R6", 0.9, 0.75),
+    ("derived_from", "R5a", 0.6, 0.5),
+])
+@pytest.mark.parametrize("basis", ["implicit_recall_feedback", "co_access", "cluster"])
+def test_merged_source_relation_retains_its_own_contribution(tmp_path, kind, rule, source_weight, factor, basis):
+    with MemoryStore(tmp_path / "merged.sqlite3") as store:
+        node(store, "root", content="needle")
+        node(store, "leaf")
+        edge = store.create_connection("root", "leaf", "related", weight=source_weight,
+                                       metadata={"kind": kind, "rule": rule, "basis": basis})
+        service = MemoryRecallService(store, embedder=Encoder())
+        recall(service)
+        before = {r.node_id: r for r in service.last_query_relevance.ranked}["leaf"]
+        store.update_connection(edge.id, weight=1)
+        recall(service)
+        after = {r.node_id: r for r in service.last_query_relevance.ranked}["leaf"]
+        assert before.source_graph_score == after.source_graph_score == pytest.approx(source_weight * factor)
+        assert after.graph_score > before.graph_score
+
+
+def test_anchor_only_discovery_does_not_become_source_evidence(tmp_path, monkeypatch):
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.35")
+    with MemoryStore(tmp_path / "anchor.sqlite3") as store:
+        node(store, "leaf")
+        anchor(store, "leaf")
+        service = MemoryRecallService(store, embedder=Encoder())
+        delivered, _ = recall(service)
+        assert len(delivered) == 1
+        assert delivered[0]["graph_score"] == 1
+        assert delivered[0]["source_graph_score"] == 0
+        assert delivered[0]["withheld"] == "below_threshold"
+        assert service.last_query_relevance.eligible_ids() == set()
