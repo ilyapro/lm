@@ -80,6 +80,20 @@ copies can redirect anchors and source lineage only after checking their
 current content and source identity. Historical rows and stored decay flags
 remain intact; this policy does not reconstruct prior lifecycle side effects.
 
+New traces from `memory_remember`, its rejected alternatives, and
+`memory_teach` prepare search chunks from their exact normalized source text
+before taking the shared store lock or opening a SQLite write transaction.
+Remember preserves its input text unchanged. Encoder loading, inference and
+fallback have their own guard, released before store apply. The writer checks
+exact source identity and commits knowledge, successful chunks and required
+feedback together, using current scope and validity. A derived-index failure
+returns `indexing: {"status": "deferred", "node_ids": [...]}` while preserving
+the knowledge write; required failures still raise and roll it back. Reads and
+independent writes that do not need the busy encoder can proceed during
+preparation. Query encoding, including feedback anchors, still shares the
+encoder. This provides neither a general latency guarantee nor exactly-once
+writes after response loss.
+
 Exact-id lookup preserves the complete original content. `context_key` adds
 one original context field; `view="full"` returns all stored node fields plus
 the same relation-derived validity. An explicit lookup scope restricts
