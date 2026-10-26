@@ -103,9 +103,11 @@ def test_identical_content_in_same_scope_and_level_leaves_one_active_node(
         assert older is not None
         assert older.decayed is True
         assert older.decay_reason == "duplicate_content"
-        edges = store.list_connections(source_id=second.id, relation_type="supersedes")
+        edges = store.list_connections(source_id=second.id, relation_type="related")
         assert [edge.target_id for edge in edges] == [first.id]
         assert edges[0].metadata.get("kind") == "duplicate_content"
+        assert store.list_connections(relation_type="supersedes") == []
+        assert store.list_supersedes_pairs([first.id, second.id]) == []
 
 
 def test_identical_content_across_scopes_or_levels_stays_separate(tmp_path: Path) -> None:

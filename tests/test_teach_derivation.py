@@ -14,6 +14,7 @@ from living_memory.consolidation import (
     _TraceCluster,
     memory_teach,
 )
+from living_memory.delivery import DeliveryHistory, shape_recall_results
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.feedback import apply_pending_recall_feedback
 from living_memory.retrieval import MemoryRecallService
@@ -65,8 +66,19 @@ def recall(service):
     )
 
 
+def assert_withheld_source(results, source_id, correction_id):
+    # A corrected source may remain discoverable as an unqualified reference.
+    for item in results:
+        if item["id"] == source_id:
+            assert item["delivery"] == "below_threshold"
+            assert item["content"] == ""
+            assert item["content_ref"]["node_id"] == source_id
+            assert item["superseded"] is True
+            assert item["superseded_by"] == [correction_id]
+
+
 @pytest.mark.parametrize("separate_writer", [False, True])
-def test_teach_then_warm_recall_keeps_only_current_binding_steps(tmp_path, separate_writer):
+def test_teach_then_warm_recall_delivers_current_binding_steps(tmp_path, separate_writer):
     path = tmp_path / "memory.sqlite3"
     with MemoryStore(path) as store:
         store.set_chunk_embedder(lambda texts: [Encoder().embed(text) for text in texts])
@@ -91,7 +103,14 @@ def test_teach_then_warm_recall_keeps_only_current_binding_steps(tmp_path, separ
         assert any(r.node.id == schema.id and r.node.content == current.content for r in results)
         assert any(r.node.id == taught.corrective_trace.id for r in results)
         assert STEPS[0] not in current.content
-        assert all(r.node.id != traces[0].id for r in results)
+        delivered = shape_recall_results(
+            results, delivery_history=DeliveryHistory(), snippet_max_chars=1000,
+            context_value_max_chars=1000, session_dedup=False, view="knowledge",
+            correction_refs={r.node.id: r.correction_ids for r in results},
+        )
+        assert next(item for item in delivered if item["id"] == schema.id)["content"] == current.content
+        assert next(item for item in delivered if item["id"] == taught.corrective_trace.id)["content"] == CORRECTION
+        assert_withheld_source(delivered, traces[0].id, taught.corrective_trace.id)
         assert all(r.node.scope != "project:other" for r in results)
         assert {node_id: asdict(store.get_node(node_id)) for node_id in controls} == controls
         historical = store.get_node(traces[0].id)
@@ -123,10 +142,14 @@ def test_mcp_teach_recall_and_exact_historical_lookup(tmp_path, declared):
         assert delivered["content"] == store.get_node(schema.id).content
         assert all(text in delivered["content"] for text in [CORRECTION, *STEPS[1:]])
         assert STEPS[0] not in delivered["content"]
-        assert any(item["id"] == taught["corrective_trace"]["id"] for item in results)
+        correction_id = taught["corrective_trace"]["id"]
+        assert next(item for item in results if item["id"] == correction_id)["content"] == CORRECTION
+        assert_withheld_source(results, traces[0].id, correction_id)
         old = mcp.tools["memory_lookup"](node_id=traces[0].id)["results"][0]
         assert old["content"] == STEPS[0]
         assert old["provenance"]["corrections"][-1]["new"] == CORRECTION
+        assert old["superseded"] is True
+        assert old["superseded_by"] == [correction_id]
 
 
 def test_later_materialization_cannot_undo_teach_or_erase_independent_steps(tmp_path):
