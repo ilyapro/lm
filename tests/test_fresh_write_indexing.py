@@ -187,6 +187,7 @@ def test_partial_index_failure_keeps_atomic_knowledge_and_feedback(mcp, operatio
 
 def test_deferred_write_repairs_while_an_earlier_node_still_fails(mcp):
     store = mcp.memory_store
+    blocker_content = "Violet botanical inventory."
     attempts = []
     store.connection.create_function("chunk_attempt", 1, lambda node: attempts.append(node) or 0)
     store.connection.execute("""CREATE TRIGGER reject_index BEFORE INSERT ON node_chunk_embeddings
@@ -194,7 +195,7 @@ def test_deferred_write_repairs_while_an_earlier_node_still_fails(mcp):
 
     async def scenario():
         async with Client(mcp) as client:
-            blocker = await remember(client, "Violet botanical inventory.", context={
+            blocker = await remember(client, blocker_content, context={
                 **CONTEXT, "timestamp": "2026-02-01T00:00:00Z",
             })
             target = await remember(client, CONTENT, context={
@@ -227,7 +228,7 @@ def test_deferred_write_repairs_while_an_earlier_node_still_fails(mcp):
                 assert attempts.count(blocker_id) == attempt
                 assert attempts.count(target_id) == 1
                 assert not store.connection.in_transaction
-            for node_id, content in ((blocker_id, blocker["node"]["content"]), (target_id, CONTENT)):
+            for node_id, content in ((blocker_id, blocker_content), (target_id, CONTENT)):
                 looked = (await client.call_tool("memory_lookup", {"node_id": node_id})).data
                 assert looked["results"][0]["content"] == content
             store.connection.execute("DROP TRIGGER reject_index")
@@ -235,7 +236,7 @@ def test_deferred_write_repairs_while_an_earlier_node_still_fails(mcp):
             scored = next(row for row in store.get_recall_event(recovered["recall_event_id"]).results
                           if row["node_id"] == target_id)
             assert scores == [scored["vector_score"]] * 3
-            assert_current_chunks(store, blocker_id, blocker["node"]["content"])
+            assert_current_chunks(store, blocker_id, blocker_content)
             assert store.connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
     asyncio.run(scenario())
