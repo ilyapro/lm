@@ -989,8 +989,17 @@ class MemoryRecallService:
              for node in self.store.list_unchunked_nodes(scope=scope, limit=LAZY_CHUNK_NODE_LIMIT)),
             key=lambda node: (node.timestamp, node.id),
         )[:LAZY_CHUNK_NODE_LIMIT]
-        for node in pending:
-            self._rechunk_node(node)
+        try:
+            for node in pending:
+                self._rechunk_node(node)
+        except Exception as error:
+            # Each node's index write is atomic. Stop this drain on failure;
+            # missing chunks stay pending for the next recall. Required reads
+            # and scoring below still run, with no invented semantic evidence.
+            logging.getLogger(__name__).warning(
+                "lazy chunk indexing deferred (%s); using available index",
+                type(error).__name__,
+            )
 
         q_arr = _as_query_array(query_embedding)
         # Resolve membership after the drain, which can write new chunks.
