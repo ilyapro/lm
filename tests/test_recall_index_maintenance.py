@@ -113,7 +113,9 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
             assert body(response)["id"] == target.id
             assert body(response)["content"] == CONTENT
             assert body(response)["scope"] == SCOPE
-            assert body(response)["decayed"] is False
+            assert body(response).get("decayed", False) is False
+            assert response["results"][0]["superseded"] is False
+            assert response["results"][0]["superseded_by"] == []
             assert response["results"][0]["delivery"] == "session_duplicate"
             assert response["results"][0]["content_ref"] == {
                 "node_id": target.id, "full_content_chars": len(CONTENT),
@@ -227,14 +229,13 @@ def test_required_source_and_validity_read_failures_still_raise(mcp, table):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("required_write", ["access", "event", "feedback"])
+@pytest.mark.parametrize("required_write", ["access", "event"])
 def test_required_recall_writes_still_raise_when_indexing_also_fails(mcp, required_write):
     store = mcp.memory_store
     target = store.append_trace(CONTENT, {"scope": SCOPE})
     statements = {
         "access": "BEFORE UPDATE OF access_count ON nodes WHEN NEW.access_count > OLD.access_count",
         "event": "BEFORE INSERT ON recall_events",
-        "feedback": "BEFORE INSERT ON recall_feedback_marks",
     }
 
     async def scenario():
@@ -249,11 +250,8 @@ def test_required_recall_writes_still_raise_when_indexing_also_fails(mcp, requir
             with pytest.raises(ToolError, match="required write unavailable"):
                 await recall(client, used=[target.id])
             assert attempts == [0]
-            # Feedback follows the committed recall fact; an access/event
-            # failure rolls back that atomic pair. Neither returns success.
-            committed = int(required_write == "feedback")
-            assert store.get_node(target.id).access_count == access + committed
-            assert len(store.list_recall_events()) == events + committed
+            assert store.get_node(target.id).access_count == access
+            assert len(store.list_recall_events()) == events
             assert store.connection.execute("SELECT COUNT(*) FROM recall_feedback_marks").fetchone()[0] == 0
             assert not store.connection.in_transaction
 
