@@ -533,6 +533,14 @@ class _AnchorVectorCache:
         return getattr(self.store, name)
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedQuery:
+    """One normalized query and its vector, without store or response state."""
+
+    text: str
+    embedding: tuple[float, ...]
+
+
 class MemoryRecallService:
     """Callable retrieval policy service on top of MemoryStore."""
 
@@ -573,9 +581,17 @@ class MemoryRecallService:
         self._store_embedder_shared = False
         self._failed_legacy_chunks: set[str] = set()
 
+    def prepare_query(self, query: str, *, max_results: int = 10) -> _PreparedQuery:
+        """Encode immutable input through the shared encoder, without store access."""
+
+        if max_results <= 0:
+            return _PreparedQuery("", ())
+        query = query.strip()
+        return _PreparedQuery(query, tuple(self.embedder.embed(query)) if query else ())
+
     def memory_recall(
         self,
-        query: str,
+        query: str | _PreparedQuery,
         *,
         scope: str | None = None,
         ambient_context: dict[str, Any] | None = None,
@@ -591,9 +607,11 @@ class MemoryRecallService:
         if max_results <= 0:
             return []
 
-        query = query.strip()
+        prepared = query if isinstance(query, _PreparedQuery) else self.prepare_query(query)
+        query = prepared.text
         if not query:
             return []
+        query_embedding = prepared.embedding
 
         plan = self.scope_resolver.resolve(
             scope=scope,
@@ -603,9 +621,7 @@ class MemoryRecallService:
         candidates: dict[str, _Candidate] = {}
 
         self._collect_bm25(query, plan, candidates, max_results=max_results)
-        query_embedding = self._collect_vector(
-            query, plan, candidates, max_results=max_results
-        )
+        self._collect_vector(query_embedding, plan, candidates, max_results=max_results)
         by_name = schema_trigger_by_name()
         if not by_name:
             self._collect_schema_triggers(query, plan, candidates)
@@ -619,9 +635,8 @@ class MemoryRecallService:
         decision_mode = _is_decision_depth(depth)
         # Anchors are an entry *into* the graph channel, so they are asked for
         # exactly when that channel runs: with the graph off (depth=0) there is
-        # nothing for a seed to open. The query vector is the one
-        # ``_collect_vector`` already computed -- an anchor match embeds
-        # nothing of its own.
+        # nothing for a seed to open. Vector scoring and anchor matching
+        # reuse the same prepared query embedding.
         anchor_matches = (
             self._match_query_anchors(plan, query_embedding)
             if graph_depth > 0 and self.anchor_seeding else None
@@ -972,12 +987,12 @@ class MemoryRecallService:
 
     def _collect_vector(
         self,
-        query: str,
+        query_embedding: Sequence[float],
         plan: ScopePlan,
         candidates: dict[str, _Candidate],
         *,
         max_results: int,
-    ) -> list[float]:
+    ) -> None:
         """Score nodes by the best cosine among their chunk vectors.
 
         A node's vector score is ``max`` over its chunks, not the mean and not
@@ -995,14 +1010,11 @@ class MemoryRecallService:
         gate read it the same way. What the shift in that score's distribution
         does to those two thresholds is measured in the module notes above.
 
-        Returns the query's embedding so the anchor match can reuse it. The
-        encoder costs ~8.6 ms warm on this machine -- more than the whole
-        anchor budget -- and the two channels want the same vector of the same
-        query, so embedding twice would be paying that twice for one answer.
+        The caller supplies the prepared query vector, also used by anchors.
+        Pending content indexing still reads and repairs current store state.
         """
 
         per_scope_limit = max(50, max_results * 12)
-        query_embedding = self.embedder.embed(query)
 
         # One bounded queue covers new content, edits and migrated derived
         # chunks. Chunk presence, not the legacy representative, decides work.
@@ -1043,7 +1055,7 @@ class MemoryRecallService:
                     scoped_scores.append((similarity, node_id))
 
         if not scoped_scores:
-            return query_embedding
+            return
 
         scoped_scores.sort(key=lambda item: item[0], reverse=True)
         keep_n = per_scope_limit * max(1, len(plan.scopes))
@@ -1072,7 +1084,6 @@ class MemoryRecallService:
             if similarity > existing.vector_score:
                 existing.vector_score = similarity
                 existing.chunk_id = matched_chunks.get(node_id)
-        return query_embedding
 
     # ------------------------------------------------------------------
     # Chunk corpus cache
@@ -1173,7 +1184,7 @@ class MemoryRecallService:
     # ------------------------------------------------------------------
 
     def _match_query_anchors(
-        self, plan: ScopePlan, query_embedding: list[float]
+        self, plan: ScopePlan, query_embedding: Sequence[float]
     ) -> list[AnchorMatch]:
         """Observe matches and graph targets for this recall only."""
 
@@ -1191,7 +1202,7 @@ class MemoryRecallService:
         )
 
     def _collect_anchor_seeds(
-        self, plan: ScopePlan, query_embedding: list[float],
+        self, plan: ScopePlan, query_embedding: Sequence[float],
         *, matches: list[AnchorMatch] | None = None,
     ) -> dict[str, float]:
         """Graph seeds contributed by the anchors this query matches.
@@ -1235,7 +1246,7 @@ class MemoryRecallService:
         )
 
     def _collect_query_demotions(
-        self, plan: ScopePlan, query_embedding: list[float],
+        self, plan: ScopePlan, query_embedding: Sequence[float],
         *, matches: list[AnchorMatch] | None = None,
     ) -> dict[str, float]:
         """Query-relative irrelevance multipliers for this recall. Never raises.
@@ -2204,7 +2215,7 @@ def _is_rejected_alternative_node(node: Node) -> bool:
     return bool(node.context.get("is_rejected_alternative"))
 
 
-def _as_query_array(query_embedding: list[float]) -> Any:
+def _as_query_array(query_embedding: Sequence[float]) -> Any:
     """Convert query embedding to a normalized numpy array (or None without numpy)."""
 
     if _np is None or not query_embedding:
@@ -2362,7 +2373,7 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
 
 def _pooled_chunk_similarities(
     block: _ChunkBlock,
-    query_embedding: list[float],
+    query_embedding: Sequence[float],
     q_arr: Any,
     *,
     matched_chunks: dict[str, str] | None = None,
