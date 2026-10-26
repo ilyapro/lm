@@ -231,6 +231,7 @@ from living_memory.models import (
     ConnectionType,
     Node,
     RetrievalWeights,
+    SourcePassage,
 )
 from living_memory.query_anchors import (
     ANCHOR_MATCH_COSINE_THRESHOLD,
@@ -353,6 +354,8 @@ class RecallResult:
     withheld: str | None = None
     # Direct relation endpoints, before the public reader's scope projection.
     correction_ids: tuple[str, ...] = ()
+    # Transient source evidence from this query's winning chunk, not a score.
+    semantic_passage: SourcePassage | None = None
 
     @property
     def node_id(self) -> str:
@@ -379,6 +382,7 @@ class _Candidate:
     node: Node
     bm25_score: float = 0.0
     vector_score: float = 0.0
+    chunk_id: str | None = None
     #: Activation from the traversal that would have happened with anchors
     #: switched off. Written by that walk only, so it stays usable as the
     #: anchors-off counterfactual the ranker needs.
@@ -459,6 +463,7 @@ class _ChunkBlock:
     log2_chunk_counts: Any
     norms: Any = None
     norm_deviation: float = 0.0
+    chunk_ids: tuple[str, ...] = ()
 
     @property
     def needs_normalization(self) -> bool:
@@ -678,7 +683,17 @@ class MemoryRecallService:
                 replace(result, node=node, recall_event_id=self.last_recall_event_id)
                 for result, node in zip(limited, nodes, strict=True)
             ]
-        return limited
+        chunk_ids = {
+            result.node_id: candidates[result.node_id].chunk_id
+            for result in limited
+            if not result.withheld and result.node.level != "schema"
+            and candidates[result.node_id].chunk_id is not None
+        }
+        passages = self.store.get_chunk_passages(list(chunk_ids.values()))
+        return [
+            replace(result, semantic_passage=passages.get(chunk_ids.get(result.node_id)))
+            for result in limited
+        ]
 
     def memory_connect(
         self,
@@ -936,9 +951,10 @@ class MemoryRecallService:
         q_arr = _as_query_array(query_embedding)
         # Resolve membership after the drain, which can write new chunks.
         scoped_scores: list[tuple[float, str]] = []
+        matched_chunks: dict[str, str] = {}
         for block in self._chunk_blocks(plan, len(query_embedding)):
             for similarity, node_id in _pooled_chunk_similarities(
-                block, query_embedding, q_arr
+                block, query_embedding, q_arr, matched_chunks=matched_chunks,
             ):
                 if similarity >= VECTOR_MATCH_THRESHOLD:
                     scoped_scores.append((similarity, node_id))
@@ -970,7 +986,9 @@ class MemoryRecallService:
                 if node is None or node.decayed or not plan.allows(node.scope):
                     continue
                 existing = candidates.setdefault(node_id, _Candidate(node=node))
-            existing.vector_score = max(existing.vector_score, similarity)
+            if similarity > existing.vector_score:
+                existing.vector_score = similarity
+                existing.chunk_id = matched_chunks.get(node_id)
         return query_embedding
 
     # ------------------------------------------------------------------
@@ -1047,7 +1065,9 @@ class MemoryRecallService:
         accumulators: dict[int, _BlockAccumulator] = {}
         width = -1
         accumulator: _BlockAccumulator | None = None
-        for node_id, _ordinal, view in self.store.iter_chunk_embedding_rows(scope=scope):
+        for node_id, _ordinal, view, chunk_id in self.store.iter_chunk_embedding_rows(
+            scope=scope, include_identity=True,
+        ):
             row_width, remainder = divmod(len(view), CHUNK_EMBEDDING_ITEMSIZE)
             if remainder or not row_width:
                 # Not a whole number of float32s, or none at all: not a vector.
@@ -1055,7 +1075,7 @@ class MemoryRecallService:
             if row_width != width or accumulator is None:
                 width = row_width
                 accumulator = accumulators.setdefault(width, _BlockAccumulator())
-            accumulator.add(node_id, view)
+            accumulator.add(node_id, view, chunk_id)
 
         blocks = tuple(accumulators[width].freeze(width) for width in sorted(accumulators))
         return _ScopeChunkIndex(
@@ -2090,21 +2110,23 @@ LENGTH_BIAS_LOG2_COEFFICIENT = 0.031
 class _BlockAccumulator:
     """Collect ordered BLOBs once, retaining one raw array per vector width."""
 
-    __slots__ = ("payload", "node_ids", "starts", "rows")
+    __slots__ = ("payload", "node_ids", "starts", "rows", "chunk_ids")
 
     def __init__(self) -> None:
         self.payload = bytearray()
         self.node_ids: list[str] = []
         self.starts: list[int] = []
         self.rows = 0
+        self.chunk_ids: list[str] = []
 
-    def add(self, node_id: str, view: Any) -> None:
+    def add(self, node_id: str, view: Any, chunk_id: str) -> None:
         # iter_chunk_embedding_rows promises rows grouped by node, so a node id
         # that differs from the last one can only mean a new run.
         if not self.node_ids or self.node_ids[-1] != node_id:
             self.node_ids.append(node_id)
             self.starts.append(self.rows)
         self.payload += view
+        self.chunk_ids.append(chunk_id)
         self.rows += 1
 
     def freeze(self, dimension: int) -> _ChunkBlock:
@@ -2131,6 +2153,7 @@ class _BlockAccumulator:
                 log2_chunk_counts=_np.log2(counts),
                 norms=norms,
                 norm_deviation=norm_deviation,
+                chunk_ids=tuple(self.chunk_ids),
             )
         payload = bytes(self.payload)
         stride = dimension * CHUNK_EMBEDDING_ITEMSIZE
@@ -2148,6 +2171,7 @@ class _BlockAccumulator:
             log2_chunk_counts=tuple(
                 log2(bounds[index + 1] - bounds[index]) for index in range(len(node_ids))
             ),
+            chunk_ids=tuple(self.chunk_ids),
         )
 
 
@@ -2166,6 +2190,11 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
     ]
     row_count = sum(counts)
     dimension = blocks[0].dimension
+    chunk_ids = tuple(
+        chunk_id
+        for (_, block, index), count in zip(runs, counts, strict=True)
+        for chunk_id in block.chunk_ids[int(block.starts[index]):int(block.starts[index]) + count]
+    )
     if _np is not None and isinstance(blocks[0].rows, _np.ndarray):
         starts = _np.cumsum([0, *counts[:-1]], dtype=_np.intp)
         destinations = dict(zip(node_ids, starts, strict=True))
@@ -2185,6 +2214,7 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
             dimension, node_ids, starts, None, row_count,
             _np.asarray([block.log2_chunk_counts[index] for _, block, index in runs]),
             norms, float(_np.max([block.norm_deviation for block in blocks])),
+            chunk_ids=chunk_ids,
         )
         return _ChunkGatherPlan(blocks, tuple(placements), template)
     starts_list = []
@@ -2196,6 +2226,7 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
     template = _ChunkBlock(
         dimension, node_ids, tuple(starts_list), tuple(scalar_rows), row_count,
         tuple(block.log2_chunk_counts[index] for _, block, index in runs),
+        chunk_ids=chunk_ids,
     )
     return _ChunkGatherPlan(blocks, (), template)
 
@@ -2204,6 +2235,8 @@ def _pooled_chunk_similarities(
     block: _ChunkBlock,
     query_embedding: list[float],
     q_arr: Any,
+    *,
+    matched_chunks: dict[str, str] | None = None,
 ) -> list[tuple[float, str]]:
     """Max-pool one block's chunk cosines into one score per node.
 
@@ -2221,7 +2254,19 @@ def _pooled_chunk_similarities(
         sims = rows @ q_arr
         # `starts` is the run boundary of each node, so one reduceat pools
         # every node at once -- no Python loop over the corpus's 60k chunk rows.
-        pooled = _np.clip(_np.maximum.reduceat(sims, block.starts), 0.0, None)
+        maxima = _np.maximum.reduceat(sims, block.starts)
+        pooled = _np.clip(maxima, 0.0, None)
+        if matched_chunks is not None:
+            counts = _np.diff(_np.append(block.starts, block.row_count))
+            winners = _np.minimum.reduceat(
+                _np.where(sims == _np.repeat(maxima, counts), _np.arange(block.row_count), block.row_count),
+                block.starts,
+            )
+            matched_chunks.update(
+                (node_id, block.chunk_ids[int(row)])
+                for node_id, row in zip(block.node_ids, winners, strict=True)
+                if row < block.row_count
+            )
         if LENGTH_BIAS_LOG2_COEFFICIENT:
             pooled -= LENGTH_BIAS_LOG2_COEFFICIENT * block.log2_chunk_counts
             _np.clip(pooled, 0.0, None, out=pooled)
@@ -2231,8 +2276,13 @@ def _pooled_chunk_similarities(
     pooled_rows: list[tuple[float, str]] = []
     for index, node_id in enumerate(block.node_ids):
         best = 0.0
-        for row in block.rows[bounds[index] : bounds[index + 1]]:
-            best = max(best, cosine_similarity(query_embedding, list(row)))
+        winner = bounds[index]
+        for position in range(bounds[index], bounds[index + 1]):
+            similarity = cosine_similarity(query_embedding, list(block.rows[position]))
+            if similarity > best:
+                best, winner = similarity, position
+        if matched_chunks is not None:
+            matched_chunks[node_id] = block.chunk_ids[winner]
         penalty = LENGTH_BIAS_LOG2_COEFFICIENT * block.log2_chunk_counts[index]
         pooled_rows.append((max(0.0, best - penalty), node_id))
     return pooled_rows
