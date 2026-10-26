@@ -223,11 +223,11 @@ def test_grounded_policy_leaves_ungrounded_weights_untouched(
 
 
 # ---------------------------------------------------------------------------
-# Provenance and graph linkage stay exhaustive
+# Provenance stays exhaustive without knowledge relations
 # ---------------------------------------------------------------------------
 
 
-def test_linkage_still_covers_every_delivered_result(tmp_path: Path) -> None:
+def test_provenance_covers_every_delivered_result_without_relations(tmp_path: Path) -> None:
     """Gating credit must not narrow provenance: traceability needs all eight."""
 
     mcp, store, node_ids, event_id = _seed_event(tmp_path / "linkage.sqlite3")
@@ -235,14 +235,13 @@ def test_linkage_still_covers_every_delivered_result(tmp_path: Path) -> None:
     trace_id = consumed["node"]["id"]
     trace = store.get_node(trace_id)
 
-    assert set(consumed["implicit_feedback"]["linked_node_ids"]) == set(node_ids)
     assert set(trace.provenance["recalled_nodes"]) == set(node_ids)
     assert set(trace.source_traces) == set(node_ids)
     related = {
         connection.target_id
         for connection in store.list_connections(source_id=trace_id, relation_type="related")
     }
-    assert set(node_ids) <= related
+    assert related == set()
 
     prior = trace.provenance["prior_recalls"]
     assert [entry["id"] for entry in prior] == [event_id]
@@ -250,7 +249,7 @@ def test_linkage_still_covers_every_delivered_result(tmp_path: Path) -> None:
     assert store.get_recall_event(event_id).feedback_trace_id == trace_id
 
 
-def test_grounded_subset_is_reported_and_is_a_subset_of_linkage(
+def test_consumed_event_is_not_reinforced_again(
     tmp_path: Path,
 ) -> None:
     mcp, store, node_ids, _event_id = _seed_event(tmp_path / "reported.sqlite3")

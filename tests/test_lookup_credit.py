@@ -565,9 +565,8 @@ def test_grounded_closure_after_a_lookup_does_not_credit_twice(
     consumed = _consume(mcp)
     trace_id = consumed["node"]["id"]
 
-    # The closure happened and its linkage is exhaustive, exactly as before.
+    # The closure records the complete delivery history without related edges.
     assert consumed["implicit_feedback"]["recall_event_ids"] == [event_id]
-    assert set(consumed["implicit_feedback"]["linked_node_ids"]) == set(node_ids)
     trace = store.get_node(trace_id)
     assert set(trace.provenance["recalled_nodes"]) == set(node_ids)
     assert set(trace.source_traces) == set(node_ids)
@@ -576,7 +575,7 @@ def test_grounded_closure_after_a_lookup_does_not_credit_twice(
         connection.target_id
         for connection in store.list_connections(source_id=trace_id, relation_type="related")
     }
-    assert set(node_ids) <= related
+    assert related == set()
     assert store.get_recall_event(event_id).feedback_trace_id == trace_id
 
     # But the one node it grounded was already credited by the lookup: no

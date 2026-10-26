@@ -536,7 +536,7 @@ def test_closure_links_recall_to_remember_despite_stub_delivery(
     # nothing and earns no credit, while the provenance link still lands.
     # Both halves matter — a regression that re-broadened credit to every
     # delivered result would flip `feedback_applied` back to True here.
-    assert remembered["implicit_feedback"]["linked_node_ids"] == [seeded_id]
+    assert stored.provenance["recalled_nodes"] == [seeded_id]
     assert remembered["implicit_feedback"]["feedback_applied"] is False
 
 

@@ -107,7 +107,7 @@ def test_mcp_remember_consumes_prior_recall_as_implicit_feedback(tmp_path: Path)
     assert new_trace.provenance["prior_recalls"][0]["id"] == event_id
     assert first_id in new_trace.provenance["recalled_nodes"]
     assert first_id in new_trace.source_traces
-    assert first_id in {connection.target_id for connection in connections}
+    assert connections == []
     assert store.get_node(first_id).usefulness_score > before
     assert remembered["implicit_feedback"]["recall_event_ids"] == [event_id]
 

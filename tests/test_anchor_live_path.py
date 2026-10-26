@@ -190,7 +190,6 @@ def test_grounded_consumption_anchors_the_query_to_the_used_node_only(
     # And the outcome object reports it, so a caller need not re-query.
     feedback = consumed["implicit_feedback"]
     assert feedback["feedback_applied"] is True
-    assert set(feedback["linked_node_ids"]) == set(node_ids)
     assert store.get_recall_event(event_id).feedback_trace_id == consumed["node"]["id"]
 
     trace = store.get_node(consumed["node"]["id"])
@@ -226,9 +225,8 @@ def test_ungrounded_consumption_writes_no_anchor(tmp_path: Path) -> None:
 
     consumed = _consume(mcp, UNGROUNDED_TRACE)
 
-    # The event really was consumed — linkage is exhaustive as ever — and yet
+    # The event was consumed and its history recorded, but
     # nothing was used, so there is nothing for an anchor to point at.
-    assert set(consumed["implicit_feedback"]["linked_node_ids"]) == set(node_ids)
     assert store.get_recall_event(event_id).feedback_trace_id == consumed["node"]["id"]
     assert _anchors(store) == []
     assert store.count_query_anchor_edges() == 0

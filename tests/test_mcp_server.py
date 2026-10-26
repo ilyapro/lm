@@ -444,7 +444,6 @@ def test_memory_remember_confirmation_stays_small_under_auto_consolidation(
     assert len(feedback["recall_event_ids"]) == 1
     assert feedback["feedback_applied"] is True
     assert node["prior_recall_count"] == 1
-    assert node["linked_node_count"] == len(feedback["linked_node_ids"]) == 4
     assert node["source_trace_count"] == len(stored.source_traces) == 4
 
     # The write only schedules the pass; its summary lands on the scheduler.

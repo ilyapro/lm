@@ -38,7 +38,6 @@ def mcp(tmp_path, monkeypatch):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "grounded")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
-    monkeypatch.setenv("LM_IMPLICIT_LINK_POLICY", "all")
     monkeypatch.setattr(server, "_transport_session_id", lambda: "fixture-transport")
     # Time-based maintenance has its own outcome, outside the requested write.
     monkeypatch.setattr(server, "_decay_sweep_if_due", lambda store: None)
@@ -93,14 +92,14 @@ def test_required_feedback_failure_rolls_back_and_retry_is_coherent(mcp, tmp_pat
     assert store.get_recall_event(event_id).feedback_trace_id == trace.id
     assert store.get_recall_event(event_id).feedback_applied_at
     assert result["implicit_feedback"] == {
-        "recall_event_ids": [event_id], "linked_node_ids": ids, "feedback_applied": True,
+        "recall_event_ids": [event_id], "feedback_applied": True,
     }
     assert [tuple(row) for row in store.connection.execute(
         "SELECT node_id, basis, source_id FROM recall_credit_ledger"
     )] == [(ids[0], "grounded", trace.id)]
     assert {edge.target_id for edge in store.list_connections(
         source_id=trace.id, relation_type="related"
-    )} == set(ids)
+    )} == set()
     if alternatives is not None:
         rejected = store.get_node(result["rejected_alternatives"][0])
         assert rejected.context["rejected_for"] == trace.id
@@ -132,10 +131,9 @@ def test_success_preserves_alternatives_marks_and_confirmation(mcp):
     assert result["node"] == {
         "id": trace.id, "level": "trace", "scope": CONTEXT["scope"],
         "created_at": trace.timestamp, "prior_recall_count": 1,
-        "linked_node_count": 1, "source_trace_count": 2,
+        "source_trace_count": 2,
     }
     assert set(trace.provenance["recalled_nodes"]) == set(ids)
-    assert result["implicit_feedback"]["linked_node_ids"] == ids[:1]
     assert store.get_recall_event(event_id).feedback_trace_id == trace.id
     assert result["feedback_marks"] == {"accepted": 2, "dropped": 0, "by_reason": {}}
     assert {tuple(row) for row in store.connection.execute(

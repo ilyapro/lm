@@ -13,10 +13,8 @@ What this module pins, in the order docs/explicit-feedback.md states it:
   claims basis ``explicit`` once per (event, node) across grounded, lookup
   and explicit, in either order, and hands irrelevant marks to the
   query-irrelevance hook; ``off`` records nothing.
-* **Link hygiene.** No ``related`` edge from the closing trace to a node
-  marked irrelevant for that event — same call or later call — under every
-  valve value but ``off``; ``LM_IMPLICIT_LINK_POLICY=credited`` links only
-  credited results.
+* **History.** Every shown result remains in provenance; explicit marks do
+  not assert or erase a knowledge relation to the closing trace.
 * **Prompt arms.** Both description arms fit the 1024-char budget and keep
   the recall law.
 """
@@ -34,10 +32,8 @@ import living_memory.feedback as feedback_module
 import living_memory.server as server_module
 from living_memory.feedback import (
     DEFAULT_EXPLICIT_FEEDBACK_POLICY,
-    DEFAULT_IMPLICIT_LINK_POLICY,
     _explicit_credit_weight,
     _explicit_feedback_policy,
-    _implicit_link_policy,
 )
 from living_memory.irrelevance import list_query_irrelevance
 from living_memory.server import (
@@ -126,7 +122,6 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LM_LOOKUP_CREDIT_WINDOW_SECONDS",
         "LM_EXPLICIT_FEEDBACK_POLICY",
         "LM_EXPLICIT_CREDIT_WEIGHT",
-        "LM_IMPLICIT_LINK_POLICY",
         "LM_EXPLICIT_FEEDBACK_PROMPT",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -213,12 +208,11 @@ def _weights(store: MemoryStore) -> tuple[float, float, float]:
 
 
 def _implicit_targets(store: MemoryStore, trace_id: str, event_id: str) -> set[str]:
-    return {
-        connection.target_id
-        for connection in store.list_connections(source_id=trace_id, relation_type="related")
-        if connection.metadata.get("basis") == "implicit_recall_feedback"
-        and connection.metadata.get("recall_event_id") == event_id
-    }
+    return {row[0] for row in store.connection.execute(
+        "SELECT target_id FROM connections WHERE source_id = ? AND type = 'related' "
+        "AND json_extract(metadata, '$.basis') = 'implicit_recall_feedback' "
+        "AND json_extract(metadata, '$.recall_event_id') = ?", (trace_id, event_id),
+    )}
 
 
 def _rank(store: MemoryStore, event_id: str, node_id: str) -> int:
@@ -234,25 +228,19 @@ def _rank(store: MemoryStore, event_id: str, node_id: str) -> int:
 
 def test_valve_defaults_and_unknown_values_fall_back(monkeypatch: pytest.MonkeyPatch) -> None:
     assert DEFAULT_EXPLICIT_FEEDBACK_POLICY == "audit"
-    assert DEFAULT_IMPLICIT_LINK_POLICY == "all"
     assert _explicit_feedback_policy() == "audit"
-    assert _implicit_link_policy() == "all"
     assert _explicit_credit_weight() == 1.0
     assert _explicit_feedback_prompt_arm() == "optional"
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "bogus")
-    monkeypatch.setenv("LM_IMPLICIT_LINK_POLICY", "bogus")
     monkeypatch.setenv("LM_EXPLICIT_CREDIT_WEIGHT", "-3")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_PROMPT", "bogus")
     assert _explicit_feedback_policy() == "audit"
-    assert _implicit_link_policy() == "all"
     assert _explicit_credit_weight() == 1.0
     assert _explicit_feedback_prompt_arm() == "optional"
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", " CREDIT ")
-    monkeypatch.setenv("LM_IMPLICIT_LINK_POLICY", "credited")
     monkeypatch.setenv("LM_EXPLICIT_CREDIT_WEIGHT", "0.5")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_PROMPT", "mandatory")
     assert _explicit_feedback_policy() == "credit"
-    assert _implicit_link_policy() == "credited"
     assert _explicit_credit_weight() == 0.5
     assert _explicit_feedback_prompt_arm() == "mandatory"
     monkeypatch.setenv("LM_EXPLICIT_CREDIT_WEIGHT", "nan")
@@ -563,7 +551,7 @@ def test_off_mode_records_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     }
     assert _marks(store) == [] and _explicit(store) == []
     # No hygiene either: off is the pre-feature behaviour, all eight linked.
-    assert _implicit_targets(store, response["node"]["id"], event_id) == set(node_ids)
+    assert _implicit_targets(store, response["node"]["id"], event_id) == set()
     recalled = _recall(mcp, irrelevant=[off_topic])
     assert recalled["feedback_marks"]["ignored"] is True
     assert _marks(store) == []
@@ -837,8 +825,7 @@ def test_no_related_edge_for_irrelevant_in_the_same_call(
     off_topic = node_ids[OTHER_INDEX]
     response = _remember(mcp, irrelevant=[off_topic])
     trace_id = response["node"]["id"]
-    assert _implicit_targets(store, trace_id, event_id) == set(node_ids) - {off_topic}
-    assert off_topic not in response["implicit_feedback"]["linked_node_ids"]
+    assert _implicit_targets(store, trace_id, event_id) == set()
     # Provenance still records what was shown.
     trace = store.get_node(trace_id)
     assert off_topic in trace.provenance["recalled_nodes"]
@@ -859,20 +846,20 @@ def test_no_related_edge_for_irrelevant_in_the_same_teach(
     assert event_id in taught["implicit_feedback"]["recall_event_ids"]
     targets = _implicit_targets(store, trace_id, event_id)
     assert off_topic not in targets
-    assert targets  # the rest of the delivery is still linked
+    assert targets == set()
 
 
-def test_later_irrelevant_mark_removes_that_events_edge(
+def test_later_irrelevant_mark_preserves_delivery_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     mcp, store, node_ids, event_id = _seed(tmp_path / "later.sqlite3", monkeypatch)
     off_topic = node_ids[OTHER_INDEX]
     trace_id = _remember(mcp)["node"]["id"]
-    assert _implicit_targets(store, trace_id, event_id) == set(node_ids)
+    assert _implicit_targets(store, trace_id, event_id) == set()
 
     response = _recall(mcp, irrelevant=[off_topic])
     assert response["feedback_marks"]["accepted"] == 1
-    assert _implicit_targets(store, trace_id, event_id) == set(node_ids) - {off_topic}
+    assert _implicit_targets(store, trace_id, event_id) == set()
     assert store.list_connections(source_id=trace_id, target_id=off_topic, relation_type="related") == []
 
 
@@ -888,35 +875,32 @@ def test_later_mark_leaves_an_edge_that_belongs_to_other_evidence(
     assert len(store.list_connections(source_id=trace_id, target_id=off_topic, relation_type="related")) == 1
 
 
-def test_link_policy_credited_links_only_credited_results(
+def test_lookup_credit_does_not_assert_relation_to_closing_trace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LM_IMPLICIT_LINK_POLICY", "credited")
     mcp, store, node_ids, event_id = _seed(tmp_path / "credited.sqlite3", monkeypatch)
     looked_up = node_ids[1]
     mcp.tools["memory_lookup"](node_id=looked_up)
     response = _remember(mcp)
     trace_id = response["node"]["id"]
-    assert _implicit_targets(store, trace_id, event_id) == {node_ids[USED_INDEX], looked_up}
+    assert _implicit_targets(store, trace_id, event_id) == set()
     # Provenance stays exhaustive.
     assert set(store.get_node(trace_id).provenance["recalled_nodes"]) >= set(node_ids)
 
 
-def test_link_policy_credited_counts_explicit_credit(
+def test_explicit_credit_does_not_assert_relation_to_closing_trace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LM_IMPLICIT_LINK_POLICY", "credited")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
     mcp, store, node_ids, event_id = _seed(tmp_path / "credited-explicit.sqlite3", monkeypatch)
     response = _remember(mcp, UNRELATED_TRACE, used=[node_ids[0]])
-    assert _implicit_targets(store, response["node"]["id"], event_id) == {node_ids[0]}
+    assert _implicit_targets(store, response["node"]["id"], event_id) == set()
 
 
-def test_link_policy_all_is_todays_behaviour(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_closing_trace_does_not_link_delivered_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     mcp, store, node_ids, event_id = _seed(tmp_path / "all.sqlite3", monkeypatch)
     response = _remember(mcp)
-    assert _implicit_targets(store, response["node"]["id"], event_id) == set(node_ids)
-    assert set(response["implicit_feedback"]["linked_node_ids"]) == set(node_ids)
+    assert _implicit_targets(store, response["node"]["id"], event_id) == set()
 
 
 # ---------------------------------------------------------------------------

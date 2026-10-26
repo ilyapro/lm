@@ -96,7 +96,6 @@ def test_mcp_recall_delivery_and_feedback_ignore_unavailable_aggregate(tmp_path,
     monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_PROMPT", "mandatory")
-    monkeypatch.setenv("LM_IMPLICIT_LINK_POLICY", "credited")
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     store = mcp.memory_store
     legacy_signal(store)

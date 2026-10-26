@@ -542,7 +542,7 @@ def test_re_derivation_is_idempotent_and_multi_rule_pairs_merge(tmp_path: Path) 
         assert edges[0].metadata["commit"] == "cafe123"  # R4a's 7-char prefix survives
 
 
-def test_upsert_max_merges_weight_and_merges_metadata(tmp_path: Path) -> None:
+def test_derived_evidence_replaces_recall_history_without_inheriting_weight(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
         cited = _remember(store, "Earlier note about the module", files=["src/z.py"])
         new = _remember(store, "New note about the module", files=["src/z.py"])
@@ -559,9 +559,9 @@ def test_upsert_max_merges_weight_and_merges_metadata(tmp_path: Path) -> None:
 
         edges = _related(store, source_id, target_id)
         assert len(edges) == 1
-        assert edges[0].weight == 0.97  # stronger existing weight is kept
+        assert edges[0].weight == 0.65
         assert edges[0].metadata["basis"] == SHARED_FILES_BASIS  # new keys win
-        assert edges[0].metadata["recall_id"] == "evt-1"  # old keys survive
+        assert "recall_id" not in edges[0].metadata
 
 
 # --- memory_remember wiring ---------------------------------------------------------

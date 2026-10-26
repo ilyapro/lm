@@ -40,7 +40,6 @@ def mcp(tmp_path, monkeypatch, request):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", request.param)
     monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "fixed")
-    monkeypatch.setenv("LM_IMPLICIT_LINK_POLICY", "all")
     monkeypatch.setattr(server, "_transport_session_id", lambda: "fixture-transport")
     instance = server.create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     yield instance
@@ -73,9 +72,6 @@ def assert_outcome(mcp, ids, event_id, result):
     assert trace.context["session_id"] == CONTEXT["session_id"]
     assert trace.context["transport_session_id"] == "fixture-transport"
     assert set(trace.provenance["recalled_nodes"]) == set(ids)
-    assert result["corrective_trace"]["linked_node_count"] == len(
-        result["implicit_feedback"]["linked_node_ids"]
-    ) == 1
     assert [event["id"] for event in trace.provenance["prior_recalls"]] == [event_id]
     assert store.get_recall_event(event_id).feedback_trace_id == trace.id
     assert store.get_node(ids[0]).corrections[-1]["new"] == CORRECTION
@@ -84,7 +80,7 @@ def assert_outcome(mcp, ids, event_id, result):
     )] == [(trace.id, ids[0])]
     assert {edge.target_id for edge in store.list_connections(
         source_id=trace.id, relation_type="related"
-    )} == {ids[0]}
+    )} == set()
     assert result["feedback_marks"] == {"accepted": 2, "dropped": 0, "by_reason": {}}
     assert {tuple(row) for row in store.connection.execute(
         "SELECT node_id, mark, accepted, source_id, transport_session_id, agent "
