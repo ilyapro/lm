@@ -224,7 +224,9 @@ def test_stdio_returns_knowledge_on_map_failure_and_preserves_required_errors(tm
                 recorded, = connection.execute(
                     "SELECT recall_map FROM recall_events WHERE id=?", (success["recall_event_id"],),
                 ).fetchone()
-                assert json.loads(recorded) == success["recall_map"]
+                stored_map = json.loads(recorded)
+                assert stored_map.pop("sel")["e"] == success["recall_map"]["pool"]
+                assert stored_map == success["recall_map"]
                 connection.execute("""CREATE TRIGGER reject_event BEFORE INSERT ON recall_events
                     BEGIN SELECT RAISE(ABORT, 'required recall unavailable'); END""")
             failed = await client.call_tool("memory_recall", arguments, raise_on_error=False)

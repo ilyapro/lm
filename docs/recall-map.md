@@ -73,8 +73,8 @@ The response fitter searches for the widest common excerpt after each change
 in displayed breadth. It drops tail clusters and optional journal names to
 preserve a useful gist. If the minimum useful presentation cannot fit, it
 retains selection accounting without clusters in the stored map and diagnostic
-view. `memory_lookup` remains the
-full-content path. A fully skipped curtail decision omits `pool` and `sel`:
+view. `memory_lookup` remains the full-content path. A fully skipped curtail
+decision omits `pool` and `sel`:
 neither was computed. A measured empty pool includes `pool: 0`; its selection
 accounting remains available in the stored map and diagnostic view.
 
