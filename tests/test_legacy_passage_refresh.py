@@ -250,6 +250,7 @@ def test_changed_encoder_cannot_readdress_the_old_score(app, monkeypatch):
     monkeypatch.setattr(encoder, "embed_batch", lambda texts: [
         [0.6, 0.8, 0.0] if "amber" in text else [0.0, 1.0, 0.0] for text in texts
     ])
+    mcp.memory_store.set_chunk_embedder(encoder.embed_batch)
     first = call(mcp, view="full")["results"][0]
     assert first["vector_score"] == round(scored.vector_score, 6)
     assert FACT not in first["node"]["content"]
@@ -273,6 +274,7 @@ def test_failure_rolls_back_and_does_not_repeat_on_each_read(app, monkeypatch, f
         encoder.fail = True
     elif failure == "empty_vector":
         monkeypatch.setattr(encoder, "embed_batch", lambda texts: [[] for _ in texts])
+        store.set_chunk_embedder(encoder.embed_batch)
     else:
         original = store._replace_node_chunks
 

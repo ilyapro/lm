@@ -343,7 +343,10 @@ def test_source_aware_budget_through_mcp(tmp_path, monkeypatch, view, budget, ca
                     assert "open the amber hatch" not in body
             else:
                 assert all(text in body for text in required)
-                assert body.endswith("\n[Context omitted]")
+                notice = ("[Incomplete source context]" if case in {
+                    "paragraph_break", "overlapped_paragraphs", "evidence_records",
+                } else "[Context omitted]")
+                assert body.endswith("\n" + notice)
                 assert "[Incomplete passage]" not in body
                 if case == "evidence_records":
                     assert body.startswith(heading)
