@@ -410,7 +410,11 @@ Context-filter lookup continues to return complete matching nodes.
 
 Both views preserve the response envelope, including `recall_event_id`,
 `recall_map`, feedback summaries, decay summaries, warnings, and limitations
-when emitted. A content delivery class of `full` means the content is
+when emitted. Within `recall_map`, diagnostic selection accounting (`sel`,
+including its exclusion samples) appears only in `view="full"`; the complete
+map remains stored on the recall event. Every other map field, including
+navigation, filtered labels and limitations, is identical between views.
+A content delivery class of `full` means the content is
 complete; it is independent of the selected result view.
 
 #### Delivery shaping

@@ -14,9 +14,10 @@ and groups members of that residual without changing the main results.
 The server constructs the map after shaping the required response. It records
 the complete map with `attach_recall_map` on the same recall event before adding
 `recall_map` to the response. The persisted JSON is the payload delivered to the
-caller. A missing residual or a builder returning `None` produces no map key.
-A measured pool with no eligible members may produce an empty map with selection
-accounting.
+caller with `view="full"`. The default knowledge view omits only diagnostic
+selection accounting (`sel`); navigation, filtered labels and limitations remain
+identical. A missing residual or a builder returning `None` produces no map key.
+A measured pool with no eligible members may produce an empty map.
 
 Map construction and attribution share a nonfatal boundary: an optional-map
 failure leaves the required recall response usable. Errors in the required
@@ -52,7 +53,9 @@ server does not create or manage the agent's plan.
 The map adds `pool`, `covered` and, when needed, `more`. These describe the
 considered pool, represented members and omitted clusters; they do not claim
 to describe every memory in the store. `filtered` records withheld labels and
-budget exclusions. The additive `sel` journal records candidate selection.
+budget exclusions. The additive `sel` journal records candidate selection and
+identity-free exclusion samples. It is stored with the complete map and exposed
+through `view="full"` for diagnostics.
 
 | Constant | Value | Purpose |
 | --- | --- | --- |
@@ -69,10 +72,11 @@ budget exclusions. The additive `sel` journal records candidate selection.
 The response fitter searches for the widest common excerpt after each change
 in displayed breadth. It drops tail clusters and optional journal names to
 preserve a useful gist. If the minimum useful presentation cannot fit, it
-delivers selection accounting without clusters. `memory_lookup` remains the
+retains selection accounting without clusters in the stored map and diagnostic
+view. `memory_lookup` remains the
 full-content path. A fully skipped curtail decision omits `pool` and `sel`:
-neither was computed. A measured empty pool includes `pool: 0` and selection
-accounting.
+neither was computed. A measured empty pool includes `pool: 0`; its selection
+accounting remains available in the stored map and diagnostic view.
 
 ## 3. Current-work identity
 

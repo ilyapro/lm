@@ -166,7 +166,9 @@ location without inheriting its author/session/task. Explicit `used` and
 `irrelevant` marks retain their same-transport delivery contract.
 
 Request `memory_recall(..., view="full")` to inspect ranked entries with their
-`node`, scores, and compacted metadata. For original metadata, use exact-id
+`node`, scores, compacted metadata, and recall-map selection accounting (`sel`).
+The knowledge view keeps the map's navigation, filtered labels and limitations;
+the complete map remains stored on the recall event. For original metadata, use exact-id
 `memory_lookup(..., context_key="field")` or `view="full"`. The
 [interface contract](docs/mcp-interface.md#memory_recall) describes delivery,
 feedback, and warnings.

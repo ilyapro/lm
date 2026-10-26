@@ -1,4 +1,4 @@
-"""The recall map on the wire: additive, verbatim, recorded.
+"""The recall map on the wire: navigation, diagnostic access, recorded facts.
 
 ``memory_recall`` gains one top-level key and loses nothing. These tests pin
 that trade from both sides:
@@ -10,10 +10,9 @@ that trade from both sides:
   recall produce the same ``results`` array and the same every-other-key
   envelope, byte for byte. The delivery diet is untouched; the map rides
   beside it.
-* **Verbatim** — whatever the builder returns is what ships. A stubbed builder
-  whose payload the map module would never produce arrives unedited, so a
-  later change to the *builder* (the curtail work) needs no change here.
-* **Recorded** — what was delivered lands in ``recall_events.recall_map`` and
+* **Diagnostic access** — full view carries the complete builder payload;
+  knowledge omits only selection accounting, preserving all other fields.
+* **Recorded** — the complete builder payload lands in ``recall_events.recall_map`` and
   comes back through ``recent_recall_map_history`` for the downstream
   attribution consumers, filtered by scope, task and transport session.
 * **Migratable** — the column is added to a database that lacks it, on open,
@@ -122,13 +121,14 @@ def _recall(mcp: Any, **arguments: Any) -> dict[str, Any]:
 # --- (a) The key is there when there is a residual to describe ---------------
 
 
+@pytest.mark.parametrize("view", ["knowledge", "full"])
 def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
-    tmp_path: Path,
+    tmp_path: Path, view: str,
 ) -> None:
     mcp = _server(tmp_path / "memory.sqlite3")
     _seed(mcp.memory_store)
 
-    response = _recall(mcp, max_results=3)
+    response = _recall(mcp, max_results=3, view=view)
 
     assert response["count"] == 3
     assert "recall_map" in response
@@ -137,9 +137,8 @@ def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
     assert set(payload) <= {
         "clusters", "pool", "covered", "more", "filtered", "sel"
     }
-    assert {"clusters", "pool", "covered", "sel"} <= set(payload)
-    assert payload["sel"]["e"] == payload["pool"]
-    assert payload["sel"]["n"] == payload["sel"]["e"] + sum(payload["sel"]["x"])
+    assert {"clusters", "pool", "covered"} <= set(payload)
+    assert ("sel" in payload) is (view == "full")
     assert payload["pool"] == 13 - 3  # everything ranked, minus the delivered cut
     assert payload["clusters"]
 
@@ -157,11 +156,17 @@ def test_recall_map_rides_along_when_the_pool_leaves_a_residual(
         assert cluster["plan_item"].startswith(f"on touching {cluster['label']} -")
 
     # The map describes the residual and nothing else: no delivered node is in it.
-    delivered = {entry["id"] for entry in response["results"]}
+    delivered = {entry.get("node", entry)["id"] for entry in response["results"]}
     mapped = {cluster["medoid"]["node_id"] for cluster in payload["clusters"]}
     assert delivered.isdisjoint(mapped)
     history = mcp.memory_store.recent_recall_map_history()
-    assert [row["recall_map"] for row in history] == [payload]
+    assert len(history) == 1
+    recorded = history[0]["recall_map"]
+    assert recorded["sel"]["e"] == payload["pool"]
+    assert recorded["sel"]["n"] == recorded["sel"]["e"] + sum(recorded["sel"]["x"])
+    assert {key: value for key, value in recorded.items() if key != "sel"} == {
+        key: value for key, value in payload.items() if key != "sel"
+    }
 
 
 # --- (b) ... and absent when there is not ------------------------------------
@@ -200,14 +205,14 @@ def test_builder_returning_none_omits_the_key(
     assert mcp.memory_store.recent_recall_map_history() == []
 
 
-# --- (c) Whatever the builder says is what ships -----------------------------
+# --- (c) Navigation is preserved and selection diagnostics remain explicit ---
 
 
-def test_the_builders_output_is_attached_and_recorded_verbatim(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+def test_the_builders_output_preserves_navigation_and_records_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, view: str,
 ) -> None:
-    """The server adds no logic: a payload the module would never build lands
-    on the wire, and in the column, exactly as returned."""
+    """Only diagnostic selection fields depend on the requested view."""
 
     sentinel = {
         "clusters": [
@@ -222,6 +227,9 @@ def test_the_builders_output_is_attached_and_recorded_verbatim(
         "pool": 1234,
         "covered": 99,
         "more": 7,
+        "filtered": {"withheld": 2, "dropped": 7, "names": [["w", "useful refinement", 2]]},
+        "sel": {"v": "r1", "n": 1235, "e": 1234, "x": [0, 0, 1, 0, 0, 0, 0],
+                "o": 0, "q": [["fc", "diagnostic exclusion sample"]]},
     }
 
     class _Stub:
@@ -235,9 +243,12 @@ def test_the_builders_output_is_attached_and_recorded_verbatim(
     mcp = _server(tmp_path / "memory.sqlite3")
     _seed(mcp.memory_store)
 
-    response = _recall(mcp, max_results=3)
+    response = _recall(mcp, max_results=3, view=view)
 
-    assert response["recall_map"] == sentinel
+    expected = sentinel if view == "full" else {
+        key: value for key, value in sentinel.items() if key != "sel"
+    }
+    assert response["recall_map"] == expected
     history = mcp.memory_store.recent_recall_map_history()
     assert [row["recall_map"] for row in history] == [sentinel]
     assert history[0]["id"] == response["recall_event_id"]

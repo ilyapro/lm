@@ -1204,7 +1204,8 @@ def _register_tools(
             Field(description=(
                 "knowledge returns flat content, identity, validity, delivery and "
                 "content_ref. full returns diagnostic node wrappers, context and "
-                "ranking scores with delivery compaction; memory_lookup by id "
+                "ranking scores with delivery compaction, plus recall-map "
+                "selection accounting; memory_lookup by id "
                 "with context_key or view='full' restores original metadata. "
                 "Both views include superseded and scope-visible direct correction "
                 "ids in superseded_by, even when corrections are not in results."
@@ -1236,6 +1237,8 @@ def _register_tools(
         metadata is available through exact-id lookup's ``context_key`` or
         ``view="full"``. Both recall views use the same retrieval and delivery
         selection and keep all envelope fields, including warnings and maps.
+        Map selection accounting (``sel``) is diagnostic: it remains in the
+        stored map and ``view="full"``; knowledge keeps every other map field.
         ``superseded`` reports an incoming correction relation independently
         of correction availability; ``superseded_by`` lists scope-visible ids
         for exact lookup, including decayed history. Neither asserts that a
@@ -1359,7 +1362,10 @@ def _register_tools(
                             recall_service.last_recall_event_id,
                             payload,
                         )
-                        response["recall_map"] = payload
+                        response["recall_map"] = (
+                            payload if view == "full"
+                            else {key: value for key, value in payload.items() if key != "sel"}
+                        )
                 except Exception:
                     logging.getLogger(__name__).warning(
                         "could not deliver optional recall map for event %s",
