@@ -114,7 +114,7 @@ def test_new_index_does_not_wait_for_other_nodes(mcp, operation, legacy_backlog)
     asyncio.run(scenario())
 
 
-def test_multichunk_correction_and_later_edit_use_current_content(mcp):
+def test_multichunk_correction_keeps_both_content_identities(mcp):
     store = mcp.memory_store
 
     async def scenario():
@@ -136,14 +136,9 @@ def test_multichunk_correction_and_later_edit_use_current_content(mcp):
             for node_id, content in ((original, LONG), (corrected, CONTENT)):
                 looked = (await client.call_tool("memory_lookup", {"node_id": node_id})).data
                 assert looked["results"][0]["content"] == content
-            edited = "The cobalt registry now requires a signed harbor manifest."
-            store.update_node(corrected, content=edited)
-            assert not store.node_chunks_are_current(corrected)
-            result = await recall(client, query="cobalt registry signed harbor manifest")
-            assert corrected in {entry["id"] for entry in result["results"]}
-            assert_current_chunks(store, corrected, edited)
-            looked = (await client.call_tool("memory_lookup", {"node_id": corrected})).data
-            assert looked["results"][0]["content"] == edited
+            with pytest.raises(ValueError, match="append-only"):
+                store.update_node(corrected, content="Changed trace content")
+            assert_current_chunks(store, corrected, CONTENT)
 
     asyncio.run(scenario())
 
