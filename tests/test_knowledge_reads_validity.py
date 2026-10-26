@@ -153,3 +153,82 @@ def test_native_knowledge_reads_share_relation_validity(
         asyncio.run(scenario())
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("writer", ["teach", "historical_duplicate"])
+def test_native_reads_preserve_teach_and_historical_relation_semantics(tmp_path, monkeypatch, writer):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    store = mcp.memory_store
+    scope = "project:read-validity"
+
+    async def scenario():
+        async with Client(mcp) as client:
+            original = _structured(await client.call_tool("memory_remember", {
+                "content": "Amber hatch opening is allowed before approval.",
+                "context": {"scope": scope, "task_pattern": "amber-hatch"},
+            }))["node"]["id"]
+            replacement = "Amber hatch opening is forbidden before approval."
+            if writer == "teach":
+                correction = _structured(await client.call_tool("memory_teach", {
+                    "trace_id": original, "correction": replacement,
+                }))["corrective_trace"]["id"]
+            else:
+                correction = _structured(await client.call_tool("memory_remember", {
+                    "content": replacement, "context": {"scope": scope},
+                }))["node"]["id"]
+                store.create_connection(correction, original, "supersedes", metadata={
+                    "kind": "duplicate_content",
+                })
+
+            async def check(level):
+                before = list(store.connection.iterdump())
+                filtered = _structured(await client.call_tool("memory_lookup", {
+                    "scope": scope, "task_pattern": "amber-hatch", "level": level,
+                }))["results"]
+                uri = "memory://recent" if level == "trace" else "memory://project/read-validity/concepts"
+                resource = json.loads((await client.read_resource(uri))[0].text)
+                entries = resource["traces" if level == "trace" else "concepts"]
+                for selection in (filtered, entries):
+                    entry = next(item for item in selection if item["id"] == original)
+                    assert entry["superseded"] is (writer == "teach")
+                    assert entry["superseded_by"] == ([correction] if writer == "teach" else [])
+                    assert bool(entry["provenance"]["corrections"]) is (writer == "teach")
+                    assert entry["decayed"] is False
+                assert list(store.connection.iterdump()) == before
+
+            await check("trace")
+            store.update_node(original, level="concept")
+            await check("concept")
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        store.close()
+
+
+def test_prompt_projects_validity_for_schemas_and_decision_history(tmp_path, monkeypatch):
+    from living_memory.prompts import ContextSchema, DecisionHistory, format_retrieval_context
+    from living_memory.scope import resolve_scope
+    from living_memory.storage import MemoryStore
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        schema = store.create_node(level="schema", content="Hatch recipe", context={"trigger": "hatch"})
+        decision = store.append_trace("Hatch decision")
+        correction = store.append_trace("Corrected hatch recipe")
+        store.create_connection(correction.id, schema.id, "supersedes")
+        store.soft_delete_node(correction.id, "historical correction")
+        before = list(store.connection.iterdump())
+        block = format_retrieval_context(
+            [], schemas=[ContextSchema(schema, 0.5)],
+            decision_history=[DecisionHistory(decision, ("Rejected approach",), 0.5)],
+            task="hatch", plan=resolve_scope(), store=store,
+            min_confidence=0.0, retrieval_policy="balanced",
+        )
+        schema_line = next(line for line in block.splitlines() if f"id={schema.id} " in line)
+        decision_line = next(line for line in block.splitlines() if f"id={decision.id} " in line)
+        assert f'superseded=true superseded_by=["{correction.id}"]' in schema_line
+        assert "superseded=false superseded_by=[]" in decision_line
+        assert list(store.connection.iterdump()) == before
