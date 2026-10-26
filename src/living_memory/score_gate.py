@@ -45,6 +45,7 @@ import math
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from typing import Any
 
 from living_memory.feedback import feedback_weighted_score
@@ -213,44 +214,57 @@ class QueryRelevance:
     threshold: float | None = field(default_factory=min_score_from_env)
     _eligible: frozenset[str] | None = field(default=None, init=False, repr=False)
 
-    def eligible_ids(self) -> frozenset[str]:
-        if self._eligible is not None:
-            return self._eligible
-
-        def passes(result: Any) -> bool:
-            if self.threshold is not None:
-                return passes_gate(
-                    result, self.threshold, self.demotions,
-                    plan=self.plan, causal_mode=self.causal_mode,
-                )
-            trigger = trigger_gate_score(result, self.demotions)
-            return (
-                trigger is not None and trigger >= SCHEMA_TRIGGER_GATE_MIN
-            ) or gate_score(
-                result, self.demotions, plan=self.plan, causal_mode=self.causal_mode,
-            ) > 0.0
-
+    @cached_property
+    def _present_edges(self) -> dict[str, tuple[str, ...]]:
         positions = {
             result.node.id: index for index, result in enumerate(self.ranked)
-            if getattr(getattr(result, "node", None), "id", None)
         }
-        eligible = {
-            result.node.id for result in self.ranked if passes(result)
-        }
-        for result in reversed(self.ranked):
-            original_id = getattr(getattr(result, "node", None), "id", None)
-            if original_id not in eligible:
-                continue
+        edges: dict[str, tuple[str, ...]] = {}
+        for result in self.ranked:
+            original_id = result.node.id
             corrections = (
                 self.corrections_by_superseded.get(original_id, ())
                 if self.corrections_by_superseded is not None
                 else getattr(result, "correction_ids", ())
             )
-            eligible.update(
+            present = tuple(
                 correction_id for correction_id in corrections
                 if correction_id in positions
                 and positions[correction_id] < positions[original_id]
             )
+            if present:
+                edges[original_id] = present
+        return edges
+
+    def _passes(self, result: Any) -> bool:
+        if self.threshold is not None:
+            return passes_gate(
+                result, self.threshold, self.demotions,
+                plan=self.plan, causal_mode=self.causal_mode,
+            )
+        trigger = trigger_gate_score(result, self.demotions)
+        return (
+            trigger is not None and trigger >= SCHEMA_TRIGGER_GATE_MIN
+        ) or gate_score(
+            result, self.demotions, plan=self.plan, causal_mode=self.causal_mode,
+        ) > 0.0
+
+    def passes(self, result: Any) -> bool:
+        # A plain main cut need not evaluate its unused tail. Correction
+        # chains require the full set, as they do in main selection.
+        if self._present_edges:
+            return result.node.id in self.eligible_ids()
+        return self._passes(result)
+
+    def eligible_ids(self) -> frozenset[str]:
+        if self._eligible is not None:
+            return self._eligible
+        eligible = {
+            result.node.id for result in self.ranked if self._passes(result)
+        }
+        for result in reversed(self.ranked):
+            if result.node.id in eligible:
+                eligible.update(self._present_edges.get(result.node.id, ()))
         self._eligible = frozenset(eligible)
         return self._eligible
 
@@ -275,10 +289,7 @@ def apply_score_gate(
         ranked, plan=plan, demotions=demotions, causal_mode=causal_mode,
         corrections_by_superseded=corrections_by_superseded or {}, threshold=threshold,
     )
-    eligible = evidence.eligible_ids()
-
-    def passes(result: Any) -> bool:
-        return result.node.id in eligible
+    passes = evidence.passes
 
     if gate_form_from_env() == GATE_FORM_STUB:
         delivered = [
