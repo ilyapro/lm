@@ -11,7 +11,7 @@ def supersedes_sets(
 ) -> tuple[dict[str, tuple[str, ...]], set[str]]:
     """Incident edges as (superseded -> corrections, superseding ids).
 
-    Shared by ranking, selection and exact-id reads. Do not follow absent
+    Shared by ranking, selection and knowledge reads. Do not follow absent
     intermediates or discard edges whose correction cannot be delivered.
     Runtime storage and replay expose the same incident-pair reader.
     """
@@ -40,4 +40,28 @@ def correction_references(
     return {
         target: [source for source in sources if source in nodes and plan.allows(nodes[source].scope)]
         for target, sources in corrections.items()
+    }
+
+
+def validity_fields(superseded: bool, references: Sequence[str] = ()) -> dict[str, Any]:
+    """Project known replacement independently of readable correction links."""
+    return {"superseded": superseded, "superseded_by": list(references)}
+
+
+def read_validity(
+    store: Any, node_ids: Iterable[str], plan: ScopePlan,
+) -> dict[str, dict[str, Any]]:
+    """Batch-project incident facts for already selected nodes, without writes.
+
+    The caller supplies the surface's existing scope admission. Recall uses
+    validity_fields with its ranking observation instead of reading edges again.
+    """
+    ids = tuple(dict.fromkeys(node_ids))
+    corrections, _ = supersedes_sets(store, ids)
+    references = correction_references(
+        store, {node_id: corrections.get(node_id, ()) for node_id in ids}, plan,
+    )
+    return {
+        node_id: validity_fields(node_id in corrections, references[node_id])
+        for node_id in ids
     }

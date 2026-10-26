@@ -107,6 +107,7 @@ from typing import TYPE_CHECKING, Any
 from .resources import node_to_dict
 from .models import SourcePassage, content_identity
 from .source_text import passage_spans
+from .validity import validity_fields
 
 if TYPE_CHECKING:
     from .models import Node
@@ -340,10 +341,7 @@ def shape_recall_results(
         node_id = node_dict["id"]
         content = node_dict["content"]
         full_chars = len(content)
-        validity = {
-            "superseded": result.superseded,
-            "superseded_by": list((correction_refs or {}).get(node_id, ())),
-        }
+        validity = validity_fields(result.superseded, (correction_refs or {}).get(node_id, ()))
 
         withheld = getattr(result, "withheld", None)
         twin_of: str | None = None

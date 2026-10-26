@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+import json
 import re
 
 from living_memory.models import REJECTED_ALTERNATIVE_KIND, Node
 from living_memory.retrieval import SCOPE_RANK_BOOST_STEP, MemoryRecallService
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
+from living_memory.validity import read_validity
 
 MEMORY_GUIDANCE = (
     "Use relevant knowledge and applicable complete recipes under current "
@@ -271,6 +273,17 @@ def format_retrieval_context(
     min_confidence: float,
     retrieval_policy: str,
 ) -> str:
+    nodes = [item.node for item in (*concepts, *(schemas or []))]
+    nodes.extend(item.primary for item in (decision_history or []))
+    validity = read_validity(store, (node.id for node in nodes), plan)
+
+    def validity_text(node: Node) -> str:
+        fields = validity[node.id]
+        return (
+            f"superseded={str(fields['superseded']).lower()} "
+            f"superseded_by={json.dumps(fields['superseded_by'])}"
+        )
+
     policy_weights = store.get_retrieval_weights(plan.requested_scope).normalized()
     lines = [
         "BEGIN ACTIVE MEMORY CONTEXT",
@@ -296,7 +309,7 @@ def format_retrieval_context(
             (
                 f"{index}. id={node.id} scope={node.scope} "
                 f"confidence={node.confidence:.2f} usefulness={node.usefulness_score:.2f} "
-                f"score={concept.score:.4f} methods={method_text}"
+                f"score={concept.score:.4f} methods={method_text} {validity_text(node)}"
             )
         )
         lines.append(f"   {_single_line(node.content)}")
@@ -310,7 +323,7 @@ def format_retrieval_context(
                 (
                     f"{index}. id={node.id} scope={node.scope} "
                     f"trigger=\"{trigger}\" confidence={node.confidence:.2f} "
-                    f"score={schema.score:.4f} methods={method_text}"
+                    f"score={schema.score:.4f} methods={method_text} {validity_text(node)}"
                 )
             )
             lines.append(f"   {_single_line(node.content)}")
@@ -322,7 +335,7 @@ def format_retrieval_context(
             lines.append(
                 (
                     f"{index}. id={node.id} scope={node.scope} "
-                    f"confidence={node.confidence:.2f} score={decision.score:.4f}"
+                    f"confidence={node.confidence:.2f} score={decision.score:.4f} {validity_text(node)}"
                 )
             )
             lines.append(f"   {_single_line(node.content)}")

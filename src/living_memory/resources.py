@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 import json
@@ -18,8 +19,9 @@ from living_memory.health_audit import (
     storage_metrics,
 )
 from living_memory.models import Connection, Node, RecallEvent, RetrievalWeights, string_list
-from living_memory.scope import normalize_scope, scope_family
+from living_memory.scope import ScopePlan, normalize_scope, resolve_scope, scope_family
 from living_memory.storage import MemoryStore
+from living_memory.validity import read_validity
 
 DEFAULT_CONCEPT_LIMIT = 100_000
 DEFAULT_RECENT_LIMIT = 20
@@ -72,7 +74,7 @@ def concepts_for_scope(
         "uri": uri or f"memory://{scope}/concepts",
         "scope": scope,
         "count": len(concepts),
-        "concepts": [node_to_dict(node) for node in concepts],
+        "concepts": nodes_to_dict(store, concepts, ScopePlan(scope, (scope,))),
     }
 
 
@@ -104,7 +106,7 @@ def recent_interactions(
         "uri": "memory://recent",
         "limit": max(0, int(limit)),
         "count": len(traces),
-        "traces": [node_to_dict(trace) for trace in traces],
+        "traces": nodes_to_dict(store, traces, resolve_scope()),
     }
 
 
@@ -121,6 +123,12 @@ def memory_status(store: MemoryStore, scope: str | None = None) -> dict[str, Any
         "promotions": promotion_summary(store, scope=normalized_scope),
         "retrieval_policy": retrieval_policy_for_scope(store, normalized_scope or "global"),
     }
+
+
+def nodes_to_dict(store: MemoryStore, nodes: Sequence[Node], plan: ScopePlan) -> list[dict[str, Any]]:
+    """Full stored nodes plus relation validity within this read surface."""
+    validity = read_validity(store, (node.id for node in nodes), plan)
+    return [node_to_dict(node) | validity[node.id] for node in nodes]
 
 
 def node_to_dict(node: Node) -> dict[str, Any]:

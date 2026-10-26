@@ -66,11 +66,12 @@ from living_memory.resources import (
     memory_stats,
     memory_status as status_view,
     node_to_dict,
+    nodes_to_dict,
     project_concepts,
     recent_interactions,
 )
 from living_memory.retrieval import MemoryRecallService
-from living_memory.scope import normalize_scope, resolve_scope
+from living_memory.scope import ScopePlan, normalize_scope, resolve_scope
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.feedback import (
     apply_explicit_marks,
@@ -82,7 +83,7 @@ from living_memory.feedback import (
 from living_memory import storage as storage_module
 from living_memory.storage import MemoryStore
 from living_memory.temporal import parse_timestamp
-from living_memory.validity import correction_references, supersedes_sets
+from living_memory.validity import correction_references
 
 _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
@@ -1483,27 +1484,16 @@ def _register_tools(
                         "results": [],
                     }
                 found = store.get_nodes(requested_ids)
-                corrections, _ = supersedes_sets(store, found)
-                correction_refs = correction_references(
-                    store,
-                    {node_id: corrections.get(node_id, ()) for node_id in found},
-                    resolve_scope(scope=normalized_scope, store=store),
-                )
                 results = []
-                for requested in requested_ids:
-                    if requested not in found:
-                        continue
-                    node = node_to_dict(found[requested])
-                    validity = {
-                        "superseded": requested in corrections,
-                        "superseded_by": correction_refs[requested],
-                    }
+                for node in nodes_to_dict(
+                    store, [found[requested] for requested in requested_ids if requested in found],
+                    resolve_scope(scope=normalized_scope, store=store),
+                ):
                     if view == "full":
-                        node.update(validity)
                         results.append(node)
                         continue
                     knowledge = knowledge_node(node)
-                    knowledge.update(validity)
+                    knowledge.update({key: node[key] for key in ("superseded", "superseded_by")})
                     if context_key is not None:
                         knowledge["context"] = (
                             {context_key: node["context"][context_key]}
@@ -1613,7 +1603,7 @@ def _register_tools(
                 "scope": normalized_scope,
                 "filters": dict(filters),
                 "count": len(nodes),
-                "results": [node_to_dict(node) for node in nodes],
+                "results": nodes_to_dict(store, nodes, ScopePlan(normalized_scope, (normalized_scope,))),
             }
 
     @mcp.tool(description=_CONSOLIDATE_DESCRIPTION)
