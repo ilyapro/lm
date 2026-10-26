@@ -86,8 +86,6 @@ CORPUS_DOCUMENTS = 32
 _CORPUS_FILLER = "quarterly ledger reconciliation entry"
 
 
-
-
 def seed_corpus(store: MemoryStore, count: int = CORPUS_DOCUMENTS) -> None:
     """Give the delivery gate a corpus to measure rarity against.
 
@@ -586,12 +584,6 @@ def test_two_builds_of_the_same_pool_are_identical(store: MemoryStore) -> None:
     assert first is not None
     assert first.to_dict() == third.to_dict()
     assert first.render_compact() == third.render_compact()
-
-
-
-
-
-
 
 
 def test_equal_cluster_scores_use_unique_best_original_ordinal(
@@ -1148,8 +1140,6 @@ def test_corpus_movement_invalidates_the_cache_without_a_timer(store: MemoryStor
 
     builder.build(candidates, scope=SCOPE, task="caching")
     assert builder.last_cache_hit is False
-
-
 
 
 def test_anchor_movement_invalidates_the_cache(store: MemoryStore) -> None:

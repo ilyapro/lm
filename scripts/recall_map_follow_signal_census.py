@@ -890,12 +890,6 @@ def _rank(
     )
 
 
-
-
-
-
-
-
 def node_metadata(
     connection: sqlite3.Connection, node_ids: Sequence[str]
 ) -> dict[str, dict[str, Any]]:

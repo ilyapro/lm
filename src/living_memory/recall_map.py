@@ -29,7 +29,6 @@ from __future__ import annotations
 from collections import Counter, deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
 from math import log, sqrt
 from typing import TYPE_CHECKING, Any
 import hashlib
@@ -123,15 +122,8 @@ SELECTION_REASON_CODES: tuple[str, ...] = (
     "lr",
     "pc",
 )
-#: Reason codes the two env-gated pool gates add *after* the frozen vector.
-#:
-#: Appended, never interleaved: a reader that knows the seven above keeps
-#: reading them at the same indices, which is the whole content of the
-#: positional contract. The other half of keeping that promise is
-#: :meth:`_SelectionLedger.freeze`, which trims trailing zeros back to the
-#: frozen width — so a server with both valves unset emits exactly the
-#: seven-wide ``x`` it emitted before these codes existed, and a longer vector
-#: is itself the statement that a gate fired.
+#: Extra journal positions follow the fixed seven-code prefix. Trailing zero
+#: positions are omitted; stored readers retain the same positional meaning.
 POOL_GATE_REASON_CODES: tuple[str, ...] = (
     #: Below the usefulness floor of :data:`POOL_USEFULNESS_FLOOR_ENV`.
     "uf",
@@ -144,22 +136,12 @@ SELECTION_LEDGER_REASON_CODES: tuple[str, ...] = (
 )
 SELECTION_SAMPLE_GIST_CHARS = 24
 SELECTION_SAMPLE_LIMIT = 2
-#: Both gate codes are sampleable, and that is a decision rather than a
-#: default. The three ballast codes are sampleable because an operator reading
-#: the journal needs to see *what* a machine-shaped rule swallowed; ``lr`` and
-#: ``pc`` because a frozen score and a cap are invisible otherwise. The gate
-#: codes are the strongest case of the same argument: their thresholds are the
-#: one part of this module an operator sets by hand from field numbers, and a
-#: journal that says "the floor dropped 14" without ever naming one of them
-#: gives the operator no way to tell a floor that is working from a floor set
-#: one decimal place too high. The gist is already identity-free and capped at
-#: :data:`SELECTION_SAMPLE_GIST_CHARS`, so admitting them costs the payload
-#: nothing it does not already spend on the codes beside them — and costs it
-#: only when a valve is on, since with both unset neither code ever fires.
+#: Exclusion samples carry a bounded, identity-free gist so callers can
+#: distinguish rejected content from an empty residual.
 _SAMPLEABLE_REASONS = frozenset({"fc", "ss", "sj", "lr", "pc", "uf", "nf"})
 
 # ----------------------------------------------------------------------
-# Pool gates behind env valves
+# Optional usefulness floor
 # ----------------------------------------------------------------------
 #
 # The optional stored-usefulness floor is independent of map consumption.
@@ -170,7 +152,7 @@ _SAMPLEABLE_REASONS = frozenset({"fc", "ss", "sj", "lr", "pc", "uf", "nf"})
 #: silently removes rows from the one channel that says what memory holds.
 _POOL_GATE_ON_FLAGS = frozenset({"1", "true", "yes", "on"})
 
-#: Valve for gate (a): drop a candidate whose ``usefulness_score`` sits below
+#: Drop a candidate whose ``usefulness_score`` sits below
 #: the floor. The score is already on the node the residual carries, so this
 #: gate costs one attribute read per candidate and no query at all.
 POOL_USEFULNESS_GATE_ENV = "LM_MAP_POOL_USEFULNESS_GATE"
@@ -474,19 +456,9 @@ class SelectionSample:
 class SelectionAccounting:
     """Complete candidate-selection accounting for one inspected residual.
 
-    The response fitter added by the delivery integration can vary only how
-    many of ``samples`` it buys.  ``inspected``, ``admitted`` and ``excluded``
-    are unconditional, and ``to_dict`` recomputes ``o`` from the chosen sample
-    count so dropping examples can never falsify the accounting equation.
-
-    ``excluded`` is the frozen :data:`SELECTION_REASON_CODES` vector,
-    optionally extended by the :data:`POOL_GATE_REASON_CODES` an env valve
-    turned on.  The extension is *canonically trimmed*: a trailing zero past
-    the frozen width is rejected rather than accepted-and-ignored, so there is
-    exactly one encoding of "no gate fired" and it is byte-identical to what a
-    build with no gates at all produced.  That is the invariant, not a
-    convention — an accounting that could spell the same fact two ways would
-    make the byte-identity claim unfalsifiable.
+    Counts cover every candidate regardless of how many examples fit. The
+    exclusion vector keeps the fixed reason positions and trims trailing zeros
+    beyond its seven-code prefix. Sample omission never changes the counts.
     """
 
     inspected: int
@@ -698,7 +670,7 @@ class _SelectionLedger:
 
         The exclusion vector is built over every code this module knows and
         then cut back to :data:`SELECTION_REASON_CODES` while its tail is
-        zero. With both pool valves unset that cut always reaches the frozen
+        zero. Without an optional exclusion that cut reaches the fixed
         width, so the payload is the one this module emitted before the gate
         codes existed — down to the length of ``x``.
         """
@@ -978,14 +950,8 @@ def _shorten(text: str, limit: int) -> str:
     return collapsed[: limit - 1].rstrip() + "…"
 
 
-def _utc_now() -> str:
-    """One canonical map-build instant, captured before any history read."""
-
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
 def _is_file_chunk_envelope(envelope: Any) -> bool:
-    """The evaluator's strict file-chunk schema, with no provenance lookup."""
+    """A strict file-chunk envelope, with no provenance lookup."""
 
     if not isinstance(envelope, dict):
         return False
@@ -1070,7 +1036,7 @@ def _gate_flag(name: str) -> bool:
 
 
 def pool_usefulness_floor_from_env() -> float | None:
-    """The usefulness floor, or ``None`` when gate (a) is not armed.
+    """The usefulness floor, or ``None`` without both configuration values.
 
     Armed means both halves: ``LM_MAP_POOL_USEFULNESS_GATE`` on *and*
     ``LM_MAP_POOL_MIN_USEFULNESS`` holding a number. Unlike the drain's
@@ -1509,7 +1475,7 @@ class RecallMapBuilder:
             # not the same event as an empty residual.  It offered no cluster
             # and therefore cannot advance curtailment.  Its empty structure
             # is still a useful negative cache result, but only for a fresh
-            # empty selection under this exact corpus/policy revision.  Keep
+            # empty selection under this corpus revision.  Keep
             # this branch explicit: `_recount((), pool)` deliberately rejects
             # so an empty entry can never hide a later eligible pool.
             revision = self._corpus_revision()
@@ -1534,11 +1500,8 @@ class RecallMapBuilder:
                     (), 0, 0, selection=selection
                 ),
             )
-            if not built.clusters:
-                built = replace(built, pool_digest=pool_digest)
-            self._note_delivery(
-                work, offered=bool(built.clusters)
-            )
+            built = replace(built, pool_digest=pool_digest)
+            self._note_delivery(work, offered=False)
             return built
 
         if not offer:
@@ -2506,10 +2469,10 @@ class RecallMapBuilder:
             return None
 
         # Stage 4 is a retrieval-ordered greedy walk. Re-run that membership
-        # rule from fresh vectors and fresh scores, but retain cached labels
+        # rule from fresh vectors and fresh retrieval order, but retain cached labels
         # only if it reproduces the current template buckets exactly. This
-        # keeps the cache template-only: no score, low-relevance verdict,
-        # relevance order, or medoid identity survives a build boundary.
+        # keeps the cache template-only: no qualification verdict,
+        # retrieval order, or medoid identity survives a build boundary.
         embedding_indexes = [
             index
             for index, template in ordered

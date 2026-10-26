@@ -281,8 +281,6 @@ def test_run_reports_zero_echo_disagreements(arm: dict[str, Any]) -> None:
     assert agreement["disagreements"] == 0
 
 
-
-
 # ----------------------------------------------------------------------
 # The read-only boundary
 # ----------------------------------------------------------------------
