@@ -14,10 +14,13 @@ from living_memory.storage import MemoryStore
 
 
 class _Encoder:
+    def __init__(self, original_vector: float = 0.8):
+        self.original_vector = original_vector
+
     def embed(self, text: str) -> list[float]:
         return {
             "bystander": [1.0, 0.0],
-            "stale": [0.8, 0.6],
+            "stale": [self.original_vector, math.sqrt(1 - self.original_vector**2)],
             "correction": [0.1, math.sqrt(0.99)],
         }.get(text, [1.0, 0.0])
 
@@ -32,12 +35,13 @@ def _recall(
     correction_scope: str = "project:app",
     decayed: bool = False,
     max_results: int = 3,
+    original_vector: float = 0.8,
 ) -> tuple[list[str], list[str], list[str | None]]:
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", threshold)
     monkeypatch.setenv("LM_RECALL_GATE_FORM", form)
     monkeypatch.delenv("LM_RECALL_SCHEMA_TRIGGER", raising=False)
     monkeypatch.delenv("LM_RECALL_SCHEMA_DEDUP", raising=False)
-    encoder = _Encoder()
+    encoder = _Encoder(original_vector)
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         store.set_chunk_embedder(lambda texts: [encoder.embed(text) for text in texts])
         for name in ("bystander", "stale", "correction"):
@@ -82,18 +86,27 @@ def _recall(
 def test_public_recall_keeps_present_correction_when_original_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert _recall(tmp_path, monkeypatch) == (
+    # Exact current source evidence passes even after the superseded penalty;
+    # the original's accumulated feedback is not what qualifies the correction.
+    assert _recall(tmp_path, monkeypatch, original_vector=1.0) == (
         ["bystander", "correction", "stale"], [], [None, None, None]
+    )
+
+
+def test_history_does_not_qualify_a_weak_corrected_source(tmp_path, monkeypatch):
+    assert _recall(tmp_path, monkeypatch) == (
+        ["bystander", "correction", "stale"], [],
+        [None, "below_threshold", "below_threshold"],
     )
 
 
 def test_correction_selection_respects_cap_and_stub_form(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert _recall(tmp_path / "cap", monkeypatch, max_results=2) == (
+    assert _recall(tmp_path / "cap", monkeypatch, max_results=2, original_vector=1.0) == (
         ["bystander", "correction"], ["stale"], [None, None]
     )
-    assert _recall(tmp_path / "stub", monkeypatch, form="stub") == (
+    assert _recall(tmp_path / "stub", monkeypatch, form="stub", original_vector=1.0) == (
         ["bystander", "correction", "stale"], [], [None, None, None]
     )
 
@@ -108,6 +121,7 @@ def test_unavailable_correction_does_not_change_original(
         edge=case != "absent_edge",
         correction_scope="project:elsewhere" if case == "outside_scope" else "project:app",
         decayed=case == "decayed",
+        original_vector=1.0,
     )
     assert {node_id for node_id, reason in zip(delivered, withheld) if not reason} == {
         "bystander", "stale",
