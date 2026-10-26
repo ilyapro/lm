@@ -2,8 +2,8 @@
 
 The map supplements selected results with structural, path, query-anchor and
 embedding clusters. Labels are enriched and screened against corpus document
-frequencies, then fitted to the response budget. Main retrieval and corpus
-relevance remain independent of map delivery.
+frequencies, then fitted to the response budget. Query qualification is shared with retrieval; map delivery leaves the main
+results unchanged.
 
 Structure and delivery cadence belong to one current-work consumer: scope plus
 an exact explicit task_pattern or task, otherwise the server's transport id.
@@ -26,12 +26,10 @@ No model call, new history table or background process is needed.
 
 from __future__ import annotations
 
-from bisect import bisect_left
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
-from math import fsum, isfinite, log, log1p, sqrt
+from math import log, sqrt
 from typing import TYPE_CHECKING, Any
 import hashlib
 import json
@@ -43,14 +41,11 @@ from living_memory.embeddings import cosine_similarity, tokenize
 from living_memory.grounding import token_set
 from living_memory.models import Node
 from living_memory.scope import GLOBAL_SCOPE, normalize_scope
+from living_memory.score_gate import QueryRelevance
 from living_memory.storage import (
     CHUNK_EMBEDDING_TABLE,
-    MAX_RECALL_HISTORY_CANDIDATES,
-    RECALL_DELIVERY_HISTORY_STATE_TABLE,
-    RECALL_DELIVERY_HISTORY_TABLE,
     MemoryStore,
     RecallWork,
-    _RECALL_DELIVERY_HISTORY_FORMAT,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -111,64 +106,8 @@ MIN_CLUSTERS = 2
 MAX_LABEL_CHARS = 40
 MAX_ASK_HINT_CHARS = 80
 
-#: Clustering cap, applied only after the complete residual has passed frozen
-#: eligibility and relevance scoring.  That ordering is load-bearing: applying
-#: the cap while scanning would let a machine-ballast head crowd useful members
-#: out before the selector saw them.  Only the admitted 200 pay for the heavier
-#: four-stage cascade and its per-node anchor/vector reads.
+#: Only admitted members pay for the full anchor/vector labeling cascade.
 MAX_POOL_NODES = 200
-
-#: Frozen member-selection policy.  These are literals rather than a runtime
-#: read of ``artifacts/``: a deployed server must not depend on its source
-#: checkout being present, and changing any value is a policy revision rather
-#: than configuration.  The digest binds the canonical ``selected_policy``
-#: object in ``artifacts/recall-map/relevance/policy.json``.
-RELEVANCE_POLICY_ID = "directional-zsum-r1"
-RELEVANCE_POLICY_DIGEST = (
-    "3acad3d92db2538bf3096ab99d2c4d337ea3c8aebddc226646527b4d277660ea"
-)
-RELEVANCE_FEATURE_MEANS: tuple[float, ...] = (
-    0.26434558349451964,
-    2.856678070667311,
-    2.789348366105738,
-    1.5799800264635717,
-    0.06059739660863959,
-)
-RELEVANCE_FEATURE_SCALES: tuple[float, ...] = (
-    0.4409841221421261,
-    2.5772848149641323,
-    2.5560016163553305,
-    1.765967625291225,
-    0.11674776461860277,
-)
-RELEVANCE_THRESHOLD = 3.8708378402511
-
-#: The calibration tables the selected policy publishes, keyed by the
-#: calibrated quantity.  ``directional-zsum-r1`` publishes none and this is
-#: empty on purpose: it z-scores five features against
-#: :data:`RELEVANCE_FEATURE_MEANS` and :data:`RELEVANCE_FEATURE_SCALES` and
-#: calibrates nothing.  Every lookup against an empty block raises, which is
-#: what keeps the reader below inert until a revision fills this in — and
-#: filling it in is a policy revision that moves
-#: :data:`RELEVANCE_POLICY_ID` and :data:`RELEVANCE_POLICY_DIGEST` together.
-RELEVANCE_POLICY_CALIBRATION: Mapping[str, Any] = {}
-
-#: Ceiling on the breakpoints one published table may spend, from
-#: ``coldstart-prereg-v2.json#scorer_shape.calibration``
-#: ``.out_of_sample_and_live_application.max_breakpoints``.  A 512-knot
-#: quantile grid plus its atoms has to fit under it; a table that does not is
-#: not the registered form and is refused rather than truncated.
-RELEVANCE_CALIBRATION_MAX_BREAKPOINTS = 1024
-
-#: ``max_interpolation_error_on_u`` from the same registered form: 2**-9, the
-#: resolution a 512-knot grid buys.  Between two knots the reconstructed ``u``
-#: and the true one both lie inside the knots' own ``u`` bracket, so holding
-#: consecutive knots to this step is what makes the published bound true.
-#:
-#: These two are the registered *form*, not fitted content — the shape a table
-#: must have to be read at all.  Not one number a lookup can return lives in
-#: this module; every one of them comes off the table the policy publishes.
-RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR = 0.001953125
 
 #: Compact exclusion vector order frozen in the additive ``sel`` contract.
 #: Do not alphabetize it: both persistence and the evaluator interpret counts
@@ -221,14 +160,8 @@ _SAMPLEABLE_REASONS = frozenset({"fc", "ss", "sj", "lr", "pc", "uf", "nf"})
 # Pool gates behind env valves
 # ----------------------------------------------------------------------
 #
-# Two admission rules that ``_pool`` applies *around* the frozen selector,
-# never inside it: :data:`RELEVANCE_FEATURE_MEANS`,
-# :data:`RELEVANCE_FEATURE_SCALES` and :func:`relevance_score` see exactly what
-# they saw before, and every new signal enters as a separate yes/no on a
-# candidate the frozen pipeline already judged.
-#
-# Optional recall-map features require both an enabled gate and an explicit
-# threshold. Enabling a gate without a configured number leaves it inert.
+# The optional stored-usefulness floor is independent of map consumption.
+# Both an enabled valve and an explicit threshold are required.
 
 #: ``1``/``true``/``yes``/``on`` enables a gate. Anything
 #: else — unset, empty, ``0``, a typo — is off, because a misread flag here
@@ -241,2096 +174,6 @@ _POOL_GATE_ON_FLAGS = frozenset({"1", "true", "yes", "on"})
 POOL_USEFULNESS_GATE_ENV = "LM_MAP_POOL_USEFULNESS_GATE"
 #: The floor itself. No default: see the block comment above.
 POOL_USEFULNESS_FLOOR_ENV = "LM_MAP_POOL_MIN_USEFULNESS"
-
-# ----------------------------------------------------------------------
-# Cold exploration lane behind its own paired env valve
-# ----------------------------------------------------------------------
-#
-# Registered in ``artifacts/recall-map/pool-quality/cold-quota-prereg.json``
-# (plan cold-quota-r1). The lane never touches the frozen selector: candidates
-# the frozen threshold alone excluded (``lr``) and that the delivery ledger has
-# never seen are ranked only against each other on their own candidate-time
-# scores, and at most :data:`POOL_COLD_SLOTS_MAX` of them are appended to the
-# *built* map as marked singleton clusters, into free cluster capacity only.
-# With the valve pair unset nothing below runs and the payload is byte-for-byte
-# what the pre-lane module emitted.
-
-#: Valve for the cold quota lane, drain-valve spelling like the usefulness floor
-#: above. On with no parseable slot count is inert: "on, but at what?" has no
-#: safe answer.
-POOL_COLD_QUOTA_GATE_ENV = "LM_MAP_POOL_COLD_QUOTA_GATE"
-#: The slot count itself. The registered domain is ``1..POOL_COLD_SLOTS_MAX``;
-#: anything else — non-integer, empty, ``0``, negative, larger — leaves the
-#: lane inert.
-POOL_COLD_SLOTS_ENV = "LM_MAP_POOL_COLD_SLOTS"
-#: The registered quota is a 1-2 slot exploration lane; a larger number is not
-#: this design and reads as the misconfiguration it is.
-POOL_COLD_SLOTS_MAX = 2
-
-#: The four registered composite members and their signs, family
-#: ``recorded-delivery-scores-v3``: ``f = u_rs + u_tg + (1-u_bm) + (1-u_vs)``.
-#: ``graph_score`` is excluded permanently (its association flips sign on the
-#: cold subpopulation); ``usefulness_score`` and ``access_count`` are banned as
-#: mutable post-outcome stats.
-COLD_RANKING_MEMBERS: tuple[tuple[str, float], ...] = (
-    ("result_score", 1.0),
-    ("trigger_score", 1.0),
-    ("bm25_score", -1.0),
-    ("vector_score", -1.0),
-)
-
-#: Registered member name -> the field carrying it on the residual result
-#: record, the same per-item fields ``recall_events.results`` persists.
-_COLD_MEMBER_FIELDS: Mapping[str, str] = {
-    "result_score": "score",
-    "trigger_score": "trigger_score",
-    "bm25_score": "bm25_score",
-    "vector_score": "vector_score",
-}
-
-# --- BEGIN COLD_RANKING_CALIBRATION (generated) -----------------------
-#: Per-member monotone rank tables fitted on the cold-eligible subpopulation
-#: of the replayed live candidate population (500 queries, seed 20260824,
-#: frozen snapshot c70875d9...), in the registered form
-#: :func:`_calibration_table` reads: atoms at >= 0.5% multiplicity, a quantile
-#: grid of at most 512 knots, at most 1024 breakpoints, u-steps within
-#: :data:`RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR`. Digests and the
-#: fitting-population count are published in
-#: ``artifacts/recall-map/pool-quality/cold-quota-params.json``; regenerated
-#: only by ``scripts/recall_map_cold_lane_replay.py fit``. The frozen warm
-#: policy (:data:`RELEVANCE_POLICY_CALIBRATION`) stays empty and does not
-#: move.
-COLD_RANKING_CALIBRATION: Mapping[str, Any] = {
-    "bm25_score": {
-        "atoms": [
-            [
-                0.0,
-                0.472600538
-            ]
-        ],
-        "knots": [
-            [
-                0.025,
-                0.945856521
-            ],
-            [
-                0.02564102564102564,
-                0.947284003
-            ],
-            [
-                0.02631578947368421,
-                0.948742997
-            ],
-            [
-                0.02702702702702703,
-                0.95009485
-            ],
-            [
-                0.027777777777777776,
-                0.951475065
-            ],
-            [
-                0.02857142857142857,
-                0.952889942
-            ],
-            [
-                0.029411764705882353,
-                0.954292215
-            ],
-            [
-                0.030303030303030304,
-                0.955719697
-            ],
-            [
-                0.03125,
-                0.957128272
-            ],
-            [
-                0.03225806451612903,
-                0.958562056
-            ],
-            [
-                0.03333333333333333,
-                0.960046259
-            ],
-            [
-                0.034482758620689655,
-                0.96147059
-            ],
-            [
-                0.03571428571428571,
-                0.962828746
-            ],
-            [
-                0.037037037037037035,
-                0.964224717
-            ],
-            [
-                0.038461538461538464,
-                0.965674257
-            ],
-            [
-                0.04,
-                0.967085983
-            ],
-            [
-                0.041666666666666664,
-                0.968456744
-            ],
-            [
-                0.043478260869565216,
-                0.9698149
-            ],
-            [
-                0.045454545454545456,
-                0.971207719
-            ],
-            [
-                0.047619047619047616,
-                0.972622596
-            ],
-            [
-                0.05,
-                0.974072137
-            ],
-            [
-                0.05263157894736842,
-                0.975474409
-            ],
-            [
-                0.05555555555555555,
-                0.97681681
-            ],
-            [
-                0.058823529411764705,
-                0.978187571
-            ],
-            [
-                0.0625,
-                0.979492157
-            ],
-            [
-                0.06666666666666667,
-                0.98081565
-            ],
-            [
-                0.07142857142857142,
-                0.982195864
-            ],
-            [
-                0.07692307692307693,
-                0.983569776
-            ],
-            [
-                0.08333333333333333,
-                0.98494684
-            ],
-            [
-                0.09090909090909091,
-                0.98628924
-            ],
-            [
-                0.1,
-                0.987666303
-            ],
-            [
-                0.1111111111111111,
-                0.989131599
-            ],
-            [
-                0.125,
-                0.990546477
-            ],
-            [
-                0.14285714285714285,
-                0.991892028
-            ],
-            [
-                0.16666666666666666,
-                0.993256487
-            ],
-            [
-                0.2,
-                0.994592585
-            ],
-            [
-                0.25,
-                0.995938136
-            ],
-            [
-                0.3333333333333333,
-                0.997255327
-            ],
-            [
-                0.5,
-                0.998421262
-            ],
-            [
-                1.0,
-                0.999483207
-            ]
-        ]
-    },
-    "result_score": {
-        "atoms": [
-            [
-                0.039,
-                0.741379962
-            ],
-            [
-                0.051333750000000004,
-                0.781043795
-            ]
-        ],
-        "knots": [
-            [
-                4.282968937171783e-05,
-                3.151e-06
-            ],
-            [
-                0.0009461752177881467,
-                0.001947426
-            ],
-            [
-                0.001476141222381592,
-                0.003888549
-            ],
-            [
-                0.0018205792366504667,
-                0.005839126
-            ],
-            [
-                0.0019856783282361764,
-                0.007786552
-            ],
-            [
-                0.0021046888413906095,
-                0.009730827
-            ],
-            [
-                0.002186483554601669,
-                0.01159002
-            ],
-            [
-                0.0022364569677114487,
-                0.013534294
-            ],
-            [
-                0.002296624041080475,
-                0.015465964
-            ],
-            [
-                0.0023672369458200187,
-                0.017410239
-            ],
-            [
-                0.002453377796302708,
-                0.019357665
-            ],
-            [
-                0.002533386990460754,
-                0.021220009
-            ],
-            [
-                0.0025749635520451375,
-                0.023151679
-            ],
-            [
-                0.0026392807989499595,
-                0.02500772
-            ],
-            [
-                0.0027058621883638313,
-                0.026863762
-            ],
-            [
-                0.0027809506453428854,
-                0.028814339
-            ],
-            [
-                0.0028359841226041323,
-                0.030755463
-            ],
-            [
-                0.002886807134650684,
-                0.032687132
-            ],
-            [
-                0.002957662327672812,
-                0.034628256
-            ],
-            [
-                0.003052756327954761,
-                0.03654417
-            ],
-            [
-                0.003128278491318226,
-                0.038472689
-            ],
-            [
-                0.0032046386248739487,
-                0.040420115
-            ],
-            [
-                0.0032797253319025044,
-                0.042351785
-            ],
-            [
-                0.003350973273731074,
-                0.04429921
-            ],
-            [
-                0.003436963447070567,
-                0.046246636
-            ],
-            [
-                0.0034890716460049156,
-                0.048190911
-            ],
-            [
-                0.003582290194094181,
-                0.050135185
-            ],
-            [
-                0.0036504000000000003,
-                0.051975471
-            ],
-            [
-                0.0037341027748643376,
-                0.053919746
-            ],
-            [
-                0.0038231917073307314,
-                0.055867172
-            ],
-            [
-                0.003906475886107377,
-                0.05776733
-            ],
-            [
-                0.003982310922369361,
-                0.059705302
-            ],
-            [
-                0.004057841375693679,
-                0.061652728
-            ],
-            [
-                0.004134016616106034,
-                0.063593851
-            ],
-            [
-                0.00422309677746892,
-                0.065525521
-            ],
-            [
-                0.0043247791065818076,
-                0.067476098
-            ],
-            [
-                0.0044178200245181655,
-                0.069423524
-            ],
-            [
-                0.0045618652026319685,
-                0.071197635
-            ],
-            [
-                0.004619852059967816,
-                0.07303477
-            ],
-            [
-                0.004663119691626597,
-                0.074972742
-            ],
-            [
-                0.004784651707511844,
-                0.076910715
-            ],
-            [
-                0.0048963957887591305,
-                0.078854989
-            ],
-            [
-                0.005024140456858695,
-                0.080792962
-            ],
-            [
-                0.005116006341040135,
-                0.082740387
-            ],
-            [
-                0.005216351612091064,
-                0.084684662
-            ],
-            [
-                0.00533935211404589,
-                0.086635239
-            ],
-            [
-                0.005449455709218979,
-                0.088585816
-            ],
-            [
-                0.005544045000000001,
-                0.090504881
-            ],
-            [
-                0.0056546893383264555,
-                0.092427098
-            ],
-            [
-                0.005764895067662,
-                0.09436507
-            ],
-            [
-                0.005868560269474983,
-                0.096293589
-            ],
-            [
-                0.005925881534814835,
-                0.098218956
-            ],
-            [
-                0.005973523898643887,
-                0.100166382
-            ],
-            [
-                0.006024103224277496,
-                0.102110657
-            ],
-            [
-                0.006079442836493252,
-                0.104061234
-            ],
-            [
-                0.006137898445129395,
-                0.105967694
-            ],
-            [
-                0.006186870396137237,
-                0.107877306
-            ],
-            [
-                0.006216876772999764,
-                0.109821581
-            ],
-            [
-                0.006273001939058304,
-                0.111731192
-            ],
-            [
-                0.006332211068292246,
-                0.113672316
-            ],
-            [
-                0.00637757760827642,
-                0.115613439
-            ],
-            [
-                0.006409764021635055,
-                0.117513597
-            ],
-            [
-                0.0064480405747890475,
-                0.119410604
-            ],
-            [
-                0.006499627758345451,
-                0.121351728
-            ],
-            [
-                0.006554412774654947,
-                0.123302305
-            ],
-            [
-                0.006606245919168448,
-                0.12522137
-            ],
-            [
-                0.006646219354348941,
-                0.127159342
-            ],
-            [
-                0.006702675449538279,
-                0.129109919
-            ],
-            [
-                0.006747687722241232,
-                0.131060496
-            ],
-            [
-                0.006803209964454175,
-                0.132995317
-            ],
-            [
-                0.006844234049320221,
-                0.134403892
-            ],
-            [
-                0.0068587779566807875,
-                0.136348167
-            ],
-            [
-                0.006903878342986108,
-                0.138295593
-            ],
-            [
-                0.00694894347332418,
-                0.140236716
-            ],
-            [
-                0.006993079885840416,
-                0.142171537
-            ],
-            [
-                0.007046084799170495,
-                0.144093754
-            ],
-            [
-                0.007092138095199943,
-                0.146038028
-            ],
-            [
-                0.007141609096380384,
-                0.147985454
-            ],
-            [
-                0.007192219074967256,
-                0.149923426
-            ],
-            [
-                0.007267094489859165,
-                0.151874003
-            ],
-            [
-                0.007315850593149662,
-                0.153767859
-            ],
-            [
-                0.007369902112142022,
-                0.155708983
-            ],
-            [
-                0.007415421847254038,
-                0.157643804
-            ],
-            [
-                0.007463998818062265,
-                0.159594381
-            ],
-            [
-                0.0075152413332613,
-                0.161494539
-            ],
-            [
-                0.007568369621481563,
-                0.163363185
-            ],
-            [
-                0.007614129780828952,
-                0.165310611
-            ],
-            [
-                0.007653532198369503,
-                0.167245432
-            ],
-            [
-                0.0077006516000032435,
-                0.169186556
-            ],
-            [
-                0.007761357272507116,
-                0.171118226
-            ],
-            [
-                0.007797557567593997,
-                0.173065652
-            ],
-            [
-                0.007845800292491913,
-                0.174978414
-            ],
-            [
-                0.007878600286338529,
-                0.176922689
-            ],
-            [
-                0.007928509205357526,
-                0.178870115
-            ],
-            [
-                0.00797464511203766,
-                0.180820692
-            ],
-            [
-                0.008034071280956267,
-                0.182771269
-            ],
-            [
-                0.008082258193597197,
-                0.184715543
-            ],
-            [
-                0.008144693478763104,
-                0.18666612
-            ],
-            [
-                0.008203045384347438,
-                0.188607244
-            ],
-            [
-                0.008254227730751037,
-                0.190551519
-            ],
-            [
-                0.008318088782072068,
-                0.192489491
-            ],
-            [
-                0.00837094301590696,
-                0.194436917
-            ],
-            [
-                0.00842077005493641,
-                0.196292958
-            ],
-            [
-                0.008447621428906918,
-                0.198199419
-            ],
-            [
-                0.008495497635126114,
-                0.200146845
-            ],
-            [
-                0.008555292561650276,
-                0.201810665
-            ],
-            [
-                0.00859793494552374,
-                0.203758091
-            ],
-            [
-                0.008649024276137354,
-                0.205702365
-            ],
-            [
-                0.008712378311902285,
-                0.207643489
-            ],
-            [
-                0.008757394319529453,
-                0.209584612
-            ],
-            [
-                0.008798389684438706,
-                0.211535189
-            ],
-            [
-                0.008846808839589358,
-                0.213482615
-            ],
-            [
-                0.008940586764433737,
-                0.215430041
-            ],
-            [
-                0.009030240516185761,
-                0.217371164
-            ],
-            [
-                0.009099324162499998,
-                0.21931859
-            ],
-            [
-                0.009179460629852308,
-                0.221266016
-            ],
-            [
-                0.009270689597010613,
-                0.22321029
-            ],
-            [
-                0.00935854949662796,
-                0.224927681
-            ],
-            [
-                0.009429656411309204,
-                0.226849897
-            ],
-            [
-                0.009520811504065991,
-                0.228787869
-            ],
-            [
-                0.009610041592195633,
-                0.230738446
-            ],
-            [
-                0.009691663262122337,
-                0.232685872
-            ],
-            [
-                0.009756540951468051,
-                0.234614391
-            ],
-            [
-                0.009857855756789444,
-                0.236561817
-            ],
-            [
-                0.009962493225129992,
-                0.238496638
-            ],
-            [
-                0.010060228044959795,
-                0.240437761
-            ],
-            [
-                0.010190631987493773,
-                0.242378885
-            ],
-            [
-                0.010314854462072252,
-                0.244320008
-            ],
-            [
-                0.010400583655008771,
-                0.245977526
-            ],
-            [
-                0.010464784594528377,
-                0.247924952
-            ],
-            [
-                0.010582799223953377,
-                0.249875529
-            ],
-            [
-                0.010694774214715248,
-                0.251822954
-            ],
-            [
-                0.010817956892271212,
-                0.253767229
-            ],
-            [
-                0.01093304598614845,
-                0.255708353
-            ],
-            [
-                0.011034821919654214,
-                0.257655778
-            ],
-            [
-                0.011140710512135358,
-                0.259593751
-            ],
-            [
-                0.011262006671394096,
-                0.261538025
-            ],
-            [
-                0.011346733868122101,
-                0.263353102
-            ],
-            [
-                0.01144816925033927,
-                0.26522805
-            ],
-            [
-                0.011536523031815887,
-                0.267166023
-            ],
-            [
-                0.011635357408225539,
-                0.269047274
-            ],
-            [
-                0.011735834686068558,
-                0.270991549
-            ],
-            [
-                0.011844385714396838,
-                0.272932672
-            ],
-            [
-                0.011909416895359756,
-                0.274883249
-            ],
-            [
-                0.012000934365590897,
-                0.276830675
-            ],
-            [
-                0.01210829738096174,
-                0.278781252
-            ],
-            [
-                0.012185971750994774,
-                0.280659352
-            ],
-            [
-                0.012261952701956035,
-                0.282600475
-            ],
-            [
-                0.01237814560621977,
-                0.284494331
-            ],
-            [
-                0.012482406770586775,
-                0.286432303
-            ],
-            [
-                0.012595606070045255,
-                0.288379729
-            ],
-            [
-                0.012692136276067708,
-                0.290327155
-            ],
-            [
-                0.01282054100109074,
-                0.292265127
-            ],
-            [
-                0.012861275422748758,
-                0.294215704
-            ],
-            [
-                0.012969581541921796,
-                0.296141072
-            ],
-            [
-                0.013067653253674509,
-                0.298075893
-            ],
-            [
-                0.013178441938273612,
-                0.30002647
-            ],
-            [
-                0.013310920595079663,
-                0.301967593
-            ],
-            [
-                0.013447142831459643,
-                0.303908717
-            ],
-            [
-                0.013552184889949859,
-                0.305856143
-            ],
-            [
-                0.013665968361496925,
-                0.307746847
-            ],
-            [
-                0.01368867036509514,
-                0.308874968
-            ],
-            [
-                0.01368883518254757,
-                0.309988908
-            ],
-            [
-                0.013689000000000003,
-                0.311102848
-            ],
-            [
-                0.013689000815927985,
-                0.312216788
-            ],
-            [
-                0.013689001631855964,
-                0.313330728
-            ],
-            [
-                0.013814735725969078,
-                0.315271852
-            ],
-            [
-                0.01393925653517246,
-                0.317165708
-            ],
-            [
-                0.01403526669368148,
-                0.319094226
-            ],
-            [
-                0.014143131030008704,
-                0.321044803
-            ],
-            [
-                0.014268686438128354,
-                0.322989078
-            ],
-            [
-                0.014346525893992577,
-                0.324876632
-            ],
-            [
-                0.014455424511117561,
-                0.326811453
-            ],
-            [
-                0.014583370482623582,
-                0.328717913
-            ],
-            [
-                0.014695798729173839,
-                0.330599164
-            ],
-            [
-                0.014767680964507165,
-                0.332549741
-            ],
-            [
-                0.014870844348818066,
-                0.334497167
-            ],
-            [
-                0.014997553884834052,
-                0.336441442
-            ],
-            [
-                0.015086948484443129,
-                0.338351053
-            ],
-            [
-                0.015176365138031542,
-                0.340298479
-            ],
-            [
-                0.015301781302280727,
-                0.342249056
-            ],
-            [
-                0.015425284829735757,
-                0.34419018
-            ],
-            [
-                0.0155296137907058,
-                0.346087187
-            ],
-            [
-                0.015626646906137468,
-                0.348034613
-            ],
-            [
-                0.01572789765123278,
-                0.349982038
-            ],
-            [
-                0.015821723751962273,
-                0.351932615
-            ],
-            [
-                0.015927374969619514,
-                0.353870588
-            ],
-            [
-                0.01603569424364716,
-                0.355792804
-            ],
-            [
-                0.01613640184164047,
-                0.357737079
-            ],
-            [
-                0.016275209902860226,
-                0.359668749
-            ],
-            [
-                0.016394296423305713,
-                0.361613023
-            ],
-            [
-                0.01651026042431887,
-                0.363560449
-            ],
-            [
-                0.016661740995794535,
-                0.365476363
-            ],
-            [
-                0.016836968904733657,
-                0.367423789
-            ],
-            [
-                0.016984883663691584,
-                0.369273528
-            ],
-            [
-                0.017106994509869883,
-                0.371167384
-            ],
-            [
-                0.017130510427000673,
-                0.37311481
-            ],
-            [
-                0.017272127111823857,
-                0.375059085
-            ],
-            [
-                0.017450006979703902,
-                0.377009662
-            ],
-            [
-                0.017565531224012377,
-                0.378941331
-            ],
-            [
-                0.01773470377922058,
-                0.380879304
-            ],
-            [
-                0.017888491094112398,
-                0.382823578
-            ],
-            [
-                0.018011815878136547,
-                0.384774155
-            ],
-            [
-                0.018154807080658454,
-                0.386724732
-            ],
-            [
-                0.018295217382396742,
-                0.388665856
-            ],
-            [
-                0.018466181520620652,
-                0.390600677
-            ],
-            [
-                0.018645063404459,
-                0.392551254
-            ],
-            [
-                0.018856589956366396,
-                0.394470319
-            ],
-            [
-                0.018973475698828696,
-                0.396370477
-            ],
-            [
-                0.019095763474702838,
-                0.398314752
-            ],
-            [
-                0.019198217064142226,
-                0.400218061
-            ],
-            [
-                0.019302414089441302,
-                0.402168638
-            ],
-            [
-                0.019409266948699953,
-                0.40407825
-            ],
-            [
-                0.01949906464666128,
-                0.405997315
-            ],
-            [
-                0.019561318545341492,
-                0.407947892
-            ],
-            [
-                0.019696051252999263,
-                0.409750364
-            ],
-            [
-                0.019804207454815512,
-                0.411615859
-            ],
-            [
-                0.019850206312738358,
-                0.413566436
-            ],
-            [
-                0.019976350843906403,
-                0.415479199
-            ],
-            [
-                0.02011906152963638,
-                0.417423474
-            ],
-            [
-                0.020258055210113524,
-                0.4193709
-            ],
-            [
-                0.020385786294937133,
-                0.421308872
-            ],
-            [
-                0.020486126840114593,
-                0.423237391
-            ],
-            [
-                0.02058765059709549,
-                0.425187968
-            ],
-            [
-                0.020696264326572417,
-                0.427135393
-            ],
-            [
-                0.02081342484610677,
-                0.429054459
-            ],
-            [
-                0.02091656720638275,
-                0.430995582
-            ],
-            [
-                0.021059774874486032,
-                0.432943008
-            ],
-            [
-                0.021156087398529054,
-                0.434871527
-            ],
-            [
-                0.02125491081686318,
-                0.436806348
-            ],
-            [
-                0.021355343520641328,
-                0.43869075
-            ],
-            [
-                0.02143974551296234,
-                0.440531036
-            ],
-            [
-                0.021528930884879473,
-                0.442472159
-            ],
-            [
-                0.021646897024402426,
-                0.444413283
-            ],
-            [
-                0.02177008134126663,
-                0.44636386
-            ],
-            [
-                0.021826374175071713,
-                0.448308134
-            ],
-            [
-                0.021934793853600438,
-                0.45025556
-            ],
-            [
-                0.0220310621740669,
-                0.452174625
-            ],
-            [
-                0.02210688917167222,
-                0.454106295
-            ],
-            [
-                0.022206995666027067,
-                0.456019058
-            ],
-            [
-                0.022245697617530823,
-                0.457944426
-            ],
-            [
-                0.022310355842113494,
-                0.459891852
-            ],
-            [
-                0.02239812551710612,
-                0.461839277
-            ],
-            [
-                0.0224737948179245,
-                0.463711075
-            ],
-            [
-                0.02258031177520752,
-                0.465661652
-            ],
-            [
-                0.022659989485162495,
-                0.467602776
-            ],
-            [
-                0.022731335163116456,
-                0.469537597
-            ],
-            [
-                0.022810442984104156,
-                0.471469267
-            ],
-            [
-                0.022901901014149188,
-                0.473394634
-            ],
-            [
-                0.02299510051980363,
-                0.475326304
-            ],
-            [
-                0.023069877359715836,
-                0.477248521
-            ],
-            [
-                0.02315634123980999,
-                0.479139225
-            ],
-            [
-                0.023224882534203753,
-                0.481055139
-            ],
-            [
-                0.023292380152165892,
-                0.48298996
-            ],
-            [
-                0.02335870281443731,
-                0.484902723
-            ],
-            [
-                0.02348273487215639,
-                0.486846998
-            ],
-            [
-                0.02357147056232393,
-                0.488797575
-            ],
-            [
-                0.02366918868439079,
-                0.490489756
-            ],
-            [
-                0.02374627286195755,
-                0.492437181
-            ],
-            [
-                0.02379094237580939,
-                0.494233351
-            ],
-            [
-                0.02388487833738327,
-                0.496183928
-            ],
-            [
-                0.023958413265645503,
-                0.498134505
-            ],
-            [
-                0.02403465002061806,
-                0.500050419
-            ],
-            [
-                0.02413686264306307,
-                0.501997845
-            ],
-            [
-                0.024235118329524994,
-                0.50394527
-            ],
-            [
-                0.024301289993003013,
-                0.505851731
-            ],
-            [
-                0.024374965230077508,
-                0.507651052
-            ],
-            [
-                0.02445445127785206,
-                0.509529152
-            ],
-            [
-                0.024542815436157793,
-                0.511476577
-            ],
-            [
-                0.024630603012281295,
-                0.513354677
-            ],
-            [
-                0.024705965872853994,
-                0.515305254
-            ],
-            [
-                0.024777830487281084,
-                0.517249529
-            ],
-            [
-                0.024808868251740935,
-                0.518913349
-            ],
-            [
-                0.02483612483739853,
-                0.520854472
-            ],
-            [
-                0.02491090428829193,
-                0.522748328
-            ],
-            [
-                0.02501555181887001,
-                0.524692603
-            ],
-            [
-                0.02509262887048424,
-                0.526640029
-            ],
-            [
-                0.025170158442556857,
-                0.528458256
-            ],
-            [
-                0.025274824868202213,
-                0.530408833
-            ],
-            [
-                0.025360902808606627,
-                0.53230584
-            ],
-            [
-                0.025445744854438027,
-                0.534240661
-            ],
-            [
-                0.025532858828902247,
-                0.536188087
-            ],
-            [
-                0.02559676207602024,
-                0.538138664
-            ],
-            [
-                0.02566642671277004,
-                0.539717403
-            ],
-            [
-                0.02566665085638502,
-                0.540738384
-            ],
-            [
-                0.025666875000000002,
-                0.541759364
-            ],
-            [
-                0.025667582509517672,
-                0.542785071
-            ],
-            [
-                0.02566829001903534,
-                0.543810778
-            ],
-            [
-                0.02574880203232169,
-                0.545745599
-            ],
-            [
-                0.0258823681075573,
-                0.547696176
-            ],
-            [
-                0.026000867988914253,
-                0.549643602
-            ],
-            [
-                0.02612087424845123,
-                0.551591028
-            ],
-            [
-                0.02621194446958602,
-                0.553525849
-            ],
-            [
-                0.02627581327222288,
-                0.555448065
-            ],
-            [
-                0.02637447685003281,
-                0.557386038
-            ],
-            [
-                0.026462962283276166,
-                0.559330312
-            ],
-            [
-                0.026541573554277418,
-                0.561227319
-            ],
-            [
-                0.02666761077144026,
-                0.563155838
-            ],
-            [
-                0.026691431687772275,
-                0.564863775
-            ],
-            [
-                0.0267814795397222,
-                0.566785991
-            ],
-            [
-                0.026860995801240208,
-                0.568670393
-            ],
-            [
-                0.026947086726240226,
-                0.570334214
-            ],
-            [
-                0.02697100505232811,
-                0.572168197
-            ],
-            [
-                0.027068356758579614,
-                0.574093565
-            ],
-            [
-                0.027169599831104282,
-                0.575943304
-            ],
-            [
-                0.027255219665805887,
-                0.577887579
-            ],
-            [
-                0.027366937444433578,
-                0.57979719
-            ],
-            [
-                0.027396138980984686,
-                0.581735163
-            ],
-            [
-                0.027427125956833363,
-                0.583654228
-            ],
-            [
-                0.027512984052300456,
-                0.585601654
-            ],
-            [
-                0.027605740741506693,
-                0.587514417
-            ],
-            [
-                0.027688544025912882,
-                0.589121516
-            ],
-            [
-                0.027761087630001215,
-                0.59101222
-            ],
-            [
-                0.027873524690642956,
-                0.592921832
-            ],
-            [
-                0.027951426045941984,
-                0.594837746
-            ],
-            [
-                0.02799389446623624,
-                0.596778869
-            ],
-            [
-                0.028079507137656216,
-                0.598726295
-            ],
-            [
-                0.028206256671210003,
-                0.600661116
-            ],
-            [
-                0.02827885323442519,
-                0.602599089
-            ],
-            [
-                0.02840106190770865,
-                0.604537061
-            ],
-            [
-                0.028470966483199595,
-                0.606452975
-            ],
-            [
-                0.028558185363247994,
-                0.60810419
-            ],
-            [
-                0.02863635242963966,
-                0.60998229
-            ],
-            [
-                0.02869236349605024,
-                0.611923414
-            ],
-            [
-                0.028785835185796027,
-                0.613864537
-            ],
-            [
-                0.028830124776586898,
-                0.615654404
-            ],
-            [
-                0.028919606847129766,
-                0.61760183
-            ],
-            [
-                0.028951498143598438,
-                0.619546105
-            ],
-            [
-                0.029094608724117278,
-                0.621477775
-            ],
-            [
-                0.029191995976120235,
-                0.623425201
-            ],
-            [
-                0.029266243421882377,
-                0.625183556
-            ],
-            [
-                0.029357637515813117,
-                0.627080563
-            ],
-            [
-                0.029467136070951826,
-                0.628898791
-            ],
-            [
-                0.029554509718939664,
-                0.630786344
-            ],
-            [
-                0.029647448607712987,
-                0.632727468
-            ],
-            [
-                0.02972056126244366,
-                0.634624475
-            ],
-            [
-                0.029833133344463955,
-                0.636540389
-            ],
-            [
-                0.029925692215213236,
-                0.638487814
-            ],
-            [
-                0.03005230920922543,
-                0.640422636
-            ],
-            [
-                0.030162470119850557,
-                0.642370061
-            ],
-            [
-                0.030270865929946305,
-                0.644150475
-            ],
-            [
-                0.030336803110018375,
-                0.646006517
-            ],
-            [
-                0.03043275967238183,
-                0.647953942
-            ],
-            [
-                0.030583463908998514,
-                0.649901368
-            ],
-            [
-                0.03070806583555629,
-                0.651848794
-            ],
-            [
-                0.030748560146391397,
-                0.653462195
-            ],
-            [
-                0.030822278219684963,
-                0.655321388
-            ],
-            [
-                0.030875247350254306,
-                0.657268814
-            ],
-            [
-                0.03094456338621676,
-                0.659184728
-            ],
-            [
-                0.031049479041248558,
-                0.661135305
-            ],
-            [
-                0.03119078045322897,
-                0.66307958
-            ],
-            [
-                0.03130296607589722,
-                0.664976587
-            ],
-            [
-                0.03141287483882905,
-                0.666816873
-            ],
-            [
-                0.03154076594799233,
-                0.668622496
-            ],
-            [
-                0.03161221175640821,
-                0.670573073
-            ],
-            [
-                0.03173100883081556,
-                0.672454324
-            ],
-            [
-                0.03185589286176442,
-                0.674360784
-            ],
-            [
-                0.031976067514503034,
-                0.67630821
-            ],
-            [
-                0.03208993351042271,
-                0.678198915
-            ],
-            [
-                0.032185149246230726,
-                0.679950968
-            ],
-            [
-                0.03228381941713393,
-                0.68183537
-            ],
-            [
-                0.03236086647659541,
-                0.68376704
-            ],
-            [
-                0.032481799242496494,
-                0.685714466
-            ],
-            [
-                0.03255194293928147,
-                0.687488577
-            ],
-            [
-                0.03271610198756634,
-                0.689423398
-            ],
-            [
-                0.03284112125028006,
-                0.691370824
-            ],
-            [
-                0.03298367756433786,
-                0.693226866
-            ],
-            [
-                0.03305086617395282,
-                0.6949285
-            ],
-            [
-                0.033138177124972905,
-                0.696809751
-            ],
-            [
-                0.03328759441919625,
-                0.698741421
-            ],
-            [
-                0.03352949100340399,
-                0.700691998
-            ],
-            [
-                0.033743159497882994,
-                0.702639424
-            ],
-            [
-                0.033909024297773836,
-                0.704567942
-            ],
-            [
-                0.034063609385669234,
-                0.706383019
-            ],
-            [
-                0.034192218025445933,
-                0.708311538
-            ],
-            [
-                0.034455324025707654,
-                0.710252661
-            ],
-            [
-                0.034557774409460625,
-                0.711998412
-            ],
-            [
-                0.034737761457759,
-                0.713945838
-            ],
-            [
-                0.03502963902334686,
-                0.715893263
-            ],
-            [
-                0.03538070223927497,
-                0.717645316
-            ],
-            [
-                0.03564049729663182,
-                0.719592742
-            ],
-            [
-                0.03602043980008364,
-                0.721540168
-            ],
-            [
-                0.03639383347705007,
-                0.723490745
-            ],
-            [
-                0.03668851259404421,
-                0.725441322
-            ],
-            [
-                0.036995181553065776,
-                0.727379294
-            ],
-            [
-                0.03731054263472557,
-                0.729099836
-            ],
-            [
-                0.03759467868964355,
-                0.730905458
-            ],
-            [
-                0.03784752475743375,
-                0.732843431
-            ],
-            [
-                0.03826455471217632,
-                0.734794008
-            ],
-            [
-                0.038672255577027796,
-                0.736719375
-            ],
-            [
-                2.9039866002240435,
-                0.999996849
-            ]
-        ]
-    },
-    "trigger_score": {
-        "atoms": [
-            [
-                0.0,
-                0.499322497
-            ]
-        ],
-        "knots": [
-            [
-                0.975,
-                0.998802554
-            ],
-            [
-                1.0,
-                0.999873953
-            ]
-        ]
-    },
-    "vector_score": {
-        "atoms": [
-            [
-                0.0,
-                0.439758998
-            ]
-        ],
-        "knots": [
-            [
-                0.18184927105903625,
-                0.879521148
-            ],
-            [
-                0.3434552848339081,
-                0.881468573
-            ],
-            [
-                0.36580488085746765,
-                0.883415999
-            ],
-            [
-                0.3810511827468872,
-                0.885363425
-            ],
-            [
-                0.39168107509613037,
-                0.887310851
-            ],
-            [
-                0.4004264771938324,
-                0.889258277
-            ],
-            [
-                0.4085971415042877,
-                0.891205702
-            ],
-            [
-                0.4161820709705353,
-                0.893153128
-            ],
-            [
-                0.42227402329444885,
-                0.895100554
-            ],
-            [
-                0.427592009305954,
-                0.89704798
-            ],
-            [
-                0.4330182671546936,
-                0.898995406
-            ],
-            [
-                0.4380373954772949,
-                0.900942831
-            ],
-            [
-                0.44239887595176697,
-                0.902890257
-            ],
-            [
-                0.44636088609695435,
-                0.904837683
-            ],
-            [
-                0.450370192527771,
-                0.906785109
-            ],
-            [
-                0.4546162188053131,
-                0.908732535
-            ],
-            [
-                0.4583626985549927,
-                0.91067996
-            ],
-            [
-                0.46221446990966797,
-                0.912627386
-            ],
-            [
-                0.4655419588088989,
-                0.914574812
-            ],
-            [
-                0.4692562222480774,
-                0.916522238
-            ],
-            [
-                0.4724314510822296,
-                0.918469664
-            ],
-            [
-                0.475703626871109,
-                0.920417089
-            ],
-            [
-                0.47869598865509033,
-                0.922364515
-            ],
-            [
-                0.4819644093513489,
-                0.924311941
-            ],
-            [
-                0.4851280152797699,
-                0.926259367
-            ],
-            [
-                0.48848050832748413,
-                0.928206793
-            ],
-            [
-                0.49138161540031433,
-                0.930154218
-            ],
-            [
-                0.4945862889289856,
-                0.932101644
-            ],
-            [
-                0.49773648381233215,
-                0.93404907
-            ],
-            [
-                0.500457763671875,
-                0.935996496
-            ],
-            [
-                0.5033261775970459,
-                0.937943922
-            ],
-            [
-                0.5061900615692139,
-                0.939891348
-            ],
-            [
-                0.5091306567192078,
-                0.941838773
-            ],
-            [
-                0.5117607116699219,
-                0.943786199
-            ],
-            [
-                0.514281153678894,
-                0.945733625
-            ],
-            [
-                0.5171493291854858,
-                0.947681051
-            ],
-            [
-                0.5197951793670654,
-                0.949628477
-            ],
-            [
-                0.5224427580833435,
-                0.951575902
-            ],
-            [
-                0.5253888964653015,
-                0.953523328
-            ],
-            [
-                0.5283223390579224,
-                0.955470754
-            ],
-            [
-                0.531343936920166,
-                0.95741818
-            ],
-            [
-                0.5338909029960632,
-                0.959365606
-            ],
-            [
-                0.5368397235870361,
-                0.961313031
-            ],
-            [
-                0.5395470261573792,
-                0.963260457
-            ],
-            [
-                0.5423921346664429,
-                0.965211034
-            ],
-            [
-                0.5454372763633728,
-                0.967161611
-            ],
-            [
-                0.5485271215438843,
-                0.969109037
-            ],
-            [
-                0.5518088340759277,
-                0.971056463
-            ],
-            [
-                0.5548797845840454,
-                0.973003889
-            ],
-            [
-                0.558305025100708,
-                0.974951314
-            ],
-            [
-                0.5623133778572083,
-                0.97689874
-            ],
-            [
-                0.566662609577179,
-                0.978846166
-            ],
-            [
-                0.5710911154747009,
-                0.980793592
-            ],
-            [
-                0.5755058526992798,
-                0.982741018
-            ],
-            [
-                0.5807040333747864,
-                0.984688443
-            ],
-            [
-                0.586899995803833,
-                0.986635869
-            ],
-            [
-                0.592790961265564,
-                0.988583295
-            ],
-            [
-                0.5992965698242188,
-                0.990530721
-            ],
-            [
-                0.6073158383369446,
-                0.992478147
-            ],
-            [
-                0.6179296970367432,
-                0.994425572
-            ],
-            [
-                0.6316601037979126,
-                0.996372998
-            ],
-            [
-                0.6530047059059143,
-                0.998320424
-            ],
-            [
-                0.7702784538269043,
-                0.999996849
-            ]
-        ]
-    }
-}
-# --- END COLD_RANKING_CALIBRATION -------------------------------------
 
 #: Cosine at or above which greedy leader clustering admits a node to an
 #: existing cluster. A fallback stage's threshold, deliberately loose: whatever
@@ -2499,12 +342,6 @@ STAGE_STRUCTURAL = "structural"
 STAGE_PATH = "path"
 STAGE_ANCHOR = "anchor"
 STAGE_EMBEDDING = "embedding"
-#: The appended cold-lane singletons. Not a cascade stage: cold clusters are
-#: never produced by :meth:`RecallMapBuilder._cluster`, never cached, never
-#: sorted into the warm order, and absent from :data:`_STAGE_ORDER` on
-#: purpose — they exist only past the warm cap.
-STAGE_COLD = "cold"
-
 #: Precedence, and the secondary sort key for equal-sized clusters: a cluster
 #: whose label is a key the corpus actually stores outranks one whose label was
 #: derived from term statistics.
@@ -2581,12 +418,6 @@ class MapCluster:
     plan_item: str
     stage: str
     member_ids: tuple[str, ...]
-    #: Set only on clusters the cold exploration lane appended. The additive
-    #: wire marker is what lets after-window tooling split medoid delivery
-    #: windows into warm and cold arms — ``recall_delivery_history`` rows carry
-    #: no lane provenance and must not be extended to.
-    cold: bool = False
-
     def to_dict(self) -> dict[str, Any]:
         payload = {
             "label": self.label,
@@ -2595,8 +426,6 @@ class MapCluster:
             "ask_hint": self.ask_hint,
             "plan_item": self.plan_item,
         }
-        if self.cold:
-            payload["cold"] = 1
         return payload
 
 
@@ -2641,7 +470,7 @@ class SelectionSample:
 
 @dataclass(frozen=True, slots=True)
 class SelectionAccounting:
-    """Complete frozen-policy accounting for one inspected residual.
+    """Complete candidate-selection accounting for one inspected residual.
 
     The response fitter added by the delivery integration can vary only how
     many of ``samples`` it buys.  ``inspected``, ``admitted`` and ``excluded``
@@ -2768,12 +597,6 @@ class RecallMap:
     #: Optional ``q`` examples that survived the response budget. When
     #: selection is computed, its core counts always survive fitting.
     selection_sample_limit: int = SELECTION_SAMPLE_LIMIT
-    #: ``(g, k)`` of the cold exploration lane — cold-eligible candidates
-    #: examined and cold clusters delivered — present when selection ran and
-    #: the cold valve pair is armed, even at ``(0, 0)``. An armed idle lane
-    #: differs from an unarmed lane. On a skipped build, selection and its
-    #: lane accounting are both absent.
-    cold: tuple[int, int] | None = None
     #: Digest of the pool this delivery was decided over (``pd``), present on
     #: exactly the deliveries a decay-armed key uses as a baseline: the first
     #: marker after an offer, and a served skip run that rebuilt the pool and
@@ -2795,7 +618,6 @@ class RecallMap:
             ),
             selection=self.selection,
             selection_sample_limit=self.selection_sample_limit,
-            cold=self.cold,
             pool_digest=self.pool_digest,
         )
 
@@ -2838,7 +660,6 @@ class _Member:
 
     rank: int
     node: Node
-    relevance_score: float = 0.0
 
 
 @dataclass(slots=True)
@@ -3240,398 +1061,6 @@ def _ballast_reason(
     return None
 
 
-def _history_features(history: Any) -> tuple[float, float, float, float]:
-    """Frozen evaluator features, or train means when history is unavailable."""
-
-    unavailable = (
-        RELEVANCE_FEATURE_MEANS[1],
-        RELEVANCE_FEATURE_MEANS[2],
-        RELEVANCE_FEATURE_MEANS[3],
-        RELEVANCE_FEATURE_MEANS[4],
-    )
-    if history is None or getattr(history, "available", False) is not True:
-        return unavailable
-
-    values = (
-        getattr(history, "matured", None),
-        getattr(history, "consumed", None),
-        getattr(history, "trailing_nonconsumed", None),
-    )
-    if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
-        return unavailable
-    matured, consumed, streak = values
-    if (
-        matured < 0
-        or consumed < 0
-        or consumed > matured
-        or streak < 0
-        or streak > matured - consumed
-    ):
-        return unavailable
-
-    # ``round(..., 8)`` is part of the unchanged evaluator's feature
-    # arithmetic.  Keeping it here is necessary to reproduce threshold ties.
-    return (
-        round(log1p(matured), 8),
-        round(log1p(matured - consumed), 8),
-        round(log1p(streak), 8),
-        round(consumed / matured, 8) if matured else 0.0,
-    )
-
-
-#: The candidate-time evidence a residual entry carries about *this* query, in
-#: the order ``retrieval.RecallResult`` declares it (see
-#: ``src/living_memory/retrieval.py``): the composite score first, then the four
-#: components behind it. A node with no delivery history at all still owns every
-#: one of these numbers for the query that just ranked it — which is exactly why
-#: they are the material a cold-start feature family can be built from, and why
-#: they are worth carrying to the scorer before any such family exists.
-_CANDIDATE_SCORE_FIELDS: tuple[str, ...] = (
-    "score",
-    "bm25_score",
-    "vector_score",
-    "graph_score",
-    "trigger_score",
-)
-
-
-def _candidate_scores(result: Any) -> tuple[float, ...] | None:
-    """This candidate's own query-time scores, or ``None`` if unreadable.
-
-    Fail-closed, and the closure is registered rather than invented:
-    ``artifacts/recall-map/relevance/coldstart-prereg.json``'s
-    ``missing_value_rule.cause_a_live_unreadable`` rules that a row whose own
-    candidate-time evidence cannot be read as finite floats has, by definition,
-    no candidate-time evidence to be admitted on. Such a row is inadmissible
-    under the frozen ``lr`` code — the reason vector gains nothing, loses
-    nothing and is not reordered for it.
-
-    Absent and malformed deliberately collapse to the same answer: a caller
-    that passes no result and a caller that passes a shape this cannot read are
-    stating the same fact, so the absent case needs no sentinel of its own.
-
-    Nothing reads this yet. :data:`RELEVANCE_POLICY_ID` spends five features
-    and none of them is here, so today this reads evidence the scorer declines.
-    Spending it is a policy revision, and that revision moves
-    :data:`RELEVANCE_POLICY_DIGEST` with it.
-    """
-
-    values: list[float] = []
-    for name in _CANDIDATE_SCORE_FIELDS:
-        try:
-            value = getattr(result, name, None)
-        except (AttributeError, TypeError, ValueError):
-            return None
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None
-        number = float(value)
-        if not isfinite(number):
-            return None
-        values.append(number)
-    return tuple(values)
-
-
-def _relevance_features(
-    node: Any, history: Any, result: Any = None
-) -> tuple[float, ...]:
-    """The frozen five, plus the candidate evidence no term spends yet.
-
-    ``result`` is this candidate's ``RecallResult`` for this query, threaded
-    here so the vector can one day be built from what a cold node actually
-    owns. Under ``directional-zsum-r1`` it contributes nothing: the width stays
-    five and every element is what it was, whether ``result`` is present,
-    absent or malformed.
-    """
-
-    level = getattr(node, "level", None)
-    level_schema = (
-        float(level == "schema")
-        if level in {"trace", "concept", "schema"}
-        else RELEVANCE_FEATURE_MEANS[0]
-    )
-    return (level_schema, *_history_features(history))
-
-
-def _directional_zsum(features: Sequence[float]) -> float:
-    """Exact equal-weight directional-zsum-r1 arithmetic."""
-
-    if len(features) != len(RELEVANCE_FEATURE_MEANS):
-        raise ValueError("relevance feature vector has the wrong width")
-    return sum(
-        (float(value) - mean) / scale
-        for value, mean, scale in zip(
-            features,
-            RELEVANCE_FEATURE_MEANS,
-            RELEVANCE_FEATURE_SCALES,
-            strict=True,
-        )
-    )
-
-
-def relevance_score(node: Any, history: Any, result: Any = None) -> float:
-    """Score one node from only its level and strictly matured history.
-
-    ``result`` — the residual entry this node arrived in, holding the
-    candidate-time scores :func:`_candidate_scores` reads — is accepted and
-    deliberately unread. Carrying it is what lets a cold-start revision change
-    the *scorer* without touching the call site that feeds it; making it count
-    is that revision, and it moves :data:`RELEVANCE_POLICY_ID` and
-    :data:`RELEVANCE_POLICY_DIGEST` together. Until then
-    ``relevance_score(node, history)`` and
-    ``relevance_score(node, history, result)`` are the same float for every
-    input, bit for bit.
-    """
-
-    return _directional_zsum(_relevance_features(node, history, result))
-
-
-# ----------------------------------------------------------------------
-# Rank calibration: reading a published table, and looking a value up in it
-# ----------------------------------------------------------------------
-#
-# ``directional-zsum-r1`` calibrates nothing.  A cold-start revision cannot
-# keep that up: its arms are a history z-sum and a family of retrieval scores,
-# quantities with no common unit, and summing them raw would let whichever one
-# happens to be numerically larger decide every row.
-# ``artifacts/recall-map/relevance/coldstart-prereg-v2.json`` registers the
-# answer in advance, at ``scorer_shape.calibration``: each arm is put on a rank
-# scale by a monotone step function fitted on ``coldstart_train`` alone,
-# published in the policy, and evaluated by *lookup* everywhere else.  "The
-# published step function IS the definition" — fit, eval, holdout and the live
-# scorer must all read the same table, or a threshold tie stops reproducing.
-#
-# This is the evaluator for that table, and it is landed empty-handed on
-# purpose.  It owns the form — how a table is read, and how a value is looked
-# up in one — and none of the content: every float it can return was handed to
-# it.  :data:`RELEVANCE_POLICY_CALIBRATION` is empty, so nothing calls it and
-# no score moves.  What that buys is that the revision commit has one job,
-# spending a table, instead of two.
-
-
-@dataclass(frozen=True)
-class _CalibrationTable:
-    """One published monotone step function, validated once when read.
-
-    ``values`` and ``us`` are the *merged* breakpoints — atoms and knots
-    together, sorted by value, strictly increasing in value and non-decreasing
-    in ``u``.  Merging them is what makes the composite monotone: an atom held
-    apart as a pure equality override may sit anywhere inside the bracket its
-    neighbouring knots interpolate across, and a probe a hair below such an
-    atom would then score *above* it.  Merged, the atom is a breakpoint the
-    interpolation bends through, so the function is monotone everywhere and
-    the atom is still recovered bit-for-bit by equality.
-
-    ``atoms`` and ``knots`` are kept as published so a caller can tell the two
-    apart afterwards — they are read back by the resolution rule below, and
-    they are what a test can hold the evaluator to.
-    """
-
-    quantity: str
-    values: tuple[float, ...]
-    us: tuple[float, ...]
-    atoms: tuple[tuple[float, float], ...]
-    knots: tuple[tuple[float, float], ...]
-
-
-def _calibration_number(value: Any, what: str) -> float:
-    """One published float, or a refusal naming what was wrong with it."""
-
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{what} is not a real number: {value!r}")
-    number = float(value)
-    if not isfinite(number):
-        raise ValueError(f"{what} is not finite: {value!r}")
-    return number
-
-
-def _calibration_pairs(raw: Any, what: str) -> tuple[tuple[float, float], ...]:
-    """A published ``(value, u)`` list, refusing anything that is not one."""
-
-    if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
-        raise ValueError(f"{what} is not a sequence of value/u pairs")
-    pairs: list[tuple[float, float]] = []
-    for index, entry in enumerate(raw):
-        if (
-            isinstance(entry, (str, bytes))
-            or not isinstance(entry, Sequence)
-            or len(entry) != 2
-        ):
-            raise ValueError(f"{what}[{index}] is not a value/u pair")
-        pairs.append(
-            (
-                _calibration_number(entry[0], f"{what}[{index}] value"),
-                _calibration_number(entry[1], f"{what}[{index}] u"),
-            )
-        )
-    for index in range(1, len(pairs)):
-        if pairs[index][0] <= pairs[index - 1][0]:
-            raise ValueError(
-                f"{what} are not sorted by strictly increasing value "
-                f"at index {index}"
-            )
-    return tuple(pairs)
-
-
-def _calibration_table(calibration: Any, quantity: str) -> _CalibrationTable:
-    """The published table for ``quantity``, or a refusal to guess one.
-
-    Fail-closed in the one way that matters here: there is no neutral answer to
-    fall back on.  ``rank_uniform_centered`` is centred at the fitting median,
-    so its neutral value is ``0.0`` — a number that means "this row sits where
-    half the population sits".  Returning that for a table this could not read
-    would not be a degraded answer, it would be a *fabricated measurement*,
-    and the arm it feeds would go on being summed as if it had been calibrated.
-    So every unreadable shape raises, and a caller that cannot produce a table
-    has to say so upstream where the row can be dropped honestly.
-
-    What is refused, and why each one is not recoverable:
-
-    * no calibration block at all, or none for this quantity — the policy never
-      fitted this arm, so there is nothing to look anything up in;
-    * fewer than two knots — a one-knot grid interpolates nothing and clamps
-      every input to a single constant, which is the neutral-value failure
-      wearing a table's clothes;
-    * a value or a ``u`` that is not a finite real — ``nan`` compares false
-      against every bound, so it would slip through the ordering checks and
-      then poison the sum;
-    * knots or atoms not strictly increasing in value — the lookup is a binary
-      search and an unsorted array silently answers the wrong bracket;
-    * an atom sitting on a knot's value — two published answers for one input;
-    * a merged pair that steps *down* in ``u`` — the function is not monotone,
-      and monotonicity is the whole reason a rank scale preserves the arm's
-      ordering;
-    * more breakpoints than the registered form allows;
-    * two consecutive knots further apart in ``u`` than
-      :data:`RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR` with no atom
-      between them — the grid is too coarse to honour the bound it is
-      published under.
-
-    That last check exempts knot pairs straddling an atom, and the exemption is
-    structural rather than a concession: an atom is published exactly because
-    its value carries at least 0.5% of the fitting rows, so the ``u`` it jumps
-    across is at least ``0.005`` — wider than ``2**-9`` by construction.  No
-    grid can resolve that jump, which is why the registered form carries the
-    value exactly instead of trying to.
-    """
-
-    if not isinstance(calibration, Mapping) or not calibration:
-        raise ValueError("the policy publishes no calibration tables")
-    raw = calibration.get(quantity)
-    if raw is None:
-        raise ValueError(f"the policy publishes no calibration table for {quantity!r}")
-    if not isinstance(raw, Mapping):
-        raise ValueError(f"the calibration table for {quantity!r} is not a mapping")
-
-    knots = _calibration_pairs(raw.get("knots"), f"{quantity} knots")
-    atoms = _calibration_pairs(raw.get("atoms", ()), f"{quantity} atoms")
-    if len(knots) < 2:
-        raise ValueError(
-            f"the calibration table for {quantity!r} publishes fewer than two knots"
-        )
-
-    knot_values = {value for value, _u in knots}
-    shared = sorted(value for value, _u in atoms if value in knot_values)
-    if shared:
-        raise ValueError(
-            f"the calibration table for {quantity!r} publishes both an atom and "
-            f"a knot at {shared[0]!r}"
-        )
-
-    breakpoints = sorted(atoms + knots)
-    if len(breakpoints) > RELEVANCE_CALIBRATION_MAX_BREAKPOINTS:
-        raise ValueError(
-            f"the calibration table for {quantity!r} spends {len(breakpoints)} "
-            f"breakpoints, over the registered "
-            f"{RELEVANCE_CALIBRATION_MAX_BREAKPOINTS}"
-        )
-    for index in range(1, len(breakpoints)):
-        (low_value, low_u), (high_value, high_u) = (
-            breakpoints[index - 1],
-            breakpoints[index],
-        )
-        if high_u < low_u:
-            raise ValueError(
-                f"the calibration table for {quantity!r} is not monotone: u steps "
-                f"down from {low_u!r} at {low_value!r} to {high_u!r} at "
-                f"{high_value!r}"
-            )
-        if not isfinite(high_value - low_value):
-            raise ValueError(
-                f"the calibration table for {quantity!r} spans a value gap that "
-                f"is not representable, at {low_value!r}"
-            )
-
-    atom_values = tuple(value for value, _u in atoms)
-    for index in range(1, len(knots)):
-        (low_value, low_u), (high_value, high_u) = knots[index - 1], knots[index]
-        if any(low_value < atom < high_value for atom in atom_values):
-            continue
-        if high_u - low_u > RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR:
-            raise ValueError(
-                f"the calibration table for {quantity!r} steps u by "
-                f"{high_u - low_u!r} between the knots at {low_value!r} and "
-                f"{high_value!r}, over the registered "
-                f"{RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR}"
-            )
-
-    return _CalibrationTable(
-        quantity=quantity,
-        values=tuple(value for value, _u in breakpoints),
-        us=tuple(u for _value, u in breakpoints),
-        atoms=atoms,
-        knots=knots,
-    )
-
-
-def _calibrate(table: _CalibrationTable, value: Any) -> float:
-    """Look ``value`` up in a published table and return its ``u``.
-
-    Three rules, in the order the registered form states them.  A value the
-    table publishes is **matched by equality first**, before any arithmetic
-    happens, and its published ``u`` is returned unchanged — that is what makes
-    a tie with the fitting sample recover the midrank of its block bit-for-bit
-    instead of an interpolation that lands an ulp away, and the tie-block
-    identity the feasibility argument rests on needs the exact one.  A value
-    between two breakpoints is linearly interpolated.  A value outside the
-    outermost breakpoints is clamped to the outermost published ``u``: the
-    fitting sample never went there, and the honest reading of "further out
-    than anything I was fitted on" is the extreme rank, not an extrapolation
-    off the end of the evidence.
-
-    The interpolation is clamped into its own bracket, and that clamp is not
-    idle.  On a table whose values span wide enough,
-    ``(probe - low) / (high - low)`` rounds to exactly ``1.0`` for a probe
-    strictly *below* the segment's top, and ``low_u + (high_u - low_u)`` need
-    not round back to ``high_u`` — so unclamped, a segment can end above the
-    breakpoint the next one starts at, and a table the reader certified as
-    monotone evaluates non-monotonically for purely floating-point reasons.
-    The reader constrains a span to be representable, not to be narrow, so
-    that table is one it accepts.  Everything else here is monotone by
-    construction: a correctly rounded subtraction, a division by a positive
-    span and a multiplication by a non-negative rise each preserve order.
-    """
-
-    probe = _calibration_number(value, f"{table.quantity} probe")
-    values = table.values
-    index = bisect_left(values, probe)
-    if index < len(values) and values[index] == probe:
-        return table.us[index]
-    if index == 0:
-        return table.us[0]
-    if index == len(values):
-        return table.us[-1]
-
-    low_value, high_value = values[index - 1], values[index]
-    low_u, high_u = table.us[index - 1], table.us[index]
-    reading = low_u + (probe - low_value) / (high_value - low_value) * (high_u - low_u)
-    return min(max(reading, low_u), high_u)
-
-
-# ----------------------------------------------------------------------
-# Pool gates: reading the valves, and the two predicates behind them
-# ----------------------------------------------------------------------
-
-
 def _gate_flag(name: str) -> bool:
     """Whether an operator turned this gate on, drain-valve spelling."""
 
@@ -3665,127 +1094,10 @@ def pool_usefulness_floor_from_env() -> float | None:
     return value
 
 
-def pool_cold_slots_from_env() -> int | None:
-    """The armed cold-lane slot count, or ``None`` when the lane is inert.
-
-    Same paired-valve grammar as the usefulness floor: the lane runs only when
-    :data:`POOL_COLD_QUOTA_GATE_ENV` is on *and*
-    :data:`POOL_COLD_SLOTS_ENV` parses to an integer inside the registered
-    ``1..POOL_COLD_SLOTS_MAX`` domain. Non-integer, empty, ``0``, negative or
-    larger values leave the lane inert rather than guessed at: the registered
-    design is a 1-2 slot exploration quota, and a number outside it is not
-    this design.
-    """
-
-    if not _gate_flag(POOL_COLD_QUOTA_GATE_ENV):
-        return None
-    raw = os.environ.get(POOL_COLD_SLOTS_ENV, "").strip()
-    if not raw:
-        return None
-    try:
-        value = int(raw)
-    except ValueError:
-        return None
-    return value if 1 <= value <= POOL_COLD_SLOTS_MAX else None
-
-
 def curtail_decay_from_env() -> bool:
-    """Whether the operator armed the decaying curtail retry.
-
-    One flag, no number, unlike the paired gates above: there is no threshold
-    to invent because the schedule is the registered rule itself,
-    ``min(2**(N-1), CURTAIL_DECAY_SKIP_MAX)``. Read at the two collapse
-    decisions — :meth:`RecallMapBuilder.build` and
-    :meth:`RecallMapBuilder._with_cold_lane` — and nowhere inside the curtail
-    probes, so the unarmed decision path is bit-identical to the frozen
-    behaviour and ``test_the_rule_needs_no_flag`` keeps holding.
-    """
+    """Whether current work retries with exponential, pool-aware skips."""
 
     return _gate_flag(CURTAIL_DECAY_GATE_ENV)
-
-
-#: Parse-once memo for :func:`_cold_ranking_tables`, keyed by the identity of
-#: the constant so a monkeypatched table set in tests re-parses.
-_COLD_TABLES_MEMO: tuple[int, Mapping[str, _CalibrationTable] | None] | None = None
-
-
-def _cold_ranking_tables() -> Mapping[str, _CalibrationTable] | None:
-    """The published cold composite, or ``None`` when the lane cannot rank.
-
-    Fail-closed to inert: a lane whose tables are absent, unreadable under the
-    registered form, name an unregistered member, or lack ``result_score``
-    delivers nothing rather than ranking on invented numbers. The shipped
-    constant is validated by tests; this guard is for the constant a bad
-    regeneration could leave behind.
-    """
-
-    global _COLD_TABLES_MEMO
-    calibration = COLD_RANKING_CALIBRATION
-    if _COLD_TABLES_MEMO is not None and _COLD_TABLES_MEMO[0] == id(calibration):
-        return _COLD_TABLES_MEMO[1]
-    registered = {name for name, _sign in COLD_RANKING_MEMBERS}
-    parsed: Mapping[str, _CalibrationTable] | None
-    try:
-        if (
-            not isinstance(calibration, Mapping)
-            or "result_score" not in calibration
-            or not set(calibration) <= registered
-        ):
-            parsed = None
-        else:
-            parsed = {
-                name: _calibration_table(calibration, name) for name in calibration
-            }
-    except ValueError:
-        parsed = None
-    _COLD_TABLES_MEMO = (id(calibration), parsed)
-    return parsed
-
-
-def _cold_member_values(
-    result: Any, tables: Mapping[str, _CalibrationTable]
-) -> dict[str, float] | None:
-    """The composite members off one residual result, or ``None``.
-
-    Cold eligibility E5: every published member must be readable as a finite
-    float off the candidate's own residual record. A candidate with an
-    unreadable member is ineligible — ranking it would mean inventing a
-    number.
-    """
-
-    values: dict[str, float] = {}
-    for name in tables:
-        try:
-            raw = getattr(result, _COLD_MEMBER_FIELDS[name], None)
-        except (AttributeError, TypeError, ValueError):
-            return None
-        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            return None
-        number = float(raw)
-        if not isfinite(number):
-            return None
-        values[name] = number
-    return values
-
-
-def _cold_composite(
-    values: Mapping[str, float], tables: Mapping[str, _CalibrationTable]
-) -> float:
-    """``f = u_rs + u_tg + (1 - u_bm) + (1 - u_vs)`` over the published tables.
-
-    Members are evaluated by :func:`_calibrate` — the merged calibration
-    surface — and a negative registered sign contributes ``1 - u``. The
-    ordering needs no ``rank_normal`` wrapper: the wrapper is monotone and
-    this lane sums no second arm.
-    """
-
-    signs = dict(COLD_RANKING_MEMBERS)
-    return fsum(
-        _calibrate(table, values[name])
-        if signs[name] > 0
-        else 1.0 - _calibrate(table, values[name])
-        for name, table in tables.items()
-    )
 
 
 def _below_usefulness(node: Any, floor: float) -> bool:
@@ -4130,7 +1442,7 @@ class RecallMapBuilder:
         task: str | None = None,
         task_pattern: str | None = None,
         transport_session_id: str | None = None,
-        decision_at: str | datetime | None = None,
+        relevance: QueryRelevance | None = None,
     ) -> RecallMap | None:
         """Cluster one residual pool, or return None when there is nothing to say.
 
@@ -4139,16 +1451,15 @@ class RecallMapBuilder:
         Otherwise transport_session_id identifies the consumer. Absent context
         bypasses both caches. Scope must match the recorded recall's scope.
 
-        decision_at freezes the candidate-history boundary for deterministic
-        replay. The pool is built at most once, only for an offer, an initial
-        digest or a due retry; skipped calls carry no pool/selection counts."""
+        The shared relevance evidence includes the full ranking and correction
+        edges. The pool is built only for an offer, initial digest or due retry;
+        skipped calls carry no pool/selection counts."""
 
         self.last_cache_hit = False
         self._reset_corpus_memo()
         if not results:
             return None
 
-        instant = decision_at if decision_at is not None else datetime.now(UTC)
         map_scope = (
             normalize_scope(scope) if scope else _dominant_residual_scope(results)
         )
@@ -4157,15 +1468,10 @@ class RecallMapBuilder:
             transport_session_id=transport_session_id,
         )
         key = work.key if work else ""
-        cold_slots = pool_cold_slots_from_env()
-        cold_rows: list[tuple[int, Node, Any, Any]] | None = (
-            [] if cold_slots is not None else None
-        )
         curtailment = self._curtailment(work)
         self.last_curtailment = curtailment
         pool: list[_Member] | None = None
         selection: SelectionAccounting | None = None
-        cold_candidates: list[tuple[int, Node, Any, dict[str, float]]] | None = None
         anchor_assignment: _AnchorAssignment | None = None
 
         def ensure_pool() -> list[_Member]:
@@ -4173,21 +1479,17 @@ class RecallMapBuilder:
             if pool is None:
                 pool, selection = self._pool(
                     results,
-                    decision_at=instant,
-                    cold_rows=cold_rows,
+                    relevance=relevance,
                 )
             return pool
 
         def digest() -> str:
-            nonlocal cold_candidates, anchor_assignment
+            nonlocal anchor_assignment
             members = ensure_pool()
-            if cold_rows is not None and cold_candidates is None:
-                cold_candidates = self._cold_candidates(cold_rows)
             if anchor_assignment is None:
                 anchor_assignment = self._anchor_assignment(members)
             return self._pool_digest(
-                members, cold_rows, candidates=cold_candidates,
-                assignment=anchor_assignment.by_node,
+                members, assignment=anchor_assignment.by_node,
             )
 
         offer, pool_digest = self._reoffer(curtailment, digest)
@@ -4195,7 +1497,7 @@ class RecallMapBuilder:
             self._note_delivery(work, offered=False)
             return self._collapsed(
                 map_scope, key, pool_size=None, streak=curtailment.streak,
-                selection=None, cold=None, pool_digest=None,
+                selection=None, pool_digest=None,
             )
 
         pool = ensure_pool()
@@ -4230,14 +1532,6 @@ class RecallMapBuilder:
                     (), 0, 0, selection=selection
                 ),
             )
-            if cold_slots is not None:
-                if offer:
-                    built = self._with_cold_lane(
-                        built, cold_rows or (), slots=cold_slots,
-                        candidates=cold_candidates,
-                    )
-                else:
-                    built = replace(built, cold=(0, 0))
             if not built.clusters:
                 built = replace(built, pool_digest=pool_digest)
             self._note_delivery(
@@ -4253,10 +1547,6 @@ class RecallMapBuilder:
                 pool_size=len(pool),
                 streak=curtailment.streak,
                 selection=selection,
-                # On a curtailed key the lane does not run: the unread-collapse
-                # defense binds cold content exactly as warm, and an armed
-                # server states that fact on the wire as c = [0, 0].
-                cold=(0, 0) if cold_slots is not None else None,
                 pool_digest=pool_digest,
             )
 
@@ -4280,16 +1570,6 @@ class RecallMapBuilder:
             pool_size=len(pool),
             selection=selection,
         )
-        if built is not None and cold_slots is not None:
-            # The curtail verdict on this path was already read and either was
-            # not a collapse or was reprieved — the collapse branch returned
-            # above — so the lane runs against the finished warm map.
-            built = self._with_cold_lane(
-                built,
-                cold_rows or (),
-                slots=cold_slots,
-                candidates=cold_candidates,
-            )
         if built is not None and pool_digest is not None and not built.clusters:
             # A reprieved key that rebuilt its map and found nothing deliverable
             # in it did not wake up. The wire says so — a marker, not an empty
@@ -4303,7 +1583,6 @@ class RecallMapBuilder:
                 pool_size=len(pool),
                 streak=curtailment.streak,
                 selection=selection,
-                cold=built.cold,
                 pool_digest=pool_digest,
             )
         if built is not None:
@@ -4321,20 +1600,22 @@ class RecallMapBuilder:
         self,
         results: Sequence["RecallResult"],
         *,
-        decision_at: str | datetime,
-        cold_rows: list[tuple[int, Node, Any, Any]] | None = None,
+        relevance: QueryRelevance | None = None,
     ) -> tuple[list[_Member], SelectionAccounting]:
-        """Select eligible residual members using corpus relevance before the cap.
+        """Qualify by this query, then share bounded capacity across topics.
 
-        Classification is one ordinal pass; eligible identities share bounded
-        matured-history reads. Survivors are stably sorted by relevance. The
-        optional usefulness floor reads the node's score; cold candidates are
-        captured separately without changing warm selection."""
+        The shared predicate includes retrieval's scope/causal adjustments,
+        demotions and correction inheritance. History of other deliveries does
+        not qualify a candidate. Structural/path buckets get a turn before a
+        large bucket gets another member; within each bucket retrieval order
+        is preserved. Only the bounded pool pays for anchor/vector clustering.
+        """
 
+        eligible_ids = (relevance or QueryRelevance(results)).eligible_ids()
         usefulness_floor = pool_usefulness_floor_from_env()
         ledger = _SelectionLedger(inspected=len(results))
         seen: set[str] = set()
-        eligible: list[tuple[int, Node, "RecallResult"]] = []
+        buckets: dict[tuple[str, ...], deque[_Member]] = {}
         for ordinal, result in enumerate(results):
             node = getattr(result, "node", None)
             node_id = getattr(node, "id", None) if node is not None else None
@@ -4345,7 +1626,6 @@ class RecallMapBuilder:
                 ledger.exclude("du", ordinal=ordinal)
                 continue
             seen.add(node_id)
-
             reason = _ballast_reason(
                 getattr(node, "content", None),
                 getattr(node, "context", None),
@@ -4354,328 +1634,34 @@ class RecallMapBuilder:
             if reason is not None:
                 ledger.exclude(reason, ordinal=ordinal, node=node)
                 continue
-            if usefulness_floor is not None and _below_usefulness(
-                node, usefulness_floor
-            ):
+            if usefulness_floor is not None and _below_usefulness(node, usefulness_floor):
                 ledger.exclude("uf", ordinal=ordinal, node=node)
                 continue
-            eligible.append((ordinal, node, result))
-
-        histories = self._matured_history(
-            [node.id for _ordinal, node, _result in eligible],
-            decision_at=decision_at,
-        )
-        survivors: list[_Member] = []
-        for ordinal, node, result in eligible:
-            history = histories.get(node.id)
-            score = relevance_score(node, history, result)
-            if score < RELEVANCE_THRESHOLD:
+            if node_id not in eligible_ids:
                 ledger.exclude("lr", ordinal=ordinal, node=node)
-                # Cold-lane candidate capture: rows the frozen threshold alone
-                # excluded, having survived every check above it — eligibility
-                # E1 and E2 of the registered plan, by construction rather than
-                # by a mirror that could drift. Capture only; classification,
-                # scoring and admission are untouched, and with the valve pair
-                # unset ``cold_rows`` is ``None`` and this line never runs.
-                if cold_rows is not None:
-                    cold_rows.append((ordinal, node, result, history))
                 continue
-            survivors.append(
-                _Member(rank=ordinal, node=node, relevance_score=score)
+            structural = _structural_key(node)
+            path = _node_subsystem(node) if structural is None else None
+            key = (
+                (STAGE_STRUCTURAL, *structural) if structural is not None
+                else (STAGE_PATH, path) if path is not None
+                else (STAGE_EMBEDDING,)
             )
+            buckets.setdefault(key, deque()).append(_Member(rank=ordinal, node=node))
 
-        survivors.sort(key=lambda member: (-member.relevance_score, member.rank))
-        admitted = survivors[: self.max_pool_nodes]
+        admitted: list[_Member] = []
+        active = deque(buckets.values())
+        while active and len(admitted) < self.max_pool_nodes:
+            bucket = active.popleft()
+            admitted.append(bucket.popleft())
+            if bucket:
+                active.append(bucket)
         for member in sorted(
-            survivors[self.max_pool_nodes :], key=lambda item: item.rank
+            (member for bucket in active for member in bucket), key=lambda item: item.rank,
         ):
             ledger.exclude("pc", ordinal=member.rank, node=member.node)
-        accounting = ledger.freeze(len(admitted))
-        return admitted, accounting
-
-    def _matured_history(
-        self,
-        node_ids: Sequence[str],
-        *,
-        decision_at: str | datetime,
-    ) -> dict[str, Any]:
-        """Read every candidate's history through fixed-size bounded batches.
-
-        A missing method, failed batch, absent id, malformed row, truncation or
-        unavailable ledger remains absent in this mapping (or carries the
-        reader's unavailable object) and therefore receives frozen train means
-        in :func:`relevance_score`.  A real zero-history row is present with
-        ``available=True`` and M=C=K=0, preserving the cold-start distinction.
-        """
-
-        histories: dict[str, Any] = {}
-        for offset in range(0, len(node_ids), MAX_RECALL_HISTORY_CANDIDATES):
-            batch = node_ids[offset : offset + MAX_RECALL_HISTORY_CANDIDATES]
-            try:
-                fetched = self.store.matured_recall_history(batch, decision_at)
-            except (AttributeError, sqlite3.Error, TypeError, ValueError):
-                continue
-            if not isinstance(fetched, Mapping):
-                continue
-            for node_id in batch:
-                if node_id in fetched:
-                    histories[node_id] = fetched[node_id]
-        return histories
-
-    # -- cold exploration lane -----------------------------------------
-
-    def _cold_undelivered(self, node_ids: Sequence[str]) -> frozenset[str] | None:
-        """Ids with affirmatively zero delivery-ledger rows, or ``None``.
-
-        Cold eligibility E3 tests row *existence*, not maturity:
-        ``matured_recall_history`` cannot express "never delivered", because a
-        node delivered an hour ago has ``matured == 0`` and is
-        indistinguishable from a virgin node on the matured aggregate — a lane
-        keyed on that aggregate would re-deliver the same top-ranked cold node
-        on every map for the 24h its first window takes to mature.
-
-        E4 makes the unknown case fail towards not-delivering: an absent or
-        incomplete ledger, a wrong format, or a failed read returns ``None``
-        and every candidate becomes ineligible — the mirror of
-        :func:`_below_usefulness`'s fail-open, inverted because this lane only
-        ever *adds* delivery. The state checks are the same three
-        :meth:`MemoryStore.matured_recall_history` makes before trusting the
-        ledger.
-        """
-
-        ids = list(dict.fromkeys(str(node_id) for node_id in node_ids))
-        if not ids:
-            return frozenset()
-        try:
-            state = self.store.connection.execute(
-                f"""
-                SELECT format_version, complete
-                FROM {RECALL_DELIVERY_HISTORY_STATE_TABLE}
-                WHERE singleton = 1
-                """
-            ).fetchone()
-            if (
-                state is None
-                or int(state["format_version"]) != _RECALL_DELIVERY_HISTORY_FORMAT
-                or not int(state["complete"])
-            ):
-                return None
-            delivered: set[str] = set()
-            for offset in range(0, len(ids), MAX_RECALL_HISTORY_CANDIDATES):
-                batch = ids[offset : offset + MAX_RECALL_HISTORY_CANDIDATES]
-                placeholders = ",".join("?" for _ in batch)
-                rows = self.store.connection.execute(
-                    f"""
-                    SELECT DISTINCT node_id
-                    FROM {RECALL_DELIVERY_HISTORY_TABLE}
-                    WHERE node_id IN ({placeholders})
-                    """,
-                    batch,
-                ).fetchall()
-                delivered.update(str(row["node_id"]) for row in rows)
-        except (AttributeError, sqlite3.Error, TypeError, ValueError):
-            return None
-        return frozenset(ids) - delivered
-
-    def _cold_candidates(
-        self, cold_rows: Sequence[tuple[int, Node, Any, Any]]
-    ) -> list[tuple[int, Node, Any, dict[str, float]]]:
-        """The lane's eligible candidates: E1-E5 survivors, before ranking.
-
-        Captured rows whose composite the published tables can value, that
-        carry no matured window, and that the delivery ledger affirmatively
-        has never delivered. Empty — not ``None`` — when the lane cannot rank
-        or the ledger cannot answer, because on both counts the lane delivers
-        nothing and a digest of "nothing eligible" is the honest one. One
-        ledger probe per call; :meth:`build` calls it at most once per build
-        and hands the result to both the digest and the lane.
-        """
-
-        tables = _cold_ranking_tables()
-        if tables is None or not cold_rows:
-            return []
-
-        candidates: list[tuple[int, Node, Any, dict[str, float]]] = []
-        probe_ids: list[str] = []
-        for ordinal, node, result, history in cold_rows:
-            values = _cold_member_values(result, tables)
-            if values is None:
-                continue
-            matured = (
-                getattr(history, "matured", None)
-                if history is not None and getattr(history, "available", False)
-                else None
-            )
-            if matured is not None and matured > 0:
-                # A matured window is a ledger row; no existence probe needed.
-                continue
-            candidates.append((ordinal, node, result, values))
-            probe_ids.append(node.id)
-
-        undelivered = self._cold_undelivered(probe_ids)
-        if undelivered is None:
-            return []
-        return [
-            (ordinal, node, result, values)
-            for ordinal, node, result, values in candidates
-            if node.id in undelivered
-        ]
-
-    def _cold_lane(
-        self,
-        cold_rows: Sequence[tuple[int, Node, Any, Any]],
-        *,
-        slots: int,
-        warm_clusters: Sequence[MapCluster],
-        candidates: Sequence[tuple[int, Node, Any, dict[str, float]]] | None = None,
-    ) -> tuple[int, list[MapCluster]]:
-        """Rank the captured cold candidates and deliver into free capacity.
-
-        Returns ``(g, delivered)``: the count of cold-eligible candidates
-        examined this build (E1-E5 survivors, before ranking and guards) and
-        the marked singleton clusters to append. Candidates are ranked only
-        against each other on the published composite; the tie-break — higher
-        raw ``result_score``, then lower residual ordinal — makes the order
-        total and deterministic. Two per-candidate guards run at delivery
-        time, each skipping to the next-ranked candidate: the same
-        deliverable-label gate every warm cluster passes, and the inter-slot
-        diversity preference at :data:`EMBEDDING_CLUSTER_COSINE`. Similar
-        directions compete for suggestion slots; this neither declares their
-        claims identical nor changes content delivery or validity. Missing
-        embeddings leave a candidate eligible.
-
-        ``candidates`` is the eligible list a caller already computed through
-        :meth:`_cold_candidates`; absent, the lane computes it here.
-        """
-
-        eligible = (
-            self._cold_candidates(cold_rows) if candidates is None else candidates
-        )
-        examined = len(eligible)
-        tables = _cold_ranking_tables()
-        capacity = min(int(slots), self.max_clusters - len(warm_clusters))
-        if tables is None or capacity <= 0 or not eligible:
-            return examined, []
-
-        def order(entry: tuple[int, Node, Any, dict[str, float]]) -> tuple:
-            ordinal, _node, result, values = entry
-            raw = getattr(result, "score", None)
-            raw_score = (
-                float(raw)
-                if isinstance(raw, (int, float)) and not isinstance(raw, bool)
-                else 0.0
-            )
-            return (-_cold_composite(values, tables), -raw_score, ordinal)
-
-        delivered: list[tuple[MapCluster, list[float] | None]] = []
-        for ordinal, node, _result, _values in sorted(eligible, key=order):
-            if len(delivered) >= capacity:
-                break
-            member = _Member(rank=ordinal, node=node, relevance_score=0.0)
-            label = self._ctfidf_label([member])
-            if not self._deliverable(label):
-                continue
-            vector = self._node_vector(node)
-            duplicate = any(
-                prior is not None
-                and vector is not None
-                and len(prior) == len(vector)
-                and cosine_similarity(prior, vector) >= self.cluster_cosine
-                for _cluster, prior in delivered
-            )
-            if duplicate:
-                continue
-            group = _Group(
-                stage=STAGE_COLD,
-                signature=(STAGE_COLD, (node.id,)),
-                label=label,
-                ask_hint="",
-                members=[member],
-            )
-            cluster = replace(
-                self._cluster_of(group, example_chars=MEDOID_EXAMPLE_CHARS),
-                cold=True,
-            )
-            delivered.append((cluster, vector))
-        return examined, [cluster for cluster, _vector in delivered]
-
-    def _with_cold_lane(
-        self,
-        built: RecallMap,
-        cold_rows: Sequence[tuple[int, Node, Any, Any]],
-        *,
-        slots: int,
-        candidates: list[tuple[int, Node, Any, dict[str, float]]] | None = None,
-    ) -> RecallMap:
-        """Append the lane's outcome to a built map, warm bytes untouched.
-
-        The warm cluster list, counts, ``sel`` core and sample budget were all
-        settled before this runs, so with the valves armed the only changes
-        are the appended marked clusters and the ``c`` key — the additive
-        contract in its constructive form. The caller has already decided to
-        offer and supplies any candidates computed for the pool digest.
-
-        Appended cold examples are shrunk — cold examples only, never a warm
-        byte — towards :data:`MAX_RESPONSE_CHARS`; if even bare clusters
-        overflow, the lane still delivers, because the registered noise bound
-        is the slot quota, not the character budget the warm map was fitted
-        under.
-        """
-
-        examined, cold_clusters = self._cold_lane(
-            cold_rows,
-            slots=slots,
-            warm_clusters=built.clusters,
-            candidates=candidates,
-        )
-        if not cold_clusters:
-            return replace(built, cold=(examined, 0))
-
-        outcome = (examined, len(cold_clusters))
-        filtered = _filter_block(
-            built.withheld, built.dropped, built.filtered, built.filtered_omitted
-        )
-
-        def size_at(width: int) -> tuple[int, tuple[MapCluster, ...]]:
-            shaped = tuple(
-                replace(
-                    cluster,
-                    medoid=replace(
-                        cluster.medoid,
-                        example=_shorten(cluster.medoid.example, width),
-                    ),
-                )
-                for cluster in cold_clusters
-            )
-            return (
-                _payload_size(
-                    (*built.clusters, *shaped),
-                    built.pool_size,
-                    built.dropped,
-                    filtered,
-                    selection=built.selection,
-                    selection_sample_limit=built.selection_sample_limit,
-                    cold=outcome,
-                ),
-                shaped,
-            )
-
-        low, high = 0, MEDOID_EXAMPLE_CHARS
-        _size, best = size_at(0)
-        while low <= high:
-            width = (low + high) // 2
-            measured, shaped = size_at(width)
-            if measured <= MAX_RESPONSE_CHARS:
-                best = shaped
-                low = width + 1
-            else:
-                high = width - 1
-        return replace(
-            built,
-            clusters=(*built.clusters, *best),
-            covered=built.covered + sum(cluster.count for cluster in best),
-            cold=outcome,
-        )
+        admitted.sort(key=lambda member: member.rank)
+        return admitted, ledger.freeze(len(admitted))
 
     # -- cascade -------------------------------------------------------
 
@@ -5200,7 +2186,7 @@ class RecallMapBuilder:
         persist the digest on the marker as the new baseline.
 
         ``digest`` constructs the pool lazily, then reads its anchors and
-        cold-lane candidates. Only an initial baseline or a due retry invokes
+        assignments. Only an initial baseline or a due retry invokes
         it. The valve is read here and nowhere else on the collapse path.
         """
 
@@ -5223,7 +2209,6 @@ class RecallMapBuilder:
         pool_size: int | None,
         streak: int,
         selection: SelectionAccounting | None,
-        cold: tuple[int, int] | None,
         pool_digest: str | None,
     ) -> RecallMap:
         """The collapsed form: shape kept, content dropped, streak carried."""
@@ -5246,38 +2231,20 @@ class RecallMapBuilder:
                 streak=streak,
                 pool_digest=pool_digest,
             ),
-            cold=cold,
             pool_digest=pool_digest,
         )
 
     def _pool_digest(
         self,
         pool: Sequence[_Member],
-        cold_rows: Sequence[tuple[int, Node, Any, Any]] | None,
         *,
-        candidates: Sequence[tuple[int, Node, Any, dict[str, float]]] | None,
         assignment: Mapping[str, str],
     ) -> str:
-        """What this build could have said, as one comparable string.
-
-        Three sorted id lists: the admitted members of the residual pool, the
-        ``(member, anchor)`` pairs stage 3 would partition them by, and the
-        cold-lane candidates the lane would rank — the eligible ones, after
-        the ledger probe, because a candidate the lane would not deliver is
-        not something new to say. Order-free, so two processes or two
-        deliveries over the same pool agree; content-free, so the digest
-        carries no text onto the wire. An unarmed lane contributes the same
-        empty list an armed lane with nothing eligible does.
-        """
+        """Content-free identity of qualified members and their anchor groups."""
 
         members = sorted(member.node.id for member in pool)
         anchors = [list(pair) for pair in sorted(assignment.items())]
-        cold = (
-            sorted(node.id for _ordinal, node, _result, _values in candidates)
-            if cold_rows is not None and candidates
-            else []
-        )
-        canonical = json.dumps([members, anchors, cold], separators=(",", ":"))
+        canonical = json.dumps([members, anchors], separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[
             :CURTAIL_POOL_DIGEST_CHARS
         ]
@@ -5453,13 +2420,11 @@ class RecallMapBuilder:
         cached = self._revision
         if (
             cached is not None
-            and cached[0] == RELEVANCE_POLICY_DIGEST
             and probe == self._write_probe
         ):
             return cached
         anchor_revision = self.store.query_anchor_revision()
         revision = (
-            RELEVANCE_POLICY_DIGEST,
             _chunk_table_revision(connection),
             anchor_revision
             if anchor_revision is not None and not connection.in_transaction
@@ -5532,7 +2497,7 @@ class RecallMapBuilder:
         if covered < CACHE_MIN_COVERAGE * len(pool):
             return None
 
-        # Stage 4 is a relevance-ordered greedy walk. Re-run that membership
+        # Stage 4 is a retrieval-ordered greedy walk. Re-run that membership
         # rule from fresh vectors and fresh scores, but retain cached labels
         # only if it reproduces the current template buckets exactly. This
         # keeps the cache template-only: no score, low-relevance verdict,
@@ -5631,17 +2596,9 @@ class RecallMapBuilder:
         because the verdict is a corpus statistic and the corpus moves under a
         cache that is deliberately validated against something else.
 
-        What survives is ordered only by the frozen member policy: descending
-        maximum member score, descending mean member score, then the unique
-        best original residual ordinal. The mean uses :func:`math.fsum` over
-        original residual order. Size, cascade stage, label, task and identity
-        are deliberately absent from the relevance order.
-
-        Order is deliberately not part of the cached structure.  A cached
-        recount supplies this call's :class:`_Member` objects and therefore
-        this call's ranks and scores; this sort and medoid tie logic refresh
-        relevance-derived presentation on both cold and warm paths while
-        labels and signatures remain stable.
+        Surviving topics follow their best current retrieval ordinal. Cached
+        templates contain no ordering or representative decisions; both refresh
+        from this call's members.
 
         A pool whose every cluster is withheld yields a journal-only map.  It
         carries no delivered clusters (and therefore counts as no curtail
@@ -5699,16 +2656,9 @@ class RecallMapBuilder:
                 ),
             )
 
-        def relevance_key(group: _Group) -> tuple[float, float, int]:
-            members = sorted(group.members, key=lambda member: member.rank)
-            scores = [member.relevance_score for member in members]
-            return (
-                -max(scores),
-                -(fsum(scores) / len(scores)),
-                members[0].rank,
-            )
-
-        deliverable.sort(key=relevance_key)
+        # Each topic gets one cluster. Its best retrieval ordinal orders the
+        # menu without rewarding the number or exposure history of its members.
+        deliverable.sort(key=lambda group: min(member.rank for member in group.members))
         kept = deliverable[: self.max_clusters]
         journal.dropped.extend(
             _filtered_of(FILTER_TAG_DROPPED, group)
@@ -6023,7 +2973,6 @@ def _payload(
     filtered: Mapping[str, Any] | None = None,
     selection: SelectionAccounting | None = None,
     selection_sample_limit: int = SELECTION_SAMPLE_LIMIT,
-    cold: tuple[int, int] | None = None,
     pool_digest: str | None = None,
 ) -> dict[str, Any]:
     """The wire form. Curtailed maps keep the shape and drop the content.
@@ -6055,13 +3004,6 @@ def _payload(
         payload["filtered"] = dict(filtered)
     if selection is not None:
         payload["sel"] = selection.to_dict(sample_limit=selection_sample_limit)
-        if cold is not None:
-            # Additive and unconditional-when-armed: even [0, 0] is emitted,
-            # because "armed and idle" and "unarmed" are different facts. The
-            # positional ``x`` vector is untouched — a cold admission is not a
-            # pool admission and the accounting equation ``n = e + sum(x)``
-            # holds exactly as before.
-            payload["sel"]["c"] = [int(cold[0]), int(cold[1])]
     if curtailed:
         payload["curtailed"] = True
         payload["streak"] = streak
@@ -6114,7 +3056,6 @@ def _payload_size(
     *,
     selection: SelectionAccounting | None = None,
     selection_sample_limit: int = SELECTION_SAMPLE_LIMIT,
-    cold: tuple[int, int] | None = None,
 ) -> int:
     return len(
         json.dumps(
@@ -6125,8 +3066,7 @@ def _payload_size(
                 filtered=filtered,
                 selection=selection,
                 selection_sample_limit=selection_sample_limit,
-                cold=cold,
-            ),
+                ),
             ensure_ascii=False,
             separators=(",", ":"),
         )
@@ -6136,8 +3076,6 @@ def _payload_size(
 __all__ = [
     "ASK_HINT_MAX_TOKENS",
     "CACHE_MIN_COVERAGE",
-    "COLD_RANKING_CALIBRATION",
-    "COLD_RANKING_MEMBERS",
     "CTFIDF_LABEL_TERMS",
     "CURTAIL_DECAY_GATE_ENV",
     "CURTAIL_DECAY_SKIP_MAX",
@@ -6161,26 +3099,14 @@ __all__ = [
     "MEDOID_EXAMPLE_CHARS",
     "MIN_CLUSTERS",
     "MIN_MEDOID_EXAMPLE_CHARS",
-    "POOL_COLD_QUOTA_GATE_ENV",
-    "POOL_COLD_SLOTS_ENV",
-    "POOL_COLD_SLOTS_MAX",
     "POOL_GATE_REASON_CODES",
     "POOL_USEFULNESS_FLOOR_ENV",
     "POOL_USEFULNESS_GATE_ENV",
-    "RELEVANCE_CALIBRATION_MAX_BREAKPOINTS",
-    "RELEVANCE_CALIBRATION_MAX_INTERPOLATION_ERROR",
-    "RELEVANCE_FEATURE_MEANS",
-    "RELEVANCE_FEATURE_SCALES",
-    "RELEVANCE_POLICY_CALIBRATION",
-    "RELEVANCE_POLICY_DIGEST",
-    "RELEVANCE_POLICY_ID",
-    "RELEVANCE_THRESHOLD",
     "SELECTION_LEDGER_REASON_CODES",
     "SELECTION_REASON_CODES",
     "SELECTION_SAMPLE_GIST_CHARS",
     "SELECTION_SAMPLE_LIMIT",
     "STAGE_ANCHOR",
-    "STAGE_COLD",
     "STAGE_EMBEDDING",
     "STAGE_PATH",
     "STAGE_STRUCTURAL",
@@ -6195,7 +3121,5 @@ __all__ = [
     "cache_key",
     "curtail_decay_from_env",
     "normalize_key",
-    "pool_cold_slots_from_env",
     "pool_usefulness_floor_from_env",
-    "relevance_score",
 ]
