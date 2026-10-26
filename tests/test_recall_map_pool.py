@@ -580,6 +580,33 @@ def test_map_shares_query_gate_context_and_correction_inheritance(tmp_path, monk
         assert built.selection.excluded[5] == 1
 
 
+@pytest.mark.parametrize("form", ["drop", "stub"])
+def test_main_and_map_share_source_qualification_after_positive_history(tmp_path, monkeypatch, form):
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.35")
+    monkeypatch.setenv("LM_RECALL_GATE_FORM", form)
+    with MemoryStore(tmp_path / "source.sqlite3") as store:
+        seed_corpus(store)
+        lead = _node(store, "lead", "recall head", context={"topic": "head procedure"})
+        weak = _node(store, "weak", "query source evidence", context={"topic": "query protocol"})
+        fresh = _node(store, "fresh", "current source relation", context={"topic": "source relation"})
+        builder = RecallMapBuilder(store)
+        for history in (False, True):
+            reinforced = dataclasses.replace(weak, access_count=1000, usefulness_score=1) if history else weak
+            ranked = [result(lead),
+                      RecallResult(reinforced, score=2 if history else 0.3,
+                                   bm25_score=0.75, graph_score=1.5 if history else 0),
+                      RecallResult(fresh, score=0.4, bm25_score=0.75,
+                                   graph_score=0.5, source_graph_score=0.5)]
+            evidence = QueryRelevance(ranked)
+            selected, residual = apply_score_gate(ranked, 1, relevance=evidence)
+            assert selected == ranked[:1]
+            assert evidence.eligible_ids() == {lead.id, fresh.id}
+            built = builder.build(residual, scope=POOL_SCOPE, relevance=evidence)
+            assert built
+            assert {n for c in built.clusters for n in c.member_ids} == {fresh.id}
+            assert built.selection.excluded[5] == 1
+
+
 def test_usefulness_floor_is_optional_and_keeps_its_accounting(tmp_path, monkeypatch):
     with MemoryStore(tmp_path / "usefulness.sqlite3") as store:
         low = _node(store, "low", "qualified but negatively reviewed", stats={"usefulness_score": -0.5})

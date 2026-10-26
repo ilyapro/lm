@@ -10,6 +10,7 @@ retrieval weights; trigger-found schemas are gated on their own scale.
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -251,14 +252,53 @@ def test_gate_score_uses_reference_weights_and_multipliers() -> None:
     assert gate_score(RecallResult(**{**_fields(base), "superseded": True})) == pytest.approx(
         expected * 0.2
     )
-    # Node feedback multiplier: a useful node scores higher.
+    # Positive usefulness affects ranking, not source qualification.
     useful = make_result("y", 0.5, vector_score=0.5, node=make_node("y", usefulness_score=0.8))
-    assert gate_score(useful) > gate_score(base)
+    assert gate_score(useful) == gate_score(base)
     # Causal boost applies only with graph evidence.
-    graphed = make_result("g", 0.5, graph_score=0.5)
+    graphed = make_result("g", 0.5, graph_score=0.5, source_graph_score=0.5)
     assert gate_score(graphed, causal_mode=True) == pytest.approx(
         gate_score(graphed, causal_mode=False) * 1.5 * _causal_floor_ratio(graphed)
     )
+
+
+@pytest.mark.parametrize("stats", [
+    {"access_count": 1000}, {"usefulness_score": 1}, {"confidence": 1},
+    {"access_count": 1000, "usefulness_score": 1, "confidence": 1},
+])
+def test_positive_history_cannot_qualify_fixed_channel_or_trigger_evidence(stats):
+    from living_memory.feedback import feedback_weighted_score
+
+    channel = make_result("x", 0.75)
+    trigger = make_result("x", 0, node=make_node("x", level="schema"), trigger_score=0.975)
+    for result, demotions in ((channel, {}), (trigger, {"x": 0.4})):
+        reinforced = replace(result, node=replace(result.node, **stats))
+        assert gate_score(reinforced, demotions) == gate_score(result, demotions)
+        assert trigger_gate_score(reinforced, demotions) == trigger_gate_score(result, demotions)
+        assert not passes_gate(result, 0.35, demotions)
+        assert not passes_gate(reinforced, 0.35, demotions)
+        assert feedback_weighted_score(reinforced.node, 1) > feedback_weighted_score(result.node, 1)
+
+
+def test_historical_graph_is_not_source_evidence():
+    weak = make_result("x", 0.75)
+    anchored = replace(weak, graph_score=1.5)
+    sourced = replace(anchored, source_graph_score=0.5)
+    assert gate_score(anchored) == gate_score(weak) == pytest.approx(0.3)
+    assert not passes_gate(anchored, 0.35)
+    assert passes_gate(sourced, 0.35)
+
+
+@pytest.mark.parametrize("negative", [{"usefulness_score": -1}, {"confidence": 0.1}])
+def test_positive_history_does_not_offset_negative_source_restrictions(negative):
+    channel = make_result("x", 1, node=make_node("x", **negative))
+    trigger = make_result("x", 0, node=make_node("x", level="schema", **negative), trigger_score=0.975)
+    positive = {"access_count": 1000, "confidence": 1, "usefulness_score": 1, **negative}
+    for result in (channel, trigger):
+        reinforced = replace(result, node=replace(result.node, **positive))
+        assert gate_score(reinforced) == gate_score(result)
+        assert trigger_gate_score(reinforced) == trigger_gate_score(result)
+        assert gate_score(result) < gate_score(replace(result, node=make_node("x", level=result.node.level)))
 
 
 def _fields(result: RecallResult) -> dict[str, Any]:
