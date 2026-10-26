@@ -2113,7 +2113,6 @@ def _remember_node_confirmation(node: Any, feedback: Any) -> dict[str, Any]:
         "scope": node.scope,
         "created_at": node.created_at,
         "prior_recall_count": len(provenance.get("prior_recalls") or []),
-        "linked_node_count": len(feedback.linked_node_ids) if feedback is not None else 0,
         "source_trace_count": len(node.source_traces or []),
     }
 
@@ -2131,10 +2130,9 @@ def _teach_result_to_dict(result: TeachResult) -> dict[str, Any]:
 
 def _implicit_feedback_to_dict(feedback: Any) -> dict[str, Any]:
     if feedback is None:
-        return {"recall_event_ids": [], "linked_node_ids": [], "feedback_applied": False}
+        return {"recall_event_ids": [], "feedback_applied": False}
     return {
         "recall_event_ids": [event.id for event in feedback.events],
-        "linked_node_ids": list(feedback.linked_node_ids),
         "feedback_applied": feedback.feedback_applied,
     }
 

@@ -1,8 +1,9 @@
-"""Correction semantics shared by runtime and offline relation readers.
+"""Knowledge-relation semantics shared by runtime and offline readers.
 
 Known duplicate bookkeeping is not a correction. Historical rows remain in
 storage for inspection; they confer no validity, graph or lifecycle authority.
-Unrecognized supersedes metadata retains its ordinary correction semantics.
+Recall delivery history is not a relation between the displayed knowledge and
+a later trace. Unrecognized metadata retains its ordinary relation semantics.
 """
 
 from collections.abc import Mapping
@@ -36,4 +37,8 @@ def correction_sql(alias: str = "") -> str:
 
 def semantic_relation_sql(alias: str = "") -> str:
     prefix = f"{alias}." if alias else ""
-    return f"({prefix}type <> 'supersedes' OR {correction_sql(alias)})"
+    return (
+        f"(({prefix}type <> 'supersedes' OR {correction_sql(alias)})"
+        f" AND NOT ({prefix}type = 'related' AND "
+        f"COALESCE(json_extract({prefix}metadata, '$.basis'), '') = 'implicit_recall_feedback'))"
+    )

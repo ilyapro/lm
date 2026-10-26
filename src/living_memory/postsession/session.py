@@ -395,7 +395,7 @@ class WriteInteraction(Wire):
     """One ``memory_remember`` / ``memory_teach`` round trip.
 
     ``implicit_feedback`` is the server's own verdict block
-    (``recall_event_ids``, ``linked_node_ids``, ``feedback_applied``): it says
+    (``recall_event_ids``, ``feedback_applied``): it says
     which recalls the write closed the loop on, and whether credit was applied.
     ``supersedes`` is set for teach only and holds the corrected node id.
     """

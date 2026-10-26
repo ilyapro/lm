@@ -26,8 +26,8 @@ _LOG = logging.getLogger(__name__)
 # trace (living_memory.grounding). ``grounded`` reinforces only results whose
 # IDF-weighted content containment meets ``min_containment``;
 # ``grounded_negative`` also blames ungrounded results at a reduced signal;
-# ``all`` reinforces every result. Trace provenance stays exhaustive; related
-# edges follow the implicit link policy.
+# ``all`` reinforces every result. Trace provenance records every shown
+# result; delivery history does not establish a relation to the new trace.
 #
 # A same-transport ``memory_lookup`` of a delivered id earns positive numeric
 # credit using the delivering event's scores, rank and scope, plus an anchor
@@ -37,8 +37,8 @@ _LOG = logging.getLogger(__name__)
 # Grounding, lookup and explicit ``used`` share one claim per (event, node).
 # The claim gates numeric reinforcement only. Lookup is a read and preserves
 # query-relative irrelevance; grounded consumption or explicit ``used`` can
-# cancel that row even if lookup claimed the numeric credit first. Provenance,
-# related edges and event closure follow the consuming trace independently.
+# cancel that row even if lookup claimed the numeric credit first. Provenance
+# and event closure follow the consuming trace independently.
 RECALL_CREDIT_POLICIES: tuple[str, ...] = ("grounded", "grounded_negative", "all")
 DEFAULT_RECALL_CREDIT_POLICY = "grounded"
 
@@ -65,27 +65,19 @@ _LOOKUP_CREDIT_EVENT_LIMIT = 200
 # Policies (``LM_EXPLICIT_FEEDBACK_POLICY``):
 #
 # * ``audit`` (default) — record and audit marks; no reinforcement, no
-#   credit claimed, so grounded and lookup credit are untouched. Irrelevant
-#   marks still drive link hygiene.
+#   credit claimed, so grounded and lookup credit are untouched.
 # * ``credit`` — additionally turn each accepted ``used`` mark into explicit
 #   credit (basis ``explicit``, once per (event, node) across all three
 #   bases) with the grounded assignment scaled by
 #   ``LM_EXPLICIT_CREDIT_WEIGHT``, and hand accepted ``irrelevant`` marks to
 #   ``_apply_query_feedback``.
-# * ``off`` — accept the fields, ignore them, record nothing, no hygiene.
+# * ``off`` — accept the fields, ignore them, record nothing.
 #
 # An unknown policy or an unparsable weight falls back to the default, like
 # ``LM_RECALL_CREDIT_POLICY``.
-#
-# ``LM_IMPLICIT_LINK_POLICY`` decides which delivered results the closing
-# trace gets a ``related`` edge to: ``all`` (default, today's behaviour minus
-# irrelevant-marked results) or ``credited`` (only results credited for that
-# event under any basis).
 EXPLICIT_FEEDBACK_POLICIES: tuple[str, ...] = ("audit", "credit", "off")
 DEFAULT_EXPLICIT_FEEDBACK_POLICY = "audit"
 DEFAULT_EXPLICIT_CREDIT_WEIGHT = 1.0
-IMPLICIT_LINK_POLICIES: tuple[str, ...] = ("all", "credited")
-DEFAULT_IMPLICIT_LINK_POLICY = "all"
 EXPLICIT_MARK_KINDS: tuple[str, ...] = ("used", "irrelevant")
 #: Why a mark was dropped, in precedence order.
 EXPLICIT_MARK_REJECT_REASONS: tuple[str, ...] = (
@@ -271,15 +263,6 @@ def _explicit_credit_weight() -> float:
     return parsed
 
 
-def _implicit_link_policy() -> str:
-    """Active implicit-link policy; an unknown value falls back to the default."""
-
-    policy = os.environ.get("LM_IMPLICIT_LINK_POLICY", "").strip().lower()
-    if policy in IMPLICIT_LINK_POLICIES:
-        return policy
-    return DEFAULT_IMPLICIT_LINK_POLICY
-
-
 def ungrounded_negative_signals(result: Any, signal: float) -> dict[str, float]:
     """Damped per-channel blame for a delivered result the trace never used.
 
@@ -339,18 +322,15 @@ class FeedbackUpdate:
 
 @dataclass(frozen=True, slots=True)
 class ImplicitRecallFeedback:
-    """Result of connecting a new ingest trace to prior recall events."""
+    """Recall history and credit recorded by a new ingest trace."""
 
     trace: Node
     events: list[RecallEvent]
-    linked_node_ids: list[str]
     feedback_applied: bool
     #: Results this consumption reinforced: those whose content the consuming
     #: trace actually grounded (every delivered result under policy ``all``),
     #: minus pairs whose credit a same-session lookup or explicit mark had
-    #: already claimed. A subset of ``linked_node_ids`` except for a result
-    #: the agent marked irrelevant for its event, which is credited on its
-    #: grounding but never linked. Empty when reinforcement was skipped.
+    #: already claimed. Empty when reinforcement was skipped.
     grounded_node_ids: list[str] = field(default_factory=list)
     #: Query anchors created or reinforced by this consumption, deduplicated —
     #: one per consumed event that grounded at least one result. Empty when
@@ -425,15 +405,10 @@ def apply_pending_recall_feedback(
     """Attach recalls from compatible work and reinforce what the trace used.
 
     Provenance is exhaustive: every resolvable result of every consumed event
-    lands in ``recalled_nodes``/``source_traces``, because provenance must
-    record what was *shown*. The rank-weighted ``related`` edge is not
-    quite: a result with an accepted explicit ``irrelevant`` mark for that
-    event gets no edge (link hygiene, every ``LM_EXPLICIT_FEEDBACK_POLICY``
-    but ``off``), and under ``LM_IMPLICIT_LINK_POLICY=credited`` only results
-    credited for the event under any basis get one. Reinforcement is gated
-    further: under the grounding policies only results the trace
-    demonstrably used move node usefulness and retrieval weights. See the
-    credit-assignment note at the top of this module.
+    lands in ``recalled_nodes``/``source_traces``, because provenance records
+    what was shown. This history creates no knowledge relations. Under the
+    grounding policies only results the trace demonstrably used move node
+    usefulness and retrieval weights.
 
     The same grounded subset also becomes a query anchor per consumed event —
     the graph's entry from query space. See the anchor note above it.
@@ -448,7 +423,6 @@ def apply_pending_recall_feedback(
         return ImplicitRecallFeedback(
             trace=trace,
             events=[],
-            linked_node_ids=[],
             feedback_applied=False,
         )
 
@@ -456,13 +430,10 @@ def apply_pending_recall_feedback(
     prior_recalls = list(provenance.get("prior_recalls", []))
     recalled_nodes = list(provenance.get("recalled_nodes", []))
     source_traces = list(trace.source_traces)
-    linked_node_ids: list[str] = []
     grounded_node_ids: list[str] = []
     anchor_work: list[tuple[RecallEvent, tuple[str, ...], tuple[str, ...]]] = []
     feedback_applied = False
     policy = _recall_credit_policy()
-    link_policy = _implicit_link_policy()
-    link_hygiene = _explicit_feedback_policy() != "off"
 
     for event in events:
         event_node_ids: list[str] = []
@@ -473,21 +444,14 @@ def apply_pending_recall_feedback(
         # Pairs already credited under any basis (a same-session lookup, an
         # explicit ``used`` mark). Read once per event, and only where it can
         # matter: under ``grounded_negative`` an ungrounded-but-credited
-        # result is not blamed, because the ledger says it was used; under
-        # link policy ``credited`` it decides which results get an edge.
+        # result is not blamed, because the ledger says it was used.
         # Grounded results claim their own row below.
         already_credited: set[str] = (
             store.credited_node_ids(event.id)
-            if (reinforce_results and policy == "grounded_negative")
-            or link_policy == "credited"
+            if reinforce_results and policy == "grounded_negative"
             else set()
         )
-        # Results the agent explicitly marked irrelevant to this event's
-        # query get no edge from the closing trace (link hygiene; see
-        # apply_explicit_marks). Provenance still records them as shown.
-        irrelevant = store.irrelevant_marked_node_ids(event.id) if link_hygiene else set()
-        # Resolve every result once: linkage needs the node, and grounding
-        # needs its content. One get_node per result, as before.
+        # Resolve each result once for provenance and content grounding.
         resolved: list[tuple[int, dict[str, Any], Node]] = []
         for rank, result in enumerate(event.results):
             node_id = str(result.get("node_id") or "")
@@ -557,26 +521,6 @@ def apply_pending_recall_feedback(
                     )
                     feedback_applied = True
 
-            if node_id in irrelevant:
-                continue
-            if link_policy == "credited" and not (claimed or node_id in already_credited):
-                continue
-            weight = _implicit_connection_weight(rank)
-            store.create_connection(
-                trace.id,
-                node_id,
-                "related",
-                weight=weight,
-                metadata={
-                    "basis": "implicit_recall_feedback",
-                    "recall_event_id": event.id,
-                    "recall_query": event.query,
-                    "rank": rank + 1,
-                },
-            )
-            if node_id not in linked_node_ids:
-                linked_node_ids.append(node_id)
-
         if event_grounded or event_confirmed:
             anchor_work.append((event, tuple(event_grounded), tuple(event_confirmed)))
 
@@ -600,7 +544,6 @@ def apply_pending_recall_feedback(
     return ImplicitRecallFeedback(
         trace=updated,
         events=events,
-        linked_node_ids=linked_node_ids,
         feedback_applied=feedback_applied,
         grounded_node_ids=grounded_node_ids,
         anchor_ids=anchor_ids,
@@ -762,8 +705,6 @@ class ExplicitMarks:
     #: ``(recall_event_id, node_id)`` pairs explicit credit was claimed for.
     credited: list[tuple[str, str]] = field(default_factory=list)
     anchor_ids: list[str] = field(default_factory=list)
-    #: ``related`` edges removed by link hygiene for later irrelevant marks.
-    unlinked: list[tuple[str, str]] = field(default_factory=list)
 
     def summary(self) -> dict[str, Any]:
         """The compact ``feedback_marks`` block of a tool response."""
@@ -884,11 +825,8 @@ def apply_explicit_marks(
 
     Order: resolve (unless ``resolved`` is passed — memory_recall resolves
     before recording its own event, so its marks can only name *earlier*
-    deliveries), audit every mark, unlink, credit. Unlinking is the
-    irrelevant-link hygiene for the later-call case: when the delivering
-    event is already closed and its closing trace carries an
-    ``implicit_recall_feedback`` edge for this event to the marked node, the
-    edge is deleted. Under ``credit`` each accepted ``used`` mark claims
+    deliveries), audit every mark, then apply query-relative feedback.
+    Under ``credit`` each accepted ``used`` mark claims
     basis ``explicit`` (``source_id`` ``mark:<audit row id>``) and, when new,
     is reinforced exactly as a grounded result at its delivered rank with
     the signal scaled by ``LM_EXPLICIT_CREDIT_WEIGHT``, plus one anchor edge
@@ -939,9 +877,6 @@ def apply_explicit_marks(
                 entry = irrelevant_by_event.setdefault(mark.event.id, (mark.event, []))
                 if mark.node_id not in entry[1]:
                     entry[1].append(mark.node_id)
-        for event, node_ids in irrelevant_by_event.values():
-            outcome.unlinked.extend(_unlink_irrelevant(store, event, node_ids))
-
         if policy != "credit":
             return outcome
 
@@ -989,37 +924,6 @@ def apply_explicit_marks(
             "explicit feedback marks failed for %s %s", via_tool, source_id, exc_info=True
         )
     return outcome
-
-
-def _unlink_irrelevant(
-    store: MemoryStore, event: RecallEvent, node_ids: Sequence[str]
-) -> list[tuple[str, str]]:
-    """Delete the closing trace's implicit edges for this event to ``node_ids``.
-
-    Only an edge whose metadata says it is the ``implicit_recall_feedback``
-    edge *of this event* is removed: the (source, target, type) key is unique,
-    so an edge a later event or a typed-edge derivation rewrote is somebody
-    else's evidence and stays. Re-read the event, since the caller's copy may
-    predate its closure.
-    """
-
-    current = store.get_recall_event(event.id)
-    trace_id = current.feedback_trace_id if current is not None else None
-    if not trace_id:
-        return []
-    removed: list[tuple[str, str]] = []
-    for node_id in node_ids:
-        for connection in store.list_connections(
-            source_id=trace_id, target_id=node_id, relation_type="related"
-        ):
-            metadata = connection.metadata or {}
-            if (
-                metadata.get("basis") == "implicit_recall_feedback"
-                and metadata.get("recall_event_id") == event.id
-            ):
-                store.delete_connection(connection.id)
-                removed.append((trace_id, node_id))
-    return removed
 
 
 def _lookup_instant(value: str | datetime | Any) -> datetime | None:
@@ -1221,6 +1125,3 @@ def _result_node(result: Any, store: MemoryStore) -> Node | None:
 def _log1p(value: int) -> float:
     return math.log1p(max(0, value))
 
-
-def _implicit_connection_weight(rank: int) -> float:
-    return max(0.2, 0.75 / (rank + 1))
