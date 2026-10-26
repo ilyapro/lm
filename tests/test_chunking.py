@@ -23,6 +23,7 @@ from living_memory.chunking import (
     get_tokenizer,
     reset_tokenizer_cache,
 )
+from living_memory.source_text import passage_spans
 
 
 # A node-shaped text: Russian prose with English identifiers, numbers, bullet
@@ -221,16 +222,69 @@ def test_overlap_stays_within_the_requested_size(
     )
 
     assert len(chunks) > 1
+    paragraphs = passage_spans(REAL_SHAPED_NODE)
+
+    def paragraph_at(offset: int) -> int:
+        return next(paragraph for start, end, paragraph in paragraphs if start <= offset < end)
+
     for index in range(len(chunks) - 1):
         overlap = chunks[index].token_end - chunks[index + 1].token_start
         assert 0 <= overlap <= overlap_tokens
-        if overlap_tokens:
+        same_paragraph = paragraph_at(chunks[index].char_end - 1) == paragraph_at(chunks[index + 1].char_start)
+        if not same_paragraph:
+            assert overlap == 0
+        elif overlap_tokens:
             # Snapping to a boundary may shrink the overlap, but never below half
             # of what was asked for.
             assert overlap >= max(1, overlap_tokens // 2)
     _assert_sane(
         chunks, REAL_SHAPED_NODE, window=DEFAULT_MAX_TOKENS - ENCODER_SPECIAL_TOKENS
     )
+
+
+@pytest.mark.parametrize("separator", ["\n\n", "\n \t\n", "\r\n\r\n", "\n\u2003\n"])
+def test_short_paragraphs_remain_separate(separator, heuristic):
+    first = "Build artifacts are disposable. Keep the release package elsewhere."
+    second = "The registry certificate expired. Renew it before retrying."
+    text = first + separator + second
+    chunks = chunk_text(text, tokenizer=heuristic)
+
+    assert count_tokens(text, tokenizer=heuristic) < 126
+    assert [chunk.text for chunk in chunks] == [first, second]
+    _assert_sane(chunks, text, window=126, tokenizer=heuristic)
+
+
+@pytest.mark.parametrize("position", [0, 1, 2])
+def test_paragraph_boundaries_override_fill_tail_and_overlap(position, heuristic):
+    short = "Do not restart the dashboard without explicit permission."
+    long = " ".join(f"maintenance{index}" for index in range(70)) + "."
+    paragraphs = [long, long]
+    paragraphs.insert(position, short)
+    text = "\n\n".join(paragraphs)
+    chunks = chunk_text(text, max_tokens=34, overlap_tokens=8, tokenizer=heuristic)
+
+    assert [chunk.text for chunk in chunks if "dashboard" in chunk.text] == [short]
+    source_paragraphs = passage_spans(text)
+    for chunk in chunks:
+        touched = {paragraph for start, end, paragraph in source_paragraphs
+                   if start < chunk.char_end and chunk.char_start < end}
+        assert len(touched) == 1
+    _assert_sane(chunks, text, window=32, tokenizer=heuristic)
+
+
+@pytest.mark.parametrize("continuation", ["\nDo not restart it.", " Do not restart it."])
+def test_fitting_paragraph_keeps_sentences_and_negation_together(continuation, heuristic):
+    text = "The deployment worker may restart automatically." + continuation
+    assert [chunk.text for chunk in chunk_text(text, tokenizer=heuristic)] == [text]
+
+
+def test_long_paragraph_uses_shared_passages_instead_of_soft_line_cuts(heuristic):
+    lead = "The worker can restart after maintenance"
+    text = lead + "\nonly if " + " ".join(f"condition{index}" for index in range(60))
+    assert len(passage_spans(text)) == 1
+    chunks = chunk_text(text, max_tokens=34, overlap_tokens=8, tokenizer=heuristic)
+    assert chunks[0].text.startswith(lead + "\nonly if ")
+    _assert_sane(chunks, text, window=32, tokenizer=heuristic)
 
 
 @pytest.mark.parametrize(
