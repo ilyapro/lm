@@ -22,7 +22,7 @@ Rules, applied in this order per ranked result:
    snippet ladder indexed by its content-bearer position (stubs of every
    class don't consume ladder slots): the first bearer has a finite 2400-char
    budget, lower-ranked bearers get descending budgets, and oversized content
-   is selected at paragraph and sentence boundaries. Indivisible passages
+   is selected at paragraph and conservative sentence boundaries. Indivisible passages
    exceeding the budget deliver only a marked prefix. Schema recipes ship
    complete. With the ladder disabled (``snippet_ladder=None``) every bearer shares the
    uniform ``snippet_max_chars`` budget (``0`` disables snippeting) — the
@@ -466,8 +466,8 @@ def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
 
     Case carriers use consolidation's ``- <source id>: <record>`` format. A
     selected passage retains both its source id and the evidence-only heading.
-    Passages start at paragraph or sentence boundaries, including in long
-    single-line records. Soft line wraps stay within the passage. Ties retain
+    Passages use paragraph breaks and conservative sentence-end hints, including
+    in long single-line records. Soft line wraps stay within the passage. Ties retain
     original order; content_ref exposes the full text, including any context
     omitted by selection or marked prefix truncation.
     """
@@ -542,13 +542,30 @@ def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
 
 
 def _passages(text: str) -> list[str]:
-    """Keep clauses together; size limits apply only after passage selection.
+    """Keep ambiguous punctuation inside a candidate, without an abbreviation list.
 
-    Punctuation and blank lines are textual heuristics, not semantic parsing.
-    A passage without these boundaries stays whole even when it is oversized.
+    A capitalized continuation suggests a new sentence. Periods additionally
+    need a lowercase alphabetic terminal word longer than three letters: short,
+    dotted, capitalized and numeric tokens can be abbreviations or references.
+    This is a textual heuristic, not a parser; word-shaped abbreviations remain
+    ambiguous. Conservative merging can leave late text in an oversized passage,
+    which contributes only a marked prefix after selection.
     """
 
-    return [part.strip() for part in re.split(r"\n\s*\n|(?<=[.!?])\s+", text) if part.strip()]
+    passages = []
+    for paragraph in re.split(r"\n\s*\n", text):
+        start = 0
+        for match in re.finditer(r"(\S+)([.!?])\s+(?=\S)", paragraph):
+            word, punctuation = match.groups()
+            if not paragraph[match.end()].isupper():
+                continue
+            if punctuation == "." and not (word.isalpha() and word.islower() and len(word) > 3):
+                continue
+            passages.append(paragraph[start:match.start(2) + 1].strip())
+            start = match.end()
+        if tail := paragraph[start:].strip():
+            passages.append(tail)
+    return passages
 
 
 def _bearer_budget(

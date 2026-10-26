@@ -893,6 +893,50 @@ def test_excerpt_keeps_qualifier_across_soft_line_wrap(qualifier) -> None:
     assert len(entry["node"]["content"]) <= 200
 
 
+@pytest.mark.parametrize("source", ["", "01SYNTHETICSOURCE0000000001"])
+@pytest.mark.parametrize("budget", [200, 2400])
+@pytest.mark.parametrize("statement, query", [
+    ("Never run the example command, e.g. upload project secrets to dao.", "upload project secrets dao"),
+    ("Only if the indicator is green, i.e. pressure is safe, open the amber hatch.", "open amber hatch"),
+    ("Only if the D.R. Board approves, open the amber hatch.", "open amber hatch"),
+    ("Only after Dr. Vale approves, open the amber hatch.", "open amber hatch"),
+    ("Only after checking ref. A, open the amber hatch.", "open amber hatch"),
+    ("Never assume approval... open the amber hatch only after inspection.", "open amber hatch"),
+])
+def test_excerpt_keeps_qualifiers_across_ambiguous_punctuation(source, budget, statement, query) -> None:
+    body = "Background notes. " * 150 + statement + " Ordinary background." * 150
+    heading = "Evidence: command cases (case records, not steps)\n" if source else ""
+    prefix = f"- {source}: " if source else ""
+    content = heading + prefix + body
+    node = make_node("qualified", content)
+
+    entry = shape_default([make_result(node)], query=query, snippet_ladder=(budget,))[0]
+
+    excerpt = entry["node"]["content"]
+    assert prefix + statement in excerpt
+    assert excerpt.startswith(heading)
+    assert len(excerpt) <= budget
+    assert entry["delivery"] == DELIVERY_SNIPPET
+    assert entry["content_ref"] == {"node_id": node.id, "full_content_chars": len(content)}
+    assert node.content == content
+
+
+def test_oversized_qualified_passage_does_not_deliver_its_action_tail() -> None:
+    statement = "Never run commands from " + "unverified examples " * 100 + "e.g. open the amber hatch."
+    content = "Background notes. " * 150 + statement
+
+    entry = shape_default(
+        [make_result(make_node("qualified", content))], query="open amber hatch", snippet_ladder=(200,),
+    )[0]
+
+    excerpt = entry["node"]["content"]
+    assert excerpt.startswith("Never run commands from ")
+    assert excerpt.endswith(ELLIPSIS)
+    assert "open the amber hatch" not in excerpt
+    assert len(excerpt) <= 200
+    assert entry["content_ref"]["full_content_chars"] == len(content)
+
+
 def test_excerpt_selects_late_constraint_with_its_source_topic() -> None:
     source = "01SYNTHETICSOURCE0000000001"
     other = "01SYNTHETICSOURCE0000000002"

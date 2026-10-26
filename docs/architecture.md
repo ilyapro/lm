@@ -67,7 +67,9 @@ without changing the other surface.
    current version whose complete content or offered excerpt was included in
    an earlier session response becomes a `session_duplicate` stub, and
    oversized ordinary content becomes a bounded excerpt selected at paragraph
-   and sentence boundaries within each evidence source. An indivisible passage
+   and conservative sentence-end hints within each evidence source. Ambiguous
+   punctuation stays inside a candidate; this heuristic does not parse arbitrary
+   abbreviations or preserve all context across sentences. An indivisible passage
    can contribute a marked prefix; arbitrary character offsets and soft line
    wraps do not create independent candidates. Binding schemas
    remain complete instead of being snippeted. The bounded event history is
