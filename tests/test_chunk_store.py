@@ -201,7 +201,7 @@ def test_schema_v6_creates_the_chunk_table_with_its_index(store: MemoryStore) ->
             "SELECT name FROM sqlite_master WHERE type = 'index'"
         ).fetchall()
     }
-    assert "idx_nodes_active_scope_level" in indexes
+    assert "idx_nodes_active_scope_source" in indexes
 
 
 def test_chunk_scan_is_index_driven_not_a_table_scan(store: MemoryStore) -> None:
@@ -218,7 +218,7 @@ def test_chunk_scan_is_index_driven_not_a_table_scan(store: MemoryStore) -> None
             ("global",),
         ).fetchall()
     )
-    assert "idx_nodes_active_scope_level" in plan
+    assert "idx_nodes_active_scope_source" in plan
     assert "SCAN n" not in plan
 
 

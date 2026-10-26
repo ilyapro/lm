@@ -3950,15 +3950,16 @@ class MemoryStore:
         a backfill driven by "keep going until this list is empty" would spin on
         it forever. SQLite's one-argument ``TRIM`` strips spaces only, hence the
         explicit whitespace set.
+
+        Materialize pending identities before reading content: completed nodes
+        and their chunk vectors stay behind covering indexes. Whitespace and
+        the limit are applied together only after that single-statement probe.
         """
 
         if not self._chunk_table_present():
             return []
 
-        clauses = [
-            "n.decayed = 0",
-            f"TRIM(n.content, {_SQL_WHITESPACE}) != ''",
-        ]
+        clauses = ["n.decayed = 0"]
         params: list[Any] = []
         if level is not None:
             self._validate_level(level)
@@ -3970,13 +3971,17 @@ class MemoryStore:
         params.append(int(limit))
         rows = self._conn.execute(
             f"""
-            SELECT n.* FROM nodes n
-            WHERE {' AND '.join(clauses)}
-              AND NOT EXISTS (
+            WITH pending AS MATERIALIZED (
+                SELECT n.id FROM nodes n
+                WHERE {' AND '.join(clauses)}
+                  AND NOT EXISTS (
                     SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
                     WHERE c.node_id = n.id
                       AND c.content_fingerprint = n.content_fingerprint
-              )
+                  )
+            )
+            SELECT n.* FROM pending p JOIN nodes n ON n.id = p.id
+            WHERE TRIM(n.content, {_SQL_WHITESPACE}) != ''
             ORDER BY n.timestamp ASC, n.id ASC
             LIMIT ?
             """,
@@ -5276,26 +5281,24 @@ class MemoryStore:
                     ON nodes(scope, content)
                     WHERE level IN ('concept', 'schema') AND decayed = 0;
 
-                -- Chunk-scan driver (iter_chunk_embedding_rows), the v6 mirror
-                -- of idx_nodes_embedded_active_scope. That index exists so the
-                -- vector channel can enumerate one scope's embedded active
-                -- nodes without touching the table, and it cannot serve the
-                -- chunk scan: it leads with `level` while the chunk scan always
-                -- filters `scope` and only sometimes `level`, and its
-                -- `embedding IS NOT NULL` predicate names the very column v6
-                -- replaces (and a later operator step drops). Carrying `id`
-                -- makes the range covering, so the scan walks a scope's active
-                -- nodes index-only and probes UNIQUE(node_id, chunk_index) once
-                -- per node — which also yields chunks in ordinal order with no
-                -- sort. Partial on decayed = 0 because chunk rows outlive their
-                -- node's soft delete and liveness only lives here.
-                CREATE INDEX IF NOT EXISTS idx_nodes_active_scope_level
-                    ON nodes(scope, level, id)
+                -- Source identities cover pending-chunk discovery for broad,
+                -- scope-only and level-only reads. The scope-leading index
+                -- also drives active chunk scans without reading node bodies.
+                CREATE INDEX IF NOT EXISTS idx_nodes_active_scope_source
+                    ON nodes(scope, level, id, content_fingerprint)
                     WHERE decayed = 0;
 
-                CREATE INDEX IF NOT EXISTS idx_nodes_level_scope_active
-                    ON nodes(level, scope)
+                CREATE INDEX IF NOT EXISTS idx_nodes_active_level_source
+                    ON nodes(level, scope, id, content_fingerprint)
                     WHERE decayed = 0;
+
+                DROP INDEX IF EXISTS idx_nodes_active_scope_level;
+                DROP INDEX IF EXISTS idx_nodes_level_scope_active;
+
+                -- Freshness probes must not visit rows containing vector BLOBs.
+                -- UNIQUE(node_id, chunk_index) separately owns ordinal identity.
+                CREATE INDEX IF NOT EXISTS idx_chunk_source
+                    ON node_chunk_embeddings(node_id, content_fingerprint);
 
                 CREATE INDEX IF NOT EXISTS idx_nodes_dedup
                     ON nodes(level, scope, content_fingerprint)
