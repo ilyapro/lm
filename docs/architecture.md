@@ -46,11 +46,16 @@ without changing the other surface.
 ## Data Flow
 
 1. `memory_remember` appends a trace through `MemoryStore.append_trace`.
-2. The trace is indexed by SQLite FTS5 immediately. Embeddings are computed lazily
-   on first semantic recall using a configured sentence-transformers model only
-   when it resolves to a local path or existing local cache. If no local model is
-   available, recall uses a deterministic Unicode-aware hash fallback without
-   attempting network access.
+2. The trace is indexed by SQLite FTS5 immediately. MCP writes prepare their own
+   search chunks in the knowledge transaction, with an explicit deferred receipt
+   for derived-index failures; required knowledge and feedback failures still
+   raise. Missing and stale indices use bounded recall repair. Search windows
+   stay within the paragraph IDs of `source_text.passage_spans`, shared with
+   derivation and delivery; long paragraphs retain bounded overlapping windows.
+   Existing content-current chunks are not reindexed merely by opening the
+   database. Embeddings use the configured sentence-transformers model only
+   when it resolves locally; otherwise the deterministic Unicode-aware hash
+   fallback avoids network access. See [write indexing](mcp-interface.md).
 3. Every 100 active traces in a scope, `memory_remember` triggers consolidation.
 4. `memory_recall` resolves the search scope, queries FTS5, scans local
    embeddings, optionally traverses graph edges, reranks by feedback and
