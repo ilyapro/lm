@@ -184,7 +184,8 @@ def test_failed_repair_batch_has_bounded_attempts_and_diagnostics(mcp, caplog, f
                 "timestamp": f"2026-02-01T00:00:{index:02d}Z",
             }).id for index in range(LAZY_CHUNK_NODE_LIMIT + 1)]
             store.connection.execute("CREATE TABLE denied_index (id TEXT PRIMARY KEY)")
-            store.connection.executemany("INSERT INTO denied_index VALUES (?)", [(node,) for node in pending[:-1]])
+            with store.transaction():
+                store.connection.executemany("INSERT INTO denied_index VALUES (?)", [(node,) for node in pending[:-1]])
             condition = "1" if fault == "global" else "NEW.node_id IN (SELECT id FROM denied_index)"
             store.connection.execute(f"""CREATE TRIGGER reject_index BEFORE INSERT ON node_chunk_embeddings
                 BEGIN

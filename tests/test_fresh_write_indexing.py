@@ -206,7 +206,8 @@ def test_deferred_write_repairs_while_an_earlier_node_still_fails(mcp):
                 assert store.count_node_chunks(node_id) == 0
             store.connection.execute("DROP TRIGGER reject_index")
             store.connection.execute("CREATE TABLE denied_index (id TEXT PRIMARY KEY)")
-            store.connection.execute("INSERT INTO denied_index VALUES (?)", (blocker_id,))
+            with store.transaction():
+                store.connection.execute("INSERT INTO denied_index VALUES (?)", (blocker_id,))
             store.connection.execute("""CREATE TRIGGER reject_index BEFORE INSERT ON node_chunk_embeddings
                 BEGIN
                     SELECT chunk_attempt(NEW.node_id);
