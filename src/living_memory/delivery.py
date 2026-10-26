@@ -104,7 +104,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .resources import node_to_dict
-from .models import content_identity
+from .models import SourcePassage, content_identity
 
 if TYPE_CHECKING:
     from .models import Node
@@ -370,7 +370,9 @@ def shape_recall_results(
             # Case records can instead be excerpted for the current task.
             if result.node.level != "schema" and LADDER_COMPLETE < budget < full_chars:
                 delivery = DELIVERY_SNIPPET
-                node_dict["content"] = _relevant_excerpt(content, budget, query)
+                node_dict["content"] = _relevant_excerpt(
+                    content, budget, query, result.semantic_passage,
+                )
             else:
                 delivery = DELIVERY_FULL
             if session_dedup and delivery_history.covers(result.node, node_dict["content"]):
@@ -461,32 +463,50 @@ def knowledge_node(node: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
+def _relevant_excerpt(
+    content: str, budget: int, query: str | None,
+    semantic_passage: SourcePassage | None = None,
+) -> str:
     """Select bounded source-labelled passages without changing the stored node.
 
     Case carriers use consolidation's ``- <source id>: <record>`` format. A
     selected passage retains both its source id and the evidence-only heading.
     Passages use paragraph breaks and conservative sentence-end hints, including
     in long single-line records. Soft line wraps stay within the passage. Ties retain
-    original order; content_ref exposes the full text, including any context
+    original order. A verified semantic address selects its enclosing paragraph
+    first, or conservative passages with adjacent context when that paragraph
+    exceeds the budget. The vector window itself is never presented as a claim.
+    content_ref exposes the full text, including any context
     omitted by selection or marked prefix truncation.
     """
 
-    if not query:
+    if semantic_passage is not None and not (
+        semantic_passage.content_fingerprint == _content_digest(content)
+        and 0 <= semantic_passage.char_start < semantic_passage.char_end <= len(content)
+    ):
+        semantic_passage = None
+    if not query and semantic_passage is None:
         return _truncate_at_boundary(content, budget)
     record_scores: list[tuple[int, int]] = []
+    units = []
+    spans = []
+    paragraphs = []
+
+    def append_passages(start: int, end: int, prefix: str, record: int) -> None:
+        for left, right, paragraph in _passage_spans(content[start:end]):
+            units.append((prefix, content[start + left:start + right], record))
+            spans.append((start + left, start + right))
+            paragraphs.append((record, paragraph))
+
     if content.startswith("Evidence: ") and (matches := list(_EVIDENCE_RECORD.finditer(content))):
         heading = content[: matches[0].start()].strip()
-        units = []
         for index, match in enumerate(matches):
             end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
             source_id = match.group(1)
-            body = content[match.end() : end].strip()
-            for passage in _passages(body):
-                units.append((f"- {source_id}: ", passage, index))
+            append_passages(match.end(), end, f"- {source_id}: ", index)
     else:
         heading = ""
-        units = [("", passage, index) for index, passage in enumerate(_passages(content))]
+        append_passages(0, len(content), "", 0)
     if not units:
         return _truncate_at_boundary(content, budget)
 
@@ -525,7 +545,35 @@ def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
     )
     remaining = budget - len(heading) - (1 if heading else 0)
     picked: dict[int, str] = {}
+    reserved: set[int] = set()
+    if semantic_passage is not None:
+        overlaps = [
+            max(0, min(end, semantic_passage.char_end) - max(start, semantic_passage.char_start))
+            for start, end in spans
+        ]
+        anchor = max(range(len(units)), key=overlaps.__getitem__)
+        if overlaps[anchor]:
+            group = [index for index in range(len(units)) if paragraphs[index] == paragraphs[anchor]]
+            first, last = group[0], group[-1]
+            prefix = units[anchor][0]
+            allowance = remaining - len(prefix)
+            if spans[last][1] - spans[first][0] > allowance:
+                # Keep the whole matching sentences plus their immediate
+                # context in this source paragraph. Overlap is evidence of a
+                # location, not permission to drop a preceding qualification.
+                matched = [index for index in group if overlaps[index]]
+                first = max(first, matched[0] - 1)
+                last = min(last, matched[-1] + 1)
+            if allowance >= 80:
+                context = content[spans[first][0]:spans[last][1]]
+                picked[first] = prefix + (
+                    context if len(context) <= allowance else _truncate_at_boundary(context, allowance)
+                )
+                reserved.update(range(first, last + 1))
+                remaining -= len(picked[first])
     for index in scored:
+        if index in reserved:
+            continue
         prefix, passage, _ = units[index]
         allowance = remaining - len(prefix) - (1 if picked else 0)
         if allowance < 80:
@@ -541,7 +589,7 @@ def _relevant_excerpt(content: str, budget: int, query: str | None) -> str:
     return f"{heading}\n{selected}" if heading else selected
 
 
-def _passages(text: str) -> list[str]:
+def _passage_spans(text: str) -> list[tuple[int, int, int]]:
     """Keep ambiguous punctuation inside a candidate, without an abbreviation list.
 
     A capitalized continuation suggests a new sentence. Periods additionally
@@ -553,7 +601,17 @@ def _passages(text: str) -> list[str]:
     """
 
     passages = []
-    for paragraph in re.split(r"\n\s*\n", text):
+    paragraph_start = 0
+    breaks = [match.span() for match in re.finditer(r"\n\s*\n", text)]
+    for paragraph_index, (paragraph_end, next_start) in enumerate([*breaks, (len(text), len(text))]):
+        paragraph = text[paragraph_start:paragraph_end]
+        def append(start: int, end: int) -> None:
+            segment = paragraph[start:end]
+            left = start + len(segment) - len(segment.lstrip())
+            right = end - len(segment) + len(segment.rstrip())
+            if left < right:
+                passages.append((paragraph_start + left, paragraph_start + right, paragraph_index))
+
         start = 0
         for match in re.finditer(r"(?<!\S)(\S+)([.!?])\s+(?=\S)", paragraph):
             word, punctuation = match.groups()
@@ -561,10 +619,10 @@ def _passages(text: str) -> list[str]:
                 continue
             if punctuation == "." and not (word.isalpha() and word.islower() and len(word) > 3):
                 continue
-            passages.append(paragraph[start:match.start(2) + 1].strip())
+            append(start, match.start(2) + 1)
             start = match.end()
-        if tail := paragraph[start:].strip():
-            passages.append(tail)
+        append(start, len(paragraph))
+        paragraph_start = next_start
     return passages
 
 
