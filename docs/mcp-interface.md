@@ -183,7 +183,28 @@ holds the content it just stored, so nothing bulky is echoed back:
 `node` carries identity and counters instead of the full
 [node payload](#node-payload-contract); fetch complete content and validity
 with `memory_lookup(node_id=...)`, one context field with `context_key`, or
-the complete stored node with `view="full"`. When the
+the complete stored node with `view="full"`.
+
+`memory_remember` prepares and stores current search chunks for its new trace
+and rejected alternatives before returning. `memory_teach` does the same for
+its corrective trace. This removes their dependence on unrelated lazy-index
+backlog; ranking, scope, validity and delivery still determine recall results.
+It does not guarantee semantic completeness. Encoding uses the existing model
+and fallback policy and adds work to the write, including all windows of long
+content, while the required write transaction holds the content stable.
+
+Knowledge, correction relationships and required recall feedback commit
+together. Each new trace's derived index has its own savepoint. An encoding or
+index replacement failure leaves that trace durable with no partial chunk set
+and adds `indexing: {"status": "deferred", "node_ids": [...]}` to the response.
+This confirms the knowledge write, not a completed index; exact lookup and
+lexical search remain available. Existing bounded recall maintenance can repair
+missing chunks on a later call. It also continues repairing old and edited
+nodes. Required source, validity, knowledge and feedback failures still raise;
+this boundary does not recover from failures of the enclosing transaction.
+Whitespace-only content has no search windows.
+
+When the
 scope reaches a consolidation boundary, the pass is *scheduled*, not run:
 the write answers at write time and `auto_consolidation` reports
 `{"status": "scheduled", "scope": ..., "trace_count": N, "coalesced": bool}`
