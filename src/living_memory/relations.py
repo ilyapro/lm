@@ -23,6 +23,18 @@ def is_correction(relation_type: str, metadata: Mapping[str, Any]) -> bool:
     )
 
 
+
+def is_semantic_relation(relation_type: str, metadata: Mapping[str, Any]) -> bool:
+    if relation_type == "supersedes":
+        return is_correction(relation_type, metadata)
+    # Content-reference and derivation writers can merge their evidence into
+    # a row without replacing an earlier recall-history basis.
+    return not (
+        relation_type == "related"
+        and metadata.get("basis") == "implicit_recall_feedback"
+        and metadata.get("kind") not in ("content_reference", "derived_from")
+    )
+
 def correction_sql(alias: str = "") -> str:
     """SQL equivalent of is_correction; alias is a caller-owned identifier."""
     prefix = f"{alias}." if alias else ""
@@ -36,9 +48,12 @@ def correction_sql(alias: str = "") -> str:
 
 
 def semantic_relation_sql(alias: str = "") -> str:
+    """SQL equivalent of is_semantic_relation; filter before graph limits."""
     prefix = f"{alias}." if alias else ""
     return (
         f"(({prefix}type <> 'supersedes' OR {correction_sql(alias)})"
         f" AND NOT ({prefix}type = 'related' AND "
-        f"COALESCE(json_extract({prefix}metadata, '$.basis'), '') = 'implicit_recall_feedback'))"
+        f"COALESCE(json_extract({prefix}metadata, '$.basis'), '') = 'implicit_recall_feedback'"
+        f" AND COALESCE(json_extract({prefix}metadata, '$.kind'), '')"
+        f" NOT IN ('content_reference', 'derived_from')))"
     )

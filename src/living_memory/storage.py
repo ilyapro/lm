@@ -37,7 +37,7 @@ from living_memory.models import (
     RecallEvent,
     RetrievalWeights,
 )
-from living_memory.relations import correction_sql, is_correction, semantic_relation_sql
+from living_memory.relations import correction_sql, is_correction, is_semantic_relation, semantic_relation_sql
 from living_memory.phase import PhaseManager
 from living_memory.scope import normalize_scope
 from living_memory.temporal import parse_timestamp
@@ -1818,8 +1818,8 @@ class MemoryStore:
         to six decimals, and shallow-merge metadata with incoming keys winning.
         An unchanged contribution retains the row and its updated_at; every
         correction or verified exact-copy call still moves attached anchors.
-        A correction contribution replaces prior technical provenance on the
-        same pair instead of inheriting its duplicate marker or weight.
+        A semantic contribution replaces prior technical provenance on the
+        same pair instead of inheriting its bookkeeping marker or weight.
         """
 
         with self.transaction(immediate=True):
@@ -1859,10 +1859,10 @@ class MemoryStore:
             ).fetchone()
             if row is not None:
                 existing = _connection_from_row(row)
-                if (is_correction(relation_type, metadata_data)
-                        and not is_correction(existing.type, existing.metadata)):
-                    # A fresh correction contribution replaces prior technical
-                    # provenance; its obsolete marker must not veto correction.
+                if (is_semantic_relation(relation_type, metadata_data)
+                        and not is_semantic_relation(existing.type, existing.metadata)):
+                    # Fresh semantic evidence replaces technical history; the
+                    # old marker and weight do not describe this contribution.
                     existing = None
                 else:
                     weight = max(float(weight), existing.weight)
