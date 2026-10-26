@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections import Counter, deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from math import log, sqrt
 from typing import TYPE_CHECKING, Any
 import hashlib
@@ -44,6 +45,7 @@ from living_memory.scope import GLOBAL_SCOPE, normalize_scope
 from living_memory.score_gate import QueryRelevance
 from living_memory.storage import (
     CHUNK_EMBEDDING_TABLE,
+    RECALL_DELIVERY_HISTORY_TABLE,
     MemoryStore,
     RecallWork,
 )
@@ -656,7 +658,7 @@ class RecallMap:
 
 @dataclass(slots=True)
 class _Member:
-    """One admitted entry with its frozen score and original residual ordinal."""
+    """One admitted entry with its original retrieval ordinal."""
 
     rank: int
     node: Node
