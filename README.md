@@ -92,12 +92,24 @@ results, lookups, or confirmed use for feedback attribution.
 
 Bounded excerpts select passages at paragraph breaks or sentence-ending
 punctuation followed by whitespace, preserving soft line wraps. Evidence
-passages retain their source labels. An indivisible passage that exceeds the
+passages retain their source labels. Semantic retrieval carries the winning
+chunk's source address into delivery: its enclosing paragraph is preferred,
+or matching sentences with adjacent context when the paragraph is too large.
+The address must match the exact content version; delivery does not embed or
+search again. An indivisible passage that exceeds the
 budget contributes only a prefix marked with `…`; when the evidence heading
 and label cannot fit, the whole excerpt falls back to a bounded prefix of the
 original. These boundaries are textual heuristics: abbreviations, context
 in other sentences, and conditions beyond a truncated prefix may require the
 full original via `content_ref`.
+
+Chunk writers save verified character coordinates alongside their vectors.
+Existing chunks without coordinates retain lexical excerpt selection: a
+software upgrade alone does not recover their unknown tokenizer history.
+Normal content-changing writes and explicit content re-encoding populate the
+coordinates. Metadata-only updates and the backfill's already-current chunks
+do not. Missing or stale chunks use the existing bounded indexing path; no
+separate coordinate backfill or embedding pass runs during delivery.
 
 Recall before acting and at every new turn of thought, including mid-work.
 Use relevant knowledge and applicable complete recipes under current system
