@@ -41,6 +41,7 @@ from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_
 from living_memory.models import Connection, ConnectionType, Node, string_list
 from living_memory.query_anchors import resolve_replacement
 from living_memory.storage import MemoryStore, _node_read_batches, new_ulid
+from living_memory.source_text import passage_spans
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
 _LOG = logging.getLogger(__name__)
@@ -1792,7 +1793,7 @@ class _DigestSource:
     id: str
     content: str
     tokens: set[str]
-    sentences: list[tuple[str, set[str]]]
+    passages: list[tuple[str, set[str]]]
 
 
 def _digest_sources(
@@ -1823,23 +1824,24 @@ def _prepare_digest(
 
 
 def _prepare_digest_sources(sources: Sequence[Node]) -> list[_DigestSource]:
-    """Extract whole-source and sentence signals together for one materialization."""
+    """Extract whole-source and passage signals together for one materialization."""
 
     prepared = []
     for source in sources:
         tokens: set[str] = set()
-        sentences = []
-        for sentence in _split_sentences(source.content):
-            sentence_tokens: set[str] = set()
-            for raw in _raw_tokens(sentence):
+        passages = []
+        for start, end, _ in passage_spans(source.content):
+            passage = source.content[start:end]
+            passage_tokens: set[str] = set()
+            for raw in _raw_tokens(passage):
                 token = _significant_token(raw)
                 if token is not None:
                     tokens.add(token)
-                    sentence_tokens.add(token)
-            sentences.append((sentence, {token for token in sentence_tokens if token}))
+                    passage_tokens.add(token)
+            passages.append((passage, {token for token in passage_tokens if token}))
         # Keep the whole-source insertion order used by _significant_tokens:
         # Counter's equal-count ordering also determines the retrieval label.
-        prepared.append(_DigestSource(source.id, source.content, {token for token in tokens if token}, sentences))
+        prepared.append(_DigestSource(source.id, source.content, {token for token in tokens if token}, passages))
     return prepared
 
 
@@ -1850,10 +1852,10 @@ def _synthesize_digest(
     max_chars: int = DIGEST_MAX_CHARS,
     prepared_sources: Sequence[_DigestSource] | None = None,
 ) -> str:
-    """Select complete source sentences within a deterministic digest budget.
+    """Select complete source passages within a deterministic digest budget.
 
-    Exact repeated sentences share a slot. Token novelty ranks the remaining
-    sentences but never establishes identity; conditions and contrasting claims
+    Exact repeated passages share a slot. Token novelty ranks the remaining
+    passages but never establishes identity; conditions and contrasting claims
     remain eligible even when their token sets or embeddings are identical.
     Source identities and complete contents remain available through provenance.
     """
@@ -1870,7 +1872,7 @@ def _synthesize_digest(
     lead = _digest_lead(best.content, max_chars=max_chars)
     covered_significant = _significant_tokens(lead)
     covered_raw = set(_raw_tokens(lead))
-    included_sentences = set(_split_sentences(lead))
+    included_passages = {lead[start:end] for start, end, _ in passage_spans(lead)}
     ordered = sorted(
         prepared,
         key=lambda source: (
@@ -1885,18 +1887,18 @@ def _synthesize_digest(
         for source in ordered:
             prefix = DIGEST_FACT_PREFIX if lines else ""
             separator_length = 1 if lines else 0
-            sentence = _most_distinctive_sentence(
-                source.sentences, covered_significant, covered_raw, included_sentences,
+            passage = _most_distinctive_passage(
+                source.passages, covered_significant, covered_raw, included_passages,
                 max_chars=max_chars - length - separator_length - len(prefix),
             )
-            if sentence is None:
+            if passage is None:
                 continue
-            line = prefix + sentence
+            line = prefix + passage
             lines.append(line)
             length += separator_length + len(line)
-            covered_significant |= _significant_tokens(sentence)
-            covered_raw.update(_raw_tokens(sentence))
-            included_sentences.add(sentence)
+            covered_significant |= _significant_tokens(passage)
+            covered_raw.update(_raw_tokens(passage))
+            included_passages.add(passage)
             added = True
         if not added:
             break
@@ -1911,47 +1913,42 @@ def _digest_lead(content: str, *, max_chars: int = DIGEST_MAX_CHARS) -> str:
     lead_limit = min(DIGEST_LEAD_MAX_CHARS, max_chars)
     if len(text) <= lead_limit:
         return text
-    sentences = _split_sentences(text)
-    if not sentences or len(sentences[0]) > max_chars:
+    spans = passage_spans(text)
+    if not spans or spans[0][1] > max_chars:
         return ""
-    lead = sentences[0]
-    for sentence in sentences[1:]:
-        if len(lead) + 1 + len(sentence) > lead_limit:
+    end = spans[0][1]
+    for _, next_end, _ in spans[1:]:
+        if next_end > lead_limit:
             break
-        lead = f"{lead} {sentence}"
-    return lead
+        end = next_end
+    return text[:end]
 
 
-def _most_distinctive_sentence(
-    sentences: Sequence[tuple[str, set[str]]],
+def _most_distinctive_passage(
+    passages: Sequence[tuple[str, set[str]]],
     covered_significant: set[str],
     covered_raw: set[str],
-    included_sentences: set[str],
+    included_passages: set[str],
     *,
     max_chars: int,
 ) -> str | None:
-    best_sentence: str | None = None
+    best_passage: str | None = None
     best_rank: tuple[int, int, int] | None = None
-    for index, (sentence, tokens) in enumerate(sentences):
-        if sentence in included_sentences or len(sentence) > max_chars:
+    for index, (passage, tokens) in enumerate(passages):
+        if passage in included_passages or len(passage) > max_chars:
             continue
-        raw = set(_raw_tokens(sentence))
+        raw = set(_raw_tokens(passage))
         rank = (-len(tokens - covered_significant), -len(raw - covered_raw), index)
         if best_rank is None or rank < best_rank:
             best_rank = rank
-            best_sentence = sentence
-    return best_sentence
+            best_passage = passage
+    return best_passage
 
 
 def _token_centrality(tokens: set[str], token_counts: Counter[str]) -> float:
     if not tokens:
         return 0.0
     return sum(token_counts[token] for token in tokens) / len(tokens)
-
-
-def _split_sentences(content: str) -> list[str]:
-    parts = re.split(r"(?<=[.!?;])\s+|\n+", content.strip())
-    return [part.strip() for part in parts if part and part.strip()]
 
 
 def _raw_tokens(text: str) -> list[str]:

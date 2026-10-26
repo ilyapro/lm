@@ -7,6 +7,7 @@ import pytest
 from living_memory import consolidation as c
 from living_memory.models import Node
 from living_memory.storage import MemoryStore
+from living_memory.source_text import passage_spans
 
 
 @pytest.fixture
@@ -106,14 +107,15 @@ def test_connections_validate_identity_without_loading_endpoint_documents(store,
     "Repeated crane inspection. Repeated crane inspection! cable tension? cable tension",
     "\n\t __ 123 и the \n. ! ; \n",
 ])
-def test_preparation_keeps_whole_source_token_order_and_sentence_signals(content):
+def test_preparation_keeps_whole_source_token_order_and_passage_signals(content):
     source = Node("source", "trace", content)
     prepared, = c._prepare_digest_sources([source])
     expected = c._significant_tokens(content)
     assert list(prepared.tokens) == list(expected)
     assert Counter(prepared.tokens).most_common(12) == Counter(expected).most_common(12)
-    assert prepared.sentences == [
-        (sentence, c._significant_tokens(sentence)) for sentence in c._split_sentences(content)
+    assert prepared.passages == [
+        (content[start:end], c._significant_tokens(content[start:end]))
+        for start, end, _ in passage_spans(content)
     ]
 
 
