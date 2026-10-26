@@ -953,7 +953,8 @@ class MemoryRecallService:
     ) -> None:
         per_scope_limit = max(25, max_results * 8)
         expanded_query = _expanded_query(query)
-        # A bm25 score is a rank within one query. The named scopes keep their
+        # Reciprocal FTS rank is a discovery score, not lexical support.
+        # The named scopes keep their
         # own ranking, as a restricted plan ranks them; a whole-store plan adds
         # one pass over everything, where an unnamed scope competes on the
         # corpus-wide ranking instead of getting a rank 1 of its own.
@@ -1373,9 +1374,9 @@ class MemoryRecallService:
     ) -> list[RecallResult]:
         """``name`` mode: the schemas this query names, if they earned a slot, go first.
 
-        A schema is named when the query's token set equals its trigger's:
-        the whole query is its title, the lexical channel's best match (bm25
-        1.0). Only schemas the meaning channels already ranked can be named,
+        A schema is named when the query's evidence terms equal its trigger's:
+        the whole query is its title, with complete lexical support and a
+        discovery score of 1.0. Only schemas already ranked can be named,
         and a named schema moves to the front only if
         :func:`score_gate.passes_gate` passes it on that score (with the gate
         off, always). Named schemas keep their ranked order among themselves
@@ -1514,8 +1515,8 @@ class MemoryRecallService:
         )
 
         if historical_edges or source_roots != roots or any(score < 0.05 for _, score in roots):
-            # Reuse the bounded walk with independent best-path state: a
-            # stronger historical path must not hide a weaker source path.
+            # Reuse the bounded walk with independent roots and best-path
+            # state: discovery strength must not hide a source path.
             # Extra source-only discoveries do not change ranking membership.
             self._walk_graph(
                 plan, dict(candidates), source_roots,
@@ -2051,8 +2052,9 @@ def _blend_candidate_score(
     comparison between them proves nothing.
 
     Returns 0.0 for a candidate no channel scored, which is the caller's cue
-    to drop it. Qualification passes source activation and disables positive
-    history; ranking retains its effective activation and feedback rewards.
+    to drop it. Qualification reads lexical coverage, source activation and
+    source restrictions; ranking retains reciprocal FTS rank, effective
+    activation and feedback rewards.
     """
 
     bm25_weight = weights.bm25

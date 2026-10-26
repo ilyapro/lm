@@ -31,7 +31,9 @@ superseded penalty, causal boost, and per-node ``demotions`` apply here. The
 ranker's correction boost does not enter an individual gate score; a present
 correction instead qualifies when its original passes the gate.
 Transient ``source_graph_score`` excludes query anchors and historical edge
-reinforcement. Access and the entire net usefulness accumulator stay outside both
+reinforcement; its seeds use current lexical/vector support. ``lexical_score``
+measures query-term coverage in source text, while reciprocal FTS rank remains
+discovery evidence only. Access and the entire net usefulness accumulator stay outside both
 qualification scales; positive confidence never lifts them. Historical signals
 retain their ranking and discovery roles.
 
@@ -118,7 +120,7 @@ def gate_score(
     """Current source evidence of one ``RecallResult`` on the channel scale.
 
     Callable offline on a result carrying source evidence and recall demotions.
-    A historical effective graph score alone is not source evidence.
+    Discovery rank and effective graph scores alone are not source evidence.
     Without ``plan`` the scope boost is 1.0 (the boost needs the resolved
     scope list). Ordinary trigger evidence receives the same content-supported
     contribution as in ranking. See :func:`trigger_gate_score` for the

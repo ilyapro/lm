@@ -131,7 +131,9 @@ All candidates use the same query qualification regardless of their age or
 exposure history. A never-shown or rarely used entry needs no separate quota.
 Query anchors, positive feedback and history-derived graph weights can aid
 retrieval and its order; they do not qualify a map suggestion. The shared
-qualifier uses transient source graph evidence and retains source confidence,
+qualifier uses query-term coverage of current source text and transient source
+graph evidence. Reciprocal FTS rank remains discovery/order information and
+does not qualify map content or seed source activation. The qualifier retains source confidence,
 correction and query-relative/hub restrictions on both channel and trigger
 scales. The net usefulness accumulator does not enter either scale. No map-specific corpus delivery count,
 consumed ratio or nonuse streak admits or orders a candidate.

@@ -89,16 +89,30 @@ separate full/snippet response already supplied that content.
 Ranking and qualification share `_blend_candidate_score`, with different inputs
 and feedback treatment. Ranking keeps learned scope weights, query anchors and
 historical feedback. `QueryRelevance` uses the fixed `REFERENCE_WEIGHTS`
-(BM25 0.4, vector 0.4, graph 0.2) and current query/source evidence:
+(lexical 0.4, vector 0.4, graph 0.2) and current query/source evidence:
 
 ```
 gate_score(result, demotions, *, plan=None, causal_mode=False)
-  = _blend_candidate_score(bm25, vector, source_graph_score, trigger,
+  = _blend_candidate_score(lexical_score, vector, source_graph_score, trigger,
                            REFERENCE_WEIGHTS, plan, causal_mode,
                            superseded=result.superseded, superseding=False,
                            qualification=True)
     * demotions.get(node_id, 1.0)
 ```
+
+`lexical_score` is the fraction of distinct normalized query terms present in
+the source's current content. Empty query terms give zero support. The shared
+tokenizer retains its splitting, synonyms and stemming; evidence normalization
+also keeps numbers, including identifier components, and conditions/negation.
+The same normalization supplies trigger overlap, query coverage and name matches.
+The default embedding and search-expansion features remain unchanged.
+
+Reciprocal FTS rank (`bm25_score`) still discovers and orders candidates. Neither
+it nor raw corpus-dependent BM25 scores qualify source content. Lexical coverage
+is computed for every found candidate, including vector, graph and anchor
+discoveries. A recognized schema name supplies complete lexical support under
+the existing name semantics. Coverage is textual correspondence, not semantic
+entailment or an interpretation of a condition's polarity.
 
 The same calculation retains the strong-vector floor (`vector >= 0.65`),
 graph-weight floor (0.25, or 0.75 in causal mode), scope boost and causal boost.
@@ -117,8 +131,10 @@ query-relative negative evidence. Lookup retains once-per-event/node credit
 and anchors without acquiring those cancellation effects.
 
 `RecallResult.source_graph_score` is transient evidence, separate from the
-ranker's effective `graph_score`. It starts from the current lexical/vector
-seeds, excludes anchor activation, and uses genuine source relations:
+ranker's effective `graph_score`. Its bounded seeds are selected independently
+by `max(lexical_score, vector_score)`, with source id breaking ties. Zero support
+does not seed source activation. It excludes anchor activation and uses genuine
+source relations:
 
 - Pure `co_access` edges contribute no source evidence.
 - Cluster membership retains its fixed membership contribution, without
@@ -132,17 +148,18 @@ seeds, excludes anchor activation, and uses genuine source relations:
 
 The existing bounded graph reader applies source projection **before** ordering
 and its per-node adjacency limit. Historical edges therefore cannot spend source
-slots or displace a genuine source relation merely by gaining weight. When a
-walk encounters historical contributions, the same walker computes source paths
-with independent best-path state; a stronger historical path cannot hide a
-weaker genuine path. Pure-source walks reuse their ordinary activation. Ranking
-keeps its own traversal, bounded neighbors, anchors and order.
+slots or displace a genuine source relation merely by gaining weight. The same
+walker computes source paths with independent best-path state when source roots
+or relation contributions differ from discovery. Only identical roots and
+pure-source walks reuse ordinary activation. Ranking keeps its own traversal,
+bounded neighbors, anchors and order.
 
 **Offline use:** `gate_score`, `trigger_gate_score` and `passes_gate` accept a
 `RecallResult` and recall demotions without a store. Supply the scope plan for
-its boost; without one it is 1.0. An old effective graph score does not establish
-source evidence: absent `source_graph_score` means zero source graph contribution.
-The transient field is not added to the wire or recall-event history. Diagnostic
+its boost; without one it is 1.0. Missing `lexical_score` or `source_graph_score`
+means zero contribution from that source channel; discovery scores cannot
+substitute for either. These transient fields are not added to the wire or
+recall-event history. Diagnostic
 ranking scores continue to describe discovery, not qualification.
 
 ## Trigger qualification
@@ -175,6 +192,10 @@ See [schema trigger behavior](recall-schema-trigger.md).
 - Every inline content bearer qualifies, regardless of rank.
 - Unchanged current query/source evidence has unchanged qualification after
   inspection or changes in access, usefulness or anchor reinforcement.
+- FTS competitors can change discovery order without changing the lexical
+  support of a source that remains found. Source graph seeds and paths use
+  source evidence throughout. Bounded discovery can still omit candidates or
+  relations; this does not promise invariance under every corpus mutation.
 - Source changes, genuine relations/corrections and confirmed negative
   applicability affect qualification through their own evidence.
 - `delivered + residual` partitions `ranked`; both gate forms preserve bounded

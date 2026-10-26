@@ -13,6 +13,11 @@ it across scopes. Ranking retains the content's vector similarity and the
 existing graph weight as a small discovery floor. There is no unconditional
 trigger multiplier.
 
+Trigger matching and source lexical coverage share evidence normalization:
+word splitting, synonyms and stemming, while retaining numbers and supporting
+conditions/negation. Matching terms alone do not establish the meaning or
+polarity of a condition.
+
 The collector also records the fraction of meaningful query terms covered by
 the trigger. A schema recipe or procedural carrier citing source records gets
 a channel contribution proportional to squared query coverage. An arbitrary
@@ -45,7 +50,8 @@ It changes no provider, model or threshold.
   anchor discovery remain; sharing weights does not make ranking history
   qualification evidence. Corrections retain structural precedence.
 - If the query's token set equals a ranked schema's trigger token set, the
-  schema receives BM25 1.0: the whole query names its title. It moves first if
+  schema receives lexical support 1.0 and discovery BM25 1.0: the whole query
+  names its title. It moves first if
   that current evidence passes the channel qualifier, or unconditionally when
   the main gate is off. Named schemas retain their relative ranking order.
 - The name match is reported as `trigger_score=1.0` and `trigger` in diagnostic
