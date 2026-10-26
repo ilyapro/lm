@@ -276,7 +276,7 @@ def test_mcp_map_preserves_scopes_corrections_decay_and_main_results(tmp_path, i
         )
         store.create_connection(correction.id, old.id, "supersedes")
         foreign = store.append_trace(
-            "cobalt backup recovery checks disk sync.",
+            "cobalt backup recovery sync.",
             {"scope": "project:foreign", "topic": "disk sync"},
         )
         dead = store.append_trace(

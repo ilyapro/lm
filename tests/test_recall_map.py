@@ -1951,5 +1951,3 @@ def test_sel_contract_only_an_armed_gate_widens_the_wire_vector(
     # The vector got wider and nothing else about how it is read changed.
     assert armed_sel["v"] == unarmed_sel["v"] == "r1"
     assert armed_sel["n"] == armed_sel["e"] + sum(armed_sel["x"])
-
-
