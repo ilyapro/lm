@@ -243,6 +243,7 @@ from living_memory.query_anchors import (
     match_anchors,
 )
 from living_memory.schema_dedup import collapse_schema_duplicates
+from living_memory.relations import source_relation_weight
 from living_memory.scope import (
     ScopePlan,
     ScopeResolver,
@@ -1428,11 +1429,17 @@ class MemoryRecallService:
         # A bulk query's tie order depends on its entire frontier, so reuse
         # observations only for the same ordered request. Both walks share
         # these bounded, directional neighbors, never their score state.
-        observations: dict[tuple[str, ...], dict[str, list[tuple[str, float]]]] = {}
+        observations: dict[
+            tuple[str, ...],
+            tuple[dict[str, list[tuple[str, float]]], dict[str, list[tuple[str, float]]]],
+        ] = {}
         observed_state: tuple[int, int] | None = None
+        historical_edges = False
 
-        def neighbors_for_nodes(node_ids: list[str]) -> dict[str, list[tuple[str, float]]]:
-            nonlocal observed_state
+        def neighbors_for_nodes(
+            node_ids: list[str], *, source_only: bool = False,
+        ) -> dict[str, list[tuple[str, float]]]:
+            nonlocal observed_state, historical_edges
             connection = self.store.connection
             state = (
                 connection.total_changes,
@@ -1448,17 +1455,27 @@ class MemoryRecallService:
                 connections = self.store.list_recall_connections(
                     node_ids, limit=MAX_NEIGHBORS_PER_NODE
                 )
-                observations[key] = {
-                    node_id: [
-                        traversal for edge in edges
-                        if (traversal := _traversal(
+                ordinary = {node_id: [] for node_id in connections}
+                source = {node_id: [] for node_id in connections}
+                for node_id, edges in connections.items():
+                    for edge in edges:
+                        traversal = _traversal(
                             edge, node_id, causal_mode=causal_mode,
                             decision_mode=decision_mode,
-                        )) is not None
-                    ]
-                    for node_id, edges in connections.items()
-                }
-            return observations[key]
+                        )
+                        if traversal is None:
+                            continue
+                        ordinary[node_id].append(traversal)
+                        weight = source_relation_weight(edge.type, edge.weight, edge.metadata)
+                        if weight == edge.weight:
+                            source[node_id].append(traversal)
+                        else:
+                            historical_edges = True
+                            if weight > 0.0:
+                                neighbor, activation = traversal
+                                source[node_id].append((neighbor, activation * weight / edge.weight))
+                observations[key] = ordinary, source
+            return observations[key][int(source_only)]
 
         # Seed BFS only from the top-K pre-graph candidates to avoid
         # fan-out from low-quality matches that would dilute the graph
@@ -1468,17 +1485,30 @@ class MemoryRecallService:
             key=lambda c: max(c.bm25_score, c.vector_score, 0.0),
             reverse=True,
         )[:GRAPH_SEED_LIMIT]
+        roots = [
+            (candidate.node.id, max(candidate.bm25_score, candidate.vector_score))
+            for candidate in seed_candidates
+        ]
         self._walk_graph(
-            plan,
-            candidates,
-            [
-                (candidate.node.id, max(candidate.bm25_score, candidate.vector_score))
-                for candidate in seed_candidates
-            ],
+            plan, candidates, roots,
             max_depth=max_depth,
             neighbors_for_nodes=neighbors_for_nodes,
             anchor_pass=False,
         )
+
+        if historical_edges:
+            # Reuse the bounded walk with independent best-path state: a
+            # stronger historical path must not hide a weaker source path.
+            # Extra source-only discoveries do not change ranking membership.
+            self._walk_graph(
+                plan, dict(candidates), roots,
+                max_depth=max_depth,
+                neighbors_for_nodes=lambda ids: neighbors_for_nodes(ids, source_only=True),
+                anchor_pass=False, source_pass=True,
+            )
+        else:
+            for candidate in candidates.values():
+                candidate.source_graph_score = candidate.graph_score
 
         # An anchor's targets are admitted only now, so they cannot compete
         # for a slot in the walk above or perturb a single one of its numbers.
@@ -1515,6 +1545,7 @@ class MemoryRecallService:
         max_depth: int,
         neighbors_for_nodes: Callable[[list[str]], dict[str, list[tuple[str, float]]]],
         anchor_pass: bool,
+        source_pass: bool = False,
     ) -> None:
         """One breadth-first activation spread from ``roots``.
 
@@ -1585,7 +1616,9 @@ class MemoryRecallService:
 
                 best_seen[neighbor_id] = next_score
                 candidate = candidates.setdefault(neighbor_id, _Candidate(node=neighbor))
-                if anchor_pass:
+                if source_pass:
+                    candidate.source_graph_score = max(candidate.source_graph_score, min(1.5, next_score))
+                elif anchor_pass:
                     reached = min(1.5, next_score)
                     # Provenance belongs to the strongest explanation across
                     # the ordinary and anchor walks.
