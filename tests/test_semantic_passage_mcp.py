@@ -38,12 +38,22 @@ with tempfile.TemporaryDirectory(prefix="lm-semantic-mcp-") as directory:
         )[0]
         bm25_score = result.bm25_score
         vector_score = result.vector_score
+        if payload.get("legacy"):
+            with store.transaction():
+                store.connection.execute("UPDATE node_chunk_embeddings SET char_start=NULL, char_end=NULL")
     mcp = create_mcp_server(db)
     def structured(reply):
         value = reply.structured_content
         return value["result"] if set(value) == {"result"} else value
     async def scenario():
         cases = []
+        first = None
+        if payload.get("legacy"):
+            async with Client(mcp) as client:
+                first = structured(await client.call_tool("memory_recall", {
+                    "query": payload["query"], "scope": node.scope, "depth": 0, "max_results": 1,
+                }))["results"][0]
+            assert all(c.char_start is not None for c in mcp.memory_store.list_node_chunks(node.id))
         for view in ("knowledge", "full"):
             for query in (payload["query"], "registry certificate certbot mirror expired"):
                 async with Client(mcp) as client:
@@ -59,16 +69,17 @@ with tempfile.TemporaryDirectory(prefix="lm-semantic-mcp-") as directory:
                         "content": body["content"], "content_ref": entry["content_ref"],
                         "lookup_equal": looked["results"][0]["content"] == payload["content"],
                     })
-        return cases
+        return cases, first
     try:
-        cases = asyncio.run(scenario())
+        cases, first = asyncio.run(scenario())
     finally:
         mcp.memory_store.close()
-print(json.dumps({"model_available": True, "bm25_score": bm25_score, "vector_score": vector_score, "cases": cases}))
+print(json.dumps({"model_available": True, "bm25_score": bm25_score, "vector_score": vector_score, "cases": cases, "first": first}))
 '''
 
 
-def test_local_model_semantic_and_lexical_mcp_delivery():
+@pytest.mark.parametrize("legacy", [False, True])
+def test_local_model_semantic_and_lexical_mcp_delivery(legacy):
     environment = dict(os.environ)
     environment.pop("LIVING_MEMORY_EMBEDDING_BACKEND", None)
     environment.pop("LIVING_MEMORY_CHUNK_TOKENIZER", None)
@@ -80,7 +91,8 @@ def test_local_model_semantic_and_lexical_mcp_delivery():
     environment["PYTHONPATH"] = os.pathsep.join([str(root / "src"), environment.get("PYTHONPATH", "")])
     content = TAIL_HEAD * 3 + TAIL_ANSWER
     completed = subprocess.run(
-        [sys.executable, "-B", "-c", PROBE], input=json.dumps({"content": content, "query": QUERY}),
+        [sys.executable, "-B", "-c", PROBE],
+        input=json.dumps({"content": content, "query": QUERY, "legacy": legacy}),
         capture_output=True, text=True, env=environment, timeout=180,
     )
     assert completed.returncode == 0, completed.stderr
@@ -89,6 +101,9 @@ def test_local_model_semantic_and_lexical_mcp_delivery():
         pytest.skip("The real local MiniLM is unavailable; hash vectors cannot establish this control")
     assert report["bm25_score"] == 0.0
     assert report["vector_score"] > 0
+    if legacy:
+        assert report["first"]["delivery"] == "snippet"
+        assert TAIL_ANSWER not in report["first"]["content"]
     for case in report["cases"]:
         assert case["delivery"] == "snippet"
         assert TAIL_ANSWER in case["content"]
