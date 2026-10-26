@@ -550,7 +550,7 @@ def test_off_mode_records_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "ignored": True,
     }
     assert _marks(store) == [] and _explicit(store) == []
-    # No hygiene either: off is the pre-feature behaviour, all eight linked.
+    # Delivery history does not establish relations under any mark policy.
     assert _implicit_targets(store, response["node"]["id"], event_id) == set()
     recalled = _recall(mcp, irrelevant=[off_topic])
     assert recalled["feedback_marks"]["ignored"] is True
@@ -856,10 +856,16 @@ def test_later_irrelevant_mark_preserves_delivery_history(
     off_topic = node_ids[OTHER_INDEX]
     trace_id = _remember(mcp)["node"]["id"]
     assert _implicit_targets(store, trace_id, event_id) == set()
+    historical = store.create_connection(
+        trace_id, off_topic, "related", weight=.75,
+        metadata={"basis": "implicit_recall_feedback", "recall_event_id": event_id},
+    )
+    provenance = store.get_node(trace_id).provenance
 
     response = _recall(mcp, irrelevant=[off_topic])
     assert response["feedback_marks"]["accepted"] == 1
-    assert _implicit_targets(store, trace_id, event_id) == set()
+    assert store.get_connection(historical.id) == historical
+    assert store.get_node(trace_id).provenance == provenance
     assert store.list_connections(source_id=trace_id, target_id=off_topic, relation_type="related") == []
 
 

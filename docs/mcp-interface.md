@@ -206,7 +206,8 @@ full result with node dicts. If a compatible prior
 `provenance.prior_recalls` and all shown ids in `provenance.recalled_nodes`
 (and trace ids in `source_traces`). `implicit_feedback` lists the consumed
 event ids and whether numeric feedback was applied. This history is accessible
-through `memory_lookup(view="full")`; it creates no `related` connections. Requests arriving over an MCP
+through `memory_lookup(view="full")`; it creates no `related` connections.
+Requests arriving over an MCP
 transport are stamped with the reserved `transport_session_id` context key
 (explicit values win) so the pending-recall link works without any explicit
 identity — see
