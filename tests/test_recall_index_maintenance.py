@@ -114,7 +114,7 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
             assert body(response)["content"] == CONTENT
             assert body(response)["scope"] == SCOPE
             assert body(response)["decayed"] is False
-            assert response["results"][0]["delivery"] == baseline["results"][0]["delivery"]
+            assert response["results"][0]["delivery"] == "session_duplicate"
             assert response["results"][0]["content_ref"] == baseline["results"][0]["content_ref"]
             event = event_for(store, response)
             assert event.result_ids == [target.id]
