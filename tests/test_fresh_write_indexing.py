@@ -69,6 +69,57 @@ def assert_current_chunks(store, node_id, content):
         assert content[chunk.char_start:chunk.char_end] == window.text
 
 
+def test_ordinary_recall_discovers_pending_without_reading_completed_text(mcp, monkeypatch):
+    store = mcp.memory_store
+    trimmed = []
+    discovering = False
+    original = store.list_unchunked_nodes
+
+    def trim(content, chars):
+        if discovering:
+            trimmed.append(content)
+        return content.strip(chars)
+
+    def discover(**kwargs):
+        nonlocal discovering
+        discovering = True
+        try:
+            return original(**kwargs)
+        finally:
+            discovering = False
+
+    store.connection.create_function("trim", 2, trim)
+    monkeypatch.setattr(store, "list_unchunked_nodes", discover)
+
+    async def scenario():
+        async with Client(mcp) as client:
+            current = (await remember(client, CONTENT))["node"]["id"]
+            stale_content = "Renew the cobalt signing certificate before the next release."
+            stale = (await remember(client, stale_content))["node"]["id"]
+            current_chunks = store.list_node_chunks(current)
+            await recall(client)
+            assert trimmed == []
+
+            blank = store.append_trace(" \t\n\v\f\r ", CONTEXT | {"timestamp": "2026-01-01T00:00:00Z"})
+            missing = store.append_trace("Verify the cobalt registry certificate chain.", CONTEXT)
+            with store.transaction():
+                store.connection.execute(
+                    "UPDATE node_chunk_embeddings SET content_fingerprint = 'stale' WHERE node_id = ?",
+                    (stale,),
+                )
+            await recall(client)
+            assert set(trimmed) == {blank.content, missing.content, stale_content}
+            assert_current_chunks(store, missing.id, missing.content)
+            assert_current_chunks(store, stale, stale_content)
+            assert store.list_node_chunks(current) == current_chunks
+
+            trimmed.clear()
+            await recall(client)
+            assert trimmed == [blank.content]
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("operation", ["remember", "teach"])
 @pytest.mark.parametrize("legacy_backlog", [False, True])
 def test_new_index_does_not_wait_for_other_nodes(mcp, operation, legacy_backlog):
