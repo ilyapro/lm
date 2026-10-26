@@ -169,12 +169,10 @@ holds the content it just stored, so nothing bulky is echoed back:
     "scope": "project:alpha",
     "created_at": "ISO-8601",
     "prior_recall_count": 2,
-    "linked_node_count": 3,
     "source_trace_count": 0
   },
   "implicit_feedback": {
     "recall_event_ids": ["recall event id"],
-    "linked_node_ids": ["node id"],
     "feedback_applied": true
   },
   "auto_consolidation": null,
@@ -205,8 +203,10 @@ id lists plus counters (`concepts_created`, `concepts_updated`,
 a direct `memory_consolidate` call, which stays synchronous, returns the
 full result with node dicts. If a compatible prior
 `memory_recall` is pending, the new trace records that recall under
-`provenance.prior_recalls`, links to recalled nodes, and `implicit_feedback`
-lists the consumed event and node ids. Requests arriving over an MCP
+`provenance.prior_recalls` and all shown ids in `provenance.recalled_nodes`
+(and trace ids in `source_traces`). `implicit_feedback` lists the consumed
+event ids and whether numeric feedback was applied. This history is accessible
+through `memory_lookup(view="full")`; it creates no `related` connections. Requests arriving over an MCP
 transport are stamped with the reserved `transport_session_id` context key
 (explicit values win) so the pending-recall link works without any explicit
 identity — see

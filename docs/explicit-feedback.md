@@ -1,18 +1,8 @@
 # Explicit recall feedback: `used` / `irrelevant`
 
-Goal `explicit-recall-feedback`, node `explicit-marks-core`. This document is
-the interface contract that the sibling nodes build against
-(irrelevance-query-demotion, marks-agreement-check, link-policy-replay,
-optional-vs-mandatory-experiment, rollout-handoff).
-
-## Why
-
-Grounded credit is a rare lexical signal, and about a third of what it fires
-on is noise (LM 01M3H76JBHEZKJMBPWFVN70SB2). 26% of recalls are never closed
-at all (01M3H77WY4ZNR3XNA62Y2YEVMR). Implicit feedback also linked the closing
-trace to *every* delivered node, irrelevant ones included
-(01M3H7GVW9Y3DWRZXRZ6CE85NK). An explicit mark is the agent stating directly
-which results it used and which were off-topic.
+Explicit marks state which results helped with their recall query and which
+were off-topic. They supplement grounded consumption and lookup credit without
+asserting a relation between the shown knowledge and a later written trace.
 
 ## Tool fields
 
@@ -24,18 +14,17 @@ fields:
 | `used` | `list[str] \| None` | node ids from an earlier recall on this transport session that the agent used |
 | `irrelevant` | `list[str] \| None` | node ids from an earlier recall that did not fit *that recall's query* |
 
-Both default to `None`. A call that omits both behaves exactly as it did
-before: the response has no `feedback_marks` key and no row is written. No
-tool was added.
+Both default to `None`. When both are omitted, the response has no
+`feedback_marks` key and no mark row is written.
 
 ### Why these three tools and not `memory_lookup`
 
 - `memory_recall`: the next recall is the one call an agent almost always
-  makes after reading a result. It is also the only carrier for the 26% of
-  recalls that are never closed by a write.
+  makes after reading a result. It also carries marks for recalls that are
+  never closed by a write.
 - `memory_remember` / `memory_teach`: the closing writes. A mark carried here
-  is processed **before** the implicit feedback of the same call, so an
-  `irrelevant` mark keeps its edge out from the start.
+  is processed **before** grounded feedback of the same call, so explicit
+  usage can claim numeric credit before inferred consumption.
 - `memory_lookup` does **not** get the fields. A lookup of a delivered id
   already earns numeric lookup credit through `apply_lookup_credit`; it does
   not confirm relevance for that question. The agent can mark a previously
@@ -95,7 +84,7 @@ keys, no `SCHEMA_VERSION` bump.
 | `marked_at` | storage clock |
 
 Index `idx_recall_feedback_marks_event(recall_event_id, mark, accepted)`
-serves the per-event hygiene read that runs on every closing write.
+supports inspection of accepted and dropped marks for one recall event.
 
 `memory_teach` and `memory_recall` write their marks before their carrier
 exists: the corrective trace in one case, the new recall event in the other.
@@ -143,17 +132,15 @@ repeat cancellation of an already cleared row.
 |---|---|---|---|
 | `LM_EXPLICIT_FEEDBACK_POLICY` | `audit`, `credit`, `off` | `audit` | default |
 | `LM_EXPLICIT_CREDIT_WEIGHT` | float ≥ 0 | `1.0` | default (also NaN/negative) |
-| `LM_IMPLICIT_LINK_POLICY` | `all`, `credited` | `all` | default |
 | `LM_EXPLICIT_FEEDBACK_PROMPT` | `optional`, `mandatory` | `optional` | default |
 
-- **audit**: records and audits marks, and link hygiene applies. There is no
+- **audit**: records and audits marks. There is no
   reinforcement, **no ledger or side-table row is claimed**, and grounded
   and lookup credit behave exactly as without marks.
 - **credit**: audit, plus explicit credit for accepted `used` marks, plus
   query-relative demotion for accepted `irrelevant` marks. Each event's query
   preparation is shared across its positive and negative effects.
-- **off**: the fields are accepted and ignored. Nothing is recorded, and
-  there is no hygiene: this is exactly the behaviour before the feature.
+- **off**: the fields are accepted and ignored. Nothing is recorded.
 
 ## Irrelevance
 
@@ -164,30 +151,27 @@ that event's accepted irrelevant ids, deduplicated and in mark order. An
 irrelevant mark must never lower a node's global `usefulness_score`. It
 means "not for this query", not "wrong". "Wrong" is `memory_teach`.
 
-## Link hygiene
+## Delivery history and knowledge relations
 
-Link hygiene applies under every policy except `off`:
+Compatible closing writes preserve all shown results in `recalled_nodes`,
+`source_traces` and `prior_recalls`, independently of credit and explicit marks.
+`memory_lookup(view="full")` exposes that provenance. Recall events retain the
+original query, result ids, ranking scores and attribution.
 
-- `apply_pending_recall_feedback` creates no `related` edge from the closing
-  trace to a node that has an accepted `irrelevant` mark for that event.
-  Provenance (`recalled_nodes`, `source_traces`, `prior_recalls`) still
-  records everything shown. The node's grounded credit, if its content was
-  grounded, is unaffected.
-- Marks on the same `memory_remember` / `memory_teach` call are processed
-  before implicit feedback.
-- If a later call marks a node irrelevant after the event has closed, the
-  closing trace's `related` edge to the node is **deleted**. This happens
-  only if the edge's metadata is `basis=implicit_recall_feedback` and
-  `recall_event_id=<that event>`. The `(source, target, type)` key is unique,
-  so an edge that other evidence has rewritten is left alone.
+Neither delivery, `used` for that query, nor a lookup asserts a `related` edge
+from the closing trace. `memory_teach` records the same history without applying
+grounded reinforcement; its explicit `supersedes` and validity remain separate.
+Grounded query anchors still connect each query to its supported results.
 
-`LM_IMPLICIT_LINK_POLICY=credited` links only results credited for that event
-under any basis: grounded in this call, or earlier lookup or explicit credit.
-`all` is the default and is today's behaviour minus irrelevant marks.
-Sibling link-policy-replay measures which one to recommend. The default is
-unchanged. Note: `memory_teach` runs implicit feedback with
-`reinforce_results=False`, so under `credited` a teach links only results
-that were credited before it.
+Semantic graph readers exclude stored `related` rows whose current
+`basis=implicit_recall_feedback` represents only recall history. This applies
+before adjacency limits and to graph-evidence checks in live retrieval and
+replay. Raw rows remain inspectable with `MemoryStore.get_connection` or SQL;
+no corpus rewrite is required. A content-reference or derivation `kind` merged
+into such a row establishes its own relation, and a replacement basis is read
+as its current evidence. Fresh semantic contributions replace purely technical
+metadata and weight instead of inheriting them. Explicit `related`, `caused`,
+`requires` and correction relations retain their semantics.
 
 ## Prompt arms (`LM_EXPLICIT_FEEDBACK_PROMPT`)
 

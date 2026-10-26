@@ -19,7 +19,7 @@ that association back for matching queries only.
 | `LM_EXPLICIT_FEEDBACK_POLICY` | irrelevant mark writes a row | retrieval demotes |
 |---|---|---|
 | `off` | no | no |
-| `audit` (default) | no (audited and link hygiene only) | no |
+| `audit` (default) | no (audit only) | no |
 | `credit` | yes | yes |
 
 Retrieval reads the demotion rows only under `credit`. Switching the valve back

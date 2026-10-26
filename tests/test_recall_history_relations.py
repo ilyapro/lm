@@ -1,7 +1,6 @@
 """Recall history is observable without becoming evidence between topics."""
 
 import asyncio
-import json
 
 import pytest
 
@@ -85,7 +84,7 @@ def test_two_topics_keep_credit_and_history_without_graph_leakage(
                 (new_id,),
             ).fetchone()[0] == 0
             fetched = await call("memory_lookup", node_id=new_id, view="full")
-            provenance = fetched["results"][0]["node"]["provenance"]
+            provenance = fetched["results"][0]["provenance"]
             assert set(provenance["recalled_nodes"]) == {orchid.id, deployment.id}
             assert {p["query"] for p in provenance["prior_recalls"]} == {
                 QUERY, "Cobalt deployment package transfer",

@@ -85,9 +85,10 @@ without changing the other surface.
    for legacy events. Without a transport session id, session dedup is skipped.
    A formed response is not proof of successful network transport.
 6. The next compatible `memory_remember` consumes the pending recall event,
-   records it in the new trace provenance, creates `related` edges to recalled
-   nodes, and applies implicit positive feedback to the recalled results and
-   retrieval weights. Compatibility follows identity precedence: explicit
+   records the complete delivery history in the new trace provenance, and
+   applies content-grounded credit to recalled results and retrieval weights.
+   Delivery history and credit for an earlier query create no knowledge
+   relation to the new trace. Compatibility follows identity precedence: explicit
    conflicting `session_id`/`task` values reject attribution; an equal
    session or task permits continuation across reconnects within the recall's
    scope. Otherwise an equal transport id and compatible agent are required,

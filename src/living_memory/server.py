@@ -1076,7 +1076,7 @@ def _register_tools(
                 admitted_traces=1 + len(rejected_alternatives or []),
             )
             response = {
-                "node": _remember_node_confirmation(node, implicit_feedback),
+                "node": _remember_node_confirmation(node),
                 "implicit_feedback": _implicit_feedback_to_dict(implicit_feedback),
                 "auto_consolidation": scheduled,
                 "auto_decay": auto_decay,
@@ -2099,7 +2099,7 @@ def _compact_consolidation_summary(result: ConsolidationResult) -> dict[str, Any
     }
 
 
-def _remember_node_confirmation(node: Any, feedback: Any) -> dict[str, Any]:
+def _remember_node_confirmation(node: Any) -> dict[str, Any]:
     """Compact write receipt for remember and teach: no content echo.
 
     The writer already holds the content it just stored; provenance bodies
@@ -2120,7 +2120,7 @@ def _remember_node_confirmation(node: Any, feedback: Any) -> dict[str, Any]:
 def _teach_result_to_dict(result: TeachResult) -> dict[str, Any]:
     return {
         "corrective_trace": _remember_node_confirmation(
-            result.corrective_trace, result.implicit_feedback
+            result.corrective_trace
         ),
         "supersedes": {"id": result.supersedes.id, "type": result.supersedes.type},
         "original": {"id": result.original.id},
