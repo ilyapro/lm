@@ -65,7 +65,9 @@ def deterministic_embeddings(monkeypatch):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
     monkeypatch.setenv("LM_DELIVERY_SNIPPET_LADDER", "300")
-    monkeypatch.setattr(LocalEmbeddingModel, "embed", lambda self, text: [1.0, 0.0])
+    monkeypatch.setattr(LocalEmbeddingModel, "embed", lambda self, text: (
+        [1.0, 0.0] if "amber" in text else [0.8, 0.6]
+    ))
 
 
 def seed(store):
