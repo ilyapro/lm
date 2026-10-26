@@ -243,6 +243,25 @@ def test_new_tokenizer_chunk_bound_is_checked_before_encoding(tmp_path):
         assert rows(store, node.id) == before
 
 
+def test_changed_encoder_cannot_readdress_the_old_score(app, monkeypatch):
+    mcp, encoder, service = app
+    node = legacy(mcp.memory_store)
+    scored = service.memory_recall(QUERY, scope=SCOPE, depth=0, max_results=1, log_access=False)[0]
+    monkeypatch.setattr(encoder, "embed_batch", lambda texts: [
+        [0.6, 0.8, 0.0] if "amber" in text else [0.0, 1.0, 0.0] for text in texts
+    ])
+    first = call(mcp, view="full")["results"][0]
+    assert first["vector_score"] == round(scored.vector_score, 6)
+    assert FACT not in first["node"]["content"]
+    assert scored.semantic_passage is None
+    assert mcp.memory_store.get_chunk_passages([scored.scored_chunk_id]) == {}
+    fresh = service.memory_recall(QUERY, scope=SCOPE, depth=0, max_results=1, log_access=False)[0]
+    assert fresh.node_id == node.id and fresh.vector_score < scored.vector_score
+    assert fresh.semantic_passage is not None
+    assert fresh.scored_chunk_id != scored.scored_chunk_id
+    assert FACT in call(mcp)["results"][0]["content"]
+
+
 @pytest.mark.parametrize("failure", ["encoder", "empty_vector", "write"])
 def test_failure_rolls_back_and_does_not_repeat_on_each_read(app, monkeypatch, failure):
     mcp, encoder, service = app
