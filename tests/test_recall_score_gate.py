@@ -437,7 +437,7 @@ def test_withheld_content_reaches_same_session_when_it_becomes_relevant(tmp_path
 
 def test_unused_tail_qualification_stays_outside_required_selection(monkeypatch):
     from living_memory import score_gate
-    ranked = [_result("head", bm25=1.0), _result("tail", bm25=0.5)]
+    ranked = [make_result("head", 1.0), make_result("tail", 0.5)]
     monkeypatch.setenv(MIN_SCORE_ENV, "0.35")
     monkeypatch.setenv(GATE_FORM_ENV, "drop")
     evidence = score_gate.QueryRelevance(ranked)
