@@ -154,6 +154,8 @@ def test_changed_scope_is_fresh_without_reloading_other_scopes(stores, monkeypat
             if mutation == "chunk-replace":
                 writer.connection.execute(
                     "INSERT OR REPLACE INTO node_chunk_embeddings "
+                    "(id, node_id, chunk_index, dimensions, embedding, token_start, token_end, "
+                    "content_fingerprint, created_at, updated_at) "
                     "SELECT (SELECT id FROM node_chunk_embeddings WHERE node_id='b'), "
                     "node_id, chunk_index, dimensions, embedding, token_start, token_end, "
                     "content_fingerprint, created_at, updated_at "
