@@ -83,6 +83,7 @@ def _assert_sane(
     assert chunks[-1].char_end == len(text)
 
     covered: set[int] = set()
+    characters: set[int] = set()
     for previous, chunk in zip([None, *chunks[:-1]], chunks, strict=True):
         assert chunk.text, "chunks must be non-empty"
         assert chunk.text == text[chunk.char_start : chunk.char_end]
@@ -93,7 +94,9 @@ def _assert_sane(
             assert previous.token_end <= chunk.token_end
             assert chunk.token_start <= previous.token_end, "coverage must not gap"
         covered.update(range(chunk.token_start, chunk.token_end))
+        characters.update(range(chunk.char_start, chunk.char_end))
     assert covered == set(range(total)), "chunks must cover the whole token stream"
+    assert all(char.isspace() or index in characters for index, char in enumerate(text))
 
 
 def test_short_text_is_one_chunk_carrying_the_whole_input(

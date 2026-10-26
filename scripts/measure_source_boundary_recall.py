@@ -103,7 +103,7 @@ async def case(name, content, query, distractor):
                         str(budget): _relevant_excerpt(content, budget, query, passage)
                         for passage in passages.values()
                         if passage.content_fingerprint == hashlib.sha256(content.encode()).hexdigest()
-                        for budget in (1000, 300, 160)
+                        for budget in (1000, 700, 500, 300, 200, 160)
                     }
                 report["write_plus_first_recall"] = {key: report["write"][key] + report["first_recall"][key] for key in report["write"]}
                 event = store.get_recall_event(recalled["recall_event_id"])

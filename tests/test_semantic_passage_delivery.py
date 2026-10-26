@@ -118,7 +118,7 @@ def test_semantic_source_record_and_adjacent_condition(tmp_path, view):
 
 
 @pytest.mark.parametrize("condition_before", [False, True])
-@pytest.mark.parametrize("budget", [1000, 300, 160])
+@pytest.mark.parametrize("budget", [1000, 700, 500, 300, 200, 160])
 def test_cross_paragraph_condition_precedes_remote_context(tmp_path, condition_before, budget):
     permission = "The dashboard may restart automatically after maintenance."
     condition = ("On the operator workstation, this permission requires an explicit operator "
@@ -136,7 +136,7 @@ def test_cross_paragraph_condition_precedes_remote_context(tmp_path, condition_b
         assert len(body) <= budget
         if budget >= 300:
             assert condition in body
-            assert body.index(condition) < body.index(permission) if condition_before else body.index(permission) < body.index(condition)
+            assert (body.index(condition) < body.index(permission)) == condition_before
         else:
             assert condition not in body
         # The other adjacent paragraph cannot fit even at 1000. Its omission
