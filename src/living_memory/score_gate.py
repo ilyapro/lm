@@ -130,7 +130,7 @@ def gate_score(
 
     candidate = _Candidate(
         node=result.node,
-        bm25_score=result.bm25_score,
+        lexical_score=getattr(result, "lexical_score", 0.0),
         vector_score=result.vector_score,
         graph_score=getattr(result, "source_graph_score", 0.0),
         trigger_score=0.0 if schema_trigger_by_name() else result.trigger_score,

@@ -364,6 +364,9 @@ class RecallResult:
     # Query activation through source relations, excluding anchors and
     # access/usefulness-derived edge strength. Never projected as wire history.
     source_graph_score: float = 0.0
+    # Current query-term coverage of source text, independent of FTS position.
+    # Transient qualification evidence, not a learned ranking channel.
+    lexical_score: float = 0.0
 
     @property
     def node_id(self) -> str:
@@ -404,6 +407,7 @@ class _Candidate:
     #: seed" in the module docstring.
     anchor_score: float = 0.0
     source_graph_score: float = 0.0
+    lexical_score: float = 0.0
 
     @property
     def combined_graph_score(self) -> float:
@@ -606,6 +610,11 @@ class MemoryRecallService:
         if not by_name:
             self._collect_schema_triggers(query, plan, candidates)
 
+        query_terms = set(tokenize(query, evidence=True))
+        for candidate in candidates.values():
+            candidate.lexical_score = _lexical_support(query_terms, candidate.node.content)
+        lexical_ids = set(candidates)
+
         graph_depth, causal_mode = _parse_depth(depth, query)
         decision_mode = _is_decision_depth(depth)
         # Anchors are an entry *into* the graph channel, so they are asked for
@@ -631,6 +640,10 @@ class MemoryRecallService:
                 decision_mode=decision_mode,
                 anchor_seeds=anchor_seeds,
             )
+
+        for node_id in candidates.keys() - lexical_ids:
+            candidate = candidates[node_id]
+            candidate.lexical_score = _lexical_support(query_terms, candidate.node.content)
 
         demotions = _merge_demotions(
             self._collect_query_demotions(plan, query_embedding, matches=anchor_matches),
@@ -887,6 +900,7 @@ class MemoryRecallService:
                     node=node,
                     score=adjusted,
                     bm25_score=candidate.bm25_score,
+                    lexical_score=candidate.lexical_score,
                     vector_score=candidate.vector_score,
                     graph_score=effective_graph,
                     source_graph_score=candidate.source_graph_score,
@@ -1320,14 +1334,14 @@ class MemoryRecallService:
         plan: ScopePlan,
         candidates: dict[str, _Candidate],
     ) -> None:
-        query_tokens = set(tokenize(query))
+        query_tokens = set(tokenize(query, evidence=True))
         if not query_tokens:
             return
         scores: dict[str, float] = {}
         coverages: dict[str, float] = {}
         for scope in plan.search_scopes:
             for schema_id, trigger in self.store.schema_triggers(scope):
-                trigger_tokens = set(tokenize(trigger))
+                trigger_tokens = set(tokenize(trigger, evidence=True))
                 if not trigger_tokens:
                     continue
                 matching = query_tokens & trigger_tokens
@@ -1368,14 +1382,14 @@ class MemoryRecallService:
         and are marked with ``trigger_score``/``"trigger"`` for the wire.
         """
 
-        query_tokens = frozenset(tokenize(query))
+        query_tokens = frozenset(tokenize(query, evidence=True))
         if not query_tokens or not ranked:
             return ranked
         named_ids = {
             node_id
             for scope in plan.search_scopes
             for node_id, trigger in self.store.schema_triggers(scope)
-            if frozenset(tokenize(trigger)) == query_tokens
+            if frozenset(tokenize(trigger, evidence=True)) == query_tokens
         }
         threshold = min_score_from_env()
         first: list[RecallResult] = []
@@ -1387,6 +1401,7 @@ class MemoryRecallService:
             result = replace(
                 result,
                 bm25_score=1.0,
+                lexical_score=1.0,
                 trigger_score=SCHEMA_NAME_TRIGGER_SCORE,
                 methods=(*result.methods, "trigger"),
             )
@@ -1425,9 +1440,9 @@ class MemoryRecallService:
         from a traversed one, so the ranker had no way to tell what a
         candidate had been worth before the anchor named it.
 
-        Source qualification also excludes history-derived relation weights.
-        When those occur, the same bounded walker evaluates source paths
-        independently; otherwise the ordinary activation is already sufficient.
+        Source qualification seeds by current lexical/vector support and
+        excludes history-derived relation weights. The same bounded walker
+        evaluates source paths independently when either differs from discovery.
         Neither source pass nor anchors change the ordinary ranking walk.
         """
 
@@ -1485,6 +1500,12 @@ class MemoryRecallService:
             (candidate.node.id, max(candidate.bm25_score, candidate.vector_score))
             for candidate in seed_candidates
         ]
+        source_roots = sorted(
+            ((candidate.node.id, max(candidate.lexical_score, candidate.vector_score))
+             for candidate in candidates.values()
+             if max(candidate.lexical_score, candidate.vector_score) > 0.0),
+            key=lambda item: (-item[1], item[0]),
+        )[:GRAPH_SEED_LIMIT]
         self._walk_graph(
             plan, candidates, roots,
             max_depth=max_depth,
@@ -1492,12 +1513,12 @@ class MemoryRecallService:
             anchor_pass=False,
         )
 
-        if historical_edges:
+        if historical_edges or source_roots != roots or any(score < 0.05 for _, score in roots):
             # Reuse the bounded walk with independent best-path state: a
             # stronger historical path must not hide a weaker source path.
             # Extra source-only discoveries do not change ranking membership.
             self._walk_graph(
-                plan, dict(candidates), roots,
+                plan, dict(candidates), source_roots,
                 max_depth=max_depth,
                 neighbors_for_nodes=lambda ids: neighbors_for_nodes(ids, source_only=True),
                 anchor_pass=False, source_pass=True,
@@ -1553,7 +1574,7 @@ class MemoryRecallService:
         queue: deque[tuple[str, float, int, tuple[str, ...]]] = deque()
         best_seen: dict[str, float] = {}
         for node_id, activation in roots:
-            seed = max(activation, 0.05)
+            seed = activation if source_pass else max(activation, 0.05)
             queue.append((node_id, seed, 0, (node_id,)))
             best_seen[node_id] = seed
 
@@ -1881,6 +1902,14 @@ def _is_causal_query(query: str) -> bool:
     )
 
 
+def _lexical_support(query_terms: set[str], content: str) -> float:
+    """Query coverage by source terms, without corpus counts or discovery rank."""
+
+    if not query_terms:
+        return 0.0
+    return len(query_terms.intersection(tokenize(content, evidence=True))) / len(query_terms)
+
+
 def _expanded_query(query: str) -> str:
     """The BM25 query: the raw text plus its normalized tokens and prefix terms.
 
@@ -2041,7 +2070,7 @@ def _blend_candidate_score(
 
     node = candidate.node
     base_score = (
-        bm25_weight * candidate.bm25_score
+        bm25_weight * (candidate.lexical_score if qualification else candidate.bm25_score)
         + vector_weight * candidate.vector_score
         + graph_weight * graph_score
     )

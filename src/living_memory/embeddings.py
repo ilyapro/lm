@@ -113,6 +113,9 @@ _RUSSIAN_STOP_WORDS = {
 }
 
 _STOP_WORDS = _ENGLISH_STOP_WORDS | _RUSSIAN_STOP_WORDS
+# Conditions and negation distinguish source applicability. Their English
+# counterparts already survive the ordinary stop-word filter.
+_EVIDENCE_STOP_WORDS = _STOP_WORDS - {"без", "до", "если", "не", "при"}
 
 _SYNONYMS = {
     "auth": "authentication",
@@ -849,21 +852,26 @@ def _offline_model_loading() -> Iterator[None]:
                 os.environ[name] = value
 
 
-def tokenize(text: str) -> list[str]:
-    """Return normalized Unicode tokens for BM25 expansion and fallback vectors."""
+def tokenize(text: str, *, evidence: bool = False) -> list[str]:
+    """Normalize Unicode terms with shared splitting, synonyms and stemming.
+
+    Evidence retains numbers (including identifier components) and conditions.
+    The default features for search expansion and fallback vectors stay compact.
+    """
 
     separated = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
     separated = separated.replace("_", " ").replace("-", " ").replace("/", " ").replace(".", " ")
     normalized = separated.lower().replace("ё", "е")
     raw_tokens = _TOKEN_RE.findall(normalized)
 
+    stop_words = _EVIDENCE_STOP_WORDS if evidence else _STOP_WORDS
     tokens: list[str] = []
     for raw_token in raw_tokens:
         token = raw_token.strip("_")
-        if not token or token.isdigit() or token in _STOP_WORDS:
+        if not token or (token.isdigit() and not evidence) or token in stop_words:
             continue
         canonical = _canonical_token(token)
-        if canonical and canonical not in _STOP_WORDS:
+        if canonical and canonical not in stop_words:
             tokens.append(canonical)
     return tokens
 
