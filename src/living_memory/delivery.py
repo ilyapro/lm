@@ -555,6 +555,19 @@ def _relevant_excerpt(
     if not required:
         required = {scored[0]}
 
+    groups = {paragraphs[index] for index in required}
+    paragraph_indices = {index for index in range(len(units)) if paragraphs[index] in groups}
+    adjacent_groups = []
+    if semantic_passage is not None:
+        for direction in (1, -1):
+            for index in sorted(paragraph_indices):
+                adjacent = index + direction
+                if (0 <= adjacent < len(units) and adjacent not in paragraph_indices
+                        and units[adjacent][2] == units[index][2]
+                        and paragraphs[adjacent] not in adjacent_groups):
+                    adjacent_groups.append(paragraphs[adjacent])
+    adjacent_indices = {index for index in range(len(units)) if paragraphs[index] in adjacent_groups}
+
     def render(selected: set[int], *, mark_omission: bool = True) -> str:
         # Join adjacent source units verbatim; separated runs keep their own
         # source label. This also handles an address spanning several records.
@@ -571,7 +584,8 @@ def _relevant_excerpt(
         if heading:
             body = f"{heading}\n{body}"
         if mark_omission and len(selected) < len(units):
-            body += "\n[Context omitted]"
+            body += ("\n[Incomplete source context]" if adjacent_indices - selected
+                     else "\n[Context omitted]")
         return body
 
     picked = required.copy()
@@ -594,8 +608,6 @@ def _relevant_excerpt(
 
     # Prefer complete enclosing paragraphs, then immediate source neighbours.
     # Every addition is tested together with the mandatory source and labels.
-    groups = {paragraphs[index] for index in required}
-    paragraph_indices = {index for index in range(len(units)) if paragraphs[index] in groups}
     if not include(paragraph_indices):
         neighbours = {
             adjacent for index in required for adjacent in (index - 1, index + 1)
@@ -609,14 +621,6 @@ def _relevant_excerpt(
         # in the same source may qualify it, so try them before distant lexical
         # matches. Following context comes first, then preceding context; each
         # paragraph stays whole and neither can displace the mandatory source.
-        adjacent_groups = []
-        for direction in (1, -1):
-            for index in sorted(paragraph_indices):
-                adjacent = index + direction
-                if (0 <= adjacent < len(units) and adjacent not in paragraph_indices
-                        and units[adjacent][2] == units[index][2]
-                        and paragraphs[adjacent] not in adjacent_groups):
-                    adjacent_groups.append(paragraphs[adjacent])
         for group in adjacent_groups:
             include({index for index in range(len(units)) if paragraphs[index] == group})
     for index in scored:
