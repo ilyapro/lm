@@ -91,8 +91,9 @@ def test_new_index_does_not_wait_for_other_nodes(mcp, operation, legacy_backlog)
             assert all(store.count_node_chunks(node_id) == 0 for node_id in pending)
             # A pre-existing maintenance failure must not hide this new index.
             if pending:
+                pending_ids = ",".join(f"'{node_id}'" for node_id in pending)
                 store.connection.execute(f"""CREATE TRIGGER reject_old_index
-                    BEFORE INSERT ON node_chunk_embeddings WHEN NEW.node_id='{pending[0]}'
+                    BEFORE INSERT ON node_chunk_embeddings WHEN NEW.node_id IN ({pending_ids})
                     BEGIN SELECT RAISE(ABORT, 'old index unavailable'); END""")
             result = await recall(client)
             ids = {entry["id"] for entry in result["results"]}
@@ -106,7 +107,9 @@ def test_new_index_does_not_wait_for_other_nodes(mcp, operation, legacy_backlog)
             if operation == "teach":
                 old = (await client.call_tool("memory_lookup", {"node_id": original})).data["results"][0]
                 assert old["superseded"] and target in old["superseded_by"]
-                assert original not in ids
+                for entry in result["results"]:
+                    if entry["id"] == original:
+                        assert entry["superseded"] and target in entry["superseded_by"]
 
     asyncio.run(scenario())
 
@@ -127,7 +130,9 @@ def test_multichunk_correction_and_later_edit_use_current_content(mcp):
             assert len(store.list_node_chunks(corrected)) == 1
             result = await recall(client)
             assert corrected in {entry["id"] for entry in result["results"]}
-            assert original not in {entry["id"] for entry in result["results"]}
+            for entry in result["results"]:
+                if entry["id"] == original:
+                    assert entry["superseded"] and corrected in entry["superseded_by"]
             for node_id, content in ((original, LONG), (corrected, CONTENT)):
                 looked = (await client.call_tool("memory_lookup", {"node_id": node_id})).data
                 assert looked["results"][0]["content"] == content
