@@ -73,6 +73,9 @@ def assert_outcome(mcp, ids, event_id, result):
     assert trace.context["session_id"] == CONTEXT["session_id"]
     assert trace.context["transport_session_id"] == "fixture-transport"
     assert set(trace.provenance["recalled_nodes"]) == set(ids)
+    assert result["corrective_trace"]["linked_node_count"] == len(
+        result["implicit_feedback"]["linked_node_ids"]
+    ) == 1
     assert [event["id"] for event in trace.provenance["prior_recalls"]] == [event_id]
     assert store.get_recall_event(event_id).feedback_trace_id == trace.id
     assert store.get_node(ids[0]).corrections[-1]["new"] == CORRECTION

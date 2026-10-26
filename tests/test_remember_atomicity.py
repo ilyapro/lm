@@ -132,7 +132,7 @@ def test_success_preserves_alternatives_marks_and_confirmation(mcp):
     assert result["node"] == {
         "id": trace.id, "level": "trace", "scope": CONTEXT["scope"],
         "created_at": trace.timestamp, "prior_recall_count": 1,
-        "linked_node_count": 2, "source_trace_count": 2,
+        "linked_node_count": 1, "source_trace_count": 2,
     }
     assert set(trace.provenance["recalled_nodes"]) == set(ids)
     assert result["implicit_feedback"]["linked_node_ids"] == ids[:1]
