@@ -121,7 +121,7 @@ def test_exact_generation_and_content_binding(tmp_path, monkeypatch):
     content = BACKGROUND + "\n\n" + FACT
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         start = content.index("open the amber")
-        node = put_match(store, content, start, start + 20)
+        node = put_match(store, content, start, start + 20, level="concept")
         service = MemoryRecallService(store, embedder=QueryEmbedder())
         result = recall(service)[0]
         original = store.get_chunk_passages
