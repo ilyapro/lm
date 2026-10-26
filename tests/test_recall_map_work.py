@@ -267,22 +267,25 @@ def test_mcp_map_preserves_scopes_corrections_decay_and_main_results(tmp_path, i
         mcp = create_mcp_server(tmp_path / "map.sqlite3")
         store = mcp.memory_store
         encoder = LocalEmbeddingModel(backend="hash")
-        store.set_chunk_embedder(encoder.embed_batch)
         seed(store)
-        old = store.append_trace(
+
+        def indexed(content, context):
+            return store.create_node(level="trace", content=content, context=context,
+                                     embedding=encoder.embed(content))
+        old = indexed(
             "cobalt backup recovery: trust snapshot marker.",
             {"scope": SCOPE, "topic": "snapshot marker"},
         )
-        correction = store.append_trace(
+        correction = indexed(
             "cobalt backup recovery: verify snapshot marker.",
             {"scope": SCOPE, "topic": "snapshot marker"},
         )
         store.create_connection(correction.id, old.id, "supersedes")
-        foreign = store.append_trace(
+        foreign = indexed(
             "cobalt backup recovery sync.",
             {"scope": "project:foreign", "topic": "disk sync"},
         )
-        dead = store.append_trace(
+        dead = indexed(
             "cobalt backup recovery uses a removed archive.",
             {"scope": SCOPE, "topic": "archive log"},
         )
