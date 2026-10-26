@@ -31,7 +31,7 @@ Rules, applied in this order per ranked result:
 4. Otherwise ``delivery: "full"`` with complete ``content``.
 
 Before all four, a result the score gate marked ``withheld="below_threshold"``
-(``score_gate``, ``LM_RECALL_GATE_FORM=stub``) becomes a
+(``score_gate``) becomes a
 ``delivery: "below_threshold"`` stub: empty ``content`` (the key stays), a
 ``content_ref`` naming the node for ``memory_lookup``, no ladder slot, and it
 never becomes a twin bearer -- its text was not delivered, so a later twin

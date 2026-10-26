@@ -1214,7 +1214,12 @@ def _register_tools(
         Each result carries a ``delivery`` class: ``full``, ``snippet`` (long
         content truncated inline), ``session_duplicate`` (already delivered on
         this transport session), ``twin_duplicate`` (byte-identical to a
-        higher-ranked result with the same scope and source identity).
+        higher-ranked result with the same scope and source identity), or
+        ``below_threshold`` (found source whose evidence did not qualify for
+        inline content; its empty body and content_ref permit exact lookup).
+        The evidence gate applies at every rank. In drop form, qualified
+        results take priority and spare slots hold below-threshold references;
+        stub form preserves the ranked cut. Both stay within max_results.
         Session dedup requires a transport session id and recorded delivery.
         Similarity ranks candidates without declaring them duplicates.
         The top-ranked content-bearer has a bounded default budget;

@@ -12,12 +12,14 @@ Valves, read per call:
   unparsable, non-positive or NaN: the gate is off and the function is the
   plain ``max_results`` cut, byte for byte.
 - ``LM_RECALL_GATE_FORM`` -- ``drop`` (default) or ``stub``. ``drop`` walks
-  ``ranked`` and delivers up to ``max_results`` results that pass; ``stub``
+  ``ranked`` and prioritizes results that pass, filling spare slots with
+  ``below_threshold`` source references; ``stub``
   keeps the plain cut and marks the failing results inside it
   ``withheld="below_threshold"`` (shaped by ``delivery`` as a content-less
   stub with a ``content_ref``). Anything else reads as ``drop``.
 
-Rank 1 is always delivered in full, whatever its score.
+Every rank needs the same evidence to deliver content. References keep a
+bounded route to found sources without treating them as qualified answers.
 
 The gate score is NOT the ranker's score. The ranker blends channels with the
 store's per-scope retrieval weights, which move with every ~100 credits; a
@@ -294,19 +296,29 @@ def apply_score_gate(
     if gate_form_from_env() == GATE_FORM_STUB:
         delivered = [
             result
-            if index == 0 or passes(result)
+            if passes(result)
             else replace(result, withheld=WITHHELD_BELOW_THRESHOLD)
-            for index, result in enumerate(ranked[:max_results])
+            for result in ranked[:max_results]
         ]
         return delivered, list(ranked[max_results:])
 
-    delivered = [ranked[0]]
+    delivered: list[Any] = []
     residual: list[Any] = []
-    for result in ranked[1:]:
+    for result in ranked:
         if len(delivered) < max_results and passes(result):
             delivered.append(result)
         else:
             residual.append(result)
+    # If capacity remains, every residual failed the gate: the scan above
+    # exhausted ranked without finding enough passing results. References
+    # use the same slots and withheld shaping as the explicit stub form.
+    spare = max_results - len(delivered)
+    if spare:
+        delivered.extend(
+            replace(result, withheld=WITHHELD_BELOW_THRESHOLD)
+            for result in residual[:spare]
+        )
+        residual = residual[spare:]
     return delivered, residual
 
 
