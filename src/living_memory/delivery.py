@@ -476,7 +476,8 @@ def _relevant_excerpt(
     original order. All conservative passages overlapping a verified semantic
     address are mandatory; a lexical hit supplies the anchor otherwise. One
     selection accounts for their source labels, surrounding context and budget.
-    Optional context never displaces the anchor. If the mandatory source itself
+    Further optional context is included only as whole source paragraphs and
+    never displaces the anchor. If the mandatory source itself
     cannot fit, only its explicitly incomplete prefix is offered, never an
     independent vector window or clause. Text boundaries do not prove semantic
     completeness; content_ref exposes the original, including omitted context.
@@ -631,7 +632,9 @@ def _relevant_excerpt(
                 include(indices)
     for index in scored:
         if index not in picked:
-            include({index})
+            # Keep optional matches with the rest of their source paragraph.
+            include({other for other in range(len(units))
+                     if paragraphs[other] == paragraphs[index]})
     return render(picked)
 
 

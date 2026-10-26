@@ -106,7 +106,9 @@ does not rewrite existing derived content; there is no bulk migration.
 Evidence passages retain their source labels and heading. Semantic retrieval
 carries the winning chunk's verified source address into delivery. All conservative
 passages overlapping that address are budgeted together before optional enclosing
-paragraphs, adjacent context and other relevant passages. Without a usable address,
+paragraphs and adjacent context. Further optional matches retain their whole
+paragraph within the source record or are omitted when that group cannot fit.
+Without a usable address,
 lexical source-record and passage relevance selects the anchor. Optional context
 cannot displace the anchor, and the vector window itself is never presented as an
 independent claim. Delivery does not embed or search again.

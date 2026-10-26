@@ -77,7 +77,8 @@ without changing the other surface.
    abbreviations or preserve all context across sentences. All passages overlapped
    by a verified semantic source address are budgeted together before optional
    context. Complete adjacent paragraphs from the same source precede distant
-   lexical context. Missing adjacent context is explicitly marked incomplete;
+   lexical context, which is added only as whole paragraphs within each source
+   record. Missing adjacent context is explicitly marked incomplete;
    other omitted context is marked, and an oversized anchor contributes an
    explicitly incomplete source prefix. Arbitrary character offsets and soft line wraps do not
    create independent candidates. Binding schemas

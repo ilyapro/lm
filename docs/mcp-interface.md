@@ -446,8 +446,9 @@ position — stubs don't consume ladder slots. The default ladder
 (positions past the end reuse the last budget). A verified semantic source address
 selects all overlapping conservative passages together; otherwise lexical relevance
 selects a passage within its source record. The same budget decision retains that
-anchor before adding complete enclosing paragraphs, immediate neighbours and other
-relevant passages. Each selected run preserves its source text and evidence label;
+anchor before adding complete enclosing paragraphs and immediate neighbours.
+Further optional matches are included as whole paragraphs within their source
+record, only when the group fits the remaining budget. Each selected run preserves its source text and evidence label;
 evidence carriers also retain their heading. Optional context cannot displace the
 found passage. Arbitrary vector-window boundaries never become claim boundaries.
 
