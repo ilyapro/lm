@@ -56,6 +56,29 @@ def source_relation_weight(
     return weight
 
 
+def source_relation_weight_sql(alias: str = "") -> str:
+    """SQL equivalent of source_relation_weight, before adjacency limits."""
+    prefix = f"{alias}." if alias else ""
+    weight = f"MAX(0.0, {prefix}weight)"
+    kind = f"COALESCE(json_extract({prefix}metadata, '$.kind'), '')"
+    rule = f"COALESCE(json_extract({prefix}metadata, '$.rule'), '')"
+    basis = f"COALESCE(json_extract({prefix}metadata, '$.basis'), '')"
+    historical = f"{basis} IN ('implicit_recall_feedback', 'co_access', 'cluster')"
+    return (
+        f"CASE WHEN NOT {semantic_relation_sql(alias)} THEN 0.0"
+        f" WHEN {prefix}type <> 'related' THEN {weight}"
+        f" WHEN {kind} = 'content_reference' AND ({historical} OR {rule} = 'R6')"
+        f" THEN MIN({weight}, {CONTENT_REFERENCE_WEIGHT})"
+        f" WHEN {kind} = 'derived_from' AND ({historical} OR {rule} = 'R5a')"
+        f" THEN MIN({weight}, {DERIVED_FROM_WEIGHT})"
+        f" WHEN {rule} = 'R4a' THEN MIN({weight}, {CONTENT_REFERENCE_WEIGHT})"
+        f" WHEN {rule} = 'R4b' AND json_type({prefix}metadata, '$.files') = 'array'"
+        f" THEN MIN({weight}, 0.95, 0.5 + 0.15 * json_array_length({prefix}metadata, '$.files'))"
+        f" WHEN {basis} = 'cluster' THEN MIN({weight}, {CLUSTER_MEMBERSHIP_WEIGHT})"
+        f" WHEN {basis} = 'co_access' THEN 0.0 ELSE {weight} END"
+    )
+
+
 def is_correction(relation_type: str, metadata: Mapping[str, Any]) -> bool:
     return relation_type == "supersedes" and not (
         metadata.get("kind") in _BOOKKEEPING_KINDS

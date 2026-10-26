@@ -146,7 +146,7 @@ def gate_score(
         # correction boost is left out, which only makes the gate stricter
         # on corrections by that factor.
         superseding=False,
-        positive_history=False,
+        qualification=True,
     )
     return score * _demotion(result, demotions)
 
@@ -178,7 +178,7 @@ def trigger_gate_score(
             node,
             result.trigger_score / SCHEMA_TRIGGER_SCALE,
             superseded=bool(result.superseded),
-            positive_history=False,
+            qualification=True,
         )
         * (
             1.0 if node.level == "schema"

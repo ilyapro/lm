@@ -2020,7 +2020,7 @@ def _blend_candidate_score(
     causal_mode: bool,
     superseded: bool,
     superseding: bool,
-    positive_history: bool = True,
+    qualification: bool = False,
 ) -> float:
     """Blend one graph activation with the candidate's other query channels.
 
@@ -2093,7 +2093,7 @@ def _blend_candidate_score(
         base_score * scope_boost,
         superseded=superseded,
         superseding=superseding,
-        positive_history=positive_history,
+        qualification=qualification,
     )
     if causal_mode and graph_score > 0.0:
         adjusted *= 1.5

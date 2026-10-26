@@ -39,6 +39,7 @@ from living_memory.models import (
     SourcePassage,
 )
 from living_memory.relations import (
+    source_relation_weight_sql,
     correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
 )
 from living_memory.phase import PhaseManager
@@ -2090,13 +2091,15 @@ class MemoryStore:
         return conns_by_node
 
     def list_recall_connections(
-        self, node_ids: Iterable[str], *, limit: int
+        self, node_ids: Iterable[str], *, limit: int, source_only: bool = False,
     ) -> dict[str, list[Connection]]:
         """Bound each adjacency before decoding connections and their metadata.
 
         Keep the bulk reader's query, batch order and tie order. A connection
         shared by two requested nodes occupies a slot in each adjacency but
         needs only one object. Close the cursor as soon as every list is full.
+        Source qualification projects and orders source contributions before
+        this bound, so historical weights cannot spend its adjacency slots.
         """
 
         ids = list(set(node_ids))
@@ -2105,11 +2108,13 @@ class MemoryStore:
             return result
         remaining = len(ids)
         seen: set[str] = set()
+        weight = source_relation_weight_sql() if source_only else "weight"
+        positive = f" AND ({weight}) > 0.0" if source_only else ""
         for i in range(0, len(ids), 400):
             chunk = ids[i : i + 400]
             placeholders = ",".join("?" for _ in chunk)
             cursor = self._conn.execute(
-                f"SELECT * FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()} ORDER BY weight DESC, created_at DESC",
+                f"SELECT *, {weight} AS recall_weight FROM connections WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders})) AND {semantic_relation_sql()}{positive} ORDER BY recall_weight DESC, created_at DESC",
                 chunk + chunk,
             )
             try:
@@ -2123,6 +2128,8 @@ class MemoryStore:
                     if not targets:
                         continue
                     connection = _connection_from_row(row)
+                    if source_only:
+                        connection = replace(connection, weight=float(row["recall_weight"]))
                     seen.add(connection.id)
                     for node_id in targets:
                         result[node_id].append(connection)
