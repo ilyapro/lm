@@ -1432,11 +1432,10 @@ class MemoryRecallService:
         """
 
         # A bulk query's tie order depends on its entire frontier, so reuse
-        # observations only for the same ordered request. Both walks share
-        # these bounded, directional neighbors, never their score state.
+        # observations only for the same ordered request and contribution.
+        # Walks share bounded neighbors, never their best-path state.
         observations: dict[
-            tuple[str, ...],
-            tuple[dict[str, list[tuple[str, float]]], dict[str, list[tuple[str, float]]]],
+            tuple[bool, tuple[str, ...]], dict[str, list[tuple[str, float]]],
         ] = {}
         observed_state: tuple[int, int] | None = None
         historical_edges = False
@@ -1455,32 +1454,24 @@ class MemoryRecallService:
             if connection.in_transaction or state != observed_state:
                 observations.clear()
             observed_state = None if connection.in_transaction else state
-            key = tuple(node_ids)
+            key = source_only, tuple(node_ids)
             if key not in observations:
                 connections = self.store.list_recall_connections(
-                    node_ids, limit=MAX_NEIGHBORS_PER_NODE
+                    node_ids, limit=MAX_NEIGHBORS_PER_NODE, source_only=source_only,
                 )
-                ordinary = {node_id: [] for node_id in connections}
-                source = {node_id: [] for node_id in connections}
+                neighbors = {node_id: [] for node_id in connections}
                 for node_id, edges in connections.items():
                     for edge in edges:
+                        if not source_only and source_relation_weight(edge.type, edge.weight, edge.metadata) != edge.weight:
+                            historical_edges = True
                         traversal = _traversal(
                             edge, node_id, causal_mode=causal_mode,
                             decision_mode=decision_mode,
                         )
-                        if traversal is None:
-                            continue
-                        ordinary[node_id].append(traversal)
-                        weight = source_relation_weight(edge.type, edge.weight, edge.metadata)
-                        if weight == edge.weight:
-                            source[node_id].append(traversal)
-                        else:
-                            historical_edges = True
-                            if weight > 0.0:
-                                neighbor, activation = traversal
-                                source[node_id].append((neighbor, activation * weight / edge.weight))
-                observations[key] = ordinary, source
-            return observations[key][int(source_only)]
+                        if traversal is not None:
+                            neighbors[node_id].append(traversal)
+                observations[key] = neighbors
+            return observations[key]
 
         # Seed BFS only from the top-K pre-graph candidates to avoid
         # fan-out from low-quality matches that would dilute the graph
