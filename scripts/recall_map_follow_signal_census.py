@@ -1375,8 +1375,6 @@ def build_synthetic_corpus(path: Path, *, base: datetime | None = None) -> dict[
             task,
             "session-census",
             transport,
-            None,
-            0,
             0,
             None,
             None,
@@ -1422,10 +1420,10 @@ def build_synthetic_corpus(path: Path, *, base: datetime | None = None) -> dict[
             INSERT INTO recall_events (
                 id, query, scope, requested_scope, resolved_scopes,
                 ambient_context, depth, max_results, results, agent, task,
-                session_id, transport_session_id, fingerprint, gated,
+                session_id, transport_session_id,
                 feedback_applied, feedback_trace_id, feedback_applied_at,
                 created_at, recall_map
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             rows,
         )

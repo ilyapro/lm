@@ -267,11 +267,11 @@ def test_mcp_map_preserves_scopes_corrections_decay_and_main_results(tmp_path, i
         store = mcp.memory_store
         seed(store)
         old = store.append_trace(
-            "cobalt backup recovery uses an obsolete snapshot marker.",
+            "cobalt backup recovery: trust snapshot marker.",
             {"scope": SCOPE, "topic": "snapshot marker"},
         )
         correction = store.append_trace(
-            "cobalt backup recovery verifies the current snapshot marker.",
+            "cobalt backup recovery: verify snapshot marker.",
             {"scope": SCOPE, "topic": "snapshot marker"},
         )
         store.create_connection(correction.id, old.id, "supersedes")
@@ -315,8 +315,9 @@ def test_mcp_map_preserves_scopes_corrections_decay_and_main_results(tmp_path, i
                 assert by_id[correction.id]["content"] == correction.content
                 assert by_id[old.id]["superseded"]
                 assert correction.id in by_id[old.id]["superseded_by"]
-                event = store.get_recall_event(actual["recall_event_id"])
-                assert event.recall_map == actual["recall_map"]
+                event = store.recent_recall_map_history()[0]
+                assert event["id"] == actual["recall_event_id"]
+                assert event["recall_map"] == actual["recall_map"]
         finally:
             store.close()
             plain.memory_store.close()
