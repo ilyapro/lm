@@ -104,12 +104,16 @@ in other sentences, and conditions beyond a truncated prefix may require the
 full original via `content_ref`.
 
 Chunk writers save verified character coordinates alongside their vectors.
-Existing chunks without coordinates retain lexical excerpt selection: a
-software upgrade alone does not recover their unknown tokenizer history.
-Normal content-changing writes and explicit content re-encoding populate the
-coordinates. Metadata-only updates and the backfill's already-current chunks
-do not. Missing or stale chunks use the existing bounded indexing path; no
-separate coordinate backfill or embedding pass runs during delivery.
+Existing chunks without coordinates retain lexical excerpt selection for the
+current call. After shaping, MCP recall can refresh one selected legacy snippet's
+chunk index, limited to 32,768 source characters and 32 old and new chunks. It
+uses the current encoder and verified source coordinates; the next ordinary
+recall scores that new index. No old score is assigned to a replacement chunk.
+Concurrent source or generation changes cancel the write. Full deliveries,
+duplicate/withheld results, current indices and oversized records do not incur
+refresh encoding. Failed or unsupported refreshes preserve lexical fallback and
+full lookup. Metadata-only updates and opening a database do not refresh these
+chunks; missing or stale chunks retain their existing indexing path.
 
 Recall before acting and at every new turn of thought, including mid-work.
 Use relevant knowledge and applicable complete recipes under current system

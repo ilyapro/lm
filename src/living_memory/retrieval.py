@@ -204,6 +204,7 @@ costs one indexed ``COUNT``.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
@@ -329,6 +330,8 @@ VECTOR_MATCH_THRESHOLD = 0.08
 GRAPH_SEED_LIMIT = 50
 MAX_NEIGHBORS_PER_NODE = 200
 LAZY_CHUNK_NODE_LIMIT = 16
+LEGACY_PASSAGE_MAX_CHARS = 32_768
+LEGACY_PASSAGE_MAX_CHUNKS = 32
 
 @dataclass(frozen=True, slots=True)
 class RecallResult:
@@ -356,6 +359,7 @@ class RecallResult:
     correction_ids: tuple[str, ...] = ()
     # Transient source evidence from this query's winning chunk, not a score.
     semantic_passage: SourcePassage | None = None
+    scored_chunk_id: str | None = None
 
     @property
     def node_id(self) -> str:
@@ -691,9 +695,38 @@ class MemoryRecallService:
         }
         passages = self.store.get_chunk_passages(list(chunk_ids.values()))
         return [
-            replace(result, semantic_passage=passages.get(chunk_ids.get(result.node_id)))
+            replace(result, semantic_passage=passages.get(chunk_ids.get(result.node_id)),
+                    scored_chunk_id=chunk_ids.get(result.node_id))
             for result in limited
         ]
+
+    def refresh_legacy_passages(self, snippets: Sequence[RecallResult]) -> None:
+        """Prepare at most one delivered snippet for a future semantic recall.
+
+        The caller supplies actual snippet bearers after delivery shaping. The
+        scored generation remains this call's only evidence; replacing its index
+        cannot give that old score an address in the replacement generation.
+        """
+        refresh = getattr(self.store, "refresh_legacy_chunks", None)
+        if not callable(refresh):
+            return
+        for result in snippets:
+            if (result.semantic_passage is not None or not result.scored_chunk_id
+                    or result.withheld or result.node.level == "schema"
+                    or len(result.node.content) > LEGACY_PASSAGE_MAX_CHARS):
+                continue
+            try:
+                self._share_embedder_with_store()
+                refresh(
+                    result.node_id, result.node.content, result.scored_chunk_id,
+                    max_chars=LEGACY_PASSAGE_MAX_CHARS,
+                    max_chunks=LEGACY_PASSAGE_MAX_CHUNKS,
+                )
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "could not refresh selected legacy chunk index", exc_info=True,
+                )
+            return
 
     def memory_connect(
         self,

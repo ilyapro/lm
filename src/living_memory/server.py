@@ -41,6 +41,7 @@ from living_memory.consolidation import (
 )
 from living_memory.decay import apply_decay
 from living_memory.delivery import (
+    DELIVERY_SNIPPET,
     DeliveryHistory,
     context_value_max_chars_from_env,
     full_node_diet_enabled_from_env,
@@ -1296,6 +1297,10 @@ def _register_tools(
                 stats_compaction=stats_compaction_enabled_from_env(),
                 sparse_entries=sparse_entries_enabled_from_env(),
             )
+            recall_service.refresh_legacy_passages([
+                result for result, entry in zip(results, shaped, strict=True)
+                if entry["delivery"] == DELIVERY_SNIPPET
+            ])
             response: dict[str, Any] = {
                 "query": query,
                 "scope": scope,

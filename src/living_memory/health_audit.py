@@ -443,6 +443,9 @@ class ReadOnlyAuditStore(MemoryStore):
     def replace_node_chunks(self, *args: Any, **kwargs: Any) -> int:
         raise RuntimeError("health audit store is read-only")
 
+    def refresh_legacy_chunks(self, *args: Any, **kwargs: Any) -> bool:
+        return False
+
     def delete_node_chunks(self, *args: Any, **kwargs: Any) -> int:
         raise RuntimeError("health audit store is read-only")
 

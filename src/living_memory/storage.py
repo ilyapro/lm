@@ -4021,6 +4021,51 @@ class MemoryStore:
             written = self._replace_node_chunks(node_id, chunks, fingerprint)
         return written
 
+    def refresh_legacy_chunks(
+        self, node_id: str, content: str, scored_chunk_id: str, *,
+        max_chars: int, max_chunks: int,
+    ) -> bool:
+        """Conditionally replace one selected legacy index, leaving its node alone.
+
+        Bound both source tokenization and encoding before doing model work.
+        Encode outside the write transaction, then compare the source and immutable
+        scored row again under the writer lock. A concurrent edit or replacement
+        wins; its generation must never be overwritten by this delayed read.
+        """
+        if (len(content) > max_chars or max_chunks <= 0
+                or not self._chunk_table_present()
+                or self._conn.execute("PRAGMA query_only").fetchone()[0]):
+            return False
+        fingerprint = _content_fingerprint(content)
+
+        def still_legacy() -> bool:
+            return self._conn.execute(
+                f"""SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
+                JOIN nodes n ON n.id = c.node_id
+                WHERE c.id = ? AND c.node_id = ? AND n.decayed = 0
+                  AND n.content_fingerprint = ? AND c.content_fingerprint = ?
+                  AND n.content = ? AND (c.char_start IS NULL OR c.char_end IS NULL)""",
+                (scored_chunk_id, node_id, fingerprint, fingerprint, content),
+            ).fetchone() is not None
+
+        if not still_legacy():
+            return False
+        # Inspect only enough row metadata to reject an oversized old index.
+        rows = self._conn.execute(
+            f"SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ? LIMIT ?",
+            (node_id, max_chunks + 1),
+        ).fetchall()
+        if len(rows) > max_chunks:
+            return False
+        pairs = self._chunk_embeddings_for(content, None, max_chunks=max_chunks)
+        if not pairs:
+            return False
+        with self.transaction(immediate=True):
+            if not still_legacy():
+                return False
+            self._replace_node_chunks(node_id, pairs, fingerprint)
+        return True
+
     def _replace_node_chunks(
         self,
         node_id: str,
@@ -4087,6 +4132,8 @@ class MemoryStore:
         self,
         content: str,
         node_embedding: Sequence[float] | None,
+        *,
+        max_chunks: int | None = None,
     ) -> list[tuple[TextChunk, Sequence[float]]]:
         """Split ``content`` into windows and pair each with its vector.
 
@@ -4101,7 +4148,7 @@ class MemoryStore:
         """
 
         chunks = chunk_text(content)
-        if not chunks:
+        if not chunks or (max_chunks is not None and len(chunks) > max_chunks):
             return []
         if len(chunks) == 1:
             if node_embedding:
@@ -4114,6 +4161,8 @@ class MemoryStore:
             raise ValueError(
                 f"chunk embedder returned {len(vectors)} vectors for {len(chunks)} chunks"
             )
+        if max_chunks is not None and any(not vector for vector in vectors):
+            raise ValueError("bounded chunk refresh requires every chunk vector")
         return [
             (chunk, list(vector))
             for chunk, vector in zip(chunks, vectors, strict=True)
