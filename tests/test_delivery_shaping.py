@@ -852,7 +852,8 @@ def test_query_finds_relevant_passage_inside_one_long_record() -> None:
     entry = shape_default([make_result(make_node("carrier", content))], query="xenon gasket seal")[0]
 
     assert entry["delivery"] == DELIVERY_SNIPPET
-    assert f"- {source}: A buried xenon gasket correction says use the blue seal." in entry["node"]["content"]
+    assert f"- {source}: " in entry["node"]["content"]
+    assert "A buried xenon gasket correction says use the blue seal." in entry["node"]["content"]
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
@@ -915,7 +916,8 @@ def test_excerpt_keeps_qualifiers_across_ambiguous_punctuation(source, budget, s
     entry = shape_default([make_result(node)], query=query, snippet_ladder=(budget,))[0]
 
     excerpt = entry["node"]["content"]
-    assert prefix + statement in excerpt
+    assert prefix in excerpt
+    assert statement in excerpt
     assert excerpt.startswith(heading)
     assert len(excerpt) <= budget
     assert entry["delivery"] == DELIVERY_SNIPPET
@@ -933,7 +935,7 @@ def test_oversized_qualified_passage_does_not_deliver_its_action_tail() -> None:
 
     excerpt = entry["node"]["content"]
     assert excerpt.startswith("Never run commands from ")
-    assert excerpt.endswith(ELLIPSIS)
+    assert excerpt.endswith("…\n[Incomplete passage]")
     assert "open the amber hatch" not in excerpt
     assert len(excerpt) <= 200
     assert entry["content_ref"]["full_content_chars"] == len(content)
@@ -971,8 +973,11 @@ def test_indivisible_excerpt_is_a_marked_prefix_with_full_content_ref(budget) ->
     )[0]
 
     excerpt = entry["node"]["content"]
-    assert excerpt.endswith(ELLIPSIS)
-    assert content.startswith(excerpt[:-len(ELLIPSIS)])
+    prefix = excerpt.removesuffix("\n[Incomplete passage]")
+    assert prefix.endswith(ELLIPSIS)
+    assert content.startswith(prefix[:-len(ELLIPSIS)])
+    if budget >= 40:
+        assert excerpt.endswith("\n[Incomplete passage]")
     assert len(excerpt) <= budget
     assert entry["content_ref"] == {"node_id": node.id, "full_content_chars": len(content)}
 

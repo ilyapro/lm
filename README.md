@@ -103,16 +103,20 @@ These rules apply to new derived writes and ordinary source-based refreshes,
 including consolidation, correction and promotion. Reading or opening a store
 does not rewrite existing derived content; there is no bulk migration.
 
-Evidence passages retain their source labels. Semantic retrieval carries the winning
-chunk's source address into delivery: its enclosing paragraph is preferred,
-or matching sentences with adjacent context when the paragraph is too large.
-The address must match the exact content version; delivery does not embed or
-search again. An indivisible passage that exceeds the
-budget contributes only a prefix marked with `…`; when the evidence heading
-and label cannot fit, the whole excerpt falls back to a bounded prefix of the
-original. These boundaries are textual heuristics: abbreviations, context
-in other sentences, and conditions beyond a truncated prefix may require the
-full original via `content_ref`.
+Evidence passages retain their source labels and heading. Semantic retrieval
+carries the winning chunk's verified source address into delivery. All conservative
+passages overlapping that address are budgeted together before optional enclosing
+paragraphs, adjacent context and other relevant passages. Without a usable address,
+lexical source-record and passage relevance selects the anchor. Optional context
+cannot displace the anchor, and the vector window itself is never presented as an
+independent claim. Delivery does not embed or search again.
+
+`[Context omitted]` marks selection that leaves out source passages. If the anchor
+itself exceeds the budget, delivery provides its source prefix with `…` and
+`[Incomplete passage]`; very small budgets may fit only a prefix and `…`, including
+when the evidence heading and label cannot fit. These are textual heuristics,
+not a guarantee of semantic completeness. Conditions in omitted sentences or the
+missing tail may matter; use the full original via `content_ref` to resolve them.
 
 Chunk writers save verified character coordinates alongside their vectors.
 Existing chunks without coordinates retain lexical excerpt selection for the

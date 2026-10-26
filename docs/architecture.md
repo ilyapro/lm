@@ -69,9 +69,11 @@ without changing the other surface.
    oversized ordinary content becomes a bounded excerpt selected at paragraph
    and conservative sentence-end hints within each evidence source. Common
    ambiguous boundary hints stay inside a candidate; this heuristic does not parse arbitrary
-   abbreviations or preserve all context across sentences. An indivisible passage
-   can contribute a marked prefix; arbitrary character offsets and soft line
-   wraps do not create independent candidates. Binding schemas
+   abbreviations or preserve all context across sentences. All passages overlapped
+   by a verified semantic source address are budgeted together before optional
+   context. Omitted context is marked; an oversized anchor contributes an explicitly
+   incomplete source prefix. Arbitrary character offsets and soft line wraps do not
+   create independent candidates. Binding schemas
    remain complete instead of being snippeted. The bounded event history is
    read before retrieval, so a response never stubs itself.
    The default `view="knowledge"` serializes identity, content, validity,

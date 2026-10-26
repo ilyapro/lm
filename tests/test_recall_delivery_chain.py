@@ -67,7 +67,7 @@ def test_consolidated_qualifications_survive_persistence_and_mcp_recall(tmp_path
                 assert "…" not in entry["content"]
                 source_entry = next(item for item in response["results"] if item["id"] == sources[1].id)
                 assert source_entry["delivery"] == "snippet"
-                assert source_entry["content"].endswith("…")
+                assert source_entry["content"].endswith("…\n[Incomplete passage]")
                 assert "restart the dashboard" not in source_entry["content"]
             else:
                 assert statement in entry["content"]
@@ -165,8 +165,9 @@ def test_mcp_indivisible_excerpt_is_marked_and_refetchable(tmp_path, monkeypatch
             entry = answer["results"][0]
             excerpt = entry.get("node", entry)["content"]
             assert entry["delivery"] == "snippet"
-            assert len(excerpt) <= 200 and excerpt.endswith("…")
-            assert content.startswith(excerpt[:-1])
+            assert len(excerpt) <= 200 and excerpt.endswith("…\n[Incomplete passage]")
+            prefix = excerpt.removesuffix("\n[Incomplete passage]")
+            assert content.startswith(prefix[:-1])
             assert "open the amber hatch" not in excerpt
             assert entry["content_ref"]["full_content_chars"] == len(content)
             lookup = _structured(await client.call_tool("memory_lookup", {

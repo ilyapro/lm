@@ -386,19 +386,21 @@ separate even when their text matches.
 Content budgets come from the snippet ladder, indexed by content-bearer
 position — stubs don't consume ladder slots. The default ladder
 `2400,1000,700,500,300,200` bounds ordinary content at each position
-(positions past the end reuse the last budget). Task-relevant passages start
-at paragraph breaks or sentence-ending punctuation followed by whitespace;
-soft line wraps stay within a passage. A long indivisible passage contributes
-only its beginning, marked with `…`, rather than an independently selected
-tail. Evidence carriers retain their heading and each selected passage's
-source label. If these cannot fit, delivery falls back to a bounded prefix
-of the original. `content_ref` always permits byte-complete lookup.
+(positions past the end reuse the last budget). A verified semantic source address
+selects all overlapping conservative passages together; otherwise lexical relevance
+selects a passage within its source record. The same budget decision retains that
+anchor before adding complete enclosing paragraphs, immediate neighbours and other
+relevant passages. Each selected run preserves its source text and evidence label;
+evidence carriers also retain their heading. Optional context cannot displace the
+found passage. Arbitrary vector-window boundaries never become claim boundaries.
 
-These textual boundaries are heuristics: abbreviations and dependencies
-between sentences or paragraphs can require more context. Truncation can
-also omit a later condition. Use the full original when the excerpt is
-insufficient to establish a statement's qualifications; snippets do not
-guarantee interpretation of arbitrary text.
+`[Context omitted]` marks unselected source passages. If the mandatory source cannot
+fit, only its beginning is delivered, with `…` and `[Incomplete passage]`. A budget
+too small for the heading, label and notice falls back to a prefix with `…`.
+`content_ref` always permits byte-complete lookup. These textual boundaries are
+heuristics: abbreviations and dependencies between sentences or paragraphs can
+require more context. Use the full original when omitted context or a missing tail
+could qualify the statement; snippets do not guarantee semantic completeness.
 Recipe `level="schema"` content is delivered complete instead of snippeted.
 This preserves its steps and conditions; the storage level grants no authority.
 
