@@ -202,7 +202,8 @@ it is not a general speed or recall guarantee. Each window retains its global
 source token and character coordinates. Delivery uses that source address,
 not the window as an independent assertion. After the mandatory source, it
 prefers complete adjacent paragraphs from that same source before distant
-lexical matches, following context before preceding context. If adjacent source
+lexical matches. It tries both neighbours together, then smaller whole
+paragraphs first if both cannot fit. If adjacent source
 context cannot fit, the excerpt says `[Incomplete source context]`; if the
 mandatory passage itself cannot fit, it says `[Incomplete passage]`. Other
 omissions use `[Context omitted]`. Neither adjacency nor these textual boundaries

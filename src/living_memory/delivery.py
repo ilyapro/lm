@@ -619,10 +619,18 @@ def _relevant_excerpt(
     if semantic_passage is not None:
         # A search window is not an independent assertion. Adjacent paragraphs
         # in the same source may qualify it, so try them before distant lexical
-        # matches. Following context comes first, then preceding context; each
-        # paragraph stays whole and neither can displace the mandatory source.
-        for group in adjacent_groups:
-            include({index for index in range(len(units)) if paragraphs[index] == group})
+        # matches. If both cannot fit, try the smaller complete paragraph first
+        # so a large neighbour cannot monopolize the optional context budget.
+        # Missing adjacent context stays explicit; size proves no applicability.
+        if not include(adjacent_indices):
+            adjacent_paragraphs = [
+                {index for index in range(len(units)) if paragraphs[index] == group}
+                for group in adjacent_groups
+            ]
+            for indices in sorted(adjacent_paragraphs, key=lambda indices: (
+                spans[max(indices)][1] - spans[min(indices)][0], min(indices),
+            )):
+                include(indices)
     for index in scored:
         if index not in picked:
             include({index})
