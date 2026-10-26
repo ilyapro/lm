@@ -457,7 +457,8 @@ def test_consolidation_near_identical_cluster_digest_stays_compact_and_distinct(
         assert "\n• " in concept.content
         assert len(concept.content) <= DIGEST_MAX_CHARS
         source_contents = {trace.content for trace in traces}
-        assert all(line.removeprefix("• ") in source_contents for line in concept.content.splitlines())
+        assert all(passage.removeprefix("• ") in source_contents
+                   for passage in concept.content.split("\n\n"))
 
 
 def test_consolidation_preserves_legacy_copy_without_recorded_sources(

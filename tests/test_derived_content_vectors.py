@@ -76,7 +76,8 @@ def test_consolidate_recall_and_updates_keep_content_vectors_and_sources(tmp_pat
         encoder.calls.clear()
         concept, = memory_consolidate(store, scope=SCOPE, min_cluster_size=10).concepts_created
         assert all(concept.content != s.content for s in sources)
-        assert (len(chunk_text(concept.content)) > 1) is long
+        assert all((len(chunk_text(source.content)) > 1) is long for source in sources)
+        assert len(chunk_text(concept.content)) > 1
         assert encoder.calls == [w.text for w in chunk_text(concept.content)]
         assert_content_vectors(store, concept, encoder)
         assert concept.embedding == sources[-1].embedding
@@ -84,12 +85,13 @@ def test_consolidate_recall_and_updates_keep_content_vectors_and_sources(tmp_pat
         assert {s.id: asdict(store.get_node(s.id)) for s in sources} == preserved
 
         service = MemoryRecallService(store, embedder=encoder)
-        result = next(r for r in recall(service, concept.content) if r.node.id == concept.id)
+        query = chunk_text(concept.content)[-1].text
+        result = next(r for r in recall(service, query) if r.node.id == concept.id)
         assert result.node.content == concept.content
         if not long:
             assert result.vector_score == pytest.approx(1.0, abs=1e-6)
             assert result.vector_score > cosine_similarity(
-                encoder.model.embed(concept.content), concept.embedding,
+                encoder.model.embed(query), concept.embedding,
             )
 
         before = store.list_node_chunks(concept.id)
@@ -260,9 +262,11 @@ def test_promotion_owns_search_vectors_for_distinct_project_contents(tmp_path, l
         assert encoder.calls == [w.text for w in chunk_text(promoted.content)]
         assert_content_vectors(store, promoted, encoder)
         assert promoted.embedding == sources[0].embedding
-        assert (len(chunk_text(promoted.content)) > 1) is long
+        assert all((len(chunk_text(source.content)) > 1) is long for source in sources)
+        assert len(chunk_text(promoted.content)) > 1
         service = MemoryRecallService(store, embedder=encoder)
-        delivered = next(r for r in recall(service, promoted.content, scope="global") if r.node.id == promoted.id)
+        query = chunk_text(promoted.content)[-1].text
+        delivered = next(r for r in recall(service, query, scope="global") if r.node.id == promoted.id)
         assert delivered.node.content == promoted.content
         if not long:
             assert delivered.vector_score == pytest.approx(1., abs=1e-6)
