@@ -1800,12 +1800,7 @@ def test_module_imports_nothing_that_calls_a_model_or_the_network() -> None:
 
 @pytest.fixture(autouse=True)
 def _valves_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every test in this file starts with no pool valve armed.
-
-    Both live hosts now export the cold-quota pair into every login shell, so
-    an inherited valve would make the seven-count guard below assert its own
-    opposite.
-    """
+    """Keep query and usefulness settings independent of the host shell."""
 
     for name in (
         POOL_USEFULNESS_GATE_ENV,

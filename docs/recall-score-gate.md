@@ -1,17 +1,13 @@
 # Recall quality gate
 
 Code: `src/living_memory/score_gate.py` (gate), `src/living_memory/delivery.py`
-(stub shaping). Tests: `tests/test_recall_score_gate.py`. Goal: recall-precision,
-node score-gate.
+(stub shaping). Tests: `tests/test_recall_score_gate.py`.
 
 ## Why
 
-A `memory_recall` answer always fills up to `max_results`, however weak the
-tail is. Agent marks (`recall_feedback_marks`) show that the final score
-predicts usefulness well: below 0.3, 4–6% of results are marked `used`; at 0.6
-and above, 42–67%. The gate stops weak results from taking a full slot. It is
-off by default. Choosing the threshold is not part of this change: the
-precision-measure-handoff node calibrates it on snapshots.
+The quality gate prevents weak ranked results from taking full delivery slots.
+It is optional and uses a configured threshold on current retrieval evidence.
+The map shares this qualification while retaining its own grouping and budget.
 
 ## Valves
 
@@ -21,7 +17,7 @@ precision-measure-handoff node calibrates it on snapshots.
 | `LM_RECALL_GATE_FORM` | `drop` or `stub` | `drop` |
 
 The gate is off when `LM_RECALL_MIN_SCORE` is unset, empty, unparsable, zero or
-negative, NaN or infinite. In that case `apply_score_gate` is exactly the old cut
+negative, NaN or infinite. In that case `apply_score_gate` is the plain cut
 (`ranked[:max_results]`, `ranked[max_results:]`), and no result carries
 `withheld`. `LM_RECALL_GATE_FORM` is read only while the gate is on. Any value
 other than `stub` (case-insensitive) reads as `drop`.
@@ -47,11 +43,11 @@ therefore never empty just because the gate is on.
   result that passes, until `max_results` results are delivered. Every ranked
   result that is not delivered goes into `residual` in ranked order: results
   that failed the gate, and passing results past the cap. A passing result
-  from below the old cut can move up into a freed slot. The answer can be
+  from below the plain cut can move up into a freed slot. The answer can be
   shorter than `max_results`.
-- **stub**: keep the old cut. Results inside it that fail the gate are
+- **stub**: keep the plain cut. Results inside it that fail the gate are
   delivered as `dataclasses.replace(result, withheld="below_threshold")`, and
-  `residual` is the old residual. Tail slots are not filled from below.
+  `residual` is the plain-cut residual. Tail slots are not filled from below.
   `withheld` goes into the recall event summary through `RecallResult.to_dict`
   and `_recall_result_summary`.
 
@@ -78,8 +74,7 @@ every other rule:
   was not delivered, so a later result with the same content is delivered on
   its own terms.
 
-This is an added delivery class, and the existing classes keep their meaning.
-Without the gate, nothing changes.
+The withheld delivery class applies only while the gate is enabled.
 
 A withheld node retains its selected event entry and lookup reference, but its
 empty response body does not establish content delivery. If a later recall
