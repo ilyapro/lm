@@ -9,6 +9,7 @@ as well as matches. Model/tokenizer warmup is outside the measured calls.
 
 import asyncio
 from dataclasses import asdict
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -99,7 +100,8 @@ async def case(name, content, query, distractor):
                 if "constraint" in name:
                     report["bounded_delivery_diagnostic"] = {
                         str(budget): _relevant_excerpt(content, budget, query, passage)
-                        for passage in passages.values() if passage.node_id == target
+                        for passage in passages.values()
+                        if passage.content_fingerprint == hashlib.sha256(content.encode()).hexdigest()
                         for budget in (1000, 300, 160)
                     }
                 report["write_plus_first_recall"] = {key: report["write"][key] + report["first_recall"][key] for key in report["write"]}
