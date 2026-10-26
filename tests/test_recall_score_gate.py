@@ -396,6 +396,10 @@ def _seed_corpus(store: MemoryStore) -> None:
     store.append_trace("Database vacuum schedule and disk space", {"scope": SCOPE, "agent": "b"})
     for index in range(30):
         store.append_trace(f"unrelated note {index} about lunch menus", {"scope": SCOPE, "agent": "c"})
+    # Gate comparisons require the same indexed corpus on every read.
+    service = MemoryRecallService(store)
+    for node in store.list_unchunked_nodes(scope=SCOPE):
+        service._rechunk_node(node)
 
 
 # --- trigger-found schemas ------------------------------------------------
@@ -461,7 +465,6 @@ def _recall_snapshot(store: MemoryStore) -> tuple[list[dict[str, Any]], list[str
 def test_off_is_identical_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         _seed_corpus(store)
-        _recall_snapshot(store)  # first recall backfills embeddings
         baseline = _recall_snapshot(store)
         for raw in ("", "0", "junk"):
             monkeypatch.setenv(MIN_SCORE_ENV, raw)
@@ -474,7 +477,6 @@ def test_off_is_identical_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 def test_live_path_drop_and_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         _seed_corpus(store)
-        _recall_snapshot(store)  # first recall backfills embeddings
         off_delivered, off_residual = _recall_snapshot(store)
         monkeypatch.setenv(MIN_SCORE_ENV, "5")  # nothing passes
         drop_delivered, drop_residual = _recall_snapshot(store)

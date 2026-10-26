@@ -290,7 +290,7 @@ def test_failure_rolls_back_and_does_not_repeat_on_each_read(app, monkeypatch, f
     assert store.get_node(node.id).content == CONTENT
 
 
-def test_failed_winners_are_bounded_and_do_not_consume_the_next_source_slot(app, monkeypatch):
+def test_failed_winners_are_bounded_and_do_not_consume_the_next_source_slot(app):
     mcp, encoder, service = app
     store = mcp.memory_store
     node = legacy(store)
