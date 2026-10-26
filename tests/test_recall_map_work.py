@@ -256,3 +256,68 @@ def test_foreign_lookup_volume_cannot_disable_own_noise_limit(tmp_path, isolated
             store.record_lookup_event([medoid], transport_session_id="A")
         assert verdict(store, task="backup").collapse
         assert verdict(store, task="backup").offers == 3
+
+
+@pytest.mark.parametrize("scope", [SCOPE, None])
+def test_mcp_map_preserves_scopes_corrections_decay_and_main_results(tmp_path, isolated, monkeypatch, scope):
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.35")
+
+    async def run():
+        mcp = create_mcp_server(tmp_path / "map.sqlite3")
+        store = mcp.memory_store
+        seed(store)
+        old = store.append_trace(
+            "cobalt backup recovery uses an obsolete snapshot marker.",
+            {"scope": SCOPE, "topic": "snapshot marker"},
+        )
+        correction = store.append_trace(
+            "cobalt backup recovery verifies the current snapshot marker.",
+            {"scope": SCOPE, "topic": "snapshot marker"},
+        )
+        store.create_connection(correction.id, old.id, "supersedes")
+        foreign = store.append_trace(
+            "cobalt backup recovery checks disk sync.",
+            {"scope": "project:foreign", "topic": "disk sync"},
+        )
+        dead = store.append_trace(
+            "cobalt backup recovery uses a removed archive.",
+            {"scope": SCOPE, "topic": "archive log"},
+        )
+        store.soft_delete_node(dead.id, "fixture")
+        baseline_path = tmp_path / "plain.sqlite3"
+        with sqlite3.connect(baseline_path) as target:
+            store.connection.backup(target)
+        plain = create_mcp_server(baseline_path)
+        arguments = {"query": "cobalt backup recovery", "max_results": 1,
+                     "depth": 0, "ambient_context": {"task": "backup check"}}
+        if scope is not None:
+            arguments["scope"] = scope
+        try:
+            monkeypatch.setenv("LM_RECALL_MAP", "0")
+            async with Client(plain) as client:
+                baseline = _structured(await client.call_tool("memory_recall", arguments))
+            monkeypatch.setenv("LM_RECALL_MAP", "1")
+            async with Client(mcp) as client:
+                actual = _structured(await client.call_tool("memory_recall", arguments))
+                assert actual["results"] == baseline["results"]
+                ids = {entry["id"] for entry in actual["results"]}
+                ids.update(c["medoid"]["node_id"] for c in actual["recall_map"]["clusters"])
+                assert correction.id in ids and old.id not in ids and dead.id not in ids
+                if scope is not None:
+                    assert foreign.id not in ids
+                else:
+                    assert foreign.id in ids
+                    assert actual["recall_map"]["clusters"]
+                lookup = _structured(await client.call_tool("memory_lookup", {
+                    "node_ids": [old.id, correction.id], "scope": SCOPE,
+                }))
+                by_id = {entry["id"]: entry for entry in lookup["results"]}
+                assert by_id[correction.id]["content"] == correction.content
+                assert by_id[old.id]["superseded"]
+                assert correction.id in by_id[old.id]["superseded_by"]
+                event = store.get_recall_event(actual["recall_event_id"])
+                assert event.recall_map == actual["recall_map"]
+        finally:
+            store.close()
+            plain.memory_store.close()
+    asyncio.run(run())

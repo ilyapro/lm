@@ -433,3 +433,22 @@ def test_withheld_content_reaches_same_session_when_it_becomes_relevant(tmp_path
     assert second["results"][0]["delivery"] == "full"
     assert "NIGHTJAR" in second["results"][0]["content"]
     assert recall("Harbour OMEGA NIGHTJAR")["results"][0]["delivery"] == "session_duplicate"
+
+
+def test_unused_tail_qualification_stays_outside_required_selection(monkeypatch):
+    from living_memory import score_gate
+    ranked = [_result("head", bm25=1.0), _result("tail", bm25=0.5)]
+    monkeypatch.setenv(MIN_SCORE_ENV, "0.35")
+    monkeypatch.setenv(GATE_FORM_ENV, "drop")
+    evidence = score_gate.QueryRelevance(ranked)
+
+    def unavailable(*args, **kwargs):
+        raise ValueError("query qualification unavailable")
+
+    monkeypatch.setattr(score_gate, "passes_gate", unavailable)
+    selected, residual = apply_score_gate(ranked, 1, relevance=evidence)
+    assert selected == ranked[:1] and residual == ranked[1:]
+    with pytest.raises(ValueError, match="query qualification unavailable"):
+        evidence.eligible_ids()
+    with pytest.raises(ValueError, match="query qualification unavailable"):
+        apply_score_gate(ranked, 2, relevance=evidence)
