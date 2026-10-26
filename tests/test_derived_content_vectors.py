@@ -89,7 +89,7 @@ def test_consolidate_recall_and_updates_keep_content_vectors_and_sources(tmp_pat
         result = next(r for r in recall(service, query) if r.node.id == concept.id)
         assert result.node.content == concept.content
         if not long:
-            assert result.vector_score == pytest.approx(1.0, abs=1e-6)
+            assert result.scored_chunk_id == store.list_node_chunks(concept.id)[-1].id
             assert result.vector_score > cosine_similarity(
                 encoder.model.embed(query), concept.embedding,
             )
@@ -269,7 +269,7 @@ def test_promotion_owns_search_vectors_for_distinct_project_contents(tmp_path, l
         delivered = next(r for r in recall(service, query, scope="global") if r.node.id == promoted.id)
         assert delivered.node.content == promoted.content
         if not long:
-            assert delivered.vector_score == pytest.approx(1., abs=1e-6)
+            assert delivered.scored_chunk_id == store.list_node_chunks(promoted.id)[-1].id
 
         changed_text = f"{core} Beta keeps nine retries."
         store.update_node(sources[1].id, content=changed_text, embedding=encoder.embed(changed_text))
