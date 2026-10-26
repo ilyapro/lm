@@ -550,7 +550,7 @@ def test_skipped_recall_preserves_results_and_persists_unmeasured_pool(
 
     def history_spy(self, ids, instant):
         calls["history"] += 1
-        return _REAL_MATURED_RECALL_HISTORY(self, ids, instant)
+        raise AssertionError("skipped map must not read candidate history")
 
     monkeypatch.setattr(RecallMapBuilder, "_pool", pool_spy)
     monkeypatch.setattr(MemoryStore, "matured_recall_history", history_spy)
