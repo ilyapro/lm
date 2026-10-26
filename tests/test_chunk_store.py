@@ -18,7 +18,7 @@ from typing import Sequence
 import pytest
 
 from living_memory import replay
-from living_memory.chunking import TextChunk, chunk_text
+from living_memory.chunking import TextChunk, chunk_text, count_tokens
 from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
@@ -62,6 +62,44 @@ def stub_embedder(dimensions: int) -> tuple[object, list[list[str]]]:
 def store(tmp_path: Path) -> MemoryStore:
     with MemoryStore(tmp_path / "memory.sqlite3") as opened:
         yield opened
+
+
+def test_addressed_chunks_keep_their_generation_until_content_reindex(tmp_path):
+    content = "Build artifacts are disposable.\n\nRenew the registry certificate before retrying."
+    path = tmp_path / "memory.sqlite3"
+    embed, calls = stub_embedder(3)
+    with MemoryStore(path) as store:
+        node = store.create_node(level="concept", content=content)
+        # A valid, addressed index from a writer that combined fitting paragraphs.
+        store.replace_node_chunks(node.id, [(
+            TextChunk(content, 0, 0, count_tokens(content), 0, len(content)),
+            [1.0, 0.0, 0.0],
+        )])
+        old_chunks = store.list_node_chunks(node.id)
+
+    with MemoryStore(path) as store:
+        store.set_chunk_embedder(embed)
+        store.update_node(node.id, stats={"confidence": 0.4})
+        assert store.node_chunks_are_current(node.id)
+        assert store.list_unchunked_nodes() == []
+        assert store.list_node_chunks(node.id) == old_chunks
+        assert calls == []
+        assert store.get_chunk_passages([old_chunks[0].id])
+        assert store.get_node(node.id).content == content
+
+        # An explicit content-index update uses the current splitter. Merely
+        # changing the representative vector is not a content-index update.
+        store.update_node(node.id, embedding=[1.0, 0.0, 0.0])
+        windows = chunk_text(content)
+        assert len(windows) == 2
+        assert calls == [[window.text for window in windows]]
+        chunks = store.list_node_chunks(node.id)
+        assert [(chunk.token_start, chunk.token_end, chunk.char_start, chunk.char_end)
+                for chunk in chunks] == [
+            (window.token_start, window.token_end, window.char_start, window.char_end)
+            for window in windows
+        ]
+        assert store.get_chunk_passages([old_chunks[0].id]) == {}
 
 
 # ---------------------------------------------------------------------------

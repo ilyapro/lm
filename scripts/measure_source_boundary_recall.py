@@ -10,6 +10,7 @@ as well as matches. Model/tokenizer warmup is outside the measured calls.
 import asyncio
 from dataclasses import asdict
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -136,7 +137,12 @@ async def main():
     model.warmup()
     chunk_text(ANSWER)
     assert model.encoder_id().startswith("st:")
-    report = {"head": subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(), "encoder": model.encoder_id(), "tokenizer": get_tokenizer().name, "cases": []}
+    source = Path(inspect.getfile(chunk_text))
+    report = {
+        "checkout_head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        "chunker_file": str(source), "chunker_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "encoder": model.encoder_id(), "tokenizer": get_tokenizer().name, "cases": [],
+    }
     for name, content in CONTROLS.items():
         constraint = "constraint" in name
         report["cases"].append(await case(name, content, "Можно ли автоматически перезапускать панель оператора на рабочей станции после обслуживания?" if constraint else QUERY, "The dashboard restarts automatically after the maintenance window, including on the operator workstation." if constraint else RELATED))
