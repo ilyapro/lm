@@ -56,7 +56,7 @@ from living_memory.delivery import (
     stats_compaction_enabled_from_env,
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
-from living_memory.models import content_identity
+from living_memory.models import Node, content_identity
 from living_memory.prompts import MEMORY_GUIDANCE, retrieval_context_prompt
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.resources import (
@@ -986,6 +986,7 @@ def _register_tools(
     mcp: Any, store: MemoryStore, runtime_lock: Any, *, expose_attest: bool = False
 ) -> None:
     recall_service = MemoryRecallService(store)
+    recall_service._share_embedder_with_store()
     # One builder per server, like the service's own caches: the map's
     # stability guarantee is "same task, same structure across sessions",
     # which only holds if the thing remembering the structure outlives a call.
@@ -1022,6 +1023,8 @@ def _register_tools(
         nodes via memory_lookup(node_id=...).
 
         The trace, alternatives and required recall feedback commit together.
+        Current chunks are indexed here; a derived-index failure preserves the
+        knowledge write and reports the affected ids as indexing deferred.
         Optional explicit marks run before implicit feedback and roll back
         with a failed required write; their own failures remain nonfatal.
         Edge derivation, instruction refresh and scheduling are nonfatal
@@ -1038,6 +1041,7 @@ def _register_tools(
             # Knowledge and required recall feedback have one durable outcome.
             # Optional marks remain nonfatal, but roll back with a failed write.
             with store.transaction():
+                rejected_nodes = []
                 if alternatives_considered is None:
                     node = store.append_trace(content, context, feedback=feedback)
                     rejected_alternatives: list[Any] | None = None
@@ -1049,6 +1053,7 @@ def _register_tools(
                         alternatives_considered=alternatives_considered,
                     )
                     rejected_alternatives = [rejected.id for rejected in rejected_nodes]
+                indexing = _index_written_traces(store, [node, *rejected_nodes])
                 # Explicit marks before implicit feedback, so an irrelevant mark
                 # carried on the closing call already keeps its edge out.
                 marks = None
@@ -1086,6 +1091,8 @@ def _register_tools(
                 response["rejected_alternatives"] = rejected_alternatives
             if marks is not None:
                 response["feedback_marks"] = marks.summary()
+            if indexing is not None:
+                response["indexing"] = indexing
             return response
 
     @mcp.tool(description=protocol_texts["memory_teach"])
@@ -1138,6 +1145,7 @@ def _register_tools(
                     context=context,
                     preparation=preparation,
                 )
+                indexing = _index_written_traces(store, [taught.corrective_trace])
                 if marks is not None:
                     try:
                         store.set_feedback_marks_source(
@@ -1153,6 +1161,8 @@ def _register_tools(
             )
             if marks is not None:
                 response["feedback_marks"] = marks.summary()
+            if indexing is not None:
+                response["indexing"] = indexing
             return response
 
     @mcp.tool
@@ -2113,6 +2123,28 @@ def _compact_consolidation_summary(result: ConsolidationResult) -> dict[str, Any
         "clusters_considered": result.clusters_considered,
         "traces_considered": result.traces_considered,
     }
+
+
+def _index_written_traces(store: MemoryStore, nodes: Sequence[Node]) -> dict[str, Any] | None:
+    """Index this write's content while its required transaction owns it.
+
+    The outer transaction keeps content identity stable and rolls chunks back
+    with required knowledge/feedback failures. Each replacement has its own
+    savepoint, so a derived-index fault cannot leave a partial chunk set or
+    discard knowledge. Missing chunks remain eligible for bounded recall repair.
+    """
+
+    deferred = []
+    for node in nodes:
+        try:
+            chunks = store._chunk_embeddings_for(node.content, None, require_complete=True)
+            store.replace_node_chunks(node.id, chunks)
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "new trace indexing deferred (%s)", type(exc).__name__,
+            )
+            deferred.append(node.id)
+    return {"status": "deferred", "node_ids": deferred} if deferred else None
 
 
 def _remember_node_confirmation(node: Any) -> dict[str, Any]:

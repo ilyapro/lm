@@ -1443,7 +1443,7 @@ class MemoryStore:
 
         # A supplied vector makes content searchable now. Only content_vector
         # can supply a single chunk; representatives require content encoding.
-        # Remember/teach traces supply neither and remain lazy.
+        # Callers without a vector own eager indexing or leave bounded repair.
         if vector:
             self._write_node_chunks(new_id, content, fingerprint, content_vector)
 
@@ -4134,6 +4134,7 @@ class MemoryStore:
         node_embedding: Sequence[float] | None,
         *,
         max_chunks: int | None = None,
+        require_complete: bool = False,
     ) -> list[tuple[TextChunk, Sequence[float]]]:
         """Split ``content`` into windows and pair each with its vector.
 
@@ -4161,8 +4162,8 @@ class MemoryStore:
             raise ValueError(
                 f"chunk embedder returned {len(vectors)} vectors for {len(chunks)} chunks"
             )
-        if max_chunks is not None and any(not vector for vector in vectors):
-            raise ValueError("bounded chunk refresh requires every chunk vector")
+        if (max_chunks is not None or require_complete) and any(not vector for vector in vectors):
+            raise ValueError("complete chunk indexing requires every chunk vector")
         return [
             (chunk, list(vector))
             for chunk, vector in zip(chunks, vectors, strict=True)
