@@ -60,7 +60,7 @@ def snapshot(store, service, query, depth=0):
         "scores": {key: gate_score(r, relevance.demotions, plan=relevance.plan,
                                    causal_mode=relevance.causal_mode) for key, r in by_id.items()},
         "qualified": relevance.eligible_ids(),
-        "mapped": {member.node_id for member in pool},
+        "mapped": {member.node.id for member in pool},
         "delivered": {r.node_id: r.withheld for r in delivered},
         "fts": [node.id for node, _ in store.search_content(_expanded_query(query), scope=SCOPE, limit=40)],
     }
@@ -165,7 +165,7 @@ def test_lexical_only_identifiers_and_source_coverage_remain_available(tmp_path,
 
 
 @pytest.mark.parametrize("mode", ["", "name"])
-@pytest.mark.parametrize("trigger,query", [("HTTP_429", "HTTP_503"), ("если не готово", "готово")])
+@pytest.mark.parametrize("trigger,query", [("HTTP_429_RETRY", "HTTP_503_ABORT"), ("если не готово", "готово")])
 def test_trigger_matching_keeps_identifier_and_condition_terms(tmp_path, monkeypatch, mode, trigger, query):
     monkeypatch.setenv("LM_RECALL_SCHEMA_TRIGGER", mode)
     encoder = FrozenEncoder(query)
