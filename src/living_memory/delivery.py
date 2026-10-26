@@ -22,8 +22,9 @@ Rules, applied in this order per ranked result:
    snippet ladder indexed by its content-bearer position (stubs of every
    class don't consume ladder slots): the first bearer has a finite 2400-char
    budget, lower-ranked bearers get descending budgets, and oversized content
-   is selected at paragraph and conservative sentence boundaries. Indivisible passages
-   exceeding the budget deliver only a marked prefix. Schema recipes ship
+   is selected at paragraph and conservative sentence boundaries. Found source
+   passages take priority over surrounding context; omitted context and partial
+   passages are marked. Schema recipes ship
    complete. With the ladder disabled (``snippet_ladder=None``) every bearer shares the
    uniform ``snippet_max_chars`` budget (``0`` disables snippeting) — the
    legacy contract.
@@ -474,11 +475,13 @@ def _relevant_excerpt(
     selected passage retains both its source id and the evidence-only heading.
     Passages use paragraph breaks and conservative sentence-end hints, including
     in long single-line records. Soft line wraps stay within the passage. Ties retain
-    original order. A verified semantic address selects its enclosing paragraph
-    first, or conservative passages with adjacent context when that paragraph
-    exceeds the budget. The vector window itself is never presented as a claim.
-    content_ref exposes the full text, including any context
-    omitted by selection or marked prefix truncation.
+    original order. All conservative passages overlapping a verified semantic
+    address are mandatory; a lexical hit supplies the anchor otherwise. One
+    selection accounts for their source labels, surrounding context and budget.
+    Optional context never displaces the anchor. If the mandatory source itself
+    cannot fit, only its explicitly incomplete prefix is offered, never an
+    independent vector window or clause. Text boundaries do not prove semantic
+    completeness; content_ref exposes the original, including omitted context.
     """
 
     if semantic_passage is not None and not (
@@ -544,50 +547,67 @@ def _relevant_excerpt(
         key=relevance,
         reverse=True,
     )
-    remaining = budget - len(heading) - (1 if heading else 0)
-    picked: dict[int, str] = {}
-    reserved: set[int] = set()
-    if semantic_passage is not None:
-        overlaps = [
-            max(0, min(end, semantic_passage.char_end) - max(start, semantic_passage.char_start))
-            for start, end in spans
-        ]
-        anchor = max(range(len(units)), key=overlaps.__getitem__)
-        if overlaps[anchor]:
-            group = [index for index in range(len(units)) if paragraphs[index] == paragraphs[anchor]]
-            first, last = group[0], group[-1]
-            prefix = units[anchor][0]
-            allowance = remaining - len(prefix)
-            if spans[last][1] - spans[first][0] > allowance:
-                # Keep the whole matching sentences plus their immediate
-                # context in this source paragraph. Overlap is evidence of a
-                # location, not permission to drop a preceding qualification.
-                matched = [index for index in group if overlaps[index]]
-                first = max(first, matched[0] - 1)
-                last = min(last, matched[-1] + 1)
-            if allowance >= 80:
-                context = content[spans[first][0]:spans[last][1]]
-                picked[first] = prefix + (
-                    context if len(context) <= allowance else _truncate_at_boundary(context, allowance)
-                )
-                reserved.update(range(first, last + 1))
-                remaining -= len(picked[first])
+    required = {
+        index for index, (start, end) in enumerate(spans)
+        if semantic_passage is not None
+        and start < semantic_passage.char_end and semantic_passage.char_start < end
+    }
+    if not required:
+        required = {scored[0]}
+
+    def render(selected: set[int], *, mark_omission: bool = True) -> str:
+        # Join adjacent source units verbatim; separated runs keep their own
+        # source label. This also handles an address spanning several records.
+        runs: list[tuple[int, int]] = []
+        for index in sorted(selected):
+            if runs and runs[-1][1] + 1 == index and units[runs[-1][1]][2] == units[index][2]:
+                runs[-1] = (runs[-1][0], index)
+            else:
+                runs.append((index, index))
+        body = "\n".join(
+            units[first][0] + content[spans[first][0]:spans[last][1]]
+            for first, last in runs
+        )
+        if heading:
+            body = f"{heading}\n{body}"
+        if mark_omission and len(selected) < len(units):
+            body += "\n[Context omitted]"
+        return body
+
+    picked = required.copy()
+    if len(render(picked)) > budget:
+        # No smaller arbitrary clause can stand in for the addressed source.
+        # Keep the source's beginning and explicitly expose the missing tail.
+        partial = render(picked, mark_omission=False)
+        notice = "\n[Incomplete passage]"
+        label_chars = len(heading) + (1 if heading else 0) + len(units[min(picked)][0])
+        if budget > label_chars + len(notice) + len(ELLIPSIS):
+            return _truncate_at_boundary(partial, budget - len(notice)) + notice
+        return _truncate_at_boundary(partial, budget)
+
+    def include(indices: set[int]) -> bool:
+        candidate = picked | indices
+        if len(render(candidate)) <= budget:
+            picked.update(indices)
+            return True
+        return False
+
+    # Prefer complete enclosing paragraphs, then immediate source neighbours.
+    # Every addition is tested together with the mandatory source and labels.
+    groups = {paragraphs[index] for index in required}
+    paragraph_indices = {index for index in range(len(units)) if paragraphs[index] in groups}
+    if not include(paragraph_indices):
+        neighbours = {
+            adjacent for index in required for adjacent in (index - 1, index + 1)
+            if 0 <= adjacent < len(units) and paragraphs[adjacent] == paragraphs[index]
+        } - required
+        if not include(neighbours):
+            for index in sorted(neighbours):
+                include({index})
     for index in scored:
-        if index in reserved:
-            continue
-        prefix, passage, _ = units[index]
-        allowance = remaining - len(prefix) - (1 if picked else 0)
-        if allowance < 80:
-            break
-        excerpt = passage if len(passage) <= allowance else _truncate_at_boundary(passage, allowance)
-        picked[index] = prefix + excerpt
-        remaining -= len(picked[index]) + (1 if len(picked) > 1 else 0)
-        if remaining < 80:
-            break
-    if not picked:
-        return _truncate_at_boundary(content, budget)
-    selected = "\n".join(picked[index] for index in sorted(picked))
-    return f"{heading}\n{selected}" if heading else selected
+        if index not in picked:
+            include({index})
+    return render(picked)
 
 
 def _bearer_budget(
