@@ -38,7 +38,7 @@ def test_consolidated_qualifications_survive_persistence_and_mcp_recall(tmp_path
     sources = [
         store.append_trace(
             text, {"scope": scope, "agent": f"source-{index}"},
-            feedback={"confidence": 0.9 if index == 0 else 0.5},
+            feedback={"usefulness_score": 0.5 if index == 0 else 0.0},
         )
         for index, text in enumerate((topic, topic + " " + statement, topic + " " + complement))
     ]
@@ -75,6 +75,7 @@ def test_consolidated_qualifications_survive_persistence_and_mcp_recall(tmp_path
     try:
         created = asyncio.run(consolidate(mcp))["concepts_created"]
         assert len(created) == 1
+        assert created[0]["content"].startswith(topic + "\n")
         concept_id = created[0]["id"]
         # Read from a reopened store: delivery must consume the persisted concept.
         store.close()
