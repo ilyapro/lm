@@ -555,7 +555,7 @@ def _passages(text: str) -> list[str]:
     passages = []
     for paragraph in re.split(r"\n\s*\n", text):
         start = 0
-        for match in re.finditer(r"(\S+)([.!?])\s+(?=\S)", paragraph):
+        for match in re.finditer(r"(?<!\S)(\S+)([.!?])\s+(?=\S)", paragraph):
             word, punctuation = match.groups()
             if not paragraph[match.end()].isupper():
                 continue
