@@ -1318,7 +1318,6 @@ def test_the_gate_is_a_corpus_statistic_not_a_word_list(
 
     latin = verdicts(bare_store, "widget")
     with MemoryStore(tmp_path / "other-corpus.sqlite3") as other:
-        other.matured_recall_history = eligible_history  # type: ignore[method-assign]
         cyrillic = verdicts(other, "шестерёнка")
 
     assert latin == {"шестерёнка tempo"}

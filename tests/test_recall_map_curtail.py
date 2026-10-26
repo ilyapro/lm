@@ -124,6 +124,11 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     for name in OPERATOR_VALVES:
         monkeypatch.delenv(name, raising=False)
     with MemoryStore(tmp_path / "curtail.sqlite3") as opened:
+        for index in range(CORPUS_DOCUMENTS):
+            opened.create_node(
+                level="trace", content=f"quarterly ledger reconciliation entry {index}",
+                context={"scope": SCOPE},
+            )
         yield opened
 
 
@@ -910,8 +915,6 @@ def test_the_rule_needs_no_flag() -> None:
     assert read_names == {
         module.POOL_USEFULNESS_GATE_ENV,
         module.POOL_USEFULNESS_FLOOR_ENV,
-        module.POOL_COLD_QUOTA_GATE_ENV,
-        module.POOL_COLD_SLOTS_ENV,
         module.CURTAIL_DECAY_GATE_ENV,
     }, "an env name appeared that is not a registered operator valve"
 

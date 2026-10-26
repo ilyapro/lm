@@ -518,12 +518,12 @@ def test_query_evidence_survives_history_swap_and_cold_start(tmp_path, monkeypat
 def test_relevant_minority_topics_share_capacity_before_clustering(tmp_path):
     with MemoryStore(tmp_path / "diverse.sqlite3") as store:
         seed_corpus(store)
-        majority = [_node(store, f"major-{i}", "checkpoint recovery evidence",
-                          context={"topic": "checkpoint recovery"}) for i in range(8)]
-        minority = _node(store, "minority", "restore journal verification",
-                         context={"topic": "journal verification"})
-        transfer = _node(store, "transfer", "replica consistency validation",
-                         context={"scope": "project:other", "topic": "replica consistency"})
+        majority = [_node(store, f"major-{i}", "recover from wal redo",
+                          context={"topic": "wal redo"}) for i in range(8)]
+        minority = _node(store, "minority", "flush disk sync",
+                         context={"topic": "disk sync"})
+        transfer = _node(store, "transfer", "verify log audit",
+                         context={"scope": "project:other", "topic": "log audit"})
         candidates = [*(result(n) for n in majority), result(minority, 0.7), result(transfer, 0.6)]
         builder = RecallMapBuilder(store, max_pool_nodes=4)
         built = builder.build(candidates, scope="global", task="recovery")
