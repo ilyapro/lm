@@ -1062,20 +1062,18 @@ def feedback_weighted_score(
 
     confidence = max(0.0, min(node.confidence, 1.0))
     confidence_boost = 1.0 + _CONFIDENCE_SLOPE * (confidence - _BASE_CONFIDENCE)
-    usefulness = max(-1.0, min(node.usefulness_score, 1.0))
-    usefulness_boost = 1.0 + (0.55 * usefulness if usefulness >= 0.0 else 0.45 * usefulness)
-    access_boost = 1.0 + min(0.25, 0.04 * _log1p(node.access_count))
     if qualification:
-        confidence_boost = min(1.0, confidence_boost)
-        usefulness_boost = 1.0
-        access_boost = 1.0
-    # Cap covers the compounded positive feedback only; correction signals
-    # (superseding boost, superseded penalty) stay deliberate and uncapped.
-    feedback_multiplier = min(
-        confidence_boost * usefulness_boost * access_boost,
-        FEEDBACK_MULTIPLIER_CAP,
-    )
-    correction_boost = 1.2 if superseding else 1.0
+        feedback_multiplier = min(1.0, confidence_boost)
+    else:
+        usefulness = max(-1.0, min(node.usefulness_score, 1.0))
+        usefulness_boost = 1.0 + (0.55 * usefulness if usefulness >= 0.0 else 0.45 * usefulness)
+        access_boost = 1.0 + min(0.25, 0.04 * _log1p(node.access_count))
+        # Cap compounded ranking feedback; correction signals stay uncapped.
+        feedback_multiplier = min(
+            confidence_boost * usefulness_boost * access_boost,
+            FEEDBACK_MULTIPLIER_CAP,
+        )
+    correction_boost = 1.2 if superseding and not qualification else 1.0
     superseded_penalty = 0.2 if superseded else 1.0
     return base_score * feedback_multiplier * correction_boost * superseded_penalty
 

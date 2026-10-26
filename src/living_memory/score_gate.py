@@ -32,7 +32,8 @@ ranker's correction boost does not enter an individual gate score; a present
 correction instead qualifies when its original passes the gate.
 Transient ``source_graph_score`` excludes query anchors and historical edge
 reinforcement. Access and the entire net usefulness accumulator stay outside both
-qualification scales; positive confidence never lifts them. They retain their ranking and discovery roles.
+qualification scales; positive confidence never lifts them. Historical signals
+retain their ranking and discovery roles.
 
 Trigger-found instructions retain a separate availability scale based on
 trigger overlap, query coverage and negative restrictions:
