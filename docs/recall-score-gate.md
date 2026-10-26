@@ -36,15 +36,18 @@ uses residual membership alone as evidence of applicability.
 
 ## Forms
 
-**Rank 1 is always delivered in full**, whatever its gate score. An answer is
-therefore never empty just because the gate is on.
+Every rank uses the same evidence gate for inline content. A found source that
+does not qualify can occupy a spare slot as a content-less, addressable reference.
+This preserves bounded access without claiming that the source answers the query.
 
-- **drop**: walk `ranked` in order and deliver rank 1 plus each following
-  result that passes, until `max_results` results are delivered. Every ranked
+- **drop**: walk `ranked` in order and deliver results that pass, until
+  `max_results` results are delivered. If capacity remains, fill it with failing
+  results in ranked order, marked `withheld="below_threshold"`. Every ranked
   result that is not delivered goes into `residual` in ranked order: results
   that failed the gate, and passing results past the cap. A passing result
-  from below the plain cut can move up into a freed slot. The answer can be
-  shorter than `max_results`.
+  from below the plain cut can move up into a freed slot; references never
+  displace passing results. When none pass, the bounded cut consists entirely
+  of references, with no inline content.
 - **stub**: keep the plain cut. Results inside it that fail the gate are
   delivered as `dataclasses.replace(result, withheld="below_threshold")`, and
   `residual` is the plain-cut residual. Tail slots are not filled from below.
@@ -156,10 +159,13 @@ on the channel scale only.
 
 - Valve off: output is byte-identical to the plain cut
   (`test_off_is_identical_output`, `test_invalid_or_zero_threshold_is_off`).
-- Rank 1 is never withheld or dropped.
+- Every inline content bearer qualifies, regardless of rank.
 - `delivered + residual` is a partition of `ranked` in drop form. In stub form,
   `delivered` is the old cut.
 - Changing store retrieval weights does not change any gate score
   (`test_gate_score_does_not_read_the_store_weights`).
-- The MCP response gains only a delivery class value, and only while
-  `stub` is on.
+- Both forms use the same `below_threshold` delivery class and exact lookup.
+  Source references count toward `max_results`; qualified residuals alone
+  enter the optional map. Lookup is optional, returns complete source content,
+  and does not resolve contradictions or promise usefulness. Consumers can
+  narrow a query or stop when only weak sources were found.
