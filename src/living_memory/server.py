@@ -1026,7 +1026,8 @@ def _register_tools(
         nodes via memory_lookup(node_id=...).
 
         The trace, alternatives and required recall feedback commit together.
-        Current chunks are indexed here; a derived-index failure preserves the
+        Current chunks are prepared before the store lock and applied inside
+        the required transaction. A derived-index failure preserves the
         knowledge write and reports the affected ids as indexing deferred.
         Optional explicit marks run before implicit feedback and roll back
         with a failed required write; their own failures remain nonfatal.
@@ -1123,8 +1124,9 @@ def _register_tools(
         Explicit marks precede implicit feedback and receive the corrective
         source before commit. Their own failures remain nonfatal. Optional
         consolidation scheduling runs only after the knowledge commit.
-        Pure digest preparation runs outside the store lock; the writer checks
-        its inputs against the current graph before using it.
+        Corrective trace chunks are prepared from normalized text before the
+        store lock. Pure digest preparation also runs outside that lock; the
+        writer checks its inputs against the current graph before using it.
         """
 
         correction = _correction_text(correction)

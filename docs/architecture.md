@@ -47,9 +47,10 @@ without changing the other surface.
 
 1. `memory_remember` appends a trace through `MemoryStore.append_trace`.
 2. The trace is indexed by SQLite FTS5 immediately. MCP writes prepare their own
-   search chunks in the knowledge transaction, with an explicit deferred receipt
-   for derived-index failures; required knowledge and feedback failures still
-   raise. Missing and stale indices use bounded recall repair. Search windows
+   search chunks from immutable source text before the shared store lock and
+   apply them to the exact stored content in the knowledge transaction. A
+   derived-index failure returns an explicit deferred receipt; required knowledge
+   and feedback failures still raise. Missing and stale indices use bounded recall repair. Search windows
    stay within the paragraph IDs of `source_text.passage_spans`, shared with
    derivation and delivery; long paragraphs retain bounded overlapping windows.
    Existing content-current chunks are not reindexed merely by opening the

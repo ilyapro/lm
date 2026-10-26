@@ -212,3 +212,87 @@ def test_feedback_queries_reach_model_in_one_batch(tmp_path: Path, monkeypatch) 
             assert anchor.query == query
             assert anchor.embedding == pytest.approx(model.embed(query))
             assert [edge.target_id for edge in store.list_query_anchor_edges(anchor_id=anchor_id)] == [node.id]
+
+
+@pytest.mark.parametrize("stage", ["load", "encode", "fallback"])
+def test_shared_encoder_serializes_loading_inference_and_fallback(tmp_path, monkeypatch, stage):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, RLock
+    from types import SimpleNamespace
+    import sys
+
+    from living_memory import embeddings
+
+    entered, release, attempted = Event(), Event(), Event()
+
+    class ObservedLock:
+        def __init__(self):
+            self.lock = RLock()
+
+        def __enter__(self):
+            if not self.lock.acquire(blocking=False):
+                attempted.set()
+                self.lock.acquire()
+            return self
+
+        def __exit__(self, *args):
+            self.lock.release()
+
+    loads = []
+    calls = []
+
+    class Encoder:
+        def __init__(self, source):
+            loads.append(source)
+            if stage == "load":
+                entered.set()
+                assert release.wait(10)
+
+        def get_sentence_embedding_dimension(self):
+            return 3
+
+        def encode(self, texts, **kwargs):
+            calls.append(texts)
+            if stage != "load" and not entered.is_set():
+                entered.set()
+                assert release.wait(10)
+            if stage == "fallback":
+                raise RuntimeError("encoder unavailable")
+            return [[1.0, 2.0, 2.0] for _ in texts] if isinstance(texts, list) else [1.0, 2.0, 2.0]
+
+    model_dir = tmp_path / "encoder"
+    model_dir.mkdir()
+    monkeypatch.setattr(embeddings, "_ENCODER_LOCK", ObservedLock())
+    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=Encoder))
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    first = LocalEmbeddingModel(model_name=str(model_dir), backend="auto")
+    # Separate instances share the cached backend; fallback is instance state.
+    second = first if stage == "fallback" else LocalEmbeddingModel(model_name=str(model_dir), backend="auto")
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        batch = workers.submit(first.embed_batch, ["first", "second"])
+        try:
+            assert entered.wait(5)
+            scalar = workers.submit(second.embed, "next")
+            assert attempted.wait(5)
+            assert not scalar.done()
+            if stage == "load":
+                assert calls == []
+            else:
+                assert calls == [["first", "second"]]
+        finally:
+            release.set()
+        vectors, vector = batch.result(timeout=5), scalar.result(timeout=5)
+    assert loads == [str(model_dir)]
+    assert first.dimensions == second.dimensions == 3
+    if stage == "fallback":
+        reference = LocalEmbeddingModel(dimensions=3, backend="hash")
+        assert vectors == reference.embed_batch(["first", "second"])
+        assert vector == reference.embed("next")
+        assert first.encoder_id() == "hash:3"
+    else:
+        assert vectors == [[1 / 3, 2 / 3, 2 / 3]] * 2
+        assert vector == [1 / 3, 2 / 3, 2 / 3]
+        assert first.encoder_id() == second.encoder_id()
+    assert "HF_HUB_OFFLINE" not in __import__("os").environ
+    assert "TRANSFORMERS_OFFLINE" not in __import__("os").environ

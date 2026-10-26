@@ -191,7 +191,18 @@ its corrective trace. This removes their dependence on unrelated lazy-index
 backlog; ranking, scope, validity and delivery still determine recall results.
 It does not guarantee semantic completeness. Encoding uses the existing model
 and fallback policy and adds work to the write, including all windows of long
-content, while the required write transaction holds the content stable.
+content. Normalized correction and rejected-alternative text, and unchanged
+remember text, supply immutable preparation inputs before the shared store lock
+and SQLite write transaction. Encoder loading, inference and fallback have a
+separate guard shared by model instances; preparation releases it before store
+apply. The writer accepts prepared chunks only for exactly matching stored text,
+using the existing replacement savepoint. Current scope, validity and pending
+feedback are resolved under the store lock, not captured in index preparation.
+Other tools and SQLite writers that do not need the busy encoder can proceed
+during preparation. Calls that themselves encode queries or feedback anchors
+still share that encoder; query preparation and recall maintenance retain their
+existing boundaries. New knowledge and its successful index become visible only
+at the required commit.
 
 Search windows stay within the paragraph IDs supplied by
 `source_text.passage_spans`, shared with derivation and delivery. Fitting
