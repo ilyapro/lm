@@ -372,7 +372,8 @@ def test_missing_detail_requires_lookup_but_unknown_memory_stays_discoverable(
     scope = "project:synthetic-missing"
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     hidden = "The hidden iris rotor exception code is NOVA-82."
-    content = "Iris rotor handbook.\n\n" + "Iris rotor handbook background. " * 170 + "\n\n" + hidden
+    content = ("Iris rotor handbook.\n\n" + "Iris rotor handbook background. " * 170
+               + "\n\n" + hidden + " Exception reference background." * 170)
     carrier = mcp.memory_store.create_node(level="concept", content=content, context={"scope": scope})
     assert hidden in carrier.content
     candidate, baseline = _paired(
@@ -458,7 +459,8 @@ def test_new_query_can_deliver_a_previously_unseen_excerpt(tmp_path, monkeypatch
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     scope = "project:synthetic-new-excerpt"
     fact = "The hidden iris rotor exception code is NOVA-82."
-    content = "Iris rotor handbook.\n\n" + "Iris rotor handbook background. " * 170 + "\n\n" + fact
+    content = ("Iris rotor handbook.\n\n" + "Iris rotor handbook background. " * 170
+               + "\n\n" + fact + " Exception reference background." * 170)
     node = mcp.memory_store.create_node(level="concept", content=content, context={"scope": scope})
 
     async def scenario():

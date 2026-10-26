@@ -448,8 +448,9 @@ selects all overlapping conservative passages together; otherwise lexical releva
 selects a passage within its source record. The same budget decision retains that
 anchor before adding complete enclosing paragraphs and immediate neighbours.
 Further optional matches are included as whole paragraphs within their source
-record, only when the group fits the remaining budget. Each selected run preserves its source text and evidence label;
-evidence carriers also retain their heading. Optional context cannot displace the
+record, only when the group fits the remaining budget. Each selected run preserves
+its source text and evidence label; evidence carriers also retain their heading.
+Optional context cannot displace the
 found passage. Arbitrary vector-window boundaries never become claim boundaries.
 
 `[Context omitted]` marks unselected source passages. If the mandatory source cannot

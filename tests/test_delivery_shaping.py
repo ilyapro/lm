@@ -941,7 +941,8 @@ def test_oversized_qualified_passage_does_not_deliver_its_action_tail() -> None:
     assert entry["content_ref"]["full_content_chars"] == len(content)
 
 
-def test_excerpt_selects_late_constraint_with_its_source_topic() -> None:
+@pytest.mark.parametrize("separate_paragraph", [False, True])
+def test_excerpt_selects_late_constraint_with_its_source_topic(separate_paragraph) -> None:
     source = "01SYNTHETICSOURCE0000000001"
     other = "01SYNTHETICSOURCE0000000002"
     constraint = "Do not open the hatch unless the indicator is green."
@@ -949,12 +950,15 @@ def test_excerpt_selects_late_constraint_with_its_source_topic() -> None:
         "Evidence: hatch cases (case records, not steps)\n"
         f"- {other}: Open amber hatch discussion. " + "Routine notes. " * 100
         + f"\n- {source}: Amber hatch calibration and pressure inspection. "
-        + "Routine notes. " * 100 + constraint
+        + "Routine notes. " * 100 + ("\n\n" if separate_paragraph else "") + constraint
     )
+    # A late anchor or a complete complementary paragraph keeps its own label.
+    query = ("amber hatch calibration pressure open indicator green" if separate_paragraph
+             else "amber hatch calibration open indicator green")
 
     entry = shape_default(
         [make_result(make_node("carrier", content))],
-        query="amber hatch calibration pressure open indicator green", snippet_ladder=(300,),
+        query=query, snippet_ladder=(300,),
     )[0]
 
     excerpt = entry["node"]["content"]

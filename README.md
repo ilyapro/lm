@@ -108,8 +108,8 @@ carries the winning chunk's verified source address into delivery. All conservat
 passages overlapping that address are budgeted together before optional enclosing
 paragraphs and adjacent context. Further optional matches retain their whole
 paragraph within the source record or are omitted when that group cannot fit.
-Without a usable address,
-lexical source-record and passage relevance selects the anchor. Optional context
+Without a usable address, lexical source-record and passage relevance selects
+the anchor. Optional context
 cannot displace the anchor, and the vector window itself is never presented as an
 independent claim. Delivery does not embed or search again.
 

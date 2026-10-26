@@ -49,7 +49,7 @@ def put_match(store, content, anchor):
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
-@pytest.mark.parametrize("placement", ["explicit_300", "default_first", "default_fifth"])
+@pytest.mark.parametrize("placement", ["explicit_300", "default_first", "default_fourth", "default_fifth"])
 @pytest.mark.parametrize("remote", [CONDITION + " " + ACTION, COMPLEMENT], ids=["conditional", "complement"])
 def test_optional_context_keeps_source_paragraph(monkeypatch, view, placement, remote):
     for key, value in {
@@ -76,7 +76,8 @@ def test_optional_context_keeps_source_paragraph(monkeypatch, view, placement, r
         remote, PRECEDING, ANCHOR, FOLLOWING,
         "The quarterly catalog contains " + "ordinary maintenance background " * 9 + "for completeness.",
     ])
-    position = 4 if placement == "default_fifth" else 0
+    position = {"default_fourth": 3, "default_fifth": 4}.get(placement, 0)
+    budget = delivery.snippet_ladder_from_env()[position]
     try:
         store.set_chunk_embedder(encoder.embed_batch)
         node = put_match(store, content, ANCHOR)
@@ -122,9 +123,9 @@ def test_optional_context_keeps_source_paragraph(monkeypatch, view, placement, r
             assert body == content
         else:
             assert entry["delivery"] == "snippet"
-            assert len(body) <= 300
+            assert len(body) <= budget
             assert entry["content_ref"] == {"node_id": node.id, "full_content_chars": len(content)}
-            paragraphs = ([COMPLEMENT] if remote == COMPLEMENT else []) + [PRECEDING, ANCHOR, FOLLOWING]
+            paragraphs = ([remote] if remote == COMPLEMENT or budget == 500 else []) + [PRECEDING, ANCHOR, FOLLOWING]
             assert body == "\n\n".join(paragraphs) + "\n[Context omitted]"
     finally:
         mcp.auto_consolidation.close()
