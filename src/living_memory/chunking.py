@@ -54,6 +54,7 @@ from living_memory.embeddings import (
     _HASH_BACKENDS as _EMBEDDING_HASH_BACKENDS,
     _resolve_local_model_source,
 )
+from living_memory.source_text import passage_spans
 
 
 MODEL_MAX_SEQ_LENGTH = 128
@@ -75,23 +76,13 @@ _HEURISTIC_BACKENDS = frozenset({"heuristic", "fallback", "hash", "none"}) | fro
 )
 _MODEL_BACKENDS = frozenset({"model", "real", "encoder", "sentence-transformers"})
 
-# A cut prefers structure, but not at any price: a paragraph or sentence break is
-# only taken when it fills at least this much of the window, so respecting
-# structure can never waste more than half a window.
+# Within an oversized paragraph, prefer a passage boundary when it fills at
+# least half a window. Paragraph boundaries themselves are unconditional.
 _MIN_FILL_RATIO = 0.5
 
 # How many tokens a hard cut may give up to land on a word start instead of in
 # the middle of a word — roughly the length of one long word in subwords.
 _HARD_CUT_WORD_SLACK = 6
-
-# Paragraph break: a blank line (two or more newlines, tolerating indentation).
-_PARAGRAPH_BREAK_RE = re.compile(r"\n[ \t]*(?:\n[ \t]*)+")
-
-# Sentence break: a run of sentence-final punctuation, optional closing quotes or
-# brackets, then whitespace — or a single line break, which ends a line-shaped
-# unit such as a bullet in a list. Russian and English share this punctuation;
-# the pattern is Unicode-wide and never assumes ASCII.
-_SENTENCE_BREAK_RE = re.compile(r"[.!?…‽⁇⁈⁉]+[\"'»”’)\]]*\s+|\n")
 
 _TOKENIZER_CACHE: dict[tuple[str, str], "Tokenizer"] = {}
 
@@ -277,13 +268,13 @@ def chunk_text(
     at most ``max_tokens - special_tokens`` content tokens. Consecutive chunks
     overlap by at most ``overlap_tokens`` tokens.
 
-    Cuts prefer a paragraph break, then a sentence break, and fall back to a hard
-    token cut only when no such boundary fills at least half the window — which
-    is what happens inside a single sentence longer than one window. A hard cut
-    still lands on a word start when one is within a few tokens. Every chunk
-    except the last one therefore holds between half a window and a full window
-    of tokens. A text that fits in one window comes back as exactly one chunk
-    whose ``text`` is the entire input, trailing whitespace included.
+    Paragraphs use the same source boundaries as derivation and delivery. Packing
+    and overlap never cross them, even when adjacent paragraphs fit one window.
+    Within a long paragraph, cuts prefer a conservative passage boundary that
+    fills at least half a window, then a word start, then a hard token cut.
+    A single paragraph that fits comes back as one chunk carrying the entire
+    input, trailing whitespace included. Windows are search evidence, not
+    standalone statements; delivery resolves their coordinates in the source.
 
     A text with no tokens at all (empty or whitespace-only) yields no chunks:
     there is nothing to embed. Chunk text carries no trailing whitespace, so with
@@ -303,7 +294,12 @@ def chunk_text(
         return []
 
     breaks = _break_indices(text, tokens)
-    spans = _pack(len(tokens), breaks, window, overlap_tokens)
+    boundaries = (0, *breaks.paragraph, len(tokens))
+    spans = [
+        span
+        for start, end in zip(boundaries, boundaries[1:])
+        for span in _pack(start, end, breaks, window, overlap_tokens)
+    ]
 
     chunks: list[TextChunk] = []
     for index, (token_start, token_end) in enumerate(spans):
@@ -365,16 +361,16 @@ def _break_indices(text: str, tokens: Sequence[TokenSpan]) -> _Breaks:
     def token_index(char_offset: int) -> int:
         return bisect_left(starts, char_offset)
 
-    def collect(pattern: re.Pattern[str]) -> set[int]:
-        found: set[int] = set()
-        for match in pattern.finditer(text):
-            index = token_index(match.end())
-            if 0 < index < limit:
-                found.add(index)
-        return found
-
-    paragraph = collect(_PARAGRAPH_BREAK_RE)
-    sentence = collect(_SENTENCE_BREAK_RE) | paragraph
+    paragraph: set[int] = set()
+    sentence: set[int] = set()
+    previous_paragraph = None
+    for start, _end, paragraph_id in passage_spans(text):
+        index = token_index(start)
+        if 0 < index < limit:
+            sentence.add(index)
+            if paragraph_id != previous_paragraph:
+                paragraph.add(index)
+        previous_paragraph = paragraph_id
     word = tuple(
         index
         for index in range(1, limit)
@@ -388,20 +384,20 @@ def _break_indices(text: str, tokens: Sequence[TokenSpan]) -> _Breaks:
 
 
 def _pack(
-    token_count: int, breaks: _Breaks, window: int, overlap_tokens: int
+    start: int, end: int, breaks: _Breaks, window: int, overlap_tokens: int
 ) -> list[tuple[int, int]]:
     min_fill = max(1, int(window * _MIN_FILL_RATIO))
     spans: list[tuple[int, int]] = []
-    cursor = 0
-    while cursor < token_count:
+    cursor = start
+    while cursor < end:
         limit = cursor + window
-        if limit >= token_count:
-            spans.append((cursor, token_count))
+        if limit >= end:
+            spans.append((cursor, end))
             break
         cut = _choose_cut(cursor, limit, min_fill, breaks)
         spans.append((cursor, cut))
         advanced = _next_cursor(cursor, cut, overlap_tokens, breaks)
-        if advanced <= cursor or len(spans) > token_count:
+        if advanced <= cursor or len(spans) > end - start:
             # Unreachable while the arguments are validated; a loud failure beats
             # a hang or an unbounded chunk list if that ever stops holding.
             raise RuntimeError(
@@ -416,10 +412,9 @@ def _pack(
 def _choose_cut(cursor: int, limit: int, min_fill: int, breaks: _Breaks) -> int:
     lowest = cursor + min_fill
     if lowest <= limit:
-        for candidates in (breaks.paragraph, breaks.sentence):
-            cut = _largest_in_range(candidates, lowest, limit)
-            if cut is not None:
-                return cut
+        cut = _largest_in_range(breaks.sentence, lowest, limit)
+        if cut is not None:
+            return cut
 
     # Hard cut inside one long sentence. Pull back to the nearest word start
     # within a small slack so the window does not end mid-word: a window whose
