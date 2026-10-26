@@ -112,7 +112,9 @@ recall scores that new index. No old score is assigned to a replacement chunk.
 Concurrent source or generation changes cancel the write. Full deliveries,
 duplicate/withheld results, current indices and oversized records do not incur
 refresh encoding. Failed or unsupported refreshes preserve lexical fallback and
-full lookup. Metadata-only updates and opening a database do not refresh these
+full lookup. An indexing exception disables this optional refresh for the service
+instance, preventing repeated failed work until a new instance is created.
+Metadata-only updates and opening a database do not refresh these
 chunks; missing or stale chunks retain their existing indexing path.
 
 Recall before acting and at every new turn of thought, including mid-work.
