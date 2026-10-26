@@ -86,9 +86,9 @@ def _recall(
 def test_public_recall_keeps_present_correction_when_original_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Exact current source evidence passes even after the superseded penalty;
-    # the original's accumulated feedback is not what qualifies the correction.
-    assert _recall(tmp_path, monkeypatch, original_vector=1.0) == (
+    # Strong current vector and causal source evidence pass after the
+    # superseded penalty; accumulated feedback does not qualify the correction.
+    assert _recall(tmp_path, monkeypatch, original_vector=0.99) == (
         ["bystander", "correction", "stale"], [], [None, None, None]
     )
 
@@ -103,10 +103,10 @@ def test_history_does_not_qualify_a_weak_corrected_source(tmp_path, monkeypatch)
 def test_correction_selection_respects_cap_and_stub_form(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert _recall(tmp_path / "cap", monkeypatch, max_results=2, original_vector=1.0) == (
+    assert _recall(tmp_path / "cap", monkeypatch, max_results=2, original_vector=0.99) == (
         ["bystander", "correction"], ["stale"], [None, None]
     )
-    assert _recall(tmp_path / "stub", monkeypatch, form="stub", original_vector=1.0) == (
+    assert _recall(tmp_path / "stub", monkeypatch, form="stub", original_vector=0.99) == (
         ["bystander", "correction", "stale"], [], [None, None, None]
     )
 
@@ -121,7 +121,7 @@ def test_unavailable_correction_does_not_change_original(
         edge=case != "absent_edge",
         correction_scope="project:elsewhere" if case == "outside_scope" else "project:app",
         decayed=case == "decayed",
-        original_vector=1.0,
+        original_vector=0.99,
     )
     assert {node_id for node_id, reason in zip(delivered, withheld) if not reason} == {
         "bystander", "stale",
