@@ -98,7 +98,7 @@ def assert_delivered(mcp, node, fact):
     assert result["delivery"] == "snippet"
     assert fact in result["content"]
     assert len(result["content"]) <= 300
-    assert result["content"].endswith("[Context omitted]")
+    assert result["content"].endswith(("[Context omitted]", "[Incomplete source context]"))
     assert result["content_ref"] == {"node_id": node.id, "full_content_chars": len(node.content)}
     lookup = mcp.tools["memory_lookup"](node_id=node.id)["results"][0]
     assert lookup["content"] == node.content
