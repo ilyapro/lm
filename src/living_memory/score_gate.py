@@ -218,20 +218,17 @@ class QueryRelevance:
             return self._eligible
 
         def passes(result: Any) -> bool:
-            try:
-                if self.threshold is not None:
-                    return passes_gate(
-                        result, self.threshold, self.demotions,
-                        plan=self.plan, causal_mode=self.causal_mode,
-                    )
-                trigger = trigger_gate_score(result, self.demotions)
-                return (
-                    trigger is not None and trigger >= SCHEMA_TRIGGER_GATE_MIN
-                ) or gate_score(
-                    result, self.demotions, plan=self.plan, causal_mode=self.causal_mode,
-                ) > 0.0
-            except (AttributeError, TypeError, ValueError, OverflowError):
-                return False
+            if self.threshold is not None:
+                return passes_gate(
+                    result, self.threshold, self.demotions,
+                    plan=self.plan, causal_mode=self.causal_mode,
+                )
+            trigger = trigger_gate_score(result, self.demotions)
+            return (
+                trigger is not None and trigger >= SCHEMA_TRIGGER_GATE_MIN
+            ) or gate_score(
+                result, self.demotions, plan=self.plan, causal_mode=self.causal_mode,
+            ) > 0.0
 
         positions = {
             result.node.id: index for index, result in enumerate(self.ranked)
@@ -270,13 +267,13 @@ def apply_score_gate(
 ) -> tuple[list[Any], list[Any]]:
     """Select results, letting present corrections inherit their original's relevance."""
 
-    threshold = min_score_from_env()
+    threshold = relevance.threshold if relevance is not None else min_score_from_env()
     if threshold is None or max_results <= 0 or not ranked:
         return list(ranked[:max_results]), list(ranked[max_results:])
 
     evidence = relevance or QueryRelevance(
         ranked, plan=plan, demotions=demotions, causal_mode=causal_mode,
-        corrections_by_superseded=corrections_by_superseded, threshold=threshold,
+        corrections_by_superseded=corrections_by_superseded or {}, threshold=threshold,
     )
     eligible = evidence.eligible_ids()
 

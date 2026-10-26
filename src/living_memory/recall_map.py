@@ -1613,11 +1613,10 @@ class RecallMapBuilder:
         is preserved. Only the bounded pool pays for anchor/vector clustering.
         """
 
-        eligible_ids = (relevance or QueryRelevance(results)).eligible_ids()
         usefulness_floor = pool_usefulness_floor_from_env()
         ledger = _SelectionLedger(inspected=len(results))
         seen: set[str] = set()
-        buckets: dict[tuple[str, ...], deque[_Member]] = {}
+        candidates: list[tuple[int, Node, RecallResult]] = []
         for ordinal, result in enumerate(results):
             node = getattr(result, "node", None)
             node_id = getattr(node, "id", None) if node is not None else None
@@ -1639,7 +1638,14 @@ class RecallMapBuilder:
             if usefulness_floor is not None and _below_usefulness(node, usefulness_floor):
                 ledger.exclude("uf", ordinal=ordinal, node=node)
                 continue
-            if node_id not in eligible_ids:
+            candidates.append((ordinal, node, result))
+
+        eligible_ids = (relevance or QueryRelevance([
+            result for _ordinal, _node, result in candidates
+        ])).eligible_ids()
+        buckets: dict[tuple[str, ...], deque[_Member]] = {}
+        for ordinal, node, _result in candidates:
+            if node.id not in eligible_ids:
                 ledger.exclude("lr", ordinal=ordinal, node=node)
                 continue
             structural = _structural_key(node)
