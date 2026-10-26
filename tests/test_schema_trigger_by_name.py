@@ -95,10 +95,10 @@ def test_shared_words_neither_raise_a_schema_nor_pass_the_gate(
         legacy, _ = _recall(store, query, max_results=10)
         monkeypatch.setenv(SCHEMA_TRIGGER_ENV, "name")
         delivered, residual = _recall(store, query, max_results=10)
-    # Legacy: the trigger words alone carry the schema into the delivery.
-    assert schema.id in [r.node.id for r in legacy]
-    # Name mode: no trigger score, no slot of its own on a 0.9 gate.
-    assert schema.id not in [r.node.id for r in delivered[1:]]
+    # Ordinary trigger availability qualifies its content.
+    assert any(r.node.id == schema.id and r.withheld is None for r in legacy)
+    # Name mode retains a bounded reference, without qualifying the content.
+    assert any(r.node.id == schema.id and r.withheld == "below_threshold" for r in delivered)
     for result in delivered + residual:
         assert result.trigger_score == 0.0
         assert "trigger" not in result.methods

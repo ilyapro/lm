@@ -118,7 +118,7 @@ keeps the full ranked set, scope plan, causal mode, query demotions and correcti
 edges for this call. With `LM_RECALL_MIN_SCORE` configured, candidates must pass
 that same threshold or the existing trigger-availability rule. A present
 correction can inherit its original's relevance through the ranked correction
-chain. The main answer's rank-one exception does not qualify a map suggestion.
+chain. Every rank uses the same qualification.
 Without a configured threshold, positive channel evidence or a qualifying
 trigger suffices; residual membership alone does not.
 
@@ -129,8 +129,12 @@ remains available for full knowledge, including entries the map does not offer.
 
 All candidates use the same query qualification regardless of their age or
 exposure history. A never-shown or rarely used entry needs no separate quota.
-No corpus delivery count, consumed ratio or nonuse streak admits or orders a
-candidate. The optional stored-usefulness floor rejects values below
+Query anchors, positive feedback and history-derived graph weights can aid
+retrieval and its order; they do not qualify a map suggestion. The shared
+qualifier uses transient source graph evidence and retains negative restrictions
+on both channel and trigger scales. No map-specific corpus delivery count,
+consumed ratio or nonuse streak admits or orders a candidate.
+The optional stored-usefulness floor rejects values below
 `LM_MAP_POOL_MIN_USEFULNESS` only when `LM_MAP_POOL_USEFULNESS_GATE` is enabled.
 Malformed or unavailable usefulness supplies no exclusion evidence.
 

@@ -1,6 +1,6 @@
 """Quality gate on recall results: weak results do not take a full slot.
 
-Seam for goal recall-precision (docs/recall-score-gate.md). ``apply_score_gate``
+See docs/recall-score-gate.md. ``apply_score_gate``
 turns the ranked list into ``(delivered, residual)``. ``delivered`` is what the
 recall returns (at most ``max_results``); ``residual`` feeds ``recall_map`` and
 keeps every ranked result that was not delivered, so a cut result stays
@@ -24,15 +24,18 @@ bounded route to found sources without treating them as qualified answers.
 The gate score is NOT the ranker's score. The ranker blends channels with the
 store's per-scope retrieval weights, which move with every ~100 credits; a
 threshold on that number would mean something different next week. The gate
-re-blends the result's own channel scores (bm25/vector/graph) with the fixed
+re-blends the result's current source channels with the fixed
 :data:`REFERENCE_WEIGHTS`, through the ranker's own blend function. The
-strong-vector floor, graph-weight floor, scope boost, node feedback multiplier,
+strong-vector floor, graph-weight floor, scope boost, negative feedback,
 superseded penalty, causal boost, and per-node ``demotions`` apply here. The
 ranker's correction boost does not enter an individual gate score; a present
 correction instead qualifies when its original passes the gate.
+Transient ``source_graph_score`` excludes query anchors and historical edge
+reinforcement. Positive confidence/usefulness and access never lift either
+qualification scale; they retain their ranking and discovery roles.
 
 Trigger-found instructions retain a separate availability scale based on
-trigger overlap, query coverage, node authority and feedback:
+trigger overlap, query coverage and negative restrictions:
 :func:`trigger_gate_score` against
 :data:`SCHEMA_TRIGGER_GATE_MIN`. Their channel-scale score uses the same
 content-supported trigger contribution as the ranker. A result passes when
@@ -111,9 +114,10 @@ def gate_score(
     plan: Any = None,
     causal_mode: bool = False,
 ) -> float:
-    """Weight-independent score of one ``RecallResult`` on the channel scale.
+    """Current source evidence of one ``RecallResult`` on the channel scale.
 
-    Callable offline on a stored result plus the demotions of its recall.
+    Callable offline on a result carrying source evidence and recall demotions.
+    A historical effective graph score alone is not source evidence.
     Without ``plan`` the scope boost is 1.0 (the boost needs the resolved
     scope list). Ordinary trigger evidence receives the same content-supported
     contribution as in ranking. See :func:`trigger_gate_score` for the
@@ -153,7 +157,7 @@ def trigger_gate_score(
 ) -> float | None:
     """Score of a trigger-found schema on the trigger scale; ``None`` otherwise.
 
-    ``trigger_score / SCHEMA_TRIGGER_SCALE`` times node feedback and demotion.
+    ``trigger_score / SCHEMA_TRIGGER_SCALE`` times negative feedback and demotion.
     Case-evidence carriers also need query coverage; a schema recipe retains
     its short-instruction availability when its trigger is one clause of a
     longer question. Scope and causal boosts are left out.

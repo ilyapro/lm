@@ -1408,7 +1408,7 @@ class MemoryRecallService:
         decision_mode: bool = False,
         anchor_seeds: dict[str, float] | None = None,
     ) -> None:
-        """Score candidates by graph proximity, in two separable walks.
+        """Score graph discovery and retain its independent source contribution.
 
         The first walk is the one that existed before anchors: it seeds from
         the top pre-graph candidates and writes ``graph_score``. Nothing in it
@@ -1424,6 +1424,11 @@ class MemoryRecallService:
         a real seed, and an anchor-derived activation was indistinguishable
         from a traversed one, so the ranker had no way to tell what a
         candidate had been worth before the anchor named it.
+
+        Source qualification also excludes history-derived relation weights.
+        When those occur, the same bounded walker evaluates source paths
+        independently; otherwise the ordinary activation is already sufficient.
+        Neither source pass nor anchors change the ordinary ranking walk.
         """
 
         # A bulk query's tie order depends on its entire frontier, so reuse
@@ -1549,10 +1554,9 @@ class MemoryRecallService:
     ) -> None:
         """One breadth-first activation spread from ``roots``.
 
-        ``anchor_pass`` selects which field the activation lands in and
-        nothing else: the traversal, its bounds, and its arithmetic are one
-        implementation, so the anchor walk can never drift from the walk it is
-        the counterfactual for.
+        The selected pass controls its score field and provenance updates.
+        Traversal, bounds and arithmetic are shared. The source pass supplies
+        history-free relation contributions and never changes ranking paths.
         """
 
         queue: deque[tuple[str, float, int, tuple[str, ...]]] = deque()
@@ -2018,7 +2022,7 @@ def _blend_candidate_score(
     superseding: bool,
     positive_history: bool = True,
 ) -> float:
-    """A candidate's final score for one given graph activation.
+    """Blend one graph activation with the candidate's other query channels.
 
     Takes ``graph_score`` as an argument rather than reading it off the
     candidate because the ranker scores some candidates twice -- once with the
@@ -2027,7 +2031,8 @@ def _blend_candidate_score(
     comparison between them proves nothing.
 
     Returns 0.0 for a candidate no channel scored, which is the caller's cue
-    to drop it.
+    to drop it. Qualification passes source activation and disables positive
+    history; ranking retains its effective activation and feedback rewards.
     """
 
     bm25_weight = weights.bm25
