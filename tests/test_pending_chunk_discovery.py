@@ -28,6 +28,7 @@ def seed(store):
                     content=" \t\n\v\f\r " if kind == "blank" else f"{scope} {level} {kind}",
                     context={"scope": scope},
                     timestamp="2026-01-01T00:00:00Z" if kind == "blank" else
+                              "2026-01-03T00:00:00Z" if kind == "missing" else
                               "2026-01-02T00:00:00Z",
                 )
                 if kind in {"stale", "current", "mixed"}:
@@ -91,6 +92,10 @@ def test_empty_discovery_and_fresh_source_changes(tmp_path):
         assert store.list_unchunked_nodes() == []
         fresh = store.append_trace("Fresh source", {"scope": "project:new"})
         assert store.list_unchunked_nodes() == [fresh]
+        moved = store.update_node(fresh.id, level="schema", context={"scope": "project:moved"})
+        assert store.list_unchunked_nodes(scope="project:new") == []
+        assert store.list_unchunked_nodes(level="trace") == []
+        assert store.list_unchunked_nodes(scope="project:moved", level="schema") == [moved]
         store.soft_delete_node(fresh.id)
         assert store.list_unchunked_nodes() == []
         # Empty strings and NULL fingerprints can occur in supported old files.
