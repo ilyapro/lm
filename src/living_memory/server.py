@@ -1534,16 +1534,26 @@ def _register_tools(
                 # and the credit join all see the same lookup time — a wall
                 # clock read here would drift from a frozen or offset storage
                 # clock and put the lookup outside its own delivery window.
-                # A failed credit is logged inside apply_lookup_credit, never
-                # raised here.
+                # Usage observation is optional: a recording failure leaves
+                # the assembled read response intact and skips credit. Its
+                # mutation outcome may be unknown, so it is never retried here.
+                # A failed credit is logged inside apply_lookup_credit.
                 identity = _with_transport_identity(None) or {}
                 transport_session_id = identity.get(_TRANSPORT_SESSION_KEY)
                 occurred_at = storage_module._utc_now()
-                lookup_event_id = store.record_lookup_event(
-                    requested_ids,
-                    transport_session_id=transport_session_id,
-                    occurred_at=occurred_at,
-                )
+                try:
+                    lookup_event_id = store.record_lookup_event(
+                        requested_ids,
+                        transport_session_id=transport_session_id,
+                        occurred_at=occurred_at,
+                    )
+                except Exception as error:
+                    logging.getLogger(__name__).warning(
+                        "lookup usage recording failed (%s; %d requested id(s)); credit skipped",
+                        type(error).__name__[:80],
+                        len(requested_ids),
+                    )
+                    return response
                 if lookup_event_id is not None:
                     apply_lookup_credit(
                         store,
