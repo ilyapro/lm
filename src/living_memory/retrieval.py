@@ -1004,22 +1004,29 @@ class MemoryRecallService:
 
         # One bounded queue covers new content, edits and migrated derived
         # chunks. Chunk presence, not the legacy representative, decides work.
-        # Oldest-first progress prevents new writes from starving old repairs.
+        # Oldest-first selection gives older repairs priority within the bound.
         pending = sorted(
             (node for scope in plan.search_scopes
              for node in self.store.list_unchunked_nodes(scope=scope, limit=LAZY_CHUNK_NODE_LIMIT)),
             key=lambda node: (node.timestamp, node.id),
         )[:LAZY_CHUNK_NODE_LIMIT]
-        try:
-            for node in pending:
+        deferred_count = 0
+        first_error = ""
+        for node in pending:
+            try:
                 self._rechunk_node(node)
-        except Exception as error:
-            # Each node's index write is atomic. Stop this drain on failure;
-            # missing chunks stay pending for the next recall. Required reads
-            # and scoring below still run, with no invented semantic evidence.
+            except Exception as error:
+                # Each node's index write rolls back independently. Continue
+                # the selected batch; failed nodes stay pending for next time.
+                deferred_count += 1
+                if not first_error:
+                    first_error = type(error).__name__
+        if deferred_count:
+            # One bounded diagnostic, without node content or exception text.
+            # Required reads and scoring remain outside the repair boundary.
             logging.getLogger(__name__).warning(
-                "lazy chunk indexing deferred (%s); using available index",
-                type(error).__name__,
+                "lazy chunk indexing deferred for %d/%d nodes (first error: %s); using available index",
+                deferred_count, len(pending), first_error,
             )
 
         q_arr = _as_query_array(query_embedding)
