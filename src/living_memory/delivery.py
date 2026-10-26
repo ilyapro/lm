@@ -604,6 +604,21 @@ def _relevant_excerpt(
         if not include(neighbours):
             for index in sorted(neighbours):
                 include({index})
+    if semantic_passage is not None:
+        # A search window is not an independent assertion. Adjacent paragraphs
+        # in the same source may qualify it, so try them before distant lexical
+        # matches. Following context comes first, then preceding context; each
+        # paragraph stays whole and neither can displace the mandatory source.
+        adjacent_groups = []
+        for direction in (1, -1):
+            for index in sorted(paragraph_indices):
+                adjacent = index + direction
+                if (0 <= adjacent < len(units) and adjacent not in paragraph_indices
+                        and units[adjacent][2] == units[index][2]
+                        and paragraphs[adjacent] not in adjacent_groups):
+                    adjacent_groups.append(paragraphs[adjacent])
+        for group in adjacent_groups:
+            include({index for index in range(len(units)) if paragraphs[index] == group})
     for index in scored:
         if index not in picked:
             include({index})
