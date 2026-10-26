@@ -182,3 +182,28 @@ def test_content_reference_replaces_technical_history_in_shared_writer(tmp_path)
         edge, = store.list_connections(source_id=b.id, target_id=a.id)
         assert edge.weight == .9
         assert edge.metadata == {"rule": "R6", "kind": "content_reference"}
+
+
+@pytest.mark.parametrize("evidence", ["reference", "shared_files"])
+def test_backfill_adds_semantic_evidence_to_technical_pair_only(tmp_path, evidence):
+    from living_memory.edge_backfill import backfill_edges
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        context = {"scope": SCOPE, "files": ["pollination.py"]} if evidence == "shared_files" else {"scope": SCOPE}
+        a = store.append_trace(ORCHID, context)
+        text = f"Pollination uses {a.id}." if evidence == "reference" else "Moth wing measurement."
+        b = store.append_trace(text, context)
+        source, target = (b.id, a.id) if evidence == "reference" else tuple(sorted((a.id, b.id)))
+        historical = store.create_connection(source, target, "related", weight=.99, metadata=IMPLICIT)
+        plan = backfill_edges(store)
+        assert plan["totals"]["semantic_updates"] == 1
+        assert store.get_connection(historical.id) == historical
+        applied = backfill_edges(store, apply=True)
+        edge, = store.list_connections(source_id=source, target_id=target)
+        assert edge.weight == (.9 if evidence == "reference" else .65)
+        assert edge.metadata.get("basis") == (None if evidence == "reference" else "shared_files")
+        assert "recall_event_id" not in edge.metadata
+        assert backfill_edges(store, apply=True)["totals"]["semantic_updates"] == 0
+        assert store.get_connection(historical.id) == edge
+        store.connection.execute(applied["rollback"])
+        assert store.get_connection(historical.id) == edge
