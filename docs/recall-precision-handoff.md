@@ -40,7 +40,7 @@ Two points are left open on purpose:
 
 These go into the host's `EnvironmentFile`. Keep every line already there,
 in particular `LM_EXPLICIT_FEEDBACK_POLICY=credit`,
-`LM_EXPLICIT_FEEDBACK_PROMPT=mandatory` and `LM_IMPLICIT_LINK_POLICY=credited`.
+`LM_EXPLICIT_FEEDBACK_PROMPT=mandatory`.
 Demotion is read only under `LM_EXPLICIT_FEEDBACK_POLICY=credit`.
 
 **sfx**, file `~/.config/living-memory/env` (recommended set):

@@ -558,7 +558,7 @@ def test_off_mode_records_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 # ---------------------------------------------------------------------------
-# Irrelevance: hook, global usefulness, link hygiene
+# Irrelevance: query effects, global usefulness and retained history
 # ---------------------------------------------------------------------------
 
 

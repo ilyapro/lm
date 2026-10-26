@@ -261,16 +261,16 @@ def test_explicit_correction_replaces_technical_occupancy(tmp_path, metadata) ->
         plan = backfill_edges(store)
 
         assert plan["totals"]["new_rows"] == 0
-        assert plan["totals"]["correction_updates"] == 1
+        assert plan["totals"]["semantic_updates"] == 1
         assert plan["edges_by_type"]["before"] == plan["edges_by_type"]["after"]
         assert _edge_rows(store) == before
 
         applied = backfill_edges(store, apply=True)
 
         assert applied["totals"]["new_rows"] == 0
-        assert applied["totals"]["correction_updates"] == 1
+        assert applied["totals"]["semantic_updates"] == 1
         assert applied["rules"]["R1c"]["existing_skipped"] == 0
-        assert applied["rules"]["R1c"]["correction_updates"] == 1
+        assert applied["rules"]["R1c"]["semantic_updates"] == 1
         edge = store.get_connection(old_edge.id)
         assert edge is not None
         assert edge.created_at == old_edge.created_at
@@ -285,7 +285,7 @@ def test_explicit_correction_replaces_technical_occupancy(tmp_path, metadata) ->
         after = _edge_rows(store)
         again = backfill_edges(store, apply=True)
         assert again["totals"]["new_rows"] == 0
-        assert again["totals"]["correction_updates"] == 0
+        assert again["totals"]["semantic_updates"] == 0
         assert _edge_rows(store) == after
         store.connection.execute(applied["rollback"])
         assert _edge_rows(store) == after
@@ -304,7 +304,7 @@ def test_unknown_existing_correction_is_not_overwritten(tmp_path, metadata) -> N
         report = backfill_edges(store, apply=True)
 
         assert report["totals"]["new_rows"] == 0
-        assert report["totals"]["correction_updates"] == 0
+        assert report["totals"]["semantic_updates"] == 0
         assert report["rules"]["R1c"]["existing_skipped"] == 1
         assert _edge_rows(store) == before
 

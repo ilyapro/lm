@@ -26,12 +26,12 @@ import sys
 
 import pytest
 
-from living_memory.feedback import _implicit_link_policy, _recall_credit_policy
+from living_memory.feedback import _lookup_credit_policy, _recall_credit_policy
 from living_memory.score_gate import gate_form_from_env, min_score_from_env
 
 
 def policy():
-    return [_implicit_link_policy(), _recall_credit_policy(),
+    return [_lookup_credit_policy(), _recall_credit_policy(),
             min_score_from_env(), gate_form_from_env()]
 
 
@@ -45,12 +45,12 @@ def child_policy():
 
 @pytest.fixture(scope="module")
 def probe():
-    assert policy() == ["all", "grounded", None, "drop"]
+    assert policy() == ["delivered", "grounded", None, "drop"]
     return child_policy()
 
 
 def test_default(probe):
-    assert probe == policy() == ["all", "grounded", None, "drop"]
+    assert probe == policy() == ["delivered", "grounded", None, "drop"]
     assert os.environ["LIVING_MEMORY_EMBEDDING_BACKEND"] == "hash"
     assert os.environ["HF_HUB_OFFLINE"] == "1"
     assert os.environ["LIVING_MEMORY_DEPS_DIR"] == "fixture-deps"
@@ -59,21 +59,21 @@ def test_default(probe):
 
 
 def test_override(monkeypatch):
-    monkeypatch.setenv("LM_IMPLICIT_LINK_POLICY", "credited")
+    monkeypatch.setenv("LM_LOOKUP_CREDIT_POLICY", "off")
     monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "all")
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.35")
     monkeypatch.setenv("LM_RECALL_GATE_FORM", "stub")
-    assert policy() == child_policy() == ["credited", "all", 0.35, "stub"]
+    assert policy() == child_policy() == ["off", "all", 0.35, "stub"]
 
 
 def test_restored():
-    assert policy() == child_policy() == ["all", "grounded", None, "drop"]
+    assert policy() == child_policy() == ["delivered", "grounded", None, "drop"]
 ''',
         encoding="utf-8",
     )
     environment = dict(os.environ)
     policies = {
-        "LM_IMPLICIT_LINK_POLICY": "credited",
+        "LM_LOOKUP_CREDIT_POLICY": "off",
         "LM_RECALL_CREDIT_POLICY": "grounded_negative",
         "LM_RECALL_MIN_SCORE": "0.35",
         "LM_RECALL_GATE_FORM": "stub",

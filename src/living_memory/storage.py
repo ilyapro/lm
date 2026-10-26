@@ -716,8 +716,7 @@ _RECALL_EXPLICIT_CREDIT_SCHEMA_SQL = f"""
 #: Recording happens under ``LM_EXPLICIT_FEEDBACK_POLICY`` ``audit`` and
 #: ``credit``; ``off`` writes nothing. Additive, created on every open, no
 #: foreign keys, no SCHEMA_VERSION bump — the ledger's rules. The one index
-#: serves the per-event read the implicit-feedback link hygiene does on
-#: every closing remember.
+#: supports inspection of accepted and dropped marks by recall event.
 #: Whole-content vectors the consolidation pass clusters traces by. Nodes no
 #: longer carry a vector column (``node_chunk_embeddings`` holds per-window
 #: vectors, and a multi-window node's whole-content vector is not any of its

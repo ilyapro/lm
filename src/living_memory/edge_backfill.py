@@ -10,9 +10,8 @@ Design guarantees (see ``derive-edges`` CLI below):
 
 * **Existing semantics preserved** — a pair already connected with the same
   semantic type is skipped, keeping its weight/metadata/timestamps unchanged.
-  An explicit R1c correction can replace a known technical ``supersedes`` row;
-  these updates are reported separately from new rows and use storage's
-  correction hook. They do not carry the new-row rollback marker. The
+  A semantic contribution can replace a known technical row; these updates
+  are reported separately from new rows and use the shared storage writer. They do not carry the new-row rollback marker. The
   optional R5a pass merges the ``{kind: derived_from, rule: R5a}`` annotation
   onto existing schema→trace ``related`` edges — additive metadata keys only,
   weight and type unchanged — and is off by default.
@@ -76,7 +75,7 @@ from living_memory.edge_derivation import (
     rule_r6_content_reference,
 )
 from living_memory.models import Connection, Node
-from living_memory.relations import is_correction
+from living_memory.relations import is_semantic_relation
 from living_memory.storage import (
     MemoryStore,
     _json_dumps,
@@ -134,7 +133,7 @@ class RuleAudit:
     ``(source, target, type)`` novelty, what actually gets inserted) is larger
     because same-type edges are also added on pairs already connected in the
     reverse direction or by another type, exactly as the write path does.
-    Explicit corrections replacing technical rows count as ``correction_updates``.
+    Semantic relations replacing technical rows count as ``semantic_updates``.
     """
 
     type: str
@@ -142,7 +141,7 @@ class RuleAudit:
     new: int = 0
     net_new_pairs: int = 0
     existing_skipped: int = 0
-    correction_updates: int = 0
+    semantic_updates: int = 0
     samples: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,7 +151,7 @@ class RuleAudit:
             "new": self.new,
             "net_new_pairs": self.net_new_pairs,
             "existing_skipped": self.existing_skipped,
-            "correction_updates": self.correction_updates,
+            "semantic_updates": self.semantic_updates,
             "samples": self.samples,
         }
 
@@ -303,7 +302,7 @@ def _stamp_backfill_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
 def _existing_edges(
     store: MemoryStore,
 ) -> tuple[set[tuple[str, str, str]], set[frozenset[str]], set[tuple[str, str, str]]]:
-    """Return stored keys, undirected pairs and keys of technical supersedes.
+    """Return stored keys, undirected pairs and keys of technical relations.
 
     The exact keys drive additive/idempotent insertion; the undirected pairs
     (any type, either direction) drive the ``net_new_pairs`` connectivity
@@ -322,7 +321,7 @@ def _existing_edges(
         key = (source, target, relation_type)
         keys.add(key)
         pairs.add(frozenset((source, target)))
-        if relation_type == "supersedes" and not is_correction(relation_type, json.loads(row["metadata"])):
+        if not is_semantic_relation(relation_type, json.loads(row["metadata"])):
             technical.add(key)
     return keys, pairs, technical
 
@@ -459,15 +458,18 @@ def backfill_edges(
 
     rule_audits: dict[str, RuleAudit] = {}
     to_insert: list[BackfillEdge] = []
-    to_correct: list[BackfillEdge] = []
+    to_replace: list[BackfillEdge] = []
     net_new_rows = 0
     for key in sorted(merged):
         edge = merged[key]
         is_new = key not in existing_keys
-        correction_update = key in technical_keys and is_correction(edge.type, edge.metadata)
-        if correction_update:
-            edge = replace(edge, metadata={key: value for key, value in edge.metadata.items()
-                                           if key != "basis"})
+        semantic_update = key in technical_keys and is_semantic_relation(edge.type, edge.metadata)
+        if semantic_update:
+            metadata = {key: value for key, value in edge.metadata.items()
+                        if key not in ("basis", "rule_basis")}
+            if "rule_basis" in edge.metadata:
+                metadata["basis"] = edge.metadata["rule_basis"]
+            edge = replace(edge, metadata=metadata)
         net_new = is_new and frozenset((edge.source_id, edge.target_id)) not in existing_pairs
         if net_new:
             net_new_rows += 1
@@ -480,16 +482,16 @@ def backfill_edges(
                     audit.net_new_pairs += 1
                 if len(audit.samples) < sample_size:
                     audit.samples.append(_edge_sample(edge))
-            elif correction_update:
-                audit.correction_updates += 1
+            elif semantic_update:
+                audit.semantic_updates += 1
                 if len(audit.samples) < sample_size:
                     audit.samples.append(_edge_sample(edge))
             else:
                 audit.existing_skipped += 1
         if is_new:
             to_insert.append(edge)
-        elif correction_update:
-            to_correct.append(edge)
+        elif semantic_update:
+            to_replace.append(edge)
 
     r5a_eligible = _r5a_eligible(store, active_nodes) if annotate_derived_from else []
 
@@ -497,7 +499,7 @@ def backfill_edges(
         with store.connection:
             for edge in to_insert:
                 _insert_edge(store, edge)
-            for edge in to_correct:
+            for edge in to_replace:
                 store._insert_connection(
                     edge.source_id, edge.target_id, edge.type,
                     weight=edge.weight, metadata=edge.metadata, merge=True,
@@ -523,7 +525,7 @@ def backfill_edges(
         before_share=before_share,
         after_share=after_share,
         to_insert=to_insert,
-        to_correct=to_correct,
+        to_replace=to_replace,
         net_new_rows=net_new_rows,
         rule_audits=rule_audits,
         r5a_eligible=r5a_eligible,
@@ -574,7 +576,7 @@ def _build_report(
     before_share: Mapping[str, Any],
     after_share: Mapping[str, Any],
     to_insert: Sequence[BackfillEdge],
-    to_correct: Sequence[BackfillEdge],
+    to_replace: Sequence[BackfillEdge],
     net_new_rows: int,
     rule_audits: Mapping[str, RuleAudit],
     r5a_eligible: Sequence[Connection],
@@ -618,14 +620,14 @@ def _build_report(
             f"WHERE json_extract(metadata,'$.basis')='{BACKFILL_BASIS}';"
         ),
         "guarantees": {
-            "existing_semantics_preserved": "explicit corrections replace only known technical supersedes",
+            "existing_semantics_preserved": "semantic evidence replaces only known technical relations",
             "idempotent": "second run inserts 0 new rows (pairs already connected)",
             "marker": {"metadata.basis": BACKFILL_BASIS},
-            "rollback_scope": "new rows only; correction updates and optional R5a annotations are retained",
+            "rollback_scope": "new rows only; semantic updates and optional R5a annotations are retained",
         },
         "totals": {
             "new_rows": len(to_insert),
-            "correction_updates": len(to_correct),
+            "semantic_updates": len(to_replace),
             "new_rows_by_type": {t: new_by_type[t] for t in ALL_TYPES if new_by_type[t]},
             "net_new_connectivity": net_new_rows,
             "multi_rule_rows": multi_rule_rows,
@@ -659,7 +661,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Guarantees")
     lines.append("")
-    lines.append("- **Existing semantic edges preserved**: only known technical supersedes can receive an explicit correction.")
+    lines.append("- **Existing semantic edges preserved**: only known technical relations can receive an explicit correction.")
     lines.append(
         "- **Idempotent**: a second run inserts 0 new rows (all pairs already connected)."
     )
@@ -667,13 +669,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- **Rollback**: `{report['rollback']}` (marker `metadata.basis = "
         f"\"{BACKFILL_BASIS}\"`, a namespace no other edge uses)."
     )
-    lines.append("  This removes new rows only; correction updates and optional R5a annotations remain.")
+    lines.append("  This removes new rows only; semantic updates and optional R5a annotations remain.")
     lines.append("")
     totals = report["totals"]
     lines.append("## Totals")
     lines.append("")
     lines.append(f"- New edge rows inserted: **{totals['new_rows']}**")
-    lines.append(f"- Explicit corrections replacing technical supersedes: **{totals['correction_updates']}**")
+    lines.append(f"- Semantic evidence replacing technical relations: **{totals['semantic_updates']}**")
     by_type = ", ".join(f"{t}={n}" for t, n in totals["new_rows_by_type"].items()) or "none"
     lines.append(f"- New rows by type: {by_type}")
     lines.append(
@@ -725,7 +727,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Per-rule counts")
     lines.append("")
-    lines.append("| rule | type | derived | new rows | correction updates | net-new pairs | existing skipped |")
+    lines.append("| rule | type | derived | new rows | semantic updates | net-new pairs | existing skipped |")
     lines.append("|---|---|---|---|---|---|---|")
     for rule, data in report["rules"].items():
         if rule == "R5a":
@@ -736,7 +738,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             continue
         lines.append(
             f"| {rule} | {data['type']} | {data['derived']} | {data['new']} "
-            f"| {data['correction_updates']} | {data['net_new_pairs']} | {data['existing_skipped']} |"
+            f"| {data['semantic_updates']} | {data['net_new_pairs']} | {data['existing_skipped']} |"
         )
     lines.append("")
     lines.append(
@@ -800,7 +802,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"[{report['mode']}] {report['totals']['new_rows']} new edges "
-        f"({report['totals']['correction_updates']} correction updates, "
+        f"({report['totals']['semantic_updates']} semantic updates, "
         f"{report['totals']['r5a_annotations']} R5a annotations) on {report['db_path']}",
         file=sys.stderr,
     )
