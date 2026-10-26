@@ -137,6 +137,15 @@ class Node:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SourcePassage:
+    """Character address in one exact content version, without a text copy."""
+
+    content_fingerprint: str
+    char_start: int
+    char_end: int
+
+
 @dataclass(slots=True)
 class NodeChunkEmbedding:
     """One embedding window of a node, stored as a float32 little-endian BLOB.
@@ -163,6 +172,8 @@ class NodeChunkEmbedding:
     content_fingerprint: str
     created_at: str = ""
     updated_at: str = ""
+    char_start: int | None = None
+    char_end: int | None = None
 
     @property
     def token_count(self) -> int:

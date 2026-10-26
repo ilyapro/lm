@@ -36,6 +36,7 @@ from living_memory.models import (
     NodeLevel,
     RecallEvent,
     RetrievalWeights,
+    SourcePassage,
 )
 from living_memory.relations import (
     correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
@@ -3687,7 +3688,8 @@ class MemoryStore:
         scope: str | None = None,
         level: NodeLevel | None = None,
         include_decayed: bool = False,
-    ) -> Iterator[tuple[str, int, memoryview]]:
+        include_identity: bool = False,
+    ) -> Iterator[tuple[str, int, memoryview] | tuple[str, int, memoryview, str]]:
         """Yield ``(node_id, chunk_index, embedding)`` for live chunks.
 
         The v6 analogue of :meth:`iter_embedding_rows` and the read contract the
@@ -3715,6 +3717,10 @@ class MemoryStore:
         an unjoined ``SELECT`` over the same rows is ~24 ms — so a consumer that
         wants this cheaper should cache the matrix, not micro-tune the query.
 
+        ``include_identity`` appends the immutable chunk row id. A max-pool
+        winner can then resolve its source address even if the node's chunks
+        are replaced concurrently; an ordinal alone cannot identify a generation.
+
         Yields nothing on a pre-v6 database rather than raising, so a snapshot
         opened without migrations degrades instead of crashing.
         """
@@ -3738,7 +3744,7 @@ class MemoryStore:
         cursor.row_factory = None
         cursor.execute(
             f"""
-            SELECT c.node_id, c.chunk_index, c.embedding
+            SELECT c.node_id, c.chunk_index, c.embedding{', c.id' if include_identity else ''}
             FROM {CHUNK_EMBEDDING_TABLE} c
             JOIN nodes n ON n.id = c.node_id
             {where}
@@ -3750,8 +3756,37 @@ class MemoryStore:
             batch = cursor.fetchmany(1024)
             if not batch:
                 return
-            for node_id, chunk_index, blob in batch:
-                yield str(node_id), int(chunk_index), memoryview(blob)
+            for row in batch:
+                item = (str(row[0]), int(row[1]), memoryview(row[2]))
+                yield (*item, str(row[3])) if include_identity else item
+
+    def get_chunk_passages(self, chunk_ids: Sequence[str]) -> dict[str, SourcePassage]:
+        """Resolve selected row identities without reading vectors or node text.
+
+        Legacy chunks have no character coordinates. Never guess them from
+        token offsets: the tokenizer used to write those rows is unknown.
+        """
+        if not chunk_ids or not self._chunk_table_present():
+            return {}
+        columns = {row[1] for row in self._conn.execute(
+            f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})"
+        )}
+        if not {"char_start", "char_end"} <= columns:
+            return {}
+        passages = {}
+        for batch in _node_read_batches(chunk_ids):
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(
+                f"""SELECT c.id, c.content_fingerprint, c.char_start, c.char_end
+                FROM {CHUNK_EMBEDDING_TABLE} c JOIN nodes n ON n.id = c.node_id
+                WHERE c.id IN ({placeholders}) AND n.decayed = 0
+                  AND c.content_fingerprint = n.content_fingerprint
+                  AND c.char_start >= 0 AND c.char_end > c.char_start""",
+                batch,
+            )
+            for row in rows:
+                passages[str(row[0])] = SourcePassage(str(row[1]), int(row[2]), int(row[3]))
+        return passages
 
     def chunk_corpus_revisions(
         self, scopes: Sequence[str] | None = None,
@@ -4000,6 +4035,9 @@ class MemoryStore:
         )
         if not chunks:
             return 0
+        source = self._conn.execute(
+            "SELECT content, content_fingerprint FROM nodes WHERE id = ?", (node_id,),
+        ).fetchone()
         now = _utc_now()
         payload = []
         for expected_index, (chunk, vector) in enumerate(chunks):
@@ -4011,6 +4049,11 @@ class MemoryStore:
                     f"chunk ordinals must be dense and ordered from 0; got "
                     f"{chunk.chunk_index} at position {expected_index} of {node_id}"
                 )
+            addressed = (
+                source is not None and source["content_fingerprint"] == fingerprint
+                and 0 <= chunk.char_start < chunk.char_end <= len(source["content"])
+                and source["content"][chunk.char_start:chunk.char_end] == chunk.text
+            )
             payload.append(
                 (
                     new_ulid(),
@@ -4023,15 +4066,18 @@ class MemoryStore:
                     fingerprint,
                     now,
                     now,
+                    chunk.char_start if addressed else None,
+                    chunk.char_end if addressed else None,
                 )
             )
         self._conn.executemany(
             f"""
             INSERT INTO {CHUNK_EMBEDDING_TABLE} (
                 id, node_id, chunk_index, dimensions, embedding,
-                token_start, token_end, content_fingerprint, created_at, updated_at
+                token_start, token_end, content_fingerprint, created_at, updated_at,
+                char_start, char_end
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             payload,
         )
@@ -5082,6 +5128,8 @@ class MemoryStore:
                     content_fingerprint TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    char_start INTEGER,
+                    char_end INTEGER,
                     UNIQUE(node_id, chunk_index)
                 );
 
@@ -5309,6 +5357,7 @@ class MemoryStore:
             self._backfill_recall_delivery_history()
             self._create_legacy_embedding_index()
             self._backfill_missing_content_fingerprints()
+            self._migrate_chunk_passage_columns()
             self._invalidate_derived_proxy_chunks()
             self._backfill_recall_events_task_pattern()
             self._conn.execute(
@@ -5319,6 +5368,15 @@ class MemoryStore:
                 """,
                 (str(SCHEMA_VERSION),),
             )
+
+    def _migrate_chunk_passage_columns(self) -> None:
+        """Add source coordinates without rewriting or re-encoding old chunks."""
+        columns = {row[1] for row in self._conn.execute(
+            f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})"
+        )}
+        for column in ("char_start", "char_end"):
+            if column not in columns:
+                self._conn.execute(f"ALTER TABLE {CHUNK_EMBEDDING_TABLE} ADD COLUMN {column} INTEGER")
 
     def _invalidate_derived_proxy_chunks(self) -> None:
         """Queue single-window materializer chunks for ordinary content encoding.
@@ -6206,6 +6264,8 @@ def _chunk_embedding_from_row(row: sqlite3.Row) -> NodeChunkEmbedding:
         content_fingerprint=str(row["content_fingerprint"]),
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),
+        char_start=_row_value(row, "char_start"),
+        char_end=_row_value(row, "char_end"),
     )
 
 
