@@ -285,10 +285,64 @@ def test_failure_rolls_back_and_does_not_repeat_on_each_read(app, monkeypatch, f
         monkeypatch.setattr(store, "_replace_node_chunks", fail_write)
     first = call(mcp)["results"][0]
     assert FACT not in first["content"] and rows(store, node.id) == before
-    assert service._legacy_refresh_failed
     monkeypatch.setattr(store, "refresh_legacy_chunks", lambda *a, **kw: pytest.fail("repeated failure"))
     assert call(mcp)["results"][0]["content"] == first["content"]
     assert store.get_node(node.id).content == CONTENT
+
+
+def test_failed_winners_are_bounded_and_do_not_consume_the_next_source_slot(app, monkeypatch):
+    mcp, encoder, service = app
+    store = mcp.memory_store
+    node = legacy(store)
+    other = legacy(store, CONTENT + "\nIndependent source.")
+    results = service.memory_recall(QUERY, scope=SCOPE, depth=0, max_results=2, log_access=False)
+    by_id = {result.node_id: result for result in results}
+    chunks = store.list_node_chunks(node.id)
+    assert 1 < len(chunks) <= retrieval.LEGACY_PASSAGE_MAX_CHUNKS
+    winners = [replace(by_id[node.id], scored_chunk_id=chunk.id) for chunk in chunks]
+    encoder.batches.clear()
+    encoder.fail = True
+    for _ in range(3):
+        for winner in winners:
+            service.refresh_legacy_passages([winner])
+    assert len(encoder.batches) == len(chunks)
+    assert all(len(batch) <= retrieval.LEGACY_PASSAGE_MAX_CHUNKS for batch in encoder.batches)
+    encoder.fail = False
+    service.refresh_legacy_passages([*winners, by_id[other.id]])
+    assert len(encoder.batches) == len(chunks) + 1
+    assert all(chunk.char_start is not None for chunk in store.list_node_chunks(other.id))
+    assert all(chunk.char_start is None for chunk in store.list_node_chunks(node.id))
+
+
+@pytest.mark.parametrize("change", ["content", "generation"])
+def test_failed_row_does_not_suppress_replacement_source_or_index(app, change):
+    mcp, encoder, service = app
+    store = mcp.memory_store
+    node = legacy(store)
+    original_ids = {chunk.id for chunk in store.list_node_chunks(node.id)}
+    encoder.fail = True
+    assert FACT not in call(mcp)["results"][0]["content"]
+    encoder.fail = False
+    if change == "content":
+        store.update_node(node.id, content=CONTENT + "\nUpdated source.", embedding=node.embedding)
+    else:
+        store.replace_node_chunks(node.id, [
+            (chunk, vector) for chunk, vector in zip(
+                chunk_text(CONTENT), encoder.embed_batch([c.text for c in chunk_text(CONTENT)]),
+                strict=True,
+            )
+        ])
+    with store.transaction():
+        store.connection.execute(
+            "UPDATE node_chunk_embeddings SET char_start=NULL, char_end=NULL WHERE node_id=?",
+            (node.id,),
+        )
+    assert original_ids.isdisjoint(chunk.id for chunk in store.list_node_chunks(node.id))
+    encoder.batches.clear()
+    assert FACT not in call(mcp)["results"][0]["content"]
+    assert len(encoder.batches) == 1
+    assert FACT in call(mcp)["results"][0]["content"]
+    assert len(encoder.batches) == 1
 
 
 def test_readonly_and_unsupported_paths_do_no_model_work(tmp_path):

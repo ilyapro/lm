@@ -127,8 +127,11 @@ recall scores that new index. No old score is assigned to a replacement chunk.
 Concurrent source or generation changes cancel the write. Full deliveries,
 duplicate/withheld results, current indices and oversized records do not incur
 refresh encoding. Failed or unsupported refreshes preserve lexical fallback and
-full lookup. An indexing exception disables this optional refresh for the service
-instance, preventing repeated failed work until a new instance is created.
+full lookup. An indexing exception suppresses refresh for that immutable scored
+chunk row in this service instance; other sources and replacement rows remain
+eligible. Repeated reads of the same winning row do no further refresh work.
+Different winners can attempt at most 32 refreshes per unchanged eligible index,
+with at most one attempted source per read and 32 chunks encoded per attempt.
 Metadata-only updates and opening a database do not refresh these
 chunks; missing or stale chunks retain their existing indexing path.
 

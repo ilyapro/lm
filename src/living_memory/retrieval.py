@@ -571,7 +571,7 @@ class MemoryRecallService:
         self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
         self._store_embedder_shared = False
-        self._legacy_refresh_failed = False
+        self._failed_legacy_chunks: set[str] = set()
 
     def memory_recall(
         self,
@@ -734,10 +734,11 @@ class MemoryRecallService:
         cannot give that old score an address in the replacement generation.
         """
         refresh = getattr(self.store, "refresh_legacy_chunks", None)
-        if self._legacy_refresh_failed or not callable(refresh):
+        if not callable(refresh):
             return
         for result in snippets:
             if (result.semantic_passage is not None or not result.scored_chunk_id
+                    or result.scored_chunk_id in self._failed_legacy_chunks
                     or result.withheld or result.node.level == "schema"
                     or len(result.node.content) > LEGACY_PASSAGE_MAX_CHARS):
                 continue
@@ -749,9 +750,10 @@ class MemoryRecallService:
                     max_chunks=LEGACY_PASSAGE_MAX_CHUNKS,
                 )
             except Exception:
-                # Optional indexing must not charge every useful read for the
-                # same broken encoder/store. A new service can try again.
-                self._legacy_refresh_failed = True
+                # Immutable scored rows bound repeated failure work without
+                # disabling independent sources. Replacement rows can retry;
+                # an unchanged eligible index has at most max_chunks winners.
+                self._failed_legacy_chunks.add(result.scored_chunk_id)
                 logging.getLogger(__name__).warning(
                     "could not refresh selected legacy chunk index", exc_info=True,
                 )
