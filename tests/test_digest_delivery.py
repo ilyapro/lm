@@ -9,7 +9,7 @@ from living_memory.models import Node
 from living_memory.server import create_mcp_server
 from living_memory.source_text import passage_spans
 from living_memory.storage import MemoryStore
-from test_mcp_server import FakeMCP
+from test_lookup import FakeMCP
 
 
 LEAD = (
