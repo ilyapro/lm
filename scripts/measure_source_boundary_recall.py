@@ -153,6 +153,11 @@ async def main():
     for name, content in (
         ("short_cross_paragraph_constraint", permission + "\n\n" + exception),
         ("long_cross_paragraph_constraint", "\n\n".join([*OPS, handover, permission, exception, checklist])),
+        ("preceding_cross_paragraph_constraint", "\n\n".join([
+            *OPS, handover,
+            "On the operator workstation, the following permission requires an explicit operator request; otherwise the dashboard must remain running.",
+            permission, checklist,
+        ])),
     ):
         report["cases"].append(await case(
             name, content, "When may the dashboard restart automatically after the maintenance window?", RELATED,
