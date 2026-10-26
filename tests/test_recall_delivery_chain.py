@@ -22,6 +22,79 @@ from living_memory.server import create_mcp_server
 from test_transport_identity import _structured
 
 
+@pytest.mark.parametrize("statement", [
+    "Do not\nrestart the dashboard.",
+    "Only after operator approval\nrestart the dashboard.",
+    "Only after operator approval; restart the dashboard.",
+    "Restart the dashboard; only after operator approval.",
+])
+def test_consolidated_qualifications_survive_persistence_and_mcp_recall(tmp_path, statement):
+    scope = "project:synthetic-consolidation"
+    topic = "Service availability depends on operator scheduling for dashboard maintenance release policy safety checklist."
+    complement = "Audit records expire after thirty days."
+    db = tmp_path / "memory.sqlite3"
+    mcp = create_mcp_server(db)
+    store = mcp.memory_store
+    sources = [
+        store.append_trace(
+            text, {"scope": scope, "agent": f"source-{index}"},
+            feedback={"confidence": 0.9 if index == 0 else 0.5},
+        )
+        for index, text in enumerate((topic, topic + " " + statement, topic + " " + complement))
+    ]
+
+    async def consolidate(server):
+        async with Client(server) as client:
+            return _structured(await client.call_tool("memory_consolidate", {"scope": scope}))
+
+    async def read(server, concept_id):
+        async with Client(server) as client:
+            response = _structured(await client.call_tool("memory_recall", {
+                "query": "dashboard maintenance operator scheduling", "scope": scope,
+                "depth": 0, "max_results": 4,
+            }))
+            entry = next(item for item in response["results"] if item["id"] == concept_id)
+            assert entry["delivery"] == "full"
+            assert statement in entry["content"]
+            assert complement in entry["content"]
+            assert not entry["superseded"]
+            lookup = _structured(await client.call_tool("memory_lookup", {
+                "node_id": entry["content_ref"]["node_id"], "view": "full",
+            }))
+            saved = lookup["results"][0]
+            assert saved["content"] == entry["content"]
+            assert set(saved["provenance"]["source_traces"]) == {source.id for source in sources}
+            originals = _structured(await client.call_tool("memory_lookup", {
+                "node_ids": [source.id for source in sources],
+            }))
+            assert {item["id"]: item["content"] for item in originals["results"]} == {
+                source.id: source.content for source in sources
+            }
+            assert all(not item["superseded"] for item in originals["results"])
+
+    try:
+        created = asyncio.run(consolidate(mcp))["concepts_created"]
+        assert len(created) == 1
+        concept_id = created[0]["id"]
+        # Read from a reopened store: delivery must consume the persisted concept.
+        store.close()
+        mcp = create_mcp_server(db)
+        asyncio.run(read(mcp, concept_id))
+
+        # An existing derived record changes when its ordinary materializer runs.
+        previous = "Stored digest pending ordinary refresh."
+        mcp.memory_store.update_node(concept_id, content=previous)
+        mcp.memory_store.close()
+        mcp = create_mcp_server(db)
+        assert mcp.memory_store.get_node(concept_id).content == previous
+        refreshed = asyncio.run(consolidate(mcp))
+        assert refreshed["concepts_created"] == []
+        assert [node["id"] for node in refreshed["concepts_updated"]] == [concept_id]
+        asyncio.run(read(mcp, concept_id))
+    finally:
+        mcp.memory_store.close()
+
+
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("evidence", [False, True])
 @pytest.mark.parametrize("qualifier", ["Do not", "Only if the indicator is green,"])

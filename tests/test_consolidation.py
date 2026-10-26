@@ -604,6 +604,20 @@ def test_synthesize_digest_keeps_tail_conditions_without_partial_assertions(tmp_
         assert "…" not in bounded
 
 
+@pytest.mark.parametrize("statement", [
+    "Do not\nrestart the dashboard.",
+    "Only after operator approval\nrestart the dashboard.",
+    "Only after operator approval; restart the dashboard.",
+    "Restart the dashboard; only after operator approval.",
+])
+def test_synthesize_digest_keeps_wrapped_and_semicolon_qualifications(tmp_path, statement):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        lead = store.append_trace("Service availability depends on operator scheduling.")
+        source = store.append_trace(statement)
+
+        assert _synthesize_digest([lead, source], best=lead) == lead.content + "\n• " + statement
+
+
 def test_synthesize_digest_deduplicates_exact_sentences_and_keeps_later_claims(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         common = "Deployment uses the dashboard."
