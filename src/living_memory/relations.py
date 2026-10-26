@@ -14,6 +14,47 @@ _BOOKKEEPING_KINDS = ("drain_near_duplicate", "duplicate_content")
 _HEURISTIC_PRODUCER = "lm_collapse_near_dups.py"
 _HEURISTIC_REASON = "near-duplicate collapse"
 
+# Source contributions shared with their writers. A merged row's maximum
+# weight can also contain access/recall history; it is not that contribution.
+CONTENT_REFERENCE_WEIGHT = 0.9
+DERIVED_FROM_WEIGHT = 0.6
+CLUSTER_MEMBERSHIP_WEIGHT = 0.2
+
+
+def shared_files_weight(files: Any) -> float:
+    return min(0.95, 0.5 + 0.15 * len(files))
+
+
+def source_relation_weight(
+    relation_type: str, weight: float, metadata: Mapping[str, Any],
+) -> float:
+    """Current source contribution without known historical reinforcement.
+
+    Preserve independent evidence even when a merged row retains an old
+    history basis. Known writer annotations recover their own contribution,
+    not the row's maximum. Unknown metadata keeps its ordinary semantics.
+    """
+    weight = max(0.0, weight)
+    if not is_semantic_relation(relation_type, metadata):
+        return 0.0
+    if relation_type != "related":
+        return weight
+    basis, kind, rule = (metadata.get(key) for key in ("basis", "kind", "rule"))
+    historical = basis in ("implicit_recall_feedback", "co_access", "cluster")
+    if kind == "content_reference" and (historical or rule == "R6"):
+        return min(weight, CONTENT_REFERENCE_WEIGHT)
+    if kind == "derived_from" and (historical or rule == "R5a"):
+        return min(weight, DERIVED_FROM_WEIGHT)
+    if rule == "R4a":
+        return min(weight, CONTENT_REFERENCE_WEIGHT)
+    if rule == "R4b" and isinstance(metadata.get("files"), list):
+        return min(weight, shared_files_weight(metadata["files"]))
+    if basis == "cluster":
+        return min(weight, CLUSTER_MEMBERSHIP_WEIGHT)
+    if basis == "co_access":
+        return 0.0
+    return weight
+
 
 def is_correction(relation_type: str, metadata: Mapping[str, Any]) -> bool:
     return relation_type == "supersedes" and not (

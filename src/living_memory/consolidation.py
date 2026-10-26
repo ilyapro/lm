@@ -40,6 +40,7 @@ from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
 from living_memory.models import Connection, ConnectionType, Node, string_list
 from living_memory.query_anchors import resolve_replacement
+from living_memory.relations import CLUSTER_MEMBERSHIP_WEIGHT, DERIVED_FROM_WEIGHT
 from living_memory.storage import MemoryStore, _node_read_batches, new_ulid
 from living_memory.source_text import passage_spans
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
@@ -1339,7 +1340,7 @@ def _connect_schema_to_traces(
             trace.id,
             "related",
             merge=True,
-            weight=0.6,
+            weight=DERIVED_FROM_WEIGHT,
             metadata={
                 "basis": "procedural",
                 "procedure_key": schema.context.get("procedure_key"),
@@ -2286,7 +2287,7 @@ def _update_edge_weights_from_co_access(
 def _source_edge_weight(trace: Node, max_access: int) -> float:
     access = trace.access_count / max_access if max_access > 0 else 0.0
     usefulness = min(1.0, max(0.0, trace.usefulness_score))
-    return 0.2 + 0.55 * access + 0.2 * usefulness + 0.05 * trace.confidence
+    return CLUSTER_MEMBERSHIP_WEIGHT + 0.55 * access + 0.2 * usefulness + 0.05 * trace.confidence
 
 
 def _pair_edge_weight(left: Node, right: Node, max_access: int) -> float:

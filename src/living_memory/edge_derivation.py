@@ -28,6 +28,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from living_memory.models import Connection, ConnectionType, Node
+from living_memory.relations import CONTENT_REFERENCE_WEIGHT, shared_files_weight
 from living_memory.storage import _node_from_row
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -267,7 +268,7 @@ def rule_r6_content_reference(
                 source_id=node.id,
                 target_id=target.id,
                 type="related",
-                weight=0.9,
+                weight=CONTENT_REFERENCE_WEIGHT,
                 metadata={"rule": "R6", "kind": CONTENT_REFERENCE_KIND},
                 rule="R6",
             )
@@ -384,7 +385,7 @@ def rule_r4a_same_commit(
                 source_id=source_id,
                 target_id=target_id,
                 type="related",
-                weight=0.9,
+                weight=CONTENT_REFERENCE_WEIGHT,
                 metadata={
                     "rule": "R4a",
                     "basis": SAME_COMMIT_BASIS,
@@ -440,7 +441,7 @@ def rule_r4b_shared_files(
                 source_id=source_id,
                 target_id=target_id,
                 type="related",
-                weight=min(0.95, 0.5 + 0.15 * len(shared)),
+                weight=shared_files_weight(shared),
                 metadata={
                     "rule": "R4b",
                     "basis": SHARED_FILES_BASIS,
