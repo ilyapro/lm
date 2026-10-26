@@ -161,6 +161,7 @@ def test_present_correction_chain_propagates_relevance(
             node=Node(id=name, level="trace", content=name, scope="project:app"),
             score=score,
             bm25_score=score,
+            lexical_score=score,
         )
         for name, score in (
             ("bystander", 1.0),
@@ -175,4 +176,5 @@ def test_present_correction_chain_propagates_relevance(
         corrections_by_superseded={"stale": ("older",), "older": ("newest",)},
     )
     assert [result.node.id for result in delivered] == ["bystander", "newest", "older"]
+    assert all(result.withheld is None for result in delivered)
     assert [result.node.id for result in residual] == ["stale"]

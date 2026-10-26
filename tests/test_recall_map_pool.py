@@ -483,7 +483,7 @@ def test_ballast_forms_and_prose_lookalikes():
 
 
 def result(node, evidence=1.0, **kwargs):
-    return RecallResult(node=node, score=evidence, bm25_score=evidence,
+    return RecallResult(node=node, score=evidence, bm25_score=evidence, lexical_score=evidence,
                         vector_score=evidence, **kwargs)
 
 
@@ -594,8 +594,8 @@ def test_main_and_map_share_source_qualification_after_positive_history(tmp_path
             reinforced = dataclasses.replace(weak, access_count=1000, usefulness_score=1) if history else weak
             ranked = [result(lead),
                       RecallResult(reinforced, score=2 if history else 0.3,
-                                   bm25_score=0.75, graph_score=1.5 if history else 0),
-                      RecallResult(fresh, score=0.4, bm25_score=0.75,
+                                   bm25_score=0.75, lexical_score=0.75, graph_score=1.5 if history else 0),
+                      RecallResult(fresh, score=0.4, bm25_score=0.75, lexical_score=0.75,
                                    graph_score=0.5, source_graph_score=0.5)]
             evidence = QueryRelevance(ranked)
             selected, residual = apply_score_gate(ranked, 1, relevance=evidence)

@@ -61,12 +61,13 @@ def make_node(node_id: str, content: str = "", **overrides: Any) -> Node:
 
 
 def make_result(node_id: str, strength: float, **overrides: Any) -> RecallResult:
-    """A result whose bm25 channel is ``strength`` (gate score 0.4 * strength)."""
+    """A result with lexical support ``strength`` (gate score 0.4 * strength)."""
 
     defaults: dict[str, Any] = {
         "node": make_node(node_id),
         "score": strength,
         "bm25_score": strength,
+        "lexical_score": strength,
         "vector_score": 0.0,
         "methods": ("bm25",),
     }
@@ -350,7 +351,7 @@ def _causal_floor_ratio(result: RecallResult) -> float:
             bm25 -= deficit * bm25 / remaining
             vector -= deficit * vector / remaining
             graph = floor
-        return bm25 * result.bm25_score + vector * result.vector_score + graph * result.graph_score
+        return bm25 * result.lexical_score + vector * result.vector_score + graph * result.source_graph_score
 
     return blend(0.75) / blend(0.25)
 
