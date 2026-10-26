@@ -117,6 +117,35 @@ def test_semantic_source_record_and_adjacent_condition(tmp_path, view):
         assert entry["content_ref"]["node_id"] == node.id
 
 
+@pytest.mark.parametrize("condition_before", [False, True])
+@pytest.mark.parametrize("budget", [1000, 300, 160])
+def test_cross_paragraph_condition_precedes_remote_context(tmp_path, condition_before, budget):
+    permission = "The dashboard may restart automatically after maintenance."
+    condition = ("On the operator workstation, this permission requires an explicit operator "
+                 "request; otherwise the dashboard must remain running.")
+    paragraphs = [condition, permission] if condition_before else [permission, condition]
+    background = "Routine dashboard maintenance reports describe the archive. " * 25
+    content = "\n\n".join([background, *paragraphs, background])
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        start = content.index(permission)
+        node = put_match(store, content, start, start + len(permission))
+        results = recall(MemoryRecallService(store, embedder=QueryEmbedder()))
+        entry = shape(results, budget)[0]
+        body = entry["content"]
+        assert permission in body
+        assert len(body) <= budget
+        if budget >= 300:
+            assert condition in body
+            assert body.index(condition) < body.index(permission) if condition_before else body.index(permission) < body.index(condition)
+        else:
+            assert condition not in body
+        # The other adjacent paragraph cannot fit even at 1000. Its omission
+        # remains explicit; retaining one nearby condition proves no completeness.
+        assert body.endswith("\n[Incomplete source context]")
+        assert entry["content_ref"]["node_id"] == node.id
+        assert store.get_node(node.id).content == content
+
+
 def test_exact_generation_and_content_binding(tmp_path, monkeypatch):
     content = BACKGROUND + "\n\n" + FACT
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
