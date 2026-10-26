@@ -1040,11 +1040,13 @@ def _register_tools(
             storage_module._normalize_rejected_alternatives(alternatives_considered)
             if alternatives_considered is not None else None
         )
-        prepared = _prepare_trace_indices(store, [content, *(
+        contents = [content]
+        contents.extend(
             storage_module._rejected_alternative_content(
                 alternative["approach"], alternative["rejected_because"],
             ) for alternative in alternatives or ()
-        )])
+        )
+        prepared = _prepare_trace_indices(store, contents)
         with runtime_lock:
             context = _with_transport_identity(context)
             try:
@@ -2152,7 +2154,7 @@ def _prepare_trace_indices(
 ) -> dict[str, _PreparedTraceIndex]:
     """Prepare exact source bytes without reading knowledge or session state."""
 
-    prepared = {}
+    prepared: dict[str, _PreparedTraceIndex] = {}
     for content in contents:
         try:
             chunks = store._chunk_embeddings_for(content, None, require_complete=True)
@@ -2182,17 +2184,13 @@ def _index_written_traces(
             index = prepared.get(node.content)
             if index is None:
                 raise ValueError("prepared trace source does not match stored content")
-            if index.error is not None:
-                logging.getLogger(__name__).warning(
-                    "new trace indexing deferred (%s)", index.error,
-                )
-                deferred.append(node.id)
-                continue
-            store.replace_node_chunks(node.id, index.chunks)
+            error = index.error
+            if error is None:
+                store.replace_node_chunks(node.id, index.chunks)
         except Exception as exc:
-            logging.getLogger(__name__).warning(
-                "new trace indexing deferred (%s)", type(exc).__name__,
-            )
+            error = type(exc).__name__
+        if error is not None:
+            logging.getLogger(__name__).warning("new trace indexing deferred (%s)", error)
             deferred.append(node.id)
     return {"status": "deferred", "node_ids": deferred} if deferred else None
 

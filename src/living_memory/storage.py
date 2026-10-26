@@ -1119,11 +1119,8 @@ class MemoryStore:
             self.config = MemoryConfig(db_path=Path(config))
 
         self.db_path = Path(self.config.db_path)
-        self._chunk_embedder = chunk_embedder
         self._chunk_embedder_lock = RLock()
-        self._default_chunk_embedder = LocalEmbeddingModel(
-            model_name=self.config.embedding_model,
-        ).embed_batch
+        self.set_chunk_embedder(chunk_embedder)
         self._node_embedding_column_cache: bool | None = None
         self._chunk_table_cache: bool | None = None
         self._anchor_tables_cache: bool | None = None
@@ -3687,11 +3684,15 @@ class MemoryStore:
         """
 
         with self._chunk_embedder_lock:
-            self._chunk_embedder = embedder
+            self._chunk_embedder = (
+                embedder if embedder is not None else LocalEmbeddingModel(
+                    model_name=self.config.embedding_model,
+                ).embed_batch
+            )
 
     def _resolve_chunk_embedder(self) -> ChunkEmbedder:
         with self._chunk_embedder_lock:
-            return self._chunk_embedder or self._default_chunk_embedder
+            return self._chunk_embedder
 
     def iter_chunk_embedding_rows(
         self,
@@ -4168,8 +4169,10 @@ class MemoryStore:
         # injected encoders and their replacement serialized too; never consult
         # SQLite, session state or the current knowledge projection here.
         with self._chunk_embedder_lock:
-            vectors = [list(vector) for vector in
-                       self._resolve_chunk_embedder()([chunk.text for chunk in chunks])]
+            vectors = [
+                list(vector) for vector in
+                self._resolve_chunk_embedder()([chunk.text for chunk in chunks])
+            ]
         if len(vectors) != len(chunks):
             raise ValueError(
                 f"chunk embedder returned {len(vectors)} vectors for {len(chunks)} chunks"
