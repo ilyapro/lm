@@ -548,7 +548,6 @@ def memory_consolidate(
     step = guard if guard is not None else nullcontext
 
     with step():
-        _refresh_promoted_global_concepts(store)
         trace_limit = max(recent_limit, min_cluster_size or 0) if force else recent_limit
         traces = store.list_nodes(
             level="trace",
@@ -601,6 +600,9 @@ def memory_consolidate(
                 result.concepts_updated.append(concept)
 
     with step():
+        # Existing promotions consume the project digests written by this pass,
+        # even when its phase does not admit new cross-scope promotions.
+        _refresh_promoted_global_concepts(store)
         decay_result: DecayResult = apply_decay(store, scope=scope)
     result.decayed.extend(decay_result.nodes)
     return result
@@ -1859,6 +1861,8 @@ def _synthesize_digest(
     passages but never establishes identity; conditions and contrasting claims
     remain eligible even when their token sets or embeddings are identical.
     Source identities and complete contents remain available through provenance.
+    Persisted digests change only through source-based materialization; reading
+    them cannot recover lost boundaries from ambiguous soft newlines.
     """
 
     if max_chars <= 0:
