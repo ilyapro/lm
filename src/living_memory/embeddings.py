@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
+from functools import wraps
 from hashlib import blake2b
 import importlib.util
 import logging
@@ -12,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import sys
+from threading import RLock
 from typing import Any
 
 
@@ -573,6 +575,17 @@ _ONLINE_BACKENDS = {"online", "remote", "download", "network"}
 _OFFLINE_ENV_VARS = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
 
 _MODEL_CACHE: dict[tuple[str, str], Any] = {}
+# Cached backends are shared across model instances. Protect load, inference and
+# fallback together; no store lock is acquired while this guard is held.
+_ENCODER_LOCK = RLock()
+
+
+def _serialized_encoder(method):
+    @wraps(method)
+    def guarded(*args, **kwargs):
+        with _ENCODER_LOCK:
+            return method(*args, **kwargs)
+    return guarded
 
 
 class LocalEmbeddingModel:
@@ -601,6 +614,7 @@ class LocalEmbeddingModel:
         self._model: Any | None = None
         self._load_attempted = False
 
+    @_serialized_encoder
     def embed(self, text: str) -> list[float]:
         model = self._sentence_transformer()
         if model is None:
@@ -616,6 +630,7 @@ class LocalEmbeddingModel:
 
         return self._normalize_embedding(vector)
 
+    @_serialized_encoder
     def embed_batch(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed one operation's texts in order, using the encoder's batch size.
 
@@ -641,10 +656,12 @@ class LocalEmbeddingModel:
             return _normalize(vector)
         return [0.0] * self.dimensions
 
+    @_serialized_encoder
     def warmup(self) -> None:
         """Pre-load the underlying model to avoid latency on the first query."""
         self._sentence_transformer()
 
+    @_serialized_encoder
     def encoder_id(self) -> str:
         """Name the encoder ``embed`` uses right now, for keying cached vectors.
 
@@ -656,6 +673,7 @@ class LocalEmbeddingModel:
             return f"hash:{self.dimensions}"
         return f"st:{self.model_name}:{self.dimensions}"
 
+    @_serialized_encoder
     def _sentence_transformer(self) -> Any | None:
         if self._backend in _HASH_BACKENDS:
             return None

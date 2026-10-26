@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
+from threading import RLock
 from typing import Any, Literal
 import hashlib
 import json
@@ -1119,6 +1120,10 @@ class MemoryStore:
 
         self.db_path = Path(self.config.db_path)
         self._chunk_embedder = chunk_embedder
+        self._chunk_embedder_lock = RLock()
+        self._default_chunk_embedder = LocalEmbeddingModel(
+            model_name=self.config.embedding_model,
+        ).embed_batch
         self._node_embedding_column_cache: bool | None = None
         self._chunk_table_cache: bool | None = None
         self._anchor_tables_cache: bool | None = None
@@ -3681,13 +3686,12 @@ class MemoryStore:
         ``None`` restores the lazy default.
         """
 
-        self._chunk_embedder = embedder
+        with self._chunk_embedder_lock:
+            self._chunk_embedder = embedder
 
     def _resolve_chunk_embedder(self) -> ChunkEmbedder:
-        if self._chunk_embedder is None:
-            model = LocalEmbeddingModel(model_name=self.config.embedding_model)
-            self._chunk_embedder = model.embed_batch
-        return self._chunk_embedder
+        with self._chunk_embedder_lock:
+            return self._chunk_embedder or self._default_chunk_embedder
 
     def iter_chunk_embedding_rows(
         self,
@@ -4158,13 +4162,14 @@ class MemoryStore:
         chunks = chunk_text(content)
         if not chunks or (max_chunks is not None and len(chunks) > max_chunks):
             return []
-        if len(chunks) == 1:
-            if node_embedding:
-                return [(chunks[0], list(node_embedding))]
-            vectors = self._resolve_chunk_embedder()([chunks[0].text])
-        else:
-            vectors = self._resolve_chunk_embedder()([chunk.text for chunk in chunks])
-        vectors = list(vectors)
+        if len(chunks) == 1 and node_embedding:
+            return [(chunks[0], list(node_embedding))]
+        # Preparation uses only immutable text and encoder-owned state. Keep
+        # injected encoders and their replacement serialized too; never consult
+        # SQLite, session state or the current knowledge projection here.
+        with self._chunk_embedder_lock:
+            vectors = [list(vector) for vector in
+                       self._resolve_chunk_embedder()([chunk.text for chunk in chunks])]
         if len(vectors) != len(chunks):
             raise ValueError(
                 f"chunk embedder returned {len(vectors)} vectors for {len(chunks)} chunks"

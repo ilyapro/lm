@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from collections import deque
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from functools import wraps
 import inspect
@@ -30,6 +30,7 @@ from living_memory.auto_consolidation import (
     PENDING_KV_KEY as AUTO_CONSOLIDATION_PENDING_KV_KEY,
     AutoConsolidationScheduler,
 )
+from living_memory.chunking import TextChunk
 from living_memory.config import MemoryConfig, load_config
 from living_memory.consolidation import (
     _correction_text,
@@ -1034,8 +1035,17 @@ def _register_tools(
         exactly-once.
         """
 
-        context = _with_transport_identity(context)
+        alternatives = (
+            storage_module._normalize_rejected_alternatives(alternatives_considered)
+            if alternatives_considered is not None else None
+        )
+        prepared = _prepare_trace_indices(store, [content, *(
+            storage_module._rejected_alternative_content(
+                alternative["approach"], alternative["rejected_because"],
+            ) for alternative in alternatives or ()
+        )])
         with runtime_lock:
+            context = _with_transport_identity(context)
             try:
                 auto_decay = _decay_sweep_if_due(store)
             except Exception:
@@ -1044,7 +1054,7 @@ def _register_tools(
             # Optional marks remain nonfatal, but roll back with a failed write.
             with store.transaction():
                 rejected_nodes = []
-                if alternatives_considered is None:
+                if alternatives is None:
                     node = store.append_trace(content, context, feedback=feedback)
                     rejected_alternatives: list[Any] | None = None
                 else:
@@ -1052,10 +1062,10 @@ def _register_tools(
                         content,
                         context,
                         feedback=feedback,
-                        alternatives_considered=alternatives_considered,
+                        alternatives_considered=alternatives,
                     )
                     rejected_alternatives = [rejected.id for rejected in rejected_nodes]
-                indexing = _index_written_traces(store, [node, *rejected_nodes])
+                indexing = _index_written_traces(store, [node, *rejected_nodes], prepared)
                 # Explicit marks before implicit feedback, so an irrelevant mark
                 # carried on the closing call already keeps its edge out.
                 marks = None
@@ -1117,11 +1127,13 @@ def _register_tools(
         its inputs against the current graph before using it.
         """
 
-        context = _with_transport_identity(context)
+        correction = _correction_text(correction)
+        prepared = _prepare_trace_indices(store, [correction])
         preparation = prepare_teach(
             store, trace_id, correction, confidence=confidence, guard=lambda: runtime_lock,
         )
         with runtime_lock:
+            context = _with_transport_identity(context)
             with store.transaction():
                 # Marks must precede implicit feedback, before the corrective
                 # trace exists. A failed required write also rolls them back.
@@ -1147,7 +1159,7 @@ def _register_tools(
                     context=context,
                     preparation=preparation,
                 )
-                indexing = _index_written_traces(store, [taught.corrective_trace])
+                indexing = _index_written_traces(store, [taught.corrective_trace], prepared)
                 if marks is not None:
                     try:
                         store.set_feedback_marks_source(
@@ -2127,8 +2139,34 @@ def _compact_consolidation_summary(result: ConsolidationResult) -> dict[str, Any
     }
 
 
-def _index_written_traces(store: MemoryStore, nodes: Sequence[Node]) -> dict[str, Any] | None:
-    """Index this write's content while its required transaction owns it.
+@dataclass(frozen=True, slots=True)
+class _PreparedTraceIndex:
+    chunks: tuple[tuple[TextChunk, tuple[float, ...]], ...] = ()
+    error: str | None = None
+
+
+def _prepare_trace_indices(
+    store: MemoryStore, contents: Sequence[str],
+) -> dict[str, _PreparedTraceIndex]:
+    """Prepare exact source bytes without reading knowledge or session state."""
+
+    prepared = {}
+    for content in contents:
+        try:
+            chunks = store._chunk_embeddings_for(content, None, require_complete=True)
+            prepared[content] = _PreparedTraceIndex(tuple(
+                (chunk, tuple(vector)) for chunk, vector in chunks
+            ))
+        except Exception as exc:
+            prepared[content] = _PreparedTraceIndex(error=type(exc).__name__)
+    return prepared
+
+
+def _index_written_traces(
+    store: MemoryStore, nodes: Sequence[Node],
+    prepared: Mapping[str, _PreparedTraceIndex],
+) -> dict[str, Any] | None:
+    """Apply only an exact prepared source inside the required transaction.
 
     The outer transaction keeps content identity stable and rolls chunks back
     with required knowledge/feedback failures. Each replacement has its own
@@ -2139,8 +2177,16 @@ def _index_written_traces(store: MemoryStore, nodes: Sequence[Node]) -> dict[str
     deferred = []
     for node in nodes:
         try:
-            chunks = store._chunk_embeddings_for(node.content, None, require_complete=True)
-            store.replace_node_chunks(node.id, chunks)
+            index = prepared.get(node.content)
+            if index is None:
+                raise ValueError("prepared trace source does not match stored content")
+            if index.error is not None:
+                logging.getLogger(__name__).warning(
+                    "new trace indexing deferred (%s)", index.error,
+                )
+                deferred.append(node.id)
+                continue
+            store.replace_node_chunks(node.id, index.chunks)
         except Exception as exc:
             logging.getLogger(__name__).warning(
                 "new trace indexing deferred (%s)", type(exc).__name__,
