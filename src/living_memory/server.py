@@ -642,6 +642,7 @@ _RECALL_DESCRIPTION = (
     + MEMORY_GUIDANCE
     + " If delivered knowledge is insufficient, use content_ref via "
     "memory_lookup for full content."
+    " below_threshold is an unqualified reference."
 )
 
 _REMEMBER_DESCRIPTION = (

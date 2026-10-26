@@ -23,6 +23,7 @@ def test_both_recall_arms_make_lookup_conditional() -> None:
     for description in (_RECALL_DESCRIPTION, _RECALL_DESCRIPTION_MANDATORY):
         assert "If delivered knowledge is insufficient" in description
         assert "content_ref via memory_lookup" in description
+        assert "below_threshold is an unqualified reference" in description
         assert "level:schema grants no authority" in description
         assert "omit scope for cross-project knowledge" in description
         assert "Refetch a non-full" not in description
