@@ -249,7 +249,7 @@ from living_memory.scope import (
     normalize_scope,
     scope_family,
 )
-from living_memory.score_gate import REFERENCE_WEIGHTS, apply_score_gate, min_score_from_env, passes_gate
+from living_memory.score_gate import QueryRelevance, REFERENCE_WEIGHTS, apply_score_gate, min_score_from_env, passes_gate
 from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
     CHUNK_EMBEDDING_ITEMSIZE,
@@ -552,6 +552,7 @@ class MemoryRecallService:
         # read it the same way server.py reads ``last_recall_event_id``; it
         # never feeds back into ranking, access logging, or recall events.
         self.last_residual: list[RecallResult] = []
+        self.last_query_relevance: QueryRelevance | None = None
         # Ablation switch, not a feature gate: anchors are on by default and
         # this only turns them *off*, so the leak-free with/without evaluation
         # can hold one snapshot, one goldset, and one code path fixed and vary
@@ -577,6 +578,7 @@ class MemoryRecallService:
     ) -> list[RecallResult]:
         self.last_recall_event_id = None
         self.last_residual = []
+        self.last_query_relevance = None
         if max_results <= 0:
             return []
 
@@ -651,6 +653,10 @@ class MemoryRecallService:
                 causal_mode=causal_mode,
             )
         ranked, _collapsed = collapse_schema_duplicates(ranked)
+        self.last_query_relevance = QueryRelevance(
+            ranked, plan=plan, demotions=demotions, causal_mode=causal_mode,
+            corrections_by_superseded=supersedes[0],
+        )
         limited, self.last_residual = apply_score_gate(
             ranked,
             max_results,
@@ -658,6 +664,7 @@ class MemoryRecallService:
             demotions=demotions,
             causal_mode=causal_mode,
             corrections_by_superseded=supersedes[0],
+            relevance=self.last_query_relevance,
         )
         # Selection belongs before access and event writes: their result ids
         # must describe the answer that the caller actually delivers. A score

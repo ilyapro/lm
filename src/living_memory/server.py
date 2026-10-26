@@ -1328,6 +1328,7 @@ def _register_tools(
                 try:
                     built = recall_map_builder.build(
                         residual,
+                        relevance=recall_service.last_query_relevance,
                         scope=resolve_scope(
                             scope=scope, ambient_context=ambient_context, store=store,
                         ).requested_scope,

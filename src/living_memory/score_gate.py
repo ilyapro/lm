@@ -44,7 +44,7 @@ from __future__ import annotations
 import math
 import os
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from living_memory.feedback import feedback_weighted_score
@@ -195,6 +195,69 @@ def passes_gate(
     return gate_score(result, demotions, plan=plan, causal_mode=causal_mode) >= threshold
 
 
+@dataclass
+class QueryRelevance:
+    """One recall's relevance evidence, shared by selection and its optional map.
+
+    Keep the full ranked set so a correction can inherit evidence even when
+    its original is outside the residual. Evaluation is lazy: with the main
+    gate disabled, only the optional map needs it. Without a configured
+    threshold, positive channel evidence or a qualifying trigger is enough.
+    """
+
+    ranked: Sequence[Any]
+    plan: Any = None
+    demotions: Mapping[str, float] | None = None
+    causal_mode: bool = False
+    corrections_by_superseded: Mapping[str, Sequence[str]] | None = None
+    threshold: float | None = field(default_factory=min_score_from_env)
+    _eligible: frozenset[str] | None = field(default=None, init=False, repr=False)
+
+    def eligible_ids(self) -> frozenset[str]:
+        if self._eligible is not None:
+            return self._eligible
+
+        def passes(result: Any) -> bool:
+            try:
+                if self.threshold is not None:
+                    return passes_gate(
+                        result, self.threshold, self.demotions,
+                        plan=self.plan, causal_mode=self.causal_mode,
+                    )
+                trigger = trigger_gate_score(result, self.demotions)
+                return (
+                    trigger is not None and trigger >= SCHEMA_TRIGGER_GATE_MIN
+                ) or gate_score(
+                    result, self.demotions, plan=self.plan, causal_mode=self.causal_mode,
+                ) > 0.0
+            except (AttributeError, TypeError, ValueError, OverflowError):
+                return False
+
+        positions = {
+            result.node.id: index for index, result in enumerate(self.ranked)
+            if getattr(getattr(result, "node", None), "id", None)
+        }
+        eligible = {
+            result.node.id for result in self.ranked if passes(result)
+        }
+        for result in reversed(self.ranked):
+            original_id = getattr(getattr(result, "node", None), "id", None)
+            if original_id not in eligible:
+                continue
+            corrections = (
+                self.corrections_by_superseded.get(original_id, ())
+                if self.corrections_by_superseded is not None
+                else getattr(result, "correction_ids", ())
+            )
+            eligible.update(
+                correction_id for correction_id in corrections
+                if correction_id in positions
+                and positions[correction_id] < positions[original_id]
+            )
+        self._eligible = frozenset(eligible)
+        return self._eligible
+
+
 def apply_score_gate(
     ranked: Sequence[Any],
     max_results: int,
@@ -203,6 +266,7 @@ def apply_score_gate(
     demotions: Mapping[str, float] | None = None,
     causal_mode: bool = False,
     corrections_by_superseded: Mapping[str, Sequence[str]] | None = None,
+    relevance: QueryRelevance | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Select results, letting present corrections inherit their original's relevance."""
 
@@ -210,35 +274,14 @@ def apply_score_gate(
     if threshold is None or max_results <= 0 or not ranked:
         return list(ranked[:max_results]), list(ranked[max_results:])
 
+    evidence = relevance or QueryRelevance(
+        ranked, plan=plan, demotions=demotions, causal_mode=causal_mode,
+        corrections_by_superseded=corrections_by_superseded, threshold=threshold,
+    )
+    eligible = evidence.eligible_ids()
+
     def passes(result: Any) -> bool:
-        return passes_gate(
-            result, threshold, demotions, plan=plan, causal_mode=causal_mode
-        )
-
-    # Ranking has already placed each present correction before its original.
-    # Its own channels can still be weak when the query matches the original's
-    # causal evidence. In that case the original's passing score establishes
-    # relevance for the correction too. Reverse order propagates this through
-    # correction chains; absent or filtered corrections confer nothing.
-    if corrections_by_superseded:
-        positions = {result.node.id: index for index, result in enumerate(ranked)}
-        present_edges = {
-            original_id: tuple(
-                correction_id
-                for correction_id in corrections_by_superseded.get(original_id, ())
-                if correction_id in positions and positions[correction_id] < index
-            )
-            for original_id, index in positions.items()
-        }
-        if any(present_edges.values()):
-            eligible = {result.node.id for result in ranked if passes(result)}
-            for result in reversed(ranked):
-                original_id = result.node.id
-                if original_id in eligible:
-                    eligible.update(present_edges[original_id])
-
-            def passes(result: Any) -> bool:
-                return result.node.id in eligible
+        return result.node.id in eligible
 
     if gate_form_from_env() == GATE_FORM_STUB:
         delivered = [
