@@ -130,17 +130,17 @@ def test_source_seed_bound_does_not_use_fts_tie_order(tmp_path, monkeypatch):
         add(store, encoder, "leaf", "opaque leaf")
         store.create_connection("a-root", "leaf", "requires")
         service = MemoryRecallService(store, embedder=encoder, anchor_seeding=False)
-        before = snapshot(store, service, query)
+        before = snapshot(store, service, query, depth=1)
         # Both sources have complete coverage. Only discovery prefers the
         # short competitor; source seed ties use source identity.
         add(store, encoder, "z-competitor", query + " quartz pressure")
         after = snapshot(store, service, query, depth=1)
-        before = snapshot(store, service, query, depth=1) if False else before
         # The leaf remains independently found through its frozen vector.
         assert after["fts"][0] == "z-competitor"
         leaf = after["results"]["leaf"]
         assert leaf.graph_score == 0
-        assert leaf.source_graph_score == pytest.approx(0.85)
+        assert leaf.source_graph_score == before["results"]["leaf"].source_graph_score == pytest.approx(0.85)
+        assert before["scores"]["leaf"] == after["scores"]["leaf"]
 
 
 @pytest.mark.parametrize("query,source,other", [
