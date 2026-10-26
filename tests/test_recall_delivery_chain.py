@@ -29,7 +29,7 @@ from test_transport_identity import _structured
     "Only after operator approval; restart the dashboard.",
     "Restart the dashboard; only after operator approval.",
     pytest.param(
-        "Do not\n" + "under the unverified operational policy " * 100 + "; restart the dashboard.",
+        "Do not\n" + "under the dashboard maintenance policy " * 100 + "; restart the dashboard.",
         id="oversized-qualified-passage",
     ),
 ])
