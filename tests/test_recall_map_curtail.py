@@ -60,8 +60,6 @@ from living_memory.recall_map import (
     CURTAIL_QUERY_OVERLAP,
     CURTAIL_STREAK,
     MAX_RESPONSE_CHARS,
-    POOL_COLD_QUOTA_GATE_ENV,
-    POOL_COLD_SLOTS_ENV,
     POOL_USEFULNESS_FLOOR_ENV,
     POOL_USEFULNESS_GATE_ENV,
     RecallMap,
@@ -114,9 +112,9 @@ CORPUS_DOCUMENTS = 32
 #: sfx shell exports the decay valve and the cold pair): scrubbed per test,
 #: so a test that arms one does so itself and in the open.
 OPERATOR_VALVES = (
+    "LM_RECALL_MIN_SCORE",
     CURTAIL_DECAY_GATE_ENV,
-    POOL_COLD_QUOTA_GATE_ENV,
-    POOL_COLD_SLOTS_ENV,
+    "LM_RECALL_MIN_SCORE",
     POOL_USEFULNESS_GATE_ENV,
     POOL_USEFULNESS_FLOOR_ENV,
 )
@@ -127,20 +125,6 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     for name in OPERATOR_VALVES:
         monkeypatch.delenv(name, raising=False)
     with MemoryStore(tmp_path / "curtail.sqlite3") as opened:
-        monkeypatch.setattr(
-            opened,
-            "matured_recall_history",
-            lambda candidate_ids, _decision_at: {
-                node_id: MaturedRecallHistory.known(100, 50, 50)
-                for node_id in candidate_ids
-            },
-        )
-        for index in range(CORPUS_DOCUMENTS):
-            opened.create_node(
-                level="trace",
-                content=f"quarterly ledger reconciliation entry {index}",
-                context={"scope": SCOPE},
-            )
         yield opened
 
 
@@ -161,7 +145,7 @@ def residual(store: MemoryStore) -> list[RecallResult]:
         make_node(store, "vocab index pitfall", procedure_id="vocab-index"),
     ]
     return [
-        RecallResult(node=node, score=1.0 - index * 0.01)
+        RecallResult(node=node, score=1.0 - index * 0.01, vector_score=1.0)
         for index, node in enumerate(nodes)
     ]
 
@@ -1046,7 +1030,7 @@ def _moved(store: MemoryStore, pool: list[RecallResult]) -> list[RecallResult]:
     extra = make_node(
         store, f"anchor bench arm rotation {len(pool)}", procedure_id="anchor-bench"
     )
-    return [*pool, RecallResult(node=extra, score=0.5)]
+    return [*pool, RecallResult(node=extra, score=0.5, vector_score=1.0)]
 
 
 def _count_looks(monkeypatch: pytest.MonkeyPatch):

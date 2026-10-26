@@ -76,11 +76,6 @@ SEED_LABELS = {
 SEED_CORPUS_DOCUMENTS = 40
 
 
-#: Captured before the autouse fixture below replaces it, so the one test that
-#: needs the real ledger reader can put it back.
-_REAL_MATURED_RECALL_HISTORY = MemoryStore.matured_recall_history
-
-
 @pytest.fixture(autouse=True)
 def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every scenario starts with the map valve and its neighbours unset."""
@@ -95,13 +90,6 @@ def _default_knobs(monkeypatch: pytest.MonkeyPatch) -> None:
     ):
         monkeypatch.delenv(env, raising=False)
 
-    def eligible_history(_store, candidate_ids, _decision_at):
-        return {
-            node_id: MaturedRecallHistory.known(100, 50, 50)
-            for node_id in candidate_ids
-        }
-
-    monkeypatch.setattr(MemoryStore, "matured_recall_history", eligible_history)
 
 
 def _seed_corpus(store: MemoryStore, count: int = SEED_CORPUS_DOCUMENTS) -> None:
@@ -469,9 +457,6 @@ def test_a_lookup_of_a_delivered_medoid_is_the_only_outcome_that_moves(
 
     # The pool gate above runs on the fixture's stubbed history; the ledger
     # verdict itself has to come from the real reader.
-    monkeypatch.setattr(
-        MemoryStore, "matured_recall_history", _REAL_MATURED_RECALL_HISTORY
-    )
     history = store.matured_recall_history([medoid_id], "2026-01-03T00:00:00Z")[medoid_id]
     # The frozen triple is unmoved and still says nobody used it...
     assert (history.m, history.c, history.k) == (1, 0, 1)

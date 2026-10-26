@@ -40,9 +40,6 @@ def isolated(monkeypatch):
     monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
     monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
     monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
-    monkeypatch.setattr(MemoryStore, "matured_recall_history", lambda self, ids, at: {
-        node_id: MaturedRecallHistory.known(100, 50, 50) for node_id in ids
-    })
     clock = ["2026-01-01T00:00:00Z"]
     monkeypatch.setattr(storage_module, "_utc_now", lambda: clock[0])
     return clock

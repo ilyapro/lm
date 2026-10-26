@@ -20,8 +20,6 @@ SCOPE = "project:lm"
 DECISION_AT = "2026-08-23T12:00:00Z"
 
 
-def eligible_history(candidate_ids, _decision_at):
-    return {node_id: MaturedRecallHistory.known(100, 50, 50) for node_id in candidate_ids}
 
 
 def seed_pool(store, *, early_stages=False):
@@ -51,7 +49,7 @@ def seed_pool(store, *, early_stages=False):
         for index in indices:
             if index < len(nodes):
                 store.upsert_query_anchor_edge(anchor_id, nodes[index].id, weight=0.5)
-    return [RecallResult(node=node, score=1.0 - i * 0.01) for i, node in enumerate(nodes)]
+    return [RecallResult(node=node, score=1.0 - i * 0.01, vector_score=1.0) for i, node in enumerate(nodes)]
 
 
 def due(digest="0" * 16):
@@ -59,7 +57,7 @@ def due(digest="0" * 16):
 
 
 def build(builder, results):
-    return builder.build(results, scope=SCOPE, task="orchard work", decision_at=DECISION_AT)
+    return builder.build(results, scope=SCOPE, task="orchard work")
 
 
 @contextmanager
@@ -98,7 +96,6 @@ def map_settings(monkeypatch):
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     with MemoryStore(tmp_path / "anchors.sqlite3") as opened:
-        monkeypatch.setattr(opened, "matured_recall_history", eligible_history)
         yield opened
 
 
