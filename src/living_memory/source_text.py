@@ -9,8 +9,8 @@ def passage_spans(text: str) -> list[tuple[int, int, int]]:
     """Keep ambiguous punctuation inside a candidate, without an abbreviation list.
 
     Soft newlines and semicolons stay inside a passage. Blank lines separate
-    paragraphs. A capitalized continuation suggests a new sentence. Periods additionally
-    need a lowercase alphabetic terminal word longer than three letters: short,
+    paragraphs. A capitalized continuation suggests a new sentence. Periods
+    additionally need a lowercase alphabetic terminal word longer than three letters: short,
     dotted, capitalized and numeric tokens can be abbreviations or references.
     This is a textual heuristic, not a parser; word-shaped abbreviations remain
     ambiguous. Conservative merging can leave late text in an oversized passage,
@@ -41,4 +41,3 @@ def passage_spans(text: str) -> list[tuple[int, int, int]]:
         append(start, len(paragraph))
         paragraph_start = next_start
     return passages
-

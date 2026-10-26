@@ -17,6 +17,7 @@ import pytest
 pytest.importorskip("fastmcp")
 from fastmcp import Client
 
+from living_memory.consolidation import DIGEST_MAX_CHARS
 from living_memory.delivery import DEFAULT_SNIPPET_LADDER
 from living_memory.server import create_mcp_server
 from test_transport_identity import _structured
@@ -27,6 +28,10 @@ from test_transport_identity import _structured
     "Only after operator approval\nrestart the dashboard.",
     "Only after operator approval; restart the dashboard.",
     "Restart the dashboard; only after operator approval.",
+    pytest.param(
+        "Do not\n" + "under the unverified operational policy " * 100 + "; restart the dashboard.",
+        id="oversized-qualified-passage",
+    ),
 ])
 def test_consolidated_qualifications_survive_persistence_and_mcp_recall(tmp_path, statement):
     scope = "project:synthetic-consolidation"
@@ -55,7 +60,17 @@ def test_consolidated_qualifications_survive_persistence_and_mcp_recall(tmp_path
             }))
             entry = next(item for item in response["results"] if item["id"] == concept_id)
             assert entry["delivery"] == "full"
-            assert statement in entry["content"]
+            assert len(entry["content"]) <= DIGEST_MAX_CHARS
+            if len(statement) > DIGEST_MAX_CHARS:
+                assert "restart the dashboard" not in entry["content"]
+                assert "Do not" not in entry["content"]
+                assert "…" not in entry["content"]
+                source_entry = next(item for item in response["results"] if item["id"] == sources[1].id)
+                assert source_entry["delivery"] == "snippet"
+                assert source_entry["content"].endswith("…")
+                assert "restart the dashboard" not in source_entry["content"]
+            else:
+                assert statement in entry["content"]
             assert complement in entry["content"]
             assert not entry["superseded"]
             lookup = _structured(await client.call_tool("memory_lookup", {

@@ -902,6 +902,8 @@ def test_excerpt_keeps_qualifier_across_soft_line_wrap(qualifier) -> None:
     ("Only after Dr. Vale approves, open the amber hatch.", "open amber hatch"),
     ("Only after checking ref. A, open the amber hatch.", "open amber hatch"),
     ("Never assume approval... open the amber hatch only after inspection.", "open amber hatch"),
+    ("Only after inspection; open the amber hatch.", "open amber hatch"),
+    ("Open the amber hatch; only after inspection.", "open amber hatch"),
 ])
 def test_excerpt_keeps_qualifiers_across_ambiguous_punctuation(source, budget, statement, query) -> None:
     body = "Background notes. " * 150 + statement + " Ordinary background." * 150

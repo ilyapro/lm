@@ -90,8 +90,19 @@ is correct. Chains and cycles expose direct links without chasing a final
 replacement; read each node's own validity. Links do not count as delivered
 results, lookups, or confirmed use for feedback attribution.
 
-Bounded excerpts select passages at paragraph breaks or sentence-ending
-punctuation followed by whitespace, preserving soft line wraps. Evidence
+Consolidation digests and bounded excerpts share conservative source passage
+boundaries: paragraph breaks and sentence-ending punctuation with a capitalized
+continuation. Periods also require an unambiguous terminal word; soft line wraps
+and semicolons stay inside a passage. Digests select complete passages within
+their existing budget, preserving the text and order inside each passage.
+Exact repeats may share a slot; similarity only ranks candidates. Useful
+complementary passages remain eligible. A passage too large for a digest stays
+in the recorded source, available through provenance and exact-id lookup.
+These rules apply to new derived writes and ordinary source-based refreshes,
+including consolidation, correction and promotion. Reading or opening a store
+does not rewrite existing derived content; there is no bulk migration.
+
+Evidence
 passages retain their source labels. Semantic retrieval carries the winning
 chunk's source address into delivery: its enclosing paragraph is preferred,
 or matching sentences with adjacent context when the paragraph is too large.
