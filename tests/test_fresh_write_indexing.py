@@ -185,6 +185,61 @@ def test_partial_index_failure_keeps_atomic_knowledge_and_feedback(mcp, operatio
     assert warnings[0].exc_info is None and "private diagnostic" not in caplog.text
 
 
+def test_deferred_write_repairs_while_an_earlier_node_still_fails(mcp):
+    store = mcp.memory_store
+    attempts = []
+    store.connection.create_function("chunk_attempt", 1, lambda node: attempts.append(node) or 0)
+    store.connection.execute("""CREATE TRIGGER reject_index BEFORE INSERT ON node_chunk_embeddings
+        BEGIN SELECT RAISE(ABORT, 'temporary index outage'); END""")
+
+    async def scenario():
+        async with Client(mcp) as client:
+            blocker = await remember(client, "Violet botanical inventory.", context={
+                **CONTEXT, "timestamp": "2026-02-01T00:00:00Z",
+            })
+            target = await remember(client, CONTENT, context={
+                **CONTEXT, "timestamp": "2026-02-02T00:00:00Z",
+            })
+            blocker_id, target_id = blocker["node"]["id"], target["node"]["id"]
+            for response, node_id in ((blocker, blocker_id), (target, target_id)):
+                assert response["indexing"] == {"status": "deferred", "node_ids": [node_id]}
+                assert store.count_node_chunks(node_id) == 0
+            store.connection.execute("DROP TRIGGER reject_index")
+            store.connection.execute("CREATE TABLE denied_index (id TEXT PRIMARY KEY)")
+            store.connection.execute("INSERT INTO denied_index VALUES (?)", (blocker_id,))
+            store.connection.execute("""CREATE TRIGGER reject_index BEFORE INSERT ON node_chunk_embeddings
+                BEGIN
+                    SELECT chunk_attempt(NEW.node_id);
+                    SELECT CASE WHEN NEW.node_id IN (SELECT id FROM denied_index)
+                        THEN RAISE(ABORT, 'node index unavailable') END;
+                END""")
+            scores = []
+            for attempt in (1, 2, 3):
+                result = await recall(client)
+                assert next(row for row in result["results"] if row["id"] == target_id)["content"] == CONTENT
+                scored = next(row for row in store.get_recall_event(result["recall_event_id"]).results
+                              if row["node_id"] == target_id)
+                assert scored["vector_score"] > 0
+                scores.append(scored["vector_score"])
+                assert_current_chunks(store, target_id, CONTENT)
+                assert store.count_node_chunks(blocker_id) == 0
+                assert attempts.count(blocker_id) == attempt
+                assert attempts.count(target_id) == 1
+                assert not store.connection.in_transaction
+            for node_id, content in ((blocker_id, blocker["node"]["content"]), (target_id, CONTENT)):
+                looked = (await client.call_tool("memory_lookup", {"node_id": node_id})).data
+                assert looked["results"][0]["content"] == content
+            store.connection.execute("DROP TRIGGER reject_index")
+            recovered = await recall(client)
+            scored = next(row for row in store.get_recall_event(recovered["recall_event_id"]).results
+                          if row["node_id"] == target_id)
+            assert scores == [scored["vector_score"]] * 3
+            assert_current_chunks(store, blocker_id, blocker["node"]["content"])
+            assert store.connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("failure", ["raise", "missing", "empty_tail"])
 @pytest.mark.parametrize("operation", ["remember", "teach"])
 def test_unavailable_encoding_never_reports_a_partial_index(mcp, operation, failure):

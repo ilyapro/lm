@@ -9,6 +9,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 import pytest
 
+from living_memory.retrieval import LAZY_CHUNK_NODE_LIMIT
 from living_memory.server import create_mcp_server
 
 
@@ -134,16 +135,16 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
             credits = store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
             assert len(credits) == (1 if feedback_policy == "credit" else 0)
             assert (store.get_node(target.id).usefulness_score > usefulness) == (feedback_policy == "credit")
-            # Earlier progress commits; the failing node rolls back even its
-            # first chunk, and later work is left for a subsequent invocation.
+            # Each selected node is independent: both neighbors commit while
+            # the failing node rolls back even its first chunk.
             assert attempts == [0, 1]
             assert store.node_chunks_are_current(earlier.id)
             assert store.count_node_chunks(blocker.id) == 0
             assert asdict(store.get_node(blocker.id)) == before_blocker
-            assert not store.node_chunks_are_current(later.id)
+            assert store.node_chunks_are_current(later.id)
             assert not store.node_chunks_are_current(foreign.id)
             assert not store.connection.in_transaction
-            assert [n.id for n in store.list_unchunked_nodes(scope=SCOPE)] == [blocker.id, later.id]
+            assert [n.id for n in store.list_unchunked_nodes(scope=SCOPE)] == [blocker.id]
             store.connection.execute("DROP TRIGGER refuse_index")
             recovered = await recall(client, view=view)
             assert body(recovered)["id"] == target.id
@@ -162,6 +163,57 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
     assert len(warnings[0].message) < 150 and warnings[0].exc_info is None
     assert "private diagnostic" not in caplog.text
     assert CONTENT not in caplog.text
+
+
+@pytest.mark.parametrize("fault", ["global", "selected_nodes"])
+def test_failed_repair_batch_has_bounded_attempts_and_diagnostics(mcp, caplog, fault):
+    store = mcp.memory_store
+    attempts = []
+    store.connection.create_function("chunk_attempt", 1, lambda node: attempts.append(node) or 0)
+
+    async def scenario():
+        async with Client(mcp) as client:
+            target = (await client.call_tool("memory_remember", {
+                "content": CONTENT, "context": {"scope": SCOPE},
+            })).data["node"]["id"]
+            baseline = await recall(client)
+            score = event_for(store, baseline).results[0]["vector_score"]
+            assert score > 0 and store.node_chunks_are_current(target)
+            pending = [store.append_trace(f"Violet botanical inventory {index}.", {
+                "scope": SCOPE if index % 2 else "global",
+                "timestamp": f"2026-02-01T00:00:{index:02d}Z",
+            }).id for index in range(LAZY_CHUNK_NODE_LIMIT + 1)]
+            store.connection.execute("CREATE TABLE denied_index (id TEXT PRIMARY KEY)")
+            store.connection.executemany("INSERT INTO denied_index VALUES (?)", [(node,) for node in pending[:-1]])
+            condition = "1" if fault == "global" else "NEW.node_id IN (SELECT id FROM denied_index)"
+            store.connection.execute(f"""CREATE TRIGGER reject_index BEFORE INSERT ON node_chunk_embeddings
+                BEGIN
+                    SELECT chunk_attempt(NEW.node_id);
+                    SELECT CASE WHEN {condition} THEN RAISE(ABORT, 'private diagnostic') END;
+                END""")
+            for _ in range(2):
+                attempts.clear()
+                response = await recall(client)
+                assert body(response)["id"] == target
+                assert body(response)["content"] == CONTENT
+                assert event_for(store, response).results[0]["vector_score"] == score
+                assert attempts == pending[:LAZY_CHUNK_NODE_LIMIT]
+                assert all(store.count_node_chunks(node) == 0 for node in pending)
+                assert not store.connection.in_transaction
+            # Selection stays bounded even when only its oldest nodes fail;
+            # progress beyond a full failed batch is not guaranteed.
+            assert pending[-1] not in attempts
+            assert store.connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+    with caplog.at_level(logging.WARNING, logger="living_memory.retrieval"):
+        asyncio.run(scenario())
+    warnings = [record for record in caplog.records if "lazy chunk indexing deferred" in record.message]
+    assert len(warnings) == 2
+    for record in warnings:
+        assert f"{LAZY_CHUNK_NODE_LIMIT}/{LAZY_CHUNK_NODE_LIMIT}" in record.message
+        assert "IntegrityError" in record.message
+        assert len(record.message) < 150 and record.exc_info is None
+    assert "private diagnostic" not in caplog.text and CONTENT not in caplog.text
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
