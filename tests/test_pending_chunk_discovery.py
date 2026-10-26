@@ -32,7 +32,7 @@ def seed(store):
                 )
                 if kind in {"stale", "current", "mixed"}:
                     store.replace_node_chunks(node.id, [
-                        (TextChunk(node.content, index, index, index + 1), [1.0, 0.0])
+                        (TextChunk(node.content, index, 0, 3, 0, len(node.content)), [1.0, 0.0])
                         for index in range(2)
                     ])
                     if kind in {"stale", "mixed"}:
