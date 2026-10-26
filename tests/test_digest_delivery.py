@@ -90,7 +90,7 @@ def seed(store):
 
 def assert_delivered(mcp, node, fact):
     response = mcp.tools["memory_recall"](
-        QUERY, scope=node.scope, level="concept", depth=0, max_results=10,
+        QUERY, scope=node.scope, depth=0, max_results=10,
     )
     result = next(item for item in response["results"] if item["id"] == node.id)
     assert result["delivery"] == "snippet"
@@ -120,7 +120,7 @@ def test_persisted_digest_recall_and_source_based_refresh(tmp_path, refresh):
         expected_sources = {trace.id for trace in traces}
         if refresh:
             before = mcp.tools["memory_recall"](
-                QUERY, scope=SCOPE, level="concept", depth=0, max_results=10,
+                QUERY, scope=SCOPE, depth=0, max_results=10,
             )
             old = next(item for item in before["results"] if item["id"] == concept.id)
             assert old["delivery"] == "snippet"
