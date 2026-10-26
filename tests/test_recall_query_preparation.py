@@ -140,7 +140,8 @@ def test_recall_reads_current_source_scope_and_validity_after_encoding(runtime):
             assert entry(response)["id"] == r.node.id
             assert entry(response)["content"] == updated
             assert entry(response)["scope"] == new_scope
-            assert not entry(response)["decayed"]
+            assert not entry(response).get("decayed", False)
+            assert not r.store.get_node(r.node.id).decayed
             event = r.store.get_recall_event(response["recall_event_id"])
             assert new_scope in event.resolved_scopes
             assert event.result_ids == [r.node.id]
@@ -226,3 +227,50 @@ def test_invalid_view_rejects_before_encoding(runtime):
     asyncio.run(scenario())
     assert r.encoded == []
     assert r.store.list_recall_events() == []
+
+
+def test_prepared_query_uses_current_delivery_and_feedback_attribution(runtime, monkeypatch):
+    r = runtime
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "audit")
+    prepare = r.service.prepare_query
+
+    def hold_prepared(*args, **kwargs):
+        prepared = prepare(*args, **kwargs)
+        if not r.entered.is_set():
+            r.entered.set()
+            assert r.release.wait(10), "prepared query was not released"
+        return prepared
+
+    monkeypatch.setattr(r.service, "prepare_query", hold_prepared)
+
+    async def scenario():
+        async with Client(r.mcp) as owner, Client(r.mcp) as peer:
+            pending = asyncio.create_task(recall(owner, used=[r.node.id]))
+            try:
+                assert await asyncio.to_thread(r.entered.wait, 5)
+                assert r.service.last_recall_event_id is None
+                foreign = await asyncio.wait_for(recall(peer), 3)
+                own = await asyncio.wait_for(recall(owner), 3)
+                assert foreign["results"][0]["delivery"] == "full"
+                assert own["results"][0]["delivery"] == "full"
+                assert r.service.last_recall_event_id == own["recall_event_id"]
+                assert not pending.done()
+            finally:
+                r.release.set()
+            response = await asyncio.wait_for(pending, 5)
+            assert response["results"][0]["delivery"] == "session_duplicate"
+            assert response["feedback_marks"] == {"accepted": 1, "dropped": 0, "by_reason": {}}
+            event = r.store.get_recall_event(response["recall_event_id"])
+            own_event = r.store.get_recall_event(own["recall_event_id"])
+            foreign_event = r.store.get_recall_event(foreign["recall_event_id"])
+            assert event.id != own_event.id != foreign_event.id
+            assert event.transport_session_id == own_event.transport_session_id
+            assert event.transport_session_id != foreign_event.transport_session_id
+            mark, = r.store.connection.execute("SELECT * FROM recall_feedback_marks").fetchall()
+            assert mark["recall_event_id"] == own_event.id
+            assert mark["source_id"] == event.id
+            assert mark["transport_session_id"] == event.transport_session_id
+            assert len(r.store.list_recall_events()) == 3
+            assert r.encoded == [QUERY, QUERY, QUERY]
+
+    asyncio.run(scenario())
