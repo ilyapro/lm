@@ -23,7 +23,6 @@ def is_correction(relation_type: str, metadata: Mapping[str, Any]) -> bool:
     )
 
 
-
 def is_semantic_relation(relation_type: str, metadata: Mapping[str, Any]) -> bool:
     if relation_type == "supersedes":
         return is_correction(relation_type, metadata)
@@ -34,6 +33,7 @@ def is_semantic_relation(relation_type: str, metadata: Mapping[str, Any]) -> boo
         and metadata.get("basis") == "implicit_recall_feedback"
         and metadata.get("kind") not in ("content_reference", "derived_from")
     )
+
 
 def correction_sql(alias: str = "") -> str:
     """SQL equivalent of is_correction; alias is a caller-owned identifier."""

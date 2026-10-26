@@ -11,7 +11,8 @@ Design guarantees (see ``derive-edges`` CLI below):
 * **Existing semantics preserved** — a pair already connected with the same
   semantic type is skipped, keeping its weight/metadata/timestamps unchanged.
   A semantic contribution can replace a known technical row; these updates
-  are reported separately from new rows and use the shared storage writer. They do not carry the new-row rollback marker. The
+  are reported separately from new rows and use the shared storage writer.
+  They do not carry the new-row rollback marker. The
   optional R5a pass merges the ``{kind: derived_from, rule: R5a}`` annotation
   onto existing schema→trace ``related`` edges — additive metadata keys only,
   weight and type unchanged — and is off by default.
@@ -661,7 +662,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Guarantees")
     lines.append("")
-    lines.append("- **Existing semantic edges preserved**: only known technical relations can receive an explicit correction.")
+    lines.append("- **Existing semantic edges preserved**: only known technical relations can be replaced with semantic evidence.")
     lines.append(
         "- **Idempotent**: a second run inserts 0 new rows (all pairs already connected)."
     )

@@ -94,7 +94,7 @@ def test_hub_bound_precedes_materialization_and_traversal_filters(tmp_path, monk
             return traversal(*args, **kwargs)
 
         def trace(sql):
-            if "FROM connections WHERE source_id IN" in sql:
+            if "FROM connections WHERE (source_id IN" in sql:
                 counts["adjacency_queries"] += 1
 
         monkeypatch.setattr(storage, "_connection_from_row", convert)

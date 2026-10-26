@@ -37,7 +37,9 @@ from living_memory.models import (
     RecallEvent,
     RetrievalWeights,
 )
-from living_memory.relations import correction_sql, is_correction, is_semantic_relation, semantic_relation_sql
+from living_memory.relations import (
+    correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
+)
 from living_memory.phase import PhaseManager
 from living_memory.scope import normalize_scope
 from living_memory.temporal import parse_timestamp

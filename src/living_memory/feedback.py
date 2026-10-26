@@ -480,7 +480,6 @@ def apply_pending_recall_feedback(
             if node.level == "trace" and node_id not in source_traces:
                 source_traces.append(node_id)
 
-            claimed = False
             if reinforce_results:
                 verdict = verdicts.get(node_id)
                 content_grounded = verdict is not None and verdict.grounded
@@ -1124,4 +1123,3 @@ def _result_node(result: Any, store: MemoryStore) -> Node | None:
 
 def _log1p(value: int) -> float:
     return math.log1p(max(0, value))
-
