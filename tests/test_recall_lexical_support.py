@@ -101,7 +101,7 @@ def test_genuine_relation_activation_survives_fts_competition(tmp_path, depth):
     query = "alpha beta gamma delta"
     encoder = FrozenEncoder(query, {"opaque leaf": 0.6, "opaque tail": 0.1})
     with MemoryStore(tmp_path / "graph.sqlite3", chunk_embedder=encoder.embed_batch) as store:
-        for name, text in (("root", "alpha"), ("leaf", "opaque leaf"), ("tail", "opaque tail")):
+        for name, text in (("root", query + " inspection record"), ("leaf", "opaque leaf"), ("tail", "opaque tail")):
             add(store, encoder, name, text)
         store.create_connection("root", "leaf", "requires")
         store.create_connection("leaf", "tail", "requires")
@@ -115,6 +115,8 @@ def test_genuine_relation_activation_survives_fts_competition(tmp_path, depth):
             assert before["results"][name].source_graph_score == after["results"][name].source_graph_score > 0
             assert before["scores"][name] == after["scores"][name]
             assert (name in before["qualified"]) == (name in after["qualified"])
+        assert after["results"]["leaf"].source_graph_score == pytest.approx(0.85)
+        assert after["results"]["tail"].source_graph_score == pytest.approx(0.85**2 * 0.72)
         if depth == "causal":
             assert "leaf" in before["qualified"] & after["qualified"]
 
@@ -141,6 +143,25 @@ def test_source_seed_bound_does_not_use_fts_tie_order(tmp_path, monkeypatch):
         assert leaf.graph_score == 0
         assert leaf.source_graph_score == before["results"]["leaf"].source_graph_score == pytest.approx(0.85)
         assert before["scores"]["leaf"] == after["scores"]["leaf"]
+
+
+@pytest.mark.parametrize("query,text,coverage", [
+    ("the", "the record", 0),
+    (" ".join(f"term{i}" for i in range(30)), "term0", 1 / 30),
+])
+def test_discovery_seed_floor_does_not_create_source_activation(tmp_path, query, text, coverage):
+    encoder = FrozenEncoder(query)
+    with MemoryStore(tmp_path / "floor.sqlite3", chunk_embedder=encoder.embed_batch) as store:
+        add(store, encoder, "root", text)
+        add(store, encoder, "leaf", "opaque leaf")
+        store.create_connection("root", "leaf", "requires")
+        service = MemoryRecallService(store, embedder=encoder, anchor_seeding=False)
+        arm = snapshot(store, service, query, depth=1)
+        leaf = arm["results"]["leaf"]
+        assert leaf.graph_score == pytest.approx(0.85)
+        assert leaf.source_graph_score == pytest.approx(coverage * 0.85)
+        assert leaf.withheld is None  # ranked evidence is independent of selection
+        assert arm["delivered"]["leaf"] == "below_threshold"
 
 
 @pytest.mark.parametrize("query,source,other", [
