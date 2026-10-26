@@ -615,7 +615,7 @@ def test_synthesize_digest_keeps_wrapped_and_semicolon_qualifications(tmp_path, 
         lead = store.append_trace("Service availability depends on operator scheduling.")
         source = store.append_trace(statement)
 
-        assert _synthesize_digest([lead, source], best=lead) == lead.content + "\n• " + statement
+        assert _synthesize_digest([lead, source], best=lead) == lead.content + "\n\n• " + statement
 
 
 def test_synthesize_digest_deduplicates_exact_sentences_and_keeps_later_claims(tmp_path: Path) -> None:

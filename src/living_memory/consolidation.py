@@ -42,7 +42,7 @@ from living_memory.models import Connection, ConnectionType, Node, string_list
 from living_memory.query_anchors import resolve_replacement
 from living_memory.relations import CLUSTER_MEMBERSHIP_WEIGHT, DERIVED_FROM_WEIGHT
 from living_memory.storage import MemoryStore, _node_read_batches, new_ulid
-from living_memory.source_text import passage_spans
+from living_memory.source_text import PASSAGE_SEPARATOR, passage_spans
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
 
 _LOG = logging.getLogger(__name__)
@@ -1887,7 +1887,7 @@ def _synthesize_digest(
         added = False
         for source in ordered:
             prefix = DIGEST_FACT_PREFIX if lines else ""
-            separator_length = 1 if lines else 0
+            separator_length = len(PASSAGE_SEPARATOR) if lines else 0
             passage = _most_distinctive_passage(
                 source.passages, covered_significant, covered_raw, included_passages,
                 max_chars=max_chars - length - separator_length - len(prefix),
@@ -1904,7 +1904,7 @@ def _synthesize_digest(
         if not added:
             break
     if lines:
-        return "\n".join(lines)
+        return PASSAGE_SEPARATOR.join(lines)
     notice = "Full source lookup required."
     return notice if len(notice) <= max_chars else ""
 

@@ -156,7 +156,8 @@ def test_persisted_digest_recall_and_source_based_refresh(tmp_path, refresh):
         for node in (current, global_node):
             assert not node.decayed
             assert set(node.materializer_sources) <= {
-                edge.target_id for edge in store.list_connections(source_id=node.id, relation_type="related")
+                edge.target_id if edge.source_id == node.id else edge.source_id
+                for edge in store.list_connections_for_nodes([node.id])[node.id] if edge.type == "related"
             }
             assert_delivered(mcp, node, expected_fact)
     finally:

@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 
 
+# Writers preserve known independent passages with a paragraph boundary.
+PASSAGE_SEPARATOR = "\n\n"
+
+
 def passage_spans(text: str) -> list[tuple[int, int, int]]:
     """Keep ambiguous punctuation inside a candidate, without an abbreviation list.
 
