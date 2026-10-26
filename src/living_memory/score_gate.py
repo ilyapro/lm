@@ -127,13 +127,13 @@ def gate_score(
         node=result.node,
         bm25_score=result.bm25_score,
         vector_score=result.vector_score,
-        graph_score=result.graph_score,
+        graph_score=getattr(result, "source_graph_score", 0.0),
         trigger_score=0.0 if schema_trigger_by_name() else result.trigger_score,
         trigger_coverage=getattr(result, "trigger_coverage", 0.0),
     )
     score = _blend_candidate_score(
         candidate,
-        result.graph_score,
+        candidate.graph_score,
         REFERENCE_WEIGHTS,
         plan=plan if plan is not None else _NO_PLAN,
         causal_mode=causal_mode,
@@ -142,6 +142,7 @@ def gate_score(
         # correction boost is left out, which only makes the gate stricter
         # on corrections by that factor.
         superseding=False,
+        positive_history=False,
     )
     return score * _demotion(result, demotions)
 
@@ -173,6 +174,7 @@ def trigger_gate_score(
             node,
             result.trigger_score / SCHEMA_TRIGGER_SCALE,
             superseded=bool(result.superseded),
+            positive_history=False,
         )
         * (
             1.0 if node.level == "schema"

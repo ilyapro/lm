@@ -1050,14 +1050,23 @@ def feedback_weighted_score(
     *,
     superseded: bool = False,
     superseding: bool = False,
+    positive_history: bool = True,
 ) -> float:
-    """Apply confidence, usefulness, access, and correction feedback to a score."""
+    """Apply feedback, retaining only restrictions for source qualification.
+
+    Ranking can reward confidence, usefulness and access. Qualification uses
+    the same negative factors without letting positive history offset them.
+    """
 
     confidence = max(0.0, min(node.confidence, 1.0))
     confidence_boost = 1.0 + _CONFIDENCE_SLOPE * (confidence - _BASE_CONFIDENCE)
     usefulness = max(-1.0, min(node.usefulness_score, 1.0))
     usefulness_boost = 1.0 + (0.55 * usefulness if usefulness >= 0.0 else 0.45 * usefulness)
     access_boost = 1.0 + min(0.25, 0.04 * _log1p(node.access_count))
+    if not positive_history:
+        confidence_boost = min(1.0, confidence_boost)
+        usefulness_boost = min(1.0, usefulness_boost)
+        access_boost = 1.0
     # Cap covers the compounded positive feedback only; correction signals
     # (superseding boost, superseded penalty) stay deliberate and uncapped.
     feedback_multiplier = min(

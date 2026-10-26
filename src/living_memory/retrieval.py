@@ -360,6 +360,9 @@ class RecallResult:
     # Transient source evidence from this query's winning chunk, not a score.
     semantic_passage: SourcePassage | None = None
     scored_chunk_id: str | None = None
+    # Query activation through source relations, excluding anchors and
+    # access/usefulness-derived edge strength. Never projected as wire history.
+    source_graph_score: float = 0.0
 
     @property
     def node_id(self) -> str:
@@ -399,6 +402,7 @@ class _Candidate:
     #: worth before the anchor touched it. See "Anchors never demote what they
     #: seed" in the module docstring.
     anchor_score: float = 0.0
+    source_graph_score: float = 0.0
 
     @property
     def combined_graph_score(self) -> float:
@@ -884,6 +888,7 @@ class MemoryRecallService:
                     bm25_score=candidate.bm25_score,
                     vector_score=candidate.vector_score,
                     graph_score=effective_graph,
+                    source_graph_score=candidate.source_graph_score,
                     trigger_score=candidate.trigger_score,
                     trigger_coverage=candidate.trigger_coverage,
                     scope_rank=plan.rank(node.scope),
@@ -1978,6 +1983,7 @@ def _blend_candidate_score(
     causal_mode: bool,
     superseded: bool,
     superseding: bool,
+    positive_history: bool = True,
 ) -> float:
     """A candidate's final score for one given graph activation.
 
@@ -2049,6 +2055,7 @@ def _blend_candidate_score(
         base_score * scope_boost,
         superseded=superseded,
         superseding=superseding,
+        positive_history=positive_history,
     )
     if causal_mode and graph_score > 0.0:
         adjusted *= 1.5
