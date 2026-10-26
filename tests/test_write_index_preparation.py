@@ -113,12 +113,12 @@ def test_native_apply_is_visible_only_after_required_commit(tmp_path, monkeypatc
     monkeypatch.setattr(server, "RLock", ObservedLock)
     mcp = server.create_mcp_server(tmp_path / "memory.db")
     store = mcp.memory_store
-    replace = store.replace_node_chunks
+    insert = store._insert_node
     written = []
 
-    def hold_apply(node_id, chunks, **kwargs):
-        result = replace(node_id, chunks, **kwargs)
-        written.append(node_id)
+    def hold_apply(**kwargs):
+        result = insert(**kwargs)
+        written.append(result)
         if not applying.is_set():
             assert store.connection.in_transaction
             applying.set()
@@ -134,7 +134,7 @@ def test_native_apply_is_visible_only_after_required_commit(tmp_path, monkeypatc
                     BEFORE UPDATE OF feedback_applied_at ON recall_events
                     WHEN NEW.feedback_applied_at IS NOT NULL
                     BEGIN SELECT RAISE(ABORT, 'required closure failure'); END""")
-            monkeypatch.setattr(store, "replace_node_chunks", hold_apply)
+            monkeypatch.setattr(store, "_insert_node", hold_apply)
             pending = asyncio.create_task(write(client, operation, original, context=CONTEXT, used=[original]))
             try:
                 assert await asyncio.to_thread(applying.wait, 5)
@@ -171,29 +171,29 @@ def test_native_apply_is_visible_only_after_required_commit(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize("operation", ["remember", "teach"])
-def test_apply_uses_current_feedback_and_scope_after_preparation(mcp, operation):
+def test_apply_uses_current_feedback_and_scope_after_preparation(mcp, monkeypatch, operation):
     store = mcp.memory_store
     entered, release = Event(), Event()
-    encode = store._resolve_chunk_embedder()
+    prepare = server._prepare_trace_indices
 
-    def held_encoder(texts):
-        if not entered.is_set():
-            entered.set()
-            assert release.wait(10)
-        return encode(texts)
+    def hold_prepared(*args):
+        result = prepare(*args)
+        entered.set()
+        assert release.wait(10)
+        return result
 
     async def scenario():
         async with Client(mcp) as owner, Client(mcp) as peer:
             original = (await call(owner, "memory_remember", content=SOURCE, context=CONTEXT))["node"]["id"]
             first = await call(owner, "memory_recall", query="Cobalt registry certificates", scope=CONTEXT["scope"])
-            store.set_chunk_embedder(held_encoder)
+            monkeypatch.setattr(server, "_prepare_trace_indices", hold_prepared)
             pending = asyncio.create_task(write(owner, operation, original, used=[original]))
             try:
                 assert await asyncio.to_thread(entered.wait, 5)
-                # Exact lookup creates a fresh pending observation for this same
-                # transport without needing the encoder held by preparation.
-                own = await asyncio.wait_for(call(owner, "memory_lookup", node_id=original), 3)
-                foreign = await asyncio.wait_for(call(peer, "memory_lookup", node_id=original), 3)
+                # Query encoding retains its own guard. Hold the completed
+                # preparation here so native feedback can advance independently.
+                own = await asyncio.wait_for(call(owner, "memory_recall", query="Cobalt registry certificates"), 3)
+                foreign = await asyncio.wait_for(call(peer, "memory_recall", query="Cobalt registry certificates"), 3)
                 with MemoryStore(store.db_path) as writer:
                     current = writer.get_node(original)
                     writer.update_node(original, context={**current.context, "scope": "project:current"},
@@ -205,13 +205,9 @@ def test_apply_uses_current_feedback_and_scope_after_preparation(mcp, operation)
             result, ids, contents = await pending
             current = store.get_node(ids[0])
             assert store.get_recall_event(first["recall_event_id"]).feedback_trace_id == current.id
-            # Lookup feedback is settled against the current transport only.
-            lookup_rows = store.connection.execute(
-                "SELECT transport_session_id, feedback_trace_id FROM recall_lookup_events ORDER BY created_at, id"
-            ).fetchall()
-            assert len(lookup_rows) == 2
-            assert {row["feedback_trace_id"] for row in lookup_rows} == {None, current.id}
-            assert len({row["transport_session_id"] for row in lookup_rows}) == 2
+            assert store.get_recall_event(own["recall_event_id"]).feedback_trace_id == current.id
+            assert store.get_recall_event(foreign["recall_event_id"]).feedback_trace_id is None
+            assert result["feedback_marks"]["accepted"] == 1
             if operation == "teach":
                 assert current.scope == "project:current"
                 assert current.usefulness_score == 10.0
