@@ -13,7 +13,8 @@ from living_memory.retrieval import MemoryRecallService
 
 
 SCOPE = "project:legacy-failure"
-PREFIX = ("Routine schedules and meeting notes. " * 30 + "\n\n") * 3
+# The final condition shares an oversized paragraph with the unrelated prefix.
+PREFIX = "Routine schedules and meeting notes. " * 90
 FACTS = {
     "A": "Only during maintenance. Do not open the amber hatch unless the indicator is green.",
     "B": "Only during maintenance. Do not open the cobalt hatch unless the indicator is green.",

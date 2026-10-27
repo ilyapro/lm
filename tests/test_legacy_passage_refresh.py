@@ -14,7 +14,9 @@ from test_mcp_server import FakeMCP
 SCOPE = "project:legacy-passage"
 QUERY = "почему закрыт шлюз"
 FACT = "Only during maintenance. Do not open the amber hatch unless the indicator is green."
-CONTENT = ("Routine schedules and meeting notes. " * 30 + "\n\n") * 3 + FACT
+# One oversized paragraph keeps the late condition outside lexical fallback;
+# its scored semantic window can still select the complete condition.
+CONTENT = "Routine schedules and meeting notes. " * 90 + FACT
 
 
 class Encoder:
