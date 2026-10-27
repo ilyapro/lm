@@ -2764,6 +2764,70 @@ class MemoryStore:
         ).fetchall()
         return [_recall_event_from_row(row) for row in rows]
 
+    def recall_deliveries_for_transport(
+        self,
+        transport_session_id: str | None,
+        node_ids: Iterable[str],
+        *,
+        earliest: datetime,
+        latest: datetime,
+        limit: int = 200,
+    ) -> dict[str, dict[str, Any]]:
+        """Newest delivery facts for requested ids in a bounded session window.
+
+        The event cap precedes all id/time filtering, including closed events.
+        SQL projects only matching results, without transferring unrelated
+        result bodies or ambient context. Time eligibility uses the same parsed
+        UTC seconds as feedback; ordering remains stored created_at, rowid,
+        then result position. The first eligible occurrence of each id wins.
+        No delivery-history projection or its availability state is consulted.
+        """
+        requested = set(node_ids)
+        if not transport_session_id or not requested or limit <= 0:
+            return {}
+        rows = self._conn.execute(
+            f"""
+            WITH recent AS MATERIALIZED (
+                SELECT rowid AS event_rowid, id, created_at
+                FROM recall_events
+                WHERE transport_session_id = ?
+                ORDER BY created_at DESC, rowid DESC LIMIT ?
+            )
+            SELECT event.id AS event_id, event.query, event.scope, recent.created_at,
+                   result.key AS rank, result.value AS result,
+                   EXISTS(SELECT 1 FROM {RECALL_CREDIT_LEDGER_TABLE} AS credit
+                          WHERE credit.recall_event_id = event.id
+                            AND credit.node_id = json_extract(result.value, '$.node_id'))
+                   OR EXISTS(SELECT 1 FROM {RECALL_EXPLICIT_CREDIT_TABLE} AS credit
+                             WHERE credit.recall_event_id = event.id
+                               AND credit.node_id = json_extract(result.value, '$.node_id'))
+                   AS credited
+            FROM recent
+            JOIN recall_events AS event ON event.rowid = recent.event_rowid
+            JOIN json_each(CASE WHEN json_valid(event.results)
+                                THEN event.results ELSE '[]' END) AS result
+            WHERE CAST(json_extract(result.value, '$.node_id') AS TEXT)
+                  IN (SELECT value FROM json_each(?))
+            ORDER BY recent.created_at DESC, recent.event_rowid DESC, result.key
+            """,
+            (str(transport_session_id), int(limit), _json_dumps(sorted(requested))),
+        )
+        hits: dict[str, dict[str, Any]] = {}
+        try:
+            for row in rows:
+                instant = parse_timestamp(row["created_at"])
+                if instant is None or not earliest <= instant.replace(microsecond=0) <= latest:
+                    continue
+                result = _json_loads(row["result"], {})
+                node_id = str(result.get("node_id") or "")
+                if node_id in requested and node_id not in hits:
+                    hits[node_id] = {**dict(row), "result": result}
+                    if len(hits) == len(requested):
+                        break
+        finally:
+            rows.close()
+        return hits
+
     def _record_recall_history_event(
         self,
         *,

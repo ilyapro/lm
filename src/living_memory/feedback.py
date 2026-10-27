@@ -624,32 +624,18 @@ def apply_lookup_credit(
                 occurred_at,
             )
             return outcome
-        earliest = lookup_at - _lookup_credit_window()
-
-        # Newest first, so the first event naming a node is its newest
-        # delivery; each node is credited against at most one event.
-        hits: list[tuple[RecallEvent, int, dict[str, Any], str]] = []
-        pending = list(requested)
-        for event in store.recall_events_for_transport(
-            str(transport_session_id), limit=_LOOKUP_CREDIT_EVENT_LIMIT
-        ):
-            if not pending:
-                break
-            created_at = _lookup_instant(event.created_at)
-            if created_at is None or created_at > lookup_at or created_at < earliest:
-                continue
-            for rank, result in enumerate(event.results):
-                node_id = str(result.get("node_id") or "")
-                if node_id in pending:
-                    pending.remove(node_id)
-                    hits.append((event, rank, result, node_id))
-
+        hits = _current_deliveries(store, requested, transport_session_id, lookup_at)
+        events: dict[str, RecallEvent] = {}
         anchor_work: dict[str, tuple[RecallEvent, list[str]]] = {}
-        for event, rank, result, node_id in hits:
+        for node_id, hit in hits.items():
+            event_id, rank, result = hit["event_id"], hit["rank"], hit["result"]
             if not store.claim_recall_credit(
-                event.id, node_id, basis="lookup", source_id=str(lookup_event_id)
+                event_id, node_id, basis="lookup", source_id=str(lookup_event_id)
             ):
                 continue
+            if event_id not in events:
+                events[event_id] = store.get_recall_event(event_id)
+            event = events[event_id]
             apply_retrieval_feedback(
                 store,
                 SimpleNamespace(
@@ -754,6 +740,32 @@ def resolve_explicit_marks(
     ``apply_lookup_credit`` join.
     """
 
+    marks = _explicit_mark_requests(used, irrelevant, transport_session_id)
+    hits = _current_deliveries(
+        store, [mark.node_id for mark in marks if mark.reject_reason is None],
+        transport_session_id, occurred_at,
+    )
+    events: dict[str, RecallEvent] = {}
+    for mark in marks:
+        if mark.reject_reason is not None:
+            continue
+        hit = hits.get(mark.node_id)
+        if hit is None:
+            mark.reject_reason = "not_delivered"
+            continue
+        mark.accepted = True
+        event_id = hit["event_id"]
+        if event_id not in events:
+            events[event_id] = store.get_recall_event(event_id)
+        mark.event, mark.rank, mark.result = events[event_id], hit["rank"], dict(hit["result"])
+    return marks
+
+
+def _explicit_mark_requests(
+    used: Sequence[Any] | None, irrelevant: Sequence[Any] | None,
+    transport_session_id: str | None,
+) -> list[ExplicitMark]:
+    """Classify mark requests before resolving their delivery facts."""
     raw: list[tuple[str, Any]] = [("used", item) for item in (used or [])]
     raw.extend(("irrelevant", item) for item in (irrelevant or []))
     texts: list[tuple[str, str]] = [
@@ -781,38 +793,22 @@ def resolve_explicit_marks(
             ExplicitMark(node_id=text, mark=kind, accepted=False, reject_reason=reason)
         )
 
-    pending = {mark.node_id for mark in marks if mark.reject_reason is None}
-    hits: dict[str, tuple[RecallEvent, int, dict[str, Any]]] = {}
-    if pending:
-        instant = _lookup_instant(
-            storage_module._utc_now() if occurred_at is None else occurred_at
-        )
-        if instant is not None:
-            earliest = instant - _lookup_credit_window()
-            for event in store.recall_events_for_transport(
-                str(transport_session_id), limit=_LOOKUP_CREDIT_EVENT_LIMIT
-            ):
-                if not pending:
-                    break
-                created_at = _lookup_instant(event.created_at)
-                if created_at is None or created_at > instant or created_at < earliest:
-                    continue
-                for rank, result in enumerate(event.results):
-                    node_id = str(result.get("node_id") or "")
-                    if node_id in pending:
-                        pending.discard(node_id)
-                        hits[node_id] = (event, rank, result)
-
-    for mark in marks:
-        if mark.reject_reason is not None:
-            continue
-        hit = hits.get(mark.node_id)
-        if hit is None:
-            mark.reject_reason = "not_delivered"
-            continue
-        mark.accepted = True
-        mark.event, mark.rank, mark.result = hit[0], hit[1], dict(hit[2])
     return marks
+
+
+def _current_deliveries(
+    store: MemoryStore, node_ids: Iterable[str], transport_session_id: str | None,
+    occurred_at: str | datetime | None,
+) -> dict[str, dict[str, Any]]:
+    instant = _lookup_instant(
+        storage_module._utc_now() if occurred_at is None else occurred_at
+    )
+    if instant is None:
+        return {}
+    return store.recall_deliveries_for_transport(
+        transport_session_id, node_ids, earliest=instant - _lookup_credit_window(),
+        latest=instant, limit=_LOOKUP_CREDIT_EVENT_LIMIT,
+    )
 
 
 def apply_explicit_marks(
@@ -955,24 +951,29 @@ def _feedback_queries(
     """Read possible anchor inputs; never reserve events, claims or targets."""
     queries: dict[tuple[str, str], str] = {}
 
-    def add(event: RecallEvent, *, negative: bool = False) -> None:
-        query = event.query.strip() if negative else event.query
+    def add(query: str, scope: str, *, negative: bool = False) -> None:
+        query = query.strip() if negative else query
         if query.strip():
-            scope = normalize_scope(event.scope)
+            scope = normalize_scope(scope)
             queries.setdefault((scope, recall_fingerprint(query, scope)), query)
 
     if ((_lookup_credit_policy() != "off" and lookup_ids is not None)
             or (_explicit_feedback_policy() == "credit" and has_explicit_marks(used, irrelevant))):
         try:
-            marks = resolve_explicit_marks(
-                store, lookup_ids if lookup_ids is not None else used,
-                None if lookup_ids is not None else irrelevant, transport_session_id, occurred_at,
+            marks = _explicit_mark_requests(
+                lookup_ids if lookup_ids is not None else used,
+                None if lookup_ids is not None else irrelevant, transport_session_id,
+            )
+            hits = _current_deliveries(
+                store, [mark.node_id for mark in marks if mark.reject_reason is None],
+                transport_session_id, occurred_at,
             )
             for mark in marks:
-                if mark.accepted and mark.event is not None:
-                    if lookup_ids is not None and mark.node_id in store.credited_node_ids(mark.event.id):
-                        continue
-                    add(mark.event, negative=mark.mark == "irrelevant")
+                if mark.reject_reason is not None:
+                    continue
+                hit = hits.get(mark.node_id)
+                if hit is not None and not (lookup_ids is not None and hit["credited"]):
+                    add(hit["query"], hit["scope"], negative=mark.mark == "irrelevant")
         except Exception:
             _LOG.warning("optional feedback input read failed", exc_info=True)
 
@@ -988,7 +989,7 @@ def _feedback_queries(
                 min_containment=RECALL_CREDIT_MIN_CONTAINMENT,
             ) if nodes else {}
             if any(verdict.grounded for verdict in verdicts.values()):
-                add(event)
+                add(event.query, event.scope)
     return queries
 
 
