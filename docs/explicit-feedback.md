@@ -48,9 +48,19 @@ Implemented in `feedback.resolve_explicit_marks`. A marked id is **accepted**
 only if a recall event with the same `transport_session_id` delivered it. The
 event is the newest delivering event that is no later than the mark and
 within `LM_LOOKUP_CREDIT_WINDOW_SECONDS` (default 24 h), among the newest 200
-events of the session. This is the join `apply_lookup_credit` does. A
-`memory_recall` resolves its marks *before* it records its own event, so a
-mark can never name the delivery that carries it.
+events of the session. Storage's `recall_deliveries_for_transport` supplies
+this same selection to explicit marks, lookup credit and missing-anchor
+preparation. The cap is applied before id/time filtering; events sort by
+`created_at DESC, rowid DESC`, and time eligibility uses parsed UTC seconds
+with inclusive window boundaries. Duplicate results use their first position.
+Closed events remain eligible; the credit ledger decides once-only credit.
+
+Each preparation, guarded revalidation and application reads current facts.
+Only matching result JSON and event/query/scope/claim facts reach preparation;
+application loads full events only for selected deliveries it needs. SQLite
+still examines result JSON within the bounded window. A `memory_recall`
+resolves its marks *before* it records its own event, so a mark can never name
+the delivery that carries it.
 
 A dropped mark gets one reason, checked in this order:
 

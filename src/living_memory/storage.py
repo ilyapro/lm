@@ -2794,6 +2794,7 @@ class MemoryStore:
                 ORDER BY created_at DESC, rowid DESC LIMIT ?
             )
             SELECT event.id AS event_id, event.query, event.scope, recent.created_at,
+                   json_extract(result.value, '$.node_id') AS node_id,
                    result.key AS rank, result.value AS result,
                    EXISTS(SELECT 1 FROM {RECALL_CREDIT_LEDGER_TABLE} AS credit
                           WHERE credit.recall_event_id = event.id
@@ -2804,8 +2805,7 @@ class MemoryStore:
                    AS credited
             FROM recent
             JOIN recall_events AS event ON event.rowid = recent.event_rowid
-            JOIN json_each(CASE WHEN json_valid(event.results)
-                                THEN event.results ELSE '[]' END) AS result
+            JOIN json_each(event.results) AS result
             WHERE CAST(json_extract(result.value, '$.node_id') AS TEXT)
                   IN (SELECT value FROM json_each(?))
             ORDER BY recent.created_at DESC, recent.event_rowid DESC, result.key
@@ -2817,6 +2817,8 @@ class MemoryStore:
             for row in rows:
                 instant = parse_timestamp(row["created_at"])
                 if instant is None or not earliest <= instant.replace(microsecond=0) <= latest:
+                    continue
+                if str(row["node_id"] or "") in hits:
                     continue
                 result = _json_loads(row["result"], {})
                 node_id = str(result.get("node_id") or "")

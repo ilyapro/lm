@@ -633,9 +633,10 @@ def apply_lookup_credit(
                 event_id, node_id, basis="lookup", source_id=str(lookup_event_id)
             ):
                 continue
-            if event_id not in events:
-                events[event_id] = store.get_recall_event(event_id)
-            event = events[event_id]
+            event = events.get(event_id) or store.get_recall_event(event_id)
+            if event is None:
+                continue
+            events[event_id] = event
             apply_retrieval_feedback(
                 store,
                 SimpleNamespace(
@@ -753,11 +754,14 @@ def resolve_explicit_marks(
         if hit is None:
             mark.reject_reason = "not_delivered"
             continue
-        mark.accepted = True
         event_id = hit["event_id"]
-        if event_id not in events:
-            events[event_id] = store.get_recall_event(event_id)
-        mark.event, mark.rank, mark.result = events[event_id], hit["rank"], dict(hit["result"])
+        event = events.get(event_id) or store.get_recall_event(event_id)
+        if event is None:
+            mark.reject_reason = "not_delivered"
+            continue
+        events[event_id] = event
+        mark.accepted = True
+        mark.event, mark.rank, mark.result = event, hit["rank"], dict(hit["result"])
     return marks
 
 
