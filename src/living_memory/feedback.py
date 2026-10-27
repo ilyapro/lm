@@ -1007,7 +1007,7 @@ def prepared_feedback(
     again while holding the yielded guard and their required transaction.
     Existing anchors need no inference. One further preparation handles new
     inputs or an anchor removed during encoding. Continued churn fails before
-    any operation mutation, leaving its feedback available for a caller retry.
+    authoritative feedback work, leaving claims and closure for a caller retry.
     Encoder failures remain optional and do not suppress existing anchors.
     """
     vectors: dict[tuple[str, str], tuple[float, ...]] = {}

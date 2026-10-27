@@ -7,7 +7,7 @@ from threading import RLock
 from fastmcp import Client
 import pytest
 
-from living_memory import feedback, server
+from living_memory import feedback, retrieval, server
 from living_memory.chunking import chunk_text
 from living_memory.irrelevance import list_query_irrelevance
 from living_memory.query_anchors import resolve_query_anchor
@@ -488,6 +488,34 @@ def test_pending_encoder_failure_keeps_other_selected_and_current_indexes(runtim
                 assert r.store.list_node_chunks(failing.id) == []
                 assert r.store.node_chunks_are_current(later.id)
                 assert not r.store.connection.in_transaction
+
+    asyncio.run(scenario())
+
+
+def test_due_decay_precedes_bounded_pending_selection_and_is_reported_once(runtime, monkeypatch):
+    r = runtime
+    monkeypatch.setattr(retrieval, "LAZY_CHUNK_NODE_LIMIT", 1)
+    with r.guard:
+        old = r.store.append_trace("Expired pending rule.", {"scope": SCOPE, "timestamp": "2020-01-01T00:00:00Z"})
+        current = r.store.append_trace("Current pending rule.", {"scope": SCOPE})
+    sweeps = []
+
+    def sweep(store):
+        assert r.guard._is_owned()
+        store.soft_delete_node(old.id, "expired")
+        sweeps.append(old.id)
+        return {"decayed": [old.id]}
+
+    monkeypatch.setattr(server, "_maybe_decay_sweep", sweep)
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            response = await recall(client)
+            assert response["auto_decay"] == {"decayed": [old.id]}
+            assert sweeps == [old.id]
+            with r.guard:
+                assert r.store.list_node_chunks(old.id) == []
+                assert r.store.node_chunks_are_current(current.id)
 
     asyncio.run(scenario())
 

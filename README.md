@@ -107,11 +107,11 @@ Absent identities are prepared outside the store lock and before the required
 remember/teach transaction. The guarded operation reads current deliveries,
 grounding, claims and anchor identities again, keeping explicit marks before
 implicit closure. One further preparation can cover concurrent new inputs or
-a deleted anchor; continuing changes reject the operation before its writes,
+a deleted anchor; continuing changes reject it before knowledge or feedback writes,
 without consuming feedback. A failed encoder batch leaves existing-anchor
 effects available. Query vectors live only within the operation.
 
-Pending indexing selects at most 16 oldest eligible sources before recall
+Pending indexing selects at most 16 oldest eligible sources after due decay and before recall
 selection. Whole-source and complete chunk vectors are prepared without the
 store lock or a SQLite transaction. The writer rechecks content, scope,
 liveness, representative and index identity before applying each complete
