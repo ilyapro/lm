@@ -804,13 +804,16 @@ def _current_deliveries(
     store: MemoryStore, node_ids: Iterable[str], transport_session_id: str | None,
     occurred_at: str | datetime | None,
 ) -> dict[str, dict[str, Any]]:
+    requested = tuple(node_ids)
+    if not transport_session_id or not requested:
+        return {}
     instant = _lookup_instant(
         storage_module._utc_now() if occurred_at is None else occurred_at
     )
     if instant is None:
         return {}
     return store.recall_deliveries_for_transport(
-        transport_session_id, node_ids, earliest=instant - _lookup_credit_window(),
+        transport_session_id, requested, earliest=instant - _lookup_credit_window(),
         latest=instant, limit=_LOOKUP_CREDIT_EVENT_LIMIT,
     )
 
