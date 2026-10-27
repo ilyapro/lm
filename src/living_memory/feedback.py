@@ -1144,17 +1144,17 @@ def _apply_query_feedback(
 
 def _encode_missing_feedback_queries(
     store: MemoryStore, queries: dict[tuple[str, str], str],
-) -> dict[tuple[str, str], Sequence[float]]:
+) -> dict[tuple[str, str], tuple[float, ...]]:
     """Prepare absent identities without suppressing existing-anchor effects."""
 
-    vectors: dict[tuple[str, str], Sequence[float]] = {}
+    vectors: dict[tuple[str, str], tuple[float, ...]] = {}
     if not queries:
         return vectors
     try:
         embedder = _anchor_embedder(store)
         if embedder is not None:
             for key, vector in zip(queries, embedder(list(queries.values())), strict=True):
-                vectors[key] = vector
+                vectors[key] = tuple(vector)
     except Exception:
         _LOG.warning(
             "query feedback preparation failed for %d missing anchor(s)", len(queries), exc_info=True

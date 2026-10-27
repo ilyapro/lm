@@ -1326,7 +1326,7 @@ def _register_tools(
                 delivery_history = DeliveryHistory()
             results = recall_service.memory_recall(
                 prepared_query,
-                index_prepared=True,
+                repair_pending=False,
                 scope=scope,
                 ambient_context=ambient_context,
                 depth=depth,

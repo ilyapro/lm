@@ -492,7 +492,8 @@ def test_pending_encoder_failure_keeps_other_selected_and_current_indexes(runtim
     asyncio.run(scenario())
 
 
-def test_failed_missing_anchor_batch_keeps_current_existing_effects(runtime, monkeypatch):
+@pytest.mark.parametrize("fault", ["raise", "invalid_vector", "empty_batch"])
+def test_failed_missing_anchor_batch_keeps_current_existing_effects(runtime, monkeypatch, fault):
     r = runtime
     with r.guard:
         existing = resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
@@ -503,7 +504,9 @@ def test_failed_missing_anchor_batch_keeps_current_existing_effects(runtime, mon
         def fail(texts):
             assert not r.guard._is_owned() and not store.connection.in_transaction
             r.batches.append(tuple(texts))
-            raise RuntimeError("missing anchor model failure")
+            if fault == "raise":
+                raise RuntimeError("missing anchor model failure")
+            return [None] if fault == "invalid_vector" else []
         return fail
 
     async def scenario():

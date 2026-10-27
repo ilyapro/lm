@@ -600,7 +600,7 @@ class MemoryRecallService:
         max_results: int = 10,
         log_access: bool = True,
         log_event: bool | None = None,
-        index_prepared: bool = False,
+        repair_pending: bool = True,
         select_results: Callable[[list[RecallResult], list[RecallResult], int], tuple[list[RecallResult], list[RecallResult]]] | None = None,
     ) -> list[RecallResult]:
         self.last_recall_event_id = None
@@ -615,7 +615,7 @@ class MemoryRecallService:
             return []
         query_embedding = prepared.embedding
 
-        if not index_prepared:
+        if repair_pending:
             self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context)
 
         plan = self.scope_resolver.resolve(
