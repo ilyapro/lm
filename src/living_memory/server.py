@@ -80,6 +80,7 @@ from living_memory.feedback import (
     apply_pending_recall_feedback,
     has_explicit_marks,
     prepared_feedback,
+    prepared_lookup_credit,
     resolve_explicit_marks,
 )
 from living_memory import storage as storage_module
@@ -1512,7 +1513,7 @@ def _register_tools(
         occurred_at = storage_module._utc_now()
         valid_fetch = (requested_ids and not filters and view in ("knowledge", "full")
                        and (context_key is None or (context_key and view == "knowledge")))
-        with prepared_feedback(
+        with prepared_lookup_credit(
             store, guard=lambda: runtime_lock,
             lookup_ids=requested_ids if valid_fetch else None,
             transport_session_id=transport_session_id, occurred_at=occurred_at,
@@ -1613,7 +1614,7 @@ def _register_tools(
                         len(requested_ids),
                     )
                     return response
-                if lookup_event_id is not None:
+                if lookup_event_id is not None and feedback_preparation is not None:
                     apply_lookup_credit(
                         store,
                         lookup_event_id,

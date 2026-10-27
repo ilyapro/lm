@@ -107,9 +107,13 @@ Absent identities are prepared outside the store lock and before the required
 remember/teach transaction. The guarded operation reads current deliveries,
 grounding, claims and anchor identities again, keeping explicit marks before
 implicit closure. One further preparation can cover concurrent new inputs or
-a deleted anchor; continuing changes reject it before knowledge or feedback writes,
-without consuming feedback. A failed encoder batch leaves existing-anchor
-effects available. Query vectors live only within the operation.
+a deleted anchor; continuing changes reject required feedback before knowledge
+or feedback writes, without consuming feedback. Exact lookup tolerates failed
+credit preparation, including continued input changes or anchor-read errors:
+it reads current source and validity under the store lock and skips credit with
+a bounded diagnostic. Source/validity read errors still fail the lookup. Optional
+usage writes are never retried after failure. A failed encoder batch leaves
+existing-anchor effects available. Query vectors live only within the operation.
 
 Pending indexing selects at most 16 oldest eligible sources after due decay and before recall
 selection. Whole-source and complete chunk vectors are prepared without the

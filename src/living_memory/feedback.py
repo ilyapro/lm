@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import logging
@@ -966,23 +966,20 @@ def _feedback_queries(
 
     if ((_lookup_credit_policy() != "off" and lookup_ids is not None)
             or (_explicit_feedback_policy() == "credit" and has_explicit_marks(used, irrelevant))):
-        try:
-            marks = _explicit_mark_requests(
-                lookup_ids if lookup_ids is not None else used,
-                None if lookup_ids is not None else irrelevant, transport_session_id,
-            )
-            hits = _current_deliveries(
-                store, [mark.node_id for mark in marks if mark.reject_reason is None],
-                transport_session_id, occurred_at,
-            )
-            for mark in marks:
-                if mark.reject_reason is not None:
-                    continue
-                hit = hits.get(mark.node_id)
-                if hit is not None and not (lookup_ids is not None and hit["credited"]):
-                    add(hit["query"], hit["scope"], negative=mark.mark == "irrelevant")
-        except Exception:
-            _LOG.warning("optional feedback input read failed", exc_info=True)
+        marks = _explicit_mark_requests(
+            lookup_ids if lookup_ids is not None else used,
+            None if lookup_ids is not None else irrelevant, transport_session_id,
+        )
+        hits = _current_deliveries(
+            store, [mark.node_id for mark in marks if mark.reject_reason is None],
+            transport_session_id, occurred_at,
+        )
+        for mark in marks:
+            if mark.reject_reason is not None:
+                continue
+            hit = hits.get(mark.node_id)
+            if hit is not None and not (lookup_ids is not None and hit["credited"]):
+                add(hit["query"], hit["scope"], negative=mark.mark == "irrelevant")
 
     if trace_content is not None and _recall_credit_policy() != "all":
         context = dict(trace_context or {})
@@ -1037,6 +1034,33 @@ def prepared_feedback(
                 raise RuntimeError("feedback inputs changed during preparation; retry the operation")
         prepared = _encode_missing_feedback_queries(store, missing)
         vectors.update((key, tuple(prepared.get(key, ()))) for key in missing)
+
+
+@contextmanager
+def prepared_lookup_credit(
+    store: MemoryStore, *, guard: Callable[[], AbstractContextManager[Any]],
+    lookup_ids: Sequence[str] | None,
+    transport_session_id: str | None, occurred_at: str | datetime,
+) -> Iterator[Mapping[tuple[str, str], tuple[float, ...]] | None]:
+    """Hold the read guard even when optional credit preparation fails.
+
+    None means skip credit entirely. Only entering preparation is caught;
+    source/validity reads in the caller still propagate their own failures.
+    """
+    with ExitStack() as stack:
+        try:
+            preparation = stack.enter_context(prepared_feedback(
+                store, guard=guard, lookup_ids=lookup_ids,
+                transport_session_id=transport_session_id, occurred_at=occurred_at,
+            ))
+        except Exception as error:
+            _LOG.warning(
+                "lookup credit preparation failed (%s; %d requested id(s)); credit skipped",
+                type(error).__name__[:80], len(lookup_ids or ()),
+            )
+            stack.enter_context(guard())
+            preparation = None
+        yield preparation
 
 
 def _apply_query_feedback(
@@ -1163,9 +1187,10 @@ def _encode_missing_feedback_queries(
         if embedder is not None:
             for key, vector in zip(queries, embedder(list(queries.values())), strict=True):
                 vectors[key] = tuple(vector)
-    except Exception:
+    except Exception as error:
         _LOG.warning(
-            "query feedback preparation failed for %d missing anchor(s)", len(queries), exc_info=True
+            "query feedback preparation failed (%s; %d missing anchor(s))",
+            type(error).__name__[:80], len(queries),
         )
     return vectors
 
