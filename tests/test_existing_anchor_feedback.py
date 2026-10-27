@@ -90,6 +90,39 @@ def test_native_existing_feedback_and_exact_read_finish_while_peer_encodes(runti
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("route", ["lookup", "explicit", "implicit"])
+def test_native_mixed_feedback_encodes_only_the_missing_query(runtime, route):
+    r = runtime
+    other_query = "violet garden"
+    other = r.store.create_node(level="concept", content="Violet garden needs watering every morning.",
+                                context={"scope": SCOPE}, embedding=VECTOR)
+    stored = resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            first = await recall(client)
+            second = await recall(client, query=other_query)
+            assert entry(first)["id"] == r.node.id and entry(second)["id"] == other.id
+            r.encoded.clear()
+            if route == "lookup":
+                await call(client, "memory_lookup", node_ids=[r.node.id, other.id])
+            else:
+                await call(client, "memory_remember", content=CONTENT + " " + other.content,
+                           context={"scope": SCOPE},
+                           **({"used": [r.node.id, other.id]} if route == "explicit" else {}))
+            assert QUERY not in r.encoded and r.encoded.count(other_query) == 1
+            assert anchor_for(r.store).id == stored.id
+            assert anchor_for(r.store).reinforcement_count == 1
+            assert anchor_for(r.store, other_query).reinforcement_count == 0
+            for response, node in ((first, r.node), (second, other)):
+                assert r.store.credited_node_ids(response["recall_event_id"]) == {node.id}
+                anchor = anchor_for(r.store, response["query"])
+                edge, = r.store.list_query_anchor_edges(anchor_id=anchor.id)
+                assert edge.target_id == node.id and edge.hits == 1
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("route", ["explicit", "implicit"])
 @pytest.mark.parametrize("encoder_state", ["unavailable", "failing"])
 def test_later_confirmation_without_encoder_cancels_without_reinforcement(runtime, monkeypatch, route, encoder_state):
@@ -194,3 +227,100 @@ def test_anchor_lifecycle_uses_existing_revival_and_creation_rules(runtime, effe
     assert (anchor.id == stored.id) == (state == "decayed")
     assert anchor.decayed == (state == "decayed" and effect == "negative")
     assert anchor.reinforcement_count == int(state == "decayed" and effect == "positive")
+
+
+@pytest.mark.parametrize("change", ["create_missing", "delete_existing", "replace_existing"])
+def test_anchor_identity_is_current_after_missing_encoding(runtime, monkeypatch, change):
+    r = runtime
+    stored = resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
+    events = [r.store.record_recall_event(query=query, scope=SCOPE, results=[])
+              for query in (QUERY, "missing query")]
+    batches, created = [], []
+
+    def encode(queries):
+        batches.append(list(queries))
+        if len(batches) == 1:
+            # The encoder seam changes only this disposable store, as an
+            # independent writer can while no outer transaction is active.
+            from living_memory.storage import MemoryStore
+            with MemoryStore(r.store.db_path) as writer:
+                if change != "create_missing":
+                    with writer.transaction():
+                        writer.connection.execute("DELETE FROM query_anchors WHERE id = ?", (stored.id,))
+                if change != "delete_existing":
+                    query = "missing query" if change == "create_missing" else QUERY
+                    created.append(resolve_query_anchor(writer, query, SCOPE, [0.0, 1.0]).id)
+        return [[0.0, 0.0, 1.0] for _ in queries]
+
+    monkeypatch.setattr(feedback, "_anchor_embedder", lambda store: encode)
+    feedback._apply_query_feedback(r.store, [(e, (r.node.id,), ()) for e in events])
+    assert batches == [["missing query"], *([[QUERY]] if change == "delete_existing" else [])]
+    assert len(r.store.list_query_anchors()) == 2
+    if change == "delete_existing":
+        anchor = anchor_for(r.store)
+        assert anchor.id != stored.id and anchor.embedding == (0.0, 0.0, 1.0)
+        assert anchor.reinforcement_count == 0
+    else:
+        query = "missing query" if change == "create_missing" else QUERY
+        anchor = anchor_for(r.store, query)
+        assert anchor.id == created[0] and anchor.embedding == (0.0, 1.0)
+        assert anchor.reinforcement_count == 1
+
+
+@pytest.mark.parametrize("target_state", ["decayed", "deleted", "superseded"])
+def test_existing_anchor_resolves_current_live_targets_without_encoding(runtime, target_state):
+    r = runtime
+    anchor = resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
+    event = r.store.record_recall_event(query=QUERY, scope=SCOPE, results=[{"node_id": r.node.id}])
+    if target_state == "decayed":
+        r.store.update_node(r.node.id, decayed=True, decay_reason="expired")
+    elif target_state == "deleted":
+        with r.store.transaction():
+            r.store.connection.execute("DELETE FROM nodes WHERE id = ?", (r.node.id,))
+    else:
+        replacement = r.store.create_node(level="trace", content="Renew the certificate after approval.",
+                                          context={"scope": SCOPE}, embedding=VECTOR)
+        r.store.create_connection(replacement.id, r.node.id, "supersedes")
+    r.encoded.clear()
+    feedback._apply_query_feedback(r.store, [(event, (r.node.id,), ())])
+    assert r.encoded == []
+    edges = r.store.list_query_anchor_edges(anchor_id=anchor.id)
+    assert [edge.target_id for edge in edges] == ([replacement.id] if target_state == "superseded" else [])
+
+
+@pytest.mark.parametrize("operation", ["remember", "teach"])
+def test_required_failure_rolls_back_existing_anchor_marks_credit_and_knowledge(runtime, operation):
+    r = runtime
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            prior = await recall(client)
+            anchor = resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
+            record_query_irrelevance(r.store, anchor.id, "earlier", [r.node.id])
+            negative_before = list_query_irrelevance(r.store)
+            node_before = r.store.get_node(r.node.id)
+            r.store.connection.execute("""CREATE TRIGGER reject_closure
+                BEFORE UPDATE OF feedback_applied_at ON recall_events
+                WHEN NEW.feedback_applied_at IS NOT NULL
+                BEGIN SELECT RAISE(ABORT, 'required closure failure'); END""")
+            r.encoded.clear()
+            with pytest.raises(Exception, match="required closure failure"):
+                if operation == "remember":
+                    await consume(client, "explicit", r.node.id)
+                else:
+                    await call(client, "memory_teach", trace_id=r.node.id,
+                               correction=CONTENT + " Confirmed for release.",
+                               context={"scope": SCOPE}, used=[r.node.id])
+            assert QUERY not in r.encoded
+            assert anchor_for(r.store) == anchor
+            assert r.store.list_query_anchor_edges(anchor_id=anchor.id) == []
+            assert list_query_irrelevance(r.store) == negative_before
+            assert r.store.get_node(r.node.id) == node_before
+            assert r.store.credited_node_ids(prior["recall_event_id"]) == set()
+            assert r.store.connection.execute("SELECT count(*) FROM recall_feedback_marks").fetchone()[0] == 0
+            assert r.store.connection.execute("SELECT count(*) FROM nodes").fetchone()[0] == 1
+            assert r.store.connection.execute("SELECT count(*) FROM connections").fetchone()[0] == 0
+            assert r.store.get_recall_event(prior["recall_event_id"]).feedback_trace_id is None
+            assert not r.store.connection.in_transaction
+
+    asyncio.run(scenario())
