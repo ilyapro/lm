@@ -16,7 +16,8 @@ from living_memory.irrelevance import cancel_query_irrelevance, record_query_irr
 from living_memory.models import Node, RecallEvent, RetrievalWeights
 from living_memory import storage as storage_module
 from living_memory.query_anchors import resolve_query_anchor, upsert_anchor
-from living_memory.storage import ChunkEmbedder, MemoryStore
+from living_memory.scope import normalize_scope
+from living_memory.storage import ChunkEmbedder, MemoryStore, recall_fingerprint
 from living_memory.temporal import parse_timestamp
 
 _LOG = logging.getLogger(__name__)
@@ -946,7 +947,8 @@ def _apply_query_feedback(
 ) -> list[str]:
     """Share query preparation across independent feedback effects. Never raises.
 
-    Embed each nonblank event query once in one batch for this operation.
+    Exact existing anchors supply their authoritative vectors. Only missing
+    identities need encoding, once in a batch for this operation.
     Credited targets reinforce the anchor; confirmed targets cancel negatives
     even when their numeric credit was already claimed. Irrelevant targets
     reuse that anchor without reinforcing it. Optional writes fail separately,
@@ -965,19 +967,43 @@ def _apply_query_feedback(
         return []
     anchor_ids: list[str] = []
     try:
-        embedder = _anchor_embedder(store)
-        if embedder is None:
-            return []
         # Positive feedback keeps the delivered query text; negative-only
         # feedback uses its stripped form.
         queries = [
             event.query if targets or confirmed else event.query.strip()
             for event, targets, confirmed, _irrelevant in items
         ]
-        vectors = embedder(queries)
-        for (event, targets, confirmed, irrelevant), query, vector in zip(
-            items, queries, vectors, strict=True
+        keys = [
+            (scope, recall_fingerprint(query, scope))
+            for (event, *_), query in zip(items, queries, strict=True)
+            for scope in [normalize_scope(event.scope)]
+        ]
+        missing = {
+            key: query for key, query in zip(keys, queries, strict=True)
+            if store.find_query_anchor(*key) is None
+        }
+        vectors = _encode_missing_feedback_queries(store, missing)
+        for (event, targets, confirmed, irrelevant), query, key in zip(
+            items, queries, keys, strict=True
         ):
+            try:
+                # Preparation may call an encoder while another store writer
+                # changes anchors. Resolve current identity again before use.
+                existing = store.find_query_anchor(*key)
+                if existing is not None:
+                    vector = existing.embedding
+                else:
+                    if key not in missing:
+                        # An anchor deleted during preparation needs normal
+                        # creation, not a copy of its discarded stored vector.
+                        missing[key] = query
+                        vectors.update(_encode_missing_feedback_queries(store, {key: query}))
+                    vector = vectors.get(key)
+            except Exception:
+                _LOG.warning(
+                    "query anchor preparation failed for event %s", event.id, exc_info=True
+                )
+                continue
             if not vector:
                 continue
             anchor = None
@@ -1021,6 +1047,26 @@ def _apply_query_feedback(
             "query feedback preparation failed for %d event(s)", len(items), exc_info=True
         )
     return anchor_ids
+
+
+def _encode_missing_feedback_queries(
+    store: MemoryStore, queries: dict[tuple[str, str], str],
+) -> dict[tuple[str, str], Sequence[float]]:
+    """Prepare absent identities without suppressing existing-anchor effects."""
+
+    vectors: dict[tuple[str, str], Sequence[float]] = {}
+    if not queries:
+        return vectors
+    try:
+        embedder = _anchor_embedder(store)
+        if embedder is not None:
+            for key, vector in zip(queries, embedder(list(queries.values())), strict=True):
+                vectors[key] = vector
+    except Exception:
+        _LOG.warning(
+            "query feedback preparation failed for %d missing anchor(s)", len(queries), exc_info=True
+        )
+    return vectors
 
 
 def _anchor_embedder(store: MemoryStore) -> ChunkEmbedder | None:
