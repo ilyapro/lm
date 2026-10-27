@@ -232,7 +232,9 @@ def test_response_map_and_explicit_credit_keep_their_own_event(runtime, monkeypa
                     (earlier["recall_event_id"], own_later["recall_event_id"]),
                 }
                 credits = r.store.connection.execute(
-                    "SELECT recall_event_id, source_id FROM recall_explicit_credit WHERE node_id=?",
+                    """SELECT c.recall_event_id, m.source_id FROM recall_explicit_credit c
+                    JOIN recall_feedback_marks m ON c.source_id = 'mark:' || m.id
+                    WHERE c.node_id=?""",
                     (prior.id,),
                 ).fetchall()
                 assert [tuple(credit) for credit in credits] == [(earlier["recall_event_id"], own_id)]
