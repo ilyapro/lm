@@ -35,7 +35,7 @@ def runtime(tmp_path, monkeypatch):
 
     def encode(texts):
         state.batches.append(len(texts))
-        if state.hold:
+        if state.hold and len(texts) > 1:
             assert not state.guard._is_owned()
             assert not state.store.connection.in_transaction
             state.entered.set()
@@ -43,8 +43,6 @@ def runtime(tmp_path, monkeypatch):
         if state.fail:
             raise RuntimeError("legacy encoder failed")
         return encoder.embed_batch(texts)
-
-    encoder.embed_batch = encode_batch = encoder.embed_batch
 
     def build(store):
         state.service = MemoryRecallService(store, embedder=encoder)
@@ -148,6 +146,7 @@ def test_concurrent_writer_wins_while_native_legacy_encoding_waits(runtime, chan
                                            embedding=[0.0, 1.0, 0.0])
                     elif change == "delete":
                         with writer.transaction():
+                            writer.delete_node_chunks(r.node.id)
                             writer.connection.execute("DELETE FROM nodes WHERE id=?", (r.node.id,))
                     elif change == "decay":
                         await asyncio.wait_for(call(peer, "memory_forget", id=r.node.id), 3)
@@ -187,7 +186,7 @@ def test_response_map_and_explicit_credit_keep_their_own_event(runtime, monkeypa
         for index in range(4):
             r.store.create_node(level="concept", content=f"Amber logistics note {index}.",
                                 context={"scope": SCOPE, "topic": "amber logistics"},
-                                embedding=[0.0, 0.0, 1.0])
+                                embedding=[0.6, 0.8, 0.0])
     builds = []
     build = RecallMapBuilder.build
 
