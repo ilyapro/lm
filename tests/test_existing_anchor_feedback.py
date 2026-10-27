@@ -5,7 +5,7 @@ import asyncio
 from fastmcp import Client
 import pytest
 
-from living_memory import feedback
+from living_memory import embeddings, feedback
 from living_memory.irrelevance import list_query_irrelevance, record_query_irrelevance
 from living_memory.query_anchors import resolve_query_anchor
 from living_memory.storage import recall_fingerprint
@@ -91,11 +91,20 @@ def test_native_existing_feedback_and_exact_read_finish_while_peer_encodes(runti
 
 
 @pytest.mark.parametrize("route", ["lookup", "explicit", "implicit"])
-def test_native_mixed_feedback_encodes_only_the_missing_query(runtime, route):
+def test_native_mixed_feedback_encodes_only_the_missing_query(runtime, monkeypatch, route):
     r = runtime
     other_query = "violet garden"
+    encode = embeddings._embed_hash
+
+    def distinct_query(text, dimensions):
+        if text == other_query:
+            r.encoded.append(text)
+            return [0.0, 1.0, 0.0]
+        return encode(text, dimensions)
+
+    monkeypatch.setattr(embeddings, "_embed_hash", distinct_query)
     other = r.store.create_node(level="concept", content="Violet garden needs watering every morning.",
-                                context={"scope": SCOPE}, embedding=VECTOR)
+                                context={"scope": SCOPE}, embedding=[0.0, 1.0, 0.0])
     stored = resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
 
     async def scenario():
@@ -273,9 +282,10 @@ def test_existing_anchor_resolves_current_live_targets_without_encoding(runtime,
     anchor = resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
     event = r.store.record_recall_event(query=QUERY, scope=SCOPE, results=[{"node_id": r.node.id}])
     if target_state == "decayed":
-        r.store.update_node(r.node.id, decayed=True, decay_reason="expired")
+        r.store.soft_delete_node(r.node.id, reason="expired")
     elif target_state == "deleted":
         with r.store.transaction():
+            r.store.delete_node_chunks(r.node.id)
             r.store.connection.execute("DELETE FROM nodes WHERE id = ?", (r.node.id,))
     else:
         replacement = r.store.create_node(level="trace", content="Renew the certificate after approval.",
