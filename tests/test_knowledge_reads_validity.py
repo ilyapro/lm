@@ -105,10 +105,10 @@ def test_native_knowledge_reads_share_relation_validity(
             if correction_state == "decayed":
                 store.soft_delete_node(correction, "expired correction")
             elif correction_state == "missing":
-                # Retain the known edge while its counterpart cannot be read.
-                get_nodes = store.get_nodes
-                monkeypatch.setattr(store, "get_nodes", lambda ids: {
-                    key: node for key, node in get_nodes(ids).items() if key != correction
+                # Retain the known edge while its counterpart is absent.
+                get_node_scopes = store.get_node_scopes
+                monkeypatch.setattr(store, "get_node_scopes", lambda ids: {
+                    key: scope for key, scope in get_node_scopes(ids).items() if key != correction
                 })
 
             after = await read_surface()

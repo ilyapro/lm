@@ -1574,6 +1574,17 @@ class MemoryStore:
                 nodes[node.id] = node
         return nodes
 
+    def get_node_scopes(self, node_ids: Iterable[str]) -> dict[str, str]:
+        """Read existing identities and authoritative scopes, including decayed nodes."""
+        scopes: dict[str, str] = {}
+        for chunk in _node_read_batches(node_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                f"SELECT id, scope FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
+            ).fetchall()
+            scopes.update((str(row["id"]), str(row["scope"])) for row in rows)
+        return scopes
+
     def list_nodes(
         self,
         *,

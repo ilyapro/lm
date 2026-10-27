@@ -29,16 +29,16 @@ def supersedes_sets(
 def correction_references(
     store: Any, corrections: Mapping[str, Sequence[str]], plan: ScopePlan,
 ) -> dict[str, list[str]]:
-    """Direct correction ids readable by lookup within the request's scopes.
+    """Existing direct correction ids within the request's authoritative scopes.
 
     This batch read neither retrieves candidates nor grants feedback credit.
     Decayed nodes remain addressable history through exact lookup. Missing or
     out-of-scope corrections yield no link; their supersedes edge still counts.
     No correction body or transitive/cycle resolution enters the projection.
     """
-    nodes = store.get_nodes({source for sources in corrections.values() for source in sources})
+    scopes = store.get_node_scopes({source for sources in corrections.values() for source in sources})
     return {
-        target: [source for source in sources if source in nodes and plan.allows(nodes[source].scope)]
+        target: [source for source in sources if source in scopes and plan.allows(scopes[source])]
         for target, sources in corrections.items()
     }
 

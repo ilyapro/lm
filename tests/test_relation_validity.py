@@ -72,10 +72,10 @@ def test_relation_only_correction_validity(tmp_path, monkeypatch, path, correcti
             elif correction_state == "ineligible":
                 store.update_node(correction, context={"is_rejected_alternative": True})
             elif correction_state == "missing":
-                # Model an unreadable counterpart while retaining its known relation.
-                get_nodes = store.get_nodes
-                monkeypatch.setattr(store, "get_nodes", lambda ids: {
-                    key: node for key, node in get_nodes(ids).items() if key != correction
+                # Model an absent counterpart while retaining its known relation.
+                get_node_scopes = store.get_node_scopes
+                monkeypatch.setattr(store, "get_node_scopes", lambda ids: {
+                    key: scope for key, scope in get_node_scopes(ids).items() if key != correction
                 })
 
             entry, response = await read(client, path, original)
