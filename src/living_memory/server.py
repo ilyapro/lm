@@ -79,6 +79,7 @@ from living_memory.feedback import (
     apply_lookup_credit,
     apply_pending_recall_feedback,
     has_explicit_marks,
+    prepared_feedback,
     resolve_explicit_marks,
 )
 from living_memory import storage as storage_module
@@ -1047,8 +1048,12 @@ def _register_tools(
             ) for alternative in alternatives or ()
         )
         prepared = _prepare_trace_indices(store, contents)
-        with runtime_lock:
-            context = _with_transport_identity(context)
+        context = _with_transport_identity(context)
+        with prepared_feedback(
+            store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
+            transport_session_id=_context_transport(context),
+            trace_content=content, trace_context=context,
+        ) as feedback_preparation:
             try:
                 auto_decay = _decay_sweep_if_due(store)
             except Exception:
@@ -1081,8 +1086,11 @@ def _register_tools(
                         source_id=node.id,
                         transport_session_id=_context_transport(context),
                         agent=_ambient_text(context, "agent"),
+                        preparation=feedback_preparation,
                     )
-                implicit_feedback = apply_pending_recall_feedback(store, node)
+                implicit_feedback = apply_pending_recall_feedback(
+                    store, node, preparation=feedback_preparation,
+                )
                 node = implicit_feedback.trace
             # Typed-edge derivation (edge_derivation.py go-rules) runs after
             # implicit recall feedback so an R6 reference upsert augments the
@@ -1136,8 +1144,11 @@ def _register_tools(
         preparation = prepare_teach(
             store, trace_id, correction, confidence=confidence, guard=lambda: runtime_lock,
         )
-        with runtime_lock:
-            context = _with_transport_identity(context)
+        context = _with_transport_identity(context)
+        with prepared_feedback(
+            store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
+            transport_session_id=_context_transport(context),
+        ) as feedback_preparation:
             with store.transaction():
                 # Marks must precede implicit feedback, before the corrective
                 # trace exists. A failed required write also rolls them back.
@@ -1155,6 +1166,7 @@ def _register_tools(
                         source_id="",
                         transport_session_id=_context_transport(context),
                         agent=_ambient_text(context, "agent"),
+                        preparation=feedback_preparation,
                     )
                 taught = consolidation_service.memory_teach(
                     trace_id,
@@ -1288,7 +1300,10 @@ def _register_tools(
             recall_service.refresh_pending_chunks(
                 scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
             )
-        with runtime_lock:
+        with prepared_feedback(
+            store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
+            transport_session_id=transport_session_id,
+        ) as feedback_preparation:
             auto_decay = _maybe_decay_sweep(store)
             # Resolve explicit marks before this call's own event exists, so a
             # mark can only name an earlier delivery; recorded after, with the
@@ -1357,6 +1372,7 @@ def _register_tools(
                     transport_session_id=transport_session_id,
                     agent=_ambient_text(ambient_context, "agent"),
                     resolved=pending_marks,
+                    preparation=feedback_preparation,
                 )
                 response["feedback_marks"] = marks.summary()
             # The required response is complete. Publish the optional map only

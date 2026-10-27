@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 import logging
 import math
 import os
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 from living_memory.grounding import DEFAULT_MIN_CONTAINMENT, ground_results
@@ -402,6 +403,7 @@ def apply_pending_recall_feedback(
     *,
     limit: int = _DEFAULT_PENDING_RECALL_LIMIT,
     reinforce_results: bool = True,
+    preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
 ) -> ImplicitRecallFeedback:
     """Attach recalls from compatible work and reinforce what the trace used.
 
@@ -540,7 +542,7 @@ def apply_pending_recall_feedback(
     provenance["source_traces"] = source_traces
     updated = store.update_node(trace.id, provenance=provenance)
     # Anchor reinforcement is nonfatal; the caller owns the trace transaction.
-    anchor_ids = _apply_query_feedback(store, anchor_work)
+    anchor_ids = _apply_query_feedback(store, anchor_work, preparation=preparation)
     return ImplicitRecallFeedback(
         trace=updated,
         events=events,
@@ -571,6 +573,8 @@ def apply_lookup_credit(
     node_ids: Iterable[str],
     transport_session_id: str | None,
     occurred_at: str | datetime,
+    *,
+    preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
 ) -> LookupCredit:
     """Credit a same-session id-fetch of delivered nodes as usage. Never raises.
 
@@ -666,6 +670,7 @@ def apply_lookup_credit(
                 _apply_query_feedback(
                     store,
                     [(event, tuple(targets), ()) for event, targets in anchor_work.values()],
+                    preparation=preparation,
                 )
             )
     except Exception:
@@ -820,6 +825,7 @@ def apply_explicit_marks(
     transport_session_id: str | None,
     agent: str | None = None,
     resolved: list[ExplicitMark] | None = None,
+    preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
 ) -> ExplicitMarks:
     """Record, and under ``credit`` apply, one call's explicit marks. Never raises.
 
@@ -917,6 +923,7 @@ def apply_explicit_marks(
                     for event, targets, confirmed in anchor_work.values()
                 ],
                 irrelevant_work=list(irrelevant_by_event.values()),
+                preparation=preparation,
             )
         )
     except Exception:
@@ -939,11 +946,97 @@ def _lookup_instant(value: str | datetime | Any) -> datetime | None:
     return parsed.replace(microsecond=0)
 
 
+def _feedback_queries(
+    store: MemoryStore, *, used: Sequence[Any] | None, irrelevant: Sequence[Any] | None,
+    transport_session_id: str | None, occurred_at: str | datetime | None,
+    lookup_ids: Sequence[str] | None, trace_content: str | None,
+    trace_context: Mapping[str, Any] | None,
+) -> dict[tuple[str, str], str]:
+    """Read possible anchor inputs; never reserve events, claims or targets."""
+    queries: dict[tuple[str, str], str] = {}
+
+    def add(event: RecallEvent, *, negative: bool = False) -> None:
+        query = event.query.strip() if negative else event.query
+        if query.strip():
+            scope = normalize_scope(event.scope)
+            queries.setdefault((scope, recall_fingerprint(query, scope)), query)
+
+    if ((_lookup_credit_policy() != "off" and lookup_ids is not None)
+            or (_explicit_feedback_policy() == "credit" and has_explicit_marks(used, irrelevant))):
+        try:
+            marks = resolve_explicit_marks(
+                store, lookup_ids if lookup_ids is not None else used,
+                None if lookup_ids is not None else irrelevant, transport_session_id, occurred_at,
+            )
+            for mark in marks:
+                if mark.accepted and mark.event is not None:
+                    if lookup_ids is not None and mark.node_id in store.credited_node_ids(mark.event.id):
+                        continue
+                    add(mark.event, negative=mark.mark == "irrelevant")
+        except Exception:
+            _LOG.warning("optional feedback input read failed", exc_info=True)
+
+    if trace_content is not None and _recall_credit_policy() != "all":
+        context = dict(trace_context or {})
+        scope = normalize_scope(str(context.get("scope") or store.config.default_scope))
+        for event in store.pending_recall_events(
+            scope=scope, context=context, limit=_DEFAULT_PENDING_RECALL_LIMIT,
+        ):
+            nodes = store.get_nodes(event.result_ids)
+            verdicts = ground_results(
+                trace_content, {node.id: node.content for node in nodes.values()},
+                min_containment=RECALL_CREDIT_MIN_CONTAINMENT,
+            ) if nodes else {}
+            if any(verdict.grounded for verdict in verdicts.values()):
+                add(event)
+    return queries
+
+
+@contextmanager
+def prepared_feedback(
+    store: MemoryStore, *, guard: Callable[[], AbstractContextManager[Any]],
+    used: Sequence[Any] | None = None, irrelevant: Sequence[Any] | None = None,
+    transport_session_id: str | None = None, occurred_at: str | datetime | None = None,
+    lookup_ids: Sequence[str] | None = None, trace_content: str | None = None,
+    trace_context: Mapping[str, Any] | None = None,
+) -> Iterator[Mapping[tuple[str, str], tuple[float, ...]]]:
+    """Enter authoritative feedback work with current inputs already prepared.
+
+    Only immutable query vectors cross the unlocked boundary. Every pass reads
+    current delivery, grounding and claim eligibility; callers resolve them
+    again while holding the yielded guard and their required transaction.
+    Existing anchors need no inference. One further preparation handles new
+    inputs or an anchor removed during encoding. Continued churn fails before
+    any operation mutation, leaving its feedback available for a caller retry.
+    Encoder failures remain optional and do not suppress existing anchors.
+    """
+    vectors: dict[tuple[str, str], tuple[float, ...]] = {}
+    for attempt in range(3):
+        with guard():
+            if store.connection.in_transaction:
+                raise RuntimeError("feedback preparation must precede the operation transaction")
+            queries = _feedback_queries(
+                store, used=used, irrelevant=irrelevant, transport_session_id=transport_session_id,
+                occurred_at=occurred_at, lookup_ids=lookup_ids,
+                trace_content=trace_content, trace_context=trace_context,
+            )
+            missing = {key: query for key, query in queries.items()
+                       if key not in vectors and store.find_query_anchor(*key) is None}
+            if not missing:
+                yield MappingProxyType(vectors)
+                return
+            if attempt == 2:
+                raise RuntimeError("feedback inputs changed during preparation; retry the operation")
+        prepared = _encode_missing_feedback_queries(store, missing)
+        vectors.update((key, tuple(prepared.get(key, ()))) for key in missing)
+
+
 def _apply_query_feedback(
     store: MemoryStore,
     work: Sequence[tuple[RecallEvent, tuple[str, ...], tuple[str, ...]]],
     *,
     irrelevant_work: Sequence[tuple[RecallEvent, Sequence[str]]] = (),
+    preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
 ) -> list[str]:
     """Share query preparation across independent feedback effects. Never raises.
 
@@ -981,7 +1074,8 @@ def _apply_query_feedback(
             keys.append(key)
             if key not in missing and store.find_query_anchor(*key) is None:
                 missing[key] = query
-        vectors = _encode_missing_feedback_queries(store, missing)
+        vectors = (_encode_missing_feedback_queries(store, missing)
+                   if preparation is None else preparation)
         for (event, targets, confirmed, irrelevant), query, key in zip(
             items, queries, keys, strict=True
         ):
@@ -992,7 +1086,7 @@ def _apply_query_feedback(
                 if existing is not None:
                     vector = existing.embedding
                 else:
-                    if key not in missing:
+                    if key not in missing and preparation is None:
                         # An anchor deleted during preparation needs normal
                         # creation, not a copy of its discarded stored vector.
                         missing[key] = query
