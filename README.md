@@ -100,9 +100,14 @@ independent client's exact lookup can finish while this query encoding waits.
 Retrieval and anchors reuse that vector; scope, source validity, ranking,
 feedback and delivery history are read under the lock after preparation.
 Direct `MemoryRecallService.memory_recall` callers can still pass query text.
-This preparation is per call, with no query cache. Pending/legacy indexing and
-feedback encoding can still run under the store lock; this is no guarantee of
-availability throughout recall or of a general production speedup.
+This preparation is per call, with no query cache. Feedback from lookup,
+explicit marks and grounded consumption uses an existing anchor's exact
+scope/fingerprint identity and stored vector without encoding the query.
+Only absent identities need query encoding, batched within each feedback
+operation; a failed missing-anchor batch leaves existing-anchor effects
+available. Pending/legacy indexing and first-anchor encoding can still run
+under the store lock; this is no guarantee of availability throughout recall
+or of a general production speedup.
 
 Exact-id lookup preserves the complete original content. `context_key` adds
 one original context field; `view="full"` returns all stored node fields plus

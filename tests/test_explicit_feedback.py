@@ -582,7 +582,7 @@ def _count_query_vectors(store: MemoryStore) -> list[list[str]]:
 
 
 @pytest.mark.parametrize("lookup_first", [False, True])
-def test_mixed_feedback_prepares_query_once_and_preserves_credit_and_cancellation(
+def test_mixed_feedback_reuses_anchor_and_preserves_credit_and_cancellation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lookup_first: bool
 ) -> None:
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
@@ -599,7 +599,7 @@ def test_mixed_feedback_prepares_query_once_and_preserves_credit_and_cancellatio
     result = _apply_marks(store, [used], [irrelevant])
 
     assert result.summary() == {"accepted": 2, "dropped": 0, "by_reason": {}}
-    assert calls == [[QUERY]]
+    assert calls == []
     assert result.credited == ([] if lookup_first else [(event_id, used)])
     anchor, = store.list_query_anchors(scope=SCOPE)
     assert anchor.id == anchor_before.id
@@ -623,7 +623,7 @@ def test_mixed_feedback_prepares_query_once_and_preserves_credit_and_cancellatio
     assert store.credited_node_ids(event_id) == {used}
 
     _apply_marks(store, [used], [])
-    assert calls == [[QUERY], [QUERY]]
+    assert calls == []
     assert _usefulness(store, nodes) == after
     assert store.list_query_anchors(scope=SCOPE)[0].reinforcement_count == anchor.reinforcement_count
     assert store.list_query_anchor_edges(anchor_id=anchor.id)[0].hits == 1
@@ -683,7 +683,7 @@ def test_optional_query_write_failure_preserves_independent_effects(
 
     assert result.summary()["accepted"] == 2
     assert result.credited == [(event_id, used)]
-    assert calls == [[QUERY]]
+    assert calls == []
     anchor, = store.list_query_anchors(scope=SCOPE)
     assert anchor.id == anchor_before.id
     assert anchor.reinforcement_count == anchor_before.reinforcement_count + 1
@@ -779,7 +779,7 @@ def test_zero_weight_credit_still_cancels_and_records_negatives_once_prepared(
 
     result = _apply_marks(store, [nodes[0]], [nodes[1]])
 
-    assert calls == [[QUERY]]
+    assert calls == []
     assert result.credited == [(event_id, nodes[0])] and result.anchor_ids == []
     assert (_usefulness(store, nodes), _weights(store), store.list_query_anchors(scope=SCOPE)) == before
     rows = {row["node_id"]: row for row in list_query_irrelevance(store)}

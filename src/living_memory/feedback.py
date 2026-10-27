@@ -973,15 +973,14 @@ def _apply_query_feedback(
             event.query if targets or confirmed else event.query.strip()
             for event, targets, confirmed, _irrelevant in items
         ]
-        keys = [
-            (scope, recall_fingerprint(query, scope))
-            for (event, *_), query in zip(items, queries, strict=True)
-            for scope in [normalize_scope(event.scope)]
-        ]
-        missing = {
-            key: query for key, query in zip(keys, queries, strict=True)
-            if store.find_query_anchor(*key) is None
-        }
+        keys: list[tuple[str, str]] = []
+        missing: dict[tuple[str, str], str] = {}
+        for (event, *_), query in zip(items, queries, strict=True):
+            scope = normalize_scope(event.scope)
+            key = (scope, recall_fingerprint(query, scope))
+            keys.append(key)
+            if key not in missing and store.find_query_anchor(*key) is None:
+                missing[key] = query
         vectors = _encode_missing_feedback_queries(store, missing)
         for (event, targets, confirmed, irrelevant), query, key in zip(
             items, queries, keys, strict=True

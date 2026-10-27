@@ -15,7 +15,7 @@ from test_recall_query_preparation import CONTENT, QUERY, SCOPE, VECTOR, call, e
 @pytest.fixture(autouse=True)
 def policies(monkeypatch):
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
-    monkeypatch.setenv("LM_LOOKUP_CREDIT_POLICY", "on")
+    monkeypatch.setenv("LM_LOOKUP_CREDIT_POLICY", "delivered")
     monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "grounded")
 
 
@@ -49,7 +49,7 @@ def test_native_feedback_encodes_only_missing_identity(runtime, route, existing)
             assert len(r.store.list_query_anchors(include_decayed=True)) == 1
             if existing:
                 assert anchor.id == stored.id and anchor.query == stored.query
-                assert anchor.embedding == [0.0, 1.0]
+                assert anchor.embedding == (0.0, 1.0)
                 negative, = list_query_irrelevance(r.store)
                 assert negative["weight"] == (0.5 if route == "lookup" else 0.0)
             edge, = r.store.list_query_anchor_edges(anchor_id=anchor.id)
