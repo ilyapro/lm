@@ -280,3 +280,219 @@ def test_missing_anchor_required_failure_rolls_back_knowledge_and_all_feedback(r
             assert r.batches == [(QUERY,)]
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("change", ["create", "replace", "delete"])
+def test_feedback_uses_current_anchor_identity_after_encoding(runtime, change):
+    r = runtime
+    other_query = "other pending feedback query"
+    with r.guard:
+        other = r.store.create_node(level="concept", content="Other pending rule.",
+                                    context={"scope": SCOPE}, embedding=VECTOR)
+        existing = None if change == "create" else resolve_query_anchor(r.store, QUERY, SCOPE, [0.0, 1.0])
+
+    async def scenario():
+        async with Client(r.mcp) as owner, Client(r.mcp) as reader:
+            first = await recall(owner)
+            # A second delivered id forces missing preparation even when the
+            # first query already has an authoritative anchor.
+            with r.guard:
+                event = r.store.get_recall_event(first["recall_event_id"])
+                second = r.store.record_recall_event(
+                    query=other_query, scope=SCOPE, ambient_context={"transport_session_id": event.transport_session_id},
+                    results=[{"node_id": other.id, "vector_score": 1.0}],
+                )
+            r.feedback_hold = True
+            operation = asyncio.create_task(call(owner, "memory_lookup", node_ids=[r.node.id, other.id]))
+            created = None
+            try:
+                assert await asyncio.to_thread(r.entered.wait, 4)
+                with MemoryStore(r.store.db_path) as writer:
+                    if existing is not None:
+                        with writer.transaction():
+                            writer.connection.execute("DELETE FROM query_anchors WHERE id = ?", (existing.id,))
+                    if change != "delete":
+                        created = resolve_query_anchor(writer, QUERY, SCOPE, [0.0, 0.0, 1.0])
+                await asyncio.wait_for(call(reader, "memory_lookup", node_id=r.node.id), 3)
+            finally:
+                r.release.set()
+            await asyncio.wait_for(operation, 5)
+            with r.guard:
+                final = anchor(r.store)
+                if created is not None:
+                    assert final.id == created.id and final.embedding == created.embedding
+                else:
+                    assert final.id != existing.id and final.embedding == tuple(VECTOR)
+                assert r.store.credited_node_ids(first["recall_event_id"]) == {r.node.id}
+                assert r.store.credited_node_ids(second.id) == {other.id}
+                assert r.store.list_query_anchor_edges(anchor_id=final.id)[0].hits == 1
+            assert r.batches == (
+                [(other_query, QUERY)] if change == "create" else
+                [(other_query,), (QUERY,)] if change == "delete" else [(other_query,)]
+            )
+
+    asyncio.run(scenario())
+
+
+def test_new_delivery_during_feedback_preparation_owns_credit_event_map_and_delivery(runtime, monkeypatch):
+    r = runtime
+    monkeypatch.setenv("LM_RECALL_MAP", "1")
+    with r.guard:
+        for i in range(4):
+            r.store.create_node(level="concept", content=f"Cobalt certificate logistics note {i}.",
+                                context={"scope": SCOPE, "topic": "certificate logistics"},
+                                embedding=[0.6, 0.8, 0.0])
+
+    async def scenario():
+        async with Client(r.mcp) as owner, Client(r.mcp) as peer:
+            prior = await recall(owner, view="full")
+            r.feedback_hold = True
+            operation = asyncio.create_task(recall(owner, query="next certificate request", used=[r.node.id], view="full"))
+            try:
+                assert await asyncio.to_thread(r.entered.wait, 4)
+                newest = await asyncio.wait_for(recall(owner, query="new delivery query", view="full"), 3)
+                foreign = await asyncio.wait_for(recall(peer, query="foreign delivery query", view="full"), 3)
+                assert r.service.last_recall_event_id == foreign["recall_event_id"]
+                assert not operation.done()
+            finally:
+                r.release.set()
+            response = await asyncio.wait_for(operation, 5)
+            assert response["recall_event_id"] not in (prior["recall_event_id"], newest["recall_event_id"], foreign["recall_event_id"])
+            assert response["results"][0]["delivery"] == "session_duplicate"
+            assert response["feedback_marks"] == {"accepted": 1, "dropped": 0, "by_reason": {}}
+            assert r.batches == [(QUERY,), ("new delivery query",)]
+            with r.guard:
+                event = r.store.get_recall_event(response["recall_event_id"])
+                own = r.store.get_recall_event(newest["recall_event_id"])
+                peer_event = r.store.get_recall_event(foreign["recall_event_id"])
+                assert event.transport_session_id == own.transport_session_id != peer_event.transport_session_id
+                assert event.query == response["query"]
+                assert event.result_ids == [entry(response)["id"]]
+                assert event.results[0]["delivery"]["kind"] == "session_duplicate"
+                assert r.store.credited_node_ids(prior["recall_event_id"]) == set()
+                assert r.store.credited_node_ids(own.id) == {r.node.id}
+                assert r.store.credited_node_ids(peer_event.id) == set()
+                mark, = r.store.connection.execute("SELECT * FROM recall_feedback_marks").fetchall()
+                assert mark["source_id"] == event.id and mark["recall_event_id"] == own.id
+                assert mark["transport_session_id"] == event.transport_session_id
+                stored_map = json.loads(r.store.connection.execute(
+                    "SELECT recall_map FROM recall_events WHERE id = ?", (event.id,),
+                ).fetchone()[0])
+                assert response["recall_map"] == stored_map
+                assert anchor(r.store) is None
+                assert anchor(r.store, "new delivery query") is not None
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("change", ["edit", "delete", "decay", "scope", "correction"])
+def test_feedback_rechecks_current_target_and_grounding(runtime, change):
+    r = runtime
+
+    async def scenario():
+        async with Client(r.mcp) as owner, Client(r.mcp) as reader:
+            prior = await recall(owner)
+            r.feedback_hold = True
+            operation = asyncio.create_task(consume(owner, "implicit", r.node.id))
+            replacement = None
+            try:
+                assert await asyncio.to_thread(r.entered.wait, 4)
+                with MemoryStore(r.store.db_path) as writer:
+                    if change == "edit":
+                        writer.update_node(r.node.id, content="The amber pond requires drainage.", embedding=[0.0, 1.0, 0.0])
+                    elif change == "delete":
+                        with writer.transaction():
+                            writer.delete_node_chunks(r.node.id)
+                            writer.connection.execute("DELETE FROM nodes WHERE id = ?", (r.node.id,))
+                    elif change == "decay":
+                        await asyncio.wait_for(call(reader, "memory_forget", id=r.node.id), 3)
+                    elif change == "scope":
+                        writer.update_node(r.node.id, context={"scope": "project:moved"})
+                    else:
+                        replacement = writer.create_node(level="concept", content="Use the renewed cobalt certificate.",
+                                                         context={"scope": SCOPE}, embedding=VECTOR)
+                        writer.create_connection(replacement.id, r.node.id, "supersedes")
+                await asyncio.wait_for(call(reader, "memory_lookup", node_id=r.node.id), 3)
+            finally:
+                r.release.set()
+            response = await asyncio.wait_for(operation, 5)
+            with r.guard:
+                event = r.store.get_recall_event(prior["recall_event_id"])
+                assert event.feedback_trace_id == response["node"]["id"]
+                current = anchor(r.store)
+                if change in ("edit", "delete"):
+                    assert current is None and r.store.credited_node_ids(event.id) == set()
+                else:
+                    assert current.scope == SCOPE
+                    edges = r.store.list_query_anchor_edges(anchor_id=current.id)
+                    expected = [] if change == "decay" else [replacement.id if replacement else r.node.id]
+                    assert [edge.target_id for edge in edges] == expected
+                    assert all(edge.hits == 1 for edge in edges)
+                assert r.batches == [(QUERY,)]
+
+    asyncio.run(scenario())
+
+
+def test_concurrent_negative_mark_survives_lookup_credit(runtime):
+    r = runtime
+
+    async def scenario():
+        async with Client(r.mcp) as owner, Client(r.mcp) as reader:
+            prior = await recall(owner)
+            r.feedback_hold = True
+            operation = asyncio.create_task(consume(owner, "lookup", r.node.id))
+            try:
+                assert await asyncio.to_thread(r.entered.wait, 4)
+                with r.guard:
+                    resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
+                marked = await asyncio.wait_for(consume(owner, "negative", r.node.id), 3)
+                assert marked["feedback_marks"]["accepted"] == 1
+                await asyncio.wait_for(call(reader, "memory_lookup", node_id=r.node.id), 3)
+            finally:
+                r.release.set()
+            await asyncio.wait_for(operation, 5)
+            with r.guard:
+                # The lookup re-resolves the newest same-second delivery and
+                # must not erase the independently accepted negative signal.
+                rows = list_query_irrelevance(r.store)
+                assert len(rows) == 1 and rows[0]["weight"] == 0.5
+                assert rows[0]["recall_event_id"] == prior["recall_event_id"]
+                assert sum(len(r.store.credited_node_ids(event.id)) for event in r.store.list_recall_events()) == 1
+
+    asyncio.run(scenario())
+
+
+def test_continually_changing_feedback_fails_before_mutation_without_unbounded_retry(runtime, monkeypatch):
+    r = runtime
+    queries = []
+    transport = None
+
+    def changing_encoder(store):
+        def run(texts):
+            assert not r.guard._is_owned() and not store.connection.in_transaction
+            queries.append(tuple(texts))
+            with MemoryStore(store.db_path) as writer:
+                writer.record_recall_event(query=f"concurrent query {len(queries)}", scope=SCOPE,
+                                           ambient_context={"transport_session_id": transport},
+                                           results=[{"node_id": r.node.id, "vector_score": 1.0}])
+            return [VECTOR for _ in texts]
+        return run
+
+    async def scenario():
+        nonlocal transport
+        async with Client(r.mcp) as owner:
+            prior = await recall(owner)
+            with r.guard:
+                transport = r.store.get_recall_event(prior["recall_event_id"]).transport_session_id
+            monkeypatch.setattr(feedback, "_anchor_embedder", changing_encoder)
+            with pytest.raises(Exception, match="feedback inputs changed during preparation; retry"):
+                await consume(owner, "explicit", r.node.id)
+            assert queries == [(QUERY,), ("concurrent query 1",)]
+            with r.guard:
+                assert r.store.connection.execute("SELECT count(*) FROM nodes").fetchone()[0] == 1
+                assert r.store.connection.execute("SELECT count(*) FROM recall_feedback_marks").fetchone()[0] == 0
+                assert all(not r.store.credited_node_ids(event.id) and not event.feedback_applied
+                           for event in r.store.list_recall_events())
+                assert r.store.count_query_anchors() == 0
+
+    asyncio.run(scenario())
