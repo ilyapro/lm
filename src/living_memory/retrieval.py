@@ -208,6 +208,7 @@ import logging
 import os
 from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, replace
 from math import log2, sqrt
 from typing import Any, Callable
@@ -579,7 +580,7 @@ class MemoryRecallService:
         self._chunk_gathers: dict[int, _ChunkGatherPlan] = {}
         self._anchor_vectors: _AnchorVectorCache | None = None
         self._store_embedder_shared = False
-        self._failed_legacy_chunks: set[str] = set()
+        self._unavailable_legacy_chunks: set[str] = set()
 
     def prepare_query(self, query: str, *, max_results: int = 10) -> _PreparedQuery:
         """Encode immutable input through the shared encoder, without store access."""
@@ -741,38 +742,56 @@ class MemoryRecallService:
             for result in limited
         ]
 
-    def refresh_legacy_passages(self, snippets: Sequence[RecallResult]) -> None:
+    def refresh_legacy_passages(
+        self, snippets: Sequence[RecallResult], *,
+        guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+    ) -> None:
         """Prepare at most one delivered snippet for a future semantic recall.
 
         The caller supplies actual snippet bearers after delivery shaping. The
         scored generation remains this call's only evidence; replacing its index
         cannot give that old score an address in the replacement generation.
+        The shared-store guard protects selection and storage reads/writes, while
+        the selected source's tokenization and encoding run outside it.
         """
         refresh = getattr(self.store, "refresh_legacy_chunks", None)
         if not callable(refresh):
             return
-        for result in snippets:
-            if (result.semantic_passage is not None or not result.scored_chunk_id
-                    or result.scored_chunk_id in self._failed_legacy_chunks
-                    or result.withheld or result.node.level == "schema"
-                    or len(result.node.content) > LEGACY_PASSAGE_MAX_CHARS):
-                continue
-            try:
-                self._share_embedder_with_store()
-                refresh(
+        with guard():
+            for result in snippets:
+                if (result.semantic_passage is not None or not result.scored_chunk_id
+                        or result.scored_chunk_id in self._unavailable_legacy_chunks
+                        or result.withheld or result.node.level == "schema"
+                        or len(result.node.content) > LEGACY_PASSAGE_MAX_CHARS):
+                    continue
+                node_id, content, scored_chunk_id = (
                     result.node_id, result.node.content, result.scored_chunk_id,
-                    max_chars=LEGACY_PASSAGE_MAX_CHARS,
-                    max_chunks=LEGACY_PASSAGE_MAX_CHUNKS,
                 )
-            except Exception:
-                # Immutable scored rows bound repeated failure work without
-                # disabling independent sources. Replacement rows can retry;
-                # an unchanged eligible index has at most max_chunks winners.
-                self._failed_legacy_chunks.add(result.scored_chunk_id)
-                logging.getLogger(__name__).warning(
-                    "could not refresh selected legacy chunk index", exc_info=True,
-                )
-            return
+                # Reserve the same immutable row while preparing it. A failure
+                # retains the reservation; successful/no-op attempts release it.
+                self._unavailable_legacy_chunks.add(scored_chunk_id)
+                break
+            else:
+                return
+        try:
+            with guard():
+                self._share_embedder_with_store()
+            refresh(
+                node_id, content, scored_chunk_id,
+                max_chars=LEGACY_PASSAGE_MAX_CHARS,
+                max_chunks=LEGACY_PASSAGE_MAX_CHUNKS,
+                guard=guard,
+            )
+        except Exception:
+            # Immutable scored rows bound repeated failure work without
+            # disabling independent sources. Replacement rows can retry;
+            # an unchanged eligible index has at most max_chunks winners.
+            logging.getLogger(__name__).warning(
+                "could not refresh selected legacy chunk index", exc_info=True,
+            )
+        else:
+            with guard():
+                self._unavailable_legacy_chunks.discard(scored_chunk_id)
 
     def memory_connect(
         self,

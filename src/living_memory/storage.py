@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from array import array
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import RLock
@@ -4041,44 +4041,50 @@ class MemoryStore:
     def refresh_legacy_chunks(
         self, node_id: str, content: str, scored_chunk_id: str, *,
         max_chars: int, max_chunks: int,
+        guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
     ) -> bool:
         """Conditionally replace one selected legacy index, leaving its node alone.
 
         Bound both source tokenization and encoding before doing model work.
-        Encode outside the write transaction, then compare the source and immutable
-        scored row again under the writer lock. A concurrent edit or replacement
-        wins; its generation must never be overwritten by this delayed read.
+        Read and apply under the caller's store guard; tokenize and encode only
+        immutable text outside it and the write transaction. Recheck the source,
+        scope and immutable scored row under the writer lock, so a concurrent
+        edit or replacement wins. Direct callers retain their own synchronization.
         """
-        if (len(content) > max_chars or max_chunks <= 0
-                or not self._chunk_table_present()
-                or self._conn.execute("PRAGMA query_only").fetchone()[0]):
+        if len(content) > max_chars or max_chunks <= 0:
             return False
         fingerprint = _content_fingerprint(content)
 
-        def still_legacy() -> bool:
-            return self._conn.execute(
-                f"""SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
+        def legacy_scope() -> str | None:
+            row = self._conn.execute(
+                f"""SELECT n.scope FROM {CHUNK_EMBEDDING_TABLE} c
                 JOIN nodes n ON n.id = c.node_id
                 WHERE c.id = ? AND c.node_id = ? AND n.decayed = 0
                   AND n.content_fingerprint = ? AND c.content_fingerprint = ?
                   AND n.content = ? AND (c.char_start IS NULL OR c.char_end IS NULL)""",
                 (scored_chunk_id, node_id, fingerprint, fingerprint, content),
-            ).fetchone() is not None
+            ).fetchone()
+            return row["scope"] if row is not None else None
 
-        if not still_legacy():
-            return False
-        # Inspect only enough row metadata to reject an oversized old index.
-        rows = self._conn.execute(
-            f"SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ? LIMIT ?",
-            (node_id, max_chunks + 1),
-        ).fetchall()
-        if len(rows) > max_chunks:
-            return False
+        with guard():
+            if (not self._chunk_table_present()
+                    or self._conn.execute("PRAGMA query_only").fetchone()[0]):
+                return False
+            scope = legacy_scope()
+            if scope is None:
+                return False
+            # Inspect only enough row metadata to reject an oversized old index.
+            rows = self._conn.execute(
+                f"SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ? LIMIT ?",
+                (node_id, max_chunks + 1),
+            ).fetchall()
+            if len(rows) > max_chunks:
+                return False
         pairs = self._chunk_embeddings_for(content, None, max_chunks=max_chunks)
         if not pairs:
             return False
-        with self.transaction(immediate=True):
-            if not still_legacy():
+        with guard(), self.transaction(immediate=True):
+            if legacy_scope() != scope:
                 return False
             self._replace_node_chunks(node_id, pairs, fingerprint)
         return True

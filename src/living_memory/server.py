@@ -1334,10 +1334,6 @@ def _register_tools(
                 stats_compaction=stats_compaction_enabled_from_env(),
                 sparse_entries=sparse_entries_enabled_from_env(),
             )
-            recall_service.refresh_legacy_passages([
-                result for result, entry in zip(results, shaped, strict=True)
-                if entry["delivery"] == DELIVERY_SNIPPET
-            ])
             response: dict[str, Any] = {
                 "query": query,
                 "scope": scope,
@@ -1400,7 +1396,13 @@ def _register_tools(
                         "could not record recall delivery for event %s",
                         recall_service.last_recall_event_id, exc_info=True,
                     )
-            return response
+        # Finish this call's event, feedback, map and delivery while last_* still
+        # belongs to it. Optional repair may wait without holding up store reads.
+        recall_service.refresh_legacy_passages([
+            result for result, entry in zip(results, shaped, strict=True)
+            if entry["delivery"] == DELIVERY_SNIPPET
+        ], guard=lambda: runtime_lock)
+        return response
 
     # memory_attest is NOT registered by default (expose_attest=False). Field
     # data (2026-08-20, both hosts): agents folded it into their closure
