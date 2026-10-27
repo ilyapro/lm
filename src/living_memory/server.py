@@ -1491,22 +1491,31 @@ def _register_tools(
         scope (including decayed history). These fields accompany both views.
         """
 
-        with runtime_lock:
-            normalized_scope = normalize_scope(scope) if scope is not None else None
-            filters = {
-                key: value
-                for key, value in {
-                    "task_pattern": task_pattern,
-                    "procedure_id": procedure_id,
-                    "lesson_kind": lesson_kind,
-                }.items()
-                if value is not None
-            }
-            requested_ids: list[str] = []
-            for candidate in [node_id, *(node_ids or [])]:
-                if candidate and candidate not in requested_ids:
-                    requested_ids.append(candidate)
+        normalized_scope = normalize_scope(scope) if scope is not None else None
+        filters = {
+            key: value
+            for key, value in {
+                "task_pattern": task_pattern,
+                "procedure_id": procedure_id,
+                "lesson_kind": lesson_kind,
+            }.items()
+            if value is not None
+        }
+        requested_ids: list[str] = []
+        for candidate in [node_id, *(node_ids or [])]:
+            if candidate and candidate not in requested_ids:
+                requested_ids.append(candidate)
 
+        identity = _with_transport_identity(None) or {}
+        transport_session_id = identity.get(_TRANSPORT_SESSION_KEY)
+        occurred_at = storage_module._utc_now()
+        valid_fetch = (requested_ids and not filters and view in ("knowledge", "full")
+                       and (context_key is None or (context_key and view == "knowledge")))
+        with prepared_feedback(
+            store, guard=lambda: runtime_lock,
+            lookup_ids=requested_ids if valid_fetch else None,
+            transport_session_id=transport_session_id, occurred_at=occurred_at,
+        ) as feedback_preparation:
             if requested_ids:
                 if filters:
                     return {
@@ -1590,9 +1599,6 @@ def _register_tools(
                 # the assembled read response intact and skips credit. Its
                 # mutation outcome may be unknown, so it is never retried here.
                 # A failed credit is logged inside apply_lookup_credit.
-                identity = _with_transport_identity(None) or {}
-                transport_session_id = identity.get(_TRANSPORT_SESSION_KEY)
-                occurred_at = storage_module._utc_now()
                 try:
                     lookup_event_id = store.record_lookup_event(
                         requested_ids,
@@ -1613,6 +1619,7 @@ def _register_tools(
                         requested_ids,
                         transport_session_id,
                         occurred_at,
+                        preparation=feedback_preparation,
                     )
                 return response
 
