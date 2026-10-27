@@ -9,7 +9,7 @@ from living_memory.chunking import chunk_text
 from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
-from test_mcp_server import FakeMCP
+from test_lookup import FakeMCP
 
 SCOPE = "project:legacy-passage"
 QUERY = "почему закрыт шлюз"
