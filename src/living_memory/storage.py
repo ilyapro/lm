@@ -4067,7 +4067,9 @@ class MemoryStore:
             before = chunk_ids()
             source = identity(current)
             content = current.content
-            representative = current.materializer in ("cluster", "cross-scope-promotion") and current.embedding
+            representative = bool(
+                current.materializer in ("cluster", "cross-scope-promotion") and current.embedding
+            )
 
         embedding = None if representative else tuple(embed(content))
         pairs = tuple((chunk, tuple(vector)) for chunk, vector in

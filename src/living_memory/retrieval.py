@@ -1703,15 +1703,10 @@ class MemoryRecallService:
         self.store.refresh_pending_chunks(node, self.embedder.embed, guard=guard)
 
     def _share_embedder_with_store(self) -> None:
-        """Lend the store this service's encoder for the chunks it writes.
+        """Share one encoder for queries, source chunks and feedback anchors.
 
-        ``update_node(embedding=...)`` chunks the node in the same
-        transaction, and content longer than one window needs every window
-        encoded -- which the store would otherwise do by loading a *second*
-        copy of the same model, doubling both load time and resident memory
-        for no gain. Done here rather than in ``__init__`` because this is the
-        first moment a real write is about to happen: the ranking-only store
-        face that ``replay`` passes in has no such method and never gets here.
+        Multi-window sources need every window encoded in the query's vector
+        space. The ranking-only replay store has no encoder setter.
         """
 
         if self._store_embedder_shared:

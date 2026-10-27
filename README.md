@@ -103,11 +103,23 @@ Direct `MemoryRecallService.memory_recall` callers can still pass query text.
 This preparation is per call, with no query cache. Feedback from lookup,
 explicit marks and grounded consumption uses an existing anchor's exact
 scope/fingerprint identity and stored vector without encoding the query.
-Only absent identities need query encoding, batched within each feedback
-operation; a failed missing-anchor batch leaves existing-anchor effects
-available. Pending indexing and first-anchor encoding can still run
-under the store lock; this is no guarantee of availability throughout recall
-or of a general production speedup.
+Absent identities are prepared outside the store lock and before the required
+remember/teach transaction. The guarded operation reads current deliveries,
+grounding, claims and anchor identities again, keeping explicit marks before
+implicit closure. One further preparation can cover concurrent new inputs or
+a deleted anchor; continuing changes reject the operation before its writes,
+without consuming feedback. A failed encoder batch leaves existing-anchor
+effects available. Query vectors live only within the operation.
+
+Pending indexing selects at most 16 oldest eligible sources before recall
+selection. Whole-source and complete chunk vectors are prepared without the
+store lock or a SQLite transaction. The writer rechecks content, scope,
+liveness, representative and index identity before applying each complete
+replacement. Concurrent changes win; independent failed repairs stay pending
+while other selected sources and current knowledge remain available. Ranking,
+response shaping, event/map/delivery attribution and shared-connection SQL stay
+under the store guard. These boundaries establish independent read availability
+during preparation, not a general production latency or speedup guarantee.
 
 Exact-id lookup preserves the complete original content. `context_key` adds
 one original context field; `view="full"` returns all stored node fields plus
