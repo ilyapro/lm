@@ -22,6 +22,23 @@ from living_memory.storage import (
 )
 
 
+def test_node_scopes_read_authoritative_facts_in_batches_including_decayed(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        active = store.append_trace("Inspect the hatch.")
+        decayed = store.append_trace("Release pressure first.")
+        store.soft_delete_node(decayed.id)
+        with store.transaction():
+            store.connection.execute(
+                "UPDATE nodes SET scope = ?, content = CAST(x'ff' AS TEXT) WHERE id = ?",
+                ("project:hatch", decayed.id),
+            )
+        ids = [f"missing-{i}" for i in range(1100)] + [active.id, decayed.id, active.id]
+        assert store.get_node_scopes(iter(ids)) == {active.id: "global", decayed.id: "project:hatch"}
+        assert store.get_node_scopes([]) == {}
+        with pytest.raises(sqlite3.OperationalError, match="Could not decode to UTF-8"):
+            store.get_node(decayed.id)
+
+
 def test_list_nodes_filters_source_citations_with_scope_level_and_pagination(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         source = store.append_trace("Harbor inspection evidence.")

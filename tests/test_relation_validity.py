@@ -7,6 +7,7 @@ import pytest
 
 pytest.importorskip("fastmcp")
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from living_memory.server import create_mcp_server
 from test_transport_identity import _structured
@@ -43,6 +44,65 @@ async def read(client, path, node_id, *, scope=SCOPE):
         entry for entry in response["results"]
         if entry.get("node", entry)["id"] == node_id
     ), response
+
+
+@pytest.mark.parametrize("selectors", [{}, {"view": "full"}, {"context_key": "detail"}])
+@pytest.mark.parametrize("correction_scope", [SCOPE, "project:foreign-validity"])
+def test_exact_lookup_needs_correction_scope_but_not_body(tmp_path, selectors, correction_scope):
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    store = mcp.memory_store
+    original = store.create_node(
+        level="concept", content=ORIGINAL, context={"scope": SCOPE, "detail": "source context"},
+    )
+    correction = store.create_node(
+        level="concept", content="Release pressure first.", context={"scope": correction_scope},
+    )
+    store.create_connection(correction.id, original.id, "supersedes")
+
+    def malformed(node_id, column):
+        assert column in {"content", "scope"}
+        with store.transaction():
+            store.connection.execute(
+                f"UPDATE nodes SET {column} = CAST(x'ff' AS TEXT) WHERE id = ?", (node_id,),
+            )
+
+    def restore(node_id, column, value):
+        assert column in {"content", "scope"}
+        with store.transaction():
+            store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (value, node_id))
+
+    async def scenario():
+        async with Client(mcp) as client:
+            async def lookup(node_id):
+                return _structured(await client.call_tool("memory_lookup", {
+                    "node_id": node_id, "scope": SCOPE, **selectors,
+                }))
+
+            healthy = await lookup(original.id)
+            entry = healthy["results"][0]
+            assert entry["content"] == ORIGINAL
+            assert entry["superseded"] is True
+            assert entry["superseded_by"] == ([correction.id] if correction_scope == SCOPE else [])
+            malformed(correction.id, "content")
+            assert await lookup(original.id) == healthy
+            with pytest.raises(ToolError, match="Could not decode to UTF-8 column 'content'"):
+                await lookup(correction.id)
+            restore(correction.id, "content", correction.content)
+            malformed(correction.id, "scope")
+            with pytest.raises(ToolError, match="Could not decode to UTF-8 column 'scope'"):
+                await lookup(original.id)
+            restore(correction.id, "scope", correction_scope)
+            malformed(original.id, "content")
+            with pytest.raises(ToolError, match="Could not decode to UTF-8 column 'content'"):
+                await lookup(original.id)
+            restore(original.id, "content", ORIGINAL)
+            assert await lookup(original.id) == healthy
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
 
 
 @pytest.mark.parametrize("path", [
