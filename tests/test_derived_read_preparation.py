@@ -327,7 +327,7 @@ def test_feedback_uses_current_anchor_identity_after_encoding(runtime, change):
                 assert r.store.credited_node_ids(second.id) == {other.id}
                 assert r.store.list_query_anchor_edges(anchor_id=final.id)[0].hits == 1
             assert r.batches == (
-                [(other_query, QUERY)] if change == "create" else
+                [(QUERY, other_query)] if change == "create" else
                 [(other_query,), (QUERY,)] if change == "delete" else [(other_query,)]
             )
 
@@ -456,8 +456,77 @@ def test_concurrent_negative_mark_survives_lookup_credit(runtime):
                 # must not erase the independently accepted negative signal.
                 rows = list_query_irrelevance(r.store)
                 assert len(rows) == 1 and rows[0]["weight"] == 0.5
-                assert rows[0]["recall_event_id"] == prior["recall_event_id"]
+                assert rows[0]["last_event_id"] == prior["recall_event_id"]
                 assert sum(len(r.store.credited_node_ids(event.id)) for event in r.store.list_recall_events()) == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("fault", ["raise", "incomplete"])
+def test_pending_encoder_failure_keeps_other_selected_and_current_indexes(runtime, fault):
+    r = runtime
+    with r.guard:
+        failing = r.store.create_node(level="concept", content="Failed pending source. " * 150,
+                                      context={"scope": SCOPE})
+        later = r.store.append_trace("Independent later source.", {"scope": SCOPE})
+        before = r.store.list_node_chunks(r.node.id)
+
+    def encode(texts):
+        assert not r.guard._is_owned() and not r.store.connection.in_transaction
+        if fault == "raise":
+            raise RuntimeError("pending model failure")
+        return [VECTOR, *([] for _ in texts[1:])]
+
+    r.store.set_chunk_embedder(encode)
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            response = await recall(client)
+            assert entry(response)["id"] == r.node.id
+            with r.guard:
+                assert r.store.list_node_chunks(r.node.id) == before
+                assert r.store.list_node_chunks(failing.id) == []
+                assert r.store.node_chunks_are_current(later.id)
+                assert not r.store.connection.in_transaction
+
+    asyncio.run(scenario())
+
+
+def test_failed_missing_anchor_batch_keeps_current_existing_effects(runtime, monkeypatch):
+    r = runtime
+    with r.guard:
+        existing = resolve_query_anchor(r.store, QUERY, SCOPE, VECTOR)
+        other = r.store.create_node(level="concept", content="Other certificate rule.",
+                                    context={"scope": SCOPE}, embedding=VECTOR)
+
+    def encoder(store):
+        def fail(texts):
+            assert not r.guard._is_owned() and not store.connection.in_transaction
+            r.batches.append(tuple(texts))
+            raise RuntimeError("missing anchor model failure")
+        return fail
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            prior = await recall(client)
+            with r.guard:
+                event = r.store.get_recall_event(prior["recall_event_id"])
+                other_event = r.store.record_recall_event(
+                    query="missing query", scope=SCOPE,
+                    ambient_context={"transport_session_id": event.transport_session_id},
+                    results=[{"node_id": other.id, "vector_score": 1.0}],
+                )
+            monkeypatch.setattr(feedback, "_anchor_embedder", encoder)
+            await call(client, "memory_remember", content=CONTENT + " " + other.content,
+                       context={"scope": SCOPE}, used=[r.node.id, other.id])
+            assert r.batches == [("missing query",)]
+            with r.guard:
+                assert anchor(r.store).id == existing.id
+                assert anchor(r.store).reinforcement_count == 1
+                assert anchor(r.store, "missing query") is None
+                assert r.store.list_query_anchor_edges(anchor_id=existing.id)[0].hits == 1
+                assert r.store.credited_node_ids(prior["recall_event_id"]) == {r.node.id}
+                assert r.store.credited_node_ids(other_event.id) == {other.id}
 
     asyncio.run(scenario())
 
