@@ -70,8 +70,9 @@ def pending_source(r, clustered):
             if clustered else None,
         )
         if clustered:
-            r.store.connection.execute("UPDATE nodes SET embedding = ? WHERE id = ?",
-                                       (json.dumps([0.0, 1.0, 0.0]), node.id))
+            with r.store.transaction():
+                r.store.connection.execute("UPDATE nodes SET embedding = ? WHERE id = ?",
+                                           (json.dumps([0.0, 1.0, 0.0]), node.id))
         node = r.store.get_node(node.id)
     encode = r.store._resolve_chunk_embedder()
 
@@ -146,8 +147,9 @@ def test_pending_revalidation_preserves_current_source_and_index(runtime, cluste
                     elif change == "index":
                         writer.replace_node_chunks(node.id, [(c, [0.0, 1.0, 0.0]) for c in chunk_text(node.content)])
                     else:
-                        writer.connection.execute("UPDATE nodes SET embedding = ? WHERE id = ?",
-                                                  (json.dumps([0.0, 0.0, 1.0]), node.id))
+                        with writer.transaction():
+                            writer.connection.execute("UPDATE nodes SET embedding = ? WHERE id = ?",
+                                                      (json.dumps([0.0, 0.0, 1.0]), node.id))
                     expected = writer.list_node_chunks(node.id)
                     current = writer.get_node(node.id)
                 lookup = await asyncio.wait_for(call(reader, "memory_lookup", node_id=node.id), 3)
@@ -243,7 +245,8 @@ def test_simultaneous_feedback_consumers_claim_current_credit_once(runtime, rout
                 assert current.reinforcement_count == 0
                 edge, = r.store.list_query_anchor_edges(anchor_id=current.id)
                 assert edge.hits == 1
-                assert r.store.connection.execute("SELECT count(*) FROM recall_credit_ledger").fetchone()[0] == 1
+                assert sum(r.store.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                           for table in ("recall_credit_ledger", "recall_explicit_credit")) == 1
 
     asyncio.run(scenario())
 
@@ -270,8 +273,9 @@ def test_missing_anchor_required_failure_rolls_back_knowledge_and_all_feedback(r
                 assert r.store.get_recall_event(prior["recall_event_id"]).feedback_trace_id is None
                 for table, expected in [("nodes", 1), ("connections", 0), ("recall_feedback_marks", 0),
                                         ("recall_credit_ledger", 0), ("query_anchors", 0),
-                                        ("query_anchor_edges", 0), ("query_irrelevance", 0)]:
+                                        ("query_anchor_edges", 0), ("recall_explicit_credit", 0)]:
                     assert r.store.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == expected
+                assert list_query_irrelevance(r.store) == []
                 assert not r.store.connection.in_transaction
             assert r.batches == [(QUERY,)]
 
