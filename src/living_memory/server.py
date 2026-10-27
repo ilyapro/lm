@@ -1284,6 +1284,10 @@ def _register_tools(
         transport_session_id = str(raw_transport_id) if raw_transport_id is not None else None
         session_dedup = bool(transport_session_id) and session_dedup_enabled_from_env()
         prepared_query = recall_service.prepare_query(query, max_results=max_results)
+        if prepared_query.text:
+            recall_service.refresh_pending_chunks(
+                scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
+            )
         with runtime_lock:
             auto_decay = _maybe_decay_sweep(store)
             # Resolve explicit marks before this call's own event exists, so a
@@ -1307,6 +1311,7 @@ def _register_tools(
                 delivery_history = DeliveryHistory()
             results = recall_service.memory_recall(
                 prepared_query,
+                index_prepared=True,
                 scope=scope,
                 ambient_context=ambient_context,
                 depth=depth,

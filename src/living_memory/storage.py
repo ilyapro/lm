@@ -4038,6 +4038,53 @@ class MemoryStore:
             written = self._replace_node_chunks(node_id, chunks, fingerprint)
         return written
 
+    def refresh_pending_chunks(
+        self, selected: Node, embed: Callable[[str], Sequence[float]], *,
+        guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+    ) -> bool:
+        """Prepare a complete pending index and apply it only to the same source.
+
+        Model work uses immutable text outside the shared-store guard and any
+        transaction. Current source, representative and index identities decide
+        whether the prepared replacement still belongs to this node.
+        """
+        def identity(node: Node) -> tuple[Any, ...]:
+            return (node.content, node.scope, node.level, node.decayed,
+                    node.materializer, node.derivation_identity,
+                    tuple(node.embedding or ()))
+
+        def chunk_ids() -> tuple[str, ...]:
+            return tuple(row[0] for row in self._conn.execute(
+                f"SELECT id FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ? ORDER BY id",
+                (selected.id,),
+            ))
+
+        with guard():
+            current = self.get_node(selected.id)
+            if (current is None or current.decayed or identity(current) != identity(selected)
+                    or self.node_chunks_are_current(selected.id)):
+                return False
+            before = chunk_ids()
+            source = identity(current)
+            content = current.content
+            representative = current.materializer in ("cluster", "cross-scope-promotion") and current.embedding
+
+        embedding = None if representative else tuple(embed(content))
+        pairs = tuple((chunk, tuple(vector)) for chunk, vector in
+                      self._chunk_embeddings_for(content, embedding, require_complete=True))
+        if not pairs:
+            raise ValueError("pending index requires a complete nonempty chunk set")
+        with guard(), self.transaction(immediate=True):
+            current = self.get_node(selected.id)
+            if (current is None or identity(current) != source or chunk_ids() != before
+                    or self.node_chunks_are_current(selected.id)):
+                return False
+            self._replace_node_chunks(selected.id, pairs, _content_fingerprint(content))
+            if embedding is not None and self._node_embedding_column_present():
+                self._conn.execute("UPDATE nodes SET embedding = ?, updated_at = ? WHERE id = ?",
+                                   (_json_dumps(embedding), _utc_now(), selected.id))
+        return True
+
     def refresh_legacy_chunks(
         self, node_id: str, content: str, scored_chunk_id: str, *,
         max_chars: int, max_chunks: int,

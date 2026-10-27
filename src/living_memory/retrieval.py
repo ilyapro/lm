@@ -600,6 +600,7 @@ class MemoryRecallService:
         max_results: int = 10,
         log_access: bool = True,
         log_event: bool | None = None,
+        index_prepared: bool = False,
         select_results: Callable[[list[RecallResult], list[RecallResult], int], tuple[list[RecallResult], list[RecallResult]]] | None = None,
     ) -> list[RecallResult]:
         self.last_recall_event_id = None
@@ -613,6 +614,9 @@ class MemoryRecallService:
         if not query:
             return []
         query_embedding = prepared.embedding
+
+        if not index_prepared:
+            self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context)
 
         plan = self.scope_resolver.resolve(
             scope=scope,
@@ -741,6 +745,36 @@ class MemoryRecallService:
                     scored_chunk_id=chunk_ids.get(result.node_id))
             for result in limited
         ]
+
+    def refresh_pending_chunks(
+        self, *, scope: str | None = None,
+        ambient_context: dict[str, Any] | None = None,
+        guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+    ) -> None:
+        """Repair one bounded selection before authoritative recall selection."""
+        with guard():
+            plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context,
+                                               store=self.store)
+            pending = sorted(
+                (node for item in plan.search_scopes for node in
+                 self.store.list_unchunked_nodes(scope=item, limit=LAZY_CHUNK_NODE_LIMIT)),
+                key=lambda node: (node.timestamp, node.id),
+            )[:LAZY_CHUNK_NODE_LIMIT]
+            self._share_embedder_with_store()
+        deferred_count = 0
+        first_error = ""
+        for node in pending:
+            try:
+                self._rechunk_node(node, guard=guard)
+            except Exception as error:
+                deferred_count += 1
+                if not first_error:
+                    first_error = type(error).__name__
+        if deferred_count:
+            logging.getLogger(__name__).warning(
+                "lazy chunk indexing deferred for %d/%d nodes (first error: %s); using available index",
+                deferred_count, len(pending), first_error,
+            )
 
     def refresh_legacy_passages(
         self, snippets: Sequence[RecallResult], *,
@@ -1030,37 +1064,10 @@ class MemoryRecallService:
         does to those two thresholds is measured in the module notes above.
 
         The caller supplies the prepared query vector, also used by anchors.
-        Pending content indexing still reads and repairs current store state.
+        Pending repair precedes selection; scoring reads the current index.
         """
 
         per_scope_limit = max(50, max_results * 12)
-
-        # One bounded queue covers new content, edits and migrated derived
-        # chunks. Chunk presence, not the legacy representative, decides work.
-        # Oldest-first selection gives older repairs priority within the bound.
-        pending = sorted(
-            (node for scope in plan.search_scopes
-             for node in self.store.list_unchunked_nodes(scope=scope, limit=LAZY_CHUNK_NODE_LIMIT)),
-            key=lambda node: (node.timestamp, node.id),
-        )[:LAZY_CHUNK_NODE_LIMIT]
-        deferred_count = 0
-        first_error = ""
-        for node in pending:
-            try:
-                self._rechunk_node(node)
-            except Exception as error:
-                # Each node's index write rolls back independently. Continue
-                # the selected batch; failed nodes stay pending for next time.
-                deferred_count += 1
-                if not first_error:
-                    first_error = type(error).__name__
-        if deferred_count:
-            # One bounded diagnostic, without node content or exception text.
-            # Required reads and scoring remain outside the repair boundary.
-            logging.getLogger(__name__).warning(
-                "lazy chunk indexing deferred for %d/%d nodes (first error: %s); using available index",
-                deferred_count, len(pending), first_error,
-            )
 
         q_arr = _as_query_array(query_embedding)
         # Resolve membership after the drain, which can write new chunks.
@@ -1686,16 +1693,14 @@ class MemoryRecallService:
                     candidate.path = path
                 queue.append((neighbor_id, next_score, depth, path))
 
-    def _rechunk_node(self, node: Node) -> None:
+    def _rechunk_node(
+        self, node: Node, *, guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+    ) -> None:
         """Refresh content search without overwriting a cluster representative."""
 
-        self._share_embedder_with_store()
-        if node.materializer in ("cluster", "cross-scope-promotion") and node.embedding:
-            self.store.update_node(node.id, representative_embedding=node.embedding)
-        else:
-            embedding = self.embedder.embed(node.content)
-            updated = self.store.update_node(node.id, embedding=embedding)
-            node.embedding = updated.embedding
+        with guard():
+            self._share_embedder_with_store()
+        self.store.refresh_pending_chunks(node, self.embedder.embed, guard=guard)
 
     def _share_embedder_with_store(self) -> None:
         """Lend the store this service's encoder for the chunks it writes.
