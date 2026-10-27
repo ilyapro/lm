@@ -105,7 +105,7 @@ explicit marks and grounded consumption uses an existing anchor's exact
 scope/fingerprint identity and stored vector without encoding the query.
 Only absent identities need query encoding, batched within each feedback
 operation; a failed missing-anchor batch leaves existing-anchor effects
-available. Pending/legacy indexing and first-anchor encoding can still run
+available. Pending indexing and first-anchor encoding can still run
 under the store lock; this is no guarantee of availability throughout recall
 or of a general production speedup.
 
@@ -151,15 +151,20 @@ missing tail may matter; use the full original via `content_ref` to resolve them
 
 Chunk writers save verified character coordinates alongside their vectors.
 Existing chunks without coordinates retain lexical excerpt selection for the
-current call. After shaping, MCP recall can refresh one selected legacy snippet's
+current call. After recording its response, feedback, map and delivery facts,
+MCP recall can refresh one selected legacy snippet's
 chunk index, limited to 32,768 source characters and 32 old and new chunks. It
 uses the current encoder and verified source coordinates; the next ordinary
 recall scores that new index. No old score is assigned to a replacement chunk.
-Concurrent source or generation changes cancel the write. Full deliveries,
+Source identity reads and the short recheck/apply use the shared store lock;
+tokenization and encoding use immutable input outside that lock and the SQLite
+transaction. Independent exact lookups can proceed while this recall waits for
+its repair. Concurrent source, scope, decay or generation changes cancel the write. Full deliveries,
 duplicate/withheld results, current indices and oversized records do not incur
 refresh encoding. Failed or unsupported refreshes preserve lexical fallback and
 full lookup. An indexing exception suppresses refresh for that immutable scored
-chunk row in this service instance; other sources and replacement rows remain
+chunk row in this service instance; an in-progress attempt reserves that same
+row until completion. Other sources and replacement rows remain
 eligible. Repeated reads of the same winning row do no further refresh work.
 Different winners can attempt at most 32 refreshes per unchanged eligible index,
 with at most one attempted source per read and 32 chunks encoded per attempt.
