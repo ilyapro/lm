@@ -562,7 +562,8 @@ def test_failed_missing_anchor_batch_keeps_current_existing_effects(runtime, mon
     asyncio.run(scenario())
 
 
-def test_continually_changing_feedback_fails_before_mutation_without_unbounded_retry(runtime, monkeypatch):
+@pytest.mark.parametrize("route", ["recall", "negative", "explicit", "implicit", "teach"])
+def test_continually_changing_feedback_fails_before_mutation_without_unbounded_retry(runtime, monkeypatch, route):
     r = runtime
     queries = []
     transport = None
@@ -586,7 +587,7 @@ def test_continually_changing_feedback_fails_before_mutation_without_unbounded_r
                 transport = r.store.get_recall_event(prior["recall_event_id"]).transport_session_id
             monkeypatch.setattr(feedback, "_anchor_embedder", changing_encoder)
             with pytest.raises(Exception, match="feedback inputs changed during preparation; retry"):
-                await consume(owner, "explicit", r.node.id)
+                await consume(owner, route, r.node.id)
             assert queries == [(QUERY,), ("concurrent query 1",)]
             with r.guard:
                 assert r.store.connection.execute("SELECT count(*) FROM nodes").fetchone()[0] == 1
