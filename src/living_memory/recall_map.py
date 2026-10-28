@@ -43,7 +43,6 @@ from living_memory.models import Node
 from living_memory.scope import GLOBAL_SCOPE, normalize_scope
 from living_memory.score_gate import QueryRelevance
 from living_memory.storage import (
-    CHUNK_EMBEDDING_TABLE,
     RECALL_DELIVERY_HISTORY_TABLE,
     MemoryStore,
     RecallWork,
@@ -1316,38 +1315,6 @@ def _echoes(phrasing: frozenset[str], query: frozenset[str]) -> bool:
 
 
 # ----------------------------------------------------------------------
-# Cheap revision probes, mirroring retrieval's
-# ----------------------------------------------------------------------
-
-
-def _data_version(connection: sqlite3.Connection) -> int:
-    """``PRAGMA data_version``: bumped when another connection commits."""
-
-    row = connection.execute("PRAGMA data_version").fetchone()
-    return int(row[0]) if row is not None else 0
-
-
-def _chunk_table_revision(connection: sqlite3.Connection) -> tuple[Any, ...]:
-    """``(row count, greatest chunk id)``, or ``()`` on a pre-v6 database.
-
-    A delete moves the count and a new maximum id moves the second component.
-    The build's write probe gates this scan; it does not import the ranker or
-    its embedding model.
-    """
-
-    try:
-        counted = connection.execute(
-            f"SELECT COUNT(*) FROM {CHUNK_EMBEDDING_TABLE}"
-        ).fetchone()
-        greatest = connection.execute(
-            f"SELECT MAX(id) FROM {CHUNK_EMBEDDING_TABLE}"
-        ).fetchone()
-    except sqlite3.OperationalError:
-        return ()
-    return (int(counted[0]), greatest[0])
-
-
-# ----------------------------------------------------------------------
 # The builder
 # ----------------------------------------------------------------------
 
@@ -1385,8 +1352,6 @@ class RecallMapBuilder:
         self.last_curtail_read: bool = False
         self._cache: dict[str, _CachedStructure] = {}
         self._curtail_memo: dict[str, _CurtailMemo] = {}
-        self._write_probe: tuple[int, int] | None = None
-        self._revision: tuple[Any, ...] | None = None
         #: Corpus statistics for the build in flight, reset by :meth:`build`.
         #: Label enrichment asks the document-frequency index once per bucket
         #: and the gate once per label, which without a memo would be one
@@ -1481,7 +1446,8 @@ class RecallMapBuilder:
             revision = self._corpus_revision()
             cached = self._cache.get(key)
             if (
-                cached is not None
+                revision is not None
+                and cached is not None
                 and cached.revision == revision
                 and not cached.templates
             ):
@@ -1519,7 +1485,8 @@ class RecallMapBuilder:
         cached = self._cache.get(key)
         groups: list[_Group] | None = None
         if (
-            cached is not None
+            revision is not None
+            and cached is not None
             and cached.revision == revision
             and cached.templates
         ):
@@ -2375,40 +2342,28 @@ class RecallMapBuilder:
 
     # -- cache ---------------------------------------------------------
 
-    def _corpus_revision(self) -> tuple[Any, ...]:
+    def _corpus_revision(self) -> tuple[Any, ...] | None:
         """Identity of everything the cached *structure* was derived from.
 
-        A ``(total_changes, PRAGMA data_version)`` probe answers "has anything
-        been written at all", and only when it moves does the second tier ask
-        the chunk and anchor tables themselves. Most recalls move the probe
-        with their own bookkeeping — ``record_access`` writes on every call —
-        and move neither input. Missing anchor revisions and uncommitted
-        inputs use the write probe instead of a reusable anchor identity.
+        Storage owns transactional chunk membership/vector and anchor revisions.
+        The residual can span scopes, so all chunk scopes contribute. Bookkeeping
+        leaves this identity unchanged. Unsupported read-only formats and open
+        transactions cannot supply a reusable identity: rollback may reuse a
+        revision for different inputs. Selection and recount still run fresh.
         """
 
-        connection = self.store.connection
-        probe = (int(connection.total_changes), _data_version(connection))
-        cached = self._revision
-        if (
-            cached is not None
-            and probe == self._write_probe
-        ):
-            return cached
+        if self.store.connection.in_transaction:
+            return None
+        chunk_revisions = self.store.chunk_corpus_revisions()
         anchor_revision = self.store.query_anchor_revision()
-        revision = (
-            _chunk_table_revision(connection),
-            anchor_revision
-            if anchor_revision is not None and not connection.in_transaction
-            else probe,
-        )
-        self._write_probe = probe
-        self._revision = revision
-        return revision
+        if chunk_revisions is None or anchor_revision is None:
+            return None
+        return (tuple(sorted(chunk_revisions.items())), anchor_revision)
 
     def _remember(
-        self, key: str, revision: tuple[Any, ...], groups: list[_Group]
+        self, key: str, revision: tuple[Any, ...] | None, groups: list[_Group]
     ) -> None:
-        if not key:
+        if not key or revision is None:
             return
         templates = tuple(
             _ClusterTemplate(

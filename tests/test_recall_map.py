@@ -1739,17 +1739,16 @@ def test_normalize_key_mirrors_consolidation_normalize_trigger() -> None:
 
 
 def test_chunk_revision_tracks_insert_and_delete(store: MemoryStore) -> None:
-    from living_memory.recall_map import _chunk_table_revision
-
     node = make_node(store, "content that will gain a chunk")
-    empty = _chunk_table_revision(store.connection)
+    builder = RecallMapBuilder(store)
+    empty = builder._corpus_revision()
 
     embed(store, node, [1.0, 0.0, 0.0])
-    populated = _chunk_table_revision(store.connection)
+    populated = builder._corpus_revision()
     assert populated != empty
-    assert _chunk_table_revision(store.connection) == populated
+    assert builder._corpus_revision() == populated
     assert store.delete_node_chunks(node.id) == 1
-    assert _chunk_table_revision(store.connection) == empty
+    assert builder._corpus_revision() not in (empty, populated)
 
 
 def test_module_imports_nothing_that_calls_a_model_or_the_network() -> None:
