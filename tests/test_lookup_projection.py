@@ -118,10 +118,14 @@ def test_projection_uses_stored_corrections_and_shared_shaping(runtime):
     store = mcp.memory_store
     node = store.append_trace("Original precise content.", {"scope": "project:probe"})
     corrections = [{"id": "correction", "reason": "r" * 2000, "detail": {"accepted": True}}]
-    store.update_node(node.id, corrections=corrections, provenance={
+    store.update_node(node.id, provenance={
         "corrections": [{"wrong": "not authoritative"}],
         "supersedes": ["earlier"], "history": "unselected",
     })
+    with store.transaction():
+        store.connection.execute(
+            "UPDATE nodes SET corrections = ? WHERE id = ?", (json.dumps(corrections), node.id),
+        )
     expected = knowledge_node(node_to_dict(store.get_node(node.id))) | {
         "superseded": False, "superseded_by": [],
     }
@@ -144,23 +148,35 @@ def test_only_selected_source_errors_fail_the_read(runtime, column, selectors, s
     store = mcp.memory_store
     node = store.append_trace("Selected source errors stay honest.", {"scope": "project:probe"})
     # Disposable rows only. All selected source failures precede usage recording.
-    store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", ("{invalid", node.id))
-    store.connection.commit()
+    if column == "context":
+        # Context has JSON expression indexes, so simulate an unavailable
+        # column without constructing a row its indexes would reject.
+        def authorize(action, table, name, *_args):
+            if action == storage.sqlite3.SQLITE_READ and table == "nodes" and name == column:
+                return storage.sqlite3.SQLITE_DENY
+            return storage.sqlite3.SQLITE_OK
+        store.connection.set_authorizer(authorize)
+    else:
+        with store.transaction():
+            store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", ("{invalid", node.id))
 
     async def scenario():
         async with Client(mcp) as client:
             if selected:
-                with pytest.raises(ToolError, match="malformed JSON|Expecting"):
+                with pytest.raises(ToolError, match="malformed JSON|Expecting|prohibited"):
                     await client.call_tool("memory_lookup", {"node_id": node.id, **selectors})
                 assert _lookup_events(store) == []
             else:
                 response = (await client.call_tool("memory_lookup", {"node_id": node.id})).data
                 assert response["results"][0]["content"] == node.content
                 assert len(_lookup_events(store)) == 1
-            with pytest.raises(ToolError, match="Expecting"):
+            with pytest.raises(ToolError, match="Expecting|prohibited"):
                 await client.call_tool("memory_lookup", {"node_id": node.id, "view": "full"})
 
-    asyncio.run(scenario())
+    try:
+        asyncio.run(scenario())
+    finally:
+        store.connection.set_authorizer(None)
 
 
 def test_storage_projection_batches_without_full_columns(tmp_path):
