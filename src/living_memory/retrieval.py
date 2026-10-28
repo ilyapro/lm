@@ -760,6 +760,8 @@ class MemoryRecallService:
                  self.store.list_unchunked_nodes(scope=item, limit=LAZY_CHUNK_NODE_LIMIT)),
                 key=lambda node: (node.timestamp, node.id),
             )[:LAZY_CHUNK_NODE_LIMIT]
+            if not pending:
+                return
             self._share_embedder_with_store()
         deferred_count = 0
         first_error = ""
