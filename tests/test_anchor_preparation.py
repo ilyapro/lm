@@ -210,6 +210,7 @@ def test_missing_scope_fill_uses_one_revision_snapshot(tmp_path, monkeypatch):
     with MemoryStore(path) as reader, MemoryStore(path) as writer:
         anchor(writer, "a", [1.0, 0.0], "project:alpha")
         anchor(writer, "b", [1.0, 0.0], "project:beta")
+        anchor(writer, "c", [1.0, 0.0], "global")
         service = retrieval.MemoryRecallService(reader)
         original = reader.query_anchor_vector_layout
 
@@ -226,7 +227,7 @@ def test_missing_scope_fill_uses_one_revision_snapshot(tmp_path, monkeypatch):
         source = service._anchor_vector_source()
         with writer.transaction():
             writer.connection.execute("UPDATE query_anchors SET scope='global' WHERE id='a'")
-        assert [m.anchor.id for m in qa.match_anchors(source, [1.0, 0.0], "global")] == ["a"]
+        assert [m.anchor.id for m in qa.match_anchors(source, [1.0, 0.0], "global")] == ["a", "c"]
         assert "global" not in source.ready[2]
 
 
