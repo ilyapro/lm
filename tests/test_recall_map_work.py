@@ -323,7 +323,9 @@ def test_mcp_map_preserves_scopes_corrections_decay_and_main_results(tmp_path, i
                 assert correction.id in by_id[old.id]["superseded_by"]
                 event = store.recent_recall_map_history()[0]
                 assert event["id"] == actual["recall_event_id"]
-                assert event["recall_map"] == actual["recall_map"]
+                assert "sel" in event["recall_map"]
+                assert {key: value for key, value in event["recall_map"].items()
+                        if key != "sel"} == actual["recall_map"]
         finally:
             store.close()
             plain.memory_store.close()

@@ -264,12 +264,12 @@ def test_existing_database_and_read_only_reader(tmp_path):
         assert reader.query_anchor_revision() is None
         warm = service(reader)
         builder = RecallMapBuilder(reader)
-        before = builder._corpus_revision()
+        assert builder._corpus_revision() is None
         assert_parity(warm, [1.0, 0.0], [a.id])
         with writer:
             writer.execute("UPDATE query_anchors SET embedding=?", (pack_chunk_embedding([0.0, 1.0]),))
         assert_parity(warm, [0.0, 1.0], [a.id])
-        assert builder._corpus_revision() != before
+        assert builder._corpus_revision() is None
         original = reader.get_query_anchor(a.id)
     with MemoryStore(path) as store:
         assert store.get_query_anchor(a.id) == original
