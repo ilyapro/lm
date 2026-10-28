@@ -909,7 +909,7 @@ Input:
 }
 ```
 
-Output reports phase, counts, confidence summary, coverage, and active
+Output reports counts, confidence summary, coverage, and active
 retrieval policy.
 
 ### `memory_health`
@@ -967,7 +967,7 @@ scopes.
 
 ### `memory://stats`
 
-Returns system health: phase, node counts, confidence summary, known scopes,
+Returns current node counts, confidence summary, known scopes,
 and retrieval weights.
 
 ### `memory://recent`

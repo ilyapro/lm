@@ -348,25 +348,42 @@ Storage is uniform, but retrieval is stratified with partial indexes:
 SQLite's query planner chooses the relevant index for the requested level and
 scope while the application keeps one CRUD path for all node levels.
 
-## Automatic Phases
+## Retrieval and consolidation
 
-`PhaseManager` maps trace count to capability phase:
+Recall collects BM25 and available vector candidates, with graph traversal at
+the requested depth. Its effective scope policy weights those channels; index
+readiness and actual evidence determine the results. Status and stats report
+stored counts, confidence, coverage, promotions and retrieval policy rather
+than inferring capabilities from corpus size.
 
-| Phase | Trace count | Capability |
-| --- | ---: | --- |
-| 0 | 0 | Empty local memory. |
-| 1 | 1+ | FTS5 recall. |
-| 2 | 100+ | Lazy embeddings and pattern detection. |
-| 3 | 10,000+ | Concept graph activation. |
-| 4 | 100,000+ | Hierarchical routing boundary. |
-| 5 | 1,000,000+ | Federation-ready policy boundary. |
+Consolidation uses the configured local encoder for the selected active traces,
+reusing whole-content vectors cached by source content and encoder identity.
+Missing vectors are encoded in guarded batches of eight; clustering runs outside
+the shared-store guard. The existing merge floor, similarity thresholds, scope
+and procedure grouping, current-source checks and atomic derivation writers
+determine admission. `force` expands the trace selection to an explicitly
+requested cluster floor when needed; it does not waive evidence requirements.
 
-Each phase adds behavior while preserving the one-file SQLite store.
+New cross-scope promotion requires similar, uncorrected, unsuperseded active
+concepts from at least three distinct project scopes in the same procedure
+group. The pass searches existing representative vectors only after it
+materializes project concepts. It reads at most 100,000 candidate identities
+once, loads nodes in batches of 500, and reuses that detached preparation for
+scoring outside the guard. It does not encode other projects or repair their
+indexes. Each writer rechecks current source validity, grouping and similarity
+inside its transaction. Missing representatives cannot authorize promotion.
+Existing global derivations still refresh from their recorded current sources
+when there is insufficient evidence to create a new global concept.
+
+Preparation costs up to one bounded candidate read per pass and one similarity
+comparison per materialized concept and candidate. Trace encoding pays only
+for cache misses. These operations use the existing consolidation scheduler;
+they add no background cycle or whole-memory migration.
 
 ## Configuration
 
 Defaults work without a config file. A TOML file can override storage,
-the embedding model, phase thresholds, and retrieval weights.
+the embedding model and retrieval weights.
 
 The default embedding backend is offline-only. `embedding_model` can point to a
 local sentence-transformers directory or a model already present in the local
@@ -398,14 +415,6 @@ db_path = "living_memory.sqlite3"
 default_scope = "global"
 trace_ttl_days = 180
 embedding_model = "paraphrase-multilingual-MiniLM-L12-v2"
-
-[phases]
-0 = 0
-1 = 1
-2 = 100
-3 = 10000
-4 = 100000
-5 = 1000000
 
 [retrieval_weights.project]
 bm25 = 0.7
