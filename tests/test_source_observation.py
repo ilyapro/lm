@@ -5,6 +5,7 @@ from collections import Counter
 import pytest
 
 from living_memory import consolidation as c, storage
+from living_memory.query_anchors import MAX_SUPERSEDES_CHAIN_DEPTH
 from living_memory.storage import MemoryStore
 from test_derivative_preparation import sources
 
@@ -377,3 +378,47 @@ def test_changed_exact_copy_is_not_a_correction(store, monkeypatch, prepared, co
         assert set(current.source_traces) == {taught.corrective_trace.id, traces[2].id}
         assert correction in current.content and traces[2].content in current.content
         assert traces[1].content not in current.content
+
+
+@pytest.mark.parametrize("consumer_first", [False, True])
+def test_prepared_teach_discovers_new_replacement_dependencies(store, monkeypatch, consumer_first):
+    traces = sources(store)
+    consumer = derived(store, "consumer", traces[:2])
+    correction = "Harbor crane uses the electronic manifest."
+    preparation = c.prepare_teach(store, traces[0].id, correction)
+    with MemoryStore(store.db_path) as writer:
+        interim = writer.append_trace("Harbor inspection uses an interim record.")
+        replacement = derived(writer, "replacement", [traces[0], traces[2]])
+        writer.create_connection(interim.id, traces[1].id, "supersedes")
+        writer.create_connection(replacement.id, interim.id, "supersedes")
+    order_consumers(store, monkeypatch, consumer if consumer_first else replacement)
+    taught = c.memory_teach(store, traces[0].id, correction, preparation=preparation)
+    with MemoryStore(store.db_path) as reader:
+        current = reader.get_node(consumer.id)
+        assert not current.decayed
+        assert set(current.source_traces) == {taught.corrective_trace.id, replacement.id}
+        assert correction in current.content and traces[2].content in current.content
+        assert traces[0].content not in current.content and traces[1].content not in current.content
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+@pytest.mark.parametrize("cycle", [False, True])
+def test_teach_preserves_bounded_replacement_resolution(store, prepared, cycle):
+    traces = sources(store)
+    chain = [traces[1]]
+    for index in range(3 if cycle else MAX_SUPERSEDES_CHAIN_DEPTH + 2):
+        replacement = store.append_trace(f"Harbor inspection record {index}.")
+        store.create_connection(replacement.id, chain[-1].id, "supersedes")
+        chain.append(replacement)
+    if cycle:
+        store.create_connection(chain[1].id, chain[-1].id, "supersedes")
+    expected = chain[-1] if cycle else chain[MAX_SUPERSEDES_CHAIN_DEPTH]
+    consumer = derived(store, "consumer", traces)
+    correction = "Harbor crane uses the electronic manifest."
+    preparation = c.prepare_teach(store, traces[0].id, correction) if prepared else None
+    taught = c.memory_teach(store, traces[0].id, correction, preparation=preparation)
+    with MemoryStore(store.db_path) as reader:
+        current = reader.get_node(consumer.id)
+        assert not current.decayed
+        assert set(current.source_traces) == {taught.corrective_trace.id, expected.id, traces[2].id}
+        assert all(text in current.content for text in (correction, expected.content, traces[2].content))
