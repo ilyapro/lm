@@ -1,6 +1,7 @@
 """Implicit feedback preserves each event's corpus, ranks and source lineage."""
 
 import sqlite3
+from dataclasses import replace
 
 import pytest
 
@@ -101,6 +102,75 @@ def test_overlapping_events_keep_individual_grounding_ranks_and_credit(sources, 
     before = [store.get_node(node.id).usefulness_score for node in nodes]
     mcp.tools["memory_remember"](CONTENT + " confirmed", CONTEXT)
     assert [store.get_node(node.id).usefulness_score for node in nodes] == before
+
+
+@pytest.mark.parametrize("deny_fts", [False, True])
+def test_native_repeated_source_feedback_preserves_knowledge_without_fts_writes(sources, monkeypatch, deny_fts):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    source = store.update_node(nodes[0].id, stats={"usefulness_score": 0.55, "access_count": 600})
+    events, anchors = [], []
+    for i in range(5):
+        query = f"routing source {i}"
+        events.append(store.record_recall_event(
+            query=query, scope=source.scope, ambient_context=CONTEXT,
+            results=[{"node_id": source.id, "bm25_score": 1.0}],
+        ))
+        anchors.append(store.insert_query_anchor(
+            scope=source.scope, query=query, fingerprint=recall_fingerprint(query, source.scope),
+            embedding=[1.0, 0.0],
+        ))
+    old_weights = store.get_retrieval_weights(source.scope)
+    progress, fts_writes, source_writes = [], [], []
+    update = store.update_node
+
+    def observe_update(node_id, **kwargs):
+        result = update(node_id, **kwargs)
+        if node_id == source.id:
+            progress.append(result.usefulness_score)
+        return result
+
+    def observe_sql(action, table, column, db, trigger):
+        if action == sqlite3.SQLITE_UPDATE and table == "nodes" and column in (
+            "content", "content_fingerprint", "context", "task", "level", "scope",
+        ):
+            source_writes.append(column)
+        if trigger == "nodes_fts_update" and action in (
+            sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE,
+        ):
+            fts_writes.append(table)
+            if deny_fts:
+                return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    monkeypatch.setattr(store, "update_node", observe_update)
+    store.connection.set_authorizer(observe_sql)
+    try:
+        response = mcp.tools["memory_remember"](CONTENT, CONTEXT)
+    finally:
+        store.connection.set_authorizer(None)
+    assert fts_writes == source_writes == []
+    assert len(progress) == len(events)
+    gains = [current - previous for previous, current in zip([source.usefulness_score, *progress], progress)]
+    assert all(gain > 0 for gain in gains)
+    assert all(later < earlier for earlier, later in zip(gains, gains[1:]))
+    current = store.get_node(source.id)
+    assert current == replace(source, usefulness_score=progress[-1], updated_at=current.updated_at)
+    trace = store.get_node(response["node"]["id"])
+    assert trace.content == CONTENT and trace.source_traces == [source.id]
+    assert trace.provenance["recalled_nodes"] == [source.id]
+    assert {prior["id"] for prior in trace.provenance["prior_recalls"]} == {event.id for event in events}
+    assert all(prior["result_ids"] == [source.id] for prior in trace.provenance["prior_recalls"])
+    for event, anchor in zip(events, anchors):
+        assert store.get_recall_event(event.id).feedback_trace_id == trace.id
+        assert store.credited_node_ids(event.id) == {source.id}
+        current_anchor = store.find_query_anchor(event.scope, anchor.fingerprint)
+        assert current_anchor.id == anchor.id and current_anchor.embedding == anchor.embedding
+        assert current_anchor.reinforcement_count == anchor.reinforcement_count + 1
+        edge, = store.list_query_anchor_edges(anchor_id=anchor.id)
+        assert edge.target_id == source.id and edge.hits == 1
+    assert store.get_retrieval_weights(source.scope).bm25 > old_weights.bm25
+    assert not store.pending_recall_events(scope=source.scope, context=CONTEXT)
 
 
 @pytest.mark.parametrize("existing", [False, True])
