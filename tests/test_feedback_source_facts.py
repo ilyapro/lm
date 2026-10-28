@@ -7,7 +7,7 @@ import pytest
 from living_memory import feedback
 from living_memory.server import create_mcp_server
 from living_memory.storage import recall_fingerprint
-from test_mcp_server import FakeMCP
+from test_anchor_live_path import FakeMCP
 
 
 CONTEXT = {"scope": "project:source-facts", "task": "routing"}
