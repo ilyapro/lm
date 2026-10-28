@@ -245,7 +245,7 @@ from living_memory.query_anchors import (
     match_anchors,
 )
 from living_memory.schema_dedup import collapse_schema_duplicates
-from living_memory.relations import source_relation_weight
+from living_memory.relations import is_semantic_relation, source_relation_weight
 from living_memory.scope import (
     ScopePlan,
     ScopeResolver,
@@ -2045,6 +2045,8 @@ def _traversal(
     causal_mode: bool,
     decision_mode: bool = False,
 ) -> tuple[str, float] | None:
+    if not is_semantic_relation(connection.type, connection.metadata):
+        return None
     rejected_alternative = _is_rejected_alternative_connection(connection)
     if decision_mode:
         if not rejected_alternative:

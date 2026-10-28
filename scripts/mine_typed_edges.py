@@ -2,8 +2,7 @@
 """Read-only miner for provenance-derived typed-edge candidate rules.
 
 Mines the Living Memory corpus for candidate typed, directional edges derivable
-from structured provenance (teach lineage, failure->resolution context labels,
-procedure groups, shared commit/files, concept/schema source_traces) and
+from structured provenance (teach lineage, procedure groups, shared commit/files, concept/schema source_traces) and
 measures, per rule:
 
   * derivable candidate count (directed) and unique undirected pairs,
@@ -50,42 +49,6 @@ DEFAULT_DB = str(Path.home() / ".local/share/living-memory/global.sqlite3")
 ULID_RE = re.compile(r"\b01[0-9A-HJKMNP-TV-Z]{24}\b")
 
 # --- context label sets ------------------------------------------------------
-
-PROBLEM_TYPES = {
-    "root_cause",
-    "root_cause_and_debugging_insights",
-    "failure",
-    "error",
-    "bug",
-    "blocker",
-    "incident",
-    "regression",
-    "verification_finding",
-}
-PROBLEM_LESSON_KINDS = {
-    "implementation_bug",
-    "race_condition",
-    "missing_dependency",
-    "execution_blocker",
-    "spec_ambiguity",
-    "root_cause",
-}
-PROBLEM_OUTCOMES = {"structural_fail", "reopened", "fail", "failure", "error"}
-
-SOLUTION_TYPES = {
-    "failure_resolution",
-    "working_fix",
-    "fix",
-    "gate_failure_resolution",
-    "supervision_repair",
-}
-SOLUTION_LESSON_KINDS = {
-    "tree_decomposition_repair",
-    "decomposition_repair",
-    "decomposition-repair",
-    "parent-decomposition-repair",
-    "working_fix",
-}
 
 ROOT_CAUSE_TYPES = {"root_cause", "root_cause_and_debugging_insights"}
 FAILURE_EVIDENCE_TYPES = {"verification_finding", "failure", "error", "regression"}
@@ -230,23 +193,6 @@ def is_rejected_alternative(node: NodeRow) -> bool:
     return bool(node.context.get("is_rejected_alternative"))
 
 
-def is_problem(node: NodeRow) -> bool:
-    ctx = node.context
-    return (
-        str(ctx.get("type") or "") in PROBLEM_TYPES
-        or str(ctx.get("lesson_kind") or "") in PROBLEM_LESSON_KINDS
-        or str(ctx.get("outcome") or "") in PROBLEM_OUTCOMES
-    )
-
-
-def is_solution(node: NodeRow) -> bool:
-    ctx = node.context
-    return (
-        str(ctx.get("type") or "") in SOLUTION_TYPES
-        or str(ctx.get("lesson_kind") or "") in SOLUTION_LESSON_KINDS
-    )
-
-
 # --- rules -------------------------------------------------------------------
 
 
@@ -301,65 +247,6 @@ def _grouped_by(nodes: dict[str, NodeRow], key: str) -> dict[tuple[str, str], li
         if value:
             groups[(node.scope, str(value))].append(node)
     return groups
-
-
-RESOLUTION_WINDOW_SECONDS = 3600
-
-
-def _is_tight_problem(node: NodeRow) -> bool:
-    ctx = node.context
-    return (
-        str(ctx.get("type") or "") in ROOT_CAUSE_TYPES
-        or str(ctx.get("outcome") or "") in {"structural_fail", "reopened"}
-    )
-
-
-def rule_failure_resolution(nodes: dict[str, NodeRow]) -> list[Candidate]:
-    """R2a: root-cause trace 'caused'-links to the resolution written just after it.
-
-    Select root_cause-typed or structural_fail/reopened-outcome problems in
-    the same task or session. Each resolution links to its nearest preceding
-    problem within RESOLUTION_WINDOW_SECONDS. A caused edge connects the
-    resolution with its cause while preserving the validity of both nodes.
-    """
-
-    best: dict[tuple[str, str], tuple[float, Candidate]] = {}
-    for key in ("task", "session_id"):
-        for _, members in sorted(_grouped_by(nodes, key).items()):
-            members = [m for m in members if not is_rejected_alternative(m)]
-            problems = [m for m in members if _is_tight_problem(m) and not is_solution(m)]
-            solutions = [m for m in members if is_solution(m)]
-            if not problems or not solutions:
-                continue
-            for sol in solutions:
-                sol_ts = sol.ts
-                if sol_ts is None:
-                    continue
-                scored: list[tuple[float, NodeRow]] = []
-                for prob in problems:
-                    prob_ts = prob.ts
-                    if prob.id == sol.id or prob_ts is None:
-                        continue
-                    delta = (sol_ts - prob_ts).total_seconds()
-                    if 0 <= delta <= RESOLUTION_WINDOW_SECONDS:
-                        scored.append((delta, prob))
-                if not scored:
-                    continue
-                delta, prob = min(scored, key=lambda item: (item[0], item[1].id))
-                cand = Candidate(
-                    "R2a_root_cause_caused_resolution",
-                    prob.id,
-                    sol.id,
-                    "caused",
-                    True,
-                    f"prob={prob.context.get('type') or prob.context.get('outcome')}"
-                    f" sol={sol.context.get('type') or sol.context.get('lesson_kind')}"
-                    f" gap_min={round(delta / 60)} via={key}",
-                )
-                current = best.get((prob.id, sol.id))
-                if current is None or delta < current[0]:
-                    best[(prob.id, sol.id)] = (delta, cand)
-    return [cand for _, cand in best.values()]
 
 
 def rule_root_cause_caused(nodes: dict[str, NodeRow]) -> list[Candidate]:
@@ -624,7 +511,6 @@ def main(argv: list[str] | None = None) -> int:
     active_nodes = sum(1 for n in nodes.values() if not n.decayed)
     rule_specs: list[tuple[str, str, bool, list[Candidate]]] = [
         ("R1a_supersedes_transitive", "supersedes", True, rule_supersedes_transitive(nodes, edges)),
-        ("R2a_root_cause_caused_resolution", "caused", True, rule_failure_resolution(nodes)),
         ("R2b_root_cause_caused", "caused", True, rule_root_cause_caused(nodes)),
         ("R3_procedure_requires", "requires", True, rule_procedure_requires(nodes, args.max_proc_group)),
         ("R4a_same_commit", "related", False, rule_same_commit(nodes, args.max_commit_group)),

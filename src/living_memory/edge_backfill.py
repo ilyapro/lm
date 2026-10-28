@@ -2,7 +2,7 @@
 
 The write-path engine (:mod:`living_memory.edge_derivation`) types edges for
 *new* traces as they are written. This module applies the very same go-rules
-(R2a / R4a / R4b / R6, and optionally the R5a ``derived_from``
+(R4a / R4b / R6, and optionally the R5a ``derived_from``
 annotation) to the *existing* corpus on a snapshot, so historical nodes gain
 the same typed, directional edges.
 
@@ -28,8 +28,8 @@ Design guarantees (see ``derive-edges`` CLI below):
   ``same_commit``/``shared_files`` are preserved under ``rule_basis``; the
   ``kind`` that ``retrieval._traversal`` reads is never touched.)
 
-The engine reuses :mod:`edge_derivation`'s pure rule functions and the R2a
-same-scope window helper verbatim, and serves the volume rules (R4a same
+The engine reuses :mod:`edge_derivation`'s pure rule functions and serves the
+volume rules (R4a same
 commit, R4b shared files) from two corpus-wide index scans that reproduce the
 write path's candidate WHERE-clauses (active nodes, any level, no fanout/commit
 cap applied before the rule) — so the derived edge set is identical to running
@@ -63,12 +63,8 @@ from living_memory.edge_derivation import (
     DERIVED_FROM_ANNOTATION,
     ULID_RE,
     DerivedEdge,
-    _recent_group_candidates,
     commit_prefix,
-    is_rejected_alternative,
-    is_solution_labeled,
     node_files,
-    rule_r2a_failure_resolution,
     rule_r4a_same_commit,
     rule_r4b_shared_files,
     rule_r5a_derived_from_annotations,
@@ -96,7 +92,6 @@ ALL_TYPES: tuple[str, ...] = ("related", *STRICT_TYPES)
 # plus related edges carrying a provenance kind/basis.
 _PROVENANCE_KINDS: tuple[str, ...] = (
     "derived_from",
-    "failure_resolution",
     "content_reference",
 )
 _PROVENANCE_BASES: tuple[str, ...] = ("same_commit", "shared_files", BACKFILL_BASIS)
@@ -104,8 +99,8 @@ _PROVENANCE_RULE_BASES: tuple[str, ...] = ("same_commit", "shared_files")
 
 # Merge order == write-path application order (edge_derivation.derive_edges_for
 # _new_trace): later rules win metadata conflicts, mirroring the upsert. Only
-# R4a/R4b set `basis`; only R2a/R6 set `kind`, so `kind` never collides.
-RULE_ORDER: dict[str, int] = {"R6": 0, "R2a": 1, "R4a": 2, "R4b": 3}
+# R4a/R4b set `basis`; only R6 sets `kind`, so `kind` never collides.
+RULE_ORDER: dict[str, int] = {"R6": 0, "R4a": 1, "R4b": 2}
 
 DEFAULT_SAMPLE_SIZE = 5
 
@@ -228,11 +223,6 @@ def _derived_edges_for_trace(
     if ulids:
         candidates = store.get_nodes(ulids)
         edges.extend(rule_r6_content_reference(node, candidates))
-
-    if is_solution_labeled(node) and not is_rejected_alternative(node):
-        groups = _recent_group_candidates(store, node)
-        if groups:
-            edges.extend(rule_r2a_failure_resolution(node, groups))
 
     prefix = commit_prefix(node)
     if prefix is not None:

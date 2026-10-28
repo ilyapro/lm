@@ -18,7 +18,6 @@ from living_memory.edge_derivation import (
     CONTENT_REFERENCE_KIND,
     DERIVED_FROM_ANNOTATION,
     DERIVED_FROM_KIND,
-    FAILURE_RESOLUTION_KIND,
     SAME_COMMIT_BASIS,
     SHARED_FILES_BASIS,
     derive_edges_for_new_trace,
@@ -87,136 +86,6 @@ def test_derivation_never_links_to_decayed_nodes(tmp_path: Path) -> None:
 
         assert derive_edges_for_new_trace(store, correction) == []
         assert store.list_connections(source_id=correction.id) == []
-
-
-# --- R2a root-cause caused resolution -------------------------------------------
-
-
-def test_r2a_links_nearest_root_cause_within_the_hour(tmp_path: Path) -> None:
-    with _store(tmp_path) as store:
-        far = _remember(
-            store,
-            "Root cause: config cache never invalidated on deploy",
-            task="fix-runner",
-            type="root_cause",
-            timestamp="2026-07-08T09:30:00Z",
-        )
-        near = _remember(
-            store,
-            "Root cause: stale pid file blocks the runner",
-            task="fix-runner",
-            type="root_cause",
-            timestamp="2026-07-08T09:50:00Z",
-        )
-        fix = _remember(
-            store,
-            "Fix: remove the stale pid file during startup",
-            task="fix-runner",
-            type="working_fix",
-            timestamp="2026-07-08T10:00:00Z",
-        )
-
-        derive_edges_for_new_trace(store, fix)
-
-        caused = store.list_connections(target_id=fix.id, relation_type="caused")
-        assert [edge.source_id for edge in caused] == [near.id]
-        edge = caused[0]
-        assert edge.weight == 0.9
-        assert edge.metadata == {
-            "rule": "R2a",
-            "kind": FAILURE_RESOLUTION_KIND,
-            "gap_seconds": 600,
-            "group_key": "task=fix-runner",
-        }
-        assert store.list_connections(target_id=far.id, relation_type="caused") == []
-
-
-def test_r2a_does_not_fire_beyond_the_hour_window(tmp_path: Path) -> None:
-    with _store(tmp_path) as store:
-        _remember(
-            store,
-            "Root cause: worker pool exhausted by orphaned jobs",
-            task="queue-stall",
-            type="root_cause",
-            timestamp="2026-07-08T08:58:00Z",
-        )
-        fix = _remember(
-            store,
-            "Fix: reap orphaned jobs on boot",
-            task="queue-stall",
-            type="working_fix",
-            timestamp="2026-07-08T10:00:00Z",
-        )
-
-        derive_edges_for_new_trace(store, fix)
-
-        assert store.list_connections(target_id=fix.id, relation_type="caused") == []
-
-
-def test_r2a_session_grouping_skips_rejected_and_solution_labeled_problems(
-    tmp_path: Path,
-) -> None:
-    with _store(tmp_path) as store:
-        ra_problem = _remember(
-            store,
-            "Root cause candidate written as a rejected alternative",
-            session_id="sess-1",
-            type="root_cause",
-            is_rejected_alternative=True,
-            timestamp="2026-07-08T09:55:00Z",
-        )
-        earlier_fix = _remember(
-            store,
-            "A prior fix in the same session is not a problem",
-            session_id="sess-1",
-            type="failure_resolution",
-            timestamp="2026-07-08T09:58:00Z",
-        )
-        problem = _remember(
-            store,
-            "Gate reopened: structural failure in acceptance payload",
-            session_id="sess-1",
-            outcome="structural_fail",
-            timestamp="2026-07-08T09:40:00Z",
-        )
-        fix = _remember(
-            store,
-            "Fix: reject malformed acceptance payloads",
-            session_id="sess-1",
-            type="fix",
-            timestamp="2026-07-08T10:00:00Z",
-        )
-
-        derive_edges_for_new_trace(store, fix)
-
-        caused = store.list_connections(target_id=fix.id, relation_type="caused")
-        assert [edge.source_id for edge in caused] == [problem.id]
-        assert caused[0].metadata["group_key"] == "session_id=sess-1"
-        for excluded in (ra_problem, earlier_fix):
-            assert store.list_connections(source_id=excluded.id, relation_type="caused") == []
-
-
-def test_r2a_rejected_alternative_solution_never_fires(tmp_path: Path) -> None:
-    with _store(tmp_path) as store:
-        _remember(
-            store,
-            "Root cause: missing index on recall_events",
-            task="slow-recall",
-            type="root_cause",
-            timestamp="2026-07-08T09:59:00Z",
-        )
-        ra_fix = _remember(
-            store,
-            "Rejected fix approach: drop the table",
-            task="slow-recall",
-            type="working_fix",
-            is_rejected_alternative=True,
-            timestamp="2026-07-08T10:00:00Z",
-        )
-
-        derive_edges_for_new_trace(store, ra_fix)
-
-        assert store.list_connections(target_id=ra_fix.id, relation_type="caused") == []
 
 
 # --- R4a same commit -------------------------------------------------------------
@@ -588,9 +457,7 @@ def test_memory_remember_derives_typed_edges_end_to_end(tmp_path: Path) -> None:
         caused = store.list_connections(
             source_id=root_cause_id, target_id=fix_id, relation_type="caused"
         )
-        assert len(caused) == 1
-        assert caused[0].metadata["rule"] == "R2a"
-        assert caused[0].metadata["gap_seconds"] == 300
+        assert caused == []
 
         references = _related(store, fix_id, root_cause_id)
         assert len(references) == 1
@@ -649,13 +516,13 @@ def test_traversal_new_kinds_stay_excluded_from_causal_and_decision_modes() -> N
         assert _traversal(edge, "A", causal_mode=False, decision_mode=True) is None
 
 
-def test_traversal_keeps_existing_factors_for_typed_derived_edges() -> None:
+def test_traversal_factors_for_explicit_typed_edges() -> None:
     caused = _edge(
         "RC",
         "FIX",
         "caused",
         0.9,
-        {"rule": "R2a", "kind": FAILURE_RESOLUTION_KIND, "gap_seconds": 1, "group_key": "task=t"},
+        {},
     )
     expectations = [
         ("RC", False, "FIX", 0.9 * 0.75),
@@ -681,8 +548,8 @@ def test_traversal_keeps_existing_factors_for_typed_derived_edges() -> None:
     assert (neighbor, score) == ("CORRECTION", pytest.approx(0.9 * 1.15))
 
 
-def test_causal_recall_traverses_derived_caused_edge(tmp_path: Path) -> None:
-    """The R2a edge fills the previously empty causal channel end to end."""
+def test_causal_recall_traverses_explicit_caused_edge(tmp_path: Path) -> None:
+    """Explicit causes support causal recall independently of matching text."""
 
     with _store(tmp_path) as store:
         root_cause = _remember(
@@ -699,7 +566,7 @@ def test_causal_recall_traverses_derived_caused_edge(tmp_path: Path) -> None:
             type="working_fix",
             timestamp="2026-07-08T10:00:00Z",
         )
-        derive_edges_for_new_trace(store, fix)
+        store.create_connection(root_cause.id, fix.id, "caused", weight=.9)
 
         results = memory_recall(
             store,
@@ -711,6 +578,6 @@ def test_causal_recall_traverses_derived_caused_edge(tmp_path: Path) -> None:
 
         by_id = {result.node.id: result for result in results}
         assert root_cause.id in by_id
-        # Reached by traversing the derived caused edge backwards from the fix,
+        # Reached by traversing the explicit caused edge backwards from the fix,
         # not by matching the (lexically disjoint) query directly.
         assert by_id[root_cause.id].graph_score > 0

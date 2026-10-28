@@ -1,16 +1,15 @@
 """Provenance-derived typed-edge rules applied at write time.
 
-Derives root-cause/resolution, shared-commit/file, schema-source and content
-reference relations. Text and context labels never establish supersession;
-corrections belong to memory_teach or explicit typed connections.
+Derives shared-commit/file, schema-source and content reference relations.
+Text, context labels and chronology never establish causality or supersession;
+these require explicit typed connections or memory_teach corrections.
 
 Rule functions are pure: they take the new node plus explicitly passed
 candidate rows and return :class:`DerivedEdge` specs, so the write path and
 the corpus backfill CLI share one implementation with identical caps and
 exclusions. :func:`derive_edges_for_new_trace` performs the bounded candidate
 lookups (primary-key fetches for content ULIDs, an indexed commit-prefix
-lookup, per-file citation lookups over the files-bearing subset, one recent
-same-scope window scan) and persists results with the same upsert semantics
+lookup and per-file citation lookups over the files-bearing subset) and persists results with the same upsert semantics
 as ``consolidation._upsert_weighted_connection``: weight max-merge, metadata
 merge. Edges to decayed nodes are never created; both-rejected-alternative
 pairs are skipped for the undirected rules.
@@ -20,7 +19,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from living_memory.models import Connection, ConnectionType, Node
@@ -33,39 +31,13 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # ULID node ids as they appear verbatim inside trace content (Crockford base32).
 ULID_RE = re.compile(r"\b01[0-9A-HJKMNP-TV-Z]{24}\b")
 
-SOLUTION_TYPES = frozenset(
-    {
-        "failure_resolution",
-        "working_fix",
-        "fix",
-        "gate_failure_resolution",
-        "supervision_repair",
-    }
-)
-SOLUTION_LESSON_KINDS = frozenset(
-    {
-        "tree_decomposition_repair",
-        "decomposition_repair",
-        "decomposition-repair",
-        "parent-decomposition-repair",
-        "working_fix",
-    }
-)
-ROOT_CAUSE_TYPES = frozenset({"root_cause", "root_cause_and_debugging_insights"})
-TIGHT_PROBLEM_OUTCOMES = frozenset({"structural_fail", "reopened"})
-
-RESOLUTION_WINDOW_SECONDS = 3600
 MAX_COMMIT_GROUP = 10
 MAX_FILE_FANOUT = 20
 COMMIT_PREFIX_LENGTH = 7
-# Safety bound for the R2a same-scope recent-window fetch; one scope rarely
-# accrues more than a handful of traces per hour.
-R2A_WINDOW_FETCH_LIMIT = 500
 
 # Edge metadata kinds/bases emitted by the rules. retrieval._traversal keys
 # its kind-specific factors on these and consolidation reuses the R5a
 # annotation, so they live here as the single source of truth.
-FAILURE_RESOLUTION_KIND = "failure_resolution"
 DERIVED_FROM_KIND = "derived_from"
 CONTENT_REFERENCE_KIND = "content_reference"
 SAME_COMMIT_BASIS = "same_commit"
@@ -96,22 +68,6 @@ def is_rejected_alternative(node: Node) -> bool:
     return bool(node.context.get("is_rejected_alternative"))
 
 
-def is_solution_labeled(node: Node) -> bool:
-    ctx = node.context
-    return (
-        str(ctx.get("type") or "") in SOLUTION_TYPES
-        or str(ctx.get("lesson_kind") or "") in SOLUTION_LESSON_KINDS
-    )
-
-
-def is_tight_problem(node: Node) -> bool:
-    ctx = node.context
-    return (
-        str(ctx.get("type") or "") in ROOT_CAUSE_TYPES
-        or str(ctx.get("outcome") or "") in TIGHT_PROBLEM_OUTCOMES
-    )
-
-
 def commit_prefix(node: Node) -> str | None:
     """Normalized 7-char commit prefix, or None when too short/absent."""
 
@@ -128,21 +84,6 @@ def node_files(node: Node) -> list[str]:
     if not isinstance(files, list):
         return []
     return list(dict.fromkeys(str(item) for item in files))
-
-
-def node_time(node: Node) -> datetime | None:
-    """Timestamp as an aware UTC datetime, tolerant of client formats."""
-
-    value = str(node.timestamp or node.context.get("timestamp") or "").strip()
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 # --- pure rule functions -------------------------------------------------------
@@ -176,76 +117,6 @@ def rule_r6_content_reference(
             )
         )
     return edges
-
-
-def rule_r2a_failure_resolution(
-    node: Node,
-    candidates_by_group: Mapping[str, Sequence[Node]],
-    *,
-    window_seconds: int = RESOLUTION_WINDOW_SECONDS,
-) -> list[DerivedEdge]:
-    """R2a: nearest root-cause trace ``caused`` the solution written after it.
-
-    ``node`` is the candidate solution; ``candidates_by_group`` maps a group
-    key (same scope + ``task``, then same scope + ``session_id``) to traces in
-    that group. Per group the nearest problem 0..window_seconds earlier is
-    linked; the same problem reached via several groups keeps the first
-    smallest gap. Direction root_cause → fix.
-    """
-
-    if (
-        node.decayed
-        or node.level != "trace"
-        or is_rejected_alternative(node)
-        or not is_solution_labeled(node)
-    ):
-        return []
-    sol_ts = node_time(node)
-    if sol_ts is None:
-        return []
-
-    best: dict[str, tuple[float, str]] = {}
-    for group_key, members in candidates_by_group.items():
-        scored: list[tuple[float, Node]] = []
-        for problem in members:
-            if (
-                problem.id == node.id
-                or problem.decayed
-                or problem.level != "trace"
-                or is_rejected_alternative(problem)
-                or is_solution_labeled(problem)
-                or not is_tight_problem(problem)
-            ):
-                continue
-            prob_ts = node_time(problem)
-            if prob_ts is None:
-                continue
-            delta = (sol_ts - prob_ts).total_seconds()
-            if 0 <= delta <= window_seconds:
-                scored.append((delta, problem))
-        if not scored:
-            continue
-        delta, problem = min(scored, key=lambda item: (item[0], item[1].id))
-        current = best.get(problem.id)
-        if current is None or delta < current[0]:
-            best[problem.id] = (delta, group_key)
-
-    return [
-        DerivedEdge(
-            source_id=problem_id,
-            target_id=node.id,
-            type="caused",
-            weight=0.9,
-            metadata={
-                "rule": "R2a",
-                "kind": FAILURE_RESOLUTION_KIND,
-                "gap_seconds": int(round(delta)),
-                "group_key": group_key,
-            },
-            rule="R2a",
-        )
-        for problem_id, (delta, group_key) in best.items()
-    ]
 
 
 def rule_r4a_same_commit(
@@ -411,8 +282,7 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
     All lookups are bounded: primary-key fetches for content ULIDs, an
     expression-indexed commit-prefix probe capped at the group limit,
     per-file citation probes capped at the fanout limit over the partial
-    files-present index, and one recent same-scope window scan served by
-    ``idx_nodes_trace_scope_time``. The recall query path is untouched.
+    files-present index. The recall query path is untouched.
     """
 
     if node is None or node.decayed or node.level != "trace":
@@ -424,11 +294,6 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
     if ulids:
         candidates = store.get_nodes(ulids)
         edges.extend(rule_r6_content_reference(node, candidates))
-
-    if is_solution_labeled(node) and not is_rejected_alternative(node):
-        groups = _recent_group_candidates(store, node)
-        if groups:
-            edges.extend(rule_r2a_failure_resolution(node, groups))
 
     prefix = commit_prefix(node)
     if prefix is not None:
@@ -442,45 +307,6 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
         edges.extend(rule_r4b_shared_files(node, citing))
 
     return [upsert_derived_edge(store, edge) for edge in edges]
-
-
-def _recent_group_candidates(store: "MemoryStore", node: Node) -> dict[str, list[Node]]:
-    """Active same-scope traces in the R2a window, split into task/session groups."""
-
-    sol_ts = node_time(node)
-    if sol_ts is None:
-        return {}
-    task = str(node.context.get("task") or "")
-    session = str(node.context.get("session_id") or "")
-    if not task and not session:
-        return {}
-
-    lower = _iso_z(sol_ts - timedelta(seconds=RESOLUTION_WINDOW_SECONDS))
-    upper = str(node.timestamp or _iso_z(sol_ts))
-    rows = store.connection.execute(
-        """
-        SELECT * FROM nodes
-        WHERE level = 'trace' AND decayed = 0 AND scope = ?
-          AND timestamp >= ? AND timestamp <= ?
-        ORDER BY timestamp DESC
-        LIMIT ?
-        """,
-        (node.scope, lower, upper, R2A_WINDOW_FETCH_LIMIT),
-    ).fetchall()
-    candidates = [_node_from_row(row) for row in rows]
-
-    groups: dict[str, list[Node]] = {}
-    if task:
-        members = [c for c in candidates if str(c.context.get("task") or "") == task]
-        if members:
-            groups[f"task={task}"] = members
-    if session:
-        members = [
-            c for c in candidates if str(c.context.get("session_id") or "") == session
-        ]
-        if members:
-            groups[f"session_id={session}"] = members
-    return groups
 
 
 def _commit_group_candidates(
@@ -535,7 +361,3 @@ def _file_citation_candidates(
         ).fetchall()
         citing[fname] = [_node_from_row(row) for row in rows]
     return citing
-
-
-def _iso_z(moment: datetime) -> str:
-    return moment.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")

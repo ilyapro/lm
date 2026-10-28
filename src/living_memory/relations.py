@@ -4,7 +4,8 @@ Inferred prose relations and duplicate bookkeeping are not corrections.
 Historical rows remain for inspection without validity, graph or lifecycle
 authority unless they also record an explicit correction contribution.
 Recall delivery history is not a relation between the displayed knowledge and
-a later trace. Unrecognized metadata retains its ordinary relation semantics.
+a later trace. Shared work and chronology do not establish causality.
+Unrecognized metadata retains its ordinary relation semantics.
 """
 
 from collections.abc import Mapping
@@ -98,6 +99,12 @@ def is_correction(relation_type: str, metadata: Mapping[str, Any]) -> bool:
 def is_semantic_relation(relation_type: str, metadata: Mapping[str, Any]) -> bool:
     if relation_type == "supersedes":
         return is_correction(relation_type, metadata)
+    if relation_type == "caused":
+        # A caller's explicit basis survives shallow merges of inferred markers.
+        return metadata.get("basis") == "explicit" or not (
+            metadata.get("rule") == "R2a"
+            or metadata.get("kind") == "failure_resolution"
+        )
     # Content-reference and derivation writers can merge their evidence into
     # a row without replacing an earlier recall-history basis.
     return not (
@@ -127,6 +134,10 @@ def semantic_relation_sql(alias: str = "") -> str:
     prefix = f"{alias}." if alias else ""
     return (
         f"(({prefix}type <> 'supersedes' OR {correction_sql(alias)})"
+        f" AND ({prefix}type <> 'caused'"
+        f" OR COALESCE(json_extract({prefix}metadata, '$.basis'), '') = 'explicit'"
+        f" OR (COALESCE(json_extract({prefix}metadata, '$.rule'), '') <> 'R2a'"
+        f" AND COALESCE(json_extract({prefix}metadata, '$.kind'), '') <> 'failure_resolution'))"
         f" AND NOT ({prefix}type = 'related' AND "
         f"COALESCE(json_extract({prefix}metadata, '$.basis'), '') = 'implicit_recall_feedback'"
         f" AND COALESCE(json_extract({prefix}metadata, '$.kind'), '')"

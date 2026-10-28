@@ -22,7 +22,6 @@ from living_memory.edge_backfill import (
 from living_memory.edge_derivation import (
     CONTENT_REFERENCE_KIND,
     DERIVED_FROM_KIND,
-    FAILURE_RESOLUTION_KIND,
     SAME_COMMIT_BASIS,
     SHARED_FILES_BASIS,
 )
@@ -61,7 +60,7 @@ def _only(store: MemoryStore, **kwargs: Any) -> Connection:
 
 
 def _seed_typed_material(store: MemoryStore) -> dict[str, Node]:
-    """Seed traces that fire R6, R4a, R4b, and R2a."""
+    """Seed references and shared sources, plus independent problem/fix labels."""
 
     stale = _remember(store, "The runner lock lives in /tmp/runner.lock")
     correction = _remember(
@@ -142,22 +141,16 @@ def test_backfill_derives_all_go_rules_with_marker(tmp_path: Path) -> None:
         assert r4b.metadata["rule_basis"] == SHARED_FILES_BASIS
         assert r4b.metadata["files"] == ["src/loader.py"]
 
-        # R2a: root cause caused the fix (direction problem -> fix).
-        r2a = _only(
-            store,
-            source_id=nodes["problem"].id,
-            target_id=nodes["fix"].id,
+        assert store.list_connections(
+            source_id=nodes["problem"].id, target_id=nodes["fix"].id,
             relation_type="caused",
-        )
-        assert r2a.metadata["kind"] == FAILURE_RESOLUTION_KIND
-        assert r2a.metadata["basis"] == BACKFILL_BASIS
+        ) == []
 
         by_rule = report["rules"]
-        assert by_rule["R2a"]["new"] == 1
         assert by_rule["R4a"]["new"] == 1
         assert by_rule["R4b"]["new"] == 1
         assert by_rule["R6"]["new"] == 2
-        assert report["totals"]["new_rows"] == 5
+        assert report["totals"]["new_rows"] == 4
 
 
 def test_backfill_marker_never_touches_kind_so_traversal_holds(tmp_path: Path) -> None:
