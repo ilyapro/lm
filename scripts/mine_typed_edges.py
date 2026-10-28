@@ -2,8 +2,8 @@
 """Read-only miner for provenance-derived typed-edge candidate rules.
 
 Mines the Living Memory corpus for candidate typed, directional edges derivable
-from structured provenance (teach lineage, procedure groups, shared commit/files, concept/schema source_traces) and
-measures, per rule:
+from structured provenance (teach lineage, procedure groups, shared commit/files,
+concept/schema source_traces) and measures, per rule:
 
   * derivable candidate count (directed) and unique undirected pairs,
   * both-active pair count (graph traversal skips decayed nodes),

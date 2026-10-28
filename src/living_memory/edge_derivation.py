@@ -10,8 +10,7 @@ the corpus backfill CLI share one implementation with identical caps and
 exclusions. :func:`derive_edges_for_new_trace` performs the bounded candidate
 lookups (primary-key fetches for content ULIDs, an indexed commit-prefix
 lookup and per-file citation lookups over the files-bearing subset) and persists
-results with the same upsert semantics as ``consolidation._upsert_weighted_connection``: weight max-merge, metadata
-merge. Edges to decayed nodes are never created; both-rejected-alternative
+results through the shared storage writer: weight max-merge and metadata merge. Edges to decayed nodes are never created; both-rejected-alternative
 pairs are skipped for the undirected rules.
 """
 
