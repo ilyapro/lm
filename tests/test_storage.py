@@ -41,8 +41,8 @@ def test_node_scopes_read_authoritative_facts_in_batches_including_decayed(tmp_p
 
 def test_node_contents_read_current_sources_without_unrelated_fields(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        active = store.append_trace("Inspect the hatch.")
-        decayed = store.create_node(level="concept", content="Release pressure first.")
+        active = store.create_node(level="concept", content="Inspect the hatch.")
+        decayed = store.append_trace("Release pressure first.")
         store.soft_delete_node(decayed.id)
         with store.transaction():
             store.connection.execute(
@@ -51,8 +51,8 @@ def test_node_contents_read_current_sources_without_unrelated_fields(tmp_path: P
         ids = [f"missing-{i}" for i in range(1100)] + [active.id, decayed.id, active.id]
         facts = store.get_node_contents(iter(ids))
         assert {key: (value.id, value.content, value.level) for key, value in facts.items()} == {
-            active.id: (active.id, active.content, "trace"),
-            decayed.id: (decayed.id, decayed.content, "concept"),
+            active.id: (active.id, active.content, "concept"),
+            decayed.id: (decayed.id, decayed.content, "trace"),
         }
         assert store.get_node_contents([]) == {}
         store.update_node(active.id, content="Open the current hatch.")
