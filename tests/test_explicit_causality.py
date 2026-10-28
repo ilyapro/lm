@@ -70,7 +70,7 @@ def recall(mcp, depth):
 
 @pytest.mark.parametrize("groups", GROUPS, ids=["same-task", "same-session", "unshared"])
 @pytest.mark.parametrize("depth", [1, "causal"])
-def test_native_remember_does_not_infer_causality(native, groups, depth):
+def test_native_remember_does_not_infer_causality(native, groups, depth, tmp_path):
     problem, solution = write_pair(native, groups)
     store = native.memory_store
     assert store.connection.execute("SELECT count(*) FROM connections").fetchone()[0] == 0
@@ -85,8 +85,15 @@ def test_native_remember_does_not_infer_causality(native, groups, depth):
     report = backfill_edges(store, apply=True)
     assert report["totals"]["new_rows"] == 0
     assert store.list_connections() == []
-    nodes = miner.load_corpus(store.connection)
-    assert miner.rule_content_ulid_reference(nodes) == []
+    report_path = tmp_path / "mining.json"
+    assert miner.main([
+        "--db", str(store.db_path), "--report", str(report_path),
+        "--samples", str(tmp_path / "samples.md"),
+    ]) == 0
+    mined = json.loads(report_path.read_text())
+    assert mined["edges_total"] == 0
+    assert not any(rule["rule"].startswith("R2a") for rule in mined["rules"])
+    assert all(rule["candidates_directed"] == 0 for rule in mined["rules"])
 
 
 @pytest.mark.parametrize("depth", [1, "causal"])
@@ -115,7 +122,9 @@ def test_native_explicit_connections_survive_history(native, depth, relation, se
     results = recall(native, depth)
     assert problem in results and solution in results
     assert results[problem]["graph_score"] > 0
-    assert results[problem]["delivery"] == "full"
+    assert results[problem]["content_ref"]["node_id"] == problem
+    if depth == "causal":
+        assert results[problem]["delivery"] == "full"
     assert not store.get_node(problem).decayed
     assert store.get_node(problem).corrections == []
 
@@ -228,3 +237,30 @@ def test_explicit_causality_preserves_scope_decay_and_eligibility(native, state,
     result = native.tools["memory_lookup"](node_id=solution, scope=SCOPE)["results"][0]
     assert not result["superseded"]
     assert not result["decayed"]
+
+
+def test_offline_projection_matches_semantic_updates_and_ignores_history(tmp_path):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        a = store.append_trace("Copper pump fuse diagnosis.", {"scope": SCOPE})
+        b = store.append_trace(f"Violet calendar reference to {a.id}.", {"scope": SCOPE})
+        history = store.create_connection(a.id, b.id, "caused", metadata=INFERRED)
+        technical = store.create_connection(b.id, a.id, "related", metadata={"basis": "implicit_recall_feedback"})
+        plan = backfill_edges(store)
+        applied = backfill_edges(store, apply=True)
+        assert plan["totals"]["semantic_updates"] == applied["totals"]["semantic_updates"] == 1
+        assert plan["edges_by_type"] == applied["edges_by_type"]
+        expected_share = {key: value for key, value in plan["typed_share"]["after"].items() if key != "projected"}
+        assert expected_share == applied["typed_share"]["after"]
+        assert store.get_connection(history.id) == history
+        assert store.get_connection(technical.id).metadata["kind"] == "content_reference"
+
+
+def test_inferred_history_does_not_count_as_existing_semantic_connectivity(tmp_path):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        a = store.append_trace("Copper pump fuse diagnosis.", {"scope": SCOPE})
+        b = store.append_trace(f"Violet calendar reference to {a.id}.", {"scope": SCOPE})
+        history = store.create_connection(a.id, b.id, "caused", metadata=INFERRED)
+        report = backfill_edges(store, apply=True)
+        assert report["totals"]["new_rows"] == report["totals"]["net_new_connectivity"] == 1
+        assert report["edges_by_type"]["after"]["caused"] == 0
+        assert store.get_connection(history.id) == history
