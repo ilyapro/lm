@@ -714,6 +714,133 @@ def test_a_cached_build_agrees_with_a_cold_one_on_embedding_clusters(
     assert cold.clusters[0].medoid.node_id == partner.id  # not the top-ranked one
 
 
+def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    nodes = [
+        make_node(store, "orbital telemetry calibration sensor satellite spectrum"),
+        make_node(store, "orbital telemetry drift sensor satellite alignment"),
+        make_node(store, "orchard harvest irrigation fruits pruning rainfall"),
+    ]
+    for node, vector in zip(nodes, ([1.0, 0.0], [1.0, 0.0], [0.0, 1.0])):
+        embed(store, node, vector)
+    candidates = pool(nodes)
+    builder = RecallMapBuilder(store)
+    cold = builder.build(candidates, scope=SCOPE, task="warm-labels")
+    assert cold is not None and len(cold.clusters) == 2
+    labels = [cluster.label for cluster in cold.clusters]
+    assert "orbital" in labels[0] and "harvest" in labels[1]
+
+    def unexpected_label_work(_members):
+        pytest.fail("A warm hit must not construct or rank new label terms")
+
+    vector_reads = []
+    node_vector = builder._node_vector
+
+    def read_vector(node):
+        vector_reads.append(node.id)
+        return node_vector(node)
+
+    df_requests = []
+    frequencies = store.term_document_frequencies
+
+    def read_frequencies(terms):
+        df_requests.extend(terms)
+        return frequencies(terms)
+
+    monkeypatch.setattr(builder, "_ctfidf_label", unexpected_label_work)
+    monkeypatch.setattr(builder, "_ranked_terms", unexpected_label_work)
+    monkeypatch.setattr(builder, "_node_vector", read_vector)
+    monkeypatch.setattr(store, "term_document_frequencies", read_frequencies)
+    warm = builder.build(candidates, scope=SCOPE, task="warm-labels")
+
+    assert builder.last_cache_hit and warm is not None
+    assert payload_bytes(warm) == payload_bytes(cold)
+    assert vector_reads == [node.id for node in nodes]
+    gate_terms = {term for label in labels for term in recall_map._terms(label)}
+    assert set(df_requests) == gate_terms
+    assert len(df_requests) == len(gate_terms)
+
+    # FTS-only corpus changes leave the template revision alone. The retained
+    # labels must still pass the current corpus gate on every warm build.
+    revision = builder._corpus_revision()
+    for _ in range(CORPUS_DOCUMENTS):
+        make_node(store, " ".join(labels))
+    assert builder._corpus_revision() == revision
+    vector_reads.clear()
+    df_requests.clear()
+    gated = builder.build(candidates, scope=SCOPE, task="warm-labels")
+
+    assert builder.last_cache_hit and gated is not None
+    assert gated.clusters == () and gated.withheld == 2
+    assert vector_reads == [node.id for node in nodes]
+    assert set(df_requests) == gate_terms
+
+
+def test_warm_embedding_medoid_uses_current_fallback_vectors(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    nodes = [
+        make_node(store, "outlying orbital telemetry calibration"),
+        make_node(store, "central orbital telemetry calibration"),
+        make_node(store, "nearby orbital telemetry calibration"),
+    ]
+    for node, vector in zip(nodes, ([1.0, 0.9], [1.0, 0.0], [1.0, 0.05])):
+        node.embedding = vector
+    candidates = pool(nodes)
+    builder = RecallMapBuilder(store)
+    cold = builder.build(candidates, scope=SCOPE, task="fresh-medoid")
+    assert cold is not None and cold.clusters[0].medoid.node_id == nodes[2].id
+
+    def unexpected_label_work(_members):
+        pytest.fail("Unchanged membership must retain its label and hint")
+
+    monkeypatch.setattr(builder, "_ctfidf_label", unexpected_label_work)
+    nodes[1].embedding, nodes[2].embedding = nodes[2].embedding, nodes[1].embedding
+    warm = builder.build(candidates, scope=SCOPE, task="fresh-medoid")
+
+    assert builder.last_cache_hit and warm is not None
+    assert warm.clusters[0].medoid.node_id == nodes[1].id
+    assert warm.clusters[0].label == cold.clusters[0].label
+    assert warm.clusters[0].ask_hint == cold.clusters[0].ask_hint
+
+
+@pytest.mark.parametrize("fresh_vector", [None, [1.0, 0.0, 0.0]])
+def test_warm_embedding_vector_refusal_rebuilds_with_real_labels(
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, fresh_vector
+) -> None:
+    nodes = [
+        make_node(store, "orbital telemetry calibration"),
+        make_node(store, "orbital telemetry alignment"),
+    ]
+    for node in nodes:
+        node.embedding = [1.0, 0.0]
+    candidates = pool(nodes)
+    builder = RecallMapBuilder(store)
+    first = builder.build(candidates, scope=SCOPE, task="vector-refusal")
+    assert first is not None and len(first.clusters) == 1
+
+    labels = []
+    label = builder._ctfidf_label
+
+    def make_label(members):
+        built = label(members)
+        labels.append(built)
+        return built
+
+    monkeypatch.setattr(builder, "_ctfidf_label", make_label)
+    nodes[1].embedding = fresh_vector
+    rebuilt = builder.build(candidates, scope=SCOPE, task="vector-refusal")
+    cold = RecallMapBuilder(store).build(candidates, scope=SCOPE, task="vector-refusal")
+
+    assert not builder.last_cache_hit
+    assert rebuilt is not None and cold is not None
+    assert payload_bytes(rebuilt) == payload_bytes(cold)
+    assert labels == [cluster.label for cluster in cold.clusters]
+    assert all("orbital" in label for label in labels)
+    assert len(labels) == (1 if fresh_vector is None else 2)
+
+
 def test_relevance_reorder_invalidates_a_greedy_embedding_template(
     store: MemoryStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -732,6 +859,15 @@ def test_relevance_reorder_invalidates_a_greedy_embedding_template(
     assert first is not None
     assert [cluster.count for cluster in first.clusters] == [2, 1]
 
+    labels = []
+    label = builder._ctfidf_label
+
+    def make_label(members):
+        built = label(members)
+        labels.append(built)
+        return built
+
+    monkeypatch.setattr(builder, "_ctfidf_label", make_label)
     candidates = pool([bridge, left, right])
     rebuilt = builder.build(
         candidates, scope=SCOPE, task="embedding-order"
@@ -744,6 +880,7 @@ def test_relevance_reorder_invalidates_a_greedy_embedding_template(
     assert rebuilt is not None and cold is not None
     assert [cluster.count for cluster in rebuilt.clusters] == [3]
     assert payload_bytes(rebuilt) == payload_bytes(cold)
+    assert labels == [cluster.label for cluster in cold.clusters]
 
 
 def test_distinct_structural_keys_do_not_collapse_into_one_cluster(store: MemoryStore) -> None:
