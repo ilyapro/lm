@@ -593,11 +593,9 @@ def test_protocol_abstract_coverage(instructions: str, union: str) -> None:
         "the blind/invent merge is the universal consequence of skipping "
         "recall"
     )
-    assert "link work across sessions" in instructions, (
-        "correlation identity: task/agent/session_id in context is the "
-        "actionable half of the legacy block"
-    )
-    for token in ("`task`", "`agent`", "`session_id`"):
+    for token in ("`task`", "`agent`", "`session_id`", "`ambient_context`", "`context`",
+                  "same caller-unique", "compatible", "scope", "after reconnect",
+                  "Without that durable session", "cannot be attributed"):
         assert token in instructions
 
     # Action classes and learning requirements must remain explicit:

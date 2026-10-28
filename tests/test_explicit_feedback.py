@@ -160,13 +160,15 @@ def _recall(mcp: Any, **kwargs: Any) -> dict[str, Any]:
         scope=SCOPE,
         max_results=len(BODIES),
         depth=0,
-        ambient_context=dict(AMBIENT),
+        ambient_context=kwargs.pop("ambient_context", dict(AMBIENT)),
         **kwargs,
     )
 
 
 def _remember(mcp: Any, content: str = CONSUMING_TRACE, **kwargs: Any) -> dict[str, Any]:
-    return mcp.tools["memory_remember"](content, {"scope": SCOPE, **AMBIENT}, **kwargs)
+    return mcp.tools["memory_remember"](
+        content, kwargs.pop("context", {"scope": SCOPE, **AMBIENT}), **kwargs,
+    )
 
 
 def _marks(store: MemoryStore) -> list[dict[str, Any]]:
@@ -297,10 +299,10 @@ def test_recall_marks_cannot_name_the_recall_carrying_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     mcp, store, node_ids, _event_id = _seed(tmp_path / "self.sqlite3", monkeypatch)
-    # A fresh transport has no earlier delivery; this very recall delivers
+    # An independent caller has no earlier delivery; this very recall delivers
     # the node, but a mark only ever refers to an earlier one.
     _stamp(monkeypatch, "fresh-connection")
-    response = _recall(mcp, used=[node_ids[0]])
+    response = _recall(mcp, ambient_context={**AMBIENT, "session_id": "new-caller"}, used=[node_ids[0]])
     assert response["feedback_marks"] == {
         "accepted": 0,
         "dropped": 1,
@@ -357,7 +359,8 @@ def test_foreign_session_and_unknown_ids_are_dropped_but_audited(
 ) -> None:
     mcp, store, node_ids, _event_id = _seed(tmp_path / "foreign.sqlite3", monkeypatch)
     _stamp(monkeypatch, OTHER_TRANSPORT)
-    response = _remember(mcp, UNRELATED_TRACE, used=[node_ids[0], "01UNKNOWNNODE"])
+    response = _remember(mcp, UNRELATED_TRACE, used=[node_ids[0], "01UNKNOWNNODE"],
+                         context={"scope": SCOPE, **AMBIENT, "session_id": "other-caller"})
     assert response["feedback_marks"] == {
         "accepted": 0,
         "dropped": 2,

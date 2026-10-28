@@ -111,8 +111,9 @@ def prepare_pre_ledger_schema(db_path: Path) -> dict[str, str]:
         rows = memory_rows(conn)
         for name in sorted(_ADDITIVE_TABLES):
             conn.execute(f"DROP TABLE {name}")
-        for name in sorted(PENDING_RECALL_INDEXES):
-            conn.execute(f"DROP INDEX {name}")
+        for name in sorted(ADDITIVE_OBJECTS - _ADDITIVE_TABLES):
+            # Indexes owned by the removed tables have already disappeared.
+            conn.execute(f"DROP INDEX IF EXISTS {name}")
         conn.execute("""CREATE INDEX idx_recall_pending_agent
             ON recall_events(COALESCE(agent, ''), created_at DESC)
             WHERE feedback_applied = 0""")
