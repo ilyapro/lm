@@ -69,12 +69,12 @@ def test_scopeless_mcp_recall_reaches_other_projects_and_explicit_scope_restrict
 
             for ambient in (None, {"session_id": "s-1064"}, {"project": "repo"}):
                 arguments = {"ambient_context": ambient} if ambient else {}
-                for query in (QUERY, "private snapshot immediate commit proof sidecars"):
+                for query in (QUERY, "immediate commit proof sidecars transfer reference"):
                     results = await _recall(client, query, **arguments)
                     ids = [entry["id"] for entry in results]
                     assert ids[0] == fact, (ambient, query)
                     assert len(ids) <= 5
-                    assert results[0]["delivery"] != "below_threshold"
+                    assert results[0]["delivery"] != "below_threshold", (ambient, query)
                     qualified = [entry for entry in results if entry["delivery"] != "below_threshold"]
                     assert not {entry["id"] for entry in qualified} & fillers
                     references = [entry for entry in results if entry["id"] in fillers]
