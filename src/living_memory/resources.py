@@ -18,7 +18,9 @@ from living_memory.health_audit import (
     scope_hygiene_metrics,
     storage_metrics,
 )
-from living_memory.models import Connection, Node, RecallEvent, RetrievalWeights, string_list
+from living_memory.models import (
+    Connection, Node, RecallEvent, RetrievalPolicyFloors, RetrievalWeights, string_list,
+)
 from living_memory.scope import ScopePlan, normalize_scope, resolve_scope, scope_family
 from living_memory.storage import MemoryStore
 from living_memory.validity import read_validity
@@ -26,13 +28,6 @@ from living_memory.validity import read_validity
 DEFAULT_CONCEPT_LIMIT = 100_000
 DEFAULT_RECENT_LIMIT = 20
 DEFAULT_RETRIEVAL_SKEW_PRESSURE_WINDOW_HOURS = 24
-
-_FALLBACK_RETRIEVAL_POLICY_FLOORS: dict[str, dict[str, float]] = {
-    "project": {"bm25_max": 0.85, "vector_min": 0.15, "graph_min": 0.05, "bm25_min": 0.10},
-    "global": {"bm25_max": 0.75, "vector_min": 0.20, "graph_min": 0.05, "bm25_min": 0.10},
-    "session": {"bm25_max": 0.90, "vector_min": 0.10, "graph_min": 0.0, "bm25_min": 0.10},
-}
-
 
 def global_concepts(store: MemoryStore, *, limit: int = DEFAULT_CONCEPT_LIMIT) -> dict[str, Any]:
     """Return active global concepts for the static global concepts resource."""
@@ -517,14 +512,16 @@ def retrieval_skew_metrics(
 
     normalized_scope = normalize_scope(scope) if scope else None
     thresholds = store.config.retrieval_skew_thresholds
-    floors = _retrieval_policy_floors_in_effect(store)
+    floors = {
+        family: _policy_floor_to_dict(floor)
+        for family, floor in store.config.retrieval_policy_floors.items()
+    }
     return {
         "thresholds": _skew_thresholds_to_dict(thresholds),
         "floors_in_effect": floors,
         "scopes_at_risk": _retrieval_scopes_at_risk(
             store,
             thresholds=thresholds,
-            floors=floors,
             scope=normalized_scope,
         ),
         "recent_feedback_pressure": _recent_feedback_pressure(
@@ -718,36 +715,19 @@ def _skew_thresholds_to_dict(thresholds: RetrievalSkewThresholds) -> dict[str, f
     }
 
 
-def _retrieval_policy_floors_in_effect(store: MemoryStore) -> dict[str, dict[str, float]]:
-    configured = getattr(store.config, "retrieval_policy_floors", None)
-    if configured:
-        return {
-            str(family): _policy_floor_to_dict(floor)
-            for family, floor in configured.items()
-        }
-    return {family: dict(values) for family, values in _FALLBACK_RETRIEVAL_POLICY_FLOORS.items()}
-
-
-def _policy_floor_to_dict(floor: Any) -> dict[str, float]:
+def _policy_floor_to_dict(floor: RetrievalPolicyFloors) -> dict[str, float]:
     return {
-        "bm25_max": float(_policy_floor_value(floor, "bm25_max")),
-        "vector_min": float(_policy_floor_value(floor, "vector_min")),
-        "graph_min": float(_policy_floor_value(floor, "graph_min")),
-        "bm25_min": float(_policy_floor_value(floor, "bm25_min")),
+        "bm25_max": floor.bm25_max,
+        "vector_min": floor.vector_min,
+        "graph_min": floor.graph_min,
+        "bm25_min": floor.bm25_min,
     }
-
-
-def _policy_floor_value(floor: Any, key: str) -> Any:
-    if isinstance(floor, dict):
-        return floor[key]
-    return getattr(floor, key)
 
 
 def _retrieval_scopes_at_risk(
     store: MemoryStore,
     *,
     thresholds: RetrievalSkewThresholds,
-    floors: dict[str, dict[str, float]],
     scope: str | None,
 ) -> list[dict[str, Any]]:
     params: list[Any] = []
@@ -771,10 +751,6 @@ def _retrieval_scopes_at_risk(
         if row_scope == "default":
             continue
         family = scope_family(row_scope)
-        floor = floors.get(family)
-        if floor is None:
-            continue
-
         raw_weights = RetrievalWeights(
             scope=row_scope,
             bm25=float(row["bm25"]),
@@ -784,14 +760,10 @@ def _retrieval_scopes_at_risk(
             updated_at=str(row["updated_at"]),
         ).normalized()
         raw = _weights_triplet(raw_weights)
-        has_graph_evidence = store._has_graph_evidence(row_scope)
-        flags = _retrieval_skew_flags(
-            raw,
-            thresholds=thresholds,
-            floor=floor,
-            has_graph_evidence=has_graph_evidence,
-        )
-        floor_violation = _retrieval_floor_violation(raw, floor)
+        applicable, effective = store.evaluate_retrieval_weight_floors(row_scope, raw_weights)
+        floor = _policy_floor_to_dict(applicable) if applicable is not None else {}
+        flags = _retrieval_skew_flags(raw, thresholds=thresholds)
+        floor_violation = _retrieval_floor_violation(raw, floor) if floor else {}
         if not flags and not floor_violation:
             continue
 
@@ -800,7 +772,8 @@ def _retrieval_scopes_at_risk(
                 "scope": row_scope,
                 "family": family,
                 "raw": raw,
-                "effective_after_floor": _effective_after_floor(raw, floor),
+                "effective_after_floor": _weights_triplet(effective),
+                "applicable_floors": floor,
                 "flags": flags,
                 "floor_violation": floor_violation,
             }
@@ -820,16 +793,13 @@ def _retrieval_skew_flags(
     raw: dict[str, float],
     *,
     thresholds: RetrievalSkewThresholds,
-    floor: dict[str, float],
-    has_graph_evidence: bool = False,
 ) -> list[str]:
     flags: list[str] = []
     if raw["bm25"] > thresholds.bm25_monoculture:
         flags.append("bm25_monoculture")
     if raw["vector"] < thresholds.near_zero_vector:
         flags.append("near_zero_vector")
-    graph_expected = floor["graph_min"] > 0.0 or has_graph_evidence
-    if graph_expected and raw["graph"] < thresholds.near_zero_graph:
+    if raw["graph"] < thresholds.near_zero_graph:
         flags.append("near_zero_graph")
     return flags
 
@@ -860,38 +830,6 @@ def _retrieval_floor_violation(
             "floor": floor["graph_min"],
         }
     return violation
-
-
-def _effective_after_floor(
-    raw: dict[str, float],
-    floor: dict[str, float],
-) -> dict[str, float]:
-    weights = dict(raw)
-    minimum = {
-        "bm25": floor.get("bm25_min", 0.0),
-        "vector": floor["vector_min"],
-        "graph": floor["graph_min"],
-    }
-    for target in ("vector", "graph", "bm25"):
-        deficit = max(0.0, minimum[target] - weights[target])
-        for donor in ("bm25", "graph", "vector"):
-            if donor == target or deficit <= 1e-12:
-                continue
-            available = max(0.0, weights[donor] - minimum[donor])
-            taken = min(deficit, available)
-            weights[donor] -= taken
-            weights[target] += taken
-            deficit -= taken
-
-    if weights["bm25"] > floor["bm25_max"]:
-        surplus = weights["bm25"] - floor["bm25_max"]
-        weights["bm25"] -= surplus
-        weights["vector"] += surplus
-
-    total = weights["bm25"] + weights["vector"] + weights["graph"]
-    if total <= 0.0:
-        return {"bm25": 1.0, "vector": 0.0, "graph": 0.0}
-    return {key: max(0.0, weights[key]) / total for key in ("bm25", "vector", "graph")}
 
 
 def _recent_feedback_pressure(

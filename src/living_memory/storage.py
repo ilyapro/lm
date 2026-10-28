@@ -36,6 +36,7 @@ from living_memory.models import (
     NodeChunkEmbedding,
     NodeLevel,
     RecallEvent,
+    RetrievalPolicyFloors,
     RetrievalWeights,
     SourcePassage,
 )
@@ -4860,10 +4861,20 @@ class MemoryStore:
     ) -> RetrievalWeights:
         """Return normalized weights with active scope-family floors applied."""
 
+        _, effective = self.evaluate_retrieval_weight_floors(scope, weights)
+        return effective
+
+    def evaluate_retrieval_weight_floors(
+        self,
+        scope: str,
+        weights: RetrievalWeights,
+    ) -> tuple[RetrievalPolicyFloors | None, RetrievalWeights]:
+        """Read applicable floors and effective weights from the same evidence."""
+
         normalized = weights.normalized()
         floors = self.config.retrieval_policy_floors.get(_scope_family(scope))
         if floors is None:
-            return normalized
+            return None, normalized
 
         vector_min = floors.vector_min if self._has_vector_evidence(scope) else 0.0
         graph_min = floors.graph_min if self._has_graph_evidence(scope) else 0.0
@@ -4872,8 +4883,15 @@ class MemoryStore:
         # feedback (feedback._method_signals) drives bm25 to 0 and exact-keyword /
         # identifier recall stops contributing to ranking.
         bm25_min = floors.bm25_min
+        applicable = RetrievalPolicyFloors(
+            # A BM25 surplus can move only to a channel with an active minimum.
+            bm25_max=floors.bm25_max if vector_min > 0.0 or graph_min > 0.0 else 1.0,
+            vector_min=vector_min,
+            graph_min=graph_min,
+            bm25_min=bm25_min,
+        )
         if vector_min <= 0.0 and graph_min <= 0.0 and bm25_min <= 0.0:
-            return normalized
+            return applicable, normalized
 
         values = {
             "bm25": normalized.bm25,
@@ -4902,7 +4920,7 @@ class MemoryStore:
             learning_rate=normalized.learning_rate,
             updated_at=normalized.updated_at,
         ).normalized()
-        return floored
+        return applicable, floored
 
     @staticmethod
     def _lift_retrieval_weight(
