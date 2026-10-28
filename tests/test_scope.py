@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from living_memory.config import MemoryConfig
+from living_memory.delivery import DeliveryHistory, shape_recall_results
 from living_memory.retrieval import memory_recall
 from living_memory.scope import resolve_scope
 from living_memory.storage import MemoryStore
@@ -130,9 +131,9 @@ def test_scopeless_recall_reaches_another_projects_fact(
 def test_wider_search_adds_no_noise_a_single_scope_would_not(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Weak vector-only matches fill free slots inside one scope too (and the
-    # gate always delivers a top result); spreading the same memory over thirty
-    # projects and searching them all must not add more of them.
+    # A broader search must preserve the qualified fact without adding noisy
+    # content. Weak sources may occupy spare slots as lookup references.
+    monkeypatch.setenv("LM_RECALL_GATE_FORM", "drop")
     def noise(name: str, *, spread: bool) -> tuple[int, int]:
         with MemoryStore(tmp_path / f"{name}.sqlite3") as store:
             fact = store.append_trace(
@@ -149,10 +150,30 @@ def test_wider_search_adds_no_noise_a_single_scope_would_not(
             scope = None if spread else "project:ingest"
             answer = memory_recall(store, "checkpoint cursor acked offset", scope=scope, max_results=5)
             assert answer[0].node.id == fact.id
+            assert answer[0].withheld is None
             nonsense = memory_recall(store, "qzvkrw plbxtn", scope=scope, max_results=5)
+            for results in (answer, nonsense):
+                assert 0 < len(results) <= 5
+                delivered = shape_recall_results(
+                    results, delivery_history=DeliveryHistory(), snippet_max_chars=0,
+                    context_value_max_chars=0, session_dedup=False, view="knowledge",
+                )
+                for result, entry in zip(results, delivered, strict=True):
+                    assert entry["content_ref"]["node_id"] == result.node.id
+                    assert store.get_node(entry["content_ref"]["node_id"]).id == result.node.id
+                    if result.withheld:
+                        assert entry["delivery"] == "below_threshold"
+                        assert entry["content"] == ""
+                    else:
+                        assert entry["content"] == result.node.content
+            if gate:
+                assert any(result.node.id in fillers for result in answer)
+                assert all(result.withheld == "below_threshold" for result in nonsense)
+            else:
+                assert all(result.withheld is None for result in answer + nonsense)
             return (
-                sum(result.node.id in fillers for result in answer),
-                sum(result.node.id in fillers for result in nonsense),
+                sum(result.node.id in fillers and not result.withheld for result in answer),
+                sum(result.node.id in fillers and not result.withheld for result in nonsense),
             )
 
     for gate in ("", "0.35"):  # off, and the deployed threshold
@@ -160,7 +181,9 @@ def test_wider_search_adds_no_noise_a_single_scope_would_not(
         spread = noise(f"spread{gate}", spread=True)
         single = noise(f"single{gate}", spread=False)
         assert spread[0] <= single[0] and spread[1] <= single[1]
-    assert spread[0] == 0
+        if not gate:
+            assert spread[0] > 0  # the ungated negative control really delivers noise
+    assert spread == single == (0, 0)
 
 
 def _default_scoped_store(tmp_path: Path, default_scope: str) -> MemoryStore:

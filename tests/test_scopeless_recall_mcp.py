@@ -54,6 +54,7 @@ def test_scopeless_mcp_recall_reaches_other_projects_and_explicit_scope_restrict
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.35")  # the deployed gate
+    monkeypatch.setenv("LM_RECALL_GATE_FORM", "drop")
 
     async def scenario() -> None:
         mcp = create_mcp_server(tmp_path / "memory.sqlite3")
@@ -72,7 +73,22 @@ def test_scopeless_mcp_recall_reaches_other_projects_and_explicit_scope_restrict
                     results = await _recall(client, query, **arguments)
                     ids = [entry["id"] for entry in results]
                     assert ids[0] == fact, (ambient, query)
-                    assert not set(ids) & fillers
+                    assert len(ids) <= 5
+                    assert results[0]["delivery"] != "below_threshold"
+                    qualified = [entry for entry in results if entry["delivery"] != "below_threshold"]
+                    assert not {entry["id"] for entry in qualified} & fillers
+                    references = [entry for entry in results if entry["id"] in fillers]
+                    assert references  # bounded references remain reachable
+                    for entry in references:
+                        assert entry["delivery"] == "below_threshold"
+                        assert entry["content"] == ""
+                        assert entry["content_ref"]["node_id"] == entry["id"]
+                    lookup = _structured(await client.call_tool(
+                        "memory_lookup", {"node_ids": [fact, *[entry["id"] for entry in references]]}
+                    ))
+                    found = {entry["id"]: entry for entry in lookup["results"]}
+                    assert found[fact]["content"] == FACT
+                    assert all(found[entry["id"]]["content"] for entry in references)
 
             restricted = await _recall(client, QUERY, scope="project:repo")
             assert fact not in {entry["id"] for entry in restricted}
