@@ -3,7 +3,6 @@
 import asyncio
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from dataclasses import asdict
 from threading import Event
 
@@ -143,7 +142,7 @@ def test_cross_scope_admission_through_consolidation(tmp_path, invalid):
         vector = model.embed(TEXTS[0])
         seed(store)
         beta = peer(store, "project:beta", embedding=vector)
-        gamma = peer(store, "project:gamma", embedding=vector)
+        gamma = peer(store, "project:gamma", embedding=None if invalid == "missing_vector" else vector)
         if invalid == "same_scope":
             store.update_node(gamma.id, context={"scope": beta.scope})
         elif invalid == "session":
@@ -152,8 +151,6 @@ def test_cross_scope_admission_through_consolidation(tmp_path, invalid):
             store.update_node(gamma.id, context={"scope": gamma.scope, "task_pattern": "other"})
         elif invalid == "dissimilar":
             store.update_node(gamma.id, embedding=[-v for v in vector])
-        elif invalid == "missing_vector":
-            store.update_node(gamma.id, embedding=None)
         elif invalid == "corrected":
             store.add_correction(gamma.id, old=gamma.content, new="obsolete", by="reviewer")
         elif invalid == "superseded":
