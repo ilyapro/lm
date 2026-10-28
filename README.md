@@ -75,7 +75,10 @@ supersession requires `memory_teach` or an explicit typed connection. Shared
 work context, nearby timestamps and problem/fix labels do not establish
 causality. Inferred-only `caused` history (`rule=R2a` or
 `kind=failure_resolution`) is excluded from graph evidence; explicit causal
-connections remain usable.
+connections remain usable. A caller's `basis=explicit` survives merged inferred
+markers. A later explicit connection replaces inferred metadata; historical
+unmarked explicit writes overwritten by inferred markers cannot be reconstructed
+from timestamps or work context. The stored rows remain available for inspection.
 
 Exact-copy lifecycle bookkeeping uses `related(kind=duplicate_content)` rather
 than correction semantics. Known historical `supersedes` rows from the drain
