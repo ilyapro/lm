@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
 from living_memory.config import MemoryConfig, RetrievalSkewThresholds, load_config
+from living_memory.models import RetrievalPolicyFloors, RetrievalWeights
 from living_memory.resources import memory_health, retrieval_skew_metrics
+from living_memory.server import create_mcp_server
 from living_memory.storage import MemoryStore
 
 
@@ -39,14 +43,13 @@ def test_memory_health_flags_deliberately_skewed_project_scope(tmp_path: Path) -
         "graph": pytest.approx(0.0),
     }
 
-    violation = risk["floor_violation"]
-    assert violation["bm25"]["ceiling"] == pytest.approx(0.85)
-    assert violation["vector"]["floor"] == pytest.approx(0.15)
-    assert violation["graph"]["floor"] == pytest.approx(0.05)
-    assert risk["effective_after_floor"] == {
-        "bm25": pytest.approx(0.80),
-        "vector": pytest.approx(0.15),
-        "graph": pytest.approx(0.05),
+    assert risk["floor_violation"] == {}
+    assert risk["effective_after_floor"] == risk["raw"]
+    assert risk["applicable_floors"] == {
+        "bm25_max": 1.0,
+        "vector_min": 0.0,
+        "graph_min": 0.0,
+        "bm25_min": 0.10,
     }
 
 
@@ -174,3 +177,134 @@ def test_recent_feedback_pressure_counts_dominant_methods(tmp_path: Path) -> Non
     assert empty["consumed_recall_events"] == 0
     assert empty["dominant_method_counts"] == {"bm25": 0, "vector": 0, "graph": 0}
     assert empty["bm25_dominance_ratio"] is None
+
+
+# Expected distributions are independent of the production floor calculation.
+@pytest.mark.parametrize(
+    "policy,evidence,raw,expected,violations",
+    [
+        ("default", "none", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("default", "vector", (0.98, 0.02, 0), (0.85, 0.15, 0), {"bm25", "vector"}),
+        ("default", "graph", (0.98, 0.02, 0), (0.85, 0.02, 0.13), {"bm25", "graph"}),
+        ("default", "both", (0.98, 0.02, 0), (0.80, 0.15, 0.05), {"bm25", "vector", "graph"}),
+        ("custom", "none", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("custom", "vector", (0.98, 0.02, 0), (0.60, 0.40, 0), {"bm25", "vector"}),
+        ("custom", "graph", (0.98, 0.02, 0), (0.60, 0.02, 0.38), {"bm25", "graph"}),
+        ("custom", "both", (0.98, 0.02, 0), (0.60, 0.30, 0.10), {"bm25", "vector", "graph"}),
+        ("empty", "none", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("empty", "vector", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("empty", "graph", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("empty", "both", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("default", "none", (0, 0, 1), (0.10, 0, 0.90), {"bm25"}),
+        ("default", "vector", (0, 0, 1), (0.10, 0.15, 0.75), {"bm25", "vector"}),
+        ("default", "graph", (0, 0, 1), (0.10, 0, 0.90), {"bm25"}),
+        ("default", "both", (0, 0, 1), (0.10, 0.15, 0.75), {"bm25", "vector"}),
+        ("custom", "none", (0, 0, 1), (0.20, 0, 0.80), {"bm25"}),
+        ("zero_minima", "both", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("other_family", "both", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("default", "both", (98, 2, 0), (0.80, 0.15, 0.05), {"bm25", "vector", "graph"}),
+        ("default", "both", (0, 0, 0), (0.80, 0.15, 0.05), {"bm25", "vector", "graph"}),
+    ],
+)
+def test_native_health_matches_floor_application_and_feedback_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    policy: str,
+    evidence: str,
+    raw: tuple[float, float, float],
+    expected: tuple[float, float, float],
+    violations: set[str],
+) -> None:
+    from fastmcp import Client
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    config = MemoryConfig(db_path=tmp_path / "native.sqlite3")
+    custom = RetrievalPolicyFloors(0.60, 0.25, 0.10, 0.20)
+    if policy == "custom":
+        config.retrieval_policy_floors = {"project": custom}
+    elif policy == "empty":
+        config.retrieval_policy_floors = {}
+    elif policy == "zero_minima":
+        config.retrieval_policy_floors = {"project": RetrievalPolicyFloors(0.60, 0, 0)}
+    elif policy == "other_family":
+        config.retrieval_policy_floors = {"global": custom}
+    mcp = create_mcp_server(config=config, expose_operator_tools=True)
+    store = mcp.memory_store
+    scope = "project:health"
+    try:
+        # Other scopes and families cannot enable floors in this scope.
+        _seed_floor_evidence(store, "project:other", "both")
+        _seed_floor_evidence(store, "global", "both")
+        _seed_floor_evidence(store, scope, evidence)
+        assert store._has_vector_evidence(scope) == (evidence in {"vector", "both"})
+        assert store._has_graph_evidence(scope) == (evidence in {"graph", "both"})
+        saved = store.set_retrieval_weights(
+            scope, bm25=raw[0], vector=raw[1], graph=raw[2], learning_rate=0.07,
+        )
+        assert _triplet(saved) == raw
+        store.set_retrieval_weights("project:other", bm25=1, vector=0, graph=0)
+        before = list(store.connection.iterdump())
+        changes = store.connection.total_changes
+        store.connection.execute("PRAGMA query_only = ON")
+
+        async def health() -> dict[str, object]:
+            async with Client(mcp) as client:
+                response = await client.call_tool("memory_health", {"scope": scope})
+                assert not response.is_error
+                return response.data
+
+        report = asyncio.run(health())
+        assert store.connection.total_changes == changes
+        assert list(store.connection.iterdump()) == before
+        store.connection.execute("PRAGMA query_only = OFF")
+        assert store.get_retrieval_weights(scope) == saved
+        skew = report["retrieval_skew"]
+        assert skew["floors_in_effect"] == {
+            family: asdict(floor) for family, floor in config.retrieval_policy_floors.items()
+        }
+        assert [risk["scope"] for risk in skew["scopes_at_risk"]] == [scope]
+        risk = _risk_by_scope(report, scope)
+        assert tuple(risk["raw"].values()) == pytest.approx(_triplet(saved.normalized()))
+        assert tuple(risk["effective_after_floor"].values()) == pytest.approx(expected)
+        assert set(risk["floor_violation"]) == violations
+        configured = config.retrieval_policy_floors.get("project")
+        if configured is None:
+            assert risk["applicable_floors"] == {}
+        else:
+            vector_min = configured.vector_min if evidence in {"vector", "both"} else 0
+            graph_min = configured.graph_min if evidence in {"graph", "both"} else 0
+            assert risk["applicable_floors"] == {
+                "bm25_max": configured.bm25_max if vector_min or graph_min else 1.0,
+                "vector_min": vector_min,
+                "graph_min": graph_min,
+                "bm25_min": configured.bm25_min,
+            }
+        applied = store.apply_retrieval_weight_floors(scope, saved)
+        updated = store.update_retrieval_weights(scope)
+        assert _triplet(applied) == pytest.approx(expected)
+        assert _triplet(updated) == pytest.approx(expected)
+        assert _triplet(store.get_retrieval_weights(scope)) == pytest.approx(expected)
+        assert updated.learning_rate == saved.learning_rate
+        assert sum(_triplet(updated)) == pytest.approx(1.0)
+        assert _triplet(store.get_retrieval_weights("project:other")) == (1, 0, 0)
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
+
+
+def _triplet(weights: RetrievalWeights) -> tuple[float, float, float]:
+    return weights.bm25, weights.vector, weights.graph
+
+
+def _seed_floor_evidence(store: MemoryStore, scope: str, evidence: str) -> None:
+    if evidence == "none":
+        return
+    source = store.create_node(
+        level="trace", content="floor source", context={"scope": scope},
+        embedding=[1.0, 0.0] if evidence in {"vector", "both"} else None,
+    )
+    if evidence in {"graph", "both"}:
+        target = store.create_node(
+            level="trace", content="floor target", context={"scope": scope},
+        )
+        store.create_connection(source.id, target.id, "caused")

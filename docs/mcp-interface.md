@@ -929,6 +929,18 @@ Input:
 Output is a metrics report with `activity`, `counts`, `dedup`, `staleness`,
 `retrieval_policy`, `retrieval_skew`, `feedback`, `feedback_closure`,
 `access`, `scope_hygiene`, `storage`, `latency`, and `instructions` blocks.
+
+`retrieval_skew.floors_in_effect` lists the configured family floors, including
+an empty mapping when none are configured. Each `scopes_at_risk` row separates
+normalized `raw` weights, `applicable_floors` for that scope's current evidence,
+and `effective_after_floor` from the same calculation used by feedback updates
+and floor maintenance. Unavailable vector/graph minima are zero; the BM25
+ceiling is 1 when no positive nonlexical minimum applies. The lexical BM25
+minimum remains active. An unconfigured family has `applicable_floors: {}`.
+`floor_violation` compares only applicable constraints; `flags` describe raw
+weight skew against the reported thresholds regardless of policy or evidence.
+Health observes these values without persisting weights or applying feedback.
+
 `feedback_closure` is the first-class view of the implicit feedback loop: the
 windowed share of recall events that a later ingest consumed, partitioned by
 the identity each event carried:
