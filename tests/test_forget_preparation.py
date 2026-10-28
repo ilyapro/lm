@@ -8,6 +8,7 @@ from threading import Event, RLock
 import pytest
 
 from living_memory import consolidation as c, server
+from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.storage import MemoryStore
 from test_forget_derivation import SCOPE, TEXTS, derived, sources, deterministic_runtime
 from test_lookup import FakeMCP
@@ -25,8 +26,9 @@ def mcp(tmp_path, monkeypatch):
 
 
 @contextmanager
-def preparing(mcp, monkeypatch, trace):
-    entered, release = Event(), Event()
+def preparing(mcp, monkeypatch, trace, *, release=None):
+    entered = Event()
+    release = release or Event()
     prepare = c._prepare_digest
 
     def pause(*args, **kwargs):
@@ -146,11 +148,13 @@ def test_unchanged_digest_renders_once_outside_lock_without_encoding(mcp, monkey
     assert TEXTS[0] not in store.get_node(owner.id).content
 
 
-def test_readers_see_only_complete_commit_and_failed_forget_keeps_concurrent_work(mcp, monkeypatch):
+@pytest.mark.parametrize("fail", [False, True])
+def test_readers_see_atomic_outcome_with_concurrent_work(mcp, monkeypatch, fail):
     store = mcp.memory_store
     traces = sources(store)
     owner = derived(store, "release", traces)
     writing, release, attempted = Event(), Event(), Event()
+    prepared_release = Event()
     refresh = c._refresh_derived_from
 
     def pause_write(*args, **kwargs):
@@ -158,18 +162,38 @@ def test_readers_see_only_complete_commit_and_failed_forget_keeps_concurrent_wor
         assert mcp.test_guard._is_owned()
         writing.set()
         assert release.wait(15), "test did not release mutation"
-        raise RuntimeError("required forget failure")
+        if fail:
+            raise RuntimeError("required forget failure")
 
     def read():
         assert not mcp.test_guard.acquire(blocking=False)
         attempted.set()
         return mcp.tools["memory_lookup"](node_id=owner.id)
 
-    with preparing(mcp, monkeypatch, traces[0]) as (workers, forgotten):
+    with preparing(mcp, monkeypatch, traces[0], release=prepared_release) as (workers, forgotten):
         independent = workers.submit(mcp.tools["memory_remember"], "Workshop lights turn off at night.",
                                      context={"scope": SCOPE}).result(timeout=10)
         monkeypatch.setattr(c, "_refresh_derived_from", pause_write)
         with sqlite3.connect(store.db_path) as reader:
             before = list(reader.iterdump())
-    # The preparation helper waits for its executor on exit, so the mutation
-    # pause is released by a separate reader while that executor is active.
+        prepared_release.set()
+        try:
+            assert writing.wait(10), "forget did not reach required mutation"
+            lookup = workers.submit(read)
+            assert attempted.wait(10)
+            assert not lookup.done()
+            with sqlite3.connect(store.db_path) as reader:
+                assert list(reader.iterdump()) == before
+        finally:
+            release.set()
+        if fail:
+            with pytest.raises(RuntimeError, match="required forget failure"):
+                forgotten.result(timeout=10)
+        else:
+            assert forgotten.result(timeout=10)["node"]["decayed"]
+        current = lookup.result(timeout=10)["results"][0]
+        assert (TEXTS[0] in current["content"]) == fail
+        assert store.get_node(independent["node"]["id"]).content == "Workshop lights turn off at night."
+        if fail:
+            with sqlite3.connect(store.db_path) as reader:
+                assert list(reader.iterdump()) == before
