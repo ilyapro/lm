@@ -1031,14 +1031,25 @@ class MemoryRecallService:
         # one pass over everything, where an unnamed scope competes on the
         # corpus-wide ranking instead of getting a rank 1 of its own.
         scopes = plan.search_scopes if plan.restricted else (*plan.named_scopes, None)
-        for scope in scopes:
-            rows = self.store.search_content(expanded_query, scope=scope, limit=per_scope_limit)
-            for rank, (node, _raw_score) in enumerate(rows):
-                if node.decayed or not plan.allows(node.scope):
+        scores: dict[str, float] = {}
+        # Keep discovery and admitted bodies in one short read snapshot. IDs
+        # carry rank only; the current scoped/live reader still admits bodies.
+        with self.store.transaction():
+            for scope in scopes:
+                rows = self.store.search_content_ids(expanded_query, scope=scope, limit=per_scope_limit)
+                for rank, (node_id, _raw_score) in enumerate(rows):
+                    scores[node_id] = max(scores.get(node_id, 0.0), 1.0 / (rank + 1))
+            fetched = self.store.get_recall_nodes(
+                (node_id for node_id in scores if node_id not in candidates), plan,
+            )
+        for node_id, score in scores.items():
+            candidate = candidates.get(node_id)
+            if candidate is None:
+                node = fetched.get(node_id)
+                if node is None:
                     continue
-                score = 1.0 / (rank + 1)
-                candidate = candidates.setdefault(node.id, _Candidate(node=node))
-                candidate.bm25_score = max(candidate.bm25_score, score)
+                candidate = candidates[node_id] = _Candidate(node=node)
+            candidate.bm25_score = max(candidate.bm25_score, score)
 
     def _collect_vector(
         self,

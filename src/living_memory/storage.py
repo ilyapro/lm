@@ -3676,6 +3676,31 @@ class MemoryStore:
     ) -> list[tuple[Node, float]]:
         """Search content and recorded task through the same lexical index."""
 
+        rows = self._search_content_rows(query, projection="n.*", level=level, scope=scope, limit=limit)
+        return [(_node_from_row(row), float(row["score"])) for row in rows]
+
+    def search_content_ids(
+        self,
+        query: str,
+        *,
+        level: NodeLevel | None = None,
+        scope: str | None = None,
+        limit: int = 10,
+    ) -> list[tuple[str, float]]:
+        """Discover lexical identities and ranks without materializing bodies."""
+
+        rows = self._search_content_rows(query, projection="n.id", level=level, scope=scope, limit=limit)
+        return [(str(row["id"]), float(row["score"])) for row in rows]
+
+    def _search_content_rows(
+        self,
+        query: str,
+        *,
+        projection: Literal["n.*", "n.id"],
+        level: NodeLevel | None,
+        scope: str | None,
+        limit: int,
+    ) -> list[sqlite3.Row]:
         fts_query = _fts_query(query)
         if not fts_query:
             return []
@@ -3691,9 +3716,9 @@ class MemoryStore:
             clauses.append("n.scope = ?")
             params.append(scope)
         params.append(int(limit))
-        rows = self._conn.execute(
+        return self._conn.execute(
             f"""
-            SELECT n.*, bm25(nodes_fts) AS score
+            SELECT {projection}, bm25(nodes_fts) AS score
             FROM nodes_fts
             JOIN nodes n ON n.rowid = nodes_fts.rowid
             WHERE {' AND '.join(clauses)}
@@ -3702,7 +3727,6 @@ class MemoryStore:
             """,
             params,
         ).fetchall()
-        return [(_node_from_row(row), float(row["score"])) for row in rows]
 
     def term_document_frequencies(self, terms: Sequence[str]) -> dict[str, int]:
         """Document frequency per term, read from the ``nodes_fts_vocab`` index.
