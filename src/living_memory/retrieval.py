@@ -1112,12 +1112,12 @@ class MemoryRecallService:
         # closer to its `keep_n` ceiling than it used to, and the per-node
         # round trip is the part of it that is pure overhead.
         missing = [node_id for _score, node_id in kept if node_id not in candidates]
-        fetched = self.store.get_nodes(missing) if missing else {}
+        fetched = self.store.get_recall_nodes(missing, plan) if missing else {}
         for similarity, node_id in kept:
             existing = candidates.get(node_id)
             if existing is None:
                 node = fetched.get(node_id)
-                if node is None or node.decayed or not plan.allows(node.scope):
+                if node is None:
                     continue
                 existing = candidates.setdefault(node_id, _Candidate(node=node))
             if similarity > existing.vector_score:
