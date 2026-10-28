@@ -19,7 +19,8 @@ from test_tls_transport import TOKEN, _serve
 async def mark(client, route, context, used, irrelevant, trace_id):
     fields = {"used": used, "irrelevant": irrelevant}
     if route == "recall":
-        return await recall(client, query="following request", ambient_context=context, **fields)
+        return await recall(client, query="following request", scope=context.get("scope"),
+                            ambient_context=context, **fields)
     if route == "remember":
         return await call(client, "memory_remember", content="New independent observation.",
                           context=context, **fields)
@@ -269,3 +270,110 @@ def test_streamable_http_reconnect_uses_saved_session_without_server_restart(tmp
             assert db.execute("SELECT recall_event_id, source_id, node_id, accepted FROM recall_feedback_marks").fetchall() == [
                 (old, new, target, 1),
             ]
+
+
+NOW = "2026-10-27T12:00:00Z"
+CONTEXT = {"scope": SCOPE, "session_id": "caller", "task": "task", "agent": "agent"}
+
+
+def delivery(r, transport, ids, *, context=CONTEXT, at=NOW, scope=SCOPE):
+    event = r.store.record_recall_event(
+        query=QUERY, scope=scope, ambient_context={**context, "transport_session_id": transport},
+        results=[{"node_id": target, "vector_score": 0.8} for target in ids],
+    )
+    with r.store.transaction():
+        r.store.connection.execute("UPDATE recall_events SET created_at = ?, feedback_applied = 1 WHERE id = ?",
+                                   (at, event.id))
+    return event.id
+
+
+@pytest.mark.parametrize("filler_time", [NOW, "invalid", "9999-01-01"])
+def test_reconnect_uses_one_combined_cap_before_id_and_time_filters(runtime, monkeypatch, filler_time):
+    r = runtime
+    boundary = node(r, "boundary")
+    with r.guard:
+        delivery(r, "old", [r.node.id])
+        last_eligible = delivery(r, "old", [boundary])
+        for index in range(199):
+            delivery(r, "current" if index % 2 else "old", [f"unrelated-{index}"], at=filler_time)
+        for _ in range(205):
+            delivery(r, "peer", [r.node.id, boundary], context={**CONTEXT, "session_id": "peer"})
+        materialized, projected, statements = [], [], []
+        original_event, original_json = storage._recall_event_from_row, storage._json_loads
+
+        def event(row):
+            materialized.append(row["id"])
+            return original_event(row)
+
+        def decode(value, default):
+            parsed = original_json(value, default)
+            if isinstance(parsed, dict) and "node_id" in parsed:
+                projected.append(parsed["node_id"])
+            return parsed
+
+        monkeypatch.setattr(storage, "_recall_event_from_row", event)
+        monkeypatch.setattr(storage, "_json_loads", decode)
+        r.store.connection.set_trace_callback(statements.append)
+        try:
+            marks = resolve_explicit_marks(r.store, [r.node.id, boundary], None, "current", NOW, context=CONTEXT)
+            assert [mark.accepted for mark in marks] == [False, True]
+            assert marks[1].event.id == last_eligible
+            assert materialized == [last_eligible]
+            assert projected == [boundary]
+            query = next(sql for sql in statements if "WITH recent AS MATERIALIZED" in sql)
+            plans = [row[3] for row in r.store.connection.execute("EXPLAIN QUERY PLAN " + query)]
+            assert any("idx_recall_events_session_created" in plan for plan in plans)
+            assert any("idx_recall_events_transport_created" in plan for plan in plans)
+            assert not any(plan.startswith("SCAN recall_events") for plan in plans)
+        finally:
+            r.store.connection.set_trace_callback(
+                lambda sql: r.unlocked_sql.append(sql) if not r.guard._is_owned() else None,
+            )
+
+
+def test_reconnect_preserves_time_boundaries_text_order_and_first_result_rank(runtime):
+    r = runtime
+    cases = [
+        ("2026-10-26T12:00:00.999999Z", True),
+        ("2026-10-26T11:59:59.999999Z", False),
+        ("2026-10-27T12:00:00.999999Z", True),
+        ("2026-10-27T12:00:01Z", False),
+        ("2026-10-27T19:00:00+07:00", True),
+        ("invalid", False),
+    ]
+    with r.guard:
+        expected = {}
+        for index, (at, eligible) in enumerate(cases):
+            target = str(index)
+            event_id = delivery(r, "old", [target], at=at)
+            if eligible:
+                expected[target] = (event_id, 0)
+        delivery(r, "current", ["tie"])
+        latest = delivery(r, "old", ["other", "tie", "tie"])
+        expected["tie"] = (latest, 1)
+        delivery(r, "current", ["offset"], at="2026-10-27T11:30:00Z")
+        lexical = delivery(r, "old", ["offset"], at="2026-10-27T13:00:00+02:00")
+        expected["offset"] = (lexical, 0)
+        marks = resolve_explicit_marks(r.store, [*(str(i) for i in range(len(cases))), "tie", "offset"],
+                                       None, "current", NOW, context=CONTEXT)
+        assert {mark.node_id: (mark.event.id, mark.rank) for mark in marks if mark.accepted} == expected
+
+
+def test_same_transport_contract_and_no_transport_rejection_are_unchanged(runtime):
+    r = runtime
+    with r.guard:
+        event_id = delivery(r, "current", [r.node.id], scope="project:foreign",
+                            context={"session_id": "other", "task": "other", "agent": "other"})
+        marks = resolve_explicit_marks(r.store, [r.node.id], None, "current", NOW, context=CONTEXT)
+        assert marks[0].accepted and marks[0].event.id == event_id
+        statements = []
+        r.store.connection.set_trace_callback(statements.append)
+        try:
+            for transport, at, reason in [(None, NOW, "no_transport"), ("current", "invalid", "not_delivered")]:
+                marks = resolve_explicit_marks(r.store, [r.node.id], None, transport, at, context=CONTEXT)
+                assert marks[0].reject_reason == reason
+            assert not statements
+        finally:
+            r.store.connection.set_trace_callback(
+                lambda sql: r.unlocked_sql.append(sql) if not r.guard._is_owned() else None,
+            )
