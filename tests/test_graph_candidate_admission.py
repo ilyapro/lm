@@ -32,7 +32,10 @@ def native(tmp_path, monkeypatch):
     }.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(storage, "_utc_now", lambda: "2026-10-28T12:00:00Z")
-    monkeypatch.setattr(query_anchors, "_now", lambda: datetime(2026, 10, 28, 12, tzinfo=UTC))
+    moment = query_anchors._moment
+    monkeypatch.setattr(query_anchors, "_moment", lambda value: (
+        datetime(2026, 10, 28, 12, tzinfo=UTC) if value is None else moment(value)
+    ))
     monkeypatch.setattr(server, "_transport_session_id", lambda: "graph-admission")
     guard = RLock()
     monkeypatch.setattr(server, "RLock", lambda: guard)
