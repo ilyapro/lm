@@ -86,7 +86,7 @@ from living_memory.feedback import (
 from living_memory import storage as storage_module
 from living_memory.storage import MemoryStore
 from living_memory.temporal import parse_timestamp
-from living_memory.validity import correction_references
+from living_memory.validity import correction_references, read_validity
 
 _BOOT_ID = uuid4().hex
 _STARTED_AT = datetime.now(timezone.utc)
@@ -1540,24 +1540,25 @@ def _register_tools(
                         "count": 0,
                         "results": [],
                     }
-                found = store.get_nodes(requested_ids)
-                results = []
-                for node in nodes_to_dict(
-                    store, [found[requested] for requested in requested_ids if requested in found],
-                    resolve_scope(scope=normalized_scope, store=store),
-                ):
-                    if view == "full":
-                        results.append(node)
-                        continue
-                    knowledge = knowledge_node(node)
-                    knowledge.update({key: node[key] for key in ("superseded", "superseded_by")})
-                    if context_key is not None:
-                        knowledge["context"] = (
-                            {context_key: node["context"][context_key]}
-                            if context_key in node["context"]
-                            else {}
-                        )
-                    results.append(knowledge)
+                plan = resolve_scope(scope=normalized_scope, store=store)
+                if view == "full":
+                    found = store.get_nodes(requested_ids)
+                    results = nodes_to_dict(
+                        store, [found[requested] for requested in requested_ids if requested in found],
+                        plan,
+                    )
+                else:
+                    found = store.get_node_knowledge(requested_ids, context_key=context_key)
+                    validity = read_validity(store, found, plan)
+                    results = []
+                    for requested in requested_ids:
+                        if requested not in found:
+                            continue
+                        node = found[requested]
+                        knowledge = knowledge_node(node) | validity[requested]
+                        if context_key is not None:
+                            knowledge["context"] = node["context"]
+                        results.append(knowledge)
                 response: dict[str, Any] = {
                     "scope": normalized_scope,
                     "filters": {},

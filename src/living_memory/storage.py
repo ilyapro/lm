@@ -1630,6 +1630,50 @@ class MemoryStore:
                 contents[source.id] = source
         return contents
 
+    def get_node_knowledge(
+        self, node_ids: Iterable[str], *, context_key: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Read exact content and stored validity without materializing Nodes.
+
+        JSON projection happens in SQLite; only selected values cross into
+        Python. Raw JSON preserves null, booleans and large integers. Relation
+        validity and correction-text shaping remain the readers' shared work.
+        """
+        context_column = ""
+        params: tuple[str, ...] = ()
+        if context_key is not None:
+            # JSON path quotes delimit a literal key. Encode embedded quotes as
+            # Unicode escapes so dots/brackets in the same key remain literal.
+            key = _json_dumps(context_key)[1:-1].replace(r'\"', r'\u0022')
+            params = (f'$."{key}"',)
+            context_column = ", context -> ? AS context_value"
+        nodes: dict[str, dict[str, Any]] = {}
+        for chunk in _node_read_batches(node_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                "SELECT id, level, content, scope, decayed, decay_reason, corrections,"
+                " provenance -> '$.supersedes' AS supersedes"
+                f"{context_column} FROM nodes WHERE id IN ({placeholders}) ORDER BY id",
+                (*params, *chunk),
+            ).fetchall()
+            for row in rows:
+                provenance = {"corrections": _json_loads(row["corrections"], [])}
+                if row["supersedes"] is not None:
+                    provenance["supersedes"] = _json_loads(row["supersedes"], None)
+                node = {
+                    "id": str(row["id"]), "level": row["level"],
+                    "content": str(row["content"]), "scope": str(row["scope"]),
+                    "decayed": bool(row["decayed"]), "decay_reason": row["decay_reason"],
+                    "provenance": provenance,
+                }
+                if context_key is not None:
+                    node["context"] = (
+                        {context_key: _json_loads(row["context_value"], None)}
+                        if row["context_value"] is not None else {}
+                    )
+                nodes[node["id"]] = node
+        return nodes
+
     def list_nodes(
         self,
         *,

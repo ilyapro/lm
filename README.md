@@ -127,7 +127,11 @@ during preparation, not a general production latency or speedup guarantee.
 
 Exact-id lookup preserves the complete original content. `context_key` adds
 one original context field; `view="full"` returns all stored node fields plus
-the same relation-derived validity. An explicit lookup scope restricts
+the same relation-derived validity. Knowledge reads project content, identity,
+stored validity and the selected context value directly from storage, without
+materializing a full node or decoding unrelated metadata in Python. Relation
+validity and optional usage credit use fresh reads under the runtime guard.
+An explicit lookup scope restricts
 discovered correction links using recall's scope hierarchy. Explicitly requested
 ids still return regardless of scope, with differences in `scope_mismatches`.
 Neither supersession nor its absence establishes that a correction or original
