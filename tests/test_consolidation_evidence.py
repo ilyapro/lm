@@ -11,7 +11,7 @@ import pytest
 from living_memory import consolidation as c, server
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.storage import MemoryStore
-from test_mcp_server import FakeMCP
+from test_lookup import FakeMCP
 
 
 SCOPE = "project:target"
