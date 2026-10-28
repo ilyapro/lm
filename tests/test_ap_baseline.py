@@ -49,6 +49,8 @@ def test_compare_keeps_ordinary_metrics_without_experimental_state(tmp_path, cap
         ({"kind": "drain_near_duplicate"}, False),
         ({"kind": "duplicate_content"}, False),
         ({"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"}, False),
+        ({"rule": "R1c", "kind": "content_correction"}, False),
+        ({"rule": "R1c", "kind": "content_correction", "correction": "Use the current source."}, True),
         ({"kind": "teach"}, True),
         ({"kind": "unknown"}, True),
         ({"by": "lm_collapse_near_dups.py"}, True),

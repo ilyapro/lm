@@ -238,6 +238,8 @@ def test_exact_content_preserves_scope_and_level(tmp_path, difference) -> None:
         ({"kind": "drain_near_duplicate"}, False),
         ({"kind": "duplicate_content", "basis": "procedure_key"}, False),
         ({"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"}, False),
+        ({"rule": "R1c", "kind": "content_correction"}, False),
+        ({"rule": "R1c", "kind": "content_correction", "correction": "Use the current source."}, True),
         ({"kind": "teach"}, True),
         ({"kind": "unknown"}, True),
         ({}, True),

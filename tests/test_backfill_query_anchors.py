@@ -921,6 +921,7 @@ def _supersede_without_the_hook(
     {"kind": "drain_near_duplicate", "threshold": 0.99},
     {"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"},
     {"kind": "duplicate_content"},
+    {"rule": "R1c", "kind": "content_correction"},
 ])
 def test_read_only_replacement_ignores_heuristic_and_inexact_history(tmp_path: Path, metadata: dict) -> None:
     db = tmp_path / "historical.sqlite3"

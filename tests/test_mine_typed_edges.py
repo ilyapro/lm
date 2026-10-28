@@ -25,6 +25,7 @@ _SPEC.loader.exec_module(miner)
     [
         {"kind": "drain_near_duplicate"},
         {"kind": "duplicate_content", "basis": "procedure_key"},
+        {"rule": "R1c", "kind": "content_correction"},
         {"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"},
     ],
 )
@@ -53,11 +54,15 @@ def test_edge_inventory_excludes_historical_heuristic_corrections() -> None:
             "INSERT INTO connections VALUES (?, ?, ?, ?)",
             [("a", "b", "supersedes", json.dumps({"kind": "drain_near_duplicate"})),
              ("b", "c", "supersedes", json.dumps({"kind": "teach"})),
+             ("d", "e", "supersedes", json.dumps({"rule": "R1c", "kind": "content_correction"})),
+             ("e", "f", "supersedes", json.dumps({
+                 "rule": "R1c", "kind": "content_correction", "correction": "Use the current source.",
+             })),
              ("c", "d", "related", json.dumps({"kind": "content_reference"}))],
         )
 
         edges = miner.load_edges(connection)
 
     assert [(src, dst, relation) for src, dst, relation, _ in edges] == [
-        ("b", "c", "supersedes"), ("c", "d", "related")
+        ("b", "c", "supersedes"), ("e", "f", "supersedes"), ("c", "d", "related")
     ]
