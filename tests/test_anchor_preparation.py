@@ -1,6 +1,7 @@
 """Anchor matching reuses preparation without freezing live search decisions."""
 
 import math
+import random
 import sqlite3
 import weakref
 
@@ -176,6 +177,9 @@ def test_native_recall_decodes_only_consumed_scopes_and_width(tmp_path, monkeypa
                 assert match(retriever, [1.0, 0.0, 0.0], "project:alpha") == qa.match_anchors(
                     store, [1.0, 0.0, 0.0], "project:alpha",
                 )
+                with pytest.raises(ValueError):
+                    match(retriever, [1.0] + [0.0] * (width - 1), None)
+                assert [r.node.id for r in recall(retriever)] == ["alpha"]
         with store.transaction():
             store.connection.execute("UPDATE query_anchors SET dimensions=3 WHERE id='unconsumed'")
         events = store.connection.execute("SELECT COUNT(*) FROM recall_events").fetchone()[0]
@@ -247,6 +251,52 @@ def test_scope_selection_preserves_scan_order_and_uses_contiguous_views(tmp_path
         assert [corpus.ids[index] for index in selected] == ["c", "a", "b"]
         assert not np.shares_memory(corpus.matrix[selected], corpus.matrix)
         assert source.query_anchor_corpus(2) is corpus
+
+
+@pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "python"])
+def test_lazy_scope_fills_preserve_full_corpus_thresholds_and_order(tmp_path, monkeypatch, numpy):
+    np = pytest.importorskip("numpy")
+    if not numpy:
+        monkeypatch.setattr(qa, "_np", None)
+    rng = random.Random(7304)
+    scopes = ("global", "project:alpha", "project:beta")
+    widths = (3, 17, 384)
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for index in range(69):
+            width = widths[index % 3]
+            vector = [rng.uniform(-1.0, 1.0) for _ in range(width)]
+            anchor(store, f"a{index:03d}", vector, rng.choice(scopes))
+        rows = list(store.iter_query_anchor_vectors())
+        corpora = {width: qa._prepare_anchor_vectors(rows, width, index_scopes=True)
+                   for width in widths}
+
+        class FullCorpus:
+            def query_anchor_corpus(self, width, scopes):
+                return corpora[width]
+
+            def __getattr__(self, name):
+                return getattr(store, name)
+
+        full = FullCorpus()
+        service = retrieval.MemoryRecallService(store)
+        for selection in (["project:beta"], ["global"], ["project:alpha", "global"],
+                          ["project:beta", "global", "project:alpha"], None,
+                          ["project:beta", "project:beta"], ["project:absent"]):
+            for width in widths:
+                vector = [rng.uniform(-1.0, 1.0) for _ in range(width)]
+                expected = qa.match_anchors(full, vector, selection, limit=100, min_similarity=-1.0)
+                assert match(service, vector, selection, limit=100, min_similarity=-1.0) == expected
+                for item in expected[:3]:
+                    for threshold in (
+                        float(np.nextafter(np.float32(item.similarity), np.float32(-np.inf))),
+                        item.similarity,
+                        float(np.nextafter(np.float32(item.similarity), np.float32(np.inf))),
+                    ):
+                        for limit in (1, 5, 100):
+                            assert match(service, vector, selection, limit=limit,
+                                         min_similarity=threshold) == qa.match_anchors(
+                                full, vector, selection, limit=limit, min_similarity=threshold,
+                            )
 
 
 @pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "python"])
