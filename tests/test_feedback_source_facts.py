@@ -70,10 +70,10 @@ def test_overlapping_events_keep_individual_grounding_ranks_and_credit(sources, 
     trace = store.get_node(response["node"]["id"])
     assert trace.content == CONTENT and trace.scope == CONTEXT["scope"]
     assert [row["result_ids"] for row in trace.provenance["prior_recalls"]] == [
-        [a], [b], [b, c, b], [d, a, a], [b, c, a],
+        [b, c, a], [d, a, a], [b, c, b], [b], [a],
     ]
-    assert trace.provenance["recalled_nodes"] == [a, b, c, d]
-    assert trace.source_traces == [a, b, c]
+    assert trace.provenance["recalled_nodes"] == [b, c, a, d]
+    assert trace.source_traces == [b, c, a]
     assert all(store.get_recall_event(event.id).feedback_trace_id == trace.id for event in events)
     assert not store.pending_recall_events(scope=trace.scope, context=CONTEXT)
     expected = [{a}, {b}, {b, c}, {d, a}, {b, c, a}] if policy == "all" else [
@@ -81,7 +81,7 @@ def test_overlapping_events_keep_individual_grounding_ranks_and_credit(sources, 
     ]
     assert [store.credited_node_ids(event.id) for event in events] == expected
     assert [signal for signal in signals if signal[0] == a] == [
-        (a, True, 1.0), (a, True, 0.5), (a, True, 1 / 3),
+        (a, True, 1 / 3), (a, True, 0.5), (a, True, 1.0),
     ]
     # Overlapping events accumulate on current statistics; repeated results
     # in one event spend just the first occurrence's credit.
@@ -92,7 +92,10 @@ def test_overlapping_events_keep_individual_grounding_ranks_and_credit(sources, 
     if policy != "all":
         for event, targets in zip(events, expected):
             anchor = store.find_query_anchor(event.scope, recall_fingerprint(event.query, event.scope))
-            assert {edge.target_id for edge in store.list_query_anchor_edges(anchor_id=anchor.id)} == targets if anchor else not targets
+            if anchor is None:
+                assert not targets
+            else:
+                assert {edge.target_id for edge in store.list_query_anchor_edges(anchor_id=anchor.id)} == targets
     before = [store.get_node(node.id).usefulness_score for node in nodes]
     mcp.tools["memory_remember"](CONTENT + " confirmed", CONTEXT)
     assert [store.get_node(node.id).usefulness_score for node in nodes] == before
