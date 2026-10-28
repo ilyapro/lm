@@ -1055,10 +1055,7 @@ def _register_tools(
             transport_session_id=_context_transport(context),
             trace_content=content, trace_context=context,
         ) as feedback_preparation:
-            try:
-                auto_decay = _decay_sweep_if_due(store)
-            except Exception:
-                auto_decay = None
+            auto_decay = _maybe_decay_sweep(store)
             # Knowledge and required recall feedback have one durable outcome.
             # Optional marks remain nonfatal, but roll back with a failed write.
             with store.transaction():
@@ -1896,9 +1893,10 @@ def _decay_sweep_if_due(
 ) -> dict[str, Any] | None:
     """Run a scope-agnostic decay sweep when the time gate has elapsed.
 
-    Returns a summary dict when a sweep ran, or None when it was skipped
+    Returns a summary dict after the sweep and completion marker were saved,
+    or None when it was skipped
     (interval disabled, or last sweep too recent). Raises on storage or
-    decay errors — callers decide whether to propagate or swallow.
+    decay errors; changes may already be durable when an error is raised.
     """
 
     interval = _decay_sweep_interval_seconds()
@@ -1934,12 +1932,19 @@ def _decay_sweep_if_due(
 
 
 def _maybe_decay_sweep(store: MemoryStore) -> dict[str, Any] | None:
-    """Opportunistic time-based sweep that never raises into the caller."""
+    """Report skipped, completed or failed optional maintenance without raising.
+
+    Failure leaves sweep completeness unknown: decay may have committed before
+    the completion marker failed. Only a skipped sweep returns None.
+    """
 
     try:
         return _decay_sweep_if_due(store)
-    except Exception:
-        return None
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "optional decay sweep failed; completion unknown", exc_info=True,
+        )
+        return {"swept": None, "error": str(exc)}
 
 
 _AUTO_CONSOLIDATION_STEP_HANDOFF_SECONDS = 0.005

@@ -285,6 +285,25 @@ Embedding model downloads are opt-in. Set `LIVING_MEMORY_EMBEDDING_BACKEND=onlin
 only in environments where network-backed sentence-transformers loading is
 allowed.
 
+## Optional decay maintenance
+
+`memory_recall`, `memory_remember` and `memory_consolidate` each check the
+scope-agnostic decay interval once and include `auto_decay` in their response:
+
+- `null`: skipped because the interval is disabled or a completed sweep is recent.
+- `{"swept": true, ...}`: completed sweep with `decayed_count`, `expired_count`,
+  `superseded_count`, `duration_ms` and the saved `last_decay_sweep_at` timestamp.
+- `{"swept": null, "error": "..."}`: optional maintenance failed; completeness
+  is unknown. Changes may already be durable. The server logs a warning with
+  the exception, while the primary operation retains its own result.
+
+`LM_DECAY_SWEEP_INTERVAL_SEC` defaults to 3600; `0` disables the automatic
+sweep. A failed attempt is not recorded as a completed sweep and adds no retry
+delay: the next ordinary call checks the same due condition. Recall checks decay
+before selecting pending index repairs. Forced `POST /admin/decay-sweep` bypasses
+the interval and returns HTTP 500 on failure. Errors in the requested
+consolidation itself also remain errors.
+
 ## HTTP transport and TLS
 
 The server speaks the stdio transport by default. Pass `--transport http`

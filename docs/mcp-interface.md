@@ -118,6 +118,16 @@ stdio, and in-memory transports is pinned by
 `scripts/verify_live_db_migration.py` verifies the additive `recall_events`
 schema migration against a copy of a live database.
 
+## Optional decay outcome
+
+`memory_remember`, `memory_recall` and `memory_consolidate` share the
+[`auto_decay` contract](../README.md#optional-decay-maintenance): `null` means
+skipped, `swept: true` with counts and the completion timestamp means success,
+and `{"swept": null, "error": "..."}` reports nonfatal maintenance failure
+with unknown completeness. Failure is also logged and may follow durable decay;
+it does not replace the primary tool result. Only completed maintenance advances
+the interval marker. The next ordinary call can retry, without a cooldown.
+
 ## Tools
 
 ### `memory_remember`

@@ -221,8 +221,8 @@ def test_decay_sweep_disabled_when_interval_zero(
         assert forced["swept"] is True
 
 
-def test_maybe_decay_sweep_swallows_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_maybe_decay_sweep_reports_nonfatal_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "3600")
     config = MemoryConfig(db_path=tmp_path / "memory.sqlite3", trace_ttl_days=7)
@@ -232,8 +232,12 @@ def test_maybe_decay_sweep_swallows_errors(
             raise RuntimeError("synthetic kv failure")
 
         monkeypatch.setattr(store, "set_kv", boom)
-        # _maybe_decay_sweep must return None and never propagate.
-        assert _maybe_decay_sweep(store) is None
+        assert _maybe_decay_sweep(store) == {
+            "swept": None, "error": "synthetic kv failure",
+        }
+        assert store.get_kv(_DECAY_SWEEP_KV_KEY) is None
+        assert "optional decay sweep failed; completion unknown" in caplog.text
+        assert "synthetic kv failure" in caplog.text
 
 
 # ---------- P4: hooks in memory_recall / memory_remember / memory_consolidate ----------
