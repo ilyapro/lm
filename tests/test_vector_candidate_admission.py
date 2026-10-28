@@ -87,7 +87,7 @@ def test_current_admission_after_chunk_selection(tmp_path, monkeypatch, entry, m
             actual = collect() if entry == "collection" else recall(service)
         assert decoded == [survivor.id]
         if entry == "collection":
-            chunk_id = next(store.iter_chunk_embedding_rows(include_identity=True))[3]
+            chunk_id = next(store.iter_chunk_embedding_rows(scope=SCOPE, include_identity=True))[3]
             assert actual == {survivor.id: _Candidate(node=survivor, vector_score=1.0, chunk_id=chunk_id)}
         else:
             assert [result.node.id for result in actual] == [survivor.id]
@@ -109,6 +109,7 @@ def test_healthy_candidates_keep_scores_order_chunks_limits_and_existing_bodies(
         tail = put(store, "tail")
         put_chunks(store, tail.id, [[0.0, 1.0, 0.0], [0.8, 0.6, 0.0]])
         strongest = put(store, "strongest")
+        put_chunks(store, strongest.id, [[0.8, 0.6, 0.0]])
         initial = {
             tail.id: _Candidate(node=tail, vector_score=0.1, chunk_id="previous", bm25_score=0.7,
                                 graph_score=0.4, trigger_score=0.6, trigger_coverage=0.5,
