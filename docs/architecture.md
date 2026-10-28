@@ -226,16 +226,20 @@ is not a contribution counter or a last-observed event. Replacement writes still
 refresh it. Every genuine correction write, including an unchanged contribution, moves
 newly attached query anchors inside the same transaction. Query-anchor edges
 retain their separate additive weight/hits policy. Typed backfill inserts absent
-edges and can replace a known technical supersedes row with a derived explicit
-correction; existing genuine relations retain their fields.
+edges and can replace technical related rows with source relations; existing
+genuine relations retain their fields. Derivation and backfill treat all content
+ULID mentions as references, independent of correction wording or context labels.
+Only explicit correction writes establish supersession.
 
 Exact copies use `related` edges with `kind=duplicate_content`, retaining their
 rows and source identities separately from correction validity. Anchor and
 source-lineage traversal follows such bookkeeping only after checking current
 bytes, scope, level and recorded source identity. The shared `relations` policy
-excludes known historical heuristic and duplicate supersedes rows from semantic
-adjacency, correction ranking/lookup, decay and replay. Unknown correction
-metadata remains valid. No startup corpus rewrite or inferred restoration of
+excludes known historical heuristic, duplicate and inferred text supersedes rows
+(`rule=R1c` or `kind=content_correction`) from semantic adjacency, correction
+ranking/lookup, decay and replay. A nonempty string in the relation metadata's
+`correction` field preserves an explicit teach contribution even alongside
+inferred markers. Unknown correction metadata remains valid. No startup corpus rewrite or inferred restoration of
 old decay/usage/anchor state is performed.
 
 

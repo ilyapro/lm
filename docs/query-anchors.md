@@ -52,7 +52,9 @@ must match. Mutable correction history does not break an otherwise valid copy
 lineage, so an older copy can still reach the genuine correction of its current
 copy. A technical duplicate edge is not a semantic correction.
 
-Known heuristic supersedes metadata cannot redirect an anchor. Unknown
+Known inferred-only supersedes metadata, including `rule=R1c` or
+`kind=content_correction`, cannot redirect an anchor. Explicit correction
+contributions in mixed metadata keep their meaning. Unknown
 supersedes metadata retains ordinary correction semantics. Consolidation can
 also provide an explicit source replacement. The write hook and
 `sweep_anchor_edge_migration` use the same replacement policy; the sweep repairs

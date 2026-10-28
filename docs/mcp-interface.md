@@ -302,13 +302,19 @@ corrective trace to the original, and records the correction in provenance. If
 the correction follows a compatible recall, the corrective trace records that
 recall in provenance without reinforcing the incorrect original fact.
 
-`supersedes` denotes a correction with a source, independently of whether its
-replacement can currently be delivered. Exact-copy bookkeeping uses
+`supersedes` denotes an explicit correction with a source, independently of
+whether its replacement can currently be delivered. Ordinary remembered prose,
+quotations, negations and context labels do not establish supersession. Content
+ULID references use `related(kind=content_reference)`; correction writes use
+`memory_teach` or an explicit `memory_connect` with type `supersedes`. Exact-copy bookkeeping uses
 `related(kind=duplicate_content)` and does not mark a fact corrected. Relation
 readers exclude known historical duplicate bookkeeping (`kind=duplicate_content`),
 drain heuristics (`kind=drain_near_duplicate`), and the offline heuristic producer
-(`by=lm_collapse_near_dups.py`, `reason=near-duplicate collapse`) from correction
-semantics. Unknown supersedes metadata keeps its meaning. Historical rows and
+(`by=lm_collapse_near_dups.py`, `reason=near-duplicate collapse`), and inferred
+text corrections (`rule=R1c` or `kind=content_correction`) from correction
+semantics. A nonempty string in the relation's `correction` field records the
+explicit teach contribution and remains authoritative in mixed metadata.
+Unknown supersedes metadata keeps its meaning. Historical rows and
 stored lifecycle flags remain intact; this is not a corpus restoration pass.
 
 

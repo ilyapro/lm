@@ -69,13 +69,19 @@ exact content with matching scope and recorded source identity. A different
 condition, prohibition, source or derivation remains independent. The bounded
 top-k may still omit a candidate by rank; its omission is not a duplicate claim.
 
+Ordinary remembered text and context labels are data, including correction
+wording, negations and quotations. ULID mentions can create content references;
+supersession requires `memory_teach` or an explicit typed connection.
+
 Exact-copy lifecycle bookkeeping uses `related(kind=duplicate_content)` rather
 than correction semantics. Known historical `supersedes` rows from the drain
 (`kind=drain_near_duplicate`), offline cosine collapse
 (`by=lm_collapse_near_dups.py`, `reason=near-duplicate collapse`) and technical
-copies (`kind=duplicate_content`) confer no correction validity, rank priority,
-semantic graph traversal or decay authority. Real corrections, including
-`memory_teach`, and unknown supersedes metadata retain their meaning. Exact
+copies (`kind=duplicate_content`), and inferred text corrections
+(`rule=R1c` or `kind=content_correction`) confer no correction validity, rank
+priority, semantic graph traversal or decay authority. An explicit nonempty
+`correction` text in relation metadata retains its meaning even when merged
+with inferred metadata. Unknown supersedes metadata retains its meaning. Exact
 copies can redirect anchors and source lineage only after checking their
 current content and source identity. Historical rows and stored decay flags
 remain intact; this policy does not reconstruct prior lifecycle side effects.
