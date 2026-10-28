@@ -462,6 +462,8 @@ class _PreparedAnchorVectors:
         for scope, source in prepared.by_scope.items():
             target = self.by_scope[scope]
             if _np is not None:
+                source = prepared.select([scope])
+                target = self.select([scope])
                 self.matrix[target] = prepared.matrix[source]
                 self.safe_norms[target] = prepared.safe_norms[source]
                 self.nonzero[target] = prepared.nonzero[source]

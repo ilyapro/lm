@@ -5102,6 +5102,7 @@ class MemoryStore:
         corpus is small by design — one row per distinct remembered question,
         estimated at a few thousand — so this is a scan, not an ANN index.
         ``dimensions`` is the row's own recorded width, never the BLOB length.
+        A requested width filters rows in SQL before their BLOBs are read.
 
         Yields nothing on a pre-v7 database rather than raising.
         """
