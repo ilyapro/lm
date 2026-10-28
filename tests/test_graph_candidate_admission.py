@@ -2,13 +2,14 @@
 
 from contextlib import contextmanager
 from dataclasses import asdict
+from datetime import UTC, datetime
 from itertools import count
 import sqlite3
 from threading import RLock
 
 import pytest
 
-from living_memory import server, storage
+from living_memory import query_anchors, server, storage
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
@@ -31,6 +32,7 @@ def native(tmp_path, monkeypatch):
     }.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(storage, "_utc_now", lambda: "2026-10-28T12:00:00Z")
+    monkeypatch.setattr(query_anchors, "_now", lambda: datetime(2026, 10, 28, 12, tzinfo=UTC))
     monkeypatch.setattr(server, "_transport_session_id", lambda: "graph-admission")
     guard = RLock()
     monkeypatch.setattr(server, "RLock", lambda: guard)
@@ -142,6 +144,25 @@ def test_native_selected_corruption_fails_without_event_access_or_credit(native,
             assert list(store.connection.iterdump()) == before
 
 
+@pytest.mark.parametrize("decayed", [False, True])
+def test_native_exact_lookup_keeps_out_of_scope_and_decayed_bodies(native, decayed):
+    with native("lookup.sqlite3") as (mcp, store, _, guard):
+        beta = mcp.tools["memory_remember"](
+            "Frost granite unrelated source", context={"scope": "project:beta"},
+        )["node"]["id"]
+        with guard:
+            if decayed:
+                store.soft_delete_node(beta, "expired")
+        response = mcp.tools["memory_lookup"](node_id=beta, scope=SCOPE)
+        assert response["results"][0]["id"] == beta
+        assert response["results"][0]["decayed"] is decayed
+        assert response["scope_mismatches"]
+        with guard, store.transaction():
+            store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (beta,))
+        with pytest.raises(TypeError):
+            mcp.tools["memory_lookup"](node_id=beta, scope=SCOPE)
+
+
 @pytest.mark.parametrize("entry", ["graph", "anchor"])
 @pytest.mark.parametrize("excluded", ["scope", "decay"])
 def test_graph_and_anchor_admission_do_not_decode_excluded_bodies(tmp_path, monkeypatch, entry, excluded):
@@ -180,10 +201,11 @@ def test_candidate_reader_filters_before_body_decoding_and_keeps_exact_reads(tmp
         assert store.get_recall_nodes(iter(ids), plan) == {"alpha": alpha}
         assert store.get_recall_nodes([], plan) == {}
         assert store.get_nodes(["dead"]) == {"dead": dead}
+        invalid_text = "x'22ff22'" if body == "context" else "x'ff'"
         with store.transaction():
             for target in ("beta", "dead"):
                 store.connection.execute(
-                    f"UPDATE nodes SET {body} = CAST(x'ff' AS TEXT) WHERE id = ?", (target,),
+                    f"UPDATE nodes SET {body} = CAST({invalid_text} AS TEXT) WHERE id = ?", (target,),
                 )
         assert store.get_recall_nodes(ids, plan) == {"alpha": alpha}
         for target in ("beta", "dead"):
