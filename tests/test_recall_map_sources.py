@@ -144,6 +144,7 @@ def test_read_only_sources_tolerate_missing_tables_and_chunk_coordinates(store, 
 
 
 @pytest.mark.parametrize("column, value, error", [
+    ("chunk_index", "invalid", "invalid literal"),
     ("dimensions", "invalid", "invalid literal"),
     ("embedding", b"bad", "chunk embedding blob"),
 ])

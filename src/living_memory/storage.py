@@ -4101,13 +4101,15 @@ class MemoryStore:
         for batch in _node_read_batches(map(str, node_ids), batch_size=batch_size):
             placeholders = ",".join("?" for _ in batch)
             rows = self._conn.execute(
-                f"""SELECT node_id, dimensions, embedding
+                f"""SELECT node_id, chunk_index, dimensions, embedding
                 FROM {CHUNK_EMBEDDING_TABLE}
                 WHERE node_id IN ({placeholders})
                 ORDER BY node_id, chunk_index""",
                 batch,
             )
             for row in rows:
+                # The ordinal determines which vector width a caller sees first.
+                int(row["chunk_index"])
                 vector = unpack_chunk_embedding(row["embedding"], int(row["dimensions"]))
                 vectors.setdefault(str(row["node_id"]), []).append(vector)
         return vectors

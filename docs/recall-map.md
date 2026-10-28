@@ -189,6 +189,16 @@ size and corpus exposure do not determine its position. Embedding groups choose 
 most central member; other groups use the best original residual ordinal.
 Representatives and presentation order are recomputed from the current pool.
 
+Source reads use bounded storage batches for the members that reach each stage.
+Anchor assignment reads edge identities and weights with the anchor's query and
+decay state; a digest's whole-pool assignment is shared with stage 3 within the
+build. Embedding membership reads only chunk ordinals, dimensions and vectors,
+including when validating cached templates. The first nonempty chunk determines
+vector width; other widths are ignored, and a node vector supplies the fallback
+when no chunk vector is available. Missing source tables retain the storage
+readers' empty results on old read-only stores. Malformed consumed fields and SQL
+failures remain errors.
+
 ## 5. Structure cache
 
 The process-local cache stores cluster stage, signature, label, query and member
