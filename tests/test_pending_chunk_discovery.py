@@ -54,11 +54,19 @@ def seed(store):
 
 @pytest.mark.parametrize("scope", [None, "project:pending", "global", "project:absent"])
 @pytest.mark.parametrize("level", [None, "trace", "concept", "schema"])
-def test_pending_filters_order_limit_and_covered_reads(tmp_path, scope, level):
+@pytest.mark.parametrize("position", ["start", "existing", "absent"])
+def test_pending_filters_order_limit_and_covered_reads(tmp_path, scope, level, position):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         wanted, completed = seed(store)
+        after = None if position == "start" else (
+            (wanted[3].timestamp, wanted[3].id) if position == "existing" else
+            ("2026-01-02T00:00:00Z", "absent")
+        )
         wanted = [n for n in wanted if (scope is None or n.scope == scope)
                   and (level is None or n.level == level)]
+        if after is not None:
+            wanted = ([n for n in wanted if (n.timestamp, n.id) > after]
+                      + [n for n in wanted if (n.timestamp, n.id) <= after])
         trimmed = []
         store.connection.create_function(
             "trim", 2, lambda content, chars: trimmed.append(content) or content.strip(chars),
@@ -66,7 +74,7 @@ def test_pending_filters_order_limit_and_covered_reads(tmp_path, scope, level):
         statements = []
         store.connection.set_trace_callback(statements.append)
         for limit in (0, 1, 3, -1):
-            result = store.list_unchunked_nodes(scope=scope, level=level, limit=limit)
+            result = store.list_unchunked_nodes(scope=scope, level=level, limit=limit, after=after)
             assert result == (wanted if limit < 0 else wanted[:limit])
         store.connection.set_trace_callback(None)
         assert not {n.content for n in completed}.intersection(trimmed)

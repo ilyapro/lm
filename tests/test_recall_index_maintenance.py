@@ -192,26 +192,33 @@ def test_failed_repair_batch_has_bounded_attempts_and_diagnostics(mcp, caplog, f
                     SELECT chunk_attempt(NEW.node_id);
                     SELECT CASE WHEN {condition} THEN RAISE(ABORT, 'private diagnostic') END;
                 END""")
-            for _ in range(2):
+            for round_index in range(2):
                 attempts.clear()
                 response = await recall(client)
                 assert body(response)["id"] == target
                 assert body(response)["content"] == CONTENT
                 assert event_for(store, response).results[0]["vector_score"] == score
-                assert attempts == pending[:LAZY_CHUNK_NODE_LIMIT]
-                assert all(store.count_node_chunks(node) == 0 for node in pending)
+                expected = pending[:-1] if round_index == 0 else [pending[-1], *pending[:-2]]
+                assert attempts == expected
+                assert len(attempts) == LAZY_CHUNK_NODE_LIMIT
+                assert all(store.count_node_chunks(node) == 0 for node in pending[:-1])
+                assert store.node_chunks_are_current(pending[-1]) == (
+                    round_index == 1 and fault == "selected_nodes"
+                )
                 assert not store.connection.in_transaction
-            # Selection stays bounded even when only its oldest nodes fail;
-            # progress beyond a full failed batch is not guaranteed.
-            assert pending[-1] not in attempts
+            store.connection.execute("DROP TRIGGER reject_index")
+            for _ in range(2):
+                await recall(client)
+            assert all(store.node_chunks_are_current(node) for node in pending)
             assert store.connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
     with caplog.at_level(logging.WARNING, logger="living_memory.retrieval"):
         asyncio.run(scenario())
     warnings = [record for record in caplog.records if "lazy chunk indexing deferred" in record.message]
     assert len(warnings) == 2
-    for record in warnings:
-        assert f"{LAZY_CHUNK_NODE_LIMIT}/{LAZY_CHUNK_NODE_LIMIT}" in record.message
+    for index, record in enumerate(warnings):
+        failed = LAZY_CHUNK_NODE_LIMIT - (index == 1 and fault == "selected_nodes")
+        assert f"{failed}/{LAZY_CHUNK_NODE_LIMIT}" in record.message
         assert "IntegrityError" in record.message
         assert len(record.message) < 150 and record.exc_info is None
     assert "private diagnostic" not in caplog.text and CONTENT not in caplog.text
