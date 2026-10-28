@@ -37,6 +37,7 @@ import pytest
 from living_memory import recall_map
 from living_memory.chunking import TextChunk
 from living_memory.grounding import token_set
+from living_memory.health_audit import ReadOnlyAuditStore
 from living_memory.models import Node
 from living_memory.recall_map import (
     ASK_HINT_MAX_TOKENS,
@@ -65,7 +66,7 @@ from living_memory.recall_map import (
     normalize_key,
 )
 from living_memory.retrieval import RecallResult
-from living_memory.storage import MemoryStore, recall_fingerprint
+from living_memory.storage import MemoryStore, pack_chunk_embedding, recall_fingerprint
 
 SCOPE = "project:lm"
 
@@ -1749,6 +1750,170 @@ def test_chunk_revision_tracks_insert_and_delete(store: MemoryStore) -> None:
     assert builder._corpus_revision() == populated
     assert store.delete_node_chunks(node.id) == 1
     assert builder._corpus_revision() not in (empty, populated)
+
+
+@pytest.fixture(params=[False, True], ids=["same-connection", "second-connection"])
+def revision_writer(store, request):
+    if request.param:
+        with MemoryStore(store.db_path) as writer:
+            yield writer
+    else:
+        yield store
+
+
+@pytest.mark.parametrize("mutation", ["vector", "reinsert", "scope", "decay"])
+def test_map_revision_follows_committed_chunks_and_membership(store, revision_writer, mutation):
+    nodes = [
+        make_node(store, "orbital telemetry measurements"),
+        make_node(store, "orbital telemetry calibration"),
+        make_node(store, "orchard harvest schedule", {"scope": "project:orchard"}),
+    ]
+    for node, vector in zip(nodes, ([1.0, 0.0], [1.0, 0.0], [0.0, 1.0])):
+        embed(store, node, vector)
+    builder = RecallMapBuilder(store)
+
+    def build(current):
+        live = [store.get_node(node.id) for node in nodes]
+        return current.build(pool([node for node in live if not node.decayed]),
+                             scope=SCOPE, task="corpus-membership")
+
+    original = build(builder)
+    assert original and len(original.clusters) == 2
+    assert build(builder) == original and builder.last_cache_hit
+    before = builder._corpus_revision()
+    writer = revision_writer
+    target = nodes[-1]
+    with writer.connection:
+        if mutation == "vector":
+            writer.connection.execute(
+                "UPDATE node_chunk_embeddings SET embedding = ? WHERE node_id = ?",
+                (pack_chunk_embedding([1.0, 0.0]), target.id),
+            )
+        elif mutation == "reinsert":
+            row = writer.connection.execute(
+                "SELECT * FROM node_chunk_embeddings WHERE node_id = ?", (target.id,),
+            ).fetchone()
+            writer.connection.execute("DELETE FROM node_chunk_embeddings WHERE id = ?", (row["id"],))
+            writer.connection.execute(
+                f"INSERT INTO node_chunk_embeddings VALUES ({','.join('?' for _ in row)})", tuple(row),
+            )
+        elif mutation == "scope":
+            writer.update_node(target.id, context={"scope": SCOPE})
+        else:
+            writer.connection.execute("UPDATE nodes SET decayed = 1 WHERE id = ?", (target.id,))
+
+    assert builder._corpus_revision() != before
+    changed = build(builder)
+    assert changed and not builder.last_cache_hit
+    assert changed == build(RecallMapBuilder(store))
+    if mutation == "vector":
+        assert len(changed.clusters) == 1
+    elif mutation == "decay":
+        assert changed.pool_size == 2
+        with writer.connection:
+            writer.connection.execute("UPDATE nodes SET decayed = 0 WHERE id = ?", (target.id,))
+        revived = build(builder)
+        assert not builder.last_cache_hit
+        assert revived == original == build(RecallMapBuilder(store))
+    else:
+        assert changed == original
+
+
+def test_bookkeeping_preserves_map_identity_without_scanning_chunks(store, revision_writer):
+    node = make_node(store, "orbital telemetry calibration")
+    embed(store, node, [1.0, 0.0])
+    builder = RecallMapBuilder(store)
+    candidates = pool([node])
+    original = builder.build(candidates, scope=SCOPE, task="bookkeeping")
+    before = builder._corpus_revision()
+    revision_writer.record_access(node.id)
+    statements = []
+    store.connection.set_trace_callback(statements.append)
+    try:
+        after = builder._corpus_revision()
+        warm = builder.build(candidates, scope=SCOPE, task="bookkeeping")
+    finally:
+        store.connection.set_trace_callback(None)
+    assert before == after
+    assert original == warm and builder.last_cache_hit
+    assert any("chunk_scope_revision" in sql for sql in statements)
+    assert not any(
+        "node_chunk_embeddings" in sql.lower()
+        and ("count(" in sql.lower() or "max(" in sql.lower())
+        for sql in statements
+    )
+    assert warm == RecallMapBuilder(store).build(candidates, scope=SCOPE, task="bookkeeping")
+
+
+@pytest.mark.parametrize("filtered", [False, True], ids=["clusters", "empty-selection"])
+def test_map_never_retains_transactional_structure(store, filtered):
+    nodes = [make_node(store, "orbital telemetry calibration"),
+             make_node(store, "orchard harvest schedule")]
+    for node, vector in zip(nodes, ([1.0, 0.0], [0.0, 1.0])):
+        embed(store, node, vector)
+    candidates = [RecallResult(node=node, score=0.0) for node in nodes] if filtered else pool(nodes)
+
+    def build(current):
+        return current.build(candidates, scope=SCOPE, task="transaction")
+
+    builder = RecallMapBuilder(store)
+    original = build(builder)
+    assert original is not None
+    assert build(builder) == original and builder.last_cache_hit
+    committed = builder._corpus_revision()
+    cached = dict(builder._cache)
+    store.connection.execute("BEGIN")
+    assert builder._corpus_revision() is None
+    assert build(builder) == original and not builder.last_cache_hit
+    store.connection.execute(
+        "UPDATE node_chunk_embeddings SET embedding = ? WHERE node_id = ?",
+        (pack_chunk_embedding([1.0, 0.0]), nodes[1].id),
+    )
+    transient_revision = store.chunk_corpus_revisions()
+    transient = build(builder)
+    assert transient == build(RecallMapBuilder(store)) and not builder.last_cache_hit
+    assert build(builder) == transient and not builder.last_cache_hit
+    assert builder._cache == cached
+    store.connection.rollback()
+    assert builder._corpus_revision() == committed
+    assert build(builder) == original == build(RecallMapBuilder(store))
+    assert builder.last_cache_hit
+
+    # A different committed vector can reuse the rolled-back counter value.
+    with store.connection:
+        store.connection.execute(
+            "UPDATE node_chunk_embeddings SET embedding = ? WHERE node_id = ?",
+            (pack_chunk_embedding([0.0, 1.0]), nodes[0].id),
+        )
+    assert store.chunk_corpus_revisions() == transient_revision
+    assert build(builder) == build(RecallMapBuilder(store)) and not builder.last_cache_hit
+
+
+@pytest.mark.parametrize("missing", ["chunks", "chunk-format", "anchors"])
+@pytest.mark.parametrize("filtered", [False, True], ids=["clusters", "empty-selection"])
+def test_legacy_read_only_map_rebuilds_without_reusable_identity(store, missing, filtered):
+    node = make_node(store, "orbital telemetry calibration")
+    embed(store, node, [1.0, 0.0])
+    if missing == "chunk-format":
+        with store.connection:
+            store.connection.execute(
+                "UPDATE metadata SET value = 'unsupported' WHERE key = 'chunk_scope_revision_format'"
+            )
+    else:
+        key = "chunk_scope_revision_format" if missing == "chunks" else "query_anchor_revision"
+        with store.connection:
+            store.connection.execute("DELETE FROM metadata WHERE key = ?", (key,))
+    candidates = [RecallResult(node=node, score=0.0)] if filtered else pool([node])
+    with ReadOnlyAuditStore.open_path(store.db_path) as reader:
+        builder = RecallMapBuilder(reader)
+        assert builder._corpus_revision() is None
+        for _ in range(2):
+            warm = builder.build(candidates, scope=SCOPE, task="legacy")
+            fresh = RecallMapBuilder(reader).build(candidates, scope=SCOPE, task="legacy")
+            assert warm is not None and warm == fresh
+            assert bool(warm.clusters) is not filtered
+            assert not builder.last_cache_hit and builder.cache_size == 0
+        assert reader.connection.total_changes == 0
 
 
 def test_module_imports_nothing_that_calls_a_model_or_the_network() -> None:
