@@ -351,9 +351,14 @@ def test_recall_snippets_long_content_with_content_ref(
     top = recalled["results"][0]
     assert top["delivery"] == "snippet"
     assert len(top["content"]) <= 1200
-    assert top["content"].endswith("…")
+    assert top["content"].endswith("\n[Incomplete passage]")
+    source = top["content"].removesuffix("\n[Incomplete passage]")
+    assert source.endswith("…")
+    assert long_content.startswith(source.removesuffix("…"))
     assert top["content_ref"]["node_id"] == remembered["node"]["id"]
     assert top["content_ref"]["full_content_chars"] == len(long_content)
+    looked_up = mcp.tools["memory_lookup"](node_id=top["content_ref"]["node_id"])
+    assert looked_up["results"][0]["content"] == long_content
 
 
 def test_memory_recall_default_max_results_is_five(tmp_path: Path) -> None:
