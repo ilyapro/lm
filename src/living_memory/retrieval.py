@@ -207,7 +207,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field, replace
@@ -333,6 +333,7 @@ VECTOR_MATCH_THRESHOLD = 0.08
 GRAPH_SEED_LIMIT = 50
 MAX_NEIGHBORS_PER_NODE = 200
 LAZY_CHUNK_NODE_LIMIT = 16
+LAZY_CHUNK_PLAN_LIMIT = 128
 LEGACY_PASSAGE_MAX_CHARS = 32_768
 LEGACY_PASSAGE_MAX_CHUNKS = 32
 
@@ -619,6 +620,9 @@ class MemoryRecallService:
         self._anchor_vectors: _AnchorVectorCache | None = None
         self._store_embedder_shared = False
         self._unavailable_legacy_chunks: set[str] = set()
+        self._pending_chunk_positions: OrderedDict[
+            tuple[str | None, ...], tuple[str, str]
+        ] = OrderedDict()
 
     def prepare_query(self, query: str, *, max_results: int = 10) -> _PreparedQuery:
         """Encode immutable input through the shared encoder, without store access."""
@@ -789,17 +793,34 @@ class MemoryRecallService:
         ambient_context: dict[str, Any] | None = None,
         guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
     ) -> None:
-        """Repair one bounded selection before authoritative recall selection."""
+        """Repair a bounded cyclic selection from the current pending identities.
+
+        Positions belong to this service and search-scope set, across clients.
+        Restart or LRU eviction starts at the oldest pending source again;
+        positions never certify index validity or suppress later retries.
+        """
         with guard():
             plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context,
                                                store=self.store)
+            scopes = plan.search_scopes
+            after = self._pending_chunk_positions.get(scopes)
             pending = sorted(
-                (node for item in plan.search_scopes for node in
-                 self.store.list_unchunked_nodes(scope=item, limit=LAZY_CHUNK_NODE_LIMIT)),
-                key=lambda node: (node.timestamp, node.id),
+                (node for item in scopes for node in self.store.list_unchunked_nodes(
+                    scope=item, limit=LAZY_CHUNK_NODE_LIMIT, after=after,
+                )),
+                key=lambda node: (after is not None and (node.timestamp, node.id) <= after,
+                                  node.timestamp, node.id),
             )[:LAZY_CHUNK_NODE_LIMIT]
             if not pending:
+                self._pending_chunk_positions.pop(scopes, None)
                 return
+            # Advance under the selection guard before model work releases it,
+            # even when a selected source fails or changes before application.
+            last = pending[-1]
+            self._pending_chunk_positions[scopes] = (last.timestamp, last.id)
+            self._pending_chunk_positions.move_to_end(scopes)
+            if len(self._pending_chunk_positions) > LAZY_CHUNK_PLAN_LIMIT:
+                self._pending_chunk_positions.popitem(last=False)
             self._share_embedder_with_store()
         deferred_count = 0
         first_error = ""

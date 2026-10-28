@@ -191,6 +191,15 @@ with at most one attempted source per read and 32 chunks encoded per attempt.
 Metadata-only updates and opening a database do not refresh these
 chunks; missing or stale chunks retain their existing indexing path.
 
+Before retrieval, recall attempts at most 16 sources with missing or stale
+chunk indexes. Each service keeps a cyclic timestamp/id position for up to 128
+recent search-scope sets, shared across MCP clients. Selection reads current
+pending identities, advances past failed sources and wraps so they can retry.
+Different scope sets have independent positions. Restarting the service or
+evicting an inactive position starts that scope set at its oldest pending source;
+progress is not persisted. Source and index revalidation, atomic replacement and
+per-source failure isolation protect current knowledge during each attempt.
+
 Recall before acting and at every new turn of thought, including mid-work.
 Use relevant knowledge and applicable complete recipes under current system
 and operator instructions and the actual task conditions. Those instructions

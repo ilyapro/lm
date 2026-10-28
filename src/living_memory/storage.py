@@ -4160,6 +4160,7 @@ class MemoryStore:
         scope: str | None = None,
         level: NodeLevel | None = None,
         limit: int = 200,
+        after: tuple[str, str] | None = None,
     ) -> list[Node]:
         """Active nodes whose chunks are missing or stale, oldest work first.
 
@@ -4177,6 +4178,8 @@ class MemoryStore:
         Materialize pending identities before reading content: completed nodes
         and their chunk vectors stay behind covering indexes. Whitespace and
         the limit are applied together only after that single-statement probe.
+        With ``after``, start after that timestamp/id and wrap to the beginning;
+        the position need not still identify a pending or existing node.
         """
 
         if not self._chunk_table_present():
@@ -4191,6 +4194,10 @@ class MemoryStore:
         if scope is not None:
             clauses.append("n.scope = ?")
             params.append(scope)
+        order = "n.timestamp ASC, n.id ASC"
+        if after is not None:
+            order = "(n.timestamp, n.id) <= (?, ?) ASC, " + order
+            params.extend(after)
         params.append(int(limit))
         rows = self._conn.execute(
             f"""
@@ -4205,7 +4212,7 @@ class MemoryStore:
             )
             SELECT n.* FROM pending p JOIN nodes n ON n.id = p.id
             WHERE TRIM(n.content, {_SQL_WHITESPACE}) != ''
-            ORDER BY n.timestamp ASC, n.id ASC
+            ORDER BY {order}
             LIMIT ?
             """,
             params,
