@@ -254,6 +254,46 @@ def test_loader_skips_unusable_events_gracefully(fixture_db: Path) -> None:
     assert sum(1 for event in events if event.labeled) == 4
 
 
+@pytest.mark.parametrize("withheld", [None, "below_threshold"])
+def test_recorded_qualification_survives_loading_without_changing_raw_rank_analysis(
+    tmp_path: Path, withheld: str | None
+) -> None:
+    path = tmp_path / "qualification.sqlite3"
+    with MemoryStore(path) as store:
+        node = store.append_trace("Checkpoint cursor acked offset", {"scope": SCOPE})
+        row = result_dict(node.id, 1, graph=1.0)
+        if withheld:
+            row["withheld"] = withheld
+        store.record_recall_event(
+            query="checkpoint cursor", scope=SCOPE, requested_scope=SCOPE,
+            resolved_scopes=[SCOPE], ambient_context=None, depth=1, max_results=5,
+            results=[row],
+        )
+    events, _ = _load_events(path)
+    event = events[0]
+    assert event.results[0].withheld == withheld
+    event.results[0].useful = True
+    event.feedback_trace_id = "label"
+    order = replay.recorded_order(event)
+    assert order == [node.id]
+    qualified = replay.MetricAccumulator()
+    qualified.add_event(event, order, [])
+    expected = 0.0 if withheld else 1.0
+    assert qualified.to_dict()["events_with_useful"] == 1
+    assert qualified.to_dict()["mrr"] == expected
+    assert qualified.to_dict()["graph_unique_share"] == expected
+    assert qualified.to_dict()["graph_zeroed"]["dropped_entirely"] == expected
+    assert qualified.per_event == [(event.id, expected, expected)]
+
+    for scheme in ("recorded", "uniform"):
+        raw = replay.run_scheme(
+            scheme, events, {SCOPE: SCOPE}, CUTOFF,
+            resolver=replay.explicit_weights(1 / 3, 1 / 3, 1 / 3),
+        ).to_dict()["overall"]
+        assert raw["result_basis"] == "raw_candidates"
+        assert raw["hit@1"] == raw["mrr"] == raw["graph_unique_share"] == 1.0
+
+
 def test_labels_discriminate_within_events(fixture_db: Path) -> None:
     ids = _ids(fixture_db)
     events, _ = _load_events(fixture_db)

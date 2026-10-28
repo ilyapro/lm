@@ -584,6 +584,19 @@ def test_native_qualification_pair_keeps_reference_but_only_content_earns_hit(
                 for key in ("hit@1", "hit@5", "hit@10", "mrr"):
                     assert block[key] == (0.0 if withheld else 1.0)
             assert metrics["channel_attribution"]["items_with_relevant_hit"] == int(not withheld)
+            agreement = harness.live_agreement(
+                tmp_path / "paired.sqlite3", [item], [run], sample_size=1, seed=0
+            )
+            assert agreement["agreement_rate"] == 1.0
+            if withheld:
+                lost_verdict = replace(run, results=(replace(run.results[0], withheld=None),))
+                agreement = harness.live_agreement(
+                    tmp_path / "paired.sqlite3", [item], [lost_verdict], sample_size=1, seed=0
+                )
+                assert agreement["agreement_rate"] == 0.0
+                divergence = agreement["divergences"][0]
+                assert divergence["harness_top_k"] == divergence["direct_top_k"] == [node.id]
+                assert divergence["direct_withheld"] == ["below_threshold"]
 
 
 def test_withheld_relevant_result_cannot_earn_hit_or_compress_later_ranks() -> None:
