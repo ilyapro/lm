@@ -119,11 +119,15 @@ def lat_lat_unchanged(before: dict[str, Any], after: dict[str, Any]) -> bool:
 
 
 def harness_metrics(report: dict[str, Any], russian_ids: set[str]) -> dict[str, Any]:
+    if report.get("metrics", {}).get("overall", {}).get("result_basis") != "qualified":
+        raise ValueError("qualified metrics require a qualification-aware retrieval harness report; rerun it")
+
     def block(runs: list[dict[str, Any]]) -> dict[str, Any]:
         hit1 = hit5 = hit10 = 0
         rr = 0.0
         for run in runs:
             relevant = set(run["relevant_node_ids"])
+            relevant -= {result["node_id"] for result in run["results"] if result["withheld"]}
             ranked = run["ranked_node_ids"]
             first = next((index for index, node_id in enumerate(ranked) if node_id in relevant), None)
             if first is None:
@@ -218,6 +222,7 @@ def harness_section(
         )
     def first_rank(run: dict[str, Any]) -> int:
         relevant = set(run["relevant_node_ids"])
+        relevant -= {result["node_id"] for result in run["results"] if result["withheld"]}
         return next((i for i, n in enumerate(run["ranked_node_ids"]) if n in relevant), 10**6)
 
     master_runs = {run["query_id"]: run for run in master["runs"]}

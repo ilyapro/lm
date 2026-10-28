@@ -444,6 +444,7 @@ def _replay_results(raw_results: Any) -> list[ReplayResult]:
                 vector_score=0.0,
                 graph_score=0.0,
                 trigger_score=0.0,
+                withheld=item.get("withheld") or None,
             )
         )
     return results

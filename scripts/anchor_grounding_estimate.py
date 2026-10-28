@@ -942,6 +942,8 @@ def headroom(
     """
 
     report = json.loads(baseline_report.read_text(encoding="utf-8"))
+    if report.get("metrics", {}).get("overall", {}).get("result_basis") != "qualified":
+        raise ValueError("headroom requires a qualification-aware retrieval harness report; rerun the baseline")
     runs = {str(run["query_id"]): run for run in report.get("runs", [])}
     records = {record["query_id"]: record for record in reach.get("per_item", [])}
     by_stratum: dict[str, list[tuple[Mapping[str, Any], Mapping[str, Any]]]] = defaultdict(list)
@@ -957,8 +959,9 @@ def headroom(
             hits = []
             for run, record in pairs:
                 relevant = set(run["relevant_node_ids"])
+                withheld = {result["node_id"] for result in run["results"] if result["withheld"]}
                 ranked = list(run["ranked_node_ids"])[:depth]
-                hits.append((bool(relevant & set(ranked)), record))
+                hits.append((bool((relevant - withheld) & set(ranked)), record))
             baseline = sum(1 for hit, _ in hits if hit)
             missed = [record for hit, record in hits if not hit]
             oracle_rescuable = sum(1 for record in missed if record["oracle"])

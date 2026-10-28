@@ -23,6 +23,9 @@ So this adapter does two things and owns neither piece of machinery:
    ``replay.WeightTrajectory``, ``replay.MetricAccumulator``.
    ``retrieval_harness.to_replay_event`` is the bridge between the two.
 
+Weight schemes measure raw candidate ranks, independently of the retained live
+``withheld`` verdict. The separate end-to-end metrics require qualified hits.
+
 Why the placeholder rows are safe
 ---------------------------------
 
@@ -110,6 +113,7 @@ from living_memory.replay import (  # noqa: E402
 )
 from living_memory.retrieval import MemoryRecallService  # noqa: E402
 from living_memory.retrieval_harness import (  # noqa: E402
+    HARNESS_VERSION,
     GoldsetItem,
     HarnessResult,
     HarnessRun,
@@ -292,6 +296,7 @@ def _runs_from_payload(
                         graph_score=float(row["graph_score"]),
                         trigger_score=float(row["trigger_score"]),
                         methods=tuple(str(method) for method in row["methods"]),
+                        withheld=row["withheld"],
                     )
                     for row in rows
                 ),
@@ -1374,7 +1379,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if runs_path.exists() and not args.refresh:
             loaded = json.loads(runs_path.read_text(encoding="utf-8"))
             if (
-                loaded.get("snapshot_sha256") == snapshot_sha
+                loaded.get("harness_version") == HARNESS_VERSION
+                and loaded.get("snapshot_sha256") == snapshot_sha
                 and loaded.get("frozen_goldset_sha256") == sha256_file(frozen_goldset_path)
                 and recal_path.exists()
                 and loaded.get("recalibration_goldset_sha256") == sha256_file(recal_path)
@@ -1397,6 +1403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 recal_runs = replay_end_to_end(working_db, recal_items, "recalibration")
                 frozen_runs = replay_end_to_end(working_db, frozen_items, "frozen goldset")
             cache = {
+                "harness_version": HARNESS_VERSION,
                 "snapshot_sha256": snapshot_sha,
                 "recalibration_goldset_sha256": sha256_file(recal_path),
                 "frozen_goldset_sha256": sha256_file(frozen_goldset_path),

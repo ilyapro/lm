@@ -948,6 +948,7 @@ def _as_replay_results(run: HarnessRun) -> list[ReplayResult]:
             vector_score=result.vector_score,
             graph_score=result.graph_score,
             trigger_score=result.trigger_score,
+            withheld=result.withheld,
         )
         for result in run.results
     ]
