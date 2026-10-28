@@ -318,14 +318,14 @@ def test_replacement_chain_diamond_consumes_current_source_content(
             current = reader.get_node(consumer.id)
             assert not current.decayed
             assert set(current.source_traces) == {taught.corrective_trace.id, replacement.id, traces[2].id}
-            assert current_replacement.content in current.content
-            assert traces[2].content in current.content
+            assert all(text in current.content for text in (correction, traces[1].content, traces[2].content))
             assert replacement.content not in current.content
+            assert traces[0].content not in current.content
         current_joined = reader.get_node(joined.id)
         assert not current_joined.decayed
         assert set(current_joined.source_traces) == {node.id for node in [*consumers, replacement]}
-        assert all(reader.get_node(node.id).content in current_joined.content
-                   for node in [*consumers, replacement])
+        assert all(text in current_joined.content for text in (correction, traces[1].content, traces[2].content))
+        assert traces[0].content not in current_joined.content
 
 
 @pytest.mark.parametrize("prepared", [False, True])
