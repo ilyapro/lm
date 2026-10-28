@@ -1836,9 +1836,12 @@ def _select_distinct_results(
         selected.append(result)
         if len(selected) == max_results:
             break
-    if len(selected) < max_results:
-        return limited, residual
     selected_ids = {result.node.id for result in selected}
+    if len(selected) < max_results:
+        # Keep available replacements and fill spare slots in original rank order.
+        fillers = [result for result in limited if result.node.id not in selected_ids]
+        selected_ids.update(result.node.id for result in fillers[:max_results - len(selected)])
+        selected = [result for result in pool if result.node.id in selected_ids]
     if selected_ids == {result.node.id for result in limited}:
         return limited, residual
     return selected, [result for result in limited + residual if result.node.id not in selected_ids]
