@@ -987,9 +987,12 @@ def _feedback_queries(
     if trace_content is not None and _recall_credit_policy() != "all":
         context = dict(trace_context or {})
         scope = normalize_scope(str(context.get("scope") or store.config.default_scope))
-        events = [event for event in store.pending_recall_events(
-            scope=scope, context=context, limit=_DEFAULT_PENDING_RECALL_LIMIT,
-        ) if store.find_query_anchor(event.scope, recall_fingerprint(event.query, event.scope)) is None]
+        events = [
+            event for event in store.pending_recall_events(
+                scope=scope, context=context, limit=_DEFAULT_PENDING_RECALL_LIMIT,
+            )
+            if store.find_query_anchor(event.scope, recall_fingerprint(event.query, event.scope)) is None
+        ]
         sources = store.get_node_contents(node_id for event in events for node_id in event.result_ids)
         for event in events:
             verdicts = ground_results(

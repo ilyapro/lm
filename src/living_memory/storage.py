@@ -1603,7 +1603,7 @@ class MemoryStore:
                 f"SELECT id, content, level FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
             ).fetchall()
             for row in rows:
-                source = NodeContent(id=row["id"], content=row["content"], level=row["level"])
+                source = NodeContent(id=str(row["id"]), content=str(row["content"]), level=row["level"])
                 contents[source.id] = source
         return contents
 

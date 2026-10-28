@@ -46,7 +46,7 @@ def test_node_contents_read_current_sources_without_unrelated_fields(tmp_path: P
         store.soft_delete_node(decayed.id)
         with store.transaction():
             store.connection.execute(
-                "UPDATE nodes SET context = CAST(x'ff' AS TEXT) WHERE id = ?", (decayed.id,),
+                "UPDATE nodes SET provenance = CAST(x'ff' AS TEXT) WHERE id = ?", (decayed.id,),
             )
         ids = [f"missing-{i}" for i in range(1100)] + [active.id, decayed.id, active.id]
         facts = store.get_node_contents(iter(ids))
