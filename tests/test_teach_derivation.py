@@ -280,4 +280,4 @@ def test_explicit_derivation_without_a_writer_becomes_historical(tmp_path):
         assert all(result.node.id != derived.id for result in recall(MemoryRecallService(store, embedder=Encoder())))
         history = mcp.tools["memory_lookup"](node_id=derived.id)["results"][0]
         assert history["content"] == derived.content
-        assert history["decayed"] and "corrected source" in history["decay_reason"]
+        assert history["decayed"] and "changed source" in history["decay_reason"]
