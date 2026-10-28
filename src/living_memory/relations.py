@@ -1,7 +1,8 @@
 """Knowledge-relation semantics shared by runtime and offline readers.
 
-Inferred prose relations and duplicate bookkeeping are not corrections. Rows remain in
-storage for inspection; they confer no validity, graph or lifecycle authority.
+Inferred prose relations and duplicate bookkeeping are not corrections.
+Historical rows remain for inspection without validity, graph or lifecycle
+authority unless they also record an explicit correction contribution.
 Recall delivery history is not a relation between the displayed knowledge and
 a later trace. Unrecognized metadata retains its ordinary relation semantics.
 """

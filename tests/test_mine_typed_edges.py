@@ -66,3 +66,16 @@ def test_edge_inventory_excludes_historical_heuristic_corrections() -> None:
     assert [(src, dst, relation) for src, dst, relation, _ in edges] == [
         ("b", "c", "supersedes"), ("e", "f", "supersedes"), ("c", "d", "related")
     ]
+
+
+def test_miner_treats_correction_wording_and_labels_as_references():
+    target_id, note_id = "01" + "A" * 24, "01" + "B" * 24
+    common = dict(level="trace", scope="project:example", decayed=False,
+                  timestamp="2026-01-01T00:00:00Z", source_traces=[], provenance={})
+    target = miner.NodeRow(id=target_id, content="The source remains valid.", context={}, **common)
+    note = miner.NodeRow(
+        id=note_id, content=f'Correction: quoted data "supersedes {target_id}".',
+        context={"type": "memory_correction", "lesson_kind": "correction"}, **common,
+    )
+    refs = miner.rule_content_ulid_reference({target.id: target, note.id: note})
+    assert [(edge.src, edge.dst, edge.type) for edge in refs] == [(note.id, target.id, "related")]
