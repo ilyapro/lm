@@ -229,14 +229,35 @@ def test_complete_writer_outcome_matches_separate_current_reads(store, monkeypat
     assert outcomes[0] == outcomes[1]
 
 
-def test_cycle_decay_changes_a_shared_superseders_validity(store, monkeypatch):
+def order_consumers(store, monkeypatch, first):
+    read = store.nodes_referencing_source
+    monkeypatch.setattr(store, "nodes_referencing_source", lambda source: sorted(
+        read(source), key=lambda node: (node.id != first.id, node.id),
+    ))
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+@pytest.mark.parametrize("consumer_first", [False, True])
+@pytest.mark.parametrize("chain_length", [0, 2])
+def test_cycle_decay_changes_a_shared_superseders_validity(
+    store, monkeypatch, prepared, consumer_first, chain_length,
+):
     traces = sources(store)
     cyclic = derived(store, "cyclic", [traces[0]])
     store.update_node(cyclic.id, provenance={
         **cyclic.provenance, "source_traces": [traces[0].id, cyclic.id],
     })
-    store.create_connection(cyclic.id, traces[1].id, "supersedes")
+    fallback = traces[1]
+    for index in range(chain_length):
+        replacement = store.append_trace(f"Harbor inspection uses sensor {index}.")
+        store.create_connection(replacement.id, fallback.id, "supersedes")
+        fallback = replacement
+    store.create_connection(cyclic.id, fallback.id, "supersedes")
     consumer = derived(store, "consumer", [traces[0], traces[1]])
+    order_consumers(store, monkeypatch, consumer if consumer_first else cyclic)
+    assert next(iter(c._affected_derivatives(store, traces[0].id))) == (
+        consumer.id if consumer_first else cyclic.id
+    )
     # Observe the replacement before the cycle decays it. Cached edges must
     # still use its current validity when the later consumer is refreshed.
     original = c._SourceObservation.__init__
@@ -246,6 +267,79 @@ def test_cycle_decay_changes_a_shared_superseders_validity(store, monkeypatch):
         assert c.resolve_replacement(self, traces[1].id) == cyclic.id
 
     monkeypatch.setattr(c._SourceObservation, "__init__", observe)
-    taught = c.memory_teach(store, traces[0].id, "Harbor crane uses the electronic manifest.")
-    assert store.get_node(cyclic.id).decayed
-    assert set(store.get_node(consumer.id).source_traces) == {taught.corrective_trace.id, traces[1].id}
+    correction = "Harbor crane uses the electronic manifest."
+    preparation = c.prepare_teach(store, traces[0].id, correction) if prepared else None
+    taught = c.memory_teach(store, traces[0].id, correction, preparation=preparation)
+    with MemoryStore(store.db_path) as reader:
+        assert reader.get_node(cyclic.id).decayed
+        current = reader.get_node(consumer.id)
+        assert not current.decayed
+        assert set(current.source_traces) == {taught.corrective_trace.id, fallback.id}
+        assert correction in current.content and fallback.content in current.content
+        assert cyclic.content not in current.content and traces[0].content not in current.content
+        assert reader.get_node(traces[1].id) == traces[1]
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+@pytest.mark.parametrize("consumer_first", [False, True])
+def test_replacement_chain_diamond_consumes_current_source_content(
+    store, monkeypatch, prepared, consumer_first,
+):
+    traces = sources(store)
+    predecessor = store.append_trace("Harbor inspection uses an earlier record.")
+    interim = store.append_trace("Harbor inspection uses an interim record.")
+    replacement = derived(store, "replacement", traces[:2])
+    store.create_connection(interim.id, predecessor.id, "supersedes")
+    store.create_connection(replacement.id, interim.id, "supersedes")
+    consumers = [derived(store, name, [traces[0], predecessor, traces[2]])
+                 for name in ("left", "right")]
+    joined = derived(store, "joined", [*consumers, replacement])
+    order_consumers(store, monkeypatch, consumers[0] if consumer_first else replacement)
+    correction = "Harbor crane uses the electronic manifest."
+    preparation = c.prepare_teach(store, traces[0].id, correction) if prepared else None
+    taught = c.memory_teach(store, traces[0].id, correction, preparation=preparation)
+    with MemoryStore(store.db_path) as reader:
+        current_replacement = reader.get_node(replacement.id)
+        assert not current_replacement.decayed
+        assert set(current_replacement.source_traces) == {taught.corrective_trace.id, traces[1].id}
+        for consumer in consumers:
+            current = reader.get_node(consumer.id)
+            assert not current.decayed
+            assert set(current.source_traces) == {taught.corrective_trace.id, replacement.id, traces[2].id}
+            assert current_replacement.content in current.content
+            assert traces[2].content in current.content
+            assert replacement.content not in current.content
+        current_joined = reader.get_node(joined.id)
+        assert not current_joined.decayed
+        assert set(current_joined.source_traces) == {node.id for node in [*consumers, replacement]}
+        assert all(reader.get_node(node.id).content in current_joined.content
+                   for node in [*consumers, replacement])
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+def test_replacement_cycle_decay_and_consumer_write_roll_back_together(store, monkeypatch, prepared):
+    traces = sources(store)
+    cyclic = derived(store, "cyclic", [traces[0]])
+    store.update_node(cyclic.id, provenance={
+        **cyclic.provenance, "source_traces": [traces[0].id, cyclic.id],
+    })
+    store.create_connection(cyclic.id, traces[1].id, "supersedes")
+    consumer = derived(store, "consumer", traces[:2])
+    order_consumers(store, monkeypatch, consumer)
+    correction = "Harbor crane uses the electronic manifest."
+    preparation = c.prepare_teach(store, traces[0].id, correction) if prepared else None
+    before = list(store.connection.iterdump())
+    write = c._refresh_derived_node
+
+    def fail(store, node, **kwargs):
+        result = write(store, node, **kwargs)
+        if node.id == consumer.id:
+            assert store.get_node(cyclic.id).decayed
+            raise RuntimeError("consumer write failed")
+        return result
+
+    monkeypatch.setattr(c, "_refresh_derived_node", fail)
+    with pytest.raises(RuntimeError, match="consumer write failed"):
+        c.memory_teach(store, traces[0].id, correction, preparation=preparation)
+    assert list(store.connection.iterdump()) == before
+    assert not store.connection.in_transaction
