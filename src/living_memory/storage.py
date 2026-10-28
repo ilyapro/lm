@@ -1723,9 +1723,10 @@ class MemoryStore:
     ) -> Node:
         """Update changed facts atomically, using the vector roles of create_node."""
 
-        existing = self.get_node(node_id)
-        if existing is None:
+        row = self._conn.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
+        if row is None:
             raise KeyError(node_id)
+        existing = _node_from_row(row)
         if existing.level == "trace" and content is not None and content != existing.content:
             raise ValueError("trace content is append-only and cannot be updated")
 
@@ -1766,22 +1767,23 @@ class MemoryStore:
         if content_changed:
             values["content"] = new_content
             values["content_fingerprint"] = _content_fingerprint(new_content)
-        # Compare JSON families before encoding: metadata writes preserve the
-        # stored source bytes and never name unchanged indexed columns.
-        for key, value, previous in (
-            ("context", context_data, existing.context),
-            ("source_traces", source_traces, existing.source_traces),
-            ("corrections", corrections, existing.corrections),
-            ("provenance", provenance_data, {
-                key: value for key, value in existing.provenance.items()
-                if key not in ("source_traces", "corrections")
-            }),
-        ):
-            if value != previous:
-                values[key] = _json_dumps(value)
-        if (vector is not None and vector != existing.embedding
-                and self._node_embedding_column_present()):
-            values["embedding"] = _json_dumps(vector)
+        # Omitted JSON families retain their stored bytes. Compare supplied
+        # JSON as JSON: Python equality conflates values such as 1 and True.
+        json_values = {}
+        if context is not None or context_data != existing.context:
+            json_values["context"] = context_data
+        if provenance is not None:
+            json_values["provenance"] = provenance_data
+            if "source_traces" in provenance:
+                json_values["source_traces"] = source_traces
+            if "corrections" in provenance:
+                json_values["corrections"] = corrections
+        if vector is not None and self._node_embedding_column_present():
+            json_values["embedding"] = vector
+        for key, value in json_values.items():
+            encoded = _json_dumps(value)
+            if encoded != row[key]:
+                values[key] = encoded
         values["updated_at"] = _utc_now()
 
         with self.transaction():

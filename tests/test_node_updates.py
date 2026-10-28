@@ -36,12 +36,14 @@ def test_metadata_and_equal_inputs_preserve_source_bytes_without_encoding(node_s
     def unexpected(*args, **kwargs):
         pytest.fail("unchanged source must not be serialized or fingerprinted")
 
-    monkeypatch.setattr(storage, "_json_dumps", unexpected)
     monkeypatch.setattr(storage, "_content_fingerprint", unexpected)
     monkeypatch.setattr(storage, "_utc_now", lambda: "2030-01-01T00:00:00Z")
     store.connection.set_authorizer(observe)
     try:
-        updated = store.update_node(node.id, stats={"usefulness_score": 0.4})
+        with monkeypatch.context() as guarded:
+            guarded.setattr(storage, "_json_dumps", unexpected)
+            updated = store.update_node(node.id, stats={"usefulness_score": 0.4})
+            assert store.update_node(node.id) == updated
         same = store.update_node(node.id, content=updated.content, context=updated.context,
                                  provenance=updated.provenance, stats=updated.stats, level=updated.level)
     finally:
