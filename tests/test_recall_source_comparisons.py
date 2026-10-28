@@ -70,6 +70,21 @@ def test_selection_only_compares_consumed_collisions_in_its_bounded_pool():
     assert work == {"ids": [], "bytes": 0}
 
 
+@pytest.mark.parametrize("contents, limit, selected_indices, residual_indices", [
+    ("AAAB", 3, [0, 1, 3], [2]),
+    ("AABBACC", 5, [0, 1, 2, 3, 5], [4, 6]),
+    ("AAAAAAB", 3, [0, 1, 2], [3, 4, 5, 6]),
+    ("AAABABC", 3, [0, 1, 3], [2, 4, 5, 6]),
+])
+def test_selection_keeps_available_replacements_and_ranked_fillers(
+    contents, limit, selected_indices, residual_indices,
+):
+    rows = [row(str(index), content) for index, content in enumerate(contents)]
+    selected, residual = _select_distinct_results(rows[:limit], rows[limit:], limit, DeliveryHistory())
+    assert selected == [rows[index] for index in selected_indices]
+    assert residual == [rows[index] for index in residual_indices]
+
+
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("distinction", [
     "context", "provenance", "sources", "corrections", "unknown_derivation",
@@ -141,18 +156,30 @@ def test_session_repeat_keeps_its_slot_and_delivery_uses_the_first_bearer():
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
-def test_native_recall_preserves_selection_history_and_feedback(tmp_path, monkeypatch, view):
+@pytest.mark.parametrize("limit, twins, distinct, selected_indices", [
+    (2, 2, 2, [0, 2]),
+    (3, 4, 0, [0, 1, 2]),
+    (3, 3, 1, [0, 1, 3]),
+    (3, 3, 2, [0, 3, 4]),
+])
+def test_native_recall_preserves_selection_history_and_feedback(
+    tmp_path, monkeypatch, view, limit, twins, distinct, selected_indices,
+):
     for key, value in {"LIVING_MEMORY_EMBEDDING_BACKEND": "hash", "LM_RECALL_MIN_SCORE": "off",
                        "LM_RECALL_MAP": "0", "LM_DECAY_SWEEP_INTERVAL_SEC": "0",
                        "LM_AUTO_CONSOLIDATE_POLICY": "off", "LM_DELIVERY_SESSION_DEDUP": "1"}.items():
         monkeypatch.setenv(key, value)
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     store = mcp.memory_store
-    nodes = [store.create_node(level=level, content=content, context={"scope": "project:source-test"})
-             for level, content in [("trace", "Cobalt routing requires approval."),
-                                    ("concept", "Cobalt routing requires approval."),
-                                    ("trace", "Cobalt routing requires inventory."),
-                                    ("trace", "Cobalt routing requires receipts.")]]
+    facts = ["approval"] * twins + ["inventory", "receipts"][:distinct]
+    nodes = [store.create_node(
+        level=("trace", "concept", "schema")[index] if index < twins and index < 3 else "trace",
+        content=f"Cobalt routing requires {fact}.", context={"scope": "project:source-test"},
+    ) for index, fact in enumerate(facts)]
+    selected_ids = [nodes[index].id for index in selected_indices]
+    residual_ids = [node.id for index, node in enumerate(nodes) if index not in selected_indices]
+    deliveries = ["twin_duplicate" if 0 < index < twins else "full" for index in selected_indices]
+    full_ids = [node_id for node_id, delivery in zip(selected_ids, deliveries) if delivery == "full"]
     order = {node.id: i for i, node in enumerate(nodes)}
     services = []
     rank = MemoryRecallService.rank_candidates
@@ -166,18 +193,26 @@ def test_native_recall_preserves_selection_history_and_feedback(tmp_path, monkey
     async def scenario():
         async with Client(mcp) as client:
             args = {"query": "cobalt routing", "scope": "project:source-test", "depth": 0,
-                    "max_results": 2, "view": view}
+                    "max_results": limit, "view": view}
             first = (await client.call_tool("memory_recall", args)).structured_content
-            assert [entry.get("node", entry)["id"] for entry in first["results"]] == [nodes[0].id, nodes[2].id]
-            assert [entry["delivery"] for entry in first["results"]] == ["full", "full"]
-            assert [result.node.id for result in services[-1].last_residual] == [nodes[1].id, nodes[3].id]
-            assert store.get_recall_event(first["recall_event_id"]).result_ids == [nodes[0].id, nodes[2].id]
-            assert [store.get_node(node.id).access_count for node in nodes] == [1, 0, 1, 0]
+            assert [entry.get("node", entry)["id"] for entry in first["results"]] == selected_ids
+            assert [entry["delivery"] for entry in first["results"]] == deliveries
+            assert [result.node.id for result in services[-1].last_residual] == residual_ids
+            assert store.get_recall_event(first["recall_event_id"]).result_ids == selected_ids
+            assert [store.get_node(node.id).access_count for node in nodes] == [
+                int(index in selected_indices) for index in range(len(nodes))
+            ]
             second = (await client.call_tool("memory_recall", {
-                **args, "used": [nodes[0].id], "irrelevant": [nodes[1].id],
+                **args, "used": full_ids, "irrelevant": [residual_ids[0]],
             })).structured_content
-            assert [entry["delivery"] for entry in second["results"]] == ["session_duplicate"] * 2
-            assert second["feedback_marks"] == {"accepted": 1, "dropped": 1, "by_reason": {"not_delivered": 1}}
+            assert [entry.get("node", entry)["id"] for entry in second["results"]] == selected_ids
+            assert [entry["delivery"] for entry in second["results"]] == [
+                "session_duplicate" if delivery == "full" else delivery for delivery in deliveries
+            ]
+            assert second["feedback_marks"] == {
+                "accepted": len(full_ids), "dropped": 1, "by_reason": {"not_delivered": 1},
+            }
+            assert not store.connection.in_transaction
 
     try:
         asyncio.run(scenario())
