@@ -27,23 +27,32 @@ DEFAULT_CONTEXT_SCHEMAS = 3
 
 @dataclass(frozen=True, slots=True)
 class ContextConcept:
+    """Selected source; ``withheld`` forbids treating its body as task knowledge."""
+
     node: Node
     score: float
     methods: tuple[str, ...] = ()
+    withheld: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ContextSchema:
+    """Trigger-eligible source carrying the recall's qualification verdict."""
+
     node: Node
     score: float
     methods: tuple[str, ...] = ()
+    withheld: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class DecisionHistory:
+    """Primary source with applicable reasons only when recall did not withhold it."""
+
     primary: Node
     reasons: tuple[str, ...]
     score: float
+    withheld: str | None = None
 
 
 def retrieval_context_prompt(
@@ -115,7 +124,7 @@ def select_context_concepts(
     retrieval_policy: str = "balanced",
     ambient_context: dict[str, Any] | None = None,
 ) -> list[ContextConcept]:
-    """Select concept nodes by scope, task relevance, confidence, and policy weights."""
+    """Select from task recall, or rank scoped concepts for an empty-task browse."""
 
     limit = max(0, int(max_concepts))
     if limit == 0:
@@ -143,33 +152,33 @@ def select_context_concepts(
                 node=node,
                 score=result.score,
                 methods=tuple(result.methods),
+                withheld=result.withheld,
             )
-
-    task_tokens = _tokens(query)
-    for item_scope in plan.named_scopes:
-        weights = store.get_retrieval_weights(item_scope).normalized()
-        for node in store.list_nodes(
-            level="concept",
-            scope=item_scope,
-            include_decayed=False,
-            limit=1_000,
-        ):
-            if node.confidence < min_confidence or node.id in selected:
-                continue
-            score = _policy_score(
-                node,
-                task_tokens=task_tokens,
-                plan=plan,
-                policy=retrieval_policy,
-                bm25_weight=weights.bm25,
-                vector_weight=weights.vector,
-                graph_weight=weights.graph,
-            )
-            selected[node.id] = ContextConcept(node=node, score=score, methods=("policy",))
+    else:
+        for item_scope in plan.named_scopes:
+            weights = store.get_retrieval_weights(item_scope).normalized()
+            for node in store.list_nodes(
+                level="concept",
+                scope=item_scope,
+                include_decayed=False,
+                limit=1_000,
+            ):
+                if node.confidence < min_confidence:
+                    continue
+                score = _browse_score(
+                    node,
+                    plan=plan,
+                    policy=retrieval_policy,
+                    bm25_weight=weights.bm25,
+                    vector_weight=weights.vector,
+                    graph_weight=weights.graph,
+                )
+                selected[node.id] = ContextConcept(node=node, score=score, methods=("policy",))
 
     concepts = sorted(
         selected.values(),
         key=lambda concept: (
+            not concept.withheld,
             concept.score,
             concept.node.confidence,
             concept.node.usefulness_score,
@@ -223,11 +232,12 @@ def select_context_schemas(
         if "trigger" not in result.methods:
             continue
         selected.append(
-            ContextSchema(node=node, score=result.score, methods=tuple(result.methods))
+            ContextSchema(
+                node=node, score=result.score, methods=tuple(result.methods),
+                withheld=result.withheld,
+            )
         )
-        if len(selected) >= limit:
-            break
-    return selected
+    return sorted(selected, key=lambda item: bool(item.withheld))[:limit]
 
 
 def select_decision_history(
@@ -263,10 +273,11 @@ def select_decision_history(
         reasons = _rejected_alternative_reasons(store, node, plan)
         if not reasons:
             continue
-        selected[node.id] = DecisionHistory(primary=node, reasons=tuple(reasons), score=result.score)
-        if len(selected) >= limit:
-            break
-    return list(selected.values())
+        selected[node.id] = DecisionHistory(
+            primary=node, reasons=() if result.withheld else tuple(reasons),
+            score=result.score, withheld=result.withheld,
+        )
+    return sorted(selected.values(), key=lambda item: bool(item.withheld))[:limit]
 
 
 def format_retrieval_context(
@@ -291,6 +302,14 @@ def format_retrieval_context(
             f"superseded_by={json.dumps(fields['superseded_by'])}"
         )
 
+    def reference_lines(index: int, node: Node, withheld: str) -> list[str]:
+        return [
+            f"{index}. id={node.id} scope={node.scope} delivery={withheld} "
+            f"content_ref={json.dumps({'node_id': node.id})} {validity_text(node)}",
+            "   Unqualified source reference; inspect with memory_lookup. "
+            "Lookup does not establish relevance to this task.",
+        ]
+
     policy_weights = store.get_retrieval_weights(plan.requested_scope).normalized()
     lines = [
         "BEGIN ACTIVE MEMORY CONTEXT",
@@ -311,6 +330,9 @@ def format_retrieval_context(
         lines.append("- none")
     for index, concept in enumerate(concepts, start=1):
         node = concept.node
+        if concept.withheld:
+            lines.extend(reference_lines(index, node, concept.withheld))
+            continue
         method_text = ",".join(concept.methods) if concept.methods else "policy"
         lines.append(
             (
@@ -324,6 +346,9 @@ def format_retrieval_context(
         lines.append("skills:")
         for index, schema in enumerate(schemas, start=1):
             node = schema.node
+            if schema.withheld:
+                lines.extend(reference_lines(index, node, schema.withheld))
+                continue
             trigger = str(node.context.get("trigger") or "")
             method_text = ",".join(schema.methods) if schema.methods else "trigger"
             lines.append(
@@ -338,6 +363,9 @@ def format_retrieval_context(
         lines.append("decision_history:")
         for index, decision in enumerate(decision_history, start=1):
             node = decision.primary
+            if decision.withheld:
+                lines.extend(reference_lines(index, node, decision.withheld))
+                continue
             reasons = "; ".join(_single_line(reason) for reason in decision.reasons)
             lines.append(
                 (
@@ -351,24 +379,19 @@ def format_retrieval_context(
     return "\n".join(lines)
 
 
-def _policy_score(
+def _browse_score(
     node: Node,
     *,
-    task_tokens: set[str],
     plan: ScopePlan,
     policy: str,
     bm25_weight: float,
     vector_weight: float,
     graph_weight: float,
 ) -> float:
-    node_tokens = _tokens(node.content)
-    if task_tokens and node_tokens:
-        overlap = len(task_tokens & node_tokens) / len(task_tokens | node_tokens)
-    else:
-        overlap = 0.5
+    """Rank an intentional scoped browse without claiming query relevance."""
 
-    lexical_score = 0.2 + overlap
-    semantic_score = 0.25 + 0.75 * overlap
+    lexical_score = 0.7
+    semantic_score = 0.625
     graph_score = min(1.0, 0.1 * node.access_count)
     weighted = bm25_weight * lexical_score + vector_weight * semantic_score + graph_weight * graph_score
 
@@ -386,10 +409,6 @@ def _policy_score(
     elif policy_name in {"recent", "fresh"}:
         weighted += 0.02 * min(10, node.access_count)
     return weighted * scope_boost * confidence_boost * usefulness_boost
-
-
-def _tokens(value: str) -> set[str]:
-    return {token.strip("_") for token in re.findall(r"\w+", value.lower()) if len(token.strip("_")) > 2}
 
 
 def _single_line(value: str) -> str:

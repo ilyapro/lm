@@ -1018,12 +1018,29 @@ decision_history:
 END ACTIVE MEMORY CONTEXT
 ```
 
-The prompt only includes active concepts allowed by the resolved scope and the
-minimum confidence threshold. The `skills:` section appears only when the
+For a nonempty task, concepts, schemas and decision history retain the current
+recall's qualification. A `below_threshold` result is an unqualified source
+reference, never an assertion or a recipe: its entry contains `delivery`,
+`content_ref={"node_id": "..."}` and validity, without body, trigger or decision
+reasons. Use `memory_lookup(node_id=...)` to inspect that source; fetching it
+does not establish relevance to the task. Qualified entries take precedence
+over references within each section's limit. Policy, confidence, history and
+rank do not independently admit sources absent from task recall.
+
+An empty task intentionally browses scoped concepts using `retrieval_policy`.
+Concepts and schemas respect the minimum confidence threshold and resolved
+scope. The `skills:` section appears only when the
 task tokens cover a schema's `trigger`; when no procedural patterns match the
 query, the section is omitted entirely. The optional `decision_history`
 section appears only when task recall finds primary traces with rejected
 alternatives.
+
+The direct Python selectors return `ContextConcept`, `ContextSchema` and
+`DecisionHistory` entries with the same `withheld` field as `RecallResult`.
+Their source nodes remain available for identity and validity; consumers must
+respect `withheld` before using source content. Withheld decision entries have
+no derived reasons. `format_retrieval_context` renders these entries as the
+explicit references described above.
 
 ## Node Payload Contract
 
