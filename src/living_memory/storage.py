@@ -4664,6 +4664,29 @@ class MemoryStore:
                 best[node_id] = score
         return best
 
+    def promotion_candidate_ids(self, *, limit: int) -> list[str]:
+        """Bound the project concepts whose existing vectors a pass can compare.
+
+        Promotion uses whole-concept representatives, not recall's max-pooled
+        content chunks. Without those representatives it cannot admit sources.
+        This read never prepares or repairs embeddings.
+        """
+        if limit <= 0 or not self._node_embedding_column_present():
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT id FROM nodes
+            WHERE level = 'concept' AND decayed = 0 AND embedding IS NOT NULL
+              AND scope GLOB 'project:*'
+              AND NOT EXISTS (
+                  SELECT 1 FROM connections WHERE target_id = nodes.id AND type = 'supersedes'
+              )
+            ORDER BY scope, id LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+        return [str(row["id"]) for row in rows]
+
     def find_similar_by_embedding(
         self,
         embedding: list[float],

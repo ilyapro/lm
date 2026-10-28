@@ -66,8 +66,8 @@ ADAPTIVE_MERGE_FLOOR_LADDER: tuple[tuple[int, int], ...] = (
 DEFAULT_RECENT_LIMIT = 10_000
 JACCARD_SIMILARITY_THRESHOLD = 0.58
 EMBEDDING_SIMILARITY_THRESHOLD = 0.65
-CROSS_SCOPE_PROMOTION_PHASE = 4
 CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
+CROSS_SCOPE_CANDIDATE_LIMIT = 100_000
 PROCEDURAL_MIN_CLUSTER_SIZE = 3
 _STEP_TEXT_KEYS = ("step_description", "step_content")
 DIGEST_MAX_CHARS = 1200
@@ -559,18 +559,9 @@ def memory_consolidate(
             limit=trace_limit,
         )
         merge_floor = resolve_min_cluster_size(min_cluster_size, trace_count=len(traces))
-        phase = store.detect_phase()
-        embedder = (
-            LocalEmbeddingModel(model_name=store.config.embedding_model)
-            if force or phase.number >= 2
-            else None
-        )
-        if embedder is not None:
-            # Hand the loaded encoder to the store. Every concept written below goes
-            # through create_node/update_node with an embedding, and those chunk the
-            # content — without this the store would load a second copy of the same
-            # model to do it.
-            store.set_chunk_embedder(embedder.embed_batch)
+        embedder = LocalEmbeddingModel(model_name=store.config.embedding_model)
+        # Reuse the configured encoder for derived content chunks as well.
+        store.set_chunk_embedder(embedder.embed_batch)
     embeddings = _trace_embeddings(store, traces, embedder, step)
     clusters = _cluster_traces(traces, embedder=embedder, embeddings=embeddings)
     result = ConsolidationResult(
@@ -593,18 +584,23 @@ def memory_consolidate(
             store, cluster, min_cluster_size=merge_floor, step=step,
         )
         for concept, created in materialized:
-            with step():
-                result.concepts_promoted.extend(
-                    _cross_scope_promotion(store, concept, phase_number=phase.number)
-                )
             if created:
                 result.concepts_created.append(concept)
             else:
                 result.concepts_updated.append(concept)
 
+    projects = [node for node in (*result.concepts_created, *result.concepts_updated)
+                if node.scope.startswith("project:") and node.embedding]
+    if projects:
+        candidates = _promotion_candidates(store, step=step)
+        for concept in projects:
+            result.concepts_promoted.extend(
+                _cross_scope_promotion(store, concept, candidates=candidates, step=step)
+            )
+
     with step():
-        # Existing promotions consume the project digests written by this pass,
-        # even when its phase does not admit new cross-scope promotions.
+        # Existing promotions consume current project digests even if no new
+        # group has sufficient evidence for admission.
         _refresh_promoted_global_concepts(store)
         decay_result: DecayResult = apply_decay(store, scope=scope)
     result.decayed.extend(decay_result.nodes)
@@ -2022,44 +2018,76 @@ def _raw_tokens(text: str) -> list[str]:
     return re.findall(r"\w+", text.lower().replace("ё", "е"))
 
 
-def _cross_scope_promotion(
-    store: MemoryStore, concept: Node, *, phase_number: int
+def _promotion_candidates(
+    store: MemoryStore, *, step: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> list[Node]:
-    if phase_number < CROSS_SCOPE_PROMOTION_PHASE:
-        return []
-    concept = store.get_node(concept.id)
-    if concept is None or concept.decayed:
-        return []
-    if concept.level != "concept" or not concept.scope.startswith("project:"):
-        return []
-    if concept.embedding is None or concept.corrections or _is_superseded(store, concept.id):
-        return []
+    """Read existing representatives once per pass, releasing between batches.
 
-    matches = store.find_similar_by_embedding(
-        concept.embedding, level="concept", exclude_scope=concept.scope,
-        scope_prefix="project:", threshold=CROSS_SCOPE_PROMOTION_THRESHOLD, limit=100_000,
-    )
+    Detached nodes are only search inputs. The writer rereads selected sources
+    and their validity; this preparation never encodes the other projects.
+    """
+    with step():
+        ids = store.promotion_candidate_ids(limit=CROSS_SCOPE_CANDIDATE_LIMIT)
+    candidates = []
+    for start in range(0, len(ids), _CACHE_READ_BATCH):
+        with step():
+            candidates.extend(
+                node for node in store.get_nodes(ids[start:start + _CACHE_READ_BATCH]).values()
+                if _promotion_source(node)
+            )
+    return candidates
+
+
+def _promotion_source(node: Node | None) -> bool:
+    return bool(node is not None and node.level == "concept"
+                and node.scope.startswith("project:") and node.embedding
+                and not node.decayed and not node.corrections)
+
+
+def _cross_scope_promotion(
+    store: MemoryStore, concept: Node, *, candidates: Sequence[Node] | None = None,
+    step: Callable[[], AbstractContextManager[Any]] = nullcontext,
+) -> list[Node]:
+    with step():
+        concept = store.get_node(concept.id)
+        if not _promotion_source(concept) or _is_superseded(store, concept.id):
+            return []
+    if candidates is None:
+        candidates = _promotion_candidates(store, step=step)
+
+    # Scoring is pure computation on this operation's detached snapshot.
     group = _cluster_group(concept)[1]
     sources_by_scope: dict[str, tuple[Node, float]] = {concept.scope: (concept, 1.0)}
-    for candidate, similarity in matches:
+    for candidate in candidates:
         if candidate.id == concept.id or candidate.scope == concept.scope:
             continue
-        if candidate.corrections or _is_superseded(store, candidate.id) or _cluster_group(candidate)[1] != group:
+        if _cluster_group(candidate)[1] != group:
+            continue
+        similarity = cosine_similarity(concept.embedding, candidate.embedding)
+        if similarity < CROSS_SCOPE_PROMOTION_THRESHOLD:
             continue
         current = sources_by_scope.get(candidate.scope)
-        if current is None or (similarity, candidate.confidence) > (current[1], current[0].confidence):
+        if current is None or (similarity, candidate.confidence, candidate.usefulness_score) > (
+            current[1], current[0].confidence, current[0].usefulness_score
+        ):
             sources_by_scope[candidate.scope] = (candidate, similarity)
     if len(sources_by_scope) < 3:
         return []
 
-    with store.transaction():
+    with step(), store.transaction():
+        concept = store.get_node(concept.id)
+        if not _promotion_source(concept) or _is_superseded(store, concept.id):
+            return []
+        group = _cluster_group(concept)[1]
         current = _current_sources(store, (source.id for source, _ in sources_by_scope.values())).live
         members = {source.id: source for source in current
-                   if source.level == "concept" and source.scope.startswith("project:")
-                   and _cluster_group(source)[1] == group}
+                   if _promotion_source(source) and not _is_superseded(store, source.id)
+                   and _cluster_group(source)[1] == group
+                   and cosine_similarity(concept.embedding, source.embedding) >= CROSS_SCOPE_PROMOTION_THRESHOLD}
         if len(_source_scopes(members.values())) < 3:
             return []
-        similarities = {source.id: similarity for source, similarity in sources_by_scope.values()}
+        similarities = {source.id: cosine_similarity(concept.embedding, source.embedding)
+                        for source in members.values()}
         sources = list(members.values())
         ancestors = _source_ancestors(store, sources)
         owners = [
