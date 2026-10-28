@@ -1,6 +1,7 @@
 """Anchor matching reuses preparation without freezing live search decisions."""
 
 import math
+import sqlite3
 import weakref
 
 import pytest
@@ -88,7 +89,7 @@ def test_warm_queries_do_not_rebuild_matrix_or_anchor_norms(tmp_path, monkeypatc
         assert len(query_norms) == 3
 
 
-def test_scope_and_width_changes_reuse_one_corpus_without_sql(tmp_path, monkeypatch):
+def test_scope_and_width_changes_reuse_prepared_rows_without_sql(tmp_path, monkeypatch):
     np = pytest.importorskip("numpy")
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         anchor(store, "global", [1.0, 0.0])
@@ -98,6 +99,11 @@ def test_scope_and_width_changes_reuse_one_corpus_without_sql(tmp_path, monkeypa
         match(service, [1.0, 0.0])
         cache = service._anchor_vectors
         matrix = weakref.ref(cache.by_width[2].matrix)
+        assert sum(c.matrix.nbytes for c in cache.by_width.values()) == 4 * 4
+        assert cache.ready == {2: {"global"}}
+        match(service, [1.0, 0.0], ["project:demo"])
+        match(service, [1.0, 0.0, 0.0], ["project:demo"])
+        assert cache.ready == {2: {"global", "project:demo"}, 3: {"project:demo"}}
         assert sum(c.matrix.nbytes for c in cache.by_width.values()) == 7 * 4
 
         def no_preparation(*args, **kwargs):
@@ -105,6 +111,7 @@ def test_scope_and_width_changes_reuse_one_corpus_without_sql(tmp_path, monkeypa
 
         with monkeypatch.context() as guard:
             guard.setattr(store, "iter_query_anchor_vectors", no_preparation)
+            guard.setattr(store, "query_anchor_vector_layout", no_preparation)
             guard.setattr(retrieval, "_prepare_anchor_vectors", no_preparation)
             for scopes, query, expected in (
                 (["project:demo", "global"], [1.0, 0.0], {"project", "global"}),
@@ -121,6 +128,106 @@ def test_scope_and_width_changes_reuse_one_corpus_without_sql(tmp_path, monkeypa
         store.decay_query_anchor("global", "inactive")
         match(service, [1.0, 0.0])
         assert matrix() is None
+
+
+@pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "python"])
+def test_native_recall_decodes_only_consumed_scopes_and_width(tmp_path, monkeypatch, numpy):
+    if not numpy:
+        monkeypatch.setattr(qa, "_np", None)
+
+    class Encoder:
+        def embed(self, text):
+            return [1.0, 0.0, 0.0]
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.create_node(node_id="alpha", level="concept", content="orbital telemetry drift",
+                          context={"scope": "project:alpha"}, embedding=[1.0, 0.0, 0.0])
+        anchor(store, "healthy", [1.0, 0.0, 0.0], "project:alpha")
+        store.upsert_query_anchor_edge("healthy", "alpha", weight=1.0)
+        anchor(store, "unconsumed", [1.0, 0.0, 0.0], "project:foreign")
+        service = retrieval.MemoryRecallService(store, embedder=Encoder())
+
+        def recall(retriever):
+            return retriever.memory_recall("orbital telemetry drift", scope="project:alpha",
+                                           max_results=2, depth=1, repair_pending=False)
+
+        expected = recall(service)
+        assert [r.node.id for r in expected] == ["alpha"]
+        original = store.iter_query_anchor_vectors
+        reads = []
+
+        def observed(*args, **kwargs):
+            for row in original(*args, **kwargs):
+                reads.append(row[:3])
+                yield row
+
+        monkeypatch.setattr(store, "iter_query_anchor_vectors", observed)
+        for scope, width in (("project:foreign", 3), ("project:alpha", 2)):
+            with store.transaction():
+                store.connection.execute(
+                    "UPDATE query_anchors SET embedding=X'00', scope=?, dimensions=? "
+                    "WHERE id='unconsumed'", (scope, width),
+                )
+            for retriever in (service, retrieval.MemoryRecallService(store, embedder=Encoder())):
+                reads.clear()
+                result = recall(retriever)
+                assert [r.node.id for r in result] == ["alpha"]
+                assert reads == [("healthy", "project:alpha", 3)]
+                assert match(retriever, [1.0, 0.0, 0.0], "project:alpha") == qa.match_anchors(
+                    store, [1.0, 0.0, 0.0], "project:alpha",
+                )
+        with store.transaction():
+            store.connection.execute("UPDATE query_anchors SET dimensions=3 WHERE id='unconsumed'")
+        events = store.connection.execute("SELECT COUNT(*) FROM recall_events").fetchone()[0]
+        for retriever in (service, retrieval.MemoryRecallService(store, embedder=Encoder())):
+            with pytest.raises(ValueError):
+                recall(retriever)
+        with pytest.raises(ValueError):
+            qa.match_anchors(store, [1.0, 0.0, 0.0], "project:alpha")
+        assert store.connection.execute("SELECT COUNT(*) FROM recall_events").fetchone()[0] == events
+
+
+def test_consumed_vector_sql_failure_propagates(tmp_path):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        anchor(store, "a", [1.0, 0.0])
+        service = retrieval.MemoryRecallService(store)
+
+        def deny_vector(action, table, column, *_):
+            return (sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ
+                    and table == "query_anchors" and column == "embedding" else sqlite3.SQLITE_OK)
+
+        store.connection.set_authorizer(deny_vector)
+        try:
+            with pytest.raises(sqlite3.DatabaseError, match="embedding"):
+                match(service, [1.0, 0.0])
+        finally:
+            store.connection.set_authorizer(None)
+        assert [m.anchor.id for m in match(service, [1.0, 0.0])] == ["a"]
+
+
+def test_missing_scope_fill_uses_one_revision_snapshot(tmp_path, monkeypatch):
+    path = tmp_path / "memory.sqlite3"
+    with MemoryStore(path) as reader, MemoryStore(path) as writer:
+        anchor(writer, "a", [1.0, 0.0], "project:alpha")
+        anchor(writer, "b", [1.0, 0.0], "project:beta")
+        service = retrieval.MemoryRecallService(reader)
+        original = reader.query_anchor_vector_layout
+
+        def layout(width):
+            rows = original(width)
+            with writer.transaction():
+                writer.connection.execute("UPDATE query_anchors SET scope='project:beta' WHERE id='a'")
+            return rows
+
+        with monkeypatch.context() as guard:
+            guard.setattr(reader, "query_anchor_vector_layout", layout)
+            assert [m.anchor.id for m in match(service, [1.0, 0.0], "project:beta")] == ["b"]
+        assert [m.anchor.id for m in match(service, [1.0, 0.0], "project:beta")] == ["a", "b"]
+        source = service._anchor_vector_source()
+        with writer.transaction():
+            writer.connection.execute("UPDATE query_anchors SET scope='global' WHERE id='a'")
+        assert [m.anchor.id for m in qa.match_anchors(source, [1.0, 0.0], "global")] == ["a"]
+        assert "global" not in source.ready[2]
 
 
 def test_scope_selection_preserves_scan_order_and_uses_contiguous_views(tmp_path):

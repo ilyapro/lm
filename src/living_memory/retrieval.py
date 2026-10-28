@@ -528,6 +528,7 @@ class _AnchorVectorCache:
     revision: int
     store: MemoryStore
     by_width: dict[int, _PreparedAnchorVectors]
+    has_anchors: bool
     ready: dict[int, set[str]] = field(default_factory=dict)
 
     def query_anchor_corpus(
@@ -1362,7 +1363,7 @@ class MemoryRecallService:
     def _anchor_vector_source(self) -> _AnchorVectorCache | MemoryStore | None:
         """The live anchor corpus, cached until ``query_anchor_revision`` moves.
 
-        One indexed revision lookup guards reuse, including empty widths.
+        One indexed revision lookup guards reuse, including an empty corpus.
         Matching prepares only the query's scope/width rows. An empty layout
         never scans vectors. Unmigrated read-only stores use the uncached reader.
         Uncommitted inputs must not enter the cache: rollback can restore a
@@ -1375,9 +1376,12 @@ class MemoryRecallService:
             return self.store
         cached = self._anchor_vectors
         if cached is None or cached.revision != revision:
-            cached = _AnchorVectorCache(revision, self.store, {})
+            cached = _AnchorVectorCache(
+                revision, self.store, {},
+                bool(self.store.count_query_anchors(include_decayed=False)),
+            )
             self._anchor_vectors = cached
-        return cached
+        return cached if cached.has_anchors else None
 
     def _admit_anchor_seeds(
         self,

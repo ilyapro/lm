@@ -111,7 +111,8 @@ def test_shared_and_independent_observations_agree(tmp_path, monkeypatch, numpy,
         assert counts["_rank_anchors"] == 1
         assert independent["_rank_anchors"] == (2 if graph else 1)
         assert counts["get_query_anchor"] * (2 if graph else 1) == independent["get_query_anchor"]
-        assert counts["query_anchor_revision"] == 1
+        # Cold preparation rechecks the revision inside its vector-read snapshot.
+        assert counts["query_anchor_revision"] == 2
         assert independent["query_anchor_revision"] == (2 if graph else 1)
         assert counts["list_query_anchor_edges"] == independent["list_query_anchor_edges"]
         assert bool(counts["list_query_anchor_edges"]) == graph
