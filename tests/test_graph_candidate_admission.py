@@ -128,14 +128,17 @@ def test_native_selected_corruption_fails_without_event_access_or_credit(native,
         with guard:
             before = list(store.connection.iterdump())
             target = alpha if selected == "root" else beta
-            store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (target,))
+            provenance = store.connection.execute("SELECT provenance FROM nodes WHERE id = ?", (target,)).fetchone()[0]
+            with store.transaction():
+                store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (target,))
         with pytest.raises(TypeError):
             mcp.tools["memory_recall"](
                 QUERY, scope=SCOPE, depth=0 if selected == "root" else 1, max_results=3, used=[alpha],
             )
         with guard:
             assert store.credited_node_ids(prior["recall_event_id"]) == set()
-            store.connection.execute("UPDATE nodes SET provenance = '{}' WHERE id = ?", (target,))
+            with store.transaction():
+                store.connection.execute("UPDATE nodes SET provenance = ? WHERE id = ?", (provenance, target))
             assert list(store.connection.iterdump()) == before
 
 
@@ -160,7 +163,8 @@ def test_graph_and_anchor_admission_do_not_decode_excluded_bodies(tmp_path, monk
             return decode(row)
 
         monkeypatch.setattr(storage, "_node_from_row", admitted_only)
-        store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = 'leaf'")
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = 'leaf'")
         assert recall(service) == expected
 
 
@@ -176,10 +180,11 @@ def test_candidate_reader_filters_before_body_decoding_and_keeps_exact_reads(tmp
         assert store.get_recall_nodes(iter(ids), plan) == {"alpha": alpha}
         assert store.get_recall_nodes([], plan) == {}
         assert store.get_nodes(["dead"]) == {"dead": dead}
-        for target in ("beta", "dead"):
-            store.connection.execute(
-                f"UPDATE nodes SET {body} = CAST(x'ff' AS TEXT) WHERE id = ?", (target,),
-            )
+        with store.transaction():
+            for target in ("beta", "dead"):
+                store.connection.execute(
+                    f"UPDATE nodes SET {body} = CAST(x'ff' AS TEXT) WHERE id = ?", (target,),
+                )
         assert store.get_recall_nodes(ids, plan) == {"alpha": alpha}
         for target in ("beta", "dead"):
             with pytest.raises(sqlite3.OperationalError, match="Could not decode to UTF-8"):
