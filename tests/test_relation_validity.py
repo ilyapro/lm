@@ -122,10 +122,13 @@ def test_relation_only_correction_validity(tmp_path, monkeypatch, path, correcti
                 "CORRECTION_BODY_SENTINEL",
                 "project:foreign-validity" if correction_state == "foreign" else SCOPE,
             )
+            await client.call_tool("memory_connect", {
+                "id_a": correction, "id_b": original, "relation_type": "supersedes",
+            })
             edges = store.list_connections(
                 source_id=correction, target_id=original, relation_type="supersedes",
             )
-            assert len(edges) == 1 and edges[0].metadata["rule"] == "R1c"
+            assert len(edges) == 1 and edges[0].metadata == {}
             assert store.get_node(original).corrections == []
             if correction_state == "decayed":
                 store.soft_delete_node(correction, "expired correction")
@@ -191,6 +194,10 @@ def test_direct_correction_links_preserve_chains_cycles_and_unaffected_nodes(tmp
             original = await remember(client, ORIGINAL)
             middle = await remember(client, f"Correction to {original}: amber hatch pressure rule B.")
             latest = await remember(client, f"Correction to {middle}: amber hatch pressure rule C.")
+            for source, target in ((middle, original), (latest, middle)):
+                await client.call_tool("memory_connect", {
+                    "id_a": source, "id_b": target, "relation_type": "supersedes",
+                })
             untouched = await remember(client, "Amber hatch pressure rule: inspect the seal.")
             if cycle:
                 store.create_connection(original, latest, "supersedes")
@@ -222,6 +229,9 @@ def test_direct_correction_links_preserve_chains_cycles_and_unaffected_nodes(tmp
     {'by': 'lm_collapse_near_dups.py', 'reason': 'near-duplicate collapse', 'cosine': 1.0},
     {'kind': 'duplicate_content'},
     {'kind': 'duplicate_content', 'collapsed_by': 'lm_collapse_copies.py', 'basis': 'procedure_key'},
+    {'rule': 'R1c', 'kind': 'content_correction', 'matched': 'correction to'},
+    {'rule': 'R1c'},
+    {'kind': 'content_correction'},
 ])
 @pytest.mark.parametrize('path', ['recall:knowledge', 'recall:full', 'lookup:knowledge', 'lookup:full'])
 def test_historical_bookkeeping_never_corrects_distinct_knowledge(tmp_path, metadata, path):
@@ -284,12 +294,14 @@ def test_unrecognized_metadata_does_not_cancel_supersedes(tmp_path, metadata):
 
 
 @pytest.mark.parametrize('historical', [
+    {'rule': 'R1c', 'kind': 'content_correction', 'matched': 'not a correction to'},
     {'kind': 'drain_near_duplicate'},
     {'by': 'lm_collapse_near_dups.py', 'reason': 'near-duplicate collapse'},
 ])
 @pytest.mark.parametrize('correction', [
     {'by': 'teacher', 'correction': 'Requires approval.'},
-    {'rule': 'R1c', 'kind': 'content_correction'},
+    {},
+    {'kind': 'manual_correction'},
 ])
 def test_real_correction_contribution_replaces_historical_heuristic_provenance(tmp_path, historical, correction):
     from living_memory.storage import MemoryStore

@@ -97,10 +97,13 @@ def test_native_knowledge_reads_share_relation_validity(
                 f"Correction to {original}: release pressure first. CORRECTION_BODY_SENTINEL",
                 {"scope": correction_scope},
             )
+            await client.call_tool("memory_connect", {
+                "id_a": correction, "id_b": original, "relation_type": "supersedes",
+            })
             edges = store.list_connections(
                 source_id=correction, target_id=original, relation_type="supersedes",
             )
-            assert len(edges) == 1 and edges[0].metadata["rule"] == "R1c"
+            assert len(edges) == 1 and edges[0].metadata == {}
             assert store.get_node(original).corrections == []
             if correction_state == "decayed":
                 store.soft_delete_node(correction, "expired correction")

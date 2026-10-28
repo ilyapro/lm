@@ -17,7 +17,7 @@ downgrade that ``MemoryStore.create_connection`` exhibits, as the control that
 says why anchor edges do not reuse it.
 
 *Anchor edges follow their target.* Every write path that supersedes a node —
-teach, duplicate-content dedup, derived R1c corrections — plus consolidation's
+teach and explicit connections, verified duplicate-content dedup — plus consolidation's
 era displacement, plus the batch sweep.
 """
 
@@ -808,6 +808,7 @@ def test_duplicate_content_dedup_moves_the_anchor_edge(tmp_path: Path) -> None:
     {"kind": "drain_near_duplicate", "threshold": 0.99},
     {"by": "lm_collapse_near_dups.py", "reason": "near-duplicate collapse"},
     {"kind": "duplicate_content"},
+    {"rule": "R1c", "kind": "content_correction"},
 ])
 def test_heuristic_or_inexact_bookkeeping_does_not_redirect_an_anchor(
     tmp_path: Path, metadata: dict,
@@ -832,7 +833,7 @@ def test_anchor_on_repeated_content_resolves_through_exact_copy_bookkeeping(tmp_
         assert store.list_connections(target_id=old.id, relation_type="supersedes") == []
 
 
-def test_derived_r1c_correction_moves_the_anchor_edge(tmp_path: Path) -> None:
+def test_correction_wording_preserves_the_anchor_target(tmp_path: Path) -> None:
     with _store(tmp_path) as store:
         stale = _trace(store, "The runner lock file lives in /tmp/runner.lock")
         anchor = qa.upsert_anchor(
@@ -846,7 +847,7 @@ def test_derived_r1c_correction_moves_the_anchor_edge(tmp_path: Path) -> None:
         derive_edges_for_new_trace(store, correction)
 
         assert [e.target_id for e in store.list_query_anchor_edges(anchor_id=anchor.id)] == [
-            correction.id
+            stale.id
         ]
 
 
