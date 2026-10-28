@@ -1721,7 +1721,7 @@ class MemoryStore:
         provenance: Mapping[str, Any] | None = None,
         level: NodeLevel | None = None,  # moves the node, same id and history, to a level
     ) -> Node:
-        """Update one node atomically, using the vector roles of create_node."""
+        """Update changed facts atomically, using the vector roles of create_node."""
 
         existing = self.get_node(node_id)
         if existing is None:
@@ -1729,80 +1729,73 @@ class MemoryStore:
         if existing.level == "trace" and content is not None and content != existing.content:
             raise ValueError("trace content is append-only and cannot be updated")
 
-        context_data = existing.context if context is None else dict(context)
+        context_data = dict(existing.context if context is None else context)
         context_data.setdefault("scope", existing.scope)
         context_data.setdefault("timestamp", existing.timestamp)
         stats_data = existing.stats
         if stats:
             stats_data.update(stats)
-        provenance_data = existing.provenance if provenance is None else dict(provenance)
+        provenance_data = dict(existing.provenance if provenance is None else provenance)
         source_traces = _as_list(provenance_data.pop("source_traces", existing.source_traces))
         corrections = _as_list(provenance_data.pop("corrections", existing.corrections))
         new_content = existing.content if content is None else content
         content_changed = new_content != existing.content
-        new_fingerprint = _content_fingerprint(new_content)
         content_vector = None if embedding is None else list(embedding)
         vector = (
             list(representative_embedding)
             if representative_embedding is not None else content_vector
         )
-        now = _utc_now()
         unique_agents = int(stats_data.get("unique_agents", existing.unique_agents))
         confidence = float(stats_data.get("confidence", existing.confidence))
         if unique_agents <= 1:
             confidence = min(confidence, 0.5)
 
-        legacy_embedding = self._node_embedding_column_present()
-        embedding_assignment = "embedding = ?, " if legacy_embedding else ""
-        embedding_value: tuple[Any, ...] = ()
-        if legacy_embedding:
-            if vector is not None:
-                stored_embedding = _json_dumps(vector)
-            elif existing.embedding is not None:
-                stored_embedding = _json_dumps(existing.embedding)
-            else:
-                stored_embedding = None
-            embedding_value = (stored_embedding,)
+        values = {
+            "level": level or existing.level,
+            "scope": str(context_data.get("scope") or existing.scope),
+            "agent": _optional_str(context_data.get("agent", existing.agent)),
+            "task": _optional_str(context_data.get("task", existing.task)),
+            "access_count": int(stats_data.get("access_count", existing.access_count)),
+            "last_accessed": _optional_str(stats_data.get("last_accessed")),
+            "usefulness_score": float(stats_data.get("usefulness_score", existing.usefulness_score)),
+            "confidence": confidence,
+            "unique_agents": unique_agents,
+            "temporal_hint": _optional_str(stats_data.get("temporal_hint")),
+        }
+        values = {key: value for key, value in values.items() if value != getattr(existing, key)}
+        if content_changed:
+            values["content"] = new_content
+            values["content_fingerprint"] = _content_fingerprint(new_content)
+        # Compare JSON families before encoding: metadata writes preserve the
+        # stored source bytes and never name unchanged indexed columns.
+        for key, value, previous in (
+            ("context", context_data, existing.context),
+            ("source_traces", source_traces, existing.source_traces),
+            ("corrections", corrections, existing.corrections),
+            ("provenance", provenance_data, {
+                key: value for key, value in existing.provenance.items()
+                if key not in ("source_traces", "corrections")
+            }),
+        ):
+            if value != previous:
+                values[key] = _json_dumps(value)
+        if (vector is not None and vector != existing.embedding
+                and self._node_embedding_column_present()):
+            values["embedding"] = _json_dumps(vector)
+        values["updated_at"] = _utc_now()
 
         with self.transaction():
             self._conn.execute(
-                f"""
-                UPDATE nodes
-                SET level = ?, content = ?, content_fingerprint = ?, {embedding_assignment}scope = ?,
-                    agent = ?, task = ?, context = ?,
-                    access_count = ?, last_accessed = ?, usefulness_score = ?,
-                    confidence = ?, unique_agents = ?, temporal_hint = ?,
-                    source_traces = ?, corrections = ?, provenance = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    level or existing.level,
-                    new_content,
-                    new_fingerprint,
-                    *embedding_value,
-                    str(context_data.get("scope") or existing.scope),
-                    _optional_str(context_data.get("agent", existing.agent)),
-                    _optional_str(context_data.get("task", existing.task)),
-                    _json_dumps(context_data),
-                    int(stats_data.get("access_count", existing.access_count)),
-                    _optional_str(stats_data.get("last_accessed")),
-                    float(stats_data.get("usefulness_score", existing.usefulness_score)),
-                    confidence,
-                    unique_agents,
-                    _optional_str(stats_data.get("temporal_hint")),
-                    _json_dumps(source_traces),
-                    _json_dumps(corrections),
-                    _json_dumps(provenance_data),
-                    now,
-                    node_id,
-                ),
+                f"UPDATE nodes SET {', '.join(f'{key} = ?' for key in values)} WHERE id = ?",
+                (*values.values(), node_id),
             )
             # Representatives affect clustering, not content search. An unchanged
             # digest with current chunks needs no encoding or chunk replacement.
             if content_vector or (vector and representative_embedding is not None and (
                 content_changed or not self.node_chunks_are_current(node_id)
             )):
-                self._write_node_chunks(node_id, new_content, new_fingerprint, content_vector)
+                fingerprint = values.get("content_fingerprint") or _content_fingerprint(new_content)
+                self._write_node_chunks(node_id, new_content, fingerprint, content_vector)
             elif content_changed and self._chunk_table_present():
                 self._conn.execute(
                     f"DELETE FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ?",
