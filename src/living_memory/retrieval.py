@@ -210,7 +210,7 @@ import os
 from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from math import log2, sqrt
 from typing import Any, Callable
 
