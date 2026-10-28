@@ -4932,6 +4932,16 @@ class MemoryStore:
         ).fetchone()
         return None if row is None else _query_anchor_from_row(row)
 
+    def has_query_anchor(self, scope: str, fingerprint: str) -> bool:
+        """Test exact identity, including decayed anchors, without reading the payload."""
+
+        if not self._anchor_tables_present():
+            return False
+        return self._conn.execute(
+            f"SELECT 1 FROM {QUERY_ANCHOR_TABLE} WHERE scope = ? AND fingerprint = ?",
+            (normalize_scope(scope), str(fingerprint)),
+        ).fetchone() is not None
+
     def find_query_anchor(self, scope: str, fingerprint: str) -> QueryAnchor | None:
         """Exact-identity lookup on the ``UNIQUE(scope, fingerprint)`` key."""
 

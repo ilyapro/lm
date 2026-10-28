@@ -991,7 +991,7 @@ def _feedback_queries(
             event for event in store.pending_recall_events(
                 scope=scope, context=context, limit=_DEFAULT_PENDING_RECALL_LIMIT,
             )
-            if store.find_query_anchor(event.scope, recall_fingerprint(event.query, event.scope)) is None
+            if not store.has_query_anchor(event.scope, recall_fingerprint(event.query, event.scope))
         ]
         sources = store.get_node_contents(node_id for event in events for node_id in event.result_ids)
         for event in events:
@@ -1034,7 +1034,7 @@ def prepared_feedback(
                 trace_content=trace_content, trace_context=trace_context,
             )
             missing = {key: query for key, query in queries.items()
-                       if key not in vectors and store.find_query_anchor(*key) is None}
+                       if key not in vectors and not store.has_query_anchor(*key)}
             if not missing:
                 yield MappingProxyType(vectors)
                 return
@@ -1107,15 +1107,18 @@ def _apply_query_feedback(
             for event, targets, confirmed, _irrelevant in items
         ]
         keys: list[tuple[str, str]] = []
-        missing: dict[tuple[str, str], str] = {}
         for (event, *_), query in zip(items, queries, strict=True):
             scope = normalize_scope(event.scope)
             key = (scope, recall_fingerprint(query, scope))
             keys.append(key)
-            if key not in missing and store.find_query_anchor(*key) is None:
-                missing[key] = query
-        vectors = (_encode_missing_feedback_queries(store, missing)
-                   if preparation is None else preparation)
+        missing: dict[tuple[str, str], str] = {}
+        if preparation is None:
+            for key, query in zip(keys, queries, strict=True):
+                if key not in missing and not store.has_query_anchor(*key):
+                    missing[key] = query
+            vectors = _encode_missing_feedback_queries(store, missing)
+        else:
+            vectors = preparation
         for (event, targets, confirmed, irrelevant), query, key in zip(
             items, queries, keys, strict=True
         ):

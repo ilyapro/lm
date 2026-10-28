@@ -108,7 +108,7 @@ def test_optional_preparation_failure_skips_credit_and_next_call_can_credit_once
     r = runtime
     target, name = {
         "delivery": (r.store, "recall_deliveries_for_transport"),
-        "anchor": (r.store, "find_query_anchor"),
+        "anchor": (r.store, "has_query_anchor"),
         "encoding": (feedback, "_encode_missing_feedback_queries"),
     }[fault]
     original = getattr(target, name)
@@ -179,7 +179,7 @@ def test_source_failure_propagates_after_optional_preparation_failure(runtime, m
 
 
 @pytest.mark.parametrize("route", ["recall", "explicit", "teach"])
-@pytest.mark.parametrize("read", ["recall_deliveries_for_transport", "find_query_anchor"])
+@pytest.mark.parametrize("read", ["recall_deliveries_for_transport", "has_query_anchor"])
 def test_required_preparation_read_failure_precedes_mutation(runtime, monkeypatch, route, read):
     r = runtime
 
