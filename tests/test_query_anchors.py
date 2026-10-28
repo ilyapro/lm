@@ -32,6 +32,7 @@ import pytest
 from living_memory import query_anchors as qa
 from living_memory.consolidation import memory_teach
 from living_memory.edge_derivation import derive_edges_for_new_trace
+from living_memory.health_audit import open_read_only_store
 from living_memory.query_anchors import (
     ANCHOR_EDGE_WEIGHT,
     ANCHOR_TTL_DAYS,
@@ -308,6 +309,7 @@ def test_anchor_reads_degrade_to_empty_without_the_v7_tables(tmp_path: Path) -> 
         assert store.list_anchor_edge_targets() == []
         assert list(store.iter_query_anchor_vectors()) == []
         assert store.find_query_anchor(SCOPE, "fp") is None
+        assert not store.has_query_anchor(SCOPE, "fp")
         assert store.repoint_query_anchor_edges("a", "b") == 0
         assert qa.match_anchors(store, [1.0, 0.0], SCOPE) == []
 
@@ -315,6 +317,61 @@ def test_anchor_reads_degrade_to_empty_without_the_v7_tables(tmp_path: Path) -> 
         old = _trace(store, "pre-v7 content")
         new = _trace(store, "pre-v7 replacement")
         store.create_connection(new.id, old.id, "supersedes")
+
+
+@pytest.mark.parametrize("decayed", [False, True])
+def test_anchor_presence_reads_only_exact_key(tmp_path: Path, decayed: bool) -> None:
+    with _store(tmp_path) as store:
+        anchor = store.insert_query_anchor(
+            scope="demo", query="q", fingerprint="42", embedding=[1.0, 0.0],
+        )
+        if decayed:
+            store.decay_query_anchor(anchor.id, "expired")
+
+        def key_only(action, table, column, *_args):
+            if action == sqlite3.SQLITE_READ and table == QUERY_ANCHOR_TABLE:
+                return sqlite3.SQLITE_OK if column in {"scope", "fingerprint"} else sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        store.connection.set_authorizer(key_only)
+        try:
+            assert store.has_query_anchor("demo", "42")
+            assert store.has_query_anchor(SCOPE, 42)
+            assert not store.has_query_anchor("global", "42")
+            assert not store.has_query_anchor(SCOPE, " 42 ")
+            assert not store.has_query_anchor(SCOPE, "missing")
+            with pytest.raises(sqlite3.DatabaseError):
+                store.find_query_anchor(SCOPE, "42")
+        finally:
+            store.connection.set_authorizer(None)
+
+        def deny_anchor(action, table, *_args):
+            return (sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ and table == QUERY_ANCHOR_TABLE
+                    else sqlite3.SQLITE_OK)
+
+        store.connection.set_authorizer(deny_anchor)
+        try:
+            with pytest.raises(sqlite3.DatabaseError):
+                store.has_query_anchor(SCOPE, "42")
+        finally:
+            store.connection.set_authorizer(None)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_anchor_presence_on_read_only_snapshot(tmp_path: Path, legacy: bool) -> None:
+    path = tmp_path / "snapshot.sqlite3"
+    if legacy:
+        _seed_v6_database(path)
+    else:
+        with MemoryStore(path) as store:
+            store.insert_query_anchor(scope=SCOPE, query="q", fingerprint="fp", embedding=[1.0, 0.0])
+    before = path.read_bytes()
+    with open_read_only_store(path) as store:
+        assert store.has_query_anchor("demo", "fp") == (not legacy)
+        assert not store.has_query_anchor(SCOPE, "missing")
+        assert store.connection.total_changes == 0
+        assert not store.connection.in_transaction
+    assert path.read_bytes() == before
 
 
 def test_anchor_embedding_round_trips_as_float32_blob(tmp_path: Path) -> None:

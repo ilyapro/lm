@@ -1,11 +1,12 @@
 """Feedback reuses exact authoritative anchors without query inference."""
 
 import asyncio
+import sys
 
 from fastmcp import Client
 import pytest
 
-from living_memory import embeddings, feedback
+from living_memory import embeddings, feedback, storage
 from living_memory.irrelevance import list_query_irrelevance, record_query_irrelevance
 from living_memory.query_anchors import resolve_query_anchor
 from living_memory.storage import recall_fingerprint
@@ -32,8 +33,19 @@ async def consume(client, route, node_id):
 
 @pytest.mark.parametrize("route", ["lookup", "explicit", "implicit"])
 @pytest.mark.parametrize("existing", [False, True])
-def test_native_feedback_encodes_only_missing_identity(runtime, route, existing):
+def test_native_feedback_encodes_only_missing_identity(runtime, monkeypatch, route, existing):
     r = runtime
+    materializations, presence_checks = [], []
+    materialize = storage._query_anchor_from_row
+    has_anchor = r.store.has_query_anchor
+
+    def read_anchor(row):
+        materializations.append(sys._getframe(2).f_code.co_name)
+        return materialize(row)
+
+    def check_presence(*key):
+        presence_checks.append(sys._getframe(1).f_code.co_name)
+        return has_anchor(*key)
 
     async def scenario():
         async with Client(r.mcp) as client:
@@ -42,7 +54,25 @@ def test_native_feedback_encodes_only_missing_identity(runtime, route, existing)
                 stored = resolve_query_anchor(r.store, "  cobalt\ncertificate  ", SCOPE, [0.0, 1.0])
                 record_query_irrelevance(r.store, stored.id, "earlier", [r.node.id])
             r.encoded.clear()
-            await consume(client, route, r.node.id)
+            with monkeypatch.context() as observed:
+                observed.setattr(storage, "_query_anchor_from_row", read_anchor)
+                observed.setattr(r.store, "has_query_anchor", check_presence)
+                response = await consume(client, route, r.node.id)
+            if route == "lookup":
+                assert entry(response)["content"] == CONTENT
+            else:
+                trace = r.store.get_node(response["node"]["id"])
+                assert trace.content == CONTENT + " Confirmed for release."
+                if route == "explicit":
+                    assert response["feedback_marks"] == {"accepted": 1, "dropped": 0, "by_reason": {}}
+            assert "_apply_query_feedback" not in presence_checks
+            if existing:
+                assert set(materializations) <= {
+                    "_apply_query_feedback", "upsert_anchor", "reinforce_query_anchor", "resolve_query_anchor",
+                }
+                # This fixture needs one application, upsert and readback;
+                # explicit + implicit confirmation also resolves cancellation.
+                assert len(materializations) <= (5 if route == "explicit" else 3)
             assert r.encoded.count(QUERY) == (0 if existing else 1)
             anchor = anchor_for(r.store)
             assert anchor.reinforcement_count == int(existing)
