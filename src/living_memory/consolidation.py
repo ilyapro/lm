@@ -836,7 +836,15 @@ class _SourceObservation:
         return self.edges[key]
 
     def list_duplicate_replacements(self, node_id: str) -> list[Node]:
-        return self.store.list_duplicate_replacements(node_id)
+        replacements = self.store.list_duplicate_replacements(node_id)
+        changing = [node.id for node in replacements if node.id in self.changing]
+        if changing and self.refresh is not None:
+            for source in changing:
+                self.get_node(source)
+            # A refreshed copy can decay or cease to be byte/source-identical.
+            # Copy bookkeeping does not grant semantic correction authority.
+            replacements = self.store.list_duplicate_replacements(node_id)
+        return replacements
 
     def updated(self, node: Node) -> None:
         self.changing.discard(node.id)
