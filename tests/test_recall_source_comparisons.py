@@ -158,7 +158,7 @@ def test_session_repeat_keeps_its_slot_and_delivery_uses_the_first_bearer():
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("limit, twins, distinct, selected_indices", [
     (2, 2, 2, [0, 2]),
-    (3, 4, 0, [0, 1, 2]),
+    (2, 3, 0, [0, 1]),
     (3, 3, 1, [0, 1, 3]),
     (3, 3, 2, [0, 3, 4]),
 ])
