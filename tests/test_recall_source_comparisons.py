@@ -155,6 +155,16 @@ def test_session_repeat_keeps_its_slot_and_delivery_uses_the_first_bearer():
     assert shaped[1]["content_ref"]["duplicate_of"] == "first"
 
 
+def test_partial_replacement_keeps_a_later_intentional_session_repeat():
+    first, filler, twin, repeated = [row(name) for name in ("first", "filler", "twin", "repeated")]
+    later = row("later", "Later fact.")
+    records = recall_delivery_records([repeated], shape([repeated]))
+    history = DeliveryHistory([{"node_id": key, "delivery": value} for key, value in records.items()])
+    selected, residual = _select_distinct_results([first, filler, twin, repeated], [later], 4, history)
+    assert selected == [first, filler, repeated, later]
+    assert residual == [twin]
+
+
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("limit, twins, distinct, selected_indices", [
     (2, 2, 2, [0, 2]),
