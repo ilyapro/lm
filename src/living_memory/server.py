@@ -1674,10 +1674,12 @@ def _register_tools(
 
         with runtime_lock:
             auto_decay = _maybe_decay_sweep(store)
-            result = consolidation_service.memory_consolidate(scope=scope, force=force)
-            payload = _consolidation_result_to_dict(result)
-            payload["auto_decay"] = auto_decay
-            return payload
+        result = consolidation_service.memory_consolidate(
+            scope=scope, force=force, guard=lambda: _consolidation_step(runtime_lock),
+        )
+        payload = _consolidation_result_to_dict(result)
+        payload["auto_decay"] = auto_decay
+        return payload
 
     @mcp.tool
     @_track_latency("memory_forget")
@@ -2045,6 +2047,14 @@ def _schedule_auto_consolidation_if_due(
         return None
 
 
+@contextmanager
+def _consolidation_step(runtime_lock: Any) -> Iterator[None]:
+    with runtime_lock:
+        yield
+    # Give waiting foreground calls a chance before the next guarded step.
+    _time.sleep(_AUTO_CONSOLIDATION_STEP_HANDOFF_SECONDS)
+
+
 def _build_auto_consolidation(
     store: MemoryStore,
     runtime_lock: Any,
@@ -2058,22 +2068,12 @@ def _build_auto_consolidation(
     left pending is resumed here.
     """
 
-    @contextmanager
-    def step() -> Iterator[None]:
-        with runtime_lock:
-            yield
-        # Python locks are not fair: released and re-taken at once, the lock
-        # goes back to this thread before a request thread woken by the
-        # release gets to run, and recall starves behind a pass made of many
-        # short steps. Pausing after each step hands the lock over.
-        _time.sleep(_AUTO_CONSOLIDATION_STEP_HANDOFF_SECONDS)
-
     def run_pass(scope: str) -> dict[str, Any]:
         return _compact_consolidation_summary(
             consolidation_service.memory_consolidate(
                 scope=scope,
                 force=False,
-                guard=step,
+                guard=lambda: _consolidation_step(runtime_lock),
             )
         )
 
