@@ -44,7 +44,7 @@ from living_memory.relations import (
     correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
 )
 from living_memory.phase import PhaseManager
-from living_memory.scope import normalize_scope
+from living_memory.scope import ScopePlan, normalize_scope
 from living_memory.temporal import parse_timestamp
 
 SCHEMA_VERSION = 8
@@ -1577,6 +1577,29 @@ class MemoryStore:
             placeholders = ",".join("?" for _ in chunk)
             rows = self._conn.execute(
                 f"SELECT * FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
+            ).fetchall()
+            for row in rows:
+                node = _node_from_row(row)
+                nodes[node.id] = node
+        return nodes
+
+    def get_recall_nodes(self, node_ids: Iterable[str], plan: ScopePlan) -> dict[str, Node]:
+        """Materialize live candidates admitted by the current recall plan.
+
+        Admission and body selection share one SQL statement per batch, so an
+        excluded node's body is neither returned nor decoded. Exact readers
+        retain their independent full-node and decayed-history contracts.
+        """
+        scopes = plan.named_scopes if plan.restricted else ()
+        if plan.restricted and not scopes:
+            return {}
+        scope_filter = f" AND scope IN ({','.join('?' for _ in scopes)})" if scopes else ""
+        nodes: dict[str, Node] = {}
+        for chunk in _node_read_batches(node_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                f"SELECT * FROM nodes WHERE id IN ({placeholders}) AND decayed = 0"
+                f"{scope_filter} ORDER BY id", (*chunk, *scopes),
             ).fetchall()
             for row in rows:
                 node = _node_from_row(row)

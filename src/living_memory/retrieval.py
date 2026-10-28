@@ -1363,7 +1363,7 @@ class MemoryRecallService:
         if not anchor_seeds:
             return {}
         missing = [node_id for node_id in anchor_seeds if node_id not in candidates]
-        fetched = self.store.get_nodes(missing) if missing else {}
+        fetched = self.store.get_recall_nodes(missing, plan) if missing else {}
         admitted: dict[str, float] = {}
         for node_id, activation in anchor_seeds.items():
             existing = candidates.get(node_id)
@@ -1660,9 +1660,9 @@ class MemoryRecallService:
                     if neighbor_id not in node_cache and neighbor_id not in candidates:
                         needed_neighbor_ids.add(neighbor_id)
 
-            # Batch fetch missing neighbor nodes
+            # Admit missing neighbors before materializing their bodies.
             if needed_neighbor_ids:
-                fetched_nodes = self.store.get_nodes(needed_neighbor_ids)
+                fetched_nodes = self.store.get_recall_nodes(needed_neighbor_ids, plan)
                 for nid in needed_neighbor_ids:
                     node_cache[nid] = fetched_nodes.get(nid)
 
