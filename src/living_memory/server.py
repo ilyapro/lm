@@ -1756,10 +1756,11 @@ def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
     ) -> str:
         """Return a formatted active memory context block."""
 
+        prepared_query = MemoryRecallService(store).prepare_query(str(task or ""))
         with runtime_lock:
             return retrieval_context_prompt(
                 store,
-                task=task,
+                task=prepared_query,
                 scope=scope,
                 max_concepts=max_concepts,
                 min_confidence=min_confidence,

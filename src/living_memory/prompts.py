@@ -8,7 +8,7 @@ import json
 import re
 
 from living_memory.models import REJECTED_ALTERNATIVE_KIND, Node
-from living_memory.retrieval import SCOPE_RANK_BOOST_STEP, MemoryRecallService
+from living_memory.retrieval import SCOPE_RANK_BOOST_STEP, MemoryRecallService, _PreparedQuery
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
 from living_memory.validity import read_validity
@@ -49,7 +49,7 @@ class DecisionHistory:
 def retrieval_context_prompt(
     store: MemoryStore,
     *,
-    task: str = "",
+    task: str | _PreparedQuery = "",
     scope: str | None = None,
     max_concepts: int = DEFAULT_CONTEXT_CONCEPTS,
     max_schemas: int = DEFAULT_CONTEXT_SCHEMAS,
@@ -60,14 +60,18 @@ def retrieval_context_prompt(
 ) -> str:
     """Build a formatted active context block from top-ranked concepts and schemas."""
 
-    query = str(task or "").strip()
+    query = task.text if isinstance(task, _PreparedQuery) else str(task or "").strip()
+    if not isinstance(task, _PreparedQuery):
+        task = query
+        if query and (int(max_concepts) > 0 or int(max_schemas) > 0):
+            task = MemoryRecallService(store).prepare_query(query)
     ambient = dict(ambient_context or {})
     if agent:
         ambient["agent"] = agent
     plan = resolve_scope(scope=scope, ambient_context=ambient, store=store)
     concepts = select_context_concepts(
         store,
-        task=query,
+        task=task,
         plan=plan,
         max_concepts=max_concepts,
         min_confidence=min_confidence,
@@ -76,7 +80,7 @@ def retrieval_context_prompt(
     )
     schemas = select_context_schemas(
         store,
-        task=query,
+        task=task,
         plan=plan,
         max_schemas=max_schemas,
         min_confidence=min_confidence,
@@ -84,7 +88,7 @@ def retrieval_context_prompt(
     )
     decisions = select_decision_history(
         store,
-        task=query,
+        task=task,
         plan=plan,
         max_items=max_concepts,
         ambient_context=ambient,
@@ -104,7 +108,7 @@ def retrieval_context_prompt(
 def select_context_concepts(
     store: MemoryStore,
     *,
-    task: str,
+    task: str | _PreparedQuery,
     plan: ScopePlan,
     max_concepts: int = DEFAULT_CONTEXT_CONCEPTS,
     min_confidence: float = 0.0,
@@ -119,7 +123,8 @@ def select_context_concepts(
 
     min_confidence = max(0.0, min(1.0, float(min_confidence)))
     selected: dict[str, ContextConcept] = {}
-    if task.strip():
+    query = task.text if isinstance(task, _PreparedQuery) else task
+    if query.strip():
         service = MemoryRecallService(store)
         recall_results = service.memory_recall(
             task,
@@ -140,7 +145,7 @@ def select_context_concepts(
                 methods=tuple(result.methods),
             )
 
-    task_tokens = _tokens(task)
+    task_tokens = _tokens(query)
     for item_scope in plan.named_scopes:
         weights = store.get_retrieval_weights(item_scope).normalized()
         for node in store.list_nodes(
@@ -179,7 +184,7 @@ def select_context_concepts(
 def select_context_schemas(
     store: MemoryStore,
     *,
-    task: str,
+    task: str | _PreparedQuery,
     plan: ScopePlan,
     max_schemas: int = DEFAULT_CONTEXT_SCHEMAS,
     min_confidence: float = 0.0,
@@ -190,7 +195,8 @@ def select_context_schemas(
     limit = max(0, int(max_schemas))
     if limit == 0:
         return []
-    if not task.strip():
+    query = task.text if isinstance(task, _PreparedQuery) else task
+    if not query.strip():
         return []
 
     min_confidence = max(0.0, min(1.0, float(min_confidence)))
@@ -227,7 +233,7 @@ def select_context_schemas(
 def select_decision_history(
     store: MemoryStore,
     *,
-    task: str,
+    task: str | _PreparedQuery,
     plan: ScopePlan,
     max_items: int = DEFAULT_CONTEXT_CONCEPTS,
     ambient_context: dict[str, Any] | None = None,
@@ -235,7 +241,8 @@ def select_decision_history(
     """Return primary traces that have rejected alternatives relevant to the task."""
 
     limit = max(0, int(max_items))
-    if limit == 0 or not task.strip():
+    query = task.text if isinstance(task, _PreparedQuery) else task
+    if limit == 0 or not query.strip():
         return []
 
     service = MemoryRecallService(store)
