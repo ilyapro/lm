@@ -83,11 +83,18 @@ def test_chunk_ordinal_width_and_node_fallback_define_vectors(store):
     results = [embedded(store, node_id) for node_id in ("mixed", "empty", "fallback", "absent")]
     chunk = TextChunk("sample", 0, 0, 1, 0, 6)
     store.replace_node_chunks(results[0].node.id, [
-        (replace(chunk, chunk_index=8), [0.0, 0.0, 1.0]),
-        (replace(chunk, chunk_index=3), [1.0, 0.0, 0.0]),
-        (replace(chunk, chunk_index=7), [0.0, 1.0]),
-        (replace(chunk, chunk_index=4), [0.0, 1.0, 0.0]),
+        (replace(chunk, chunk_index=0), [0.0, 1.0]),
+        (replace(chunk, chunk_index=1), [1.0, 0.0, 0.0]),
+        (replace(chunk, chunk_index=2), [0.0, 0.0, 1.0]),
+        (replace(chunk, chunk_index=3), [0.0, 1.0, 0.0]),
     ])
+    with store.connection:
+        store.connection.execute(
+            "UPDATE node_chunk_embeddings SET chunk_index = chunk_index + 10 WHERE node_id = 'mixed'"
+        )
+        store.connection.execute("""UPDATE node_chunk_embeddings SET chunk_index =
+            CASE chunk_index WHEN 10 THEN 8 WHEN 11 THEN 3 WHEN 12 THEN 7 WHEN 13 THEN 4 END
+            WHERE node_id = 'mixed'""")
     # Older unconstrained tables can contain an empty vector.
     store.connection.execute("PRAGMA ignore_check_constraints = ON")
     with store.connection:
