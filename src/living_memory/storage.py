@@ -1885,7 +1885,17 @@ class MemoryStore:
                 )
         return self.get_node(node_id)  # type: ignore[return-value]
 
-    def add_correction(self, node_id: str, *, old: str, new: str, by: str) -> Node:
+    def add_correction(
+        self,
+        node_id: str,
+        *,
+        old: str,
+        new: str,
+        by: str,
+        stats: Mapping[str, Any] | None = None,
+    ) -> Node:
+        """Append correction metadata and apply accompanying stats in one update."""
+
         existing = self.get_node(node_id)
         if existing is None:
             raise KeyError(node_id)
@@ -1894,7 +1904,7 @@ class MemoryStore:
         provenance = dict(existing.provenance)
         provenance["corrections"] = corrections
         provenance["source_traces"] = existing.source_traces
-        return self.update_node(node_id, provenance=provenance)
+        return self.update_node(node_id, provenance=provenance, stats=stats)
 
     def soft_delete_node(self, node_id: str, reason: str | None = None) -> Node:
         existing = self.get_node(node_id)

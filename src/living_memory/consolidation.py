@@ -750,13 +750,10 @@ def memory_teach(
             old=original.content,
             new=correction_text,
             by=teacher,
-        )
-        corrected_original = store.update_node(
-            corrected_original.id,
             stats={
-                "confidence": min(corrected_original.confidence, 0.25),
-                "unique_agents": corrected_original.unique_agents,
-                "usefulness_score": min(corrected_original.usefulness_score, -0.25),
+                "confidence": min(original.confidence, 0.25),
+                "unique_agents": original.unique_agents,
+                "usefulness_score": min(original.usefulness_score, -0.25),
             },
         )
         if preparation is None:
