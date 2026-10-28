@@ -34,7 +34,7 @@ import logging
 import os
 import re
 
-from living_memory.decay import DecayResult, apply_decay, memory_forget
+from living_memory.decay import DecayResult, apply_decay
 from living_memory.edge_derivation import DERIVED_FROM_ANNOTATION, DERIVED_FROM_KIND
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
@@ -516,8 +516,11 @@ class ConsolidationService:
             preparation=preparation,
         )
 
-    def memory_forget(self, node_id: str, reason: str | None = None) -> Node:
-        return memory_forget(self.store, node_id, reason)
+    def memory_forget(
+        self, node_id: str, reason: str | None = None,
+        *, preparation: _DerivationPreparation | None = None,
+    ) -> Node:
+        return memory_forget(self.store, node_id, reason, preparation=preparation)
 
 
 def memory_consolidate(
@@ -625,10 +628,14 @@ class _PreparedDigest:
 
 
 @dataclass(slots=True)
-class _TeachPreparation:
-    corrective_id: str
+class _DerivationPreparation:
     source_inputs: dict[str, _DigestSource]
     digests: dict[str, _PreparedDigest]
+
+
+@dataclass(slots=True)
+class _TeachPreparation(_DerivationPreparation):
+    corrective_id: str
 
 
 def prepare_teach(
@@ -659,22 +666,50 @@ def prepare_teach(
             confidence=min(0.5, 0.5 if confidence is None else float(confidence)),
             usefulness_score=max(1.0, original.usefulness_score + 1.0),
         )
-        owners = [
-            node for node in _affected_derivatives(store, trace_id).values()
-            if node.materializer in ("cluster", "cross-scope-promotion")
-        ]
-        observation = _SourceObservation(store, (
-            source for node in owners for source in _derivation_sources(store, node)
-        ))
-        snapshots = []
-        for node in owners:
-            members = [
-                corrective if member.id == trace_id else member
-                for member in _current_derivation(store, node, observation=observation).live
-            ]
-            if members:
-                snapshots.append((node, members))
+        snapshots = _derivation_snapshots(store, trace_id, replacement=corrective)
 
+    prepared = _prepare_derivation_digests(snapshots)
+    return _TeachPreparation(prepared.source_inputs, prepared.digests, corrective.id)
+
+
+def prepare_forget(
+    store: MemoryStore, node_id: str,
+    *, guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+) -> _DerivationPreparation:
+    """Prepare detached digests; the atomic forget revalidates current inputs."""
+
+    with guard():
+        if store.get_node(node_id) is None:
+            raise KeyError(node_id)
+        snapshots = _derivation_snapshots(store, node_id)
+    return _prepare_derivation_digests(snapshots)
+
+
+def _derivation_snapshots(
+    store: MemoryStore, source_id: str, *, replacement: Node | None = None,
+) -> list[tuple[Node, list[Node]]]:
+    owners = [
+        node for node in _affected_derivatives(store, source_id).values()
+        if node.materializer in ("cluster", "cross-scope-promotion")
+    ]
+    observation = _SourceObservation(store, (
+        source for node in owners for source in _derivation_sources(store, node)
+    ))
+    snapshots = []
+    for node in owners:
+        members = [
+            replacement if member.id == source_id else member
+            for member in _current_derivation(store, node, observation=observation).live
+            if member.id != source_id or replacement is not None
+        ]
+        if members:
+            snapshots.append((node, members))
+    return snapshots
+
+
+def _prepare_derivation_digests(
+    snapshots: Sequence[tuple[Node, list[Node]]],
+) -> _DerivationPreparation:
     source_inputs = {
         source.id: source
         for source in _prepare_digest_sources(list({
@@ -689,7 +724,19 @@ def prepare_teach(
             if node.materializer == "cluster" else _highest_confidence_source(members)
         )
         digests[node.id] = _prepare_digest(node.scope, members, best, prepared)
-    return _TeachPreparation(corrective.id, source_inputs, digests)
+    return _DerivationPreparation(source_inputs, digests)
+
+
+def memory_forget(
+    store: MemoryStore, node_id: str, reason: str | None = None,
+    *, preparation: _DerivationPreparation | None = None,
+) -> Node:
+    """Atomically forget a source and refresh its recorded derivatives."""
+
+    with store.transaction():
+        forgotten = store.soft_delete_node(node_id, reason or "manual forget")
+        _refresh_derived_from(store, node_id, preparation=preparation)
+    return forgotten
 
 
 def memory_teach(
@@ -930,12 +977,12 @@ def _affected_derivatives(store: MemoryStore, source_id: str) -> dict[str, Node]
 
 
 def _refresh_derived_from(
-    store: MemoryStore, source_id: str, *, preparation: _TeachPreparation | None = None,
+    store: MemoryStore, source_id: str, *, preparation: _DerivationPreparation | None = None,
 ) -> None:
     """Refresh the current derivation subgraph, sources before their consumers.
 
     Discover it before changing membership so diamonds and cross-scope
-    descendants see all of their updated inputs in one atomic teach.
+    descendants see all of their updated inputs in one atomic source change.
     """
 
     affected = _affected_derivatives(store, source_id)
@@ -1021,7 +1068,7 @@ def _refresh_derived_node(
     # An explicit derived_from edge proves dependency, but cannot specify how
     # to rewrite an arbitrary expression. Its sources and old content remain
     # available through exact lookup with the normal decay validity.
-    return store.soft_delete_node(node.id, "derivation: corrected source requires rederivation")
+    return store.soft_delete_node(node.id, "derivation: changed source requires rederivation")
 
 
 def _materialize_procedural_schemas(

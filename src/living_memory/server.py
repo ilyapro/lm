@@ -38,6 +38,7 @@ from living_memory.consolidation import (
     ConsolidationResult,
     ConsolidationService,
     TeachResult,
+    prepare_forget,
     prepare_teach,
 )
 from living_memory.decay import apply_decay
@@ -1681,10 +1682,11 @@ def _register_tools(
     @mcp.tool
     @_track_latency("memory_forget")
     def memory_forget(id: str, reason: str | None = None) -> dict[str, Any]:
-        """Soft-delete a memory node while preserving the stored record."""
+        """Forget a source and refresh its derivatives, preserving stored history."""
 
+        preparation = prepare_forget(store, id, guard=lambda: runtime_lock)
         with runtime_lock:
-            node = consolidation_service.memory_forget(id, reason)
+            node = consolidation_service.memory_forget(id, reason, preparation=preparation)
             return {"node": node_to_dict(node)}
 
     @mcp.tool

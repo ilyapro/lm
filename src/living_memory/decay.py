@@ -93,9 +93,11 @@ class DecayResult:
 
 
 def memory_forget(store: MemoryStore, node_id: str, reason: str | None = None) -> Node:
-    """Manually decay a node without removing its stored record."""
+    """Forget a source and refresh its derivatives, preserving stored history."""
 
-    return store.soft_delete_node(node_id, reason or "manual forget")
+    from living_memory.consolidation import memory_forget as forget
+
+    return forget(store, node_id, reason)
 
 
 def apply_decay(
