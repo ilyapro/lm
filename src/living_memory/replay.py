@@ -123,6 +123,8 @@ class ReplayResult:
     #: usage signal the ``grounded_or_lookup`` credit rule adds to grounding;
     #: never part of any label.
     looked_up: bool = False
+    #: Recorded live qualification, independent of the relevance label.
+    withheld: str | None = None
 
     @property
     def graph_only(self) -> bool:
@@ -188,6 +190,7 @@ def _parse_result(raw: Mapping[str, Any], fallback_rank: int) -> ReplayResult | 
         graph_score=float(raw.get("graph_score") or 0.0),
         trigger_score=float(raw.get("trigger_score") or 0.0),
         path=tuple(str(step) for step in raw.get("path") or ()),
+        withheld=raw.get("withheld") or None,
     )
 
 
@@ -1181,9 +1184,16 @@ def recorded_order(event: ReplayEvent, *, zero_graph: bool = False) -> list[str]
 
 
 class MetricAccumulator:
-    """Streaming hit@k / MRR / graph-contribution counters for one bucket."""
+    """Hit@k / MRR / graph contribution, preserving returned rank positions.
 
-    def __init__(self) -> None:
+    Qualified evaluation keeps every relevance label in the denominator but
+    credits only results with no withheld reason. Weight-policy replay opts
+    into raw candidate ranks: it cannot re-evaluate the live source gate from
+    recorded method scores and neutral synthetic nodes.
+    """
+
+    def __init__(self, *, qualified_only: bool = True) -> None:
+        self.qualified_only = qualified_only
         self.events = 0
         self.events_with_useful = 0
         self.hits: Counter[int] = Counter()
@@ -1201,13 +1211,17 @@ class MetricAccumulator:
         self.zero_dropped: Counter[str] = Counter()
 
     def add_event(self, event: ReplayEvent, order: Sequence[str], zero_order: Sequence[str]) -> None:
-        useful = event.useful_ids
+        labeled = event.useful_ids
+        useful = {
+            result.node_id for result in event.results
+            if result.useful and (not self.qualified_only or not result.withheld)
+        }
         self.events += 1
-        self.useful_results += len(useful)
+        self.useful_results += len(labeled)
         self.graph_only_useful += sum(
-            1 for result in event.results if result.useful and result.graph_only
+            1 for result in event.results if result.node_id in useful and result.graph_only
         )
-        if not useful:
+        if not labeled:
             return
         self.events_with_useful += 1
 
@@ -1253,6 +1267,7 @@ class MetricAccumulator:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "result_basis": "qualified" if self.qualified_only else "raw_candidates",
             "events": self.events,
             "events_with_useful": self.events_with_useful,
             "useful_results": self.useful_results,
@@ -1284,7 +1299,7 @@ def _ratio(numerator: float, denominator: float) -> float:
 
 @dataclass(slots=True)
 class SchemeReport:
-    """Nested accumulator tree: split -> (overall bucket, per-scope buckets)."""
+    """Raw rank analysis: split -> (overall bucket, per-scope buckets)."""
 
     splits: dict[str, MetricAccumulator] = field(default_factory=dict)
     per_scope: dict[str, dict[str, MetricAccumulator]] = field(default_factory=dict)
@@ -1298,9 +1313,11 @@ class SchemeReport:
         zero_order: Sequence[str],
     ) -> None:
         for split in splits:
-            self.splits.setdefault(split, MetricAccumulator()).add_event(event, order, zero_order)
+            self.splits.setdefault(split, MetricAccumulator(qualified_only=False)).add_event(
+                event, order, zero_order
+            )
             scoped = self.per_scope.setdefault(split, {})
-            scoped.setdefault(scope_bucket, MetricAccumulator()).add_event(
+            scoped.setdefault(scope_bucket, MetricAccumulator(qualified_only=False)).add_event(
                 event, order, zero_order
             )
 
@@ -1703,6 +1720,11 @@ rank-circular (it accrues via the same rank-decayed reinforcement loop the
 harness audits) with a saturated distribution (median 1.0).
 
 ## Metric definitions
+
+These are **raw candidate rank** metrics (`result_basis: raw_candidates`).
+Recorded `withheld` reasons are retained, but weight-policy replay does not
+apply the source gate or claim qualified content delivery. The end-to-end
+retrieval harness measures qualified hits using the live verdict.
 
 * `hit@k` / `mrr` — over labeled events with at least one confirmed-useful
   result: whether/where the first useful result appears in the re-ranked

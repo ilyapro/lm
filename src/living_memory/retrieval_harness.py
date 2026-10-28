@@ -151,10 +151,8 @@ from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.scope import normalize_scope
 from living_memory.storage import MemoryStore, recall_fingerprint
 
-#: v2 adds the anchor annotation and the three buckets it feeds
-#: (``fresh_node_visibility``, ``anchor_holdout``, ``anchor_coverage``), plus
-#: per-stratum channel attribution. Every v1 key keeps its meaning.
-HARNESS_VERSION = 2
+#: Report format and metric contract, including per-result qualification.
+HARNESS_VERSION = 3
 
 STRATA: tuple[str, ...] = ("content_grounded", "cross_lingual", "role_query")
 CHANNELS: tuple[str, ...] = ("bm25", "vector", "graph", "trigger")
@@ -210,20 +208,28 @@ therefore reduces to the per-node rule exactly; an item that keeps any
 head-grounded relevant node is not tail, because that node is still reachable
 through the prefix the vector sees."""
 
+METRIC_RULE = """\
+hit@k, MRR and channel attribution require a relevant result with no `withheld`
+reason. `results` and `ranked_node_ids` retain every returned source reference,
+its scores and its position; an unqualified reference occupies a rank but cannot
+earn a hit. Relevance labels and denominators include withheld and absent
+relevant nodes, so a reference-only answer is a scored miss. Qualification is
+the live recall verdict, never recomputed from ranking scores or channel order."""
+
 PER_CHANNEL_RULE = """\
 A per-channel bucket re-orders the SAME returned result list by that single
 channel score descending, ties broken by the live rank, and computes
 hit@1/hit@5/hit@10/MRR over that order. No result is added or removed, so the
 bucket measures how well one channel alone would have ranked what retrieval
 actually returned. `channel_attribution` is a separate view: for the first
-relevant result in the LIVE order it counts each method present in that
+qualified relevant result in the LIVE order it counts each method present in that
 result's `.methods`, so a result found by two channels counts once for each."""
 
 AGREEMENT_RULE = """\
 For a `random.Random(seed)` sample of goldset query ids (drawn over the sorted
 id list), a second `MemoryStore` + `MemoryRecallService` pair is constructed
 independently of the runner's code path on the same working copy, and its
-top-5 node ids are compared with the runner's top-5. `agreement_rate` is the
+top-5 node ids and withheld reasons are compared with the runner's top-5. `agreement_rate` is the
 share of sampled items that match exactly; every mismatch is listed in full.
 The run exits non-zero when the rate is below 1.0 unless `--divergence-note`
 explains it."""
@@ -785,7 +791,7 @@ def classify_item_tail(
 
 @dataclass(frozen=True, slots=True)
 class HarnessResult:
-    """One live result with its per-channel evidence."""
+    """One live result with its per-channel evidence and qualification."""
 
     node_id: str
     rank: int
@@ -797,6 +803,7 @@ class HarnessResult:
     graph_score: float
     trigger_score: float
     methods: tuple[str, ...]
+    withheld: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -810,6 +817,7 @@ class HarnessResult:
             "graph_score": self.graph_score,
             "trigger_score": self.trigger_score,
             "methods": list(self.methods),
+            "withheld": self.withheld,
         }
 
 
@@ -847,6 +855,7 @@ def _harness_result(index: int, result: RecallResult) -> HarnessResult:
         graph_score=float(result.graph_score),
         trigger_score=float(result.trigger_score),
         methods=tuple(str(method) for method in result.methods),
+        withheld=result.withheld,
     )
 
 
@@ -1059,6 +1068,8 @@ def to_replay_event(
     The ``ReplayResult`` rows carry the **live** per-channel scores, and
     ``useful`` comes from the goldset's ``relevant_node_ids`` instead of
     replay's containment labeling — the goldset already made that judgement.
+    ``withheld`` retains the independent live qualification verdict; a relevant
+    source reference stays useful for the denominator without earning a hit.
 
     Relevant nodes that retrieval never returned are appended as zero-scored
     placeholder results marked useful. ``MetricAccumulator`` reads
@@ -1093,6 +1104,7 @@ def to_replay_event(
             trigger_score=result.trigger_score,
             path=(),
             useful=result.node_id in relevant,
+            withheld=result.withheld,
         )
         for result in run.results
     ]
@@ -1265,7 +1277,8 @@ def compute_metrics(
             accumulator.add_event(event, single, single)
         relevant = set(run.item.relevant_node_ids)
         first = next(
-            (result for result in run.results if result.node_id in relevant), None
+            (result for result in run.results if result.node_id in relevant and not result.withheld),
+            None,
         )
         if first is not None:
             attribution.add(first.methods)
@@ -1420,13 +1433,17 @@ def live_agreement(
                 )
                 direct = [result.node_id for result in results][:top_k]
                 harness = list(runs_by_id[query_id].node_ids)[:top_k]
-                if direct != harness:
+                direct_withheld = [result.withheld for result in results][:top_k]
+                harness_withheld = [result.withheld for result in runs_by_id[query_id].results][:top_k]
+                if direct != harness or direct_withheld != harness_withheld:
                     divergences.append(
                         {
                             "query_id": query_id,
                             "query": item.query,
                             "harness_top_k": harness,
                             "direct_top_k": direct,
+                            "harness_withheld": harness_withheld,
+                            "direct_withheld": direct_withheld,
                         }
                     )
         finally:
@@ -1499,6 +1516,7 @@ def build_report(
             for _query_id, annotation in sorted((annotations or {}).items())
         ],
         "definitions": {
+            "metrics": METRIC_RULE,
             "tail_rule": TAIL_RULE,
             "per_channel": PER_CHANNEL_RULE,
             "live_agreement": AGREEMENT_RULE,
@@ -1592,6 +1610,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     for stratum, block in metrics["per_stratum"].items():
         lines.append(_metric_row(f"stratum:{stratum}", block))
     lines.append(_metric_row("tail", metrics["tail"]))
+    lines.extend(["", METRIC_RULE, ""])
     if "fresh_node_visibility" in metrics:
         lines.append(_metric_row("fresh_node_visibility", metrics["fresh_node_visibility"]))
     lines.append("")
