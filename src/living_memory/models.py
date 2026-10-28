@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 import re
@@ -42,6 +43,32 @@ def content_identity(node: Node) -> tuple[Any, ...] | None:
         sort_keys=True, ensure_ascii=False, separators=(",", ":"),
     )
     return node.scope, node.content, source
+
+
+def duplicate_bearers(nodes: Sequence[Node]) -> Iterator[str | None]:
+    """Yield the first prior bearer only for exact scope/content/source twins.
+
+    Compare source identities only within colliding scope/content groups in
+    this bounded sequence. Empty content and unknown derivations never share
+    a bearer. Identity evaluation follows consumption order, so callers can
+    stop at their selected cut without serializing the remaining sources.
+    """
+    seen: set[tuple[str, str]] = set()
+    collisions: set[tuple[str, str]] = set()
+    for node in nodes:
+        if node.content:
+            key = (node.scope, node.content)
+            if key in seen:
+                collisions.add(key)
+            seen.add(key)
+
+    bearers: dict[tuple[Any, ...], str] = {}
+    for node in nodes:
+        identity = content_identity(node) if (node.scope, node.content) in collisions else None
+        bearer = bearers.get(identity) if identity is not None else None
+        if identity is not None and bearer is None:
+            bearers[identity] = node.id
+        yield bearer
 
 
 @dataclass(slots=True)

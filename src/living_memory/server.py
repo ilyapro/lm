@@ -57,7 +57,7 @@ from living_memory.delivery import (
     stats_compaction_enabled_from_env,
 )
 from living_memory.edge_derivation import derive_edges_for_new_trace
-from living_memory.models import Node, content_identity
+from living_memory.models import Node, duplicate_bearers
 from living_memory.prompts import MEMORY_GUIDANCE, retrieval_context_prompt
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.resources import (
@@ -1825,14 +1825,9 @@ def _select_distinct_results(
     if len(limited) < max_results or not residual:
         return limited, residual
     pool = limited + residual[:max_results]
-    seen_content: dict[tuple[Any, ...], str] = {}
     selected: list[Any] = []
-    for result in pool:
+    for result, bearer in zip(pool, duplicate_bearers([result.node for result in pool])):
         node = result.node
-        identity = content_identity(node) if node.content else None
-        bearer = seen_content.get(identity) if identity is not None else None
-        if identity is not None and bearer is None:
-            seen_content[identity] = node.id
         if (
             bearer in {item.node.id for item in selected}
             and not delivery_history.has_content(node)

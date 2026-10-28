@@ -105,7 +105,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .resources import node_to_dict
-from .models import SourcePassage, content_identity
+from .models import SourcePassage, duplicate_bearers
 from .source_text import passage_spans
 from .validity import validity_fields
 
@@ -333,7 +333,9 @@ def shape_recall_results(
     if view not in ("knowledge", "full"):
         raise ValueError("view must be 'knowledge' or 'full'")
 
-    bearer_by_content: dict[tuple[Any, ...], str] = {}
+    bearers = duplicate_bearers([
+        result.node for result in results if not getattr(result, "withheld", None)
+    ])
     shaped: list[dict[str, Any]] = []
     bearer_position = 0
     for result in results:
@@ -344,16 +346,7 @@ def shape_recall_results(
         validity = validity_fields(result.superseded, (correction_refs or {}).get(node_id, ()))
 
         withheld = getattr(result, "withheld", None)
-        twin_of: str | None = None
-        if withheld:
-            pass  # content not delivered: neither a twin nor a bearer
-        elif content:  # empty content carries nothing worth deduplicating
-            identity = content_identity(result.node)
-            bearer_id = bearer_by_content.get(identity) if identity is not None else None
-            if bearer_id is not None:
-                twin_of = bearer_id
-            elif identity is not None:
-                bearer_by_content[identity] = node_id
+        twin_of = None if withheld else next(bearers)
 
         # The bearer named on a stub's content_ref, if this result is one.
         stub_bearer: str | None = None
