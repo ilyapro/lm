@@ -1,12 +1,8 @@
 """Provenance-derived typed-edge rules applied at write time.
 
-Implements exactly the go-rules from artifacts/discovery/typed-edge-rules.md
-section 5 — R1c (content-correction supersedes), R2a (root-cause caused
-resolution), R4a (same commit), R4b (shared files), R5a (derived-from
-annotation of existing schema edges), and R6 (content ULID reference) — with
-the final parameters, weights, metadata, and direction semantics measured by
-scripts/mine_typed_edges.py on the live corpus. The rejected rules (R1a, R1b,
-R2b, R3, R5b) are deliberately not implemented.
+Derives root-cause/resolution, shared-commit/file, schema-source and content
+reference relations. Text and context labels never establish supersession;
+corrections belong to memory_teach or explicit typed connections.
 
 Rule functions are pure: they take the new node plus explicitly passed
 candidate rows and return :class:`DerivedEdge` specs, so the write path and
@@ -37,21 +33,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # ULID node ids as they appear verbatim inside trace content (Crockford base32).
 ULID_RE = re.compile(r"\b01[0-9A-HJKMNP-TV-Z]{24}\b")
 
-# Adjacent correction/update phrasing shortly before a named node ULID
-# (typed-edge-rules.md §R1c, sampled precision 9/9). A looser 80-char
-# any-correction-word window admitted pairs whose trigger word referred to a
-# third node; the adjacent form below is the measured final rule.
-CORRECTION_NEAR_ULID_RE = re.compile(
-    r"(?i)(?:\b(?:correction|update)s?(?:/\w+)?[-\s]+(?:to|of|for)\b|\b(?:corrects|supersedes)\b)"
-    r"[^\n]{0,60}?\b(01[0-9A-HJKMNP-TV-Z]{24})\b"
-)
-
-# Context-label sets grounded in observed values on the live corpus
-# (scripts/mine_typed_edges.py; do not extend without re-mining).
-CORRECTION_CONTEXT_TYPES = frozenset(
-    {"correction", "memory_correction", "decomposition_correction"}
-)
-CORRECTION_CONTENT_PREFIXES = ("Correction:", "CORRECTION:", "Correction ")
 SOLUTION_TYPES = frozenset(
     {
         "failure_resolution",
@@ -84,7 +65,6 @@ R2A_WINDOW_FETCH_LIMIT = 500
 # Edge metadata kinds/bases emitted by the rules. retrieval._traversal keys
 # its kind-specific factors on these and consolidation reuses the R5a
 # annotation, so they live here as the single source of truth.
-CONTENT_CORRECTION_KIND = "content_correction"
 FAILURE_RESOLUTION_KIND = "failure_resolution"
 DERIVED_FROM_KIND = "derived_from"
 CONTENT_REFERENCE_KIND = "content_reference"
@@ -114,16 +94,6 @@ class DerivedEdge:
 
 def is_rejected_alternative(node: Node) -> bool:
     return bool(node.context.get("is_rejected_alternative"))
-
-
-def is_correction_marked(node: Node) -> bool:
-    ctx_type = str(node.context.get("type") or "")
-    lesson_kind = str(node.context.get("lesson_kind") or "")
-    return (
-        ctx_type in CORRECTION_CONTEXT_TYPES
-        or lesson_kind == "correction"
-        or (node.content or "").startswith(CORRECTION_CONTENT_PREFIXES)
-    )
 
 
 def is_solution_labeled(node: Node) -> bool:
@@ -160,38 +130,6 @@ def node_files(node: Node) -> list[str]:
     return list(dict.fromkeys(str(item) for item in files))
 
 
-def correction_ulid_matches(node: Node) -> list[tuple[str, str]]:
-    """R1c targets as ``(ulid, matched_phrase)`` pairs, deduped, self excluded.
-
-    Primary form: the adjacent correction-phrase regex. Fallback (only when
-    the regex matches nothing): a correction-marked node claims every ULID in
-    its content, with the marker recorded as the matched phrase.
-    """
-
-    content = node.content or ""
-    matches = [
-        (match.group(1), match.group(0))
-        for match in CORRECTION_NEAR_ULID_RE.finditer(content)
-    ]
-    if not matches and is_correction_marked(node):
-        marker = _correction_marker(node)
-        matches = [(ulid, marker) for ulid in ULID_RE.findall(content)]
-    seen: dict[str, str] = {}
-    for ulid, phrase in matches:
-        if ulid != node.id and ulid not in seen:
-            seen[ulid] = phrase
-    return list(seen.items())
-
-
-def _correction_marker(node: Node) -> str:
-    ctx_type = str(node.context.get("type") or "")
-    if ctx_type in CORRECTION_CONTEXT_TYPES:
-        return f"context.type={ctx_type}"
-    if str(node.context.get("lesson_kind") or "") == "correction":
-        return "context.lesson_kind=correction"
-    return "content-prefix:Correction"
-
-
 def node_time(node: Node) -> datetime | None:
     """Timestamp as an aware UTC datetime, tolerant of client formats."""
 
@@ -210,55 +148,19 @@ def node_time(node: Node) -> datetime | None:
 # --- pure rule functions -------------------------------------------------------
 
 
-def rule_r1c_content_correction(
-    node: Node, candidates: Mapping[str, Node]
-) -> list[DerivedEdge]:
-    """R1c: adjacent correction phrase naming a node ULID ⇒ ``supersedes`` it.
-
-    Direction correction → named node (matches memory_teach). ``candidates``
-    maps content ULIDs to their fetched nodes; missing or decayed targets are
-    skipped.
-    """
-
-    if node.decayed or node.level != "trace":
-        return []
-    edges: list[DerivedEdge] = []
-    for ulid, phrase in correction_ulid_matches(node):
-        target = candidates.get(ulid)
-        if target is None or target.decayed or target.id == node.id:
-            continue
-        edges.append(
-            DerivedEdge(
-                source_id=node.id,
-                target_id=target.id,
-                type="supersedes",
-                weight=0.9,
-                metadata={
-                    "rule": "R1c",
-                    "kind": CONTENT_CORRECTION_KIND,
-                    "matched": phrase,
-                },
-                rule="R1c",
-            )
-        )
-    return edges
-
-
 def rule_r6_content_reference(
     node: Node, candidates: Mapping[str, Node]
 ) -> list[DerivedEdge]:
-    """R6: non-correction content ULID reference ⇒ directed ``related``.
+    """R6: content ULID reference ⇒ directed ``related``.
 
-    Referrer → referee stored as source → target; ULIDs claimed by R1c for
-    this node are excluded.
+    Referrer → referee stored as source → target, independent of wording.
     """
 
     if node.decayed or node.level != "trace":
         return []
-    claimed = {ulid for ulid, _ in correction_ulid_matches(node)}
     edges: list[DerivedEdge] = []
     for ulid in dict.fromkeys(ULID_RE.findall(node.content or "")):
-        if ulid == node.id or ulid in claimed:
+        if ulid == node.id:
             continue
         target = candidates.get(ulid)
         if target is None or target.decayed:
@@ -521,7 +423,6 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
     ulids = [ulid for ulid in dict.fromkeys(ULID_RE.findall(node.content or "")) if ulid != node.id]
     if ulids:
         candidates = store.get_nodes(ulids)
-        edges.extend(rule_r1c_content_correction(node, candidates))
         edges.extend(rule_r6_content_reference(node, candidates))
 
     if is_solution_labeled(node) and not is_rejected_alternative(node):

@@ -2,7 +2,7 @@
 
 The write-path engine (:mod:`living_memory.edge_derivation`) types edges for
 *new* traces as they are written. This module applies the very same go-rules
-(R1c / R2a / R4a / R4b / R6, and optionally the R5a ``derived_from``
+(R2a / R4a / R4b / R6, and optionally the R5a ``derived_from``
 annotation) to the *existing* corpus on a snapshot, so historical nodes gain
 the same typed, directional edges.
 
@@ -68,7 +68,6 @@ from living_memory.edge_derivation import (
     is_rejected_alternative,
     is_solution_labeled,
     node_files,
-    rule_r1c_content_correction,
     rule_r2a_failure_resolution,
     rule_r4a_same_commit,
     rule_r4b_shared_files,
@@ -97,7 +96,6 @@ ALL_TYPES: tuple[str, ...] = ("related", *STRICT_TYPES)
 # plus related edges carrying a provenance kind/basis.
 _PROVENANCE_KINDS: tuple[str, ...] = (
     "derived_from",
-    "content_correction",
     "failure_resolution",
     "content_reference",
 )
@@ -106,8 +104,8 @@ _PROVENANCE_RULE_BASES: tuple[str, ...] = ("same_commit", "shared_files")
 
 # Merge order == write-path application order (edge_derivation.derive_edges_for
 # _new_trace): later rules win metadata conflicts, mirroring the upsert. Only
-# R4a/R4b set `basis`; only R1c/R2a/R6 set `kind`, so `kind` never collides.
-RULE_ORDER: dict[str, int] = {"R1c": 0, "R6": 1, "R2a": 2, "R4a": 3, "R4b": 4}
+# R4a/R4b set `basis`; only R2a/R6 set `kind`, so `kind` never collides.
+RULE_ORDER: dict[str, int] = {"R6": 0, "R2a": 1, "R4a": 2, "R4b": 3}
 
 DEFAULT_SAMPLE_SIZE = 5
 
@@ -229,7 +227,6 @@ def _derived_edges_for_trace(
     ]
     if ulids:
         candidates = store.get_nodes(ulids)
-        edges.extend(rule_r1c_content_correction(node, candidates))
         edges.extend(rule_r6_content_reference(node, candidates))
 
     if is_solution_labeled(node) and not is_rejected_alternative(node):
@@ -435,8 +432,8 @@ def backfill_edges(
 ) -> dict[str, Any]:
     """Plan (and optionally apply) the corpus backfill, returning the audit.
 
-    Read-only until ``apply`` is set; writes new edges, explicit correction
-    updates and optional R5a annotations inside one transaction.
+    Read-only until ``apply`` is set; writes new edges, semantic
+    contributions and optional R5a annotations inside one transaction.
     """
 
     before_types = _type_counts(store)

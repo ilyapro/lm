@@ -49,18 +49,7 @@ DEFAULT_DB = str(Path.home() / ".local/share/living-memory/global.sqlite3")
 # ULID node ids as they appear verbatim inside trace content (Crockford base32).
 ULID_RE = re.compile(r"\b01[0-9A-HJKMNP-TV-Z]{24}\b")
 
-# Adjacent correction/update phrasing shortly before a named node ULID.
-# Catches "Correction for trace 01K...", "UPDATE/correction to node 01K...",
-# "corrects/supersedes the leading hypothesis in 01K...".
-CORRECTION_NEAR_ULID_RE = re.compile(
-    r"(?i)(?:\b(?:correction|update)s?(?:/\w+)?[-\s]+(?:to|of|for)\b|\b(?:corrects|supersedes)\b)"
-    r"[^\n]{0,60}?\b(01[0-9A-HJKMNP-TV-Z]{24})\b"
-)
-
 # --- context label sets ------------------------------------------------------
-
-CORRECTION_CONTEXT_TYPES = {"correction", "memory_correction", "decomposition_correction"}
-CORRECTION_CONTENT_PREFIXES = ("Correction:", "CORRECTION:", "Correction ")
 
 PROBLEM_TYPES = {
     "root_cause",
@@ -288,87 +277,15 @@ def rule_supersedes_transitive(
     return out
 
 
-def _is_correction_marked(node: NodeRow) -> bool:
-    ctx_type = str(node.context.get("type") or "")
-    lesson_kind = str(node.context.get("lesson_kind") or "")
-    return (
-        ctx_type in CORRECTION_CONTEXT_TYPES
-        or lesson_kind == "correction"
-        or node.content.startswith(CORRECTION_CONTENT_PREFIXES)
-    )
-
-
-def rule_correction_lineage(nodes: dict[str, NodeRow]) -> list[Candidate]:
-    """R1b: correction-marked remember-trace supersedes a same-task recalled node.
-
-    memory_teach already writes supersedes edges, but corrections written via
-    memory_remember get only generic implicit 'related' edges. Targets are recalled
-    nodes (provenance.prior_recalls result ids) sharing the same (scope, task).
-    Corrections that name their target ULID in content are handled by R1c.
-    """
-
-    out: list[Candidate] = []
-    for node in nodes.values():
-        if node.decayed or node.level != "trace" or not _is_correction_marked(node):
-            continue
-        if ULID_RE.search(node.content):
-            continue  # explicit target -> R1c
-        prior = node.provenance.get("prior_recalls") or []
-        task = str(node.context.get("task") or "")
-        if not isinstance(prior, list) or not prior or not task:
-            continue
-        recalled: list[str] = []
-        for entry in prior:
-            if isinstance(entry, dict):
-                recalled.extend(str(x) for x in entry.get("result_ids") or [])
-        same_task = [
-            rid
-            for rid in dict.fromkeys(recalled)
-            if rid != node.id
-            and rid in nodes
-            and nodes[rid].scope == node.scope
-            and str(nodes[rid].context.get("task") or "") == task
-        ]
-        for rid in same_task[:2]:
-            out.append(Candidate("R1b_correction_lineage", node.id, rid, "supersedes", True, "recalled + same task"))
-    return out
-
-
-def _correction_ulid_targets(node: NodeRow) -> list[str]:
-    hits = [m.group(1) for m in CORRECTION_NEAR_ULID_RE.finditer(node.content)]
-    if not hits and _is_correction_marked(node):
-        hits = ULID_RE.findall(node.content)
-    return [u for u in dict.fromkeys(hits) if u != node.id]
-
-
-def rule_content_ulid_supersedes(nodes: dict[str, NodeRow]) -> list[Candidate]:
-    """R1c: trace whose content names a corrected/updated node ULID supersedes it."""
-
-    out: list[Candidate] = []
-    for node in nodes.values():
-        if node.decayed or node.level != "trace":
-            continue
-        for ulid in _correction_ulid_targets(node):
-            if ulid in nodes:
-                out.append(
-                    Candidate("R1c_content_ulid_supersedes", node.id, ulid, "supersedes", True, "target named in content")
-                )
-    return out
-
-
 def rule_content_ulid_reference(nodes: dict[str, NodeRow]) -> list[Candidate]:
-    """R6: trace naming another node's ULID references it (typed related).
-
-    Pairs already claimed by R1c (correction-word near the ULID) are excluded.
-    """
+    """R6: trace naming another node's ULID references it (typed related)."""
 
     out: list[Candidate] = []
     for node in nodes.values():
         if node.decayed or node.level != "trace":
             continue
-        correction_targets = set(_correction_ulid_targets(node))
         for ulid in dict.fromkeys(ULID_RE.findall(node.content)):
-            if ulid != node.id and ulid in nodes and ulid not in correction_targets:
+            if ulid != node.id and ulid in nodes:
                 out.append(
                     Candidate("R6_content_ulid_reference", node.id, ulid, "related", True, "explicit id reference")
                 )
@@ -707,8 +624,6 @@ def main(argv: list[str] | None = None) -> int:
     active_nodes = sum(1 for n in nodes.values() if not n.decayed)
     rule_specs: list[tuple[str, str, bool, list[Candidate]]] = [
         ("R1a_supersedes_transitive", "supersedes", True, rule_supersedes_transitive(nodes, edges)),
-        ("R1b_correction_lineage", "supersedes", True, rule_correction_lineage(nodes)),
-        ("R1c_content_ulid_supersedes", "supersedes", True, rule_content_ulid_supersedes(nodes)),
         ("R2a_root_cause_caused_resolution", "caused", True, rule_failure_resolution(nodes)),
         ("R2b_root_cause_caused", "caused", True, rule_root_cause_caused(nodes)),
         ("R3_procedure_requires", "requires", True, rule_procedure_requires(nodes, args.max_proc_group)),

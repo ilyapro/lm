@@ -1,6 +1,6 @@
 """Knowledge-relation semantics shared by runtime and offline readers.
 
-Known duplicate bookkeeping is not a correction. Historical rows remain in
+Inferred prose relations and duplicate bookkeeping are not corrections. Rows remain in
 storage for inspection; they confer no validity, graph or lifecycle authority.
 Recall delivery history is not a relation between the displayed knowledge and
 a later trace. Unrecognized metadata retains its ordinary relation semantics.
@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from typing import Any
 
 
-_BOOKKEEPING_KINDS = ("drain_near_duplicate", "duplicate_content")
+_NON_CORRECTION_KINDS = ("drain_near_duplicate", "duplicate_content", "content_correction")
 _HEURISTIC_PRODUCER = "lm_collapse_near_dups.py"
 _HEURISTIC_REASON = "near-duplicate collapse"
 
@@ -80,8 +80,15 @@ def source_relation_weight_sql(alias: str = "") -> str:
 
 
 def is_correction(relation_type: str, metadata: Mapping[str, Any]) -> bool:
-    return relation_type == "supersedes" and not (
-        metadata.get("kind") in _BOOKKEEPING_KINDS
+    if relation_type != "supersedes":
+        return False
+    # Teach's explicit contribution survives merged inferred metadata.
+    correction = metadata.get("correction")
+    if isinstance(correction, str) and correction != "":
+        return True
+    return not (
+        metadata.get("kind") in _NON_CORRECTION_KINDS
+        or metadata.get("rule") == "R1c"
         or (metadata.get("by") == _HEURISTIC_PRODUCER
             and metadata.get("reason") == _HEURISTIC_REASON)
     )
@@ -102,12 +109,15 @@ def is_semantic_relation(relation_type: str, metadata: Mapping[str, Any]) -> boo
 def correction_sql(alias: str = "") -> str:
     """SQL equivalent of is_correction; alias is a caller-owned identifier."""
     prefix = f"{alias}." if alias else ""
-    kinds = ", ".join(f"'{kind}'" for kind in _BOOKKEEPING_KINDS)
+    kinds = ", ".join(f"'{kind}'" for kind in _NON_CORRECTION_KINDS)
     return (
         f"({prefix}type = 'supersedes'"
-        f" AND COALESCE(json_extract({prefix}metadata, '$.kind'), '') NOT IN ({kinds})"
+        f" AND ((COALESCE(json_type({prefix}metadata, '$.correction'), '') = 'text'"
+        f" AND json_extract({prefix}metadata, '$.correction') <> '') OR ("
+        f" COALESCE(json_extract({prefix}metadata, '$.kind'), '') NOT IN ({kinds})"
+        f" AND COALESCE(json_extract({prefix}metadata, '$.rule'), '') <> 'R1c'"
         f" AND NOT (COALESCE(json_extract({prefix}metadata, '$.by'), '') = '{_HEURISTIC_PRODUCER}'"
-        f" AND COALESCE(json_extract({prefix}metadata, '$.reason'), '') = '{_HEURISTIC_REASON}'))"
+        f" AND COALESCE(json_extract({prefix}metadata, '$.reason'), '') = '{_HEURISTIC_REASON}'))))"
     )
 
 
