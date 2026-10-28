@@ -27,9 +27,10 @@ class Encoder:
 
 def put(store, node_id, *, scope=SCOPE, **kwargs):
     return store.create_node(
-        node_id=node_id, level="concept", content=QUERY,
+        node_id=node_id, level="concept", content=f"{QUERY} {node_id}",
         context={"scope": scope, "detail": "x" * 1024},
-        provenance={"detail": "y" * 1024}, embedding=[1.0, 0.0], **kwargs,
+        provenance={"detail": "y" * 1024}, embedding=[1.0, 0.0],
+        stats={"unique_agents": 2, **kwargs.pop("stats", {})}, **kwargs,
     )
 
 
@@ -167,6 +168,7 @@ def test_body_admission_rechecks_live_scope_without_closing_rank_holes(tmp_path,
             ids = list(ids)
             assert ids == [rejected.id, survivor.id]
             if mutation == "remove":
+                store.delete_node_chunks(rejected.id)
                 store.connection.execute("DELETE FROM nodes WHERE id = ?", (rejected.id,))
             else:
                 column, value = ("decayed", 1) if mutation == "decay" else ("scope", "project:foreign")
@@ -203,6 +205,7 @@ def test_discovery_and_bodies_share_snapshot_but_next_collection_reads_current_s
             assert store.connection.in_transaction
             with writer.transaction():
                 if mutation == "remove":
+                    writer.delete_node_chunks(original.id)
                     writer.connection.execute("DELETE FROM nodes WHERE id = ?", (original.id,))
                 else:
                     column, value = {
