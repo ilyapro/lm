@@ -74,7 +74,10 @@ def assert_outcome(mcp, ids, event_id, result):
     assert set(trace.provenance["recalled_nodes"]) == set(ids)
     assert [event["id"] for event in trace.provenance["prior_recalls"]] == [event_id]
     assert store.get_recall_event(event_id).feedback_trace_id == trace.id
-    assert store.get_node(ids[0]).corrections[-1]["new"] == CORRECTION
+    original = store.get_node(ids[0])
+    assert original.corrections[-1]["new"] == CORRECTION
+    assert original.confidence <= 0.25
+    assert original.usefulness_score <= -0.25
     assert [(edge.source_id, edge.target_id) for edge in store.list_connections(
         relation_type="supersedes"
     )] == [(trace.id, ids[0])]

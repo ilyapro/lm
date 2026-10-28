@@ -294,6 +294,9 @@ def test_memory_store_crud_search_connections_and_append_only_traces(tmp_path: P
             by="agent-c",
         )
         assert corrected.corrections[-1]["new"] == "migration 43"
+        assert corrected.stats == accessed.stats
+        assert corrected.content == accessed.content
+        assert corrected.context == accessed.context
 
         with pytest.raises(ValueError, match="append-only"):
             store.update_node(trace.id, content="mutated raw trace")

@@ -650,6 +650,9 @@ def test_read_only_path_rejects_writes(tmp_path: Path) -> None:
 
     ro_store = open_read_only_store(fixture_path)
     try:
+        for stats in (None, {"confidence": 0.25}):
+            with pytest.raises(RuntimeError, match="read-only"):
+                ro_store.add_correction("source", old="old", new="new", by="inspector", stats=stats)
         with pytest.raises(sqlite3.OperationalError):
             ro_store.connection.execute(
                 """
