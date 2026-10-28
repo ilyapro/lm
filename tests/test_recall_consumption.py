@@ -9,6 +9,7 @@ import pytest
 
 from living_memory.delivery import DeliveryHistory, shape_recall_results
 from living_memory.feedback import resolve_explicit_marks
+from living_memory.models import SourcePassage
 from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
 
@@ -96,7 +97,16 @@ def test_selected_order_access_metadata_and_one_tail_transaction(store, limit):
         assert original.node.access_count == 0
         assert replace(result.node, access_count=0, last_accessed=original.node.last_accessed,
                        updated_at=original.node.updated_at) == original.node
-        assert replace(result, node=original.node, recall_event_id=None) == original
+        chunk, = store.list_node_chunks(result.node.id)
+        assert result.scored_chunk_id == chunk.id
+        assert result.semantic_passage == SourcePassage(
+            content_fingerprint=chunk.content_fingerprint,
+            char_start=chunk.char_start, char_end=chunk.char_end,
+        )
+        assert original.semantic_passage is None and original.scored_chunk_id is None
+        assert replace(result, node=original.node, recall_event_id=None,
+                       semantic_passage=original.semantic_passage,
+                       scored_chunk_id=original.scored_chunk_id) == original
     delivered = {result.node.id for result in results}
     assert all(store.get_node(node.id).access_count == int(node.id in delivered) for node in nodes)
     event = store.get_recall_event(retrieval.last_recall_event_id)
