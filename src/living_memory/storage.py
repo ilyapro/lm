@@ -825,11 +825,13 @@ _TASK_PATTERN_BACKFILL_PREDICATE = f"""
 """
 
 
-def _node_read_batches(node_ids: Iterable[str]) -> Iterator[list[str]]:
+def _node_read_batches(
+    node_ids: Iterable[str], *, batch_size: int = 999,
+) -> Iterator[list[str]]:
     """Keep each caller's bounded ID batches in SQLite primary-key order."""
     ids = list(set(node_ids))
-    for i in range(0, len(ids), 999):
-        yield sorted(ids[i : i + 999])
+    for i in range(0, len(ids), batch_size):
+        yield sorted(ids[i : i + batch_size])
 
 
 def _content_fingerprint(content: str) -> str:
@@ -938,6 +940,17 @@ class QueryAnchorEdge:
     hits: int
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class QueryAnchorLink:
+    """An edge and its anchor's label state; a missing anchor has no query."""
+
+    target_id: str
+    anchor_id: str
+    weight: float
+    query: str | None
+    decayed: bool
 
 
 @dataclass(frozen=True)
@@ -4076,6 +4089,29 @@ class MemoryStore:
         ).fetchall()
         return [_chunk_embedding_from_row(row) for row in rows]
 
+    def get_node_chunk_vectors(
+        self, node_ids: Sequence[str],
+    ) -> dict[str, list[list[float]]]:
+        """Read only vectors for selected nodes, in each node's chunk order."""
+
+        vectors: dict[str, list[list[float]]] = {}
+        if not node_ids or not self._chunk_table_present():
+            return vectors
+        batch_size = min(999, self._conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+        for batch in _node_read_batches(map(str, node_ids), batch_size=batch_size):
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(
+                f"""SELECT node_id, dimensions, embedding
+                FROM {CHUNK_EMBEDDING_TABLE}
+                WHERE node_id IN ({placeholders})
+                ORDER BY node_id, chunk_index""",
+                batch,
+            )
+            for row in rows:
+                vector = unpack_chunk_embedding(row["embedding"], int(row["dimensions"]))
+                vectors.setdefault(str(row["node_id"]), []).append(vector)
+        return vectors
+
     def count_node_chunks(self, node_id: str | None = None) -> int:
         """Count chunk rows, for one node or for the whole database."""
 
@@ -5173,6 +5209,38 @@ class MemoryStore:
             params,
         ).fetchall()
         return [_query_anchor_edge_from_row(row) for row in rows]
+
+    def get_query_anchor_links(self, target_ids: Sequence[str]) -> list[QueryAnchorLink]:
+        """Read edge weights and anchor label state for selected targets.
+
+        Keep missing and decayed anchors visible to the caller's policy. The
+        left join also retains dangling edges so their weights are validated.
+        """
+
+        links: list[QueryAnchorLink] = []
+        if not target_ids or not self._anchor_tables_present():
+            return links
+        batch_size = min(999, self._conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+        for batch in _node_read_batches(map(str, target_ids), batch_size=batch_size):
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(
+                f"""SELECT e.target_id, e.anchor_id, e.weight, a.id, a.query, a.decayed
+                FROM {QUERY_ANCHOR_EDGE_TABLE} e
+                LEFT JOIN {QUERY_ANCHOR_TABLE} a ON a.id = e.anchor_id
+                WHERE e.target_id IN ({placeholders})
+                ORDER BY e.weight DESC, e.target_id ASC""",
+                batch,
+            )
+            links.extend(
+                QueryAnchorLink(
+                    target_id=str(row["target_id"]), anchor_id=str(row["anchor_id"]),
+                    weight=float(row["weight"]),
+                    query=None if row["id"] is None else str(row["query"]),
+                    decayed=bool(row["decayed"]),
+                )
+                for row in rows
+            )
+        return links
 
     def count_query_anchors(self, *, include_decayed: bool = True) -> int:
         if not self._anchor_tables_present():

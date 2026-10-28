@@ -640,7 +640,7 @@ class _AnchorAssignment:
     """One build's observed anchors and winning anchor for each covered node."""
 
     by_node: dict[str, str]
-    anchors: dict[str, Any]
+    queries: dict[str, str]
 
 
 @dataclass(slots=True)
@@ -1764,27 +1764,23 @@ class RecallMapBuilder:
     ) -> _AnchorAssignment:
         """``node_id -> anchor_id`` for every member a live anchor covers.
 
-        Observe each reached anchor once, including missing rows. A digest
-        needs the whole pool; stage 3 uses only the remaining members of this
+        Read edge weights and anchor labels in bounded batches. A digest needs
+        the whole pool; stage 3 uses only the remaining members of this
         assignment. Without a digest, only stage 3's members need observation.
         """
 
-        anchors: dict[str, Any] = {}
-        assignment: dict[str, str] = {}
-        for member in members:
-            best: tuple[float, str] | None = None
-            for edge in self.store.list_query_anchor_edges(target_id=member.node.id):
-                if edge.anchor_id not in anchors:
-                    anchors[edge.anchor_id] = self.store.get_query_anchor(edge.anchor_id)
-                anchor = anchors[edge.anchor_id]
-                if anchor is None or anchor.decayed or not str(anchor.query).strip():
-                    continue
-                weight = float(edge.weight)
-                if best is None or (-weight, edge.anchor_id) < (-best[0], best[1]):
-                    best = (weight, edge.anchor_id)
-            if best is not None:
-                assignment[member.node.id] = best[1]
-        return _AnchorAssignment(assignment, anchors)
+        queries: dict[str, str] = {}
+        best: dict[str, tuple[float, str]] = {}
+        for link in self.store.get_query_anchor_links([member.node.id for member in members]):
+            if link.query is None or link.decayed or not link.query.strip():
+                continue
+            queries[link.anchor_id] = link.query
+            choice = (-link.weight, link.anchor_id)
+            if link.target_id not in best or choice < best[link.target_id]:
+                best[link.target_id] = choice
+        return _AnchorAssignment(
+            {node_id: choice[1] for node_id, choice in best.items()}, queries,
+        )
 
     def _stage_anchor(
         self, members: list[_Member], assignment: _AnchorAssignment | None = None,
@@ -1810,7 +1806,7 @@ class RecallMapBuilder:
 
         groups: list[_Group] = []
         for anchor_id, bucket in sorted(buckets.items()):
-            query = _collapse(assignment.anchors[anchor_id].query)
+            query = _collapse(assignment.queries[anchor_id])
             groups.append(
                 _Group(
                     stage=STAGE_ANCHOR,
@@ -1862,8 +1858,9 @@ class RecallMapBuilder:
         vectors: dict[str, list[float]] = {}
         clusterable: list[_Member] = []
         rest: list[_Member] = []
+        chunks = self.store.get_node_chunk_vectors([member.node.id for member in members])
         for member in members:
-            vector = self._node_vector(member.node)
+            vector = self._node_vector(member.node, chunks.get(member.node.id, ()))
             if vector is None:
                 rest.append(member)
                 continue
@@ -1893,7 +1890,9 @@ class RecallMapBuilder:
 
         return [bucket for _leader_vector, bucket in leaders], vectors, rest
 
-    def _node_vector(self, node: Node) -> list[float] | None:
+    def _node_vector(
+        self, node: Node, chunks: Sequence[Sequence[float]],
+    ) -> list[float] | None:
         """One unit vector per node: the mean of its chunk vectors.
 
         Chunks first, because they are what the store keeps for every node that
@@ -1903,11 +1902,7 @@ class RecallMapBuilder:
         averaged — vectors of two widths are points in two different spaces.
         """
 
-        rows = [
-            list(chunk.embedding)
-            for chunk in self.store.list_node_chunks(node.id)
-            if chunk.embedding
-        ]
+        rows = [list(chunk) for chunk in chunks if chunk]
         if not rows and node.embedding:
             rows = [list(node.embedding)]
         if not rows:
