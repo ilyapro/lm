@@ -622,8 +622,10 @@ def _server_instructions(default_scope: str, map_section: str = "") -> str:
         "## Scope and context\n\n"
         "Write with a specific scope: `context.scope='project:<name>'` for "
         "project facts, `global` for universal knowledge. Read broad: omit "
-        "`scope` to transfer across scopes. Set `task`, `agent`, and "
-        "`session_id` in context to link work across sessions.\n"
+        "`scope` to transfer across scopes. For feedback after reconnect, keep "
+        "the same caller-unique `session_id` in recall's `ambient_context` and "
+        "writes' `context`, with compatible `task`, `agent` and scope. Without "
+        "that durable session, prior-transport feedback cannot be attributed.\n"
         f"Your default scope is {default_scope}.\n"
     )
     section = map_section.strip()
@@ -1282,8 +1284,8 @@ def _register_tools(
         recording are optional: failures are logged and leave the selected
         knowledge intact. A map is returned only after its attribution is stored.
 
-        Optional ``used``/``irrelevant`` mark results of *earlier* recalls on
-        this transport session (docs/explicit-feedback.md); the response then
+        Optional ``used``/``irrelevant`` mark results of *earlier* recalls by
+        this caller (docs/explicit-feedback.md); the response then
         carries a ``feedback_marks`` summary.
         """
 

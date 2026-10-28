@@ -1,7 +1,6 @@
 """Explicit feedback follows a declared caller session across real MCP connections."""
 
 import asyncio
-import json
 import sqlite3
 
 from fastmcp import Client

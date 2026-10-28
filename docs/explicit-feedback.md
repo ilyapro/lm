@@ -11,7 +11,7 @@ fields:
 
 | field | type | meaning |
 |---|---|---|
-| `used` | `list[str] \| None` | node ids from an earlier recall on this transport session that the agent used |
+| `used` | `list[str] \| None` | node ids from this caller's earlier recall that the agent used |
 | `irrelevant` | `list[str] \| None` | node ids from an earlier recall that did not fit *that recall's query* |
 
 Both default to `None`. When both are omitted, the response has no
@@ -45,12 +45,36 @@ Under `LM_EXPLICIT_FEEDBACK_POLICY=off` the summary is
 ## Resolution
 
 Implemented in `feedback.resolve_explicit_marks`. A marked id is **accepted**
-only if a recall event with the same `transport_session_id` delivered it. The
-event is the newest delivering event that is no later than the mark and
+only if an eligible `recall_events` row delivered it. The current transport's
+deliveries remain eligible regardless of context or scope. For a delivery on
+another transport, both calls must declare the same nonblank `session_id`
+(`session` is also supported). Both-present `task` or `agent` conflicts reject
+that match, and the current scope must equal the event's `scope` or
+`requested_scope`. Agent names, query text and a shared task alone never
+establish explicit delivery attribution across transports.
+
+To preserve feedback over reconnect, choose a session unique to the logical
+caller and retain it in `memory_recall.ambient_context` and in
+`memory_remember.context` / `memory_teach.context`. Independent callers need
+distinct sessions even when working on the same task. Keep the scope compatible:
+recall's explicit `scope` takes precedence over `ambient_context.scope`; otherwise
+the ordinary scope resolver uses context, including `session:<id>` when only
+session is supplied. Writes use that same context scope resolution for explicit
+marks. Teach uses the current call's context, never the corrected source's
+identity. For example, use `{"session_id":"caller-run", "scope":"project:demo"}`
+on both sides. No additional tool argument or caller registry is required.
+
+Without that durable identity, a previous transport's delivery is not
+attributable. Supplying identity only after reconnect cannot recover it. Do not
+copy an old `transport_session_id`, replay writes/marks or widen the window to
+compensate. A call without transport still receives `no_transport`.
+
+The event is the newest delivering event that is no later than the mark and
 within `LM_LOOKUP_CREDIT_WINDOW_SECONDS` (default 24 h), among the newest 200
-events of the session. Storage's `recall_deliveries_for_transport` supplies
-this same selection to explicit marks, lookup credit and missing-anchor
-preparation. The cap is applied before id/time filtering; events sort by
+eligible caller events. Storage's `recall_deliveries` supplies one selection
+to explicit marks, lookup credit and missing-anchor preparation. Lookup omits
+caller context and remains transport-only. Indexed transport and session
+probes share one cap before id/time filtering; events sort by
 `created_at DESC, rowid DESC`, and time eligibility uses parsed UTC seconds
 with inclusive window boundaries. Duplicate results use their first position.
 Closed events remain eligible; the credit ledger decides once-only credit.
@@ -70,7 +94,7 @@ A dropped mark gets one reason, checked in this order:
 | `duplicate` | repeated within the same list (the first occurrence stands) |
 | `conflict` | named in both `used` and `irrelevant` (every occurrence is dropped) |
 | `no_transport` | the call has no transport identity, so there is no session to join |
-| `not_delivered` | no same-session event in the window delivered it (foreign session, unknown id, too old) |
+| `not_delivered` | no eligible caller event in the window delivered it (missing/conflicting identity, foreign scope, unknown id, too old) |
 
 ## Audit table `recall_feedback_marks`
 

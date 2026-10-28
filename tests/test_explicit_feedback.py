@@ -5,10 +5,10 @@ What this module pins, in the order docs/explicit-feedback.md states it:
 * **Optional fields on three tools.** memory_recall, memory_remember and
   memory_teach accept ``used``/``irrelevant``; a call without them answers
   exactly as before (no ``feedback_marks`` key, no audit row).
-* **Only this session's deliveries.** A marked id is accepted only when a
-  recall event on the same transport delivered it (newest such event within
-  the lookup-credit window). Everything else is dropped with a reason and
-  still audited with ``accepted = 0``.
+* **Transport deliveries.** Without durable caller context, a marked id
+  requires an earlier recall on the same transport (newest such event within
+  the lookup-credit window). Dropped marks are audited with ``accepted = 0``;
+  tests/test_explicit_feedback_reconnect.py covers durable session context.
 * **Valve.** ``audit`` (default) records and claims nothing; ``credit``
   claims basis ``explicit`` once per (event, node) across grounded, lookup
   and explicit, in either order, and hands irrelevant marks to the

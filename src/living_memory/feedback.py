@@ -57,10 +57,10 @@ _LOOKUP_CREDIT_EVENT_LIMIT = 200
 # Grounding and lookup are both inferred; an explicit mark is the agent
 # saying it. memory_recall, memory_remember and memory_teach accept optional
 # ``used`` and ``irrelevant`` lists of node ids from earlier recalls on the
-# same transport session. A mark is accepted only for an id that a recall
-# event on that transport delivered — the newest delivering event within
-# the lookup-credit window and event limit, exactly the join
-# ``apply_lookup_credit`` does — and every mark, accepted or dropped, is
+# same caller. Transport identifies its own deliveries; a durable session in
+# context also permits compatible reconnects. The shared delivery join keeps
+# the lookup-credit window and event limit; lookup remains transport-only.
+# Every mark, accepted or dropped, is
 # written to the ``recall_feedback_marks`` audit table. Contract and the
 # reasoning behind each choice: docs/explicit-feedback.md.
 #
@@ -681,7 +681,7 @@ class ExplicitMark:
     mark: str
     accepted: bool
     reject_reason: str | None = None
-    #: The delivering event (newest same-transport event within the window
+    #: The delivering event (newest eligible caller event within the window
     #: naming the node); None for a dropped mark.
     event: RecallEvent | None = None
     #: 0-based rank of the node in ``event.results``.
@@ -734,16 +734,17 @@ def resolve_explicit_marks(
     *,
     context: Mapping[str, Any] | None = None,
 ) -> list[ExplicitMark]:
-    """Accept or drop each marked id against this transport's deliveries.
+    """Accept or drop each marked id against this caller's deliveries.
 
     Read-only. Reasons, in precedence order: ``empty`` (not a non-blank
     string), ``duplicate`` (repeated within its list; the first occurrence
     stands), ``conflict`` (named in both lists; every occurrence dropped),
     ``no_transport`` (the call carries no transport identity, so there is no
-    session to join), ``not_delivered`` (no recall event of this transport
-    within the lookup-credit window and event limit delivered it). An
-    accepted mark resolves to the *newest* delivering event, the
-    ``apply_lookup_credit`` join.
+    session to join), ``not_delivered`` (no eligible recall event within the
+    lookup-credit window and event limit delivered it). Context may identify
+    a previous transport's delivery by equal session and compatible task,
+    agent and scope. An accepted mark resolves to the *newest* delivery using
+    the same bounded join as lookup credit.
     """
 
     marks = _explicit_mark_requests(used, irrelevant, transport_session_id)

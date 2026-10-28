@@ -109,6 +109,14 @@ stdio, SSE, and in-memory transports).
   `memory_teach` uses only the current call's identity; it preserves the
   source's subject context, but does not inherit its author/session/task.
 
+Explicit `used`/`irrelevant` marks have a stricter reconnect contract: retain a
+caller-unique `session_id` in recall's `ambient_context` and writes' `context`,
+with compatible task, agent and scope. A shared task alone does not identify
+the recipient of an earlier delivery. Without a session saved on both sides,
+old-transport marks are `not_delivered`; identity cannot be inferred after the
+fact. Same-transport marks and transport-only lookup credit retain their
+contracts. See [explicit feedback](explicit-feedback.md#resolution).
+
 The effect is that an identity-less client gets its recall events closed by
 its own subsequent remembers — and never by another connection's — with no
 client-side changes. `memory_health.feedback_closure` (below) makes the
