@@ -80,7 +80,7 @@ def test_supported_entries_refresh_partial_and_last_support(store, forget, kind)
         traces, owner = procedure(store, declared=kind == "schema")
     _, other = procedure(store, scope="project:other")
     _, independent = procedure(store, group="independent", texts=[text + " Independently." for text in TEXTS])
-    controls = {node.id: asdict(node) for node in (other, independent)}
+    controls = {node.id: asdict(store.get_node(node.id)) for node in (other, independent)}
     for index, trace in enumerate(traces):
         previous = store.get_node(owner.id)
         forgotten = forget(trace.id)
@@ -115,6 +115,16 @@ def test_native_forget_recall_lookup_and_reopen(tmp_path):
                 result = await client.call_tool(tool, arguments)
                 return result.data
 
+            warm = await call("memory_recall", query="workshop release", scope=SCOPE, max_results=10)
+            assert any(r["id"] == schema.id and TEXTS[0] in r["content"] for r in warm["results"])
+            store.connection.execute(f"""CREATE TRIGGER reject_native_forget
+                BEFORE UPDATE OF content ON nodes WHEN NEW.id='{descendant.id}'
+                BEGIN SELECT RAISE(ABORT, 'required forget failure'); END""")
+            before = list(store.connection.iterdump())
+            failed = await client.call_tool("memory_forget", {"id": traces[0].id}, raise_on_error=False)
+            assert failed.is_error
+            assert list(store.connection.iterdump()) == before
+            store.connection.execute("DROP TRIGGER reject_native_forget")
             for index, trace in enumerate(traces):
                 forgotten = await call("memory_forget", id=trace.id, reason="withdrawn")
                 assert forgotten["node"]["decayed"]

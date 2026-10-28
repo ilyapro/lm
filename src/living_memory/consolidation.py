@@ -697,11 +697,13 @@ def _derivation_snapshots(
     ))
     snapshots = []
     for node in owners:
-        members = [
-            replacement if member.id == source_id else member
-            for member in _current_derivation(store, node, observation=observation).live
-            if member.id != source_id or replacement is not None
-        ]
+        members = []
+        for member in _current_derivation(store, node, observation=observation).live:
+            if member.id == source_id:
+                if replacement is None:
+                    continue
+                member = replacement
+            members.append(member)
         if members:
             snapshots.append((node, members))
     return snapshots
