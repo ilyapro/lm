@@ -71,7 +71,7 @@ from living_memory.edge_derivation import (
     rule_r6_content_reference,
 )
 from living_memory.models import Connection, Node
-from living_memory.relations import is_semantic_relation
+from living_memory.relations import is_semantic_relation, semantic_relation_sql
 from living_memory.storage import (
     MemoryStore,
     _json_dumps,
@@ -122,7 +122,7 @@ class RuleAudit:
     """Per-rule participation counts and samples.
 
     ``net_new_pairs`` is the subset of ``new`` rows whose two nodes had *no*
-    prior edge of any type in either direction — the non-redundant
+    prior semantic edge of any type in either direction — the non-redundant
     connectivity gain the mining artifact §4 projects. ``new`` (exact
     ``(source, target, type)`` novelty, what actually gets inserted) is larger
     because same-type edges are also added on pairs already connected in the
@@ -290,11 +290,10 @@ def _stamp_backfill_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
 def _existing_edges(
     store: MemoryStore,
 ) -> tuple[set[tuple[str, str, str]], set[frozenset[str]], set[tuple[str, str, str]]]:
-    """Return stored keys, undirected pairs and keys of technical relations.
+    """Return stored keys, semantic undirected pairs and technical keys.
 
     The exact keys drive additive/idempotent insertion; the undirected pairs
-    (any type, either direction) drive the ``net_new_pairs`` connectivity
-    metric that reconciles with the mining artifact §4.
+    (any semantic type, either direction) drive ``net_new_pairs`` connectivity.
     """
 
     rows = store.connection.execute(
@@ -308,8 +307,9 @@ def _existing_edges(
         relation_type = str(row["type"])
         key = (source, target, relation_type)
         keys.add(key)
-        pairs.add(frozenset((source, target)))
-        if not is_semantic_relation(relation_type, json.loads(row["metadata"])):
+        if is_semantic_relation(relation_type, json.loads(row["metadata"])):
+            pairs.add(frozenset((source, target)))
+        else:
             technical.add(key)
     return keys, pairs, technical
 
@@ -360,7 +360,8 @@ def _type_counts(store: MemoryStore) -> dict[str, int]:
     counts = {
         edge_type: int(
             store.connection.execute(
-                "SELECT COUNT(*) FROM connections WHERE type = ?", (edge_type,)
+                f"SELECT COUNT(*) FROM connections WHERE type = ? AND {semantic_relation_sql()}",
+                (edge_type,)
             ).fetchone()[0]
         )
         for edge_type in ALL_TYPES
@@ -370,10 +371,13 @@ def _type_counts(store: MemoryStore) -> dict[str, int]:
 
 
 def _share_counts(store: MemoryStore) -> dict[str, Any]:
-    total = int(store.connection.execute("SELECT COUNT(*) FROM connections").fetchone()[0])
+    total = int(store.connection.execute(
+        f"SELECT COUNT(*) FROM connections WHERE {semantic_relation_sql()}"
+    ).fetchone()[0])
     strict = int(
         store.connection.execute(
-            f"SELECT COUNT(*) FROM connections WHERE type IN ({_placeholders(STRICT_TYPES)})",
+            f"SELECT COUNT(*) FROM connections WHERE type IN ({_placeholders(STRICT_TYPES)}) "
+            f"AND {semantic_relation_sql()}",
             STRICT_TYPES,
         ).fetchone()[0]
     )
@@ -381,10 +385,10 @@ def _share_counts(store: MemoryStore) -> dict[str, Any]:
         store.connection.execute(
             f"""
             SELECT COUNT(*) FROM connections
-            WHERE type IN ({_placeholders(STRICT_TYPES)})
+            WHERE {semantic_relation_sql()} AND (type IN ({_placeholders(STRICT_TYPES)})
                OR json_extract(metadata, '$.kind') IN ({_placeholders(_PROVENANCE_KINDS)})
                OR json_extract(metadata, '$.basis') IN ({_placeholders(_PROVENANCE_BASES)})
-               OR json_extract(metadata, '$.rule_basis') IN ({_placeholders(_PROVENANCE_RULE_BASES)})
+               OR json_extract(metadata, '$.rule_basis') IN ({_placeholders(_PROVENANCE_RULE_BASES)}))
             """,
             (*STRICT_TYPES, *_PROVENANCE_KINDS, *_PROVENANCE_BASES, *_PROVENANCE_RULE_BASES),
         ).fetchone()[0]
@@ -500,8 +504,8 @@ def backfill_edges(
         after_types = _type_counts(store)
         after_share = _share_counts(store)
     else:
-        after_types = _project_types(before_types, to_insert)
-        after_share = _project_share(before_share, to_insert, len(r5a_eligible))
+        after_types = _project_types(before_types, [*to_insert, *to_replace])
+        after_share = _project_share(before_share, [*to_insert, *to_replace], len(r5a_eligible))
 
     return _build_report(
         apply=apply,
@@ -625,11 +629,6 @@ def _build_report(
         "typed_share": {
             "before": dict(before_share),
             "after": dict(after_share),
-            "target_from_rules_artifact": {
-                "strict_typed_share": "~0.030 (3,305 -> 3,318 / 111,689)",
-                "provenance_derived_share": "~0.157 (with R5a annotations applied)",
-                "note": "artifacts/discovery/typed-edge-rules.md §4",
-            },
         },
         "rules": rules_report,
     }
@@ -667,7 +666,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     by_type = ", ".join(f"{t}={n}" for t, n in totals["new_rows_by_type"].items()) or "none"
     lines.append(f"- New rows by type: {by_type}")
     lines.append(
-        f"- Net-new connectivity (pairs with no prior edge, any type/direction): "
+        f"- Net-new connectivity (pairs with no prior semantic edge, any type/direction): "
         f"**{totals['net_new_connectivity']}** — the non-redundant graph gain (§4)."
     )
     lines.append(f"- Rows derived by more than one rule (collapsed): {totals['multi_rule_rows']}")
@@ -677,7 +676,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         + ("" if report["annotate_derived_from"] else " (disabled; --annotate-derived-from)")
     )
     lines.append("")
-    lines.append("## Edge type counts")
+    lines.append("## Semantic edge type counts")
     lines.append("")
     lines.append("| type | before | after |")
     lines.append("|---|---|---|")
@@ -691,7 +690,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     share = report["typed_share"]
     before_share = share["before"]
     after_share = share["after"]
-    lines.append("## Typed / provenance share")
+    lines.append("## Semantic typed / provenance share")
     lines.append("")
     lines.append("| metric | before | after |")
     lines.append("|---|---|---|")
@@ -705,12 +704,6 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"({before_share['provenance_derived_share']:.4f}) | "
         f"{after_share['provenance_derived']} "
         f"({after_share['provenance_derived_share']:.4f}) |"
-    )
-    target = share["target_from_rules_artifact"]
-    lines.append("")
-    lines.append(
-        f"Target ({target['note']}): strict-typed {target['strict_typed_share']}, "
-        f"provenance-derived {target['provenance_derived_share']}."
     )
     lines.append("")
     lines.append("## Per-rule counts")

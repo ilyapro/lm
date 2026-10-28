@@ -231,6 +231,19 @@ genuine relations retain their fields. Derivation and backfill treat all content
 ULID mentions as references, independent of correction wording or context labels.
 Only explicit correction writes establish supersession.
 
+Causal relations require an explicit connection. Shared `task` or `session_id`,
+nearby timestamps and problem/fix labels do not create `caused` edges.
+The shared Python/SQL policy excludes historical `caused` rows marked `rule=R2a`
+or `kind=failure_resolution` from ordinary and causal graph traversal, ranking,
+source qualification and offline semantic inventories. A caller-supplied
+`basis=explicit` survives merged inferred markers. `memory_connect` replaces
+metadata by default, so a later explicit connection clears an inferred-only row;
+a semantic merge contribution also replaces that row's metadata and weight.
+An older unmarked explicit connection followed by inferred metadata may be
+indistinguishable from an inferred-only row. Stored weight, timestamps and
+work context cannot reconstruct the missing explicit basis. History is retained
+without a corpus rewrite. Other relation types keep their existing semantics.
+
 Exact copies use `related` edges with `kind=duplicate_content`, retaining their
 rows and source identities separately from correction validity. Anchor and
 source-lineage traversal follows such bookkeeping only after checking current

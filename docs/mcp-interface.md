@@ -370,7 +370,12 @@ default project only rank first; the plan records this as a trailing `*`
 BM25, local vector, and graph scores, reranks by feedback/confidence/access,
 logs access for returned nodes, and persists a recall event containing the
 query, scope plan, result IDs, and component scores. Causal queries such as
-"why did B happen" traverse `caused` and `requires` edges. Queries whose
+"why did B happen" traverse semantic `caused` and `requires` edges. Work context,
+chronology and problem/fix labels do not establish causality. Ordinary and causal
+recall exclude historical `caused` rows with `rule=R2a` or
+`kind=failure_resolution`, unless `basis=explicit` records an explicit contribution.
+An explicit `memory_connect` replaces the row's metadata; without such a surviving
+basis, an old mixed row cannot be distinguished from inferred-only history. Queries whose
 tokens cover a saved `context.trigger` can discover an instruction; content
 support and query coverage contribute to ranking. Main content and optional
 map qualification share current source evidence. Access, net usefulness and

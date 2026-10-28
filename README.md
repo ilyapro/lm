@@ -71,7 +71,11 @@ top-k may still omit a candidate by rank; its omission is not a duplicate claim.
 
 Ordinary remembered text and context labels are data, including correction
 wording, negations and quotations. ULID mentions can create content references;
-supersession requires `memory_teach` or an explicit typed connection.
+supersession requires `memory_teach` or an explicit typed connection. Shared
+work context, nearby timestamps and problem/fix labels do not establish
+causality. Inferred-only `caused` history (`rule=R2a` or
+`kind=failure_resolution`) is excluded from graph evidence; explicit causal
+connections remain usable.
 
 Exact-copy lifecycle bookkeeping uses `related(kind=duplicate_content)` rather
 than correction semantics. Known historical `supersedes` rows from the drain
