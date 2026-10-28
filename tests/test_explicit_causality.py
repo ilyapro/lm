@@ -122,9 +122,11 @@ def test_native_explicit_connections_survive_history(native, depth, relation, se
     results = recall(native, depth)
     assert problem in results and solution in results
     assert results[problem]["graph_score"] > 0
-    assert results[problem]["content_ref"]["node_id"] == problem
     if depth == "causal":
         assert results[problem]["delivery"] == "full"
+        assert results[problem]["node"]["content"] == PROBLEM
+    else:
+        assert results[problem]["content_ref"]["node_id"] == problem
     assert not store.get_node(problem).decayed
     assert store.get_node(problem).corrections == []
 

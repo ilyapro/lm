@@ -29,8 +29,8 @@ Design guarantees (see ``derive-edges`` CLI below):
   ``kind`` that ``retrieval._traversal`` reads is never touched.)
 
 The engine reuses :mod:`edge_derivation`'s pure rule functions and serves the
-volume rules (R4a same
-commit, R4b shared files) from two corpus-wide index scans that reproduce the
+volume rules (R4a same commit, R4b shared files) from two corpus-wide index
+scans that reproduce the
 write path's candidate WHERE-clauses (active nodes, any level, no fanout/commit
 cap applied before the rule) — so the derived edge set is identical to running
 the write path over every node, only faster.
