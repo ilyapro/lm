@@ -1692,7 +1692,7 @@ def _register_tools(
     @mcp.tool
     @_track_latency("memory_status")
     def memory_status(scope: str | None = None) -> dict[str, Any]:
-        """Describe current memory phase, coverage, confidence, and policy."""
+        """Describe current memory counts, coverage, confidence, and retrieval policy."""
 
         with runtime_lock:
             return status_view(store, scope=scope)

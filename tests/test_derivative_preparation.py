@@ -200,7 +200,7 @@ def test_overlapping_owners_share_text_preparation_only_within_one_operation(sto
         strategy = materializer
 
         def materialize():
-            return c._cross_scope_promotion(store, members[0], phase_number=4)
+            return c._cross_scope_promotion(store, members[0])
 
     owners = [store.create_node(
         level="concept", content=f"Harbor owner {i} awaiting materialization.",

@@ -232,7 +232,7 @@ def test_cluster_correction_reaches_cross_scope_promotion_without_reconsolidatio
         traces, concept = cluster(store, SCOPE, STEPS)
         _, other = cluster(store, "project:other", ["Workshop inventory is checked weekly."])
         _, third = cluster(store, "project:third", ["Workshop tools are kept dry."])
-        global_node, = _cross_scope_promotion(store, concept, phase_number=4)
+        global_node, = _cross_scope_promotion(store, concept)
         assert global_node is not None and STEPS[0] in global_node.content
         controls = {node.id: asdict(store.get_node(node.id)) for node in [other, third]}
         taught = memory_teach(store, traces[0].id, CORRECTION)

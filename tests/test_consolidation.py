@@ -14,10 +14,9 @@ from living_memory.resources import memory_status
 from living_memory.storage import MemoryStore
 
 
-def _phase4_config(path: Path) -> MemoryConfig:
+def _config(path: Path) -> MemoryConfig:
     return MemoryConfig(
         db_path=path,
-        phase_thresholds={0: 0, 1: 1, 2: 100, 3: 200, 4: 300, 5: 1_000_000},
     )
 
 
@@ -194,13 +193,13 @@ def test_consolidation_clusters_cross_language_traces_into_one_concept(
         assert store.list_nodes(level="concept", scope="project:alpha") == [concept]
 
 
-def test_cross_scope_promotion_creates_one_global_concept_at_phase_four(
+def test_cross_scope_promotion_creates_one_global_concept_from_three_projects(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     scopes = ["project:alpha", "project:beta", "project:gamma"]
-    with MemoryStore(_phase4_config(tmp_path / "memory.sqlite3")) as store:
+    with MemoryStore(_config(tmp_path / "memory.sqlite3")) as store:
         for scope in scopes:
             _append_topic_traces(store, scope, "database timeout connection pool retry budget")
 
@@ -234,7 +233,7 @@ def test_cross_scope_promotion_reinforces_existing_global_without_duplicate(
 ) -> None:
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     initial_scopes = ["project:alpha", "project:beta", "project:gamma"]
-    with MemoryStore(_phase4_config(tmp_path / "memory.sqlite3")) as store:
+    with MemoryStore(_config(tmp_path / "memory.sqlite3")) as store:
         for scope in initial_scopes:
             _append_topic_traces(store, scope, "database timeout connection pool retry budget")
         _consolidate_scopes(store, initial_scopes)
@@ -263,7 +262,7 @@ def test_cross_scope_promotion_reinforces_existing_global_without_duplicate(
 def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
     tmp_path: Path,
 ) -> None:
-    with MemoryStore(_phase4_config(tmp_path / "memory.sqlite3")) as store:
+    with MemoryStore(_config(tmp_path / "memory.sqlite3")) as store:
         alpha = store.create_node(
             level="concept",
             content="database timeout connection pool retry budget",
@@ -289,7 +288,7 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
             provenance={"source_traces": ["trace-gamma"]},
         )
 
-        promoted, = _cross_scope_promotion(store, alpha, phase_number=4)
+        promoted, = _cross_scope_promotion(store, alpha)
         assert promoted is not None
         original_confidence = promoted.confidence
 
@@ -307,24 +306,23 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
         assert refreshed.provenance["active_source_concepts"] == sorted([alpha.id, beta.id])
 
 
-def test_cross_scope_promotion_is_phase_gated(
+def test_cross_scope_promotion_requires_three_project_scopes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
-    scopes = ["project:alpha", "project:beta", "project:gamma"]
+    scopes = ["project:alpha", "project:beta"]
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         for scope in scopes:
             _append_topic_traces(store, scope, "database timeout connection pool retry budget")
 
         _consolidate_scopes(store, scopes)
 
-        assert store.detect_phase().number < 4
         assert store.list_nodes(level="concept", scope="global") == []
 
 
 def test_cross_scope_promotion_skips_concept_without_embedding(tmp_path: Path) -> None:
-    with MemoryStore(_phase4_config(tmp_path / "memory.sqlite3")) as store:
+    with MemoryStore(_config(tmp_path / "memory.sqlite3")) as store:
         concept = store.create_node(
             level="concept",
             content="database timeout connection pool retry budget",
@@ -332,7 +330,7 @@ def test_cross_scope_promotion_skips_concept_without_embedding(tmp_path: Path) -
             stats={"confidence": 0.8, "unique_agents": 2},
         )
 
-        promoted = _cross_scope_promotion(store, concept, phase_number=4)
+        promoted = _cross_scope_promotion(store, concept)
 
         assert promoted == []
         assert store.list_nodes(level="concept", scope="global") == []
@@ -492,7 +490,7 @@ def test_consolidation_preserves_legacy_copy_without_recorded_sources(
 def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
     tmp_path: Path,
 ) -> None:
-    with MemoryStore(_phase4_config(tmp_path / "memory.sqlite3")) as store:
+    with MemoryStore(_config(tmp_path / "memory.sqlite3")) as store:
         shared = "Database timeout retry budget tuned for pool exhaustion."
         alpha = store.create_node(
             level="concept",
@@ -519,7 +517,7 @@ def test_cross_scope_promotion_synthesizes_digest_from_distinct_sources(
             provenance={"source_traces": ["trace-gamma"]},
         )
 
-        promoted, = _cross_scope_promotion(store, alpha, phase_number=4)
+        promoted, = _cross_scope_promotion(store, alpha)
 
         assert promoted is not None
         sources = [alpha, beta, gamma]
@@ -765,7 +763,7 @@ def test_cross_scope_promotion_ignores_dissimilar_project_concepts(
         "project:beta": "frontend button layout mobile overflow color palette",
         "project:gamma": "invoice export pdf rounding mismatch totals",
     }
-    with MemoryStore(_phase4_config(tmp_path / "memory.sqlite3")) as store:
+    with MemoryStore(_config(tmp_path / "memory.sqlite3")) as store:
         for scope, topic in topics.items():
             _append_topic_traces(store, scope, topic)
 

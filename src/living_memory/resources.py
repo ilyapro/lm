@@ -79,11 +79,10 @@ def concepts_for_scope(
 
 
 def memory_stats(store: MemoryStore) -> dict[str, Any]:
-    """Return system health, phase, and aggregate metrics."""
+    """Return current counts, confidence, promotions and retrieval weights."""
 
     return {
         "uri": "memory://stats",
-        "phase": phase_to_dict(store),
         "counts": count_nodes(store),
         "confidence": confidence_summary(store),
         "promotions": promotion_summary(store),
@@ -116,7 +115,6 @@ def memory_status(store: MemoryStore, scope: str | None = None) -> dict[str, Any
     normalized_scope = normalize_scope(scope) if scope else None
     return {
         "scope": normalized_scope or "all",
-        "phase": phase_to_dict(store),
         "counts": count_nodes(store, scope=normalized_scope),
         "confidence": confidence_summary(store, scope=normalized_scope),
         "coverage": coverage_summary(store, scope=normalized_scope),
@@ -166,18 +164,6 @@ def connection_to_dict(connection: Connection) -> dict[str, Any]:
         "metadata": dict(connection.metadata),
         "created_at": connection.created_at,
         "updated_at": connection.updated_at,
-    }
-
-
-def phase_to_dict(store: MemoryStore) -> dict[str, Any]:
-    phase = store.detect_phase()
-    return {
-        "number": phase.number,
-        "name": phase.name,
-        "label": phase.label,
-        "trace_count": phase.trace_count,
-        "min_traces": phase.min_traces,
-        "features": list(phase.features),
     }
 
 

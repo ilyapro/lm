@@ -9,8 +9,7 @@ from living_memory.feedback import (
     apply_retrieval_feedback,
 )
 from living_memory.grounding import Grounding, containment, ground_results
-from living_memory.models import Connection, Node, PhaseInfo, RecallEvent, RetrievalWeights
-from living_memory.phase import PhaseManager
+from living_memory.models import Connection, Node, RecallEvent, RetrievalWeights
 from living_memory.retrieval import (
     MemoryRecallService,
     MemoryRetrievalService,
@@ -32,8 +31,6 @@ __all__ = [
     "MemoryRetrievalService",
     "MemoryStore",
     "Node",
-    "PhaseInfo",
-    "PhaseManager",
     "RecallEvent",
     "RecallResult",
     "RetrievalWeightConfig",

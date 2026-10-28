@@ -125,7 +125,8 @@ def test_mcp_tools_delegate_to_memory_services(tmp_path: Path) -> None:
 
     status = mcp.tools["memory_status"](scope="project:alpha")
     assert status["scope"] == "project:alpha"
-    assert status["phase"]["trace_count"] >= 3
+    assert status["counts"]["by_level"]["trace"]["total"] >= 3
+    assert "phase" not in status
 
     forgotten = mcp.tools["memory_forget"](second_id, "test cleanup")
     assert forgotten["node"]["decayed"] is True

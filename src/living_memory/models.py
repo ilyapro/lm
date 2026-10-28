@@ -324,21 +324,6 @@ class RetrievalPolicyFloors:
             raise ValueError("vector_min + graph_min + bm25_min must be at most 1.0")
 
 
-@dataclass(frozen=True, slots=True)
-class PhaseInfo:
-    """Detected automatic capability phase for the current trace count."""
-
-    number: int
-    name: str
-    trace_count: int
-    min_traces: int
-    features: tuple[str, ...]
-
-    @property
-    def label(self) -> str:
-        return f"Phase {self.number}: {self.name}"
-
-
 def string_list(value: Any) -> list[str]:
     """Return a string list from JSON-like provenance values."""
 

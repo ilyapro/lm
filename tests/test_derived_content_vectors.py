@@ -124,7 +124,6 @@ def test_cross_scope_create_update_and_teach_reach_warm_recall(tmp_path):
     encoder = Encoder()
     config = MemoryConfig(
         db_path=tmp_path / "memory.sqlite3",
-        phase_thresholds={0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 100_000},
     )
     with MemoryStore(config, chunk_embedder=encoder.batch) as store:
         all_sources = [seed(store, encoder, scope) for scope in (SCOPE, "project:beta", "project:gamma")]
@@ -255,7 +254,7 @@ def test_promotion_owns_search_vectors_for_distinct_project_contents(tmp_path, l
                 embedding=encoder.embed(content), stats={"confidence": .9 - i * .1, "unique_agents": 2},
             ))
         encoder.calls.clear()
-        promoted, = _cross_scope_promotion(store, sources[0], phase_number=4)
+        promoted, = _cross_scope_promotion(store, sources[0])
         assert all(promoted.content != source.content for source in sources)
         assert "seven retries" in promoted.content
         assert "saturation" in promoted.content
@@ -274,7 +273,7 @@ def test_promotion_owns_search_vectors_for_distinct_project_contents(tmp_path, l
         changed_text = f"{core} Beta keeps nine retries."
         store.update_node(sources[1].id, content=changed_text, embedding=encoder.embed(changed_text))
         encoder.calls.clear()
-        updated, = _cross_scope_promotion(store, sources[0], phase_number=4)
+        updated, = _cross_scope_promotion(store, sources[0])
         assert updated.id == promoted.id
         assert "nine retries" in updated.content and "seven retries" not in updated.content
         assert encoder.calls == [w.text for w in chunk_text(updated.content)]
@@ -283,6 +282,6 @@ def test_promotion_owns_search_vectors_for_distinct_project_contents(tmp_path, l
         assert updated.scope == "global"
         before = store.list_node_chunks(updated.id)
         encoder.calls.clear()
-        assert _cross_scope_promotion(store, sources[0], phase_number=4) == []
+        assert _cross_scope_promotion(store, sources[0]) == []
         assert encoder.calls == []
         assert store.list_node_chunks(updated.id) == before

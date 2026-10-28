@@ -45,23 +45,12 @@ DEFAULT_RETRIEVAL_POLICY_FLOORS: dict[str, RetrievalPolicyFloors] = {
     "session": RetrievalPolicyFloors(bm25_max=0.90, vector_min=0.10, graph_min=0.0, bm25_min=0.10),
 }
 
-DEFAULT_PHASE_THRESHOLDS: dict[int, int] = {
-    0: 0,
-    1: 1,
-    2: 100,
-    3: 10_000,
-    4: 100_000,
-    5: 1_000_000,
-}
-
-
 @dataclass(frozen=True, slots=True)
 class MemoryConfig:
     db_path: Path = Path("living_memory.sqlite3")
     default_scope: str = "global"
     trace_ttl_days: int = 180
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
-    phase_thresholds: dict[int, int] = field(default_factory=lambda: dict(DEFAULT_PHASE_THRESHOLDS))
     retrieval_weights: dict[str, RetrievalWeightConfig] = field(
         default_factory=lambda: dict(DEFAULT_RETRIEVAL_WEIGHTS)
     )
@@ -88,14 +77,9 @@ def load_config(path: str | Path | None = None) -> MemoryConfig:
     defaults = MemoryConfig()
     storage = _table(raw, "storage")
     embeddings = _table(raw, "embeddings")
-    phases = _table(raw, "phases")
     retrieval = _table(raw, "retrieval_weights")
     retrieval_policy = _table(raw, "retrieval_policy_floors")
     retrieval_skew = _table(raw, "retrieval_skew_thresholds")
-
-    phase_thresholds = dict(DEFAULT_PHASE_THRESHOLDS)
-    for key, value in phases.items():
-        phase_thresholds[int(key)] = int(value)
 
     retrieval_weights = dict(DEFAULT_RETRIEVAL_WEIGHTS)
     for scope, values in retrieval.items():
@@ -162,7 +146,6 @@ def load_config(path: str | Path | None = None) -> MemoryConfig:
                 ),
             )
         ),
-        phase_thresholds=phase_thresholds,
         retrieval_weights=retrieval_weights,
         retrieval_policy_floors=retrieval_policy_floors,
         retrieval_skew_thresholds=retrieval_skew_thresholds,

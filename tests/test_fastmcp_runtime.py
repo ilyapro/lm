@@ -149,7 +149,8 @@ async def _exercise_real_fastmcp_server(tmp_path: Path) -> None:
     assert "BEGIN ACTIVE MEMORY CONTEXT" in str(prompt)
 
     stats = await mcp.read_resource("memory://stats")
-    assert "phase" in str(stats)
+    assert "retrieval_weights" in str(stats)
+    assert "phase" not in str(stats)
 
 
 def _structured(result: Any) -> dict[str, Any]:

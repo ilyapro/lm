@@ -85,7 +85,7 @@ def seed(store):
                           stats={"confidence": 0.1})
         for name in ("north", "south")
     ]
-    promoted, = c._cross_scope_promotion(store, concept, phase_number=4)
+    promoted, = c._cross_scope_promotion(store, concept)
     assert promoted.content.startswith(concept.content)
     return traces, concept, promoted, peers
 
@@ -132,9 +132,7 @@ def test_persisted_digest_recall_and_source_based_refresh(tmp_path, refresh):
             assert store.get_node(concept.id).content == legacy_content
             assert mcp.tools["memory_lookup"](node_id=concept.id)["results"][0]["content"] == legacy_content
             if refresh == "consolidate":
-                # Existing promotions still need current source bytes below the
-                # phase that admits new cross-scope promotions.
-                assert store.detect_phase().number < c.CROSS_SCOPE_PROMOTION_PHASE
+                # Existing promotions consume the current project digest.
                 result = c.memory_consolidate(store, scope=SCOPE, force=True, min_cluster_size=2)
                 assert result.concepts_created == []
                 assert [node.id for node in result.concepts_updated] == [concept.id]

@@ -338,16 +338,16 @@ def test_promotions_use_recorded_owners_and_keep_other_global_knowledge(store):
             for scope in ("alpha", "beta", "gamma")
         ]
     before = asdict(store.get_node(unrelated.id))
-    north, = c._cross_scope_promotion(store, groups["north"][0], phase_number=4)
-    south, = c._cross_scope_promotion(store, groups["south"][0], phase_number=4)
+    north, = c._cross_scope_promotion(store, groups["north"][0])
+    south, = c._cross_scope_promotion(store, groups["south"][0])
     assert north.id != south.id
     assert set(north.provenance["source_concepts"]) == {node.id for node in groups["north"]}
     assert set(south.provenance["source_concepts"]) == {node.id for node in groups["south"]}
-    assert c._cross_scope_promotion(store, groups["north"][0], phase_number=4) == []
+    assert c._cross_scope_promotion(store, groups["north"][0]) == []
     assert asdict(store.get_node(unrelated.id)) == before
     fourth = store.create_node(level="concept", content="Release north fourth project evidence.",
                                context={"scope": "project:delta", "task_pattern": "north"}, embedding=[1.0, 0.0])
-    updated, = c._cross_scope_promotion(store, fourth, phase_number=4)
+    updated, = c._cross_scope_promotion(store, fourth)
     assert updated.id == north.id
     assert set(updated.provenance["source_concepts"]) == {node.id for node in groups["north"]} | {fourth.id}
     assert store.get_node(south.id).source_traces == south.source_traces
@@ -370,13 +370,13 @@ def test_overlapping_promotions_follow_ancestors_without_broadcasting_new_source
         level="concept", content="Release epsilon verifies the signature.",
         context={"scope": "project:epsilon"}, embedding=[1.0, 0.0],
     )
-    c._cross_scope_promotion(store, fresh, phase_number=4)
+    c._cross_scope_promotion(store, fresh)
     assert {node.id for node in store.list_nodes(level="concept", scope="global")} == {left.id, right.id}
     current = store.get_node(left.id)
     assert set(current.materializer_sources) == {replacement.id, sources[1].id, sources[2].id}
     assert "electronic archive" in current.content
     assert set(store.get_node(right.id).materializer_sources) == {node.id for node in sources[1:]}
-    assert c._cross_scope_promotion(store, fresh, phase_number=4) == []
+    assert c._cross_scope_promotion(store, fresh) == []
 
 
 def test_promotion_edge_failure_is_atomic(store, monkeypatch):
@@ -392,7 +392,7 @@ def test_promotion_edge_failure_is_atomic(store, monkeypatch):
 
     monkeypatch.setattr(c, "_connect_project_concepts_to_global", fail)
     with pytest.raises(RuntimeError, match="promotion source edge failure"):
-        c._cross_scope_promotion(store, sources[0], phase_number=4)
+        c._cross_scope_promotion(store, sources[0])
     assert list(store.connection.iterdump()) == before
 
 
@@ -406,14 +406,14 @@ def test_promotion_rereads_project_sources_and_refreshes_same_input_ids(store):
                           context={"scope": f"project:{scope}"}, embedding=[1.0, 0.0])
     replacement = "Release requires the electronic manifest."
     c.memory_teach(store, original.id, replacement)
-    promoted, = c._cross_scope_promotion(store, stale, phase_number=4)
+    promoted, = c._cross_scope_promotion(store, stale)
     assert replacement in promoted.content and "obsolete paper permit" not in promoted.content
     source_ids = promoted.provenance["source_concepts"]
     current = store.get_node(stale.id)
     fresh = trace(store, "Release encrypts transport packets.", scope=current.scope)
     materialize(store, [*store.get_nodes(current.source_traces).values(), fresh])
-    updated, = c._cross_scope_promotion(store, stale, phase_number=4)
+    updated, = c._cross_scope_promotion(store, stale)
     assert updated.id == promoted.id and updated.provenance["source_concepts"] == source_ids
     assert fresh.id in updated.source_traces
     assert "transport packets" in updated.content
-    assert c._cross_scope_promotion(store, stale, phase_number=4) == []
+    assert c._cross_scope_promotion(store, stale) == []

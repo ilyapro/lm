@@ -354,7 +354,7 @@ def test_find_similar_by_embedding_filters_scope_prefix_and_threshold(tmp_path: 
         assert matches[0][1] == pytest.approx(0.8)
 
 
-def test_toml_config_loads_storage_phase_and_retrieval_settings(tmp_path: Path) -> None:
+def test_toml_config_loads_storage_and_retrieval_settings(tmp_path: Path) -> None:
     config_path = tmp_path / "memory.toml"
     config_path.write_text(
         """
@@ -363,9 +363,6 @@ db_path = "custom.sqlite3"
 default_scope = "project:test"
 trace_ttl_days = 30
 embedding_model = "custom-multilingual-model"
-
-[phases]
-2 = 50
 
 [retrieval_weights."project:test"]
 bm25 = 0.6
@@ -381,7 +378,6 @@ learning_rate = 0.1
     assert config.default_scope == "project:test"
     assert config.trace_ttl_days == 30
     assert config.embedding_model == "custom-multilingual-model"
-    assert config.phase_thresholds[2] == 50
     assert config.retrieval_weights["project:test"].graph == pytest.approx(0.2)
 
     with MemoryStore(MemoryConfig(db_path=tmp_path / "configured.sqlite3", default_scope="project:test")) as store:

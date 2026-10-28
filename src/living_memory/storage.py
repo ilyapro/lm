@@ -43,7 +43,6 @@ from living_memory.relations import (
     source_relation_weight_sql,
     correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
 )
-from living_memory.phase import PhaseManager
 from living_memory.scope import ScopePlan, normalize_scope, resolve_scope
 from living_memory.temporal import parse_timestamp
 
@@ -4759,9 +4758,6 @@ class MemoryStore:
 
     def count_traces(self, *, include_decayed: bool = True) -> int:
         return self.trace_count(include_decayed=include_decayed)
-
-    def detect_phase(self) -> Any:
-        return PhaseManager(self.config.phase_thresholds).detect(self.trace_count(include_decayed=True))
 
     def get_retrieval_weights(self, scope: str) -> RetrievalWeights:
         candidates = [scope, _scope_family(scope), "default"]
