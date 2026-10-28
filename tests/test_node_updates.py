@@ -136,3 +136,11 @@ def test_metadata_update_does_not_hide_corrupt_source(node_store):
     with pytest.raises(ValueError):
         store.update_node(node.id, stats={"usefulness_score": 0.7})
     assert tuple(store.connection.execute("SELECT * FROM nodes WHERE id = ?", (node.id,)).fetchone()) == before
+
+
+@pytest.mark.parametrize("field", ["context", "provenance"])
+def test_json_updates_preserve_value_types(node_store, field):
+    store, node = node_store
+    store.update_node(node.id, **{field: {"value": 1}})
+    updated = store.update_node(node.id, **{field: {"value": True}})
+    assert getattr(updated, field)["value"] is True
