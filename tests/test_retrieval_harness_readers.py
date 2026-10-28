@@ -55,7 +55,9 @@ def test_cached_runs_keep_qualification_and_raw_weight_replay(runs) -> None:
     assert harness.compute_metrics(restored)["overall"]["mrr"] == 0.5
     events = script.dated_replay_events(restored)
     resolver = explicit_weights(1 / 3, 1 / 3, 1 / 3)
-    scheme = script.Scheme(name="uniform", kind="static", resolver=resolver)
+    scheme = script.Scheme(
+        name="uniform", kind="static", resolver=resolver, description="uniform weights", weights=None
+    )
     assert script.first_relevant_ranks(scheme, events) == {"qualified": 1, "reference": 1}
     raw = run_scheme("uniform", events, {}, "2026-02-01T00:00:00Z", resolver=resolver)
     assert raw.to_dict()["overall"]["mrr"] == 1.0

@@ -206,3 +206,24 @@ See [schema trigger behavior](recall-schema-trigger.md).
 
 These are eligibility and source-access guarantees. They do not establish
 semantic precision, autonomous source selection or total token savings.
+
+## Evaluation
+
+The end-to-end `retrieval_harness` retains `withheld` alongside each result's
+id, scores and rank. `ranked_node_ids` includes every returned reference.
+`hit@k`, MRR, graph contribution and channel attribution credit only relevant
+results without a withheld reason (`result_basis: qualified`). References
+still occupy their returned positions; removing them must not promote a later
+qualified result. Withheld and absent relevant nodes remain in the relevance
+denominator, so a reference-only answer is a miss. The same rule applies to
+tail, stratum, channel, anchor holdout and fresh-node metrics.
+
+Qualification comes from the live recall verdict. Channel reordering and graph
+ablation do not recompute the gate. The separate weight-policy `replay` reports
+`result_basis: raw_candidates`: it measures rankings of recorded candidates,
+including references, without claiming qualified content delivery. Recorded
+method scores and neutral synthetic nodes cannot reconstruct the source gate.
+
+Evaluation caches preserve the verdict and identify the harness version.
+Reports that discarded qualification cannot support qualified-hit recomputation;
+downstream headroom and subset readers require a current harness report.

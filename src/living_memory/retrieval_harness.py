@@ -1167,7 +1167,7 @@ def channel_order(run: HarnessRun, channel: str) -> list[str]:
     return [result.node_id for result in ordered]
 
 
-_CHANNEL_BLOCK_KEYS = ("events", "events_with_useful", "hit@1", "hit@5", "hit@10", "mrr")
+_CHANNEL_BLOCK_KEYS = ("result_basis", "events", "events_with_useful", "hit@1", "hit@5", "hit@10", "mrr")
 
 
 def _channel_block(accumulator: MetricAccumulator) -> dict[str, Any]:
@@ -1610,10 +1610,9 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     for stratum, block in metrics["per_stratum"].items():
         lines.append(_metric_row(f"stratum:{stratum}", block))
     lines.append(_metric_row("tail", metrics["tail"]))
-    lines.extend(["", METRIC_RULE, ""])
     if "fresh_node_visibility" in metrics:
         lines.append(_metric_row("fresh_node_visibility", metrics["fresh_node_visibility"]))
-    lines.append("")
+    lines.extend(["", METRIC_RULE, ""])
     holdout = metrics.get("anchor_holdout") or {}
     coverage = metrics.get("anchor_coverage") or {}
     if holdout.get("annotated_items"):

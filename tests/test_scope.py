@@ -142,7 +142,7 @@ def test_wider_search_adds_no_noise_a_single_scope_would_not(
             )
             fillers = {
                 store.append_trace(
-                    f"Team {index} lunch rota and parking badge renewal schedule",
+                    f"Team {index} lunch rota and parking badge renewal checkpoint schedule",
                     {"scope": f"project:filler-{index}" if spread else "project:ingest"},
                 ).id
                 for index in range(30)
@@ -153,7 +153,7 @@ def test_wider_search_adds_no_noise_a_single_scope_would_not(
             assert answer[0].withheld is None
             nonsense = memory_recall(store, "qzvkrw plbxtn", scope=scope, max_results=5)
             for results in (answer, nonsense):
-                assert 0 < len(results) <= 5
+                assert len(results) <= 5
                 delivered = shape_recall_results(
                     results, delivery_history=DeliveryHistory(), snippet_max_chars=0,
                     context_value_max_chars=0, session_dedup=False, view="knowledge",

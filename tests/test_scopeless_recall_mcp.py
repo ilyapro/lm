@@ -63,7 +63,7 @@ def test_scopeless_mcp_recall_reaches_other_projects_and_explicit_scope_restrict
             for scope, content in DECOYS.items():
                 await _remember(client, content, scope)
             fillers = {
-                await _remember(client, f"Team {index} lunch rota and parking badges", f"project:f{index}")
+                await _remember(client, f"Team {index} lunch rota and parking sidecars", f"project:f{index}")
                 for index in range(20)
             }
 
