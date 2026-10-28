@@ -355,3 +355,25 @@ def test_replacement_cycle_decay_and_consumer_write_roll_back_together(store, mo
         c.memory_teach(store, traces[0].id, correction, preparation=preparation)
     assert list(store.connection.iterdump()) == before
     assert not store.connection.in_transaction
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+@pytest.mark.parametrize("consumer_first", [False, True])
+def test_changed_exact_copy_is_not_a_correction(store, monkeypatch, prepared, consumer_first):
+    traces = sources(store)
+    original = derived(store, "copy", traces[:2])
+    copy = derived(store, "copy", traces[:2])
+    assert store.get_node(original.id).decayed
+    assert c.resolve_replacement(store, original.id) == copy.id
+    consumer = derived(store, "consumer", [traces[0], original, traces[2]])
+    order_consumers(store, monkeypatch, consumer if consumer_first else copy)
+    correction = "Harbor crane uses the electronic manifest."
+    preparation = c.prepare_teach(store, traces[0].id, correction) if prepared else None
+    taught = c.memory_teach(store, traces[0].id, correction, preparation=preparation)
+    with MemoryStore(store.db_path) as reader:
+        current = reader.get_node(consumer.id)
+        assert not current.decayed
+        assert c.resolve_replacement(reader, original.id) is None
+        assert set(current.source_traces) == {taught.corrective_trace.id, traces[2].id}
+        assert correction in current.content and traces[2].content in current.content
+        assert traces[1].content not in current.content
