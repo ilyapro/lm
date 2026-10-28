@@ -52,11 +52,11 @@ def derived(store, name, members, *, scope=SCOPE, strategy="token-jaccard"):
     )
 
 
-def procedure(store, *, declared=True, scope=SCOPE, group="release"):
+def procedure(store, *, declared=True, scope=SCOPE, group="release", texts=TEXTS):
     traces = [store.append_trace(text, {
         "scope": scope, "procedure_id": "workshop_release", "task_pattern": group,
         **({"step_order": index + 1} if declared else {}),
-    }) for index, text in enumerate(TEXTS)]
+    }) for index, text in enumerate(texts)]
     (node, _), = c._materialize_procedural_schemas(store, traces, min_cluster_size=3)
     return traces, node
 
@@ -78,7 +78,7 @@ def test_supported_entries_refresh_partial_and_last_support(store, forget, kind)
     else:
         traces, owner = procedure(store, declared=kind == "schema")
     _, other = procedure(store, scope="project:other")
-    _, independent = procedure(store, group="independent")
+    _, independent = procedure(store, group="independent", texts=[text + " Independently." for text in TEXTS])
     controls = {node.id: asdict(node) for node in (other, independent)}
     for index, trace in enumerate(traces):
         previous = store.get_node(owner.id)
