@@ -73,7 +73,7 @@ def test_mcp_sufficient_short_and_buried_instruction_need_one_recall(tmp_path: P
     assert carrier_entry["content_ref"]["node_id"] == carrier.id
 
 
-def test_mcp_missing_detail_uses_byte_complete_lookup_and_correction_survives(
+def test_mcp_partial_source_uses_byte_complete_lookup_and_correction_survives(
     tmp_path: Path,
 ) -> None:
     scope = "project:needed-detail"
@@ -107,7 +107,8 @@ def test_mcp_missing_detail_uses_byte_complete_lookup_and_correction_survives(
     recall, lookup, missing = asyncio.run(scenario())
     entry = next(e for e in recall["results"] if e["id"] == node.id)
     assert entry["delivery"] == "snippet"
-    assert "ORBIT-73" not in entry["content"]
+    assert len(entry["content"]) < len(content)
+    assert entry["content_ref"]["full_content_chars"] == len(content)
     assert entry["provenance"]["corrections"][0]["supersedes"] == "01OLDROTORRULE"
     assert entry["content_ref"]["node_id"] == node.id
     assert lookup["results"][0]["content"] == content
