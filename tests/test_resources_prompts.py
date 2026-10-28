@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from living_memory.prompts import retrieval_context_prompt
 from living_memory.resources import (
     global_concepts,
@@ -121,11 +123,7 @@ def test_retrieval_context_prompt_formats_top_relevant_concepts(tmp_path: Path) 
 
 def test_memory_health_reports_activity_dedup_and_staleness(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        # Three distinct contents that share a token prefix. Post-fix the write
-        # path auto-dedupes byte-identical content, so the synthetic-duplicate
-        # setup uses distinct content to keep three rows active. The dedup
-        # metric still computes correctly — duplicate_density reads zero, which
-        # is the new steady state after schema v3.
+        # Distinct contents have no textual duplicate excess.
         store.append_trace(
             "rollback migration release notes alpha",
             {"scope": "project:alpha", "agent": "agent-a"},
@@ -164,8 +162,22 @@ def test_memory_health_reports_activity_dedup_and_staleness(tmp_path: Path) -> N
         assert "retrieval_policy" in report
 
 
-def test_memory_health_dedup_collapses_identical_writes(tmp_path: Path) -> None:
-    """Two identical writes collapse to one active trace; dedup metric reads 0%."""
+@pytest.mark.parametrize(
+    ("second_agent", "active", "decayed", "duplicate_excess", "duplicate_density"),
+    [
+        pytest.param("agent-a", 1, 1, 0, 0.0, id="same-source"),
+        pytest.param("agent-b", 2, 0, 1, 0.5, id="distinct-sources"),
+    ],
+)
+def test_memory_health_distinguishes_source_identity_from_text_repetition(
+    tmp_path: Path,
+    second_agent: str,
+    active: int,
+    decayed: int,
+    duplicate_excess: int,
+    duplicate_density: float,
+) -> None:
+    """Write dedup preserves source identity; health counts textual repetition."""
 
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         store.append_trace(
@@ -174,19 +186,17 @@ def test_memory_health_dedup_collapses_identical_writes(tmp_path: Path) -> None:
         )
         store.append_trace(
             "shared bootstrap content",
-            {"scope": "project:alpha", "agent": "agent-b"},
+            {"scope": "project:alpha", "agent": second_agent},
         )
 
         report = memory_health(store, scope="project:alpha", top_stale=0)
 
-        # The older identical copy is decayed, so the active trace count is 1
-        # and there is no residual duplicate excess in the active row set.
-        assert report["counts"]["by_level"]["trace"]["active"] == 1
-        assert report["counts"]["by_level"]["trace"]["decayed"] == 1
-        assert report["dedup"]["total_traces"] == 1
+        assert report["counts"]["by_level"]["trace"]["active"] == active
+        assert report["counts"]["by_level"]["trace"]["decayed"] == decayed
+        assert report["dedup"]["total_traces"] == active
         assert report["dedup"]["distinct_contents"] == 1
-        assert report["dedup"]["duplicate_excess"] == 0
-        assert report["dedup"]["duplicate_density"] == 0.0
+        assert report["dedup"]["duplicate_excess"] == duplicate_excess
+        assert report["dedup"]["duplicate_density"] == duplicate_density
 
 
 def test_memory_health_handles_empty_scope(tmp_path: Path) -> None:
