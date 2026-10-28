@@ -28,7 +28,6 @@ def runtime(tmp_path, monkeypatch):
     monkeypatch.setenv("LM_DECAY_TTL_ANCHOR", "created")
     monkeypatch.setenv("LM_DECAY_CONCEPT_COVERED", "0")
     monkeypatch.setenv("LM_RECALL_MAP", "0")
-    monkeypatch.setenv("LM_RECALL_SESSION_DEDUP", "0")
     monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "grounded")
     guard = RLock()
     monkeypatch.setattr(server, "RLock", lambda: guard)
@@ -97,7 +96,10 @@ def test_optional_outcome_and_ordinary_recovery(
 
     def capture(stage, response):
         observations.append({"stage": stage, "response": response, **durable(r),
-                             "gate_calls": len(gate_calls), "apply_calls": len(apply_calls)})
+                             "gate_calls": len(gate_calls), "apply_calls": len(apply_calls),
+                             "failure_logs": [record.getMessage() for record in caplog.records
+                                              if record.name == "living_memory.server" and
+                                              record.getMessage().startswith("optional decay sweep failed")]})
 
     async def scenario():
         nonlocal failure_active
