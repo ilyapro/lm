@@ -447,18 +447,29 @@ def test_one_batched_query_vector_per_consumption(tmp_path: Path) -> None:
     ), "no delivered result may be embedded a second time"
 
 
-def test_grounding_runs_once_on_the_live_path() -> None:
+def test_existing_anchor_uses_one_grounding_verdict(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The anchor write reuses the credit verdict; it does not re-ground."""
 
-    import inspect
-
-    source = inspect.getsource(feedback_module)
-    code = "\n".join(
-        line for line in source.splitlines() if not line.lstrip().startswith("#")
+    mcp, store, node_ids, event_id = _seed(tmp_path / "grounding.sqlite3")
+    existing = store.insert_query_anchor(
+        scope=SCOPE, query=QUERY, fingerprint=recall_fingerprint(QUERY, SCOPE), embedding=[1.0, 0.0],
     )
-    assert code.count("ground_results(") == 1
-    assert "ground_token_sets" not in code
-    assert "containment(" not in code
+    calls = []
+    ground = feedback_module.ground_results
+
+    def counting(content, sources, **kwargs):
+        calls.append((content, set(sources)))
+        return ground(content, sources, **kwargs)
+
+    monkeypatch.setattr(feedback_module, "ground_results", counting)
+    try:
+        _consume(mcp)
+        assert calls == [(GROUNDED_TRACE, set(node_ids))]
+        assert store.credited_node_ids(event_id) == {node_ids[USED_INDEX]}
+        assert _edge_targets(store, existing.id) == {node_ids[USED_INDEX]: pytest.approx(ANCHOR_EDGE_WEIGHT)}
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
 
 
 def test_anchor_failure_leaves_the_trace_and_its_credit_intact(

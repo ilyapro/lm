@@ -283,7 +283,8 @@ def test_missing_anchor_required_failure_rolls_back_knowledge_and_all_feedback(r
 
 
 @pytest.mark.parametrize("change", ["create", "replace", "delete"])
-def test_feedback_uses_current_anchor_identity_after_encoding(runtime, change):
+@pytest.mark.parametrize("route", ["lookup", "implicit"])
+def test_feedback_uses_current_anchor_identity_after_encoding(runtime, change, route):
     r = runtime
     other_query = "other pending feedback query"
     with r.guard:
@@ -303,7 +304,10 @@ def test_feedback_uses_current_anchor_identity_after_encoding(runtime, change):
                     results=[{"node_id": other.id, "vector_score": 1.0}],
                 )
             r.feedback_hold = True
-            operation = asyncio.create_task(call(owner, "memory_lookup", node_ids=[r.node.id, other.id]))
+            operation = asyncio.create_task(
+                call(owner, "memory_lookup", node_ids=[r.node.id, other.id]) if route == "lookup" else
+                call(owner, "memory_remember", content=CONTENT + " " + other.content, context={"scope": SCOPE})
+            )
             created = None
             try:
                 assert await asyncio.to_thread(r.entered.wait, 4)
@@ -327,7 +331,7 @@ def test_feedback_uses_current_anchor_identity_after_encoding(runtime, change):
                 assert r.store.credited_node_ids(second.id) == {other.id}
                 assert r.store.list_query_anchor_edges(anchor_id=final.id)[0].hits == 1
             assert r.batches == (
-                [(QUERY, other_query)] if change == "create" else
+                [(QUERY, other_query) if route == "lookup" else (other_query, QUERY)] if change == "create" else
                 [(other_query,), (QUERY,)] if change == "delete" else [(other_query,)]
             )
 

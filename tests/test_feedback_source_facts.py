@@ -1,5 +1,7 @@
 """Implicit feedback preserves each event's corpus, ranks and source lineage."""
 
+import sqlite3
+
 import pytest
 
 from living_memory import feedback
@@ -99,3 +101,39 @@ def test_overlapping_events_keep_individual_grounding_ranks_and_credit(sources, 
     before = [store.get_node(node.id).usefulness_score for node in nodes]
     mcp.tools["memory_remember"](CONTENT + " confirmed", CONTEXT)
     assert [store.get_node(node.id).usefulness_score for node in nodes] == before
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_required_source_failure_leaves_knowledge_and_feedback_unchanged(sources, existing):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    events = overlapping_events(store, nodes, existing=existing)
+    with store.transaction():
+        store.connection.execute("UPDATE nodes SET content = CAST(x'ff' AS TEXT) WHERE id = ?",
+                                 (nodes[0].id,))
+    before = store.count_query_anchors()
+    with pytest.raises(sqlite3.OperationalError, match="Could not decode to UTF-8"):
+        mcp.tools["memory_remember"](CONTENT, CONTEXT)
+    assert store.connection.execute("SELECT count(*) FROM nodes").fetchone()[0] == len(nodes)
+    assert all(store.get_recall_event(event.id).feedback_trace_id is None for event in events)
+    assert all(not store.credited_node_ids(event.id) for event in events)
+    assert store.count_query_anchors() == before
+    assert not store.list_query_anchor_edges()
+    assert not store.connection.in_transaction
+
+
+def test_self_source_is_not_grounded_or_recorded_in_provenance(sources):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    trace, concept = nodes[0], nodes[3]
+    event = store.record_recall_event(
+        query="source identity", scope=trace.scope, ambient_context=CONTEXT,
+        results=[{"node_id": node_id} for node_id in [trace.id, "missing", concept.id, concept.id]],
+    )
+    with store.transaction():
+        outcome = feedback.apply_pending_recall_feedback(store, trace)
+    assert outcome.trace.source_traces == []
+    assert outcome.trace.provenance["recalled_nodes"] == [concept.id]
+    assert outcome.trace.provenance["prior_recalls"][0]["result_ids"] == [concept.id, concept.id]
+    assert store.credited_node_ids(event.id) == {concept.id}
+    assert store.get_node(trace.id).usefulness_score == 0.0
