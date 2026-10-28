@@ -57,7 +57,8 @@ def procedure(store, *, declared=True, scope=SCOPE, group="release", texts=TEXTS
         "scope": scope, "procedure_id": "workshop_release", "task_pattern": group,
         **({"step_order": index + 1} if declared else {}),
     }) for index, text in enumerate(texts)]
-    (node, _), = c._materialize_procedural_schemas(store, traces, min_cluster_size=3)
+    nodes = c._materialize_procedural_schemas(store, traces, min_cluster_size=3)
+    node = next(node for node, _ in nodes if node.scope == scope and node.context["task_pattern"] == group)
     return traces, node
 
 

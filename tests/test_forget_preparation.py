@@ -84,6 +84,8 @@ def test_tools_advance_during_preparation_and_final_writer_uses_current_union(mc
 def test_current_inputs_revalidate_prepared_digest(mcp, monkeypatch, change):
     store = mcp.memory_store
     traces = sources(store)
+    if change == "content":
+        traces[1] = store.create_node(level="concept", content=TEXTS[1], context={"scope": SCOPE})
     owner = derived(store, "release", traces)
     with preparing(mcp, monkeypatch, traces[0]) as (_, forgotten):
         with MemoryStore(store.db_path) as writer:
@@ -168,7 +170,11 @@ def test_readers_see_atomic_outcome_with_concurrent_work(mcp, monkeypatch, fail)
     def read():
         assert not mcp.test_guard.acquire(blocking=False)
         attempted.set()
-        return mcp.tools["memory_lookup"](node_id=owner.id)
+        with mcp.test_guard:
+            if fail:
+                with sqlite3.connect(store.db_path) as reader:
+                    assert list(reader.iterdump()) == before
+            return mcp.tools["memory_lookup"](node_id=owner.id)
 
     with preparing(mcp, monkeypatch, traces[0], release=prepared_release) as (workers, forgotten):
         independent = workers.submit(mcp.tools["memory_remember"], "Workshop lights turn off at night.",
@@ -194,6 +200,3 @@ def test_readers_see_atomic_outcome_with_concurrent_work(mcp, monkeypatch, fail)
         current = lookup.result(timeout=10)["results"][0]
         assert (TEXTS[0] in current["content"]) == fail
         assert store.get_node(independent["node"]["id"]).content == "Workshop lights turn off at night."
-        if fail:
-            with sqlite3.connect(store.db_path) as reader:
-                assert list(reader.iterdump()) == before
