@@ -4664,28 +4664,36 @@ class MemoryStore:
                 best[node_id] = score
         return best
 
-    def promotion_candidate_ids(self, *, limit: int) -> list[str]:
-        """Bound the project concepts whose existing vectors a pass can compare.
+    def promotion_candidate_page(
+        self, *, limit: int, after: tuple[str, str] = ("", ""),
+        through_rowid: int | None = None,
+    ) -> tuple[list[Node], int]:
+        """Page existing project representatives in a finite operation window.
 
-        Promotion uses whole-concept representatives, not recall's max-pooled
-        content chunks. Without those representatives it cannot admit sources.
-        This read never prepares or repairs embeddings.
+        The first read pins the insertion boundary; subsequent pages advance by
+        scope/id through the active level/source index. New rows belong to a
+        later pass. No embeddings are prepared or repaired by this read.
         """
+        if through_rowid is None:
+            through_rowid = int(self._conn.execute(
+                "SELECT COALESCE(MAX(rowid), 0) FROM nodes"
+            ).fetchone()[0])
         if limit <= 0 or not self._node_embedding_column_present():
-            return []
+            return [], through_rowid
         rows = self._conn.execute(
             """
-            SELECT id FROM nodes
+            SELECT * FROM nodes INDEXED BY idx_nodes_active_level_source
             WHERE level = 'concept' AND decayed = 0 AND embedding IS NOT NULL
-              AND scope GLOB 'project:*'
+              AND scope >= 'project:' AND scope < 'project;'
+              AND (scope, id) > (?, ?) AND rowid <= ?
               AND NOT EXISTS (
                   SELECT 1 FROM connections WHERE target_id = nodes.id AND type = 'supersedes'
               )
             ORDER BY scope, id LIMIT ?
             """,
-            (int(limit),),
+            (*after, through_rowid, int(limit)),
         ).fetchall()
-        return [str(row["id"]) for row in rows]
+        return [_node_from_row(row) for row in rows], through_rowid
 
     def find_similar_by_embedding(
         self,

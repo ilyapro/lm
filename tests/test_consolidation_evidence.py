@@ -175,7 +175,7 @@ def test_cross_scope_writer_rechecks_prepared_candidates(tmp_path, monkeypatch, 
         prepare = c._promotion_candidates
 
         def changed(*args, **kwargs):
-            snapshot = prepare(*args, **kwargs)
+            snapshot = list(prepare(*args, **kwargs))
             if change == "scope":
                 store.update_node(gamma.id, context={"scope": beta.scope})
             elif change == "group":
@@ -208,25 +208,25 @@ def test_pass_reuses_candidates_and_cached_trace_encodings(tmp_path, monkeypatch
         counts = Counter()
         encoded = []
         original_batch = LocalEmbeddingModel.embed_batch
-        original_ids = store.promotion_candidate_ids
+        original_page = store.promotion_candidate_page
 
         def batch(self, texts):
             encoded.extend(text for text in texts if text in {t.content for t in traces})
             return original_batch(self, texts)
 
-        def ids(**kwargs):
+        def page(**kwargs):
             counts["candidate_reads"] += 1
-            return original_ids(**kwargs)
+            return original_page(**kwargs)
 
         monkeypatch.setattr(LocalEmbeddingModel, "embed_batch", batch)
-        monkeypatch.setattr(store, "promotion_candidate_ids", ids)
+        monkeypatch.setattr(store, "promotion_candidate_page", page)
         result = c.memory_consolidate(store, scope=SCOPE)
         assert len(result.concepts_created) == 2
-        assert counts["candidate_reads"] == 1
+        assert counts["candidate_reads"] == 2
         assert Counter(encoded) == Counter(t.content for t in traces)
         encoded.clear()
         c.memory_consolidate(store, scope=SCOPE)
-        assert counts["candidate_reads"] == 2
+        assert counts["candidate_reads"] == 4
         assert encoded == []
 
 
@@ -238,7 +238,7 @@ def test_manual_mcp_releases_store_during_cross_scope_preparation(tmp_path, monk
     prepare = c._promotion_candidates
 
     def held(*args, **kwargs):
-        snapshot = prepare(*args, **kwargs)
+        snapshot = list(prepare(*args, **kwargs))
         prepared.set()
         assert release.wait(15)
         return snapshot

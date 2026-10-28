@@ -29,7 +29,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from math import log1p
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 import logging
 import os
 import re
@@ -67,7 +67,7 @@ DEFAULT_RECENT_LIMIT = 10_000
 JACCARD_SIMILARITY_THRESHOLD = 0.58
 EMBEDDING_SIMILARITY_THRESHOLD = 0.65
 CROSS_SCOPE_PROMOTION_THRESHOLD = 0.7
-CROSS_SCOPE_CANDIDATE_LIMIT = 100_000
+_PROMOTION_READ_BATCH = 500
 PROCEDURAL_MIN_CLUSTER_SIZE = 3
 _STEP_TEXT_KEYS = ("step_description", "step_content")
 DIGEST_MAX_CHARS = 1200
@@ -590,10 +590,10 @@ def memory_consolidate(
     projects = [node for node in (*result.concepts_created, *result.concepts_updated)
                 if node.scope.startswith("project:") and node.embedding]
     if projects:
-        candidates = _promotion_candidates(store, step=step)
+        candidates = _promotion_matches(store, projects, step=step)
         for concept in projects:
             result.concepts_promoted.extend(
-                _cross_scope_promotion(store, concept, candidates=candidates, step=step)
+                _cross_scope_promotion(store, concept, candidates=candidates[concept.id], step=step)
             )
 
     with step():
@@ -2018,22 +2018,47 @@ def _raw_tokens(text: str) -> list[str]:
 
 def _promotion_candidates(
     store: MemoryStore, *, step: Callable[[], AbstractContextManager[Any]] = nullcontext,
-) -> list[Node]:
-    """Read existing representatives once per pass, releasing between batches.
-
-    Detached nodes are only search inputs. The writer rereads selected sources
-    and their validity; this preparation never encodes the other projects.
-    """
-    with step():
-        ids = store.promotion_candidate_ids(limit=CROSS_SCOPE_CANDIDATE_LIMIT)
-    candidates = []
-    for start in range(0, len(ids), _CACHE_READ_BATCH):
+) -> Iterator[Node]:
+    """Stream existing representatives once, releasing between bounded pages."""
+    after = ("", "")
+    through_rowid = None
+    while True:
         with step():
-            candidates.extend(
-                node for node in store.get_nodes(ids[start:start + _CACHE_READ_BATCH]).values()
-                if _promotion_source(node)
+            page, through_rowid = store.promotion_candidate_page(
+                limit=_PROMOTION_READ_BATCH, after=after, through_rowid=through_rowid,
             )
-    return candidates
+        if not page:
+            return
+        after = (page[-1].scope, page[-1].id)
+        yield from (node for node in page if _promotion_source(node))
+
+
+def _promotion_matches(
+    store: MemoryStore, concepts: Sequence[Node],
+    *, step: Callable[[], AbstractContextManager[Any]] = nullcontext,
+) -> dict[str, list[Node]]:
+    """Share each candidate read across seeds, retaining only the best per scope.
+
+    Scoring happens outside the store guard. Search snapshots confer no write
+    authority: each promotion rereads current sources and similarity below.
+    """
+    selected: dict[str, dict[str, tuple[Node, float]]] = {node.id: {} for node in concepts}
+    groups: dict[str | None, list[Node]] = {}
+    for concept in concepts:
+        groups.setdefault(_cluster_group(concept)[1], []).append(concept)
+    for candidate in _promotion_candidates(store, step=step):
+        for concept in groups.get(_cluster_group(candidate)[1], []):
+            if candidate.scope == concept.scope:
+                continue
+            similarity = cosine_similarity(concept.embedding, candidate.embedding)
+            if similarity < CROSS_SCOPE_PROMOTION_THRESHOLD:
+                continue
+            best = selected[concept.id].get(candidate.scope)
+            if best is None or (similarity, candidate.confidence, candidate.usefulness_score) > (
+                best[1], best[0].confidence, best[0].usefulness_score
+            ):
+                selected[concept.id][candidate.scope] = candidate, similarity
+    return {key: [node for node, _ in matches.values()] for key, matches in selected.items()}
 
 
 def _promotion_source(node: Node | None) -> bool:
@@ -2051,7 +2076,7 @@ def _cross_scope_promotion(
         if not _promotion_source(concept) or _is_superseded(store, concept.id):
             return []
     if candidates is None:
-        candidates = _promotion_candidates(store, step=step)
+        candidates = _promotion_matches(store, [concept], step=step)[concept.id]
 
     # Scoring is pure computation on this operation's detached snapshot.
     group = _cluster_group(concept)[1]
