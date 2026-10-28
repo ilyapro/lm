@@ -162,8 +162,9 @@ def test_native_exact_lookup_keeps_out_of_scope_and_decayed_bodies(native, decay
         assert response["scope_mismatches"]
         with guard, store.transaction():
             store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (beta,))
+        assert mcp.tools["memory_lookup"](node_id=beta, scope=SCOPE) == response
         with pytest.raises(TypeError):
-            mcp.tools["memory_lookup"](node_id=beta, scope=SCOPE)
+            mcp.tools["memory_lookup"](node_id=beta, scope=SCOPE, view="full")
 
 
 @pytest.mark.parametrize("entry", ["graph", "anchor"])
