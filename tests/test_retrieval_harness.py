@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,8 @@ import pytest
 
 from living_memory import retrieval_harness as harness
 from living_memory.config import MemoryConfig
+from living_memory.delivery import DeliveryHistory, shape_recall_results
+from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import MemoryStore
 
 SCOPE = "project:harness-fixture"
@@ -516,6 +519,7 @@ def _res(
     vector: float = 0.0,
     graph: float = 0.0,
     trigger: float = 0.0,
+    withheld: str | None = None,
 ) -> harness.HarnessResult:
     methods = tuple(
         name
@@ -538,7 +542,88 @@ def _res(
         graph_score=graph,
         trigger_score=trigger,
         methods=methods,
+        withheld=withheld,
     )
+
+
+@pytest.mark.parametrize("form", ["drop", "stub"])
+def test_native_qualification_pair_keeps_reference_but_only_content_earns_hit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, form: str
+) -> None:
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_RECALL_GATE_FORM", form)
+    query = "Checkpoint cursor resumes from the last acked offset"
+    with MemoryStore(tmp_path / "paired.sqlite3") as store:
+        node = store.append_trace(query, {"scope": SCOPE})
+        service = MemoryRecallService(store)
+        item = replace(_item("paired", "content_grounded", [node.id], tail=True), query=query)
+        for threshold, withheld in (("0.35", None), ("2", "below_threshold")):
+            monkeypatch.setenv("LM_RECALL_MIN_SCORE", threshold)
+            native = service.memory_recall(
+                query, scope=SCOPE, log_access=False, log_event=False
+            )
+            delivered = shape_recall_results(
+                native, delivery_history=DeliveryHistory(), snippet_max_chars=0,
+                context_value_max_chars=0, session_dedup=False, view="knowledge",
+            )
+            assert len(delivered) == 1
+            assert delivered[0]["content_ref"]["node_id"] == node.id
+            assert store.get_node(delivered[0]["content_ref"]["node_id"]).content == query
+            assert delivered[0]["content"] == ("" if withheld else query)
+            assert native[0].withheld == withheld
+
+            run = harness.run_item(service, item)
+            assert run.node_ids == (node.id,)
+            assert run.to_dict()["results"][0]["withheld"] == withheld
+            event = harness.to_replay_event(run)
+            assert event.useful_ids == {node.id}
+            assert event.results[0].withheld == withheld
+            metrics = harness.compute_metrics([run])
+            for block in (metrics["overall"], metrics["tail"], *metrics["per_channel"].values()):
+                assert block["events_with_useful"] == 1
+                for key in ("hit@1", "hit@5", "hit@10", "mrr"):
+                    assert block[key] == (0.0 if withheld else 1.0)
+            assert metrics["channel_attribution"]["items_with_relevant_hit"] == int(not withheld)
+
+
+def test_withheld_relevant_result_cannot_earn_hit_or_compress_later_ranks() -> None:
+    run = harness.HarnessRun(
+        item=_item("mixed", "content_grounded", ["reference", "answer", "absent"], tail=True),
+        results=(
+            _res("reference", 1, graph=1.0, withheld="below_threshold"),
+            _res("other", 2, bm25=1.0, withheld="below_threshold"),
+            _res("answer", 3, vector=0.5),
+        ),
+    )
+    assert harness.live_order(run) == ["reference", "other", "answer"]
+    assert harness.channel_order(run, "graph") == ["reference", "other", "answer"]
+    assert harness.zero_graph_order(run) == ["other", "answer"]
+    metrics = harness.compute_metrics([run])
+    overall = metrics["overall"]
+    assert overall["result_basis"] == "qualified"
+    assert overall["useful_results"] == 3
+    assert overall["hit@1"] == 0.0
+    assert overall["hit@5"] == 1.0
+    assert overall["mrr"] == pytest.approx(1 / 3, abs=5e-7)
+    assert overall["graph_unique_share"] == 0.0
+    assert overall["graph_zeroed"]["mrr"] == 0.5
+    assert overall["graph_zeroed"]["dropped_entirely"] == 0.0
+    assert metrics["per_channel"]["vector"]["mrr"] == 1.0
+    assert metrics["per_channel"]["graph"]["mrr"] == overall["mrr"]
+    attribution = metrics["channel_attribution"]
+    assert attribution["methods"] == {"bm25": 0, "vector": 1, "graph": 0, "trigger": 0}
+    assert attribution["per_stratum"]["content_grounded"]["method_sets"] == {"vector": 1}
+
+
+def test_reference_only_graph_hit_stays_a_miss_in_graph_ablation() -> None:
+    run = harness.HarnessRun(
+        item=_item("reference", "role_query", ["reference"], tail=False),
+        results=(_res("reference", 1, graph=1.0, withheld="below_threshold"),),
+    )
+    block = harness.compute_metrics([run])["overall"]
+    assert block["events_with_useful"] == block["useful_results"] == 1
+    assert block["mrr"] == block["graph_unique_share"] == 0.0
+    assert set(block["graph_zeroed"].values()) == {0.0}
 
 
 @pytest.fixture()
@@ -692,13 +777,14 @@ def test_end_to_end_metrics_match_an_independent_recomputation(
     with_relevant = 0
     for run in report["runs"]:
         relevant = set(run["relevant_node_ids"])
+        withheld = {result["node_id"] for result in run["results"] if result["withheld"]}
         assert relevant, "every goldset item has at least one relevant node"
         with_relevant += 1
         rank = next(
             (
                 index + 1
                 for index, node_id in enumerate(run["ranked_node_ids"])
-                if node_id in relevant
+                if node_id in relevant and node_id not in withheld
             ),
             None,
         )

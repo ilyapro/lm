@@ -27,6 +27,7 @@ reaching a new one it does not share a fingerprint with.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,14 @@ FRESH_NODE_STAMP = "2026-03-01T00:00:00Z"
 ANCHOR_QUERY = "поревьювь мердж-реквест 9443 по чеклисту"
 REPEAT_QUERY = ANCHOR_QUERY
 DISJOINT_QUERY = "глянь мердж-реквест 9443 по чеклисту"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def hash_backend():
+    """Disjoint fixture vocabulary must have no semantic vector similarity."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+        yield
 
 
 def _set_node_created_at(store: MemoryStore, node_id: str, created_at: str) -> None:
@@ -343,6 +352,8 @@ def test_anchors_do_not_bury_the_fresh_node(
 
     assert with_anchors["provenance"]["anchor_seeding"] is True
     assert without_anchors["provenance"]["anchor_seeding"] is False
+    assert with_anchors["provenance"]["embedding_backend"] == "hash"
+    assert without_anchors["provenance"]["embedding_backend"] == "hash"
     # Both arms read the same corpus, so bucket membership is identical and the
     # comparison is like for like. Without this the two arms could be scoring
     # different item sets.
@@ -372,6 +383,11 @@ def test_anchors_do_not_bury_the_fresh_node(
     assert unseeded == {key: 0 for key in unseeded}
     assert seeded["content_grounded-repeat"] > 0
     assert seeded["content_grounded-disjoint"] > 0
+    for run in with_anchors["runs"]:
+        for result in run["results"]:
+            if result["node_id"] in targets:
+                assert result["graph_score"] > 0
+                assert "graph" in result["methods"]
 
 
 def test_slice_reports_a_buried_fresh_node_the_overall_bucket_hides() -> None:
@@ -440,6 +456,28 @@ def test_slice_reports_a_buried_fresh_node_the_overall_bucket_hides() -> None:
     assert slice_block["hit@5"] == 0.0
     assert slice_block["hit@10"] == 1.0
     assert slice_block["mrr"] == pytest.approx(1 / 7)
+
+    # A relevant fresh reference stays in this slice's denominator and raw
+    # ranking, but only the qualified old target can earn an overall hit.
+    reference_run = replace(run, results=tuple(
+        replace(result, withheld="below_threshold") if result.node_id == "fresh-1" else result
+        for result in run.results
+    ))
+    metrics = harness.compute_metrics([reference_run], {item.query_id: annotation})
+    assert reference_run.node_ids == run.node_ids
+    assert metrics["overall"]["mrr"] == 1.0
+    assert metrics["anchor_holdout"]["exact_repeat"]["mrr"] == 1.0
+    assert metrics["fresh_node_visibility"]["events_with_useful"] == 1
+    assert metrics["fresh_node_visibility"]["hit@10"] == 0.0
+    assert metrics["fresh_node_visibility"]["mrr"] == 0.0
+
+    all_references = replace(run, results=tuple(
+        replace(result, withheld="below_threshold") for result in run.results
+    ))
+    metrics = harness.compute_metrics([all_references], {item.query_id: annotation})
+    assert metrics["anchor_holdout"]["exact_repeat"]["events_with_useful"] == 1
+    assert metrics["anchor_holdout"]["exact_repeat"]["mrr"] == 0.0
+    assert metrics["channel_attribution"]["items_with_relevant_hit"] == 0
 
 
 def test_anchor_seeding_switch_matches_an_unpopulated_corpus(
