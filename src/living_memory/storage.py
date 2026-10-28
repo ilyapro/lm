@@ -44,7 +44,7 @@ from living_memory.relations import (
     correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
 )
 from living_memory.phase import PhaseManager
-from living_memory.scope import ScopePlan, normalize_scope
+from living_memory.scope import ScopePlan, normalize_scope, resolve_scope
 from living_memory.temporal import parse_timestamp
 
 SCHEMA_VERSION = 8
@@ -2882,7 +2882,7 @@ class MemoryStore:
         ).fetchall()
         return [_recall_event_from_row(row) for row in rows]
 
-    def recall_deliveries_for_transport(
+    def recall_deliveries(
         self,
         transport_session_id: str | None,
         node_ids: Iterable[str],
@@ -2890,6 +2890,7 @@ class MemoryStore:
         earliest: datetime,
         latest: datetime,
         limit: int = 200,
+        context: Mapping[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Newest delivery facts for requested ids in a bounded session window.
 
@@ -2899,17 +2900,45 @@ class MemoryStore:
         UTC seconds as feedback; ordering remains stored created_at, rowid,
         then result position. The first eligible occurrence of each id wins.
         No delivery-history projection or its availability state is consulted.
+        Transport always identifies its own deliveries. Explicit callers may
+        also supply a durable session: reconnects require equal session, no
+        both-present task/agent conflicts, and the same recall scope. Lookup
+        omits context and retains its transport-only selection.
         """
         requested = set(node_ids)
         if not transport_session_id or not requested or limit <= 0:
             return {}
+        params = {
+            **_recall_identity(context),
+            "transport_session_id": str(transport_session_id),
+            "limit": int(limit),
+            "requested": _json_dumps(sorted(requested)),
+        }
+        predicates = ["transport_session_id = :transport_session_id"]
+        if params["session_id"] and params["session_id"].strip():
+            params["scope"] = resolve_scope(ambient_context=context, store=self).requested_scope
+            predicates.append(" AND ".join([
+                "session_id = :session_id",
+                "COALESCE(transport_session_id, '') != :transport_session_id",
+                _recall_scope_match_sql(params, allow_transport=False),
+                *(_compatible_recall_identity_sql(field) for field in ("task", "agent")
+                  if params[field]),
+            ]))
+        # Separate indexed probes avoid an OR scan. They are disjoint, capped
+        # independently, then share one newest-event cap before result/time tests.
+        probes = " UNION ALL ".join(
+            f"""SELECT * FROM (
+                SELECT rowid AS event_rowid, id, created_at FROM recall_events
+                WHERE {predicate}
+                ORDER BY created_at DESC, rowid DESC LIMIT :limit
+            )"""
+            for predicate in predicates
+        )
         rows = self._conn.execute(
             f"""
             WITH recent AS MATERIALIZED (
-                SELECT rowid AS event_rowid, id, created_at
-                FROM recall_events
-                WHERE transport_session_id = ?
-                ORDER BY created_at DESC, rowid DESC LIMIT ?
+                SELECT * FROM ({probes})
+                ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
             )
             SELECT event.id AS event_id, event.query, event.scope, recent.created_at,
                    json_extract(result.value, '$.node_id') AS node_id,
@@ -2925,10 +2954,10 @@ class MemoryStore:
             JOIN recall_events AS event ON event.rowid = recent.event_rowid
             JOIN json_each(event.results) AS result
             WHERE CAST(json_extract(result.value, '$.node_id') AS TEXT)
-                  IN (SELECT value FROM json_each(?))
+                  IN (SELECT value FROM json_each(:requested))
             ORDER BY recent.created_at DESC, recent.event_rowid DESC, result.key
             """,
-            (str(transport_session_id), int(limit), _json_dumps(sorted(requested))),
+            params,
         )
         hits: dict[str, dict[str, Any]] = {}
         try:
@@ -3479,13 +3508,9 @@ class MemoryStore:
     ) -> list[RecallEvent]:
         """Return bounded pending recalls with compatible work or transport identity."""
 
-        context_data = dict(context or {})
         params = {
+            **_recall_identity(context),
             "scope": scope,
-            "session_id": _optional_str(context_data.get("session_id") or context_data.get("session")),
-            "task": _optional_str(context_data.get("task")),
-            "agent": _optional_str(context_data.get("agent")),
-            "transport_session_id": _optional_str(context_data.get("transport_session_id")),
             "limit": max(1, int(limit)),
         }
         matches = _pending_recall_match_sql(params)
@@ -5725,6 +5750,9 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_recall_events_transport_created
                     ON recall_events(transport_session_id, created_at DESC);
 
+                CREATE INDEX IF NOT EXISTS idx_recall_events_session_created
+                    ON recall_events(session_id, created_at DESC);
+
                 -- The curtail rule's delivery window, keyed the way the map
                 -- itself is keyed: equality on (scope, task_pattern), so
                 -- recent_recall_map_history sorts two bounded ranges of this
@@ -6843,6 +6871,31 @@ def _recall_attestation_from_row(row: sqlite3.Row) -> RecallAttestation:
     )
 
 
+def _recall_identity(context: Mapping[str, Any] | None) -> dict[str, str | None]:
+    """Read the persisted caller fields, including the existing session alias."""
+    context = context or {}
+    return {
+        "session_id": _optional_str(context.get("session_id") or context.get("session")),
+        **{field: _optional_str(context.get(field))
+           for field in ("task", "agent", "transport_session_id")},
+    }
+
+
+def _same_recall_identity_sql(field: str) -> str:
+    return f"COALESCE({field}, '') = :{field}"
+
+
+def _compatible_recall_identity_sql(field: str) -> str:
+    return f"COALESCE({field}, '') IN ('', :{field})"
+
+
+def _recall_scope_match_sql(context: Mapping[str, Any], *, allow_transport: bool) -> str:
+    scopes = ["scope = :scope", "requested_scope = :scope"]
+    if allow_transport and context["transport_session_id"]:
+        scopes.append(_same_recall_identity_sql("transport_session_id"))
+    return f"({' OR '.join(scopes)})"
+
+
 def _pending_recall_match_sql(context: Mapping[str, Any]) -> list[tuple[str, str]]:
     """Require a shared work/session identity or a compatible equal transport.
 
@@ -6852,17 +6905,8 @@ def _pending_recall_match_sql(context: Mapping[str, Any]) -> list[tuple[str, str
     Missing identity and matching agent names are never positive evidence.
     """
 
-    def same(field: str) -> str:
-        return f"COALESCE({field}, '') = :{field}"
-
-    def compatible(field: str) -> str:
-        return f"COALESCE({field}, '') IN ('', :{field})"
-
     explicit = [field for field in ("task", "session_id") if context[field]]
-    scopes = ["scope = :scope", "requested_scope = :scope"]
-    if context["transport_session_id"]:
-        scopes.append(same("transport_session_id"))
-    scope_match = f"({' OR '.join(scopes)})"
+    scope_match = _recall_scope_match_sql(context, allow_transport=True)
     matches = []
     missing = []
     for position, field in enumerate(explicit):
@@ -6871,15 +6915,15 @@ def _pending_recall_match_sql(context: Mapping[str, Any]) -> list[tuple[str, str
         # remain vetoes; neither agent nor transport overrides them.
         index = "idx_recall_pending_task_session" if "task" in explicit else "idx_recall_pending_session"
         matches.append((index, " AND ".join([
-            *missing, same(field),
-            *(compatible(other) for other in explicit[position + 1:]),
+            *missing, _same_recall_identity_sql(field),
+            *(_compatible_recall_identity_sql(other) for other in explicit[position + 1:]),
             scope_match,
         ])))
         missing.append(f"COALESCE({field}, '') = ''")
     if context["transport_session_id"]:
-        clauses = [same("transport_session_id"), *missing]
+        clauses = [_same_recall_identity_sql("transport_session_id"), *missing]
         if context["agent"]:
-            clauses.append(compatible("agent"))
+            clauses.append(_compatible_recall_identity_sql("agent"))
         # On multiplexed connections, missing explicit fields are exact index
         # keys too: another task/session on this transport must not widen work.
         suffix = "_task_session" if "task" in explicit else "_session" if explicit else ""

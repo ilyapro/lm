@@ -107,7 +107,7 @@ def test_churning_lookup_reads_current_source_without_credit(runtime, monkeypatc
 def test_optional_preparation_failure_skips_credit_and_next_call_can_credit_once(runtime, monkeypatch, caplog, fault):
     r = runtime
     target, name = {
-        "delivery": (r.store, "recall_deliveries_for_transport"),
+        "delivery": (r.store, "recall_deliveries"),
         "anchor": (r.store, "has_query_anchor"),
         "encoding": (feedback, "_encode_missing_feedback_queries"),
     }[fault]
@@ -162,7 +162,7 @@ def test_source_failure_propagates_after_optional_preparation_failure(runtime, m
     async def scenario():
         async with Client(r.mcp) as owner:
             await recall(owner)
-            monkeypatch.setattr(r.store, "recall_deliveries_for_transport", fail)
+            monkeypatch.setattr(r.store, "recall_deliveries", fail)
             with r.guard:
                 r.store.connection.set_authorizer(authorize)
             try:
@@ -179,7 +179,7 @@ def test_source_failure_propagates_after_optional_preparation_failure(runtime, m
 
 
 @pytest.mark.parametrize("route", ["recall", "explicit", "teach"])
-@pytest.mark.parametrize("read", ["recall_deliveries_for_transport", "has_query_anchor"])
+@pytest.mark.parametrize("read", ["recall_deliveries", "has_query_anchor"])
 def test_required_preparation_read_failure_precedes_mutation(runtime, monkeypatch, route, read):
     r = runtime
 

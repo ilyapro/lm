@@ -1054,6 +1054,7 @@ def _register_tools(
             store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
             transport_session_id=_context_transport(context),
             trace_content=content, trace_context=context,
+            context=context,
         ) as feedback_preparation:
             auto_decay = _maybe_decay_sweep(store)
             # Knowledge and required recall feedback have one durable outcome.
@@ -1082,6 +1083,7 @@ def _register_tools(
                         irrelevant,
                         via_tool="memory_remember",
                         source_id=node.id,
+                        context=context,
                         transport_session_id=_context_transport(context),
                         agent=_ambient_text(context, "agent"),
                         preparation=feedback_preparation,
@@ -1144,6 +1146,7 @@ def _register_tools(
         with prepared_feedback(
             store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
             transport_session_id=_context_transport(context),
+            context=context,
         ) as feedback_preparation:
             with store.transaction():
                 # Marks must precede implicit feedback, before the corrective
@@ -1160,6 +1163,7 @@ def _register_tools(
                         irrelevant,
                         via_tool="memory_teach",
                         source_id="",
+                        context=context,
                         transport_session_id=_context_transport(context),
                         agent=_ambient_text(context, "agent"),
                         preparation=feedback_preparation,
@@ -1286,6 +1290,7 @@ def _register_tools(
         if view not in ("knowledge", "full"):
             raise ValueError("view must be 'knowledge' or 'full'")
         ambient_context = _with_transport_identity(ambient_context)
+        feedback_context = {**(ambient_context or {}), **({"scope": scope} if scope else {})}
         raw_transport_id = (ambient_context or {}).get(_TRANSPORT_SESSION_KEY)
         # Mirror storage's stamping (str() of any non-None value) so the dedup
         # probe compares equal to the recall_events.transport_session_id column.
@@ -1301,12 +1306,14 @@ def _register_tools(
         with prepared_feedback(
             store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
             transport_session_id=transport_session_id,
+            context=feedback_context,
         ) as feedback_preparation:
             # Resolve explicit marks before this call's own event exists, so a
             # mark can only name an earlier delivery; recorded after, with the
             # new event id as their source.
             pending_marks = (
-                resolve_explicit_marks(store, used, irrelevant, transport_session_id)
+                resolve_explicit_marks(store, used, irrelevant, transport_session_id,
+                                       context=feedback_context)
                 if has_explicit_marks(used, irrelevant)
                 else None
             )

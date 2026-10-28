@@ -31,6 +31,7 @@ _ADDITIVE_TABLES = {
 ADDITIVE_OBJECTS = _ADDITIVE_TABLES | PENDING_RECALL_INDEXES | {
     "idx_transcript_grounding_node_graded",
     "idx_recall_feedback_marks_event",
+    "idx_recall_events_session_created",
 }
 
 

@@ -731,6 +731,8 @@ def resolve_explicit_marks(
     irrelevant: Sequence[Any] | None,
     transport_session_id: str | None,
     occurred_at: str | datetime | None = None,
+    *,
+    context: Mapping[str, Any] | None = None,
 ) -> list[ExplicitMark]:
     """Accept or drop each marked id against this transport's deliveries.
 
@@ -747,7 +749,7 @@ def resolve_explicit_marks(
     marks = _explicit_mark_requests(used, irrelevant, transport_session_id)
     hits = _current_deliveries(
         store, [mark.node_id for mark in marks if mark.reject_reason is None],
-        transport_session_id, occurred_at,
+        transport_session_id, occurred_at, context=context,
     )
     events: dict[str, RecallEvent] = {}
     for mark in marks:
@@ -806,6 +808,7 @@ def _explicit_mark_requests(
 def _current_deliveries(
     store: MemoryStore, node_ids: Iterable[str], transport_session_id: str | None,
     occurred_at: str | datetime | None,
+    *, context: Mapping[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
     requested = tuple(node_ids)
     if not transport_session_id or not requested:
@@ -815,9 +818,9 @@ def _current_deliveries(
     )
     if instant is None:
         return {}
-    return store.recall_deliveries_for_transport(
+    return store.recall_deliveries(
         transport_session_id, requested, earliest=instant - _lookup_credit_window(),
-        latest=instant, limit=_LOOKUP_CREDIT_EVENT_LIMIT,
+        latest=instant, limit=_LOOKUP_CREDIT_EVENT_LIMIT, context=context,
     )
 
 
@@ -830,6 +833,7 @@ def apply_explicit_marks(
     source_id: str,
     transport_session_id: str | None,
     agent: str | None = None,
+    context: Mapping[str, Any] | None = None,
     resolved: list[ExplicitMark] | None = None,
     preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
 ) -> ExplicitMarks:
@@ -860,7 +864,8 @@ def apply_explicit_marks(
         marks = (
             resolved
             if resolved is not None
-            else resolve_explicit_marks(store, used, irrelevant, transport_session_id)
+            else resolve_explicit_marks(store, used, irrelevant, transport_session_id,
+                                        context=context)
         )
         outcome.marks = list(marks)
         if not marks:
@@ -957,6 +962,7 @@ def _feedback_queries(
     transport_session_id: str | None, occurred_at: str | datetime | None,
     lookup_ids: Sequence[str] | None, trace_content: str | None,
     trace_context: Mapping[str, Any] | None,
+    context: Mapping[str, Any] | None,
 ) -> dict[tuple[str, str], str]:
     """Read possible anchor inputs; never reserve events, claims or targets."""
     queries: dict[tuple[str, str], str] = {}
@@ -976,6 +982,7 @@ def _feedback_queries(
         hits = _current_deliveries(
             store, [mark.node_id for mark in marks if mark.reject_reason is None],
             transport_session_id, occurred_at,
+            context=context if lookup_ids is None else None,
         )
         for mark in marks:
             if mark.reject_reason is not None:
@@ -1012,6 +1019,7 @@ def prepared_feedback(
     transport_session_id: str | None = None, occurred_at: str | datetime | None = None,
     lookup_ids: Sequence[str] | None = None, trace_content: str | None = None,
     trace_context: Mapping[str, Any] | None = None,
+    context: Mapping[str, Any] | None = None,
 ) -> Iterator[Mapping[tuple[str, str], tuple[float, ...]]]:
     """Enter authoritative feedback work with current inputs already prepared.
 
@@ -1032,6 +1040,7 @@ def prepared_feedback(
                 store, used=used, irrelevant=irrelevant, transport_session_id=transport_session_id,
                 occurred_at=occurred_at, lookup_ids=lookup_ids,
                 trace_content=trace_content, trace_context=trace_context,
+                context=context,
             )
             missing = {key: query for key, query in queries.items()
                        if key not in vectors and not store.has_query_anchor(*key)}
