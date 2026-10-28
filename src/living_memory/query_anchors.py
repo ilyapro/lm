@@ -371,10 +371,12 @@ def _rank_anchors(
 
     prepared = getattr(store, "query_anchor_corpus", None)
     if prepared is None:
-        corpus = _prepare_anchor_vectors(store.iter_query_anchor_vectors(scopes), len(vector))
+        corpus = _prepare_anchor_vectors(
+            store.iter_query_anchor_vectors(scopes, dimensions=len(vector)), len(vector),
+        )
         indices = slice(None)
     else:
-        corpus = prepared(len(vector))
+        corpus = prepared(len(vector), scopes)
         if corpus is None:
             return []
         indices = corpus.select(scopes)
@@ -436,6 +438,37 @@ class _PreparedAnchorVectors:
     safe_norms: Any
     nonzero: Any
     by_scope: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def reserve(cls, layout: Sequence[tuple[str, str]], width: int) -> _PreparedAnchorVectors:
+        """Allocate one width's corpus; only filled scope rows may be selected."""
+
+        ids = tuple(anchor_id for anchor_id, _scope in layout)
+        by_scope: dict[str, Any] = {}
+        for index, (_anchor_id, scope) in enumerate(layout):
+            by_scope.setdefault(scope, []).append(index)
+        if _np is not None:
+            return cls(
+                ids, _np.empty((len(ids), width), dtype="<f4"),
+                _np.empty(len(ids), dtype="<f4"), _np.empty(len(ids), dtype=bool),
+                {scope: _np.asarray(indices, dtype=_np.intp) for scope, indices in by_scope.items()},
+            )
+        return cls(ids, [None] * len(ids), [0.0] * len(ids), (),
+                   {scope: tuple(indices) for scope, indices in by_scope.items()})
+
+    def fill(self, prepared: _PreparedAnchorVectors) -> None:
+        """Place newly decoded scopes into their reserved scan-order rows."""
+
+        for scope, source in prepared.by_scope.items():
+            target = self.by_scope[scope]
+            if _np is not None:
+                self.matrix[target] = prepared.matrix[source]
+                self.safe_norms[target] = prepared.safe_norms[source]
+                self.nonzero[target] = prepared.nonzero[source]
+            else:
+                for left, right in zip(target, source, strict=True):
+                    self.matrix[left] = prepared.matrix[right]
+                    self.safe_norms[left] = prepared.safe_norms[right]
 
     def select(self, scopes: Sequence[str] | None) -> Any:
         """Select query scopes in plan order, using a view when contiguous.

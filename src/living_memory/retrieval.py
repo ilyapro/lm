@@ -168,7 +168,8 @@ chunk corpus's 60k), and its own docstring measures that scan at ~12 ms cold
 and instructs read-path callers to cache the vectors and re-validate with
 ``MemoryStore.query_anchor_revision``. That is what :class:`_AnchorVectorCache`
 below provides: policy stays in ``match_anchors``, while matrices, norms and
-scope row indices are prepared once per embedding width. Each query selects
+scope row indices are reused per embedding width. Scope vectors are prepared
+only on first use within a revision. Each query selects
 its scopes in their original order; contiguous selections use matrix views,
 and disjoint selections use temporary gathers. The transactional SQLite
 revision covers anchor membership and vectors across all writers.
@@ -516,9 +517,10 @@ class _ChunkGatherPlan:
 
 @dataclass(frozen=True, slots=True)
 class _AnchorVectorCache:
-    """The revision-guarded corpus, prepared once per embedding width.
+    """One revision's corpus, filled lazily by query width and scope.
 
-    Scope row indices select from these matrices in the matcher's query path.
+    A narrow layout reserves scan-order rows without reading their vectors.
+    Only admitted scopes are decoded; filled rows survive scope switches.
     Source BLOBs and selected matrices are not retained. Metadata and targets
     always read through to the store.
     """
@@ -526,9 +528,44 @@ class _AnchorVectorCache:
     revision: int
     store: MemoryStore
     by_width: dict[int, _PreparedAnchorVectors]
+    ready: dict[int, set[str]] = field(default_factory=dict)
 
-    def query_anchor_corpus(self, width: int) -> _PreparedAnchorVectors | None:
-        return self.by_width.get(width)
+    def query_anchor_corpus(
+        self, width: int, scopes: Sequence[str] | None = None,
+    ) -> _PreparedAnchorVectors:
+        corpus = self.by_width.get(width)
+        requested = None if scopes is None else set(map(normalize_scope, scopes))
+        ready = self.ready.setdefault(width, set())
+        if corpus is not None and (
+            (corpus.by_scope.keys() if requested is None else requested & corpus.by_scope.keys())
+            <= ready
+        ):
+            return corpus
+
+        cacheable = not self.store.connection.in_transaction
+        with self.store.transaction():
+            # Layout and newly filled rows must belong to the same revision,
+            # even if another writer committed after the source was selected.
+            if not cacheable or self.store.query_anchor_revision() != self.revision:
+                return _prepare_anchor_vectors(
+                    self.store.iter_query_anchor_vectors(scopes, dimensions=width),
+                    width, index_scopes=True,
+                )
+            if corpus is None:
+                corpus = _PreparedAnchorVectors.reserve(
+                    self.store.query_anchor_vector_layout(width), width,
+                )
+                self.by_width[width] = corpus
+            missing = [scope for scope in corpus.by_scope
+                       if scope not in ready and (requested is None or scope in requested)]
+            if missing:
+                prepared = _prepare_anchor_vectors(
+                    self.store.iter_query_anchor_vectors(missing, dimensions=width),
+                    width, index_scopes=True,
+                )
+                corpus.fill(prepared)
+                ready.update(missing)
+        return corpus
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.store, name)
@@ -1325,9 +1362,9 @@ class MemoryRecallService:
     def _anchor_vector_source(self) -> _AnchorVectorCache | MemoryStore | None:
         """The live anchor corpus, cached until ``query_anchor_revision`` moves.
 
-        One indexed revision lookup guards reuse, including an empty cache.
-        The live count is checked only on rebuild, so an empty corpus never
-        scans vectors. Unmigrated read-only stores use the uncached reader.
+        One indexed revision lookup guards reuse, including empty widths.
+        Matching prepares only the query's scope/width rows. An empty layout
+        never scans vectors. Unmigrated read-only stores use the uncached reader.
         Uncommitted inputs must not enter the cache: rollback can restore a
         revision that another mutation will reuse for different vectors.
         """
@@ -1338,19 +1375,9 @@ class MemoryRecallService:
             return self.store
         cached = self._anchor_vectors
         if cached is None or cached.revision != revision:
-            self._anchor_vectors = None
-            cached = None
-            grouped: dict[int, list[tuple[str, str, int, Any]]] = {}
-            if self.store.count_query_anchors(include_decayed=False):
-                for row in self.store.iter_query_anchor_vectors():
-                    grouped.setdefault(row[2], []).append(row)
-            by_width = {}
-            while grouped:
-                width, rows = grouped.popitem()
-                by_width[width] = _prepare_anchor_vectors(rows, width, index_scopes=True)
-            cached = _AnchorVectorCache(revision, self.store, by_width)
+            cached = _AnchorVectorCache(revision, self.store, {})
             self._anchor_vectors = cached
-        return cached if cached.by_width else None
+        return cached
 
     def _admit_anchor_seeds(
         self,

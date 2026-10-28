@@ -5073,10 +5073,25 @@ class MemoryStore:
         ).fetchall()
         return [_query_anchor_from_row(row) for row in rows]
 
+    def query_anchor_vector_layout(self, dimensions: int) -> list[tuple[str, str]]:
+        """Live ids and scopes in vector scan order, without reading BLOBs."""
+
+        if not self._anchor_tables_present():
+            return []
+        return [
+            (str(row[0]), str(row[1]))
+            for row in self._conn.execute(
+                f"SELECT id, scope FROM {QUERY_ANCHOR_TABLE} "
+                "WHERE decayed = 0 AND dimensions = ?",
+                (int(dimensions),),
+            )
+        ]
+
     def iter_query_anchor_vectors(
         self,
         scopes: Sequence[str] | None = None,
         *,
+        dimensions: int | None = None,
         include_decayed: bool = False,
         limit: int | None = None,
     ) -> Iterator[tuple[str, str, int, memoryview]]:
@@ -5097,6 +5112,9 @@ class MemoryStore:
         params: list[Any] = []
         if not include_decayed:
             clauses.append("decayed = 0")
+        if dimensions is not None:
+            clauses.append("dimensions = ?")
+            params.append(int(dimensions))
         scope_list = (
             [normalize_scope(scope) for scope in scopes] if scopes is not None else None
         )
