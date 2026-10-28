@@ -892,6 +892,15 @@ def recall_fingerprint(query: str, requested_scope: str | None) -> str:
     return hashlib.sha256(f"{collapsed_query}\n{scope_part}".encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True, slots=True)
+class NodeContent:
+    """Source identity, content and level for grounding and trace provenance."""
+
+    id: str
+    content: str
+    level: NodeLevel
+
+
 @dataclass(frozen=True)
 class QueryAnchor:
     """One remembered query: its text, its vector, and its reinforcement state.
@@ -1584,6 +1593,19 @@ class MemoryStore:
             ).fetchall()
             scopes.update((str(row["id"]), str(row["scope"])) for row in rows)
         return scopes
+
+    def get_node_contents(self, node_ids: Iterable[str]) -> dict[str, NodeContent]:
+        """Read source facts without context or statistics, including decayed nodes."""
+        contents: dict[str, NodeContent] = {}
+        for chunk in _node_read_batches(node_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                f"SELECT id, content, level FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
+            ).fetchall()
+            for row in rows:
+                source = NodeContent(id=row["id"], content=row["content"], level=row["level"])
+                contents[source.id] = source
+        return contents
 
     def list_nodes(
         self,

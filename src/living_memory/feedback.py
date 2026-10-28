@@ -18,7 +18,7 @@ from living_memory.models import Node, RecallEvent, RetrievalWeights
 from living_memory import storage as storage_module
 from living_memory.query_anchors import resolve_query_anchor, upsert_anchor
 from living_memory.scope import normalize_scope
-from living_memory.storage import ChunkEmbedder, MemoryStore, recall_fingerprint
+from living_memory.storage import ChunkEmbedder, MemoryStore, NodeContent, recall_fingerprint
 from living_memory.temporal import parse_timestamp
 
 _LOG = logging.getLogger(__name__)
@@ -437,6 +437,9 @@ def apply_pending_recall_feedback(
     anchor_work: list[tuple[RecallEvent, tuple[str, ...], tuple[str, ...]]] = []
     feedback_applied = False
     policy = _recall_credit_policy()
+    sources = store.get_node_contents(
+        node_id for event in events for node_id in event.result_ids if node_id != trace.id
+    )
 
     for event in events:
         event_node_ids: list[str] = []
@@ -454,13 +457,13 @@ def apply_pending_recall_feedback(
             if reinforce_results and policy == "grounded_negative"
             else set()
         )
-        # Resolve each result once for provenance and content grounding.
-        resolved: list[tuple[int, dict[str, Any], Node]] = []
+        # Preserve delivered order and rank, including repeated identities.
+        resolved: list[tuple[int, dict[str, Any], NodeContent]] = []
         for rank, result in enumerate(event.results):
             node_id = str(result.get("node_id") or "")
             if not node_id or node_id == trace.id:
                 continue
-            node = store.get_node(node_id)
+            node = sources.get(node_id)
             if node is None:
                 continue
             resolved.append((rank, result, node))
@@ -984,14 +987,16 @@ def _feedback_queries(
     if trace_content is not None and _recall_credit_policy() != "all":
         context = dict(trace_context or {})
         scope = normalize_scope(str(context.get("scope") or store.config.default_scope))
-        for event in store.pending_recall_events(
+        events = [event for event in store.pending_recall_events(
             scope=scope, context=context, limit=_DEFAULT_PENDING_RECALL_LIMIT,
-        ):
-            nodes = store.get_nodes(event.result_ids)
+        ) if store.find_query_anchor(event.scope, recall_fingerprint(event.query, event.scope)) is None]
+        sources = store.get_node_contents(node_id for event in events for node_id in event.result_ids)
+        for event in events:
             verdicts = ground_results(
-                trace_content, {node.id: node.content for node in nodes.values()},
+                trace_content, {node_id: sources[node_id].content for node_id in event.result_ids
+                                if node_id in sources},
                 min_containment=RECALL_CREDIT_MIN_CONTAINMENT,
-            ) if nodes else {}
+            )
             if any(verdict.grounded for verdict in verdicts.values()):
                 add(event.query, event.scope)
     return queries
