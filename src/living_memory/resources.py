@@ -19,7 +19,12 @@ from living_memory.health_audit import (
     storage_metrics,
 )
 from living_memory.models import (
-    Connection, Node, RecallEvent, RetrievalPolicyFloors, RetrievalWeights, string_list,
+    Connection,
+    Node,
+    RecallEvent,
+    RetrievalPolicyFloors,
+    RetrievalWeights,
+    string_list,
 )
 from living_memory.scope import ScopePlan, normalize_scope, resolve_scope, scope_family
 from living_memory.storage import MemoryStore
@@ -28,6 +33,7 @@ from living_memory.validity import read_validity
 DEFAULT_CONCEPT_LIMIT = 100_000
 DEFAULT_RECENT_LIMIT = 20
 DEFAULT_RETRIEVAL_SKEW_PRESSURE_WINDOW_HOURS = 24
+
 
 def global_concepts(store: MemoryStore, *, limit: int = DEFAULT_CONCEPT_LIMIT) -> dict[str, Any]:
     """Return active global concepts for the static global concepts resource."""

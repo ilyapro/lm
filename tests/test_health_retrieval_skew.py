@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -221,13 +221,15 @@ def test_native_health_matches_floor_application_and_feedback_update(
     config = MemoryConfig(db_path=tmp_path / "native.sqlite3")
     custom = RetrievalPolicyFloors(0.60, 0.25, 0.10, 0.20)
     if policy == "custom":
-        config.retrieval_policy_floors = {"project": custom}
+        config = replace(config, retrieval_policy_floors={"project": custom})
     elif policy == "empty":
-        config.retrieval_policy_floors = {}
+        config = replace(config, retrieval_policy_floors={})
     elif policy == "zero_minima":
-        config.retrieval_policy_floors = {"project": RetrievalPolicyFloors(0.60, 0, 0)}
+        config = replace(
+            config, retrieval_policy_floors={"project": RetrievalPolicyFloors(0.60, 0, 0)},
+        )
     elif policy == "other_family":
-        config.retrieval_policy_floors = {"global": custom}
+        config = replace(config, retrieval_policy_floors={"global": custom})
     mcp = create_mcp_server(config=config, expose_operator_tools=True)
     store = mcp.memory_store
     scope = "project:health"
