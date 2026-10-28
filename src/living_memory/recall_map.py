@@ -1827,7 +1827,31 @@ class RecallMapBuilder:
     def _stage_embedding(
         self, members: list[_Member]
     ) -> tuple[list[_Group], list[_Member]]:
-        """Greedy leader clustering over chunk vectors, c-TF-IDF labels.
+        """Label fresh embedding clusters for a cold or rebuilt map."""
+
+        buckets, vectors, rest = self._embedding_membership(members)
+        groups: list[_Group] = []
+        for bucket in buckets:
+            label = self._ctfidf_label(bucket)
+            groups.append(
+                _Group(
+                    stage=STAGE_EMBEDDING,
+                    signature=(
+                        STAGE_EMBEDDING,
+                        tuple(sorted(member.node.id for member in bucket)),
+                    ),
+                    label=label,
+                    ask_hint=label,
+                    members=bucket,
+                    vectors={member.node.id: vectors[member.node.id] for member in bucket},
+                )
+            )
+        return groups, rest
+
+    def _embedding_membership(
+        self, members: list[_Member]
+    ) -> tuple[list[list[_Member]], dict[str, list[float]], list[_Member]]:
+        """Greedy leader clustering over fresh chunk vectors.
 
         Leader rather than centroid clustering, because a moving centroid makes
         membership depend on arrival order in a way the rank order alone cannot
@@ -1846,7 +1870,7 @@ class RecallMapBuilder:
             vectors[member.node.id] = vector
             clusterable.append(member)
         if not clusterable:
-            return [], rest
+            return [], vectors, rest
 
         leaders: list[tuple[list[float], list[_Member]]] = []
         for member in clusterable:
@@ -1867,23 +1891,7 @@ class RecallMapBuilder:
             else:
                 leaders[best_index][1].append(member)
 
-        groups: list[_Group] = []
-        for _leader_vector, bucket in leaders:
-            label = self._ctfidf_label(bucket)
-            groups.append(
-                _Group(
-                    stage=STAGE_EMBEDDING,
-                    signature=(
-                        STAGE_EMBEDDING,
-                        tuple(sorted(member.node.id for member in bucket)),
-                    ),
-                    label=label,
-                    ask_hint=label,
-                    members=bucket,
-                    vectors={member.node.id: vectors[member.node.id] for member in bucket},
-                )
-            )
-        return groups, rest
+        return [bucket for _leader_vector, bucket in leaders], vectors, rest
 
     def _node_vector(self, node: Node) -> list[float] | None:
         """One unit vector per node: the mean of its chunk vectors.
@@ -2443,7 +2451,7 @@ class RecallMapBuilder:
             embedding_members = [
                 member for member in pool if member.node.id in embedding_ids
             ]
-            fresh, rest = self._stage_embedding(embedding_members)
+            fresh, vectors, rest = self._embedding_membership(embedding_members)
             if rest:
                 return None
             current_sets = {
@@ -2451,13 +2459,15 @@ class RecallMapBuilder:
                 for index in embedding_indexes
             }
             fresh_sets = {
-                frozenset(member.node.id for member in group.members) for group in fresh
+                frozenset(member.node.id for member in bucket) for bucket in fresh
             }
             if fresh_sets != current_sets or len(fresh) != len(embedding_indexes):
                 return None
             embedding_vectors = {
-                frozenset(member.node.id for member in group.members): group.vectors or {}
-                for group in fresh
+                frozenset(member.node.id for member in bucket): {
+                    member.node.id: vectors[member.node.id] for member in bucket
+                }
+                for bucket in fresh
             }
 
         groups: list[_Group] = []
