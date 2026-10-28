@@ -199,9 +199,12 @@ members cause a rebuild. Embedding membership is checked against fresh vectors
 and the current ranked pool before cached labels are reused. Scores, order and
 representative identity do not survive as cached decisions.
 
-Corpus revision probes use `connection.total_changes` and `PRAGMA data_version`
-before checking chunk and query-anchor revisions. Corpus changes invalidate dependent structure. There is no timer-based expiry. Up to 32 work
-entries are retained per builder, with insertion-order eviction.
+Structure identity combines storage's transactional chunk revisions across all
+scopes with its query-anchor revision. Vector and membership changes invalidate
+structure; access bookkeeping leaves its identity unchanged. Open transactions
+and read-only stores without supported revisions rebuild without retaining
+structure. There is no timer-based expiry. Up to 32 work entries are retained
+per builder, with insertion-order eviction.
 
 The cache is not persisted or shared between processes. A cold process rebuilds
 from the current residual. Persisted delivery history still identifies the same
