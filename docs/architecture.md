@@ -367,17 +367,21 @@ requested cluster floor when needed; it does not waive evidence requirements.
 New cross-scope promotion requires similar, uncorrected, unsuperseded active
 concepts from at least three distinct project scopes in the same procedure
 group. The pass searches existing representative vectors only after it
-materializes project concepts. It reads at most 100,000 candidate identities
-once, loads nodes in batches of 500, and reuses that detached preparation for
-scoring outside the guard. It does not encode other projects or repair their
+materializes project concepts. It pages through existing concepts in batches
+of 500 within the insertion boundary observed at preparation start. Each
+candidate is scored against the pass's compatible seeds outside the guard;
+only the best match per project scope and seed is retained. A full page does
+not exclude later scopes. It does not encode other projects or repair their
 indexes. Each writer rechecks current source validity, grouping and similarity
 inside its transaction. Missing representatives cannot authorize promotion.
 Existing global derivations still refresh from their recorded current sources
 when there is insufficient evidence to create a new global concept.
 
-Preparation costs up to one bounded candidate read per pass and one similarity
-comparison per materialized concept and candidate. Trace encoding pays only
-for cache misses. These operations use the existing consolidation scheduler;
+Preparation reads existing project representatives once per pass and compares
+each candidate with materialized concepts in the same group. Total work grows
+with those inputs; guarded reads and retained per-scope matches are bounded
+independently of unrelated trace counts. Trace encoding pays only for cache
+misses. These operations use the existing consolidation scheduler;
 they add no background cycle or whole-memory migration.
 
 ## Configuration

@@ -258,3 +258,52 @@ def test_manual_mcp_releases_store_during_cross_scope_preparation(tmp_path, monk
     finally:
         mcp.auto_consolidation.close()
         store.close()
+
+
+def test_later_scopes_remain_eligible_after_full_candidate_pages(tmp_path, monkeypatch):
+    monkeypatch.setattr(c, "_PROMOTION_READ_BATCH", 2)
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        vector = LocalEmbeddingModel(backend="hash").embed(TEXTS[0])
+        seed(store)
+        # Multiple early concepts are dissimilar and cannot be three scopes.
+        for i in range(7):
+            peer(store, f"project:aaa-{i}", embedding=[-v for v in vector])
+        beta = peer(store, "project:zzz-beta", embedding=vector)
+        gamma = peer(store, "project:zzz-gamma", embedding=vector)
+        pages = []
+        page = store.promotion_candidate_page
+
+        def observed(**kwargs):
+            nodes, ceiling = page(**kwargs)
+            assert len(nodes) <= 2
+            pages.append([node.id for node in nodes])
+            return nodes, ceiling
+
+        monkeypatch.setattr(store, "promotion_candidate_page", observed)
+        result = c.memory_consolidate(store, scope=SCOPE)
+        promoted, = result.concepts_promoted
+        assert set(promoted.materializer_sources) == {result.concepts_created[0].id, beta.id, gamma.id}
+        assert len(pages) == 6
+        assert len({node_id for batch in pages for node_id in batch}) == 10
+        assert pages[-1] == []
+        assert c.memory_consolidate(store, scope=SCOPE).concepts_promoted == []
+
+
+def test_promotion_pages_do_not_expand_to_new_insertions(tmp_path, monkeypatch):
+    monkeypatch.setattr(c, "_PROMOTION_READ_BATCH", 1)
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        vector = LocalEmbeddingModel(backend="hash").embed(TEXTS[0])
+        seed(store)
+        peer(store, "project:beta", embedding=vector)
+        page = store.promotion_candidate_page
+        added = []
+
+        def insert_after_selection(**kwargs):
+            result = page(**kwargs)
+            if not added:
+                added.append(peer(store, "project:zzz-gamma", embedding=vector))
+            return result
+
+        monkeypatch.setattr(store, "promotion_candidate_page", insert_after_selection)
+        assert c.memory_consolidate(store, scope=SCOPE).concepts_promoted == []
+        assert len(c.memory_consolidate(store, scope=SCOPE).concepts_promoted) == 1

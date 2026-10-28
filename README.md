@@ -152,6 +152,19 @@ is correct. Chains and cycles expose direct links without chasing a final
 replacement; read each node's own validity. Links do not count as delivered
 results, lookups, or confirmed use for feedback attribution.
 
+Consolidation uses the configured encoder and cached source vectors regardless
+of the total trace count. Same-scope clusters still require their merge floor,
+similarity and current-source checks. Global promotion requires valid similar
+concepts from at least three distinct project scopes in the same procedure
+group. Candidate reads use pages of 500 and share each vector across the pass's
+seeds, retaining the best match per scope; later scopes remain searchable.
+Scoring runs outside the shared-store guard and each atomic writer rechecks
+current evidence. Other projects are not re-embedded. Existing derivations
+continue to refresh from their recorded sources. Status and stats expose
+counts, confidence, promotions and effective retrieval policy; retrieval uses
+BM25, ready vector evidence and requested graph traversal without a corpus
+maturity stage.
+
 Consolidation digests and bounded excerpts share conservative source passage
 boundaries: paragraph breaks and sentence-ending punctuation with a capitalized
 continuation. Periods also require a lowercase alphabetic terminal word longer
