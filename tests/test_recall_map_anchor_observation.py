@@ -65,6 +65,14 @@ def observed(builder):
     """Count actual store reads and capture the digest returned by production."""
     digests = []
     original = builder._pool_digest
+    read_links = builder.store.get_query_anchor_links
+    targets, anchors = [], []
+
+    def links(node_ids):
+        targets.extend(node_ids)
+        rows = read_links(node_ids)
+        anchors.extend({row.anchor_id for row in rows})
+        return rows
 
     def digest(*args, **kwargs):
         value = original(*args, **kwargs)
@@ -72,17 +80,18 @@ def observed(builder):
         return value
 
     with (
-        patch.object(builder.store, "list_query_anchor_edges", wraps=builder.store.list_query_anchor_edges) as edges,
-        patch.object(builder.store, "get_query_anchor", wraps=builder.store.get_query_anchor) as anchors,
+        patch.object(builder.store, "get_query_anchor_links", side_effect=links),
+        patch.object(builder.store, "list_query_anchor_edges", side_effect=AssertionError("full edge read")),
+        patch.object(builder.store, "get_query_anchor", side_effect=AssertionError("full anchor read")),
         patch.object(builder, "_pool_digest", side_effect=digest),
     ):
-        yield edges, anchors, digests
+        yield targets, anchors, digests
 
 
 def assert_reads(observation, node_ids, anchor_ids):
-    edges, anchors, _ = observation
-    assert Counter(call.kwargs["target_id"] for call in edges.call_args_list) == Counter(node_ids)
-    assert Counter(call.args[0] for call in anchors.call_args_list) == Counter(anchor_ids)
+    targets, anchors, _ = observation
+    assert Counter(targets) == Counter(node_ids)
+    assert Counter(anchors) == Counter(anchor_ids)
 
 
 @pytest.fixture(autouse=True)
@@ -230,14 +239,20 @@ def test_ties_missing_decayed_and_blank_anchors(store, monkeypatch):
     assert_reads(reads, [r.node.id for r in results], ["anchor-a", "anchor-b", "dead", "blank", "missing"])
 
 
-@pytest.mark.parametrize("method", ["list_query_anchor_edges", "get_query_anchor"])
-def test_anchor_read_errors_propagate(store, monkeypatch, method):
+@pytest.mark.parametrize("table", ["query_anchor_edges", "query_anchors"])
+def test_anchor_read_errors_propagate(store, monkeypatch, table):
     results = seed_pool(store)
     builder = RecallMapBuilder(store)
     monkeypatch.setattr(builder, "_curtailment", lambda *a, **kw: due())
-    with patch.object(store, method, side_effect=sqlite3.OperationalError("anchor read failed")):
-        with pytest.raises(sqlite3.OperationalError, match="anchor read failed"):
+    def authorize(action, name, column, database, trigger):
+        return sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ and name == table else sqlite3.SQLITE_OK
+
+    store.connection.set_authorizer(authorize)
+    try:
+        with pytest.raises(sqlite3.DatabaseError, match="prohibited"):
             build(builder, results)
+    finally:
+        store.connection.set_authorizer(None)
     with observed(builder) as reads:
         assert len(build(builder, results).clusters) == 2
     assert_reads(reads, [r.node.id for r in results], ["anchor-a", "anchor-b"])

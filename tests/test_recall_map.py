@@ -737,9 +737,9 @@ def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
     vector_reads = []
     node_vector = builder._node_vector
 
-    def read_vector(node):
+    def read_vector(node, chunks):
         vector_reads.append(node.id)
-        return node_vector(node)
+        return node_vector(node, chunks)
 
     df_requests = []
     frequencies = store.term_document_frequencies
