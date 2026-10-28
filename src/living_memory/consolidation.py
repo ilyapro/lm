@@ -560,8 +560,6 @@ def memory_consolidate(
         )
         merge_floor = resolve_min_cluster_size(min_cluster_size, trace_count=len(traces))
         embedder = LocalEmbeddingModel(model_name=store.config.embedding_model)
-        # Reuse the configured encoder for derived content chunks as well.
-        store.set_chunk_embedder(embedder.embed_batch)
     embeddings = _trace_embeddings(store, traces, embedder, step)
     clusters = _cluster_traces(traces, embedder=embedder, embeddings=embeddings)
     result = ConsolidationResult(
