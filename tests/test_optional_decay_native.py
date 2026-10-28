@@ -81,6 +81,7 @@ def test_optional_outcome_and_ordinary_recovery(
     r = runtime
     gate_calls, apply_calls, observations = [], [], []
     sweep, apply = server._decay_sweep_if_due, server.apply_decay
+    failure_active = True
 
     def checked_sweep(store, **kwargs):
         assert r.guard._is_owned()
@@ -90,7 +91,7 @@ def test_optional_outcome_and_ordinary_recovery(
 
     def checked_apply(store, **kwargs):
         apply_calls.append(True)
-        if outcome == "before_effect":
+        if failure_active and outcome == "before_effect":
             raise RuntimeError(ERRORS[outcome])
         return apply(store, **kwargs)
 
@@ -99,6 +100,7 @@ def test_optional_outcome_and_ordinary_recovery(
                              "gate_calls": len(gate_calls), "apply_calls": len(apply_calls)})
 
     async def scenario():
+        nonlocal failure_active
         async with Client(r.mcp) as client:
             # Remember must still close real feedback in the same transport session.
             with monkeypatch.context() as setup:
@@ -159,7 +161,7 @@ def test_optional_outcome_and_ordinary_recovery(
                 assert ERRORS[outcome] in caplog.text
                 if outcome == "marker_failure":
                     r.store.connection.execute("DROP TRIGGER reject_decay_marker")
-                monkeypatch.setattr(server, "apply_decay", apply)
+                failure_active = False
                 recovered = await call(client, "memory_recall", query=CONTENT, scope=SCOPE)
                 capture("recovered", recovered)
                 assert recovered["auto_decay"]["swept"] is True
@@ -172,6 +174,7 @@ def test_optional_outcome_and_ordinary_recovery(
                 assert skipped["auto_decay"] is None
                 assert durable(r) == completed
                 assert len(gate_calls) == 4
+                assert len(apply_calls) == 3
             elif outcome == "success":
                 report = response["auto_decay"]
                 assert set(report) == {"swept", "decayed_count", "expired_count",
