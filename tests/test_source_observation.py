@@ -176,14 +176,24 @@ def test_source_first_writers_refresh_related_reads_for_owners_and_inputs(store,
 class SeparateReads:
     """Reference execution uses the store directly for every owner."""
 
-    def __init__(self, store, source_ids, *, changing=()):
+    def __init__(self, store, source_ids, *, changing=(), refresh=None):
         self.store = store
+        self.changing = set(changing)
+        self.refresh = refresh
 
     def __getattr__(self, name):
         return getattr(self.store, name)
 
+    def get_node(self, node_id):
+        if node_id in self.changing and self.refresh is not None:
+            self.refresh(node_id)
+        return self.store.get_node(node_id)
+
+    def get_nodes(self, source_ids):
+        return {node_id: self.get_node(node_id) for node_id in self.store.get_nodes(source_ids)}
+
     def updated(self, node):
-        pass
+        self.changing.discard(node.id)
 
 
 @pytest.mark.parametrize("prepared", [False, True])
@@ -264,7 +274,9 @@ def test_cycle_decay_changes_a_shared_superseders_validity(
 
     def observe(self, *args, **kwargs):
         original(self, *args, **kwargs)
-        assert c.resolve_replacement(self, traces[1].id) == cyclic.id
+        # Prime cached supersedes edges without triggering the writer before
+        # construction has returned its observation to the traversal.
+        assert self.list_connections(target_id=fallback.id, relation_type="supersedes")[0].source_id == cyclic.id
 
     monkeypatch.setattr(c._SourceObservation, "__init__", observe)
     correction = "Harbor crane uses the electronic manifest."

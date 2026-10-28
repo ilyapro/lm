@@ -789,17 +789,20 @@ def _derivation_sources(store: MemoryStore | _SourceObservation, node: Node) -> 
 class _SourceObservation:
     """Share current reads only within one guarded phase of derivation work.
 
-    Sources being rewritten are read on demand until their source-first writer
-    supplies the resulting node. Supersedes edges do not change during refresh;
-    their endpoint validity is always checked against the current node values.
+    The source-first writer finalizes changing sources on demand, including
+    replacement candidates, before their content or validity is consumed.
+    Supersedes edges do not change during refresh; their endpoint validity is
+    always checked against the current node values.
     Related inputs are shared until a writer updates their source node.
     """
 
     def __init__(
         self, store: MemoryStore, source_ids: Iterable[str], *, changing: Iterable[str] = (),
+        refresh: Callable[[str], None] | None = None,
     ) -> None:
         self.store = store
         self.changing = set(changing)
+        self.refresh = refresh
         ids = set(source_ids) - self.changing
         self.nodes: dict[str, Node | None] = dict.fromkeys(ids)
         self.nodes.update(store.get_nodes(ids))
@@ -807,7 +810,9 @@ class _SourceObservation:
 
     def get_node(self, node_id: str) -> Node | None:
         if node_id in self.changing:
-            return self.store.get_node(node_id)
+            if self.refresh is None:
+                return self.store.get_node(node_id)
+            self.refresh(node_id)
         if node_id not in self.nodes:
             self.nodes[node_id] = self.store.get_node(node_id)
         return self.nodes[node_id]
@@ -927,9 +932,6 @@ def _refresh_derived_from(
 
     affected = _affected_derivatives(store, source_id)
 
-    observation = _SourceObservation(store, (
-        source for node in affected.values() for source in _derivation_sources(store, node)
-    ), changing=affected)
     source_inputs = dict(preparation.source_inputs) if preparation is not None else {}
 
     visiting: set[str] = set()
@@ -944,19 +946,23 @@ def _refresh_derived_from(
             observation.updated(store.soft_delete_node(node_id, "derivation: cyclic sources"))
             return
         visiting.add(node_id)
-        for dependency in _derivation_sources(observation, affected[node_id]):
-            if dependency in affected:
-                refresh(dependency)
-        node = observation.get_node(node_id)
+        # Reading current inputs drives the traversal through the same bounded
+        # replacement resolution that selects the writer's actual sources.
+        assessment = _current_derivation(store, affected[node_id], observation=observation)
+        # Resolving an input can close a cycle and decay this owner.
+        node = store.get_node(node_id)
         if node is not None and not node.decayed:
             observation.updated(_refresh_derived_node(
-                store, node, source_inputs=source_inputs,
+                store, node, assessment=assessment, source_inputs=source_inputs,
                 prepared_digest=preparation.digests.get(node.id) if preparation else None,
                 observation=observation,
             ))
         visiting.remove(node_id)
         refreshed.add(node_id)
 
+    observation = _SourceObservation(store, (
+        source for node in affected.values() for source in _derivation_sources(store, node)
+    ), changing=affected, refresh=refresh)
     for node_id in affected:
         refresh(node_id)
 
@@ -966,8 +972,10 @@ def _refresh_derived_node(
     *, source_inputs: dict[str, _DigestSource] | None = None,
     prepared_digest: _PreparedDigest | None = None,
     observation: _SourceObservation | None = None,
+    assessment: _EraAssessment | None = None,
 ) -> Node:
-    assessment = _current_derivation(store, node, observation=observation)
+    if assessment is None:
+        assessment = _current_derivation(store, node, observation=observation)
     members = assessment.live
     if not members:
         return store.soft_delete_node(node.id, "derivation: no current sources")
