@@ -158,7 +158,7 @@ def test_native_knowledge_reads_share_relation_validity(
         store.close()
 
 
-@pytest.mark.parametrize("writer", ["teach", "historical_duplicate"])
+@pytest.mark.parametrize("writer", ["teach", "teach_mixed", "historical_duplicate", "historical_inferred"])
 def test_native_reads_preserve_teach_and_historical_relation_semantics(tmp_path, monkeypatch, writer):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
@@ -173,17 +173,21 @@ def test_native_reads_preserve_teach_and_historical_relation_semantics(tmp_path,
                 "context": {"scope": scope, "task_pattern": "amber-hatch"},
             }))["node"]["id"]
             replacement = "Amber hatch opening is forbidden before approval."
-            if writer == "teach":
+            explicit = writer.startswith("teach")
+            if explicit:
                 correction = _structured(await client.call_tool("memory_teach", {
                     "trace_id": original, "correction": replacement,
                 }))["corrective_trace"]["id"]
+                if writer == "teach_mixed":
+                    store.create_connection(correction, original, "supersedes", merge=True,
+                                            metadata={"rule": "R1c", "kind": "content_correction"})
             else:
                 correction = _structured(await client.call_tool("memory_remember", {
                     "content": replacement, "context": {"scope": scope},
                 }))["node"]["id"]
-                store.create_connection(correction, original, "supersedes", metadata={
-                    "kind": "duplicate_content",
-                })
+                metadata = ({"kind": "duplicate_content"} if writer == "historical_duplicate"
+                            else {"rule": "R1c", "kind": "content_correction"})
+                store.create_connection(correction, original, "supersedes", metadata=metadata)
 
             async def check(level):
                 before = list(store.connection.iterdump())
@@ -195,10 +199,16 @@ def test_native_reads_preserve_teach_and_historical_relation_semantics(tmp_path,
                 entries = resource["traces" if level == "trace" else "concepts"]
                 for selection in (filtered, entries):
                     entry = next(item for item in selection if item["id"] == original)
-                    assert entry["superseded"] is (writer == "teach")
-                    assert entry["superseded_by"] == ([correction] if writer == "teach" else [])
-                    assert bool(entry["provenance"]["corrections"]) is (writer == "teach")
+                    assert entry["superseded"] is explicit
+                    assert entry["superseded_by"] == ([correction] if explicit else [])
+                    assert bool(entry["provenance"]["corrections"]) is explicit
                     assert entry["decayed"] is False
+                if level == "concept":
+                    prompt = await client.get_prompt("memory://prompt/retrieval_context", {"scope": scope, "task": ""})
+                    line = next(line for line in prompt.messages[0].content.text.splitlines()
+                                if f"id={original} " in line)
+                    assert f"superseded={str(explicit).lower()}" in line
+                    assert f"superseded_by={json.dumps([correction] if explicit else [])}" in line
                 assert list(store.connection.iterdump()) == before
 
             await check("trace")

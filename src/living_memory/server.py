@@ -611,7 +611,7 @@ def _server_instructions(default_scope: str, map_section: str = "") -> str:
         "without warning; deferred learning is lost. One concrete fact per "
         "trace; never routine actions or copies of code.\n"
         "3. You MUST teach the moment a belief changes. Call `memory_teach` "
-        "at once when recalled knowledge proves wrong: only teach creates "
+        "at once when recalled knowledge proves wrong: teach creates "
         "the supersedes edge; a remember trace leaves stale knowledge active.\n\n"
         "## Tool protocol\n\n"
         "Follow the descriptions as protocol: `memory_recall` (BEFORE and "
@@ -679,7 +679,7 @@ _TEACH_DESCRIPTION = (
     "supersedes edge. You MUST teach the moment a belief changes: a "
     "recalled fact proved wrong, or your understanding shifted and a prior "
     "trace reflects the old belief. Pass the original trace_id plus the "
-    "corrected fact. Only memory_teach creates the supersedes edge — a "
+    "corrected fact. memory_teach creates the supersedes edge — a "
     "memory_remember trace with UPDATE/CORRECTION wording does NOT count, "
     "and the stale node keeps outranking the correction in every future "
     "recall. Fixing a wrong assumption without teach (anti-pattern: "
@@ -1093,10 +1093,8 @@ def _register_tools(
                     store, node, preparation=feedback_preparation,
                 )
                 node = implicit_feedback.trace
-            # Typed-edge derivation (edge_derivation.py go-rules) runs after
-            # implicit recall feedback so an R6 reference upsert augments the
-            # implicit related edge for the same pair instead of being
-            # replaced by it. A derivation failure must never lose the write.
+            # Reference and provenance derivation follows the required write.
+            # A derivation failure must never lose the remembered trace.
             try:
                 derive_edges_for_new_trace(store, node)
             except Exception:

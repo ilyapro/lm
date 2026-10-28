@@ -211,7 +211,7 @@ def test_instructions_carry_the_three_laws(instructions: str) -> None:
     assert "You MUST remember at the moment of insight" in instructions
     assert "You MUST teach the moment a belief changes" in instructions
     assert "supersedes edge" in instructions, (
-        "the teach law must explain WHY: only teach creates the supersedes edge"
+        "the teach law must explain WHY: teach creates the supersedes edge"
     )
 
 

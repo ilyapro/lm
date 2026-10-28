@@ -71,7 +71,10 @@ def test_native_remember_preserves_referenced_knowledge(tmp_path, text, labels):
                 assert entry["superseded"] is before["superseded"] is False
                 assert entry["superseded_by"] == []
                 body = entry.get("node", entry)
-                assert body["content"] == ORIGINAL
+                if path.startswith("lookup"):
+                    assert body["content"] == ORIGINAL
+                else:
+                    assert entry["content_ref"]["node_id"] == original
                 assert body["provenance"]["corrections"] == []
 
     try:
@@ -204,8 +207,9 @@ def test_history_filter_does_not_restore_persisted_lifecycle_effects(tmp_path):
         anchor = upsert_anchor(store, QUERY, "global", [1., 0.], [old.id]).anchor
         edge = store.create_connection(note.id, old.id, "supersedes", metadata=INFERRED)
         # Model already-persisted effects; the relation filter cannot infer their cause.
-        store.repoint_query_anchor_edges(old.id, note.id)
-        store.soft_delete_node(old.id, "superseded")
+        with store.transaction():
+            store.repoint_query_anchor_edges(old.id, note.id)
+            store.soft_delete_node(old.id, "superseded")
         before = store.get_node(old.id)
     with MemoryStore(db) as store:
         assert store.get_node(old.id) == before
