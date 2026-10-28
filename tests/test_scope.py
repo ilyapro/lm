@@ -240,11 +240,11 @@ def test_scopeless_recall_reaches_default_scoped_memory(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("raw_scope", "expected_scope"),
     [
-        ("rise/_critique", "project:rise/_critique"),
-        ("breakthrough/gemini-flash-contract", "project:breakthrough/gemini-flash-contract"),
+        ("example/_review", "project:example/_review"),
+        ("sample/model-contract", "project:sample/model-contract"),
         (
-            "ocpa-generative-action-substrate-v1",
-            "project:ocpa-generative-action-substrate-v1",
+            "workflow-action-substrate-v1",
+            "project:workflow-action-substrate-v1",
         ),
         ("future-goal/implementation-node", "project:future-goal/implementation-node"),
     ],
