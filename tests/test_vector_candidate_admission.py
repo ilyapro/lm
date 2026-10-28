@@ -127,18 +127,24 @@ def test_healthy_candidates_keep_scores_order_chunks_limits_and_existing_bodies(
         actual = {key: replace(value) for key, value in initial.items()}
         decoded = []
         decode = storage._node_from_row
+        blocks = service._chunk_blocks
 
         def count(row):
             decoded.append(row["id"])
             return decode(row)
 
-        with monkeypatch.context() as patch:
-            patch.setattr(storage, "_node_from_row", count)
+        def change_after_selection(plan, dimension):
+            selected = blocks(plan, dimension)
             with store.transaction():
                 store.connection.execute(
                     "UPDATE nodes SET provenance = '[]', decayed = 1 WHERE id IN (?, ?)",
                     tuple(initial),
                 )
+            return selected
+
+        with monkeypatch.context() as patch:
+            patch.setattr(storage, "_node_from_row", count)
+            patch.setattr(service, "_chunk_blocks", change_after_selection)
             service._collect_vector(VECTOR, plan, actual, max_results=2)
         # Existing candidates retain their bodies and vector evidence even when
         # the source changes after chunk selection; only new bodies are admitted.
