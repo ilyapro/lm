@@ -780,6 +780,41 @@ def test_feedback_closure_excludes_events_older_than_window(tmp_path: Path) -> N
     assert block["identity_coverage"]["none"]["closed"] == 1
 
 
+@pytest.mark.parametrize("ambient,identity_class", [
+    ({"session_id": "caller"}, "explicit"),
+    ({"session": "caller"}, "explicit"),
+    ({"session_id": "", "session": "caller"}, "explicit"),
+    ({"session_id": 42}, "explicit"),
+    ({"session": 0}, "explicit"),
+    ({"session_id": " caller ", "transport_session_id": "old"}, "explicit"),
+    ({"session_id": "caller", "agent": "", "task": None}, "explicit"),
+    ({"session_id": "caller", "task": "task", "transport_session_id": "old"}, "explicit"),
+    ({"session_id": "", "transport_session_id": "old"}, "transport_only"),
+    ({"session_id": " \t\n\u2003", "transport_session_id": "old"}, "transport_only"),
+    ({"session_id": None, "agent": "a", "task": "t", "transport_session_id": "old"}, "transport_only"),
+    ({"transport_session_id": " "}, "transport_only"),
+    ({"session_id": "", "transport_session_id": ""}, "none"),
+    ({"session_id": "\t\u2003", "agent": "a", "task": "t"}, "none"),
+    ({"agent": "a", "task": "t"}, "none"),
+    ({}, "none"),
+])
+def test_feedback_closure_uses_persisted_session_identity(tmp_path, ambient, identity_class):
+    with MemoryStore(tmp_path / "identity.sqlite3") as store:
+        target = store.append_trace("closure target", {"scope": "project:alpha"})
+        _record_closure_event(store, scope="project:alpha", ambient=ambient, closed_by=target.id)
+        _record_closure_event(store, scope="project:alpha", ambient=ambient)
+        before = list(store.connection.iterdump())
+        block = memory_health(store, scope="project:alpha", window_hours=24)["feedback_closure"]
+        assert list(store.connection.iterdump()) == before
+    assert block["recall_events_in_window"] == 2
+    assert block["feedback_applied_in_window"] == 1
+    assert block["closure_ratio"] == 0.5
+    for name, coverage in block["identity_coverage"].items():
+        assert coverage == ({"events": 2, "closed": 1, "closure_ratio": 0.5}
+                            if name == identity_class else
+                            {"events": 0, "closed": 0, "closure_ratio": None})
+
+
 def test_feedback_closure_honors_scope_filter(tmp_path: Path) -> None:
     """Only ``recall_events.scope = ?`` matches; requested_scope must not bleed."""
 

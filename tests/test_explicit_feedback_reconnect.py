@@ -41,6 +41,17 @@ def test_native_marks_keep_original_delivery_after_connection_closes(runtime, ro
         # Closing the first context ends its MCP session. A fresh client must
         # derive a different transport, without an override or a server restart.
         async with Client(r.mcp) as second:
+            health = await call(second, "memory_health", scope=SCOPE)
+            assert health["feedback_closure"]["identity_coverage"] == {
+                "explicit": {"events": 1, "closed": 0, "closure_ratio": 0.0},
+                "transport_only": {"events": 0, "closed": 0, "closure_ratio": None},
+                "none": {"events": 0, "closed": 0, "closure_ratio": None},
+            }
+            with r.guard:
+                pending = r.store.pending_recall_events(
+                    scope=SCOPE, context={**context, "transport_session_id": "new-transport"},
+                )
+                assert [event.id for event in pending] == [prior["recall_event_id"]]
             lookup = await call(second, "memory_lookup", node_id=r.node.id)
             assert lookup["results"][0]["content"] == CONTENT
             assert credits(r) == []  # lookup remains transport-only

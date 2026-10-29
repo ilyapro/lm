@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,19 @@ from living_memory.resources import (
     recent_interactions,
 )
 from living_memory.storage import MemoryStore
+
+
+@pytest.fixture
+def health_now(monkeypatch):
+    instant = datetime(2026, 10, 29, 12, tzinfo=UTC)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant
+
+    monkeypatch.setattr("living_memory.resources.datetime", Clock)
+    return instant
 
 
 def test_concept_resources_are_browsable_by_global_and_project_scope(tmp_path: Path) -> None:
@@ -208,3 +222,68 @@ def test_memory_health_handles_empty_scope(tmp_path: Path) -> None:
     assert report["staleness"]["age_seconds_p50"] is None
     assert report["staleness"]["top_stale"] == []
     assert report["activity"]["recall_to_remember_ratio"] is None
+
+
+def test_memory_health_staleness_uses_time_since_access(tmp_path, health_now):
+    def ago(days):
+        return (health_now - timedelta(days=days)).isoformat()
+
+    with MemoryStore(tmp_path / "staleness.sqlite3") as store:
+        for name, created, accessed, scope, level, decayed in [
+            ("recently-used", 90, 0, "project:alpha", "trace", False),
+            ("stale", 60, 30, "project:alpha", "trace", False),
+            ("never-used", 20, None, "project:alpha", "trace", False),
+            ("foreign", 100, None, "project:beta", "trace", False),
+            ("concept", 100, None, "project:alpha", "concept", False),
+            ("decayed", 100, None, "project:alpha", "trace", True),
+        ]:
+            store.create_node(
+                node_id=name, level=level, content=name, context={"scope": scope},
+                timestamp=ago(created), stats={"decayed": decayed,
+                    "last_accessed": ago(accessed) if accessed is not None else None,
+                    "access_count": int(accessed is not None)},
+            )
+        before = list(store.connection.iterdump())
+        report = memory_health(store, scope="project:alpha", top_stale=1)
+        stale = report["staleness"]
+        assert [row["id"] for row in stale["top_stale"]] == ["stale"]
+        assert stale["age_seconds_p50"] == 20 * 86400
+        assert stale["age_seconds_p90"] == 30 * 86400
+        assert stale["decay_rate"] == 0.25
+        assert stale["top_stale"][0] == {
+            "id": "stale", "content_preview": "stale", "timestamp": ago(60),
+            "access_count": 1, "last_accessed": ago(30),
+        }
+        all_rows = memory_health(store, scope="project:alpha", top_stale=20)["staleness"]
+        assert [row["id"] for row in all_rows["top_stale"]] == [
+            "stale", "never-used", "recently-used",
+        ]
+        assert memory_health(store, top_stale=1)["staleness"]["top_stale"][0]["id"] == "foreign"
+        assert memory_health(store, top_stale=0)["staleness"]["top_stale"] == []
+        with pytest.raises(ValueError, match="top_stale"):
+            memory_health(store, top_stale=-1)
+        assert list(store.connection.iterdump()) == before
+
+
+@pytest.mark.parametrize("created,accessed,age", [
+    ("2026-10-19T12:00:00Z", None, 10 * 86400),
+    ("2026-10-19T12:00:00Z", "", 10 * 86400),
+    ("invalid", "2026-10-28T17:00:00+05:00", 86400),
+    ("2026-10-19T12:00:00Z", "2026-10-30T12:00:00Z", 0),
+    ("2026-10-19T12:00:00Z", "invalid", None),
+    ("2026-10-19T12:00:00Z", " ", None),
+    ("invalid", None, None),
+    ("", None, None),
+])
+def test_memory_health_staleness_date_eligibility(tmp_path, health_now, created, accessed, age):
+    with MemoryStore(tmp_path / "dates.sqlite3") as store:
+        target = store.create_node(level="trace", content="date eligibility")
+        with store.transaction():
+            store.connection.execute(
+                "UPDATE nodes SET timestamp = ?, last_accessed = ? WHERE id = ?",
+                (created, accessed, target.id),
+            )
+        stale = memory_health(store)["staleness"]
+    assert stale["age_seconds_p50"] == age
+    assert stale["age_seconds_p90"] == age
+    assert [row["id"] for row in stale["top_stale"]] == ([] if age is None else [target.id])
