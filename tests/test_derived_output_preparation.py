@@ -332,3 +332,20 @@ def test_final_promotion_refresh_rechecks_current_selection_and_sources(store, c
     else:
         assert result == []
         assert current == preserved
+
+
+def test_owner_losing_all_sources_during_preparation_is_invalidated(store):
+    members = sources(store)
+    owner = derived(store, "inspection", members)
+    guard = RLock()
+    with preparing(store, guard) as (workers, entered, release, _):
+        work = workers.submit(materialize, store, members, guard)
+        assert entered.wait(10)
+        with MemoryStore(store.db_path) as writer:
+            for member in members:
+                writer.soft_delete_node(member.id, "retired source")
+        release.set()
+        assert work.result(timeout=15) == []
+    current = store.get_node(owner.id)
+    assert current.decayed and current.decay_reason == "derivation: no current sources"
+    assert c._current_derivation(store, current).live == []
