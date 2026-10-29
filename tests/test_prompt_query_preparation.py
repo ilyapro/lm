@@ -250,11 +250,12 @@ def pending_content(runtime, monkeypatch):
 def test_native_pending_content_keeps_exact_lookup_available(pending_content, monkeypatch, max_concepts):
     r = pending_content
     recalls = []
+    selection_states = []
     recall = MemoryRecallService.memory_recall
 
     def guarded_recall(self, *args, **kwargs):
-        assert r.guard._is_owned() and r.release.is_set()
-        assert kwargs["repair_pending"] is False
+        selection_states.append((r.guard._is_owned(), r.release.is_set(),
+                                 kwargs.get("repair_pending", True)))
         recalls.append((kwargs.get("depth", 1), kwargs["max_results"],
                         kwargs["log_access"], kwargs.get("log_event")))
         return recall(self, *args, **kwargs)
@@ -283,6 +284,7 @@ def test_native_pending_content_keeps_exact_lookup_available(pending_content, mo
     assert recalls == ([(1, 30, False, None)] if max_concepts else []) + [
         (1, 12, False, False),
     ] + ([("decision", 30, False, None)] if max_concepts else [])
+    assert selection_states == [(True, True, False)] * len(recalls)
     assert r.encoded == [TASK]
     assert r.content_encodes == [r.pending.content]
     assert r.encoder_guard_owned == [False]
