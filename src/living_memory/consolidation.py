@@ -2393,7 +2393,7 @@ def _promoted_unique_agents(
         unknown = 0
         if inputs:
             current = _current_sources(store, inputs, observation=reader)
-            if set(inputs) - {source.id for source in current.recorded}:
+            if set(inputs) - {source.id for source in current.members}:
                 unknown = 1
             for source in current.live:
                 authors, declared = evidence(source)
