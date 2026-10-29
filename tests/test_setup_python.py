@@ -212,9 +212,13 @@ def test_failed_local_preparation_leaves_borrowed_cache_intact(setup: Setup, fai
 @pytest.mark.parametrize("override", ["unset", "empty", "selected"])
 def test_checkout_imports_use_selected_directory(tmp_path: Path, consumer: str, override: str) -> None:
     shutil.copy2(ROOT / "conftest.py", tmp_path / "conftest.py")
-    package = tmp_path / "living_memory"
-    package.mkdir()
-    shutil.copy2(ROOT / "living_memory" / "__init__.py", package / "__init__.py")
+    if consumer == "living_memory":
+        bootstrap = ROOT / "living_memory" / "__init__.py"
+        if not bootstrap.is_file():
+            pytest.skip("This src-layout checkout has no import bootstrap")
+        package = tmp_path / "living_memory"
+        package.mkdir()
+        shutil.copy2(bootstrap, package / "__init__.py")
     (tmp_path / "src").symlink_to(ROOT / "src", target_is_directory=True)
     default = tmp_path / ".cache" / "python-deps"
     selected = tmp_path / "selected"
