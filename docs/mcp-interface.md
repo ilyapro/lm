@@ -877,8 +877,10 @@ The tool clusters similar recent traces, creates or updates concept nodes,
 records source trace IDs, computes consensus confidence and weekly temporal
 hints, updates related-edge weights, and applies decay. Concept content is a
 deterministic extractive digest of the cluster. It selects complete source
-sentences within a 1200-character budget, using token novelty to rank sentences
-and exact equality to skip repeats. Distinct conditions are never replaced by
+passages within a 1200-character budget, using token novelty to rank passages
+and exact equality to skip repeats. Selected passages keep their literal text,
+including authored bullets, with blank paragraphs between them.
+Distinct conditions are never replaced by
 novel-token fragments. A source that cannot fit remains available by its
 recorded id; the budget does not guarantee that every claim appears in the
 digest. The direct `memory_consolidate` response reports created/updated

@@ -42,7 +42,7 @@ def test_fresh_digest_delivers_the_complete_matching_passage(fact):
 @pytest.mark.parametrize("extra_budget", [-1, 0, 1])
 def test_digest_admission_counts_the_whole_passage_separator(extra_budget):
     sources = [Node("lead", "trace", LEAD), Node("fact", "trace", FACT)]
-    complete = LEAD + "\n\n• " + FACT
+    complete = LEAD + "\n\n" + FACT
     budget = len(complete) + extra_budget
     digest = c._synthesize_digest(sources, best=sources[0], max_chars=budget)
     assert len(digest) <= budget
@@ -112,7 +112,7 @@ def test_persisted_digest_recall_and_source_based_refresh(tmp_path, refresh):
         peer_contents = {node.id: node.content for node in peers}
         if refresh:
             for node in (concept, promoted):
-                store.update_node(node.id, content=node.content.replace("\n\n• ", "\n• "))
+                store.update_node(node.id, content=node.content.replace("\n\n", "\n• "))
         legacy_content = store.get_node(concept.id).content
 
     mcp = create_mcp_server(path, mcp_factory=FakeMCP)
