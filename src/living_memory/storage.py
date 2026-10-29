@@ -2385,9 +2385,10 @@ class MemoryStore:
         Return the selected nodes in order with access metadata from SQLite's
         increments, preserving their selected content and validity. Missing
         nodes or event/history failures roll back the entire write.
-        Access and event logging can be disabled independently. This records
-        the retrieval tail; response shaping and network delivery are outside
-        the transaction.
+        Access and event logging can be disabled independently. Recall composes
+        this savepoint with its required response formation transaction; a
+        failed projection rolls back consumption too. Network delivery remains
+        outside that transaction.
 
         ``recall_map`` is the map served with this delivery, stored verbatim as
         compact JSON. The live recall path leaves it unset and calls

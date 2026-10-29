@@ -1,5 +1,6 @@
 """Only needed legacy snippets pay for a bounded, generation-checked index refresh."""
 
+from contextlib import nullcontext
 from dataclasses import replace
 
 import pytest
@@ -176,7 +177,7 @@ def test_one_record_limit_after_selection_and_delivery(app, monkeypatch):
     store = mcp.memory_store
     nodes = [legacy(store, CONTENT + f"\nRecord {i}.") for i in range(3)]
     results = service.memory_recall(QUERY, scope=SCOPE, depth=0, max_results=3, log_access=False)
-    monkeypatch.setattr(service, "memory_recall", lambda *args, **kwargs: results)
+    monkeypatch.setattr(service, "recall_response", lambda *args, **kwargs: nullcontext(results))
     before = {node.id: rows(store, node.id) for node in nodes}
     encoder.batches.clear()
     call(mcp)
@@ -185,7 +186,7 @@ def test_one_record_limit_after_selection_and_delivery(app, monkeypatch):
     # A withheld result and a duplicate stub cannot consume the refresh slot.
     fresh = service.store.get_node(results[1].node_id)
     hidden = replace(results[1], withheld="below_threshold")
-    monkeypatch.setattr(service, "memory_recall", lambda *args, **kwargs: [hidden])
+    monkeypatch.setattr(service, "recall_response", lambda *args, **kwargs: nullcontext([hidden]))
     encoder.batches.clear()
     assert call(mcp)["results"][0]["delivery"] == "below_threshold"
     assert encoder.batches == [] and rows(store, fresh.id) == before[fresh.id]

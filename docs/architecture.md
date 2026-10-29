@@ -60,8 +60,15 @@ without changing the other surface.
 3. Every 100 active traces in a scope, `memory_remember` triggers consolidation.
 4. `memory_recall` resolves the search scope, queries FTS5, scans local
    embeddings, optionally traverses graph edges, reranks by feedback and
-   confidence, records access on returned nodes, and stores a `recall_events`
+   confidence, and reads the selected passage coordinates. Its short consumption
+   transaction records access on returned nodes and stores a `recall_events`
    row containing the query, resolved scopes, method scores, and result IDs.
+   Required correction reads and response shaping complete before this transaction
+   commits. A failure rolls back access and event/history together, leaving no
+   new event for later explicit or implicit feedback. Query/feedback encoding,
+   index preparation and ranking precede the transaction. The direct Python API
+   keeps independent `log_access`/`log_event` flags; disabling both opens no
+   consumption transaction.
    When the call arrives over an MCP transport, the server first stamps a
    transport-derived `transport_session_id` into the ambient context (an
    explicit caller value always wins), and the row keeps that identity in its
@@ -96,7 +103,11 @@ without changing the other surface.
    full/snippet bodies, source/body hashes. Selection IDs and scores retain their access and
    feedback roles. Missing delivery evidence permits re-delivery, including
    for legacy events. Without a transport session id, session dedup is skipped.
-   A formed response is not proof of successful network transport.
+   Optional map, delivery-receipt and passage-maintenance failures do not undo
+   the required response or its event. Feedback eligibility does not require an
+   optional delivery receipt. A formed response is not proof of successful
+   network transport: an interruption after commit has an unknown delivery
+   outcome and does not authorize automatic replay.
 6. The next compatible `memory_remember` consumes the pending recall event,
    records the complete delivery history in the new trace provenance, and
    applies content-grounded credit to recalled results and retrieval weights.

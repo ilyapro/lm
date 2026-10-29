@@ -132,11 +132,15 @@ keys, no `SCHEMA_VERSION` bump.
 Index `idx_recall_feedback_marks_event(recall_event_id, mark, accepted)`
 supports inspection of accepted and dropped marks for one recall event.
 
-`memory_teach` and `memory_recall` write their marks before their carrier
-exists: the corrective trace in one case, the new recall event in the other.
-They fill `source_id` in once the carrier has been written
-(`MemoryStore.set_feedback_marks_source`). A teach that is about to fail on
-its own arguments (unknown `trace_id`, empty correction) records nothing.
+`memory_recall` resolves marks before its own event exists, then writes them
+after committing the required formed response, with that new event as
+`source_id`. Required passage/correction reads or shaping failures leave no
+current consumption event or marks. Earlier eligible events remain available;
+optional map or delivery-receipt failure does not remove their eligibility.
+`memory_teach` writes marks before its corrective trace and fills `source_id`
+with `MemoryStore.set_feedback_marks_source` in the same required transaction.
+A teach that fails on its arguments (unknown `trace_id`, empty correction)
+records nothing.
 
 ## Explicit credit basis: side table, not a rebuild
 

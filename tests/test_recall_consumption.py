@@ -87,8 +87,15 @@ def test_selected_order_access_metadata_and_one_tail_transaction(store, limit):
     )
     store.connection.set_trace_callback(None)
     statements = [" ".join(statement.split()) for statement in sql]
-    assert sum(s.startswith("SAVEPOINT ") for s in statements) == 1
-    assert sum(s.startswith("RELEASE ") for s in statements) == 1
+    depth = commits = 0
+    for statement in statements:
+        if statement.startswith("SAVEPOINT "):
+            depth += 1
+        elif statement.startswith("RELEASE "):
+            depth -= 1
+            commits += depth == 0
+        assert not statement.startswith(("COMMIT", "END TRANSACTION"))
+    assert depth == 0 and commits == 1
     assert not any(s.startswith("SELECT") and "FROM nodes" in s for s in statements)
     assert [result.node.id for result in results] == [result.node.id for result in selected]
     for result, original in zip(results, selected, strict=True):
