@@ -87,7 +87,7 @@ def test_thousand_trace_semantic_recall_finds_relevant_record(tmp_path: Path) ->
         assert {"bm25", "vector"} & set(results[0].methods)
 
 
-def test_mcp_remember_automatically_creates_concept_with_temporal_consensus_and_prompt(
+def test_mcp_remember_automatically_creates_concept_with_consensus_and_prompt(
     tmp_path: Path,
 ) -> None:
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=RecordingMCP)
@@ -116,7 +116,7 @@ def test_mcp_remember_automatically_creates_concept_with_temporal_consensus_and_
     assert len(concept.source_traces) == 100
     assert concept.stats["unique_agents"] == 2
     assert concept.stats["confidence"] > 0.5
-    assert concept.stats["temporal_hint"] == "weekly:mon"
+    assert concept.stats["temporal_hint"] is None
 
     block = mcp.prompts["memory://prompt/retrieval_context"](
         task="deploy rollback migration",

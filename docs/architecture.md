@@ -14,7 +14,7 @@ The server is a Python package under `src/living_memory`.
 | MCP surface | `server.py`, `delivery.py` | Registers nine core tools, conditionally registers the independently controlled attestation tool, and filters only `tools/list`; also registers four resources and the retrieval-context prompt, stamps transport-derived correlation identity into recall/remember/teach, and shapes recall responses (session/twin dedup, snippets, context compaction) before serialization. |
 | Storage | `storage.py`, `models.py` | Owns SQLite schema, uniform node CRUD, connections, FTS5, and retrieval weights. |
 | Retrieval | `retrieval.py`, `scope.py`, `embeddings.py`, `feedback.py` | Resolves scope, searches FTS5, computes multilingual embeddings, traverses graph edges, reranks, logs access, stores recall events, and tunes weights. |
-| Learning loop | `consolidation.py`, `decay.py`, `temporal.py` | Clusters similar traces into concepts, computes consensus and temporal hints, updates edge weights, records corrections, and soft-deletes expired or superseded records. |
+| Learning loop | `consolidation.py`, `decay.py`, `temporal.py` | Clusters similar traces into concepts, computes consensus, parses timestamps, updates edge weights, records corrections, and soft-deletes expired or superseded records. |
 | Offline credit | `attestation.py`, `postsession/` | Grades a finished session's recall events against evidence lifted from that session's own artifacts and applies the credit the live loop missed. See [post-session-attestation.md](post-session-attestation.md). |
 | Read models | `resources.py`, `prompts.py` | Produces browsable resource payloads and formatted active memory context. |
 | Configuration | `config.py` | Loads TOML settings and supplies defaults. |
@@ -164,7 +164,7 @@ without changing the other surface.
    schema write behind the server's back — not a read. Every offline writer
    goes over MCP.
 9. `memory_consolidate` clusters recent active traces, creates or updates
-   concept nodes, computes consensus confidence and weekly temporal hints,
+   concept nodes, computes consensus confidence,
    refreshes related-edge weights, and applies decay. Concept content is a
    deterministic extractive digest of complete source sentences, capped at
    1200 characters. Token novelty ranks sentences; only exact sentence repeats
@@ -202,7 +202,8 @@ Uniform storage for traces, concepts, and schemas.
 | `scope` | `global`, `project:<name>`, or `session:<id>`. |
 | `agent`, `task`, `context`, `timestamp` | Interaction context. |
 | `decayed`, `decay_reason` | Soft-delete state. |
-| `access_count`, `last_accessed`, `usefulness_score`, `confidence`, `unique_agents`, `temporal_hint` | Ranking and learning statistics. |
+| `access_count`, `last_accessed`, `usefulness_score`, `confidence`, `unique_agents` | Ranking and learning statistics. |
+| `temporal_hint` | Opaque optional metadata supplied by callers or retained from existing records; exposed in full lookup. Consolidation and promotion preserve an owner's value without inferring or copying source hints. |
 | `source_traces`, `corrections`, `provenance` | Concept lineage and correction history. |
 | `created_at`, `updated_at` | Store timestamps. |
 

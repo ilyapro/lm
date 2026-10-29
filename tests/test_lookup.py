@@ -303,6 +303,23 @@ def test_memory_lookup_by_id_round_trips_full_content(tmp_path: Path) -> None:
     assert [entry["id"] for entry in by_level["results"]] == [target_id]
 
 
+@pytest.mark.parametrize("hint", ["2026-Q3", "weekly:thu", "current"])
+def test_full_lookup_preserves_explicit_temporal_metadata_through_updates(tmp_path: Path, hint) -> None:
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    try:
+        node = mcp.memory_store.create_node(
+            level="concept", content="Import verification requires checksum validation.",
+            stats={"temporal_hint": hint},
+        )
+        mcp.memory_store.update_node(node.id, stats={"usefulness_score": 0.4})
+        fetched, = mcp.tools["memory_lookup"](node_id=node.id, view="full")["results"]
+        assert fetched["stats"]["temporal_hint"] == hint
+        assert fetched["stats"]["usefulness_score"] == 0.4
+    finally:
+        mcp.auto_consolidation.close()
+        mcp.memory_store.close()
+
+
 def test_memory_lookup_by_ids_preserves_order_and_lists_missing(tmp_path: Path) -> None:
     mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
     first = mcp.tools["memory_remember"]("id-fetch first", {"scope": "project:idfetch"})

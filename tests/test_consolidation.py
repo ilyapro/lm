@@ -67,7 +67,7 @@ def test_consolidation_creates_concept_from_similar_traces_and_keeps_sources(
         assert concept.source_traces == sorted(trace.id for trace in traces)
         assert concept.confidence > 0.5
         assert concept.unique_agents == 2
-        assert concept.temporal_hint == "weekly:mon"
+        assert concept.temporal_hint is None
 
         for trace in traces:
             stored = store.get_node(trace.id)

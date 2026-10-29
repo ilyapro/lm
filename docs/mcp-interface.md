@@ -874,8 +874,12 @@ Input:
 ```
 
 The tool clusters similar recent traces, creates or updates concept nodes,
-records source trace IDs, computes consensus confidence and weekly temporal
-hints, updates related-edge weights, and applies decay. Concept content is a
+records source trace IDs, computes consensus confidence, updates related-edge
+weights, and applies decay. `stats.temporal_hint` is opaque optional metadata:
+new derived nodes default to null, and consolidation and promotion preserve
+existing values without inferring recurrence or copying source hints. Explicit
+strings such as `2026-Q3` remain available through `memory_lookup(view="full")`.
+Concept content is a
 deterministic extractive digest of the cluster. It selects complete source
 sentences within a 1200-character budget, using token novelty to rank sentences
 and exact equality to skip repeats. Distinct conditions are never replaced by

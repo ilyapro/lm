@@ -44,7 +44,7 @@ from living_memory.query_anchors import resolve_replacement
 from living_memory.relations import CLUSTER_MEMBERSHIP_WEIGHT, DERIVED_FROM_WEIGHT, is_correction
 from living_memory.storage import MemoryStore, _node_read_batches, new_ulid
 from living_memory.source_text import PASSAGE_SEPARATOR, passage_spans
-from living_memory.temporal import detect_temporal_hint, parse_timestamp
+from living_memory.temporal import parse_timestamp
 
 _LOG = logging.getLogger(__name__)
 
@@ -1269,7 +1269,6 @@ def _create_or_update_schema(
 
     unique_agents = _unique_agent_count(traces)
     confidence = _consensus_confidence(traces, unique_agents)
-    temporal_hint = detect_temporal_hint(traces)
     usefulness = sum(max(0.0, trace.usefulness_score) for trace in traces) / len(traces)
 
     excluded_ids = set(selection.excluded)
@@ -1287,7 +1286,6 @@ def _create_or_update_schema(
     stats = {
         "confidence": confidence,
         "unique_agents": unique_agents,
-        "temporal_hint": temporal_hint,
         "usefulness_score": usefulness,
     }
     context = {
@@ -1872,7 +1870,6 @@ def _write_cluster_concept(
     stats = {
         "confidence": _consensus_confidence(members, unique_agents),
         "unique_agents": unique_agents,
-        "temporal_hint": detect_temporal_hint(members),
         "usefulness_score": sum(max(0.0, trace.usefulness_score) for trace in members) / len(members),
     }
     with store.transaction():
@@ -2249,7 +2246,6 @@ def _write_global_promotion(
     stats = {
         "confidence": _active_promotion_confidence(project_sources, unique_agents),
         "unique_agents": unique_agents,
-        "temporal_hint": _promoted_temporal_hint(project_sources),
         "usefulness_score": _promoted_usefulness(project_sources),
     }
     if existing is not None and existing.content == digest and all(
@@ -2427,13 +2423,6 @@ def _promoted_usefulness(project_sources: Iterable[Node]) -> float:
     if not sources:
         return 0.0
     return round(sum(source.usefulness_score for source in sources) / len(sources), 6)
-
-
-def _promoted_temporal_hint(project_sources: Iterable[Node]) -> str | None:
-    hints = [source.temporal_hint for source in project_sources if source.temporal_hint]
-    if not hints:
-        return None
-    return Counter(hints).most_common(1)[0][0]
 
 
 def _refresh_promoted_global_concepts(
