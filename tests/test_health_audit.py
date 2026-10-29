@@ -7,11 +7,13 @@ import json
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from living_memory.config import MemoryConfig
 from living_memory.health_audit import (
     DEFAULT_LATENCY_QUERY,
     ReadOnlyAuditStore,
@@ -464,16 +466,24 @@ def test_health_audit_deterministic_across_repeated_calls(tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_audit_against_read_only_path_does_not_modify_db_file(tmp_path: Path) -> None:
+@pytest.mark.parametrize("custom_config", [False, True])
+def test_audit_against_read_only_path_does_not_modify_db_file(
+    tmp_path: Path, custom_config: bool,
+) -> None:
     fixture_path = tmp_path / "readonly.sqlite3"
     with _build_fixture(fixture_path) as store:
         store.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     md5_before = _md5_of_file(fixture_path)
 
-    ro_store = open_read_only_store(fixture_path)
+    config = (
+        MemoryConfig(default_scope="project:custom", retrieval_policy_floors={})
+        if custom_config else None
+    )
+    ro_store = open_read_only_store(fixture_path, config=config)
     try:
         assert isinstance(ro_store, ReadOnlyAuditStore)
+        assert ro_store.config == replace(config or MemoryConfig(), db_path=fixture_path)
         result = compute_health_audit(ro_store, latency_samples=3)
     finally:
         ro_store.close()
