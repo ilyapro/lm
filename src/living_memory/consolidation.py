@@ -1255,7 +1255,11 @@ def _materialize_procedural_schemas(
             # nothing superseded.
             members, era = (assessment.live, assessment) if binding else (group_traces, None)
             schema, created = _create_or_update_schema(
-                store, group_scope, procedure_key, members, existing, era=era
+                store, group_scope, procedure_key, members, existing, era=era,
+                retained_sources=(
+                    trace.id for trace in group_traces
+                    if existing and trace.id in existing.source_traces
+                ),
             )
             _connect_schema_to_traces(store, schema, assessment.live)
             for duplicate in duplicates:
@@ -1364,6 +1368,7 @@ def _create_or_update_schema(
     *,
     era: _EraAssessment | None = None,
     observation: _SourceObservation | None = None,
+    retained_sources: Iterable[str] = (),
 ) -> tuple[Node, bool]:
     trigger = procedure_key.trigger
     group_id = procedure_key.group_id
@@ -1408,9 +1413,9 @@ def _create_or_update_schema(
     if era_block is not None:
         context["era_status"] = "current"
 
-    # Callers supply the full revalidated union, including retained inputs
-    # outside this pass. Re-adding old citations would restore removed sources.
-    sources = sorted({trace.id for trace in traces} - excluded_ids)
+    # Retained citations are revalidated with the full group, even when only
+    # its declared steps render a schema. Never restore old citations blindly.
+    sources = sorted({*retained_sources, *(trace.id for trace in traces)} - excluded_ids)
     content = (
         _format_schema_content(trigger, steps)
         if era is not None

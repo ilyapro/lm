@@ -172,6 +172,20 @@ def test_readmission_starts_a_new_coverage_interval(store, clock, kind):
     }
 
 
+def test_schema_transition_keeps_current_cited_evidence_and_its_age(store, clock):
+    traces, owner = setup_owner(store, clock, "evidence")
+    clock[0] = 11
+    declared = [source(store, i, kind="schema") for i in range(3, 6)]
+    clock[0] = 12
+    consolidate(store, "schema")
+    current = store.get_node(owner.id)
+    assert current.level == "schema"
+    expected = {**{trace.id: stamp(10) for trace in traces}, **{trace.id: stamp(12) for trace in declared}}
+    assert current.provenance["source_coverage"] == expected
+    assert set(current.source_traces) == set(expected)
+    assert current.context["procedure"] == [trace.content for trace in declared]
+
+
 @pytest.mark.parametrize("kind", ["cluster", "schema", "evidence"])
 @pytest.mark.parametrize("history", ["legacy", "partial", "malformed"])
 def test_unknown_existing_age_survives_maintenance_and_does_not_age_new_sources(
