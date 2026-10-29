@@ -298,6 +298,27 @@ Embedding model downloads are opt-in. Set `LIVING_MEMORY_EMBEDDING_BACKEND=onlin
 only in environments where network-backed sentence-transformers loading is
 allowed.
 
+## Health report
+
+`memory_health(scope=..., window_hours=168, top_stale=5)` reports activity,
+staleness and feedback closure without recording accesses. For active traces
+in the selected scope, age percentiles and `staleness.top_stale` both use time
+since `last_accessed`, or `timestamp` when the access date is absent or empty.
+Missing or invalid reference dates are omitted, and future dates have age zero.
+An invalid nonempty access date does not fall back to creation time.
+`top_stale` returns at most the requested number, oldest by this age first;
+zero disables the list. This diagnostic leaves decay TTL and retrieval unchanged.
+
+`feedback_closure.identity_coverage` partitions events in the selected scope
+and creation-time window. `explicit` means a nonblank persisted `session_id`,
+including the writer's `session` alias and string conversion; agent and task
+are optional. `transport_only` means no such session but a nonempty transport
+stamp, and `none` means neither usable identity. A class describes saved identity,
+not a guarantee that a feedback request matches: reconnect still requires the
+existing compatible scope/context, delivery and time checks. Each class reports
+event and closed-event counts and their ratio; closure means
+`feedback_applied = 1`, regardless of when feedback was applied.
+
 ## Optional decay maintenance
 
 `memory_recall`, `memory_remember` and `memory_consolidate` each check the
