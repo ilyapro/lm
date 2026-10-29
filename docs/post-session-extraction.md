@@ -12,7 +12,7 @@ scripts/post_session_extract.py --transcript <path> [--source claude|codex|gigac
 Flow: transcript → `SessionRecord` → proposed `memory_remember` ops
 (`postsession.insights`) + `memory_teach` ops (`postsession.corrections`) +
 `memory_attest` evidence (`postsession.evidence`) → **consumption gate** →
-attributed, budget-bounded, idempotent writes over the live MCP interface →
+attributed, budget-bounded writes with durable operation state over MCP →
 run report. The gate is checked *before any session is read*: the
 pre-registered bar in `artifacts/post-session/usage-baseline.json` names the
 runner as its enforcer, and a failed, missing or stale counterfactual verdict
@@ -21,7 +21,14 @@ decided by the sealed-holdout field measurement in
 `artifacts/post-session/field-report.json` (driver:
 `scripts/postsession_field_run.py`).
 
-This document specifies **when and how the stage gets invoked after a session
+The offline stage is an independent safety net for knowledge missed during a
+session. In-session remember does not replace that purpose. The supported CLI
+is available for authorized use; installing it does not enable extraction,
+hooks or timers. The field gate remains INCONCLUSIVE (see §4), and enabling
+production extraction requires a separate decision. CLI updates need no restart
+of the Living Memory service.
+
+This document specifies **when and how the stage could be invoked after a session
 ends** — the integration point with AE — precisely enough that the hook can be
 installed by a separate goal without touching this stage's core. Nothing in
 this document (or in the goal that produced it) modifies anything under
@@ -109,30 +116,88 @@ source `ae_node_result`); the CLI sessions a node spawned are found through
 the transcript roots recorded in `artifacts/post-session/corpus.json` (claude:
 `~/.claude/projects/<cwd-slug>/<uuid>.jsonl`, codex:
 `~/.codex/sessions/…`, chats: `state/chats/<id>/transcript.jsonl`). Prefer
-transcripts whose mtime falls inside the goal's run window; the stage itself
-is idempotent, so over-approximating the set is safe and cheap (already-done
-transcripts produce zero writes).
+transcripts whose mtime falls inside the goal's run window. Reuse the same
+state directory for every writer of a given operation; a completed ledger key
+suppresses another write. Transcript changes or different extracted content can
+produce different keys, so selecting more transcripts is not a free retry.
 
-**Exit codes.** `0` = ran to completion (including "nothing to write");
-`3` = the consumption gate did not authorize the run — **nothing was
-written**, and the hook must treat this as a signal to stop scheduling runs,
-not retry; `2` = usage/environment error; `1` = ran, but at least one accepted
-op failed to write (safe to re-run: writes are idempotent). Because AE
-swallows hook failures, the hook should record non-zero outcomes in its own
-log/queue if anyone needs to notice them.
+**Exit codes.** `0` = completed with no unresolved operation in the selected
+state; `1` = an operation is known not sent and can be resumed; `2` = usage,
+environment, state or output error; `3` = the consumption gate refused the run,
+with no mutation sent; `4` = an effect is UNKNOWN. A local report error does not
+say whether a mutation happened. Non-zero outcomes need attention; a future
+hook must preserve them instead of silently scheduling retries.
 
-**Idempotency.** Every executed op is keyed by `(transcript sha256, op
-fingerprint)` in `~/.local/state/living-memory/postsession/ledger.jsonl`.
-Replaying that operation with the ledger present produces no second write.
-When the ledger is lost, the runner retrieves bounded candidates through
-`memory_recall` and restores complete content and provenance through
-`memory_lookup`. It suppresses a remember proposal only when content, scope,
-transcript hash and source span match a prior remember. A teach proposal also
-requires the same corrected node: an earlier remember cannot stand in for its
-correction edge. Missing provenance, unavailable full content and similarity
-alone do not establish a prior extraction. Bounded retrieval can miss a repeat,
-so the fallback does not guarantee exhaustive detection after ledger loss.
-`memory_attest` retains its server-side `(event, evidence)` replay identity.
+**Operation state and reruns.** Each operation is keyed by `(transcript sha256,
+op fingerprint)` in `~/.local/state/living-memory/postsession/ledger.jsonl`.
+Before invoking a mutation, the runner durably saves UNKNOWN, its exact request,
+source attribution and recipient URL. An applied response completes that same
+key. A connection/setup failure before invoking the mutation changes it to
+`ready`; a tool error, lost reply, interrupted process or unconfirmed response
+leaves UNKNOWN. Even a crash between saving UNKNOWN and sending the request is
+ambiguous on restart. Failing to save admission state prevents dispatch.
+
+The ledger uses a process lock for local read/modify/replace and fsyncs the
+replacement and its directory before dispatch. Concurrent updated CLI writers
+sharing this state directory cannot independently claim the same operation.
+The lock is released before network I/O, and an unrelated operation can proceed
+while another is UNKNOWN. A corrupt or unreadable ledger fails closed. Do not
+run old writers alongside updated writers, delete the ledger/lock, or change
+state directories to bypass an unresolved operation. Independent state dirs or
+hosts have no shared admission guarantee; this is not exactly-once delivery.
+The URL must identify the same recipient throughout recovery; replacing the
+server/database behind an unchanged URL cannot be detected by this client.
+
+A bounded `memory_recall` plus full `memory_lookup` can supply positive evidence:
+content, scope, transcript hash and source span must match for remember; teach
+requires the corrected node and its actual `superseded_by` relation as well.
+A stored extraction fingerprint, when present, must match. Text equality alone,
+empty candidates and unavailable lookup cannot clear UNKNOWN. If the ledger
+itself is lost, search can recognize some prior extractions but cannot establish
+that the rest never happened. Restore state and inspect the recipient; do not
+treat a fresh directory as safe recovery. Original completed ledger rows remain
+completed; unrecorded failures from older CLI versions cannot be reconstructed.
+
+**Finite reconciliation and continuation.** Reconciliation loads saved requests;
+it neither reads transcripts nor calls a judge. It performs one pass, with no
+poller. Start with the same state directory and recipient URL:
+
+```sh
+python3 scripts/post_session_extract.py --reconcile \
+    --state-dir "$HOME/.local/state/living-memory/postsession" --url <recipient-url>
+```
+
+This queries the recipient and saves any confirmed result locally, without
+sending a mutation. An unresolved effect is printed with `SHA:FINGERPRINT` and
+returns exit 4. A known node ID from a recipient response or independent
+inspection bypasses bounded candidate search:
+
+```sh
+python3 scripts/post_session_extract.py --reconcile \
+    --operation <SHA:FINGERPRINT> --node-id <recipient-node-id> \
+    --state-dir <same-state-dir> --url <same-recipient-url>
+```
+
+The CLI fetches that ID and verifies its content, provenance and operation kind;
+it does not trust an ID or local output as proof by itself. Matching confirmation
+completes the saved operation without another mutation. With no confirmation,
+UNKNOWN remains explicit. There is no force-retry flag: without recipient proof
+or receiver idempotency, the client cannot safely decide that the effect is
+absent. Inspect the recipient in the next ordinary recovery action, retaining
+state; repeated search misses do not change the decision.
+
+To resume `ready` requests, add `--write` to `--reconcile`, optionally selecting
+one `--operation`. This still requires the existing consumption gate and obeys
+the ordinary mutation budgets. The sole exception permitting a mutation replay
+from UNKNOWN is `memory_attest`: `--reconcile --write` resubmits the exact saved
+(event, evidence) identity and records the receiver's existing replay verdict.
+It does not create a second attestation or repeat credit. A received applied
+result remains applied even if connection cleanup or writing `--out` fails.
+
+The state directory contains private request content and evidence; new ledger
+files use owner-only permissions. Keep state and reports outside tracked source.
+A normal extraction run reports outstanding saved UNKNOWN operations even if
+proposal generation no longer emits them.
 
 The proposal stage uses the same exact content, scope and transcript/span
 identity within a run and against existing memory. Semantic retrieval finds

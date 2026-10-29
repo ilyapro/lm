@@ -289,7 +289,11 @@ def test_native_applied_lost_reply_and_finite_confirmation(live_server, tmp_path
     assert run(tmp_path, missing, record, [op])[0].reason == "ledger_duplicate"
     with sqlite3.connect(live_server["db"]) as db:
         # Count this operation's actual recipient effects, independent of recall.
-        assert db.execute("SELECT count(*) FROM nodes WHERE id = ?", (result_id,)).fetchone()[0] == 1
+        assert db.execute(
+            "SELECT count(*) FROM nodes WHERE json_extract(context, '$.source_transcript_sha256') = ? "
+            "AND json_extract(context, '$.extraction_fingerprint') = ?",
+            (record.transcript_sha256, op_fingerprint(op)),
+        ).fetchone()[0] == 1
     if kind == "teach":
         original = missing.lookup_nodes([op.payload["trace_id"]])["results"][0]
         assert original["superseded_by"] == [result_id]
@@ -426,4 +430,21 @@ def test_cli_missing_output_does_not_reopen_applied_operation(tmp_path, monkeypa
     assert len(client.effects) == 1
     assert Ledger(tmp_path / "state").entries()[0]["state"] == "applied"
     assert cli.main(args[:-2]) == 0
+    assert len(client.effects) == 1
+
+
+def test_normal_cli_reports_unknown_even_when_no_proposal_survives(tmp_path, monkeypatch, capsys):
+    from living_memory.postsession.runner import GateDecision
+
+    cli = _load_cli()
+    client = Recipient(ClientError("lost reply"))
+    client.ping = lambda: {}
+    record = make_record()
+    run(tmp_path, client, record, [make_remember(record, "Outstanding saved effect.")])
+    monkeypatch.setattr(cli, "LiveMemoryClient", lambda *args, **kwargs: client)
+    monkeypatch.setattr(cli, "evaluate_gate", lambda *args, **kwargs: GateDecision("PASS"))
+    monkeypatch.setattr(cli, "select_records", lambda *args: ([record], [], {}))
+    args = ["--transcript", "unused", "--state-dir", str(tmp_path), "--write", "--judge", "none", "--stages", ""]
+    assert cli.main(args) == EXIT_UNKNOWN
+    assert "UNKNOWN" in capsys.readouterr().err
     assert len(client.effects) == 1

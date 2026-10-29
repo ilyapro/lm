@@ -15,7 +15,7 @@ Layers:
 * one live end-to-end write scenario against a throwaway server subprocess on
   a spare port with a scratch database — never the live unit, never the live
   database file — proving real writes, real supersedes edges, real grounded
-  attestation, and both idempotency layers (ledger present; ledger lost).
+  attestation, ledger suppression, and a positive prior-extraction lookup.
 """
 
 from __future__ import annotations
@@ -777,7 +777,7 @@ def test_live_write_scenario_attribution_idempotency_and_ledger_loss(
     assert count_extracted_fact_nodes() == 1
     assert corrections_on_original() == 1
 
-    # ---- run 3: ledger LOST -> the server-side checks still hold ----------
+    # ---- run 3: fresh ledger -> positive prior-extraction evidence --------
     third = run(tmp_path / "state-b")  # a fresh, empty state dir
     by_kind3 = {d.kind: d for d in third}
     assert by_kind3["remember"].status == "skipped"
