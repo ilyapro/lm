@@ -915,7 +915,7 @@ class ExtractionRunner:
     # ---- decide + execute --------------------------------------------------
 
     def _lm_duplicate(
-        self, op: ProposedOp, *, node_id: str = "", confirm_effect: bool = False,
+        self, op: ProposedOp, *, node_id: str = "",
     ) -> tuple[str, dict[str, Any]]:
         """Ask the live server whether this write already exists.
 
@@ -945,7 +945,7 @@ class ExtractionRunner:
                     scope = results[0]["scope"]
             except ClientError:
                 results = []
-            if confirm_effect and not results:
+            if not results:
                 return "", {"checked": 0, "error": "original node unavailable"}
         index = McpMemoryIndex(self.client)
         try:
@@ -980,7 +980,7 @@ class ExtractionRunner:
             fingerprint = context.get("extraction_fingerprint")
             if fingerprint and fingerprint != op_fingerprint(op):
                 continue
-            if confirm_effect and op.kind == "teach" and snapshot.node_id not in (
+            if op.kind == "teach" and snapshot.node_id not in (
                 results[0].get("superseded_by") or []
             ):
                 continue
@@ -1066,7 +1066,7 @@ class ExtractionRunner:
         op = ProposedOp.from_dict(entry["operation"])
         if op.kind == "attest" and not self.config.dry_run:
             return False  # Receiver replay uses the exact saved event/evidence.
-        reason, detail = self._lm_duplicate(op, node_id=node_id, confirm_effect=True)
+        reason, detail = self._lm_duplicate(op, node_id=node_id)
         if reason:
             decision.status, decision.reason = "reconciled", reason
             decision.node_id = detail["node_id"]

@@ -714,7 +714,7 @@ def test_plain_remember_does_not_replace_a_teach_operation(
             return {"results": [{"node": existing, "delivery": "full"}]}
 
         def lookup_nodes(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-            return {"results": [{"id": "original", "scope": "project:demo"}]}
+            return {"results": [{"id": "original", "scope": "project:demo", "superseded_by": ["prior"]}]}
 
     runner = ExtractionRunner(config=RunnerConfig(), ledger=Ledger(tmp_path), client=Client())
     reason, _ = runner._lm_duplicate(op)
