@@ -66,8 +66,9 @@ def retrieval_context_prompt(
     retrieval_policy: str = "balanced",
     agent: str | None = None,
     ambient_context: dict[str, Any] | None = None,
+    repair_pending: bool = True,
 ) -> str:
-    """Build a formatted active context block from top-ranked concepts and schemas."""
+    """Build active context; guarded callers prepare pending indexes beforehand."""
 
     query = task.text if isinstance(task, _PreparedQuery) else str(task or "").strip()
     if not isinstance(task, _PreparedQuery):
@@ -86,6 +87,7 @@ def retrieval_context_prompt(
         min_confidence=min_confidence,
         retrieval_policy=retrieval_policy,
         ambient_context=ambient,
+        repair_pending=repair_pending,
     )
     schemas = select_context_schemas(
         store,
@@ -94,6 +96,7 @@ def retrieval_context_prompt(
         max_schemas=max_schemas,
         min_confidence=min_confidence,
         ambient_context=ambient,
+        repair_pending=repair_pending,
     )
     decisions = select_decision_history(
         store,
@@ -101,6 +104,7 @@ def retrieval_context_prompt(
         plan=plan,
         max_items=max_concepts,
         ambient_context=ambient,
+        repair_pending=repair_pending,
     )
     return format_retrieval_context(
         concepts,
@@ -123,6 +127,7 @@ def select_context_concepts(
     min_confidence: float = 0.0,
     retrieval_policy: str = "balanced",
     ambient_context: dict[str, Any] | None = None,
+    repair_pending: bool = True,
 ) -> list[ContextConcept]:
     """Select from task recall, or rank scoped concepts for an empty-task browse."""
 
@@ -141,6 +146,7 @@ def select_context_concepts(
             ambient_context=ambient_context,
             max_results=max(limit * 6, 20),
             log_access=False,
+            repair_pending=repair_pending,
         )
         for result in recall_results:
             node = result.node
@@ -198,6 +204,7 @@ def select_context_schemas(
     max_schemas: int = DEFAULT_CONTEXT_SCHEMAS,
     min_confidence: float = 0.0,
     ambient_context: dict[str, Any] | None = None,
+    repair_pending: bool = True,
 ) -> list[ContextSchema]:
     """Select schema nodes whose trigger matches the task."""
 
@@ -217,6 +224,7 @@ def select_context_schemas(
         max_results=max(limit * 4, 12),
         log_access=False,
         log_event=False,
+        repair_pending=repair_pending,
     )
     selected: list[ContextSchema] = []
     for result in recall_results:
@@ -247,6 +255,7 @@ def select_decision_history(
     plan: ScopePlan,
     max_items: int = DEFAULT_CONTEXT_CONCEPTS,
     ambient_context: dict[str, Any] | None = None,
+    repair_pending: bool = True,
 ) -> list[DecisionHistory]:
     """Return primary traces that have rejected alternatives relevant to the task."""
 
@@ -263,6 +272,7 @@ def select_decision_history(
         depth="decision",
         max_results=max(limit * 6, 20),
         log_access=False,
+        repair_pending=repair_pending,
     )
 
     selected: dict[str, DecisionHistory] = {}

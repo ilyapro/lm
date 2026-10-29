@@ -1766,6 +1766,9 @@ def _register_resources(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None
 
 
 def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
+    recall_service = MemoryRecallService(store)
+    recall_service._share_embedder_with_store()
+
     @mcp.prompt(name="memory://prompt/retrieval_context")
     def retrieval_context(
         task: str = "",
@@ -1778,7 +1781,11 @@ def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
     ) -> str:
         """Return a formatted active memory context block."""
 
-        prepared_query = MemoryRecallService(store).prepare_query(str(task or ""))
+        prepared_query = recall_service.prepare_query(str(task or ""))
+        if prepared_query.text:
+            recall_service.refresh_pending_chunks(
+                scope=scope, ambient_context=ambient_context, guard=lambda: runtime_lock,
+            )
         with runtime_lock:
             return retrieval_context_prompt(
                 store,
@@ -1789,6 +1796,7 @@ def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 retrieval_policy=retrieval_policy,
                 agent=agent,
                 ambient_context=ambient_context,
+                repair_pending=False,
             )
 
 

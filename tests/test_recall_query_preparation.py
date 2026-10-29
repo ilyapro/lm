@@ -44,8 +44,10 @@ def runtime(tmp_path, monkeypatch):
         return list(VECTOR)
 
     def service(store):
-        state.service = MemoryRecallService(store, embedder=LocalEmbeddingModel(dimensions=3, backend="hash"))
-        return state.service
+        service = MemoryRecallService(store, embedder=LocalEmbeddingModel(dimensions=3, backend="hash"))
+        if not hasattr(state, "service"):
+            state.service = service
+        return service
 
     monkeypatch.setattr(embeddings, "_embed_hash", encode)
     monkeypatch.setattr(server, "MemoryRecallService", service)

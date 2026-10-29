@@ -11,7 +11,8 @@ from test_recall_query_preparation import SCOPE, VECTOR, entry, recall, runtime
 
 
 @pytest.mark.parametrize("reset", ["none", "restart", "eviction"])
-def test_native_pending_progress_scope_isolation_and_retry(runtime, monkeypatch, reset):
+@pytest.mark.parametrize("consumer", ["recall", "prompt"])
+def test_native_pending_progress_scope_isolation_and_retry(runtime, monkeypatch, reset, consumer):
     r = runtime
     if reset == "eviction":
         monkeypatch.setattr(retrieval, "LAZY_CHUNK_PLAN_LIMIT", 1)
@@ -47,12 +48,20 @@ def test_native_pending_progress_scope_isolation_and_retry(runtime, monkeypatch,
     async def read(scope=SCOPE):
         attempts.clear()
         async with Client(r.mcp) as client:
-            response = await recall(client, scope=scope)
+            if consumer == "recall":
+                response = await recall(client, scope=scope)
+            else:
+                response = await client.get_prompt("memory://prompt/retrieval_context", {
+                    "task": "cobalt certificate", "scope": scope,
+                })
         assert len(attempts) <= limit
         assert not r.store.connection.in_transaction
         assert r.store.list_node_chunks(r.node.id) == original
         if scope == SCOPE:
-            assert entry(response)["id"] == r.node.id
+            if consumer == "recall":
+                assert entry(response)["id"] == r.node.id
+            else:
+                assert r.node.id in response.messages[0].content.text
         return list(attempts)
 
     async def scenario():
