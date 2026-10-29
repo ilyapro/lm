@@ -384,10 +384,18 @@ class ReadOnlyAuditStore(MemoryStore):
             )
 
 
-def open_read_only_store(db_path: str | Path) -> ReadOnlyAuditStore:
-    """Open a database file for audit reads using SQLite ``mode=ro``."""
+def open_read_only_store(
+    db_path: str | Path,
+    *,
+    config: MemoryConfig | None = None,
+) -> ReadOnlyAuditStore:
+    """Read an existing database with SQLite ``mode=ro`` and the given policy.
 
-    return ReadOnlyAuditStore.open_path(db_path)
+    No schema initialization or migration runs. SQLite open/query errors are
+    propagated; WAL databases retain SQLite's normal sidecar requirements.
+    """
+
+    return ReadOnlyAuditStore.open_path(db_path, config=config)
 
 
 def _coerce_store(source: StoreSource) -> tuple[MemoryStore, bool]:

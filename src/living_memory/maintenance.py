@@ -7,9 +7,11 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 import json
+import sqlite3
 import sys
 
 from living_memory.config import MemoryConfig, load_config
+from living_memory.health_audit import open_read_only_store
 from living_memory.models import RetrievalPolicyFloors, RetrievalWeights
 from living_memory.storage import MemoryStore
 
@@ -63,6 +65,12 @@ def reseat_retrieval_floors(
 def retrieval_floor_changes(store: MemoryStore) -> list[RetrievalFloorChange]:
     """Return the audited floor reseats needed for persisted retrieval weights."""
 
+    # Evidence tables must be readable even when there are no weight rows.
+    # Optional embedding storage shapes remain the storage policy's concern.
+    store.connection.execute("SELECT id, scope, decayed FROM nodes LIMIT 0")
+    store.connection.execute(
+        "SELECT source_id, target_id, type, metadata FROM connections LIMIT 0"
+    )
     rows = store.connection.execute(
         """
         SELECT scope, bm25, vector, graph, learning_rate, updated_at
@@ -106,9 +114,18 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_reseat_floors(args: Any) -> int:
-    config = _resolve_config(db_path=args.db or args.sqlite_file, config_path=args.config)
-    with MemoryStore(config) as store:
-        changes = reseat_retrieval_floors(store, apply=args.apply)
+    try:
+        config = _resolve_config(db_path=args.db or args.sqlite_file, config_path=args.config)
+        store = (
+            MemoryStore(config)
+            if args.apply
+            else open_read_only_store(config.db_path, config=config)
+        )
+        with store:
+            changes = reseat_retrieval_floors(store, apply=args.apply)
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        print(f"reseat-floors: {exc}", file=sys.stderr)
+        return 2
     payload = {
         "command": "reseat-floors",
         "mode": "apply" if args.apply else "dry-run",
@@ -153,7 +170,7 @@ def _build_parser() -> ArgumentParser:
     mode.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print the reseat audit without writing rows. This is the default.",
+        help="Audit an existing database read-only, without initialization or migration (default).",
     )
     mode.add_argument(
         "--apply",
