@@ -56,6 +56,38 @@ This explicit override also authorizes installation through a symlink at that
 path. Setup, test/server scripts, and checkout imports use the same override;
 an unset or empty value selects the default directory.
 
+## Retrieval floor maintenance
+
+Preview persisted retrieval-weight changes with the maintenance CLI:
+
+```sh
+python -m living_memory.maintenance reseat-floors --db ./living_memory.sqlite3
+python -m living_memory.maintenance reseat-floors --config ./config.toml --dry-run
+python -m living_memory.maintenance reseat-floors --config ./config.toml --apply
+```
+
+The default and `--dry-run` open an existing database with SQLite `mode=ro`.
+They do not create a database or parent directories, initialize or migrate the
+schema, backfill fields, seed weights, or write data. A missing, unreadable or
+incompatible database fails with a diagnostic on stderr and exit status 2,
+without a successful audit on stdout. The existing schema must support the
+floor audit's weight and evidence queries; preview never repairs it.
+
+Both modes use the same storage floor calculation, including scope-family
+configuration and vector/graph evidence. `--config` supplies the TOML policy
+and database path; `--db` overrides that path. Successful JSON output includes
+`mode`, `applied`, `affected_count`, and changed scopes with configured `floor`
+and `before`/`after` weights. `--apply` opens the ordinary writable store,
+including its initialization, migrations and backfills, and persists the
+audited weight changes. It recalculates from the data available at execution.
+
+Preview uses ordinary SQLite reads, including committed WAL data. SQLite may
+create or use `-wal`/`-shm` sidecars for an existing WAL database, so this is a
+schema/data read-only guarantee, not byte-for-byte filesystem immutability.
+SQLite's [read-only WAL requirements](https://sqlite.org/wal.html#read_only_databases)
+still apply. Each CLI invocation loads the installed source; updating this
+command does not require restarting an LM server.
+
 ## Reading memory
 
 `memory_recall(query=...)` returns knowledge directly in `results`: identity,
