@@ -79,7 +79,10 @@ def test_next_write_recovers_unread_pending(unread, monkeypatch, caplog, tool, d
     path, mcp, original, state, runs = unread
     scheduler = mcp.auto_consolidation
     assert state["loads"] == 1
-    assert "pending read unavailable" in caplog.text
+    assert any(
+        "pending read unavailable" in str(record.exc_info[1])
+        for record in caplog.get_records("setup") if record.exc_info
+    )
     assert pending_bytes(path) == PENDING
     state["unavailable"] = False
     expected = {OLD, NEW} if due else {OLD}
@@ -152,4 +155,27 @@ def test_repeated_read_error_retains_bytes_and_new_requests(unread, monkeypatch,
     assert set(runs) == {OLD, NEW} and len(runs) == 2
     assert set(json.loads(save.call_args_list[0].args[0])) == {OLD, NEW}
     assert scheduler.status()["passes_completed"] == 2
+    assert pending_bytes(path) == "{}"
+
+
+def test_recovered_read_waits_for_merged_save(unread, caplog):
+    path, mcp, original, state, runs = unread
+    scheduler = mcp.auto_consolidation
+    assert write(path, mcp, original, "memory_remember", NEW)["auto_consolidation"] is None
+    state["unavailable"] = False
+    mcp.memory_store.connection.execute(f"""CREATE TRIGGER reject_pending BEFORE INSERT ON kv
+        WHEN NEW.key = '{PENDING_KV_KEY}'
+        BEGIN SELECT RAISE(ABORT, 'merged save unavailable'); END""")
+    assert write(path, mcp, original, "memory_teach", OLD)["auto_consolidation"] is None
+    assert state["loads"] == 3
+    assert pending_bytes(path) == PENDING
+    assert runs == [] and scheduler._thread is None
+    assert set(scheduler.status()["queued"]) == {OLD, NEW}
+    assert "merged save unavailable" in caplog.text
+
+    mcp.memory_store.connection.execute("DROP TRIGGER reject_pending")
+    assert write(path, mcp, original, "memory_remember", OLD)["auto_consolidation"] is None
+    assert scheduler.wait_idle(timeout=5, include_retries=True)
+    assert state["loads"] == 3
+    assert set(runs) == {OLD, NEW} and len(runs) == 2
     assert pending_bytes(path) == "{}"
