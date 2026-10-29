@@ -1332,6 +1332,7 @@ class MemoryStore:
         context: Mapping[str, Any] | None = None,
         embedding: Iterable[float] | None = None,
         representative_embedding: Iterable[float] | None = None,
+        prepared_chunks: Sequence[tuple[TextChunk, Sequence[float]]] | None = None,
         stats: Mapping[str, Any] | None = None,
         provenance: Mapping[str, Any] | None = None,
         node_id: str | None = None,
@@ -1342,6 +1343,8 @@ class MemoryStore:
         ``embedding`` describes this content and can supply its single chunk.
         ``representative_embedding`` is for consolidation similarity only;
         it is stored in the legacy node column and never reused as a chunk.
+        ``prepared_chunks`` applies content vectors prepared by the caller
+        without entering the encoder from the write transaction.
         """
 
         with self.transaction():
@@ -1351,6 +1354,7 @@ class MemoryStore:
                 context=context,
                 embedding=embedding,
                 representative_embedding=representative_embedding,
+                prepared_chunks=prepared_chunks,
                 stats=stats,
                 provenance=provenance,
                 node_id=node_id,
@@ -1366,6 +1370,7 @@ class MemoryStore:
         context: Mapping[str, Any] | None = None,
         embedding: Iterable[float] | None = None,
         representative_embedding: Iterable[float] | None = None,
+        prepared_chunks: Sequence[tuple[TextChunk, Sequence[float]]] | None = None,
         stats: Mapping[str, Any] | None = None,
         provenance: Mapping[str, Any] | None = None,
         node_id: str | None = None,
@@ -1469,7 +1474,9 @@ class MemoryStore:
         # A supplied vector makes content searchable now. Only content_vector
         # can supply a single chunk; representatives require content encoding.
         # Callers without a vector own eager indexing or leave bounded repair.
-        if vector:
+        if prepared_chunks is not None:
+            self._replace_node_chunks(new_id, prepared_chunks, fingerprint)
+        elif vector:
             self._write_node_chunks(new_id, content, fingerprint, content_vector)
 
         for old_id in duplicate_ids:
@@ -1815,6 +1822,7 @@ class MemoryStore:
         context: Mapping[str, Any] | None = None,
         embedding: Iterable[float] | None = None,
         representative_embedding: Iterable[float] | None = None,
+        prepared_chunks: Sequence[tuple[TextChunk, Sequence[float]]] | None = None,
         stats: Mapping[str, Any] | None = None,
         provenance: Mapping[str, Any] | None = None,
         level: NodeLevel | None = None,  # moves the node, same id and history, to a level
@@ -1891,7 +1899,9 @@ class MemoryStore:
             )
             # Representatives affect clustering, not content search. An unchanged
             # digest with current chunks needs no encoding or chunk replacement.
-            if content_vector or (vector and representative_embedding is not None and (
+            if prepared_chunks is not None:
+                self._replace_node_chunks(node_id, prepared_chunks, _content_fingerprint(new_content))
+            elif content_vector or (vector and representative_embedding is not None and (
                 content_changed or not self.node_chunks_are_current(node_id)
             )):
                 fingerprint = values.get("content_fingerprint") or _content_fingerprint(new_content)
