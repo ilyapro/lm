@@ -17,7 +17,7 @@ from living_memory.postsession.runner import (
     EXIT_GATE, EXIT_UNKNOWN, ExtractionRunner, Ledger, RunnerConfig,
     SessionProposals, enforce_attribution, op_fingerprint,
 )
-from test_postsession_runner import (
+from postsession_support import (
     ORIGINAL_FACT, TOKEN, _live_record, _load_cli, live_server,
     make_record, make_remember, make_teach,
 )
