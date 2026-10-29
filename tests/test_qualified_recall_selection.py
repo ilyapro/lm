@@ -1,12 +1,16 @@
 """Exact-twin replacement uses the recall's current qualification evidence."""
 
 import asyncio
+from dataclasses import replace
 
 from fastmcp import Client
 import pytest
 
-from living_memory.retrieval import MemoryRecallService
-from living_memory.server import create_mcp_server
+from living_memory.delivery import DeliveryHistory, shape_recall_results
+from living_memory.models import Node
+from living_memory.retrieval import MemoryRecallService, RecallResult
+from living_memory.score_gate import QueryRelevance, apply_score_gate
+from living_memory.server import _select_distinct_results, create_mcp_server
 
 
 @pytest.fixture(autouse=True)
@@ -22,6 +26,98 @@ def isolated_environment(monkeypatch):
         "LM_DELIVERY_SNIPPET_LADDER": "off",
     }.items():
         monkeypatch.setenv(key, value)
+
+
+def row(node_id, content, strength=1.0):
+    return RecallResult(Node(id=node_id, level="trace", content=content), 1.0,
+                        lexical_score=strength)
+
+
+@pytest.mark.parametrize("form", ["drop", "stub"])
+@pytest.mark.parametrize("contents, strengths, limit, expected", [
+    ("AABC", [1, 1, 0, 1], 2, [0, 3]),
+    ("AABCD", [1, 1, 0, 0, 1], 2, [0, 1]),
+    ("AAABBB", [1, 1, 1, 0, 1, 1], 3, [0, 1, 4]),
+    ("AAA", [1, 1, 1], 2, [0, 1]),
+    ("AAB", [1, 1, 0], 2, [0, 1]),
+    ("AAB", [1, 1, 1], 1, [0]),
+])
+def test_replacement_qualifies_within_original_bound(
+    monkeypatch, form, contents, strengths, limit, expected,
+):
+    monkeypatch.setenv("LM_RECALL_GATE_FORM", form)
+    ranked = [row(str(i), text, strength)
+              for i, (text, strength) in enumerate(zip(contents, strengths))]
+    evidence = QueryRelevance(ranked)
+    limited, residual = apply_score_gate(ranked, limit, relevance=evidence)
+    selected, remaining = _select_distinct_results(
+        limited, residual, limit, DeliveryHistory(), relevance=evidence,
+    )
+    assert selected == [ranked[i] for i in expected]
+    assert remaining == [r for r in limited + residual if r not in selected]
+    assert len(selected) == limit
+    assert all(evidence.passes(r) for r in selected)
+
+
+@pytest.mark.parametrize("limit, expected", [(2, [0, 1]), (3, [0, 1, 3])])
+def test_stub_references_cannot_bear_or_release_a_content_slot(monkeypatch, limit, expected):
+    monkeypatch.setenv("LM_RECALL_GATE_FORM", "stub")
+    ranked = [row("ref", "A", 0), row("content", "A"), row("twin", "A"), row("other", "B")]
+    evidence = QueryRelevance(ranked)
+    limited, residual = apply_score_gate(ranked, limit, relevance=evidence)
+    selected, remaining = _select_distinct_results(
+        limited, residual, limit, DeliveryHistory(), relevance=evidence,
+    )
+    assert [r.node.id for r in selected] == [ranked[i].node.id for i in expected]
+    assert selected[0].withheld == "below_threshold"
+    assert {r.node.id for r in selected + remaining} == {r.node.id for r in ranked}
+    shaped = shape_recall_results(
+        selected, view="knowledge", delivery_history=DeliveryHistory(), session_dedup=False,
+        snippet_max_chars=1000, context_value_max_chars=160,
+    )
+    assert shaped[0]["content"] == ""
+    assert shaped[0]["content_ref"]["node_id"] == "ref"
+    assert [entry["delivery"] for entry in shaped] == ["below_threshold"] + ["full"] * (limit - 1)
+
+
+def test_replacement_preserves_query_demotions_and_inherited_correction_relevance():
+    first, twin = row("first", "A"), row("twin", "A")
+    demoted = row("demoted", "B")
+    correction = row("correction", "New rule", 0)
+    original = replace(row("original", "Old rule"), superseded=True)
+    ranked = [first, twin, demoted, correction, original]
+    evidence = QueryRelevance(
+        ranked, threshold=0.05, demotions={"demoted": 0.01},
+        corrections_by_superseded={"original": ["correction"]},
+    )
+    assert not evidence._passes(correction) and evidence.passes(correction)
+    limited, residual = apply_score_gate(ranked, 2, relevance=evidence)
+    selected, remaining = _select_distinct_results(
+        limited, residual, 2, DeliveryHistory(), relevance=evidence,
+    )
+    assert selected == [first, correction]
+    assert remaining == [twin, demoted, original]
+
+
+def test_qualification_stops_at_the_selected_cut(monkeypatch):
+    ranked = [row("first", "A"), row("twin", "A"), row("other", "B"), row("tail", "C")]
+    evidence = QueryRelevance(ranked)
+    passes = evidence.passes
+    inspected = []
+
+    def observe(result):
+        inspected.append(result.node.id)
+        assert result.node.id != "tail"
+        return passes(result)
+
+    monkeypatch.setattr(evidence, "passes", observe)
+    limited, residual = apply_score_gate(ranked, 2, relevance=evidence)
+    selected, _ = _select_distinct_results(limited, residual, 2, DeliveryHistory(), relevance=evidence)
+    assert selected == [ranked[0], ranked[2]]
+    assert inspected == ["first", "twin", "other"]
+    inspected.clear()
+    assert _select_distinct_results(selected, [ranked[3]], 2, DeliveryHistory(), relevance=evidence)[0] == selected
+    assert inspected == []
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])

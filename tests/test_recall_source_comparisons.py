@@ -12,6 +12,7 @@ import pytest
 from living_memory.delivery import DeliveryHistory, recall_delivery_records, shape_recall_results
 from living_memory.models import Node, content_identity
 from living_memory.retrieval import MemoryRecallService, RecallResult
+from living_memory.score_gate import QueryRelevance
 from living_memory.server import _select_distinct_results, create_mcp_server
 
 
@@ -86,12 +87,14 @@ def test_selection_keeps_available_replacements_and_ranked_fillers(
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("gate", [False, True])
 @pytest.mark.parametrize("distinction", [
     "context", "provenance", "sources", "corrections", "unknown_derivation",
     "derivation_sources", "derivation_group", "bookkeeping", "level", "known_derivation",
 ])
-def test_collisions_keep_complete_source_equality(view, distinction):
+def test_collisions_keep_complete_source_equality(view, gate, distinction):
     first, second, later = row("first"), row("second"), row("later", "Later fact.")
+    first, second, later = [replace(result, lexical_score=1.0) for result in (first, second, later)]
     if distinction == "context":
         second.node.context = {"procedure": "independent"}
     elif distinction == "provenance":
@@ -117,7 +120,10 @@ def test_collisions_keep_complete_source_equality(view, distinction):
         second.node.level = "concept"
     twins = distinction in ("bookkeeping", "level", "known_derivation")
     with identity_work() as selection_work:
-        selected, residual = _select_distinct_results([first, second], [later], 2, DeliveryHistory())
+        selected, residual = _select_distinct_results(
+            [first, second], [later], 2, DeliveryHistory(),
+            relevance=QueryRelevance([first, second, later], threshold=0.35) if gate else None,
+        )
     assert selection_work["ids"] == ["first", "second"]
     assert selected == ([first, later] if twins else [first, second])
     assert residual == ([second] if twins else [later])
@@ -166,6 +172,8 @@ def test_partial_replacement_keeps_a_later_intentional_session_repeat():
 
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("gate", ["off", "0.35"])
+@pytest.mark.parametrize("form", ["drop", "stub"])
 @pytest.mark.parametrize("limit, twins, distinct, selected_indices", [
     (2, 2, 2, [0, 2]),
     (2, 3, 0, [0, 1]),
@@ -173,9 +181,10 @@ def test_partial_replacement_keeps_a_later_intentional_session_repeat():
     (3, 3, 2, [0, 3, 4]),
 ])
 def test_native_recall_preserves_selection_history_and_feedback(
-    tmp_path, monkeypatch, view, limit, twins, distinct, selected_indices,
+    tmp_path, monkeypatch, view, gate, form, limit, twins, distinct, selected_indices,
 ):
-    for key, value in {"LIVING_MEMORY_EMBEDDING_BACKEND": "hash", "LM_RECALL_MIN_SCORE": "off",
+    for key, value in {"LIVING_MEMORY_EMBEDDING_BACKEND": "hash", "LM_RECALL_MIN_SCORE": gate,
+                       "LM_RECALL_GATE_FORM": form,
                        "LM_RECALL_MAP": "0", "LM_DECAY_SWEEP_INTERVAL_SEC": "0",
                        "LM_AUTO_CONSOLIDATE_POLICY": "off", "LM_DELIVERY_SESSION_DEDUP": "1"}.items():
         monkeypatch.setenv(key, value)
