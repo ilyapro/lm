@@ -14,7 +14,7 @@ from typing import Any
 
 from living_memory.grounding import DEFAULT_MIN_CONTAINMENT, ground_results
 from living_memory.irrelevance import cancel_query_irrelevance, record_query_irrelevance
-from living_memory.models import Node, RecallEvent, RetrievalWeights
+from living_memory.models import Node, RecallEvent, RecallEventHeader, RetrievalWeights
 from living_memory import storage as storage_module
 from living_memory.query_anchors import resolve_query_anchor, upsert_anchor
 from living_memory.scope import normalize_scope
@@ -632,8 +632,8 @@ def apply_lookup_credit(
             )
             return outcome
         hits = _current_deliveries(store, requested, transport_session_id, lookup_at)
-        events: dict[str, RecallEvent] = {}
-        anchor_work: dict[str, tuple[RecallEvent, list[str]]] = {}
+        events: dict[str, RecallEventHeader] = {}
+        anchor_work: dict[str, tuple[RecallEventHeader, list[str]]] = {}
         for node_id, hit in hits.items():
             event_id, rank, result = hit["event_id"], hit["rank"], hit["result"]
             try:
@@ -642,7 +642,7 @@ def apply_lookup_credit(
                         event_id, node_id, basis="lookup", source_id=str(lookup_event_id)
                     ):
                         continue
-                    event = events.get(event_id) or store.get_recall_event(event_id)
+                    event = events.get(event_id) or store.get_recall_event_header(event_id)
                     if event is None:
                         raise LookupError(f"recall event {event_id} disappeared before credit")
                     events[event_id] = event
@@ -693,10 +693,10 @@ class ExplicitMark:
     mark: str
     accepted: bool
     reject_reason: str | None = None
-    #: The delivering event (newest eligible caller event within the window
+    #: The delivering event header (newest eligible caller event within the window
     #: naming the node); None for a dropped mark.
-    event: RecallEvent | None = None
-    #: 0-based rank of the node in ``event.results``.
+    event: RecallEventHeader | None = None
+    #: 0-based position in the delivering event's results.
     rank: int | None = None
     result: dict[str, Any] = field(default_factory=dict)
 
@@ -766,7 +766,7 @@ def resolve_explicit_marks(
         store, [mark.node_id for mark in marks if mark.reject_reason is None],
         transport_session_id, occurred_at, context=context,
     )
-    events: dict[str, RecallEvent] = {}
+    events: dict[str, RecallEventHeader] = {}
     for mark in marks:
         if mark.reject_reason is not None:
             continue
@@ -775,7 +775,7 @@ def resolve_explicit_marks(
             mark.reject_reason = "not_delivered"
             continue
         event_id = hit["event_id"]
-        event = events.get(event_id) or store.get_recall_event(event_id)
+        event = events.get(event_id) or store.get_recall_event_header(event_id)
         if event is None:
             mark.reject_reason = "not_delivered"
             continue
@@ -908,7 +908,7 @@ def apply_explicit_marks(
             ]
         )
 
-        irrelevant_by_event: dict[str, tuple[RecallEvent, list[str]]] = {}
+        irrelevant_by_event: dict[str, tuple[RecallEventHeader, list[str]]] = {}
         for mark in marks:
             if mark.accepted and mark.mark == "irrelevant" and mark.event is not None:
                 entry = irrelevant_by_event.setdefault(mark.event.id, (mark.event, []))
@@ -918,7 +918,7 @@ def apply_explicit_marks(
             return outcome
 
         weight = _explicit_credit_weight()
-        anchor_work: dict[str, tuple[RecallEvent, list[str], list[str]]] = {}
+        anchor_work: dict[str, tuple[RecallEventHeader, list[str], list[str]]] = {}
         for mark, mark_id in zip(marks, outcome.mark_ids, strict=True):
             if not (mark.accepted and mark.mark == "used" and mark.event is not None):
                 continue
@@ -1111,9 +1111,9 @@ def prepared_lookup_credit(
 
 def _apply_query_feedback(
     store: MemoryStore,
-    work: Sequence[tuple[RecallEvent, tuple[str, ...], tuple[str, ...]]],
+    work: Sequence[tuple[RecallEventHeader, tuple[str, ...], tuple[str, ...]]],
     *,
-    irrelevant_work: Sequence[tuple[RecallEvent, Sequence[str]]] = (),
+    irrelevant_work: Sequence[tuple[RecallEventHeader, Sequence[str]]] = (),
     preparation: Mapping[tuple[str, str], tuple[float, ...]] | None = None,
 ) -> list[str]:
     """Share query preparation across independent feedback effects. Never raises.

@@ -222,12 +222,18 @@ class Connection:
 
 
 @dataclass(slots=True)
-class RecallEvent:
-    """Durable provenance record for one recall interaction."""
+class RecallEventHeader:
+    """Current event identity and query context for delivery feedback."""
 
     id: str
     query: str
     scope: str
+
+
+@dataclass(slots=True)
+class RecallEvent(RecallEventHeader):
+    """Durable provenance record for one recall interaction."""
+
     requested_scope: str
     resolved_scopes: list[str] = field(default_factory=list)
     ambient_context: dict[str, Any] = field(default_factory=dict)

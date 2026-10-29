@@ -36,6 +36,7 @@ from living_memory.models import (
     NodeChunkEmbedding,
     NodeLevel,
     RecallEvent,
+    RecallEventHeader,
     RetrievalPolicyFloors,
     RetrievalWeights,
     SourcePassage,
@@ -3507,6 +3508,14 @@ class MemoryStore:
             for row in lookups
         )
         return evidence
+
+    def get_recall_event_header(self, event_id: str) -> RecallEventHeader | None:
+        """Read current identity/query/scope without materializing provenance."""
+        row = self._conn.execute(
+            "SELECT id, query, scope FROM recall_events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+        return RecallEventHeader(**row) if row else None
 
     def get_recall_event(self, event_id: str) -> RecallEvent | None:
         row = self._conn.execute(
