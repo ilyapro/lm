@@ -20,7 +20,7 @@ DESTINATION = "project:destination"
 
 
 @pytest.mark.parametrize("route", ["remember", "teach"])
-@pytest.mark.parametrize("identity", [{"session_id": "caller"}, CALLER])
+@pytest.mark.parametrize("identity", [{"session_id": "caller"}, {"session": "caller"}, CALLER])
 def test_native_broad_read_accepts_scoped_write_after_reconnect(runtime, route, identity):
     r = runtime
     with r.guard:

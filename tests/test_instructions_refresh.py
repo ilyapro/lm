@@ -19,6 +19,30 @@ from living_memory.storage import MemoryStore
 from test_transport_identity import FakeMCP
 
 
+@pytest.mark.parametrize("arm", ["optional", "mandatory"])
+def test_native_protocol_distinguishes_read_filter_and_write_destination(tmp_path, monkeypatch, arm):
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_PROMPT", arm)
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+
+    async def scenario():
+        async with Client(mcp) as client:
+            instructions = (await client.initialize()).instructions
+            assert "omit BOTH `scope` and `ambient_context.scope`" in instructions
+            assert "ambient `project` is only a preference" in instructions
+            assert "Broad reads accept different write scopes" in instructions
+            assert "restricted reads require matching scope" in instructions
+            assert len(instructions) <= 2048
+            descriptions = {tool.name: tool.description for tool in await client.list_tools()}
+            assert "omit both scope and ambient_context.scope" in descriptions["memory_recall"]
+            assert all(len(description) <= 1024 for description in descriptions.values())
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        mcp.memory_store.close()
+
+
 def _foreign_map(store: MemoryStore) -> None:
     store.record_recall_event(
         query="release source publishing",
