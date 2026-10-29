@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PYTHON_BIN="${PYTHON:-python3}"
 DEPS_DIR="${LIVING_MEMORY_DEPS_DIR:-${ROOT_DIR}/.cache/python-deps}"
-MARKER="${DEPS_DIR}/.living-memory-deps-ready"
 
 # Cache readiness is tied to the contents of pyproject.toml.
 _deps_fingerprint() {
@@ -16,7 +15,8 @@ _deps_fingerprint() {
     fi
 }
 
-want_fp="$(_deps_fingerprint)"
+# This marker attests to a complete target prepared by this writer.
+want_fp="target-v1:$(_deps_fingerprint)"
 
 _deps_ready() {
     local marker="$1/.living-memory-deps-ready"
@@ -45,19 +45,51 @@ if _deps_ready "${DEPS_DIR}"; then
     exit 0
 fi
 
-# A default symlink is borrowed storage. Replace only the link before writing;
-# an explicit override authorizes installation into the caller's chosen target.
+# Serialize writers at the owned destination, including explicit symlink aliases.
+mkdir -p "$(dirname "${DEPS_DIR}")"
+if [[ -n "${LIVING_MEMORY_DEPS_DIR:-}" ]]; then
+    target="$(realpath -m -- "${DEPS_DIR}")"
+else
+    target="$(cd "$(dirname "${DEPS_DIR}")" && pwd)/$(basename "${DEPS_DIR}")"
+fi
+mkdir -p "$(dirname "${target}")"
+exec 9>"${target}.lock"
+flock 9
+if _deps_ready "${DEPS_DIR}"; then
+    exit 0
+fi
+
+# A default symlink is borrowed storage; only its local link may be replaced.
+# Explicit overrides own their resolved destination and retain the symlink.
 if [[ -z "${LIVING_MEMORY_DEPS_DIR:-}" && -L "${DEPS_DIR}" ]]; then
     rm -- "${DEPS_DIR}"
 fi
-mkdir -p "${DEPS_DIR}"
-export PYTHONPATH="${ROOT_DIR}/src:${DEPS_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+rm -f -- "${target}/.living-memory-deps-ready"
+stage="$(mktemp -d "${target}.tmp.XXXXXX")"
+previous="${stage}.previous"
+_cleanup() {
+    if [[ -d "${previous}" && ! -e "${target}" ]]; then
+        mv -T -- "${previous}" "${target}"
+    fi
+    rm -rf -- "${stage}" "${previous}"
+}
+trap _cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
-"${PYTHON_BIN}" -m pip install --upgrade --target "${DEPS_DIR}" "${ROOT_DIR}[test]"
+# Install into an empty tree: pip target upgrades do not remove old dist-info.
+PYTHONPATH= "${PYTHON_BIN}" -m pip install --target "${stage}" "${ROOT_DIR}[test]"
 
-"${PYTHON_BIN}" - <<'PY'
+# Validate the encoder once at preparation, before publishing readiness.
+PYTHONPATH="${ROOT_DIR}/src:${stage}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" -B - <<'PY'
 import fastmcp
 import pytest
+import sentence_transformers
 PY
 
-printf '%s\n' "${want_fp}" > "${MARKER}"
+printf '%s\n' "${want_fp}" > "${stage}/.living-memory-deps-ready"
+if [[ -e "${target}" ]]; then
+    mv -T -- "${target}" "${previous}"
+fi
+mv -T -- "${stage}" "${target}"
