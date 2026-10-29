@@ -956,10 +956,10 @@ def test_self_superseding_edge_does_not_move_anything(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_era_exclusions_move_edges_for_the_reasons_that_name_a_replacement(
+def test_source_exclusions_move_edges_for_the_reasons_that_name_a_replacement(
     tmp_path: Path,
 ) -> None:
-    """Consolidation writes no edge for explicit derivative displacement, so it is passed in."""
+    """Explicit derivative displacement supplies the replacement mapping."""
 
     with _store(tmp_path) as store:
         displaced = _trace(store, "member folded into a concept")
@@ -982,7 +982,7 @@ def test_era_exclusions_move_edges_for_the_reasons_that_name_a_replacement(
         ]
 
 
-def test_era_exclusions_without_a_named_replacement_leave_edges_alone(
+def test_source_exclusions_without_a_named_replacement_leave_edges_alone(
     tmp_path: Path,
 ) -> None:
     with _store(tmp_path) as store:

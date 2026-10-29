@@ -658,7 +658,7 @@ def test_synthesize_digest_caps_total_length(tmp_path: Path) -> None:
         assert all(digest != source.content for source in sources)
 
 
-_ERA_CORE = (
+_CLUSTER_CORE = (
     "gateway retry budget tuning requires pinned driver version rollout policy checklist"
 )
 
@@ -671,7 +671,7 @@ def test_consolidation_excludes_taught_traces_from_concept(tmp_path: Path) -> No
         for index in range(12):
             traces.append(
                 store.append_trace(
-                    f"{_ERA_CORE} sample {index}",
+                    f"{_CLUSTER_CORE} sample {index}",
                     {
                         "scope": "project:alpha",
                         "agent": "agent-a" if index % 2 == 0 else "agent-b",
@@ -712,7 +712,7 @@ def test_consolidation_preserves_independent_sources_across_a_later_relation(
         for index in range(8):
             old_traces.append(
                 store.append_trace(
-                    f"{_ERA_CORE} legacy socket draining {index}",
+                    f"{_CLUSTER_CORE} legacy socket draining {index}",
                     {
                         "scope": "project:alpha",
                         "agent": "agent-a",
@@ -725,7 +725,7 @@ def test_consolidation_preserves_independent_sources_across_a_later_relation(
         for index in range(4):
             new_traces.append(
                 store.append_trace(
-                    f"{_ERA_CORE} adaptive backoff window {index}",
+                    f"{_CLUSTER_CORE} adaptive backoff window {index}",
                     {
                         "scope": "project:alpha",
                         "agent": "agent-b",
