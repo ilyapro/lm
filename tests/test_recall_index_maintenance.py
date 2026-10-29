@@ -1,7 +1,7 @@
 """Ordinary recall keeps current evidence when bounded chunk indexing fails."""
 
 import asyncio
-from dataclasses import asdict
+from contextlib import contextmanager
 import logging
 import sqlite3
 
@@ -249,6 +249,43 @@ def test_pending_discovery_and_hydration_sql_read_errors_still_raise(mcp, column
         store.connection.set_authorizer(None)
     assert denied
     assert store.list_recall_events() == []
+    assert not store.connection.in_transaction
+
+
+@pytest.mark.parametrize("change", ["content", "scope", "decay", "delete", "index"])
+def test_pending_hydration_uses_current_source_after_discovery(mcp, change):
+    store = mcp.memory_store
+    node = store.append_trace("Violet botanical inventory.", {"scope": SCOPE})
+    service = MemoryRecallService(store)
+    changed = False
+    expected_chunks = []
+
+    @contextmanager
+    def guard():
+        nonlocal changed, expected_chunks
+        yield
+        if changed:
+            return
+        changed = True
+        if change == "content":
+            store.update_node(node.id, content="Amber mineral inventory.")
+        elif change == "scope":
+            store.update_node(node.id, context={"scope": "project:moved"})
+        elif change == "decay":
+            store.soft_delete_node(node.id)
+        elif change == "delete":
+            store.connection.execute("DELETE FROM nodes WHERE id = ?", (node.id,))
+        else:
+            store.update_node(node.id, embedding=service.embedder.embed(node.content))
+            expected_chunks = store.list_node_chunks(node.id)
+
+    service.refresh_pending_chunks(scope=SCOPE, guard=guard)
+    if change == "content":
+        assert store.node_chunks_are_current(node.id)
+        chunks = store.list_node_chunks(node.id)
+        assert [chunk.text for chunk in chunks] == ["Amber mineral inventory."]
+    else:
+        assert store.list_node_chunks(node.id) == expected_chunks
     assert not store.connection.in_transaction
 
 

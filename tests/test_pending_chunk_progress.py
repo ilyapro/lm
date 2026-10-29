@@ -5,14 +5,15 @@ import asyncio
 from fastmcp import Client
 import pytest
 
-from living_memory import retrieval, server
+from living_memory import retrieval, server, storage
 from living_memory.retrieval import LAZY_CHUNK_NODE_LIMIT
 from test_recall_query_preparation import SCOPE, VECTOR, entry, recall, runtime
 
 
 @pytest.mark.parametrize("reset", ["none", "restart", "eviction"])
 @pytest.mark.parametrize("consumer", ["recall", "prompt"])
-def test_native_pending_progress_scope_isolation_and_retry(runtime, monkeypatch, reset, consumer):
+@pytest.mark.parametrize("fault", ["encoding", "hydration"])
+def test_native_pending_progress_scope_isolation_and_retry(runtime, monkeypatch, reset, consumer, fault):
     r = runtime
     if reset == "eviction":
         monkeypatch.setattr(retrieval, "LAZY_CHUNK_PLAN_LIMIT", 1)
@@ -35,11 +36,23 @@ def test_native_pending_progress_scope_isolation_and_retry(runtime, monkeypatch,
     fail = True
     original = r.store.list_node_chunks(r.node.id)
     timestamps = {n.id: (n.timestamp, n.updated_at) for n in failures}
+    if fault == "hydration":
+        with r.store.transaction():
+            r.store.connection.executemany("UPDATE nodes SET provenance = '[]' WHERE id = ?",
+                                          [(n.id,) for n in failures])
+        hydrate = storage._node_from_row
+
+        def decode(row):
+            if row["id"] in timestamps and row["provenance"] == "[]":
+                attempts.append(row["content"].split(".")[0])
+            return hydrate(row)
+
+        monkeypatch.setattr(storage, "_node_from_row", decode)
 
     def encode(texts):
         assert not r.store.connection.in_transaction
         attempts.append(texts[0].split(".")[0])
-        if fail and texts[0].startswith("Failing source"):
+        if fault == "encoding" and fail and texts[0].startswith("Failing source"):
             raise RuntimeError("injected source-local encoding failure")
         return [VECTOR for _ in texts]
 
@@ -88,9 +101,15 @@ def test_native_pending_progress_scope_isolation_and_retry(runtime, monkeypatch,
         assert (await read())[0] == "Healthy tail"
         assert r.store.node_chunks_are_current(tail.id)
         assert all(not r.store.node_chunks_are_current(n.id) for n in failures)
-        assert {n.id: (n.timestamp, n.updated_at) for n in map(r.store.get_node, timestamps)} == timestamps
+        assert {row["id"]: (row["timestamp"], row["updated_at"])
+                for row in r.store.connection.execute("SELECT id, timestamp, updated_at FROM nodes")
+                if row["id"] in timestamps} == timestamps
 
         fail = False
+        if fault == "hydration":
+            with r.store.transaction():
+                r.store.connection.executemany("UPDATE nodes SET provenance = '{}' WHERE id = ?",
+                                              [(n.id,) for n in failures])
         await read()
         assert all(r.store.node_chunks_are_current(n.id) for n in failures)
         await read(other_scope)
