@@ -1205,15 +1205,26 @@ class MemoryStore:
             self._conn.execute(f"RELEASE {name}")
 
     def nodes_referencing_source(self, source_id: str) -> list[Node]:
-        """Candidate dependents; the materializer must verify derivation semantics.
+        """Load active recorded dependents after admitting their source identity.
 
-        Source lists can also contain recall lineage. Neither a citation nor
-        an ordinary related edge alone establishes a logical dependency.
+        Project only the fields used by Node's materializer policy. Ordinary
+        recall citations must not load a body, context or full provenance.
+        Known writers own their inputs; explicit derived_from edges are the
+        fallback for other nodes. Dependencies can cross scope boundaries.
         """
 
         rows = self._conn.execute(
             """
-            SELECT n.* FROM nodes n
+            SELECT n.id, n.level, n.source_traces,
+                   n.provenance -> '$.strategy' AS strategy,
+                   json_type(n.provenance, '$.cluster_key') IS NOT NULL AS has_cluster_key,
+                   n.provenance -> '$.source_concepts' AS source_concepts,
+                   n.id IN (
+                       SELECT source_id FROM connections
+                       WHERE target_id = ? AND type = 'related'
+                         AND json_extract(metadata, '$.kind') = 'derived_from'
+                   ) AS explicit_dependency
+            FROM nodes n
             WHERE n.decayed = 0 AND (
                 EXISTS (SELECT 1 FROM json_each(n.source_traces) WHERE value = ?)
                 OR EXISTS (
@@ -1226,9 +1237,28 @@ class MemoryStore:
                 )
             )
             """,
-            (source_id, source_id, source_id),
+            (source_id, source_id, source_id, source_id),
         ).fetchall()
-        return [_node_from_row(row) for row in rows]
+        admitted = []
+        for row in rows:
+            provenance = {
+                "strategy": _json_loads(row["strategy"], None),
+                "source_concepts": _json_loads(row["source_concepts"], []),
+            }
+            if row["has_cluster_key"]:
+                provenance["cluster_key"] = None
+            reference = Node(
+                id=str(row["id"]), level=row["level"], content="",
+                source_traces=_json_loads(row["source_traces"], []), provenance=provenance,
+            )
+            dependent = (
+                source_id in reference.materializer_sources
+                if reference.materializer else row["explicit_dependency"]
+            )
+            if dependent:
+                admitted.append(reference.id)
+        nodes = self.get_nodes(admitted)
+        return [nodes[node_id] for node_id in admitted if node_id in nodes]
 
     # ------------------------------------------------------------------
     # Schema-shape probes
