@@ -684,16 +684,21 @@ def _derived_digest(
     existing: Node | None, representative: Sequence[float] | None,
     prepared: _PreparedDigest | None,
     source_inputs: dict[str, _DigestSource] | None,
+    *, check_chunks: bool = True,
 ) -> _PreparedDigest:
     if prepared is None or not prepared.matches(members, best, scope):
         if not representative:
             return _prepare_digest(scope, members, best, _digest_sources(members, source_inputs))
         current_content = existing.content if (
-            representative and existing is not None and store.node_chunks_are_current(existing.id)
+            representative and existing is not None and (
+                kind == "cross-scope-promotion" or store.node_chunks_are_current(existing.id)
+            )
         ) else None
         raise _DerivedOutputRequired(
             kind, scope, members, best, existing, None, bool(representative), current_content,
         )
+    if not check_chunks:
+        return prepared
     needs_chunks = bool(representative) and (
         existing is None or existing.content != prepared.content or not store.node_chunks_are_current(existing.id)
     )
@@ -865,7 +870,7 @@ def memory_teach(
                 }
                 corrective_trace = store.append_trace(
                     correction_text, context_data, feedback=feedback,
-                    node_id=preparation.corrective_id if preparation is not None else None,
+                    node_id=preparation.corrective_id,
                 )
 
                 supersedes = store.create_connection(
@@ -888,10 +893,7 @@ def memory_teach(
                         "usefulness_score": min(original.usefulness_score, -0.25),
                     },
                 )
-                if preparation is None:
-                    _refresh_derived_from(store, original.id)
-                else:
-                    _refresh_derived_from(store, original.id, preparation=preparation)
+                _refresh_derived_from(store, original.id, preparation=preparation)
                 implicit_feedback = apply_pending_recall_feedback(
                     store,
                     corrective_trace,
@@ -1899,7 +1901,8 @@ def _materialize_cluster(
                     nested = store.connection.in_transaction
                     with store.transaction():
                         owner = store.get_node(owner_id)
-                        if owner is None or owner.decayed or owner.corrections or _is_superseded(store, owner_id):
+                        if (owner is None or owner.decayed or owner.corrections
+                                or owner.materializer != "cluster" or _is_superseded(store, owner_id)):
                             break
                         assessment = _current_derivation(
                             store, owner, additional=store.get_nodes(source_ids).values(),
@@ -2307,7 +2310,7 @@ def _write_global_promotion(
     best_source = _highest_confidence_source(project_sources)
     prepared_digest = _derived_digest(
         store, "cross-scope-promotion", "global", project_sources, best_source,
-        existing, best_source.embedding, prepared_digest, source_inputs,
+        existing, best_source.embedding, prepared_digest, source_inputs, check_chunks=False,
     )
     digest = prepared_digest.content
     source_scopes = _source_scopes(project_sources)
@@ -2336,6 +2339,10 @@ def _write_global_promotion(
         getattr(existing, key) == value for key, value in stats.items()
     ):
         return existing
+    prepared_digest = _derived_digest(
+        store, "cross-scope-promotion", "global", project_sources, best_source,
+        existing, best_source.embedding, prepared_digest, source_inputs,
+    )
     if similarities is not None and (
         existing is None or set(existing.materializer_sources) != set(source_concepts)
     ):
