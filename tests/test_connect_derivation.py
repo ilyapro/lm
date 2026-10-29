@@ -111,7 +111,7 @@ def test_python_connect_refreshes_existing_replacement_row(tmp_path, entry):
         assert replacement.id in current.source_traces
 
 
-@pytest.mark.parametrize("case", ["related", "inferred", "duplicate", "self", "decayed"])
+@pytest.mark.parametrize("case", ["related", "caused", "requires", "contradicts", "inferred", "duplicate", "self", "decayed"])
 def test_inapplicable_connections_do_not_refresh(tmp_path, monkeypatch, case):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         traces, schema = procedure(store)
@@ -128,7 +128,8 @@ def test_inapplicable_connections_do_not_refresh(tmp_path, monkeypatch, case):
 
         monkeypatch.setattr(c, "_derivation_snapshots", unexpected)
         monkeypatch.setattr(c, "_refresh_derived_from", unexpected)
-        edge = memory_connect(store, new.id, traces[0].id, "related" if case == "related" else "supersedes", metadata=metadata)
+        relation = case if case in ("related", "caused", "requires", "contradicts") else "supersedes"
+        edge = memory_connect(store, new.id, traces[0].id, relation, metadata=metadata)
         assert edge.metadata == (metadata or {})
         assert store.get_node(schema.id) == before
 
@@ -148,6 +149,8 @@ def test_failed_connect_rolls_back_relation_anchors_and_derivatives(native, monk
 
     store = native.memory_store
     traces, _ = seed(native, diamond=True)
+    for trace in traces:
+        store.update_node(trace.id, embedding=[1., 0.])
     new = store.append_trace("Harbor crane requires the electronic manifest.", {"scope": traces[0].scope})
     upsert_anchor(store, "Harbor crane", traces[0].scope, [1., 0.], [traces[0].id])
     if failure == "snapshot":
@@ -160,6 +163,8 @@ def test_failed_connect_rolls_back_relation_anchors_and_derivatives(native, monk
     def fail(*args, **kwargs):
         if failure == "refresh":
             original(*args, **kwargs)
+        else:
+            assert not store.connection.in_transaction
         raise RuntimeError("required connect failure")
 
     if target:
