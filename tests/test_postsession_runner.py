@@ -43,6 +43,7 @@ from living_memory.postsession.runner import (
     REQUIRED_CONTEXT_KEYS,
     ExtractionRunner,
     Ledger,
+    LedgerError,
     OpDecision,
     RunnerConfig,
     SessionProposals,
@@ -306,7 +307,7 @@ def test_op_fingerprint_ignores_context_noise_but_not_content() -> None:
     assert op_fingerprint(teach) != op_fingerprint(op)
 
 
-def test_ledger_round_trip_reload_and_corruption_tolerance(tmp_path: Path) -> None:
+def test_ledger_round_trip_reload_and_corruption_refusal(tmp_path: Path) -> None:
     ledger = Ledger(tmp_path / "state")
     assert len(ledger) == 0
     assert not ledger.has("sha", "fp")
@@ -315,14 +316,16 @@ def test_ledger_round_trip_reload_and_corruption_tolerance(tmp_path: Path) -> No
     assert ledger.has("sha", "fp")
     assert ledger.written_nodes_total() == 1  # attest entries create no node
 
-    with open(ledger.path, "a", encoding="utf-8") as handle:
-        handle.write("not json at all\n{\"broken\":\n")
-
     reloaded = Ledger(tmp_path / "state")
     assert len(reloaded) == 2
     assert reloaded.has("sha", "fp")
     assert reloaded.has("sha", "fp2")
     assert reloaded.written_nodes_total() == 1
+
+    with open(ledger.path, "a", encoding="utf-8") as handle:
+        handle.write('not json at all\n{"broken":\n')
+    with pytest.raises(LedgerError):
+        Ledger(tmp_path / "state")
 
 
 # --------------------------------------------------------------------------
@@ -788,15 +791,15 @@ def test_live_write_scenario_attribution_idempotency_and_ledger_loss(
     assert corrections_on_original() == 1
 
 
-def test_live_client_error_is_a_failed_decision_not_a_crash(
+def test_live_tool_error_preserves_unknown_effect(
     live_server: dict[str, Any], tmp_path: Path
 ) -> None:
     client = LiveMemoryClient(live_server["url"], token=TOKEN, timeout=15.0)
     record = make_record(
         session_key="claude:bad-teach-session", transcript_sha256="ef" * 32
     )
-    # A teach op naming a node that does not exist: the server rejects it, and
-    # the runner records a failed decision instead of dying mid-batch.
+    # A tool error has no generic no-effect guarantee. The runner must retain
+    # UNKNOWN even though this particular request names a missing node.
     ops = [make_teach(record, "01ZZZZZZZZZZZZZZZZZZZZZZZZ", "corrects a phantom node")]
     runner = ExtractionRunner(
         config=RunnerConfig(dry_run=False),
@@ -804,10 +807,10 @@ def test_live_client_error_is_a_failed_decision_not_a_crash(
         client=client,
     )
     decisions = runner.decide_and_execute([SessionProposals(record=record, ops=ops)])
-    assert decisions[0].status == "failed"
-    assert decisions[0].reason == "client_error"
-    # A failed write never lands in the ledger, so a retry is possible.
-    assert len(runner.ledger) == 0
+    assert decisions[0].status == "unknown"
+    assert decisions[0].reason == "unconfirmed_effect"
+    assert len(runner.ledger) == 1
+    assert runner.ledger.entries()[0]["state"] == "unknown"
 
 
 @pytest.mark.parametrize("content", [

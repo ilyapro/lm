@@ -125,6 +125,7 @@ class LiveMemoryClient:
 
     async def _call_async(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         dispatched = False
+        payload = None
         try:
             from fastmcp import Client
 
@@ -135,10 +136,13 @@ class LiveMemoryClient:
             async with client:
                 dispatched = True
                 result = await client.call_tool(tool, arguments)
-            if getattr(result, "is_error", False):
-                raise ClientError(f"{tool} returned a tool error")
-            return _payload(result)
+                if getattr(result, "is_error", False):
+                    raise ClientError(f"{tool} returned a tool error")
+                payload = _payload(result)
+            return payload
         except Exception as exc:
+            if payload is not None:
+                return payload  # Connection cleanup cannot undo a received result.
             error = ClientError if dispatched else PreDispatchError
             raise error(f"{tool} against {self.url} failed: {exc}") from exc
 
