@@ -383,12 +383,12 @@ def test_invalid_tls_certificate_is_cannot_check(
 
 
 @pytest.mark.parametrize("arm", ["optional", "mandatory"])
-def test_real_fastmcp_projection_with_nonempty_map_and_drift_cases(
+def test_real_fastmcp_projection_keeps_history_private_and_detects_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     arm: str,
 ) -> None:
-    """One private synthetic history drives the actual FastMCP initialize text."""
+    """Private synthetic history must not enter a new client's initialization."""
     from fastmcp import Client
 
     path = tmp_path / "synthetic.sqlite3"
@@ -418,16 +418,15 @@ def test_real_fastmcp_projection_with_nonempty_map_and_drift_cases(
                            if tool.name in checker.PROTOCOL_TOOLS})
             return result
 
-    served = asyncio.run(read_protocol())
-    assert "## Memory nearby\nmemory also holds: deploy recipes(3)" in served["server instructions"]
+    try:
+        served = asyncio.run(read_protocol())
+    finally:
+        mcp.auto_consolidation.close()
+        mcp.memory_store.close()
+    assert "deploy recipes" not in served["server instructions"]
     expected = checker.expected_texts(LIVE_SCOPE, arm)
     assert checker.compare(expected, served) == []
-    assert checker._memory_nearby_section(served["server instructions"])[1] is not None
-    other_data = dict(served)
-    other_data["server instructions"] = other_data["server instructions"].replace(
-        "deploy recipes(3)", "memory paths(4)"
-    )
-    assert checker.compare(expected, other_data) == []
+    assert checker._memory_nearby_section(served["server instructions"])[1] is None
 
     wrong_arm = "mandatory" if arm == "optional" else "optional"
     assert [item.name for item in checker.compare(
@@ -463,6 +462,7 @@ def _free_port() -> int:
 def _server_env() -> dict[str, str]:
     env = os.environ.copy()
     env["LM_AUTH_TOKEN"] = TOKEN
+    env["LM_EXPLICIT_FEEDBACK_PROMPT"] = "optional"
     # Keep the live server off the real embedding model: the check under test
     # never touches embeddings, and loading torch would dominate the runtime.
     env.setdefault("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
