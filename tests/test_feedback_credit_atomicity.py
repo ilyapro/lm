@@ -153,7 +153,7 @@ def test_lookup_cannot_spend_credit_without_its_event(recalled, monkeypatch):
     _mcp, store, ids, event_id, call = recalled
     before = numeric_state(store, ids)
     with monkeypatch.context() as fault:
-        fault.setattr(store, "get_recall_event", lambda event_id: None)
+        fault.setattr(store, "get_recall_event_header", lambda event_id: None)
         assert call("lookup", ids[:1]).credited == []
     assert store.credited_node_ids(event_id) == set()
     assert numeric_state(store, ids) == before

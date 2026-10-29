@@ -159,7 +159,7 @@ def test_invalid_lookup_instant_has_no_delivery_reads(runtime):
             )
 
 
-def test_native_lookup_materializes_only_the_event_needed_for_new_credit(runtime, monkeypatch):
+def test_native_lookup_uses_only_delivery_facts_for_new_and_repeated_credit(runtime, monkeypatch):
     r = runtime
     monkeypatch.setattr(storage, "_utc_now", lambda: NOW)
 
@@ -188,7 +188,7 @@ def test_native_lookup_materializes_only_the_event_needed_for_new_credit(runtime
             monkeypatch.setattr(storage, "_json_loads", decode)
             first = await call(client, "memory_lookup", node_id=r.node.id)
             assert first["results"][0]["content"] == CONTENT
-            assert materialized == [target_event]
+            assert materialized == []
             assert projected and set(projected) == {r.node.id}
             materialized.clear()
             await call(client, "memory_lookup", node_id=r.node.id)

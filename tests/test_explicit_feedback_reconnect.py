@@ -338,7 +338,7 @@ def test_reconnect_uses_one_combined_cap_before_id_and_time_filters(runtime, mon
             marks = resolve_explicit_marks(r.store, [r.node.id, boundary], None, "current", NOW, context=CONTEXT)
             assert [mark.accepted for mark in marks] == [False, True]
             assert marks[1].event.id == last_eligible
-            assert materialized == [last_eligible]
+            assert materialized == []
             assert projected == [boundary]
             query = next(sql for sql in statements if "WITH recent AS MATERIALIZED" in sql)
             plans = [row[3] for row in r.store.connection.execute("EXPLAIN QUERY PLAN " + query)]
