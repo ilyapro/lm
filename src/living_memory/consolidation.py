@@ -35,6 +35,7 @@ import os
 import re
 
 from living_memory.decay import DecayResult, apply_decay
+from living_memory.chunking import TextChunk
 from living_memory.edge_derivation import DERIVED_FROM_ANNOTATION, DERIVED_FROM_KIND
 from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
@@ -613,9 +614,12 @@ class _PreparedDigest:
     best_id: str
     content: str
     cluster_key: str
+    scope: str
+    chunks: tuple[tuple[TextChunk, tuple[float, ...]], ...] | None = None
+    output_identity: tuple[Any, ...] | None = None
 
-    def matches(self, members: Sequence[Node], best: Node) -> bool:
-        return self.best_id == best.id and self.sources == tuple(
+    def matches(self, members: Sequence[Node], best: Node, scope: str) -> bool:
+        return self.scope == scope and self.best_id == best.id and self.sources == tuple(
             (member.id, member.content) for member in members
         )
 
@@ -623,7 +627,71 @@ class _PreparedDigest:
 @dataclass(slots=True)
 class _DerivationPreparation:
     source_inputs: dict[str, _DigestSource]
-    digests: dict[str, _PreparedDigest]
+    digests: dict[str | tuple[Any, ...], _PreparedDigest]
+
+
+def _output_key(kind: str, scope: str, members: Sequence[Node], existing: Node | None) -> str | tuple[Any, ...]:
+    return existing.id if existing is not None else (kind, scope, tuple(member.id for member in members))
+
+
+def _output_identity(scope: str, members: Sequence[Node], existing: Node | None) -> tuple[Any, ...]:
+    def identity(node: Node) -> tuple[Any, ...]:
+        return (node.id, node.level, node.scope, node.content, node.materializer,
+                node.derivation_identity, node.decayed, node.corrections,
+                tuple(node.embedding or ()))
+
+    return scope, identity(existing) if existing is not None else None, tuple(map(identity, members))
+
+
+class _DerivedOutputRequired(Exception):
+    """Return detached inputs to the caller's existing preparation boundary.
+
+    This must escape every enclosing write transaction and store guard before
+    preparation. The caller then runs the ordinary writer against current
+    knowledge again; no tentative node, edge or feedback survives the retry.
+    """
+
+    def __init__(
+        self, kind: str, scope: str, members: Sequence[Node], best: Node,
+        existing: Node | None, digest: _PreparedDigest | None, chunks: bool,
+    ) -> None:
+        super().__init__("derived output changed; prepare outside the write transaction")
+        self.key = _output_key(kind, scope, members, existing)
+        self.scope, self.members, self.best = scope, list(members), best
+        self.identity = _output_identity(scope, members, existing)
+        self.digest, self.chunks = digest, chunks
+
+    def prepare(self, store: MemoryStore, preparation: _DerivationPreparation) -> None:
+        digest = self.digest
+        if digest is None:
+            digest = _prepare_digest(
+                self.scope, self.members, self.best,
+                _digest_sources(self.members, preparation.source_inputs),
+            )
+        chunks = None
+        if self.chunks:
+            chunks = tuple((chunk, tuple(vector)) for chunk, vector in
+                           store._chunk_embeddings_for(digest.content, None, require_complete=True))
+            if not chunks:
+                raise ValueError("derived output requires complete content chunks")
+        preparation.digests[self.key] = replace(digest, chunks=chunks, output_identity=self.identity)
+
+
+def _derived_digest(
+    store: MemoryStore, kind: str, scope: str, members: Sequence[Node], best: Node,
+    existing: Node | None, representative: Sequence[float] | None,
+    prepared: _PreparedDigest | None,
+) -> _PreparedDigest:
+    if prepared is None or not prepared.matches(members, best, scope):
+        raise _DerivedOutputRequired(kind, scope, members, best, existing, None, bool(representative))
+    needs_chunks = bool(representative) and (
+        existing is None or existing.content != prepared.content or not store.node_chunks_are_current(existing.id)
+    )
+    if needs_chunks and (
+        prepared.chunks is None or prepared.output_identity != _output_identity(scope, members, existing)
+    ):
+        raise _DerivedOutputRequired(kind, scope, members, best, existing, prepared, True)
+    return prepared if needs_chunks else replace(prepared, chunks=None)
 
 
 @dataclass(slots=True)
@@ -1894,6 +1962,7 @@ def _prepare_digest(
         best_id=best.id,
         content=_synthesize_digest(members, best=best, prepared_sources=sources),
         cluster_key=_cluster_key(_TraceCluster(scope, list(members), tokens)),
+        scope=scope,
     )
 
 
