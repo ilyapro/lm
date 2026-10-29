@@ -55,7 +55,7 @@ def test_repeated_explicit_marks_claim_newest_delivery_once(runtime):
     assert all(response["feedback_marks"]["accepted"] == 1 for response in responses)
     marks = store.connection.execute("SELECT * FROM recall_feedback_marks ORDER BY id").fetchall()
     assert [mark["recall_event_id"] for mark in marks] == [newer, newer]
-    assert [mark["source_id"] for mark in marks] == [response["id"] for response in responses]
+    assert [mark["source_id"] for mark in marks] == [response["node"]["id"] for response in responses]
     credit, = store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
     assert (credit["recall_event_id"], credit["node_id"]) == (newer, node.id)
     assert credit["source_id"] == f"mark:{marks[0]['id']}"
@@ -73,6 +73,21 @@ def test_needed_malformed_delivery_refuses_without_credit_or_consumption(runtime
     assert snapshot(store) == before
     replace_results(store, event, original)
     assert call(used=[node.id])["feedback_marks"]["accepted"] == 1
+
+
+def test_no_current_membership_cannot_use_history_or_foreign_delivery(runtime):
+    store, node, _, call = runtime
+    event = call()["recall_event_id"]
+    replace_results(store, event, "[]")
+    delivery(store, [node.id], transport="foreign")
+    response = call(used=[node.id])
+    assert response["feedback_marks"] == {
+        "accepted": 0, "dropped": 1, "by_reason": {"not_delivered": 1},
+    }
+    mark, = store.connection.execute("SELECT * FROM recall_feedback_marks").fetchall()
+    assert not mark["accepted"] and mark["recall_event_id"] == ""
+    assert mark["source_id"] == response["recall_event_id"]
+    assert not store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
 
 
 @pytest.fixture
@@ -133,6 +148,18 @@ def test_cap_excludes_old_malformed_body_before_membership(store):
     assert select(store, ["a"], limit=1) == {}
     with pytest.raises(sqlite3.OperationalError, match="malformed JSON"):
         select(store, ["a"], limit=2)
+
+
+@pytest.mark.parametrize("field", ["session_id", "task", "agent", "scope"])
+def test_incompatible_reconnect_does_not_read_foreign_body(store, field):
+    context = {"session_id": "session", "task": "task", "agent": "agent", "scope": "project:one"}
+    healthy = delivery(store, ["a"], context=context, scope=context["scope"])
+    foreign_context = {**context, field: "project:foreign" if field == "scope" else "foreign"}
+    foreign = delivery(store, ["a"], transport="reconnected",
+                       context=foreign_context, scope=foreign_context["scope"])
+    replace_results(store, foreign, "{")
+    assert select(store, ["a"], context=context, limit=1)["a"]["event_id"] == healthy
+    assert select(store, ["missing"], context=context) == {}
 
 
 @pytest.mark.parametrize("body", [
