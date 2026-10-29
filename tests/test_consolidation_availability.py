@@ -98,13 +98,14 @@ def test_native_procedural_pass_guards_every_sql_statement(runtime, monkeypatch,
     store = mcp.memory_store
     traces, owner = procedure(store, "inspection")
     statements, unguarded = [], []
-    encode = c.LocalEmbeddingModel.embed
+    cluster = c._cluster_traces
 
-    def embed(self, text):
+    def group(*args, **kwargs):
         assert not lock.lock._is_owned()
-        return encode(self, text)
+        return cluster(*args, **kwargs)
 
-    monkeypatch.setattr(c.LocalEmbeddingModel, "embed", embed)
+    monkeypatch.setattr(c, "_cluster_traces", group)
+    mcp.auto_consolidation._retry_delays = ()
 
     def sql(statement):
         statements.append(statement)
