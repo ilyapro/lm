@@ -250,6 +250,16 @@ feedback and delivery history are read under the lock after preparation.
 Direct `MemoryRecallService.memory_recall` callers can still pass query text.
 This preparation is per call, with no query cache.
 
+`retrieval_context` runs separate concept, schema and decision-history recalls
+through one `MemoryRecallService`, sharing compatible query and corpus
+preparation while retaining each selector's limits, depth, ranking and
+qualification. Every recall checks current corpus revisions, scope and validity.
+The Python builder creates a service per operation by default; it and standalone
+selectors also accept `recall_service` for the same store. Native prompts reuse
+their persistent preparation service and its pending-error cursor, preparing
+queries and bounded pending chunks before the runtime lock. Native selectors
+use `repair_pending=False`; standalone callers retain repair by default.
+
 The shared tokenizer reuses up to 4096 canonical token strings per process,
 keyed by token and effective Cyrillic stemming policy. Tokens longer than 128
 characters normalize in full without retention. Evidence and default modes
