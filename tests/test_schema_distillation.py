@@ -491,21 +491,21 @@ def _build_mixed_era_fixture(store: MemoryStore, case: dict) -> dict:
     }
 
 
-def _assert_no_mixed_era_schema(
+def _assert_no_displaced_sources(
     store: MemoryStore, pre_ids: set[str], live_ids: set[str]
 ) -> None:
-    """The packet's node-level predicate, inverted: no schema's sources span eras."""
+    """A current schema cannot mix explicitly displaced inputs with replacements."""
 
     for schema in store.list_nodes(
         level="schema", scope="project:game", include_decayed=True, limit=100
     ):
         sources = set(schema.source_traces)
         assert not (sources & pre_ids and sources & live_ids), (
-            f"schema {schema.id} silently merges obsolete and current eras"
+            f"schema {schema.id} merges explicitly displaced sources with replacements"
         )
 
 
-def test_consolidation_never_emits_mixed_era_schema_from_animal_planet_case(
+def test_consolidation_preserves_explicit_derivative_displacement_from_animal_planet_case(
     tmp_path: Path,
 ) -> None:
     case = json.loads(_AP_MIXED_ERA_CASE.read_text())
@@ -516,15 +516,15 @@ def test_consolidation_never_emits_mixed_era_schema_from_animal_planet_case(
 
         result = memory_consolidate(store, scope="project:game")
 
-        _assert_no_mixed_era_schema(store, pre_ids, live_ids)
+        _assert_no_displaced_sources(store, pre_ids, live_ids)
         assert len(result.schemas_created) == 1
         schema = result.schemas_created[0]
         assert set(schema.source_traces) == live_ids
-        era = schema.provenance["era"]
-        assert era["status"] == "current"
-        assert era["conflict"] is True
-        assert set(era["excluded_sources"]) == pre_ids
-        assert schema.context["era_status"] == "current"
+        selection = schema.provenance["source_selection"]
+        assert selection["policy"] == "current-sources"
+        assert selection["excluded_sources"] == {
+            source: f"displaced-via:{fixture['prior_schema'].id}" for source in pre_ids
+        }
         assert "legacy" not in schema.content
         assert "client with single manifest" in schema.content
 
@@ -540,10 +540,10 @@ def test_consolidation_never_emits_mixed_era_schema_from_animal_planet_case(
         assert second.schemas_created == []
         assert [node.id for node in second.schemas_updated] == [schema.id]
         assert set(second.schemas_updated[0].source_traces) == live_ids
-        _assert_no_mixed_era_schema(store, pre_ids, live_ids)
+        _assert_no_displaced_sources(store, pre_ids, live_ids)
 
 
-def test_consolidation_repairs_preexisting_mixed_era_schema(tmp_path: Path) -> None:
+def test_consolidation_removes_explicitly_displaced_sources_from_existing_schema(tmp_path: Path) -> None:
     case = json.loads(_AP_MIXED_ERA_CASE.read_text())
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         fixture = _build_mixed_era_fixture(store, case)
@@ -579,17 +579,17 @@ def test_consolidation_repairs_preexisting_mixed_era_schema(tmp_path: Path) -> N
         assert [node.id for node in result.schemas_updated] == [mixed.id]
         repaired = result.schemas_updated[0]
         assert set(repaired.source_traces) == live_ids
-        assert repaired.provenance["era"]["status"] == "current"
-        assert set(repaired.provenance["era"]["excluded_sources"]) == pre_ids
+        assert repaired.provenance["source_selection"]["excluded_sources"] == {
+            source: f"displaced-via:{fixture['prior_schema'].id}" for source in pre_ids
+        }
         assert "legacy" not in repaired.content
-        _assert_no_mixed_era_schema(store, pre_ids, live_ids)
+        _assert_no_displaced_sources(store, pre_ids, live_ids)
 
 
-def test_procedural_promotion_survives_disjoint_regimes_without_conflict(
+def test_procedural_promotion_preserves_independent_sources_with_distant_timestamps(
     tmp_path: Path,
 ) -> None:
-    """Anti-suppression regression: a temporal split alone must not reject,
-    filter, or era-mark a promotion — conflict evidence is required."""
+    """Timestamp proximity does not decide source validity."""
 
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         moments = (
@@ -624,8 +624,7 @@ def test_procedural_promotion_survives_disjoint_regimes_without_conflict(
         schema = result.schemas_created[0]
         assert sorted(schema.source_traces) == sorted(trace.id for trace in traces)
         assert len(schema.context["procedure"]) == 3
-        assert "era" not in schema.provenance
-        assert "era_status" not in schema.context
+        assert schema.provenance["source_selection"]["excluded_sources"] == {}
 
 
 def test_consolidation_is_idempotent_when_grouping_by_task_pattern(

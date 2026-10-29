@@ -695,16 +695,14 @@ def test_consolidation_excludes_taught_traces_from_concept(tmp_path: Path) -> No
         concept = result.concepts_created[0]
         corrected_ids = {trace.id for trace in corrected}
         assert set(concept.source_traces) == {trace.id for trace in traces} - corrected_ids
-        era = concept.provenance["era"]
-        assert era["status"] == "current"
-        assert era["conflict"] is False
-        assert set(era["excluded_sources"]) == corrected_ids
-        assert all(reason == "corrected" for reason in era["excluded_sources"].values())
+        selection = concept.provenance["source_selection"]
+        assert selection["policy"] == "current-sources"
+        assert set(selection["excluded_sources"]) == corrected_ids
+        assert set(selection["excluded_sources"].values()) == {"no current source"}
 
 
-def test_consolidation_splits_cluster_on_cross_era_supersedes(tmp_path: Path) -> None:
-    """A cluster spanning eras with a boundary-crossing correction promotes a
-    concept derived only from the live era, marked current."""
+def test_consolidation_preserves_independent_sources_across_a_later_correction(tmp_path: Path) -> None:
+    """A later correction replaces only the source it explicitly supersedes."""
 
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         old_traces = []
@@ -739,18 +737,16 @@ def test_consolidation_splits_cluster_on_cross_era_supersedes(tmp_path: Path) ->
 
         assert len(result.concepts_created) == 1
         concept = result.concepts_created[0]
-        assert set(concept.source_traces) == {trace.id for trace in new_traces}
-        era = concept.provenance["era"]
-        assert era["status"] == "current"
-        assert era["conflict"] is True
-        assert set(era["excluded_sources"]) == {trace.id for trace in old_traces}
-        assert era["excluded_sources"][old_traces[0].id].startswith("superseded-by:")
-        assert "legacy" not in concept.content
+        expected = {trace.id for trace in [*old_traces[1:], *new_traces]}
+        assert set(concept.source_traces) == expected
+        selection = concept.provenance["source_selection"]
+        assert selection["policy"] == "current-sources"
+        assert selection["excluded_sources"] == {old_traces[0].id: f"replaced-by:{new_traces[0].id}"}
+        assert "legacy" in concept.content
         assert "adaptive" in concept.content
 
         related = store.list_connections(source_id=concept.id, relation_type="related")
-        endorsed = {edge.target_id for edge in related}
-        assert endorsed == {trace.id for trace in new_traces}
+        assert {edge.target_id for edge in related} == expected
 
 
 def test_cross_scope_promotion_ignores_dissimilar_project_concepts(

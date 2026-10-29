@@ -32,7 +32,7 @@ from living_memory.storage import MemoryStore
 SCOPE = "project:fixture"
 AGENTS = ("agent-a", "agent-b", "agent-c", "agent-d")
 # Records are written minutes apart just before the test runs, so the TTL sweep
-# of a pass leaves them alone and a correction taught now lands in their era.
+# of a pass leaves them alone.
 START = datetime.now(UTC) - timedelta(hours=2)
 
 
@@ -353,7 +353,7 @@ def test_negative_controls_fail_the_oracle(tmp_path: Path) -> None:
     with store:
         for group in groups:
             if group.name == "corrected":
-                continue  # the stand-in does not model era filtering
+                continue  # the stand-in does not resolve current sources
             legacy = legacy_concatenation(store, group)
             assert oracle(group, legacy) is group.legacy_ok, group.name
         conditional = next(group for group in groups if group.name == "conditional")
@@ -832,28 +832,12 @@ def test_identity_oracle_detects_a_mutant_that_rebuilds_under_a_new_id(
         assert_carrier_of(mcp.memory_store, schema.id, [])
 
 
-# Two losses the frozen candidate showed on the regression replay, pinned.
-def test_carrier_keeps_an_older_era_record_that_nothing_superseded(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The era rule decides what a schema speaks for; it must not take a current
-    record (only in an older era, not superseded) out of its group's evidence."""
-
-    import living_memory.consolidation as consolidation
-
+def test_carrier_keeps_independent_records_with_distant_timestamps(tmp_path: Path) -> None:
     history = next(group for group in dev_groups() if group.name == "history")
-    assess = consolidation._assess_cluster_eras
-
-    def older_era_first(store, members):
-        era = assess(store, members)
-        oldest = min(era.live, key=lambda node: (node.timestamp or "", node.id))
-        era.live.remove(oldest)
-        era.excluded[oldest.id] = "obsolete-era"
-        return era
-
-    monkeypatch.setattr(consolidation, "_assess_cluster_eras", older_era_first)
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         written = _write(store, history)
+        oldest = written[0]
+        store.update_node(oldest.id, context={**oldest.context, "timestamp": "2025-01-01T00:00:00Z"})
         memory_consolidate(store, scope=SCOPE)
         carriers = [
             node

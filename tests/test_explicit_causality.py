@@ -207,8 +207,8 @@ def test_runtime_offline_and_consolidation_share_semantic_boundary(native, expli
         assert report["edges_by_type"]["before"]["caused"] == int(explicit)
         assert report["typed_share"]["after"]["strict_typed"] == int(explicit)
     members = list(store.get_nodes([problem, solution]).values())
-    eras = consolidation._assess_cluster_eras(store, members)
-    assert not eras.excluded
+    selection = consolidation._current_sources(store, (node.id for node in members))
+    assert not selection.excluded
     assert not consolidation._is_superseded(store, problem)
     assert not consolidation._is_superseded(store, solution)
     assert store.get_connection(edge.id) == edge

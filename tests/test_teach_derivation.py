@@ -7,13 +7,15 @@ import pytest
 
 from living_memory import consolidation
 from living_memory.consolidation import (
-    _assess_cluster_eras,
+    _current_sources,
+    memory_consolidate,
     _cross_scope_promotion,
     _materialize_procedural_schemas,
     _materialize_cluster,
     _TraceCluster,
     memory_teach,
 )
+from living_memory.config import MemoryConfig
 from living_memory.delivery import DeliveryHistory, shape_recall_results
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.feedback import apply_pending_recall_feedback
@@ -152,6 +154,73 @@ def test_mcp_teach_recall_and_exact_historical_lookup(tmp_path, declared):
         assert old["superseded_by"] == [correction_id]
 
 
+@pytest.mark.parametrize("kind", ["procedure", "evidence", "pattern", "promotion"])
+def test_public_first_and_repeated_build_preserve_the_same_current_sources(tmp_path, kind):
+    outcomes = []
+    for preexisting in (False, True):
+        config = MemoryConfig(db_path=tmp_path / f"{preexisting}.sqlite3", trace_ttl_days=10000)
+        with MemoryStore(config) as store:
+            grouped = kind in {"procedure", "evidence"}
+            traces = [
+                store.append_trace(text, {
+                    "scope": SCOPE, "agent": "writer", "timestamp": "2025-01-01T00:00:00Z",
+                    **({"procedure_id": "workshop_release"} if grouped else {}),
+                    **({"step_order": index + 1} if kind == "procedure" else {}),
+                }) for index, text in enumerate(STEPS)
+            ]
+            independent = []
+            if kind == "promotion":
+                for scope, subject in (("project:other", "inventory"), ("project:third", "tools")):
+                    independent.extend(store.append_trace(
+                        f"Workshop release checks {subject} item {index}.",
+                        {"scope": scope, "agent": "writer", "timestamp": "2025-01-01T00:00:00Z"},
+                    ) for index in range(3))
+            if preexisting:
+                memory_consolidate(store, force=True, min_cluster_size=3)
+            taught = memory_teach(store, traces[0].id, CORRECTION)
+            current_inputs = [taught.corrective_trace, *traces[1:]]
+            expected = {node.id for node in current_inputs}
+            owner_ids = None
+            for _ in range(2):
+                memory_consolidate(store, force=True, min_cluster_size=3)
+                materializer = "procedural" if grouped else "cluster"
+                owner, = [node for node in store.list_nodes(scope=SCOPE)
+                          if node.materializer == materializer and not node.decayed]
+                assert set(owner.source_traces) == expected
+                assert all(node.content in owner.content for node in current_inputs)
+                assert STEPS[0] not in owner.content
+                if kind == "procedure":
+                    assert owner.level == "schema"
+                    assert owner.context["procedure"] == [CORRECTION, *STEPS[1:]]
+                else:
+                    assert owner.level == "concept" and "procedure" not in owner.context
+                owners = [owner]
+                if kind == "promotion":
+                    promoted, = [node for node in store.list_nodes(scope="global")
+                                 if node.materializer == "cross-scope-promotion" and not node.decayed]
+                    assert set(promoted.source_traces) == expected | {node.id for node in independent}
+                    assert all(node.content in promoted.content for node in [*current_inputs, *independent])
+                    assert STEPS[0] not in promoted.content
+                    projects = store.get_nodes(promoted.materializer_sources).values()
+                    assert {node.scope for node in projects} == {SCOPE, "project:other", "project:third"}
+                    owners.append(promoted)
+                ids = [node.id for node in owners]
+                assert owner_ids is None or ids == owner_ids
+                owner_ids = ids
+                # Ordinary retrieval consumes the same persisted current knowledge.
+                recalled = recall(MemoryRecallService(store, embedder=Encoder()))
+                assert any(result.node.id == owner.id and result.node.content == owner.content for result in recalled)
+            assert [store.get_node(node.id).content for node in traces] == STEPS
+            assert store.get_node(traces[0].id).corrections[-1]["new"] == CORRECTION
+            assert store.get_connection(taught.supersedes.id) == taught.supersedes
+            outcomes.append([
+                (node.level, node.context.get("procedure"),
+                 sorted(source.content for source in store.get_nodes(node.source_traces).values()))
+                for node in owners
+            ])
+    assert outcomes[0] == outcomes[1]
+
+
 def test_later_materialization_cannot_undo_teach_or_erase_independent_steps(tmp_path):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         traces, schema = procedure(store)
@@ -193,9 +262,9 @@ def test_incidental_recall_lineage_and_unrecorded_citations_are_independent(tmp_
         before = {node.id: asdict(node) for node in [independent, cited]}
         memory_teach(store, traces[0].id, CORRECTION)
         assert {node_id: asdict(store.get_node(node_id)) for node_id in before} == before
-        assert not _assess_cluster_eras(store, [traces[0], independent]).excluded.get(independent.id)
+        assert not _current_sources(store, [traces[0].id, independent.id]).excluded.get(independent.id)
         corrected_independent = memory_teach(store, independent.id, "The workshop door uses the night latch.")
-        assessment = _assess_cluster_eras(store, [traces[1], corrected_independent.corrective_trace])
+        assessment = _current_sources(store, [traces[1].id, corrected_independent.corrective_trace.id])
         assert traces[1].id not in assessment.excluded
 
 

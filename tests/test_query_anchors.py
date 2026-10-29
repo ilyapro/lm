@@ -18,7 +18,7 @@ says why anchor edges do not reuse it.
 
 *Anchor edges follow their target.* Every write path that supersedes a node —
 teach and explicit connections, verified duplicate-content dedup — plus consolidation's
-era displacement, plus the batch sweep.
+explicit derivative displacement, plus the batch sweep.
 """
 
 from __future__ import annotations
@@ -952,14 +952,14 @@ def test_self_superseding_edge_does_not_move_anything(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# edge migration: era displacement and sweep
+# edge migration: explicit derivative displacement and sweep
 # ---------------------------------------------------------------------------
 
 
 def test_era_exclusions_move_edges_for_the_reasons_that_name_a_replacement(
     tmp_path: Path,
 ) -> None:
-    """Consolidation writes no edge for era displacement, so it is passed in."""
+    """Consolidation writes no edge for explicit derivative displacement, so it is passed in."""
 
     with _store(tmp_path) as store:
         displaced = _trace(store, "member folded into a concept")
@@ -990,7 +990,7 @@ def test_era_exclusions_without_a_named_replacement_leave_edges_alone(
         anchor = qa.upsert_anchor(store, "запрос", SCOPE, [1.0, 0.0], [member.id]).anchor
 
         moved = qa.migrate_anchor_edges_for_exclusions(
-            store, {member.id: "corrected", "OTHER": "obsolete-era"}
+            store, {member.id: "no current source", "OTHER": "unspecified exclusion"}
         )
 
         assert moved == 0

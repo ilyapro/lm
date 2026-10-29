@@ -193,8 +193,8 @@ def test_consolidation_uses_explicit_replacement_only(tmp_path, explicit):
         for observation in (None, consolidation._SourceObservation(store, owner.source_traces)):
             current = consolidation._current_derivation(store, owner, observation=observation)
             assert {node.id for node in current.live} == {expected_id, members[1].id, members[2].id}
-        eras = consolidation._assess_cluster_eras(store, [*members, new])
-        assert (old.id in eras.excluded) is explicit
+        selection = consolidation._current_sources(store, [*(node.id for node in members), new.id])
+        assert (old.id in selection.excluded) is explicit
         assert consolidation._is_superseded(store, old.id) is explicit
         assert store.get_connection(edge.id).metadata == metadata
 
