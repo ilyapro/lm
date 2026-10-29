@@ -298,7 +298,7 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
         refreshed = store.get_node(promoted.id)
         assert refreshed is not None
         assert refreshed.confidence < original_confidence
-        assert refreshed.unique_agents == alpha.unique_agents + beta.unique_agents
+        assert refreshed.unique_agents == 2
         assert refreshed.provenance["active_promoted_from"] == [
             "project:alpha",
             "project:beta",

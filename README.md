@@ -332,6 +332,11 @@ Scoring runs outside the shared-store guard and each atomic writer rechecks
 current evidence. Other projects are not re-embedded. Existing derivations
 continue to refresh from their recorded sources. First construction and later
 writes resolve each source through the same correction and validity checks.
+Promotion counts the union of current original authors through recorded
+derivation inputs; a materializer is not an additional author. Unavailable or
+unidentified legacy inputs retain the maximum declared support, never a sum of
+possibly overlapping counts. Scope diversity still contributes its confidence
+bonus, subject to storage's confidence cap of 0.5 for at most one author.
 A correction replaces its explicit source; time gaps and cluster membership
 cannot displace independent inputs. Replacing a recorded derivative explicitly
 displaces its cited inputs when they occur in the same candidate. Original
