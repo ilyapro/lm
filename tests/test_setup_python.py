@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -57,7 +58,7 @@ class Setup:
             "        log.write(json.dumps({'target': str(target), 'resolved': str(target.resolve())}) + '\\n')\n"
             "    if os.environ.get('SETUP_TEST_WHEELS'):\n"
             "        wheels = sorted(pathlib.Path(os.environ['SETUP_TEST_WHEELS']).glob('*.whl'))\n"
-            "        os.execv(sys.executable, [sys.executable, '-m', 'pip', *sys.argv[3:-1],\n"
+            f"        os.execv(sys.executable, [sys.executable, {str(Path(importlib.util.find_spec('pip').origin).parent)!r}, *sys.argv[3:-1],\n"
             "                 '--no-index', '--no-deps', *map(str, wheels)])\n"
             "    if os.environ.get('SETUP_TEST_FAIL') == 'pip':\n"
             "        sys.exit(1)\n"
