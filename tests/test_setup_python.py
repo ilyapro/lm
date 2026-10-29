@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -54,6 +55,10 @@ class Setup:
             "    target = pathlib.Path(sys.argv[sys.argv.index('--target') + 1])\n"
             "    with open(os.environ['SETUP_TEST_LOG'], 'a') as log:\n"
             "        log.write(json.dumps({'target': str(target), 'resolved': str(target.resolve())}) + '\\n')\n"
+            "    if os.environ.get('SETUP_TEST_WHEELS'):\n"
+            "        wheels = sorted(pathlib.Path(os.environ['SETUP_TEST_WHEELS']).glob('*.whl'))\n"
+            "        os.execv(sys.executable, [sys.executable, '-m', 'pip', *sys.argv[3:-1],\n"
+            "                 '--no-index', '--no-deps', *map(str, wheels)])\n"
             "    if os.environ.get('SETUP_TEST_FAIL') == 'pip':\n"
             "        sys.exit(1)\n"
             "    target.mkdir(parents=True, exist_ok=True)\n"
@@ -109,6 +114,65 @@ def snapshot(path: Path) -> dict:
         str(p.relative_to(path)): (p.read_bytes(), p.stat().st_mtime_ns)
         for p in path.rglob("*") if p.is_file()
     }
+
+
+def wheels(path: Path, version: str) -> None:
+    """Small offline wheels exercise pip's actual target upgrade behavior."""
+    path.mkdir()
+    modules = {
+        "fastmcp": "",
+        "pytest": CONSUMER,
+        "huggingface_hub": f"__version__ = {version!r}\n",
+        "transformers": (
+            "from importlib.metadata import version\n"
+            f"if version('huggingface_hub') != {version!r}:\n"
+            "    raise ImportError('hub metadata does not match the installed encoder')\n"
+        ),
+        "sentence_transformers": "import transformers\n",
+    }
+    for name, source in modules.items():
+        info = f"{name}-{version}.dist-info"
+        files = {
+            f"{name}/__init__.py": source,
+            f"{info}/METADATA": f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
+            f"{info}/WHEEL": "Wheel-Version: 1.0\nGenerator: setup-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        }
+        if name == "transformers" and version == "1.0":
+            files["transformers/removed_module.py"] = ""
+        files[f"{info}/RECORD"] = "".join(f"{name},,\n" for name in files) + f"{info}/RECORD,,\n"
+        with zipfile.ZipFile(path / f"{name}-{version}-py3-none-any.whl", "w") as wheel:
+            for name, content in files.items():
+                wheel.writestr(name, content)
+
+
+def test_upgrade_replaces_the_environment_seen_by_server(setup: Setup, tmp_path: Path) -> None:
+    for version in ("1.0", "2.0"):
+        wheel_dir = tmp_path / version
+        wheels(wheel_dir, version)
+        setup.env["SETUP_TEST_WHEELS"] = str(wheel_dir)
+        with (setup.root / "pyproject.toml").open("a") as spec:
+            spec.write(f"# dependency set {version}\n")
+        setup.run()
+
+    server = setup.root / "src" / "living_memory" / "server.py"
+    server.write_text(
+        "from importlib.metadata import distributions, version\n"
+        "from pathlib import Path\n"
+        "import os, sentence_transformers, transformers\n"
+        "target = Path(os.environ['SETUP_TEST_TARGET'])\n"
+        "assert version('huggingface_hub') == '2.0'\n"
+        "assert sorted((d.metadata['Name'], d.version) for d in distributions(path=[str(target)])) == "
+        "[(name, '2.0') for name in ['fastmcp', 'huggingface_hub', 'pytest', 'sentence_transformers', 'transformers']]\n"
+        "assert not (target / 'transformers' / 'removed_module.py').exists()\n"
+        + CONSUMER
+    )
+    setup.env["SETUP_TEST_TARGET"] = str(setup.deps)
+    setup.env["PYTHONDONTWRITEBYTECODE"] = "1"
+    before = snapshot(setup.deps)
+    setup.run("server.sh")
+    setup.run()
+    assert snapshot(setup.deps) == before
+    assert len([call for call in setup.calls() if "target" in call]) == 2
 
 
 @pytest.mark.parametrize("cache", ["new-link", "existing-link", "local"])
