@@ -638,14 +638,14 @@ def apply_lookup_credit(
             event_id, rank, result = hit["event_id"], hit["rank"], hit["result"]
             try:
                 with store.transaction():
-                    event = events.get(event_id) or store.get_recall_event(event_id)
-                    if event is None:
-                        continue
-                    events[event_id] = event
                     if not store.claim_recall_credit(
                         event_id, node_id, basis="lookup", source_id=str(lookup_event_id)
                     ):
                         continue
+                    event = events.get(event_id) or store.get_recall_event(event_id)
+                    if event is None:
+                        raise LookupError(f"recall event {event_id} disappeared before credit")
+                    events[event_id] = event
                     apply_retrieval_feedback(
                         store,
                         SimpleNamespace(
