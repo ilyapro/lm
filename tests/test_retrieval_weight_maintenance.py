@@ -15,11 +15,15 @@ from living_memory.storage import MemoryStore
 
 
 @pytest.mark.parametrize("mode", [(), ("--dry-run",)], ids=["default", "dry-run"])
+@pytest.mark.parametrize("chunks_only", [False, True])
 def test_reseat_floors_dry_run_reports_audit_without_writing(
-    tmp_path: Path, mode: tuple[str, ...],
+    tmp_path: Path, mode: tuple[str, ...], chunks_only: bool,
 ) -> None:
     db_path = tmp_path / "memory #?.sqlite3"
     _seed_collapsed_project(db_path, "project:collapsed")
+    if chunks_only:
+        with MemoryStore(db_path) as store:
+            assert store.drop_node_embedding_column()
     with closing(sqlite3.connect(db_path)) as connection, connection:
         connection.execute("UPDATE nodes SET content_fingerprint = NULL")
     before = _database_snapshot(db_path)
@@ -48,6 +52,20 @@ def test_reseat_floors_dry_run_reports_audit_without_writing(
         assert connection.execute(
             "SELECT content_fingerprint FROM nodes"
         ).fetchone() == (None,)
+
+
+def test_preview_empty_weight_table_succeeds_without_seeding(tmp_path: Path) -> None:
+    db_path = tmp_path / "empty-weights.sqlite3"
+    with MemoryStore(db_path) as store, store.connection:
+        store.connection.execute("DELETE FROM retrieval_weights")
+    before = _database_snapshot(db_path)
+
+    result = _run_maintenance(db_path)
+
+    assert result["applied"] is False
+    assert result["affected_count"] == 0
+    assert result["changes"] == []
+    assert _database_snapshot(db_path) == before
 
 
 @pytest.mark.parametrize("mode", [(), ("--dry-run",)], ids=["default", "dry-run"])
