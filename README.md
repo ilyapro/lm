@@ -348,7 +348,16 @@ These rules apply to new derived writes and ordinary source-based refreshes,
 including consolidation, correction and promotion. Reading or opening a store
 does not rewrite existing derived content; there is no bulk migration.
 
-Teach and forget discover consumers from a projection of recorded writer and
+An explicit `memory_connect(new, old, "supersedes")` from a live, distinct
+replacement refreshes recorded derivatives atomically with the relation and
+anchor moves, using the same materializers as teach and forget. A derivative
+without a known materializer becomes decayed and remains available by exact
+lookup. Required refresh or preparation failures roll back the whole change.
+Connect returns the connection, creates no corrective trace, and preserves the
+existing endpoints, scopes and provenance. Inferred-only and bookkeeping
+relations do not apply corrections.
+
+Teach, forget and explicit connect discover consumers from a projection of recorded writer and
 source fields before loading full nodes. Admission uses the same materializer
 policy as refresh, including legacy cluster records; explicit `derived_from`
 edges supply inputs only for nodes without a recognized writer. Ordinary recall
