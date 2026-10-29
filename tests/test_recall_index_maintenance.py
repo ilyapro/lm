@@ -288,8 +288,10 @@ def test_pending_hydration_uses_current_source_after_discovery(mcp, change):
     service.refresh_pending_chunks(scope=SCOPE, guard=guard)
     if change == "content":
         assert store.node_chunks_are_current(node.id)
-        chunks = store.list_node_chunks(node.id)
-        assert [chunk.text for chunk in chunks] == ["Amber mineral inventory."]
+        current = store.get_node(node.id)
+        chunk, = store.list_node_chunks(node.id)
+        assert current.content[chunk.char_start:chunk.char_end] == "Amber mineral inventory."
+        assert chunk.embedding == pytest.approx(service.embedder.embed(current.content))
     else:
         assert store.list_node_chunks(node.id) == expected_chunks
     assert not store.connection.in_transaction
