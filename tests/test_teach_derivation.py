@@ -170,7 +170,7 @@ def test_teaching_a_replacement_reaches_derivatives_still_citing_its_predecessor
         # Recorded input still names the original, while its replacement is
         # the source being corrected now.
         with monkeypatch.context() as previous:
-            previous.setattr(consolidation, "_refresh_derived_from", lambda *_: None)
+            previous.setattr(consolidation, "_refresh_derived_from", lambda *_, **kwargs: None)
             earlier = memory_teach(store, traces[0].id, "Workshop release uses a temporary manifest.")
         assert STEPS[0] in store.get_node(schema.id).content
         memory_teach(store, earlier.corrective_trace.id, CORRECTION)
