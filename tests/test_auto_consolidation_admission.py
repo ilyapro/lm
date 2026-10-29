@@ -121,6 +121,68 @@ def test_live_worker_admits_failed_request_only_after_save(tmp_path, monkeypatch
             scheduler.close()
 
 
+def test_completion_save_admits_outstanding_request(tmp_path, monkeypatch):
+    path = tmp_path / "memory.sqlite3"
+    with MemoryStore(path) as store:
+        scheduler = AutoConsolidationScheduler(
+            lambda scope: {}, save_pending=lambda raw: store.set_kv(PENDING_KV_KEY, raw),
+        )
+        held = HeldPasses(monkeypatch, scheduler, path, first_fails=False)
+        try:
+            scheduler.request(FIRST)
+            assert held.entered.wait(timeout=5)
+            reject_saves(store)
+            with pytest.raises(sqlite3.IntegrityError, match="pending save fault"):
+                scheduler.request(SECOND)
+            store.connection.execute("DROP TRIGGER reject_pending")
+            held.finish_first()
+            assert held.entered_next.wait(timeout=5)
+            assert held.runs == [FIRST, SECOND]
+            assert set(held.snapshots[-1]) == {SECOND}
+            held.release_next.set()
+            assert scheduler.wait_idle(timeout=5)
+            assert pending(path) == {}
+        finally:
+            held.release()
+            scheduler.close()
+
+
+@pytest.mark.parametrize("accepted", ["queued", "retry"])
+def test_failed_request_coalesces_into_an_accepted_pass(tmp_path, monkeypatch, accepted):
+    path = tmp_path / "memory.sqlite3"
+    with MemoryStore(path) as store:
+        scheduler = AutoConsolidationScheduler(
+            lambda scope: {}, save_pending=lambda raw: store.set_kv(PENDING_KV_KEY, raw),
+            retry_delays=(3600,) if accepted == "queued" else (0,),
+        )
+        held = HeldPasses(monkeypatch, scheduler, path, first_fails=True)
+        scope = SECOND if accepted == "queued" else FIRST
+        try:
+            scheduler.request(FIRST)
+            assert held.entered.wait(timeout=5)
+            if accepted == "queued":
+                scheduler.request(scope)
+            reject_saves(store)
+            with pytest.raises(sqlite3.IntegrityError, match="pending save fault"):
+                scheduler.request(scope)
+            held.finish_first()
+            # Accepted work can run despite the unsaved coalesced request.
+            assert held.entered_next.wait(timeout=5)
+            assert held.runs == [FIRST, scope]
+            assert scope in held.snapshots[-1]
+            assert scope not in scheduler.status()["queued"]
+            store.connection.execute("DROP TRIGGER reject_pending")
+            held.release_next.set()
+            assert scheduler.wait_idle(timeout=5)
+            scheduler.retry_pending()
+            assert scheduler.wait_idle(timeout=5)
+            assert held.runs == [FIRST, scope]
+            assert set(pending(path)) == ({FIRST} if accepted == "queued" else set())
+        finally:
+            held.release()
+            scheduler.close()
+
+
 @pytest.mark.parametrize("tool", ["memory_remember", "memory_teach"])
 @pytest.mark.parametrize("next_scope", [SECOND, "project:other"])
 @pytest.mark.parametrize("first_fails", [False, True])

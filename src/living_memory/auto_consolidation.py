@@ -258,10 +258,9 @@ class AutoConsolidationScheduler:
                 now = self._clock()
                 for scope, queued in self._queue.items():
                     if queued.ready_at is not None and queued.ready_at <= now:
-                        if queued.requested_at is None:
-                            del self._queue[scope]
-                        else:
-                            self._queue[scope] = _QueuedPass(requested_at=queued.requested_at)
+                        # This accepted pass also covers requests made before
+                        # it starts, even if their coalesced save failed.
+                        del self._queue[scope]
                         self._running = scope
                         return scope
                 wake = min(
