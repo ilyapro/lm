@@ -108,7 +108,7 @@ def test_native_positive_feedback_reads_only_enabled_floor_evidence(
             assert store._has_graph_evidence(scope)
             event = store.record_recall_event(
                 query="cobalt floor feedback fixture", scope=scope,
-                transport_session_id="floor-transport",
+                ambient_context={"transport_session_id": "floor-transport"},
                 results=[{
                     "node_id": node_id, "bm25_score": 1.0,
                     "vector_score": 0.0, "graph_score": 0.0, "methods": ["bm25"],
