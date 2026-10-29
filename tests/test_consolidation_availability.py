@@ -34,7 +34,7 @@ class FakeMCP:
 
 
 @pytest.fixture
-def memory(tmp_path, monkeypatch):
+def runtime(tmp_path, monkeypatch):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     locks = []
     waiting = Event()
@@ -55,6 +55,16 @@ def memory(tmp_path, monkeypatch):
 
     monkeypatch.setattr(server, "RLock", Lock)
     mcp = server.create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    try:
+        yield mcp, locks[0], waiting
+    finally:
+        mcp.auto_consolidation.close()
+        mcp.memory_store.close()
+
+
+@pytest.fixture
+def memory(runtime, monkeypatch):
+    mcp, lock, waiting = runtime
     store = mcp.memory_store
     traces = [store.append_trace(
         f"Harbor inspection checks marker {i} before departure.",
@@ -68,11 +78,181 @@ def memory(tmp_path, monkeypatch):
     # Retrieval clustering is independent of the guard and tested separately.
     cluster = c._TraceCluster(SCOPE, traces, Counter({"harbor": 6}))
     monkeypatch.setattr(c, "_cluster_traces", lambda *args, **kwargs: [cluster])
+    return mcp, lock, waiting, traces, owners, cluster
+
+
+def procedure(store, group):
+    traces = [store.append_trace(
+        f"Harbor {group} checks marker {i} before departure.",
+        {"scope": SCOPE, "agent": f"inspector-{i}", "task_pattern": group,
+         "procedure_id": "harbor_departure", "step_order": i + 1},
+    ) for i in range(3)]
+    results = c._materialize_procedural_schemas(store, traces, min_cluster_size=3)
+    owner = next(node for node, _ in results if node.context["task_pattern"] == group)
+    return traces, owner
+
+
+@pytest.mark.parametrize("route", ["manual", "scheduled"])
+def test_native_procedural_pass_guards_every_sql_statement(runtime, monkeypatch, route):
+    mcp, lock, _ = runtime
+    store = mcp.memory_store
+    traces, owner = procedure(store, "inspection")
+    statements, unguarded = [], []
+    encode = c.LocalEmbeddingModel.embed
+
+    def embed(self, text):
+        assert not lock.lock._is_owned()
+        return encode(self, text)
+
+    monkeypatch.setattr(c.LocalEmbeddingModel, "embed", embed)
+
+    def sql(statement):
+        statements.append(statement)
+        if not lock.lock._is_owned():
+            unguarded.append(statement)
+
+    store.connection.set_trace_callback(sql)
     try:
-        yield mcp, locks[0], waiting, traces, owners, cluster
+        if route == "manual":
+            result = mcp.tools["memory_consolidate"](scope=SCOPE)
+            assert [node["id"] for node in result["schemas_updated"]] == [owner.id]
+        else:
+            mcp.auto_consolidation.request(SCOPE)
+            assert mcp.auto_consolidation.wait_idle(15, include_retries=True)
+            assert mcp.auto_consolidation.last_result(SCOPE)["status"] == "completed"
     finally:
-        mcp.auto_consolidation.close()
-        store.close()
+        store.connection.set_trace_callback(None)
+    assert statements
+    assert unguarded == []
+    assert store.get_node(owner.id).context["procedure"] == [trace.content for trace in traces]
+
+
+@pytest.mark.parametrize("commit", [True, False])
+def test_procedural_discovery_waits_for_transaction_and_reads_one_snapshot(runtime, monkeypatch, commit):
+    mcp, lock, waiting = runtime
+    store = mcp.memory_store
+    traces, owner = procedure(store, "inspection")
+    entered = Event()
+    snapshots = []
+    triggers, get_nodes = store.schema_triggers, store.get_nodes
+
+    def discover(scope):
+        entered.set()
+        return triggers(scope)
+
+    def read(ids):
+        nodes = get_nodes(ids)
+        snapshots.append(nodes)
+        return nodes
+
+    monkeypatch.setattr(store, "schema_triggers", discover)
+    monkeypatch.setattr(store, "get_nodes", read)
+
+    class Rollback(Exception):
+        pass
+
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        try:
+            with lock, store.transaction():
+                store.update_node(owner.id, context={**owner.context, "transaction_fact": "new"})
+                store.update_node(traces[0].id, context={**traces[0].context, "transaction_fact": "new"})
+                work = workers.submit(c._materialize_procedural_schemas, store, [], min_cluster_size=3, step=lambda: lock)
+                assert waiting.wait(10)
+                assert not entered.is_set()
+                assert not work.done()
+                if not commit:
+                    raise Rollback
+        except Rollback:
+            pass
+        result = work.result(timeout=15)
+    assert entered.is_set()
+    expected = "new" if commit else None
+    assert snapshots[0][owner.id].context.get("transaction_fact") == expected
+    assert snapshots[1][traces[0].id].context.get("transaction_fact") == expected
+    assert [node.id for node, _ in result] == [owner.id]
+    assert store.get_node(owner.id).context["procedure"] == [trace.content for trace in traces]
+
+
+@pytest.mark.parametrize("change", [
+    "source", "owner", "owner_decay", "owner_group", "source_decay", "source_union",
+    "duplicate", "duplicate_decay", "duplicate_group", "duplicate_content", "duplicate_edge", "unchanged",
+])
+def test_procedural_write_rechecks_snapshot_and_preserves_independent_owner(runtime, change):
+    mcp, lock, _ = runtime
+    store = mcp.memory_store
+    traces, owner = procedure(store, "inspection")
+    others, independent = procedure(store, "navigation")
+    duplicate = store.create_node(
+        level="schema", content=owner.content + "\nAdditional inspection record.",
+        context=owner.context, provenance=owner.provenance,
+    )
+    discovered, resume = Event(), Event()
+    steps = 0
+
+    @contextmanager
+    def step():
+        nonlocal steps
+        with lock:
+            yield
+        steps += 1
+        assert not store.connection.in_transaction
+        if steps == 1:
+            discovered.set()
+            assert resume.wait(15)
+
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        work = workers.submit(c._materialize_procedural_schemas, store, traces + others, min_cluster_size=3, step=step)
+        try:
+            assert discovered.wait(10)
+            # Foreground tools acquire the same runtime lock between discovery and writes.
+            if change in ("source", "owner", "duplicate"):
+                target = {"source": traces[0], "owner": owner, "duplicate": duplicate}[change]
+                taught = mcp.tools["memory_teach"](target.id, "Harbor departure uses the signed manifest.")
+            elif change in ("owner_decay", "source_decay", "duplicate_decay"):
+                target = {"owner_decay": owner, "source_decay": traces[0], "duplicate_decay": duplicate}[change]
+                mcp.tools["memory_forget"](target.id, "retired by operator")
+            else:
+                with lock, store.transaction():
+                    if change in ("owner_group", "duplicate_group"):
+                        target = owner if change == "owner_group" else duplicate
+                        store.update_node(target.id, context={**target.context, "procedure_key": "independent revision", "task_pattern": "independent revision"})
+                    elif change == "duplicate_content":
+                        store.update_node(duplicate.id, content="Harbor departure checks the revised inspection record.")
+                    elif change == "duplicate_edge":
+                        replacement = store.append_trace("Harbor departure replaces the duplicate procedure.", {"scope": SCOPE})
+                        store.create_connection(replacement.id, duplicate.id, "supersedes")
+                    elif change == "source_union":
+                        added = store.append_trace("Harbor departure records the final manifest.", {**traces[0].context, "step_order": 4})
+                        store.update_node(owner.id, provenance={**owner.provenance, "source_traces": [*owner.source_traces, added.id]})
+            with lock:
+                current_owner = store.get_node(owner.id)
+                current_duplicate = store.get_node(duplicate.id)
+        finally:
+            resume.set()
+        result = work.result(timeout=15)
+    updated = {node.id for node, _ in result}
+    assert independent.id in updated
+    assert store.get_node(independent.id).context["procedure"] == [trace.content for trace in others]
+    current = store.get_node(owner.id)
+    if change in ("owner", "owner_decay", "owner_group"):
+        assert current == current_owner
+        assert owner.id not in updated
+    else:
+        assert owner.id in updated
+        if change == "source":
+            assert taught["corrective_trace"]["id"] in current.source_traces
+            assert traces[0].id not in current.source_traces
+            assert current.context["procedure"] == ["Harbor departure uses the signed manifest.", *[t.content for t in traces[1:]]]
+        elif change == "source_decay":
+            assert traces[0].id not in current.source_traces
+            assert current.context["procedure"] == [trace.content for trace in traces[1:]]
+        elif change == "source_union":
+            assert added.id in current.source_traces
+            assert added.content in current.content
+    if change.startswith("duplicate") or change in ("owner", "owner_decay", "owner_group"):
+        assert store.get_node(duplicate.id) == current_duplicate
+    else:
+        assert store.get_node(duplicate.id).decay_reason == "procedural: duplicate group"
 
 
 def test_reader_waits_for_one_complete_owner_then_proceeds_before_the_next(memory, monkeypatch):
