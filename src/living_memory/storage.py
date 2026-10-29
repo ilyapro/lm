@@ -44,7 +44,7 @@ from living_memory.relations import (
     source_relation_weight_sql,
     correction_sql, is_correction, is_semantic_relation, semantic_relation_sql,
 )
-from living_memory.scope import ScopePlan, normalize_scope, resolve_scope
+from living_memory.scope import ALL_SCOPES, ScopePlan, normalize_scope, resolve_scope
 from living_memory.temporal import parse_timestamp
 
 SCHEMA_VERSION = 8
@@ -2930,8 +2930,10 @@ class MemoryStore:
         No delivery-history projection or its availability state is consulted.
         Transport always identifies its own deliveries. Explicit callers may
         also supply a durable session: reconnects require equal session, no
-        both-present task/agent conflicts, and the same recall scope. Lookup
-        omits context and retains its transport-only selection.
+        both-present task/agent conflicts, and either the same recall scope
+        or a saved broad read. A broad read's preferred scope does not restrict
+        the destination of new knowledge. Lookup omits context and retains
+        its transport-only selection.
         """
         requested = set(node_ids)
         if not transport_session_id or not requested or limit <= 0:
@@ -2945,10 +2947,17 @@ class MemoryStore:
         predicates = ["transport_session_id = :transport_session_id"]
         if params["session_id"] and params["session_id"].strip():
             params["scope"] = resolve_scope(ambient_context=context, store=self).requested_scope
+            params["all_scopes"] = ALL_SCOPES
+            # Breadth relaxes only scope equality, never caller identity or
+            # delivered-id membership. Named resolved scopes are preferences
+            # or read fallbacks, not permission to join a different scope.
+            scope_match = f"""({_recall_scope_match_sql(params, allow_transport=False)}
+                OR EXISTS (SELECT 1 FROM json_each(resolved_scopes)
+                           WHERE value = :all_scopes))"""
             predicates.append(" AND ".join([
                 "session_id = :session_id",
                 "COALESCE(transport_session_id, '') != :transport_session_id",
-                _recall_scope_match_sql(params, allow_transport=False),
+                scope_match,
                 *(_compatible_recall_identity_sql(field) for field in ("task", "agent")
                   if params[field]),
             ]))
