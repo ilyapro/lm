@@ -14,7 +14,8 @@ def scoped_store(tmp_path: Path, request):
     scope = request.param
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         # A prefix match and another scope family must not supply evidence.
-        a = store.append_trace("unrelated source", {"scope": scope + ":child"})
+        unrelated_scope = "project:global" if scope == "global" else scope + ":child"
+        a = store.append_trace("unrelated source", {"scope": unrelated_scope})
         b = store.append_trace("unrelated target", {"scope": "session:other"})
         store.create_connection(a.id, b.id, "related")
         yield store, scope
