@@ -164,7 +164,7 @@ def max_expired_per_sweep() -> int:
 
 
 def concept_coverage(store: MemoryStore) -> dict[str, datetime | None]:
-    """Map every trace a live concept covers to when that coverage began.
+    """Map sources of live concepts and schemas to their coverage start.
 
     Coverage is recorded as the concept's ``provenance.source_traces``, which
     makes this map do double duty. Under shipped defaults it is a *guard*: a
@@ -173,11 +173,9 @@ def concept_coverage(store: MemoryStore) -> dict[str, datetime | None]:
     the *rule*: the digest already carries the fact, so a source nobody has
     read since it was consolidated may retire.
 
-    Those two readings contradict each other, which is why only the guard
-    ships on. On the live corpus (2026-08-23) 6,041 of 12,887 active traces
-    are covered and 5,392 of them are unread since coverage — enabling the
-    rule is a 42% cut of the working set, taken in
-    :data:`MAX_PER_SWEEP_ENV`-sized steps, and belongs to the operator.
+    Both policies use the same coverage fact. The default retains source
+    evidence; retiring unused covered sources is an explicit operator choice,
+    bounded by :data:`MAX_PER_SWEEP_ENV` just like TTL retirement.
 
     Each owner's ``provenance.source_coverage`` maps current source IDs to
     their continuous coverage start. Maintenance preserves retained entries;
