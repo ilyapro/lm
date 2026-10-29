@@ -1,9 +1,9 @@
 """Background runner for the consolidation pass a write makes due.
 
 The write path only schedules; one worker thread per server runs the passes.
-Pending scopes are saved before their requests become runnable. A later
-committed write retries failed admission or startup; server start resumes
-durable pending work.
+Pending scopes are loaded and merged before replacement saves and admission.
+A later committed write retries failed reads, admission or startup; server
+start resumes durable pending work.
 
 Guarantees:
 
@@ -56,9 +56,9 @@ class AutoConsolidationScheduler:
     its own locking. ``load_pending`` / ``save_pending`` persist the set of
     scopes whose pass has not completed yet (a JSON object in the store's kv,
     through the server's lock); either may be ``None`` for an in-memory queue.
-    ``persist_guard`` is held around every save, snapshot included, so saves
-    from the write path and from the worker cannot land out of order; pass
-    the lock ``save_pending`` itself needs, so it is always taken first.
+    ``persist_guard`` is held around the initial read and every save, snapshot
+    included, so pending state cannot be overwritten before it is loaded or
+    saves land out of order; pass the store's lock so it is always taken first.
     """
 
     def __init__(
@@ -74,6 +74,7 @@ class AutoConsolidationScheduler:
         self._run_pass = run_pass
         self._load_pending = load_pending
         self._save_pending = save_pending
+        self._pending_loaded = load_pending is None
         self._persist_guard = persist_guard if persist_guard is not None else threading.RLock()
         self._retry_delays = tuple(float(delay) for delay in retry_delays)
         self._clock = clock
@@ -133,14 +134,17 @@ class AutoConsolidationScheduler:
         return report
 
     def retry_pending(self) -> None:
-        """Retry unsaved requests or restart a missing worker.
+        """Recover unread pending work, retry saves or restart a missing worker.
 
         Ordinary writes may call this even when they make no new pass due.
         Only an unsaved due request can override an accepted retry's backoff.
         """
 
         with self._persist_guard, self._cond:
-            if self._closed or not self._queue:
+            if self._closed:
+                return
+            self._load_and_merge_pending()
+            if not self._queue:
                 return
             if (
                 self._thread is not None and self._thread.is_alive()
@@ -152,28 +156,23 @@ class AutoConsolidationScheduler:
             self._cond.notify_all()
 
     def resume(self) -> list[str]:
-        """Queue every scope a previous process left pending. Returns them."""
+        """Load pending work and retry admission or startup. Return queued scopes."""
 
         if self._load_pending is None:
             return []
-        try:
-            raw = self._load_pending()
-            stored = json.loads(raw) if raw else {}
-        except Exception:
-            _LOG.warning("could not read pending auto-consolidation scopes", exc_info=True)
-            return []
-        if not isinstance(stored, dict):
-            return []
-        scopes = [str(scope) for scope in stored]
-        with self._cond:
+        with self._persist_guard, self._cond:
             if self._closed:
                 return []
-            for scope in scopes:
-                self._persisted.setdefault(scope, str(stored[scope]))
-                self._queue.setdefault(scope, _QueuedPass(ready_at=self._clock()))
-            if scopes:
-                self._ensure_worker()
-                self._cond.notify_all()
+            try:
+                self._load_and_merge_pending()
+                scopes = list(self._queue)
+                if scopes:
+                    self._save_and_admit()
+                    self._ensure_worker()
+                    self._cond.notify_all()
+            except Exception:
+                _LOG.warning("could not resume pending auto-consolidation scopes", exc_info=True)
+                return []
         return scopes
 
     # -- observation -----------------------------------------------------
@@ -338,9 +337,26 @@ class AutoConsolidationScheduler:
             # the in-process retries are exhausted.
             self._cond.notify_all()
 
+    def _load_and_merge_pending(self) -> None:
+        """Initialize once under guard and condition, retaining unread state on failure."""
+
+        if self._pending_loaded:
+            return
+        raw = self._load_pending()
+        stored = json.loads(raw) if raw is not None else {}
+        if not isinstance(stored, dict) or any(not isinstance(value, str) for value in stored.values()):
+            raise ValueError("pending auto-consolidation scopes must map scopes to timestamp strings")
+        # Validate the entire payload before changing state. Durable timestamps
+        # precede requests retained in memory while the read was unavailable.
+        self._persisted.update(stored)
+        for scope in stored:
+            self._queue.setdefault(scope, _QueuedPass(requested_at=self._clock()))
+        self._pending_loaded = True
+
     def _save_and_admit(self) -> None:
         """Save and admit requests with both the guard and condition held."""
 
+        self._load_and_merge_pending()
         if self._save_pending is not None:
             self._save_pending(json.dumps(self._persisted, sort_keys=True))
         for scope, queued in self._queue.items():
