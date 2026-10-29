@@ -1,8 +1,9 @@
 """Background runner for the consolidation pass a write makes due.
 
 The write path only schedules; one worker thread per server runs the passes.
-Pending scopes are saved before starting the worker. If it cannot start, a
-later committed write or server start retries the existing queue.
+Pending scopes are saved before their requests become runnable. A later
+committed write retries failed admission or startup; server start resumes
+durable pending work.
 
 Guarantees:
 
@@ -22,6 +23,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -38,6 +40,13 @@ _LOG = logging.getLogger(__name__)
 
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+@dataclass(frozen=True)
+class _QueuedPass:
+    # An accepted pass can retain its backoff while a new request awaits save.
+    ready_at: float | None = None
+    requested_at: float | None = None
 
 
 class AutoConsolidationScheduler:
@@ -69,8 +78,8 @@ class AutoConsolidationScheduler:
         self._retry_delays = tuple(float(delay) for delay in retry_delays)
         self._clock = clock
         self._cond = threading.Condition()
-        # scope -> earliest monotonic start time; insertion order is FIFO.
-        self._queue: dict[str, float] = {}
+        # Accepted readiness and unsaved request time; insertion order is FIFO.
+        self._queue: dict[str, _QueuedPass] = {}
         # scope -> first request time (ISO) of the not-yet-completed pass.
         self._persisted: dict[str, str] = {}
         self._attempts: dict[str, int] = {}
@@ -91,25 +100,25 @@ class AutoConsolidationScheduler:
         one more).
         """
 
-        # Keep the queue hidden from an existing worker until the pending
-        # snapshot is saved. The store's guard always precedes the condition.
+        # Requests survive save failure, but only saved requests become ready.
+        # The store's guard always precedes the condition.
         with self._persist_guard, self._cond:
             if self._closed:
                 raise RuntimeError("auto-consolidation scheduler is closed")
             already_queued = scope in self._queue
             running = self._running == scope
-            if not already_queued:
-                self._queue[scope] = self._clock()
-            else:
-                # A due write overrides a back-off: run as soon as possible.
-                self._queue[scope] = min(self._queue[scope], self._clock())
-            self._attempts.pop(scope, None)
+            queued = self._queue.get(scope, _QueuedPass())
+            self._queue[scope] = _QueuedPass(
+                ready_at=queued.ready_at,
+                requested_at=(
+                    queued.requested_at if queued.requested_at is not None else self._clock()
+                ),
+            )
             self._persisted.setdefault(scope, _utc_now())
             # Save coalesced requests too: an earlier save may have failed.
             # Let failure reach the nonfatal post-commit boundary; no durable
             # scheduling confirmation can be made in that case.
-            if self._save_pending is not None:
-                self._save_pending(json.dumps(self._persisted, sort_keys=True))
+            self._save_and_admit()
             worker_started = self._ensure_worker()
             self._cond.notify_all()
         report: dict[str, Any] = {
@@ -124,19 +133,21 @@ class AutoConsolidationScheduler:
         return report
 
     def retry_pending(self) -> None:
-        """Restart a missing worker without admitting work or changing back-off.
+        """Retry unsaved requests or restart a missing worker.
 
         Ordinary writes may call this even when they make no new pass due.
-        Re-save before launch: the queue can survive a failed pending save.
+        Only an unsaved due request can override an accepted retry's backoff.
         """
 
         with self._persist_guard, self._cond:
             if self._closed or not self._queue:
                 return
-            if self._thread is not None and self._thread.is_alive():
+            if (
+                self._thread is not None and self._thread.is_alive()
+                and all(queued.requested_at is None for queued in self._queue.values())
+            ):
                 return
-            if self._save_pending is not None:
-                self._save_pending(json.dumps(self._persisted, sort_keys=True))
+            self._save_and_admit()
             self._ensure_worker()
             self._cond.notify_all()
 
@@ -159,7 +170,7 @@ class AutoConsolidationScheduler:
                 return []
             for scope in scopes:
                 self._persisted.setdefault(scope, str(stored[scope]))
-                self._queue.setdefault(scope, self._clock())
+                self._queue.setdefault(scope, _QueuedPass(ready_at=self._clock()))
             if scopes:
                 self._ensure_worker()
                 self._cond.notify_all()
@@ -213,8 +224,10 @@ class AutoConsolidationScheduler:
             return bool(self._queue)
         now = self._clock()
         return any(
-            start <= now or scope not in self._attempts
-            for scope, start in self._queue.items()
+            queued.requested_at is not None
+            or (queued.ready_at is not None and queued.ready_at <= now)
+            or scope not in self._attempts
+            for scope, queued in self._queue.items()
         )
 
     def _ensure_worker(self) -> bool:
@@ -243,12 +256,18 @@ class AutoConsolidationScheduler:
         with self._cond:
             while not self._closed:
                 now = self._clock()
-                for scope, start in self._queue.items():
-                    if start <= now:
-                        del self._queue[scope]
+                for scope, queued in self._queue.items():
+                    if queued.ready_at is not None and queued.ready_at <= now:
+                        if queued.requested_at is None:
+                            del self._queue[scope]
+                        else:
+                            self._queue[scope] = _QueuedPass(requested_at=queued.requested_at)
                         self._running = scope
                         return scope
-                wake = min(self._queue.values(), default=None)
+                wake = min(
+                    (queued.ready_at for queued in self._queue.values() if queued.ready_at is not None),
+                    default=None,
+                )
                 self._cond.wait(timeout=None if wake is None else max(0.0, wake - now))
             return None
 
@@ -300,9 +319,13 @@ class AutoConsolidationScheduler:
             attempt = self._attempts.get(scope, 0) + 1
             self._attempts[scope] = attempt
             retry_in: float | None = None
-            if scope not in self._queue and attempt <= len(self._retry_delays):
+            queued = self._queue.get(scope, _QueuedPass())
+            if queued.ready_at is None and attempt <= len(self._retry_delays):
                 retry_in = self._retry_delays[attempt - 1]
-                self._queue[scope] = self._clock() + retry_in
+                self._queue[scope] = _QueuedPass(
+                    ready_at=self._clock() + retry_in,
+                    requested_at=queued.requested_at,
+                )
             self._last[scope] = {
                 "status": "failed",
                 "started_at": started_at,
@@ -316,21 +339,31 @@ class AutoConsolidationScheduler:
             # the in-process retries are exhausted.
             self._cond.notify_all()
 
-    def _persist(self) -> None:
-        """Write the current pending set; the guard orders concurrent saves.
+    def _save_and_admit(self) -> None:
+        """Save and admit requests with both the guard and condition held."""
 
-        Lock order is guard first, then ``_cond`` (only for the snapshot):
+        if self._save_pending is not None:
+            self._save_pending(json.dumps(self._persisted, sort_keys=True))
+        for scope, queued in self._queue.items():
+            if queued.requested_at is not None:
+                # A saved due request overrides backoff and starts a fresh pass.
+                ready_at = queued.requested_at
+                if queued.ready_at is not None:
+                    ready_at = min(ready_at, queued.ready_at)
+                self._queue[scope] = _QueuedPass(ready_at=ready_at)
+                self._attempts.pop(scope, None)
+
+    def _persist(self) -> None:
+        """Save the current pending set and admit any requests it includes.
+
+        Lock order is guard first, then ``_cond``:
         the write path calls in holding the guard already, and the worker
         never holds ``_cond`` while taking the guard.
         """
 
-        if self._save_pending is None:
-            return
-        with self._persist_guard:
-            with self._cond:
-                snapshot = json.dumps(self._persisted, sort_keys=True)
+        with self._persist_guard, self._cond:
             try:
-                self._save_pending(snapshot)
+                self._save_and_admit()
             except Exception:
                 _LOG.warning(
                     "could not persist pending auto-consolidation scopes", exc_info=True
