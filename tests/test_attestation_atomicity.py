@@ -273,12 +273,18 @@ def test_application_revalidates_server_owned_inputs_after_preparation(runtime, 
                 if change == "content":
                     writer.update_node(r.node.id, content="Violet gardens need regular watering.", embedding=VECTOR)
                 elif change == "decay":
-                    writer.update_node(r.node.id, stats={"decayed": True})
+                    writer.soft_delete_node(r.node.id)
                 elif change in {"delete", "event", "trace"}:
                     table, identity = ("recall_events", r.event.id) if change == "event" else (
                         "nodes", r.trace.id if change == "trace" else r.node.id,
                     )
                     with writer.transaction():
+                        if table == "nodes":
+                            writer.delete_node_chunks(identity)
+                        else:
+                            writer.connection.execute("DELETE FROM recall_delivery_history WHERE delivery_event_id = ?", (identity,))
+                            writer.connection.execute("DELETE FROM recall_history_result_nodes WHERE recall_event_id = ?", (identity,))
+                            writer.connection.execute("DELETE FROM recall_history_events WHERE recall_event_id = ?", (identity,))
                         writer.connection.execute(f"DELETE FROM {table} WHERE id = ?", (identity,))
                 elif change == "scope":
                     writer.update_node(r.node.id, context={"scope": new_scope}, embedding=VECTOR)
