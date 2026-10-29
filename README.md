@@ -243,7 +243,17 @@ independent client's exact lookup can finish while this query encoding waits.
 Retrieval and anchors reuse that vector; scope, source validity, ranking,
 feedback and delivery history are read under the lock after preparation.
 Direct `MemoryRecallService.memory_recall` callers can still pass query text.
-This preparation is per call, with no query cache. Feedback from lookup,
+This preparation is per call, with no query cache.
+
+The shared tokenizer reuses up to 4096 canonical token strings per process,
+keyed by token and effective Cyrillic stemming policy. Tokens longer than 128
+characters normalize in full without retention. Evidence and default modes
+share normalization while keeping their own numeric and stop-word filters,
+token order and repetitions. `reset_cyrillic_stem_cache()` clears both the
+policy reading and token results. Knowledge bodies and output lists are not
+cached.
+
+Feedback from lookup,
 explicit marks and grounded consumption uses an existing anchor's exact
 scope/fingerprint identity and stored vector without encoding the query.
 Absent identities are prepared outside the store lock and before the required
