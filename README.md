@@ -88,6 +88,42 @@ SQLite's [read-only WAL requirements](https://sqlite.org/wal.html#read_only_data
 still apply. Each CLI invocation loads the installed source; updating this
 command does not require restarting an LM server.
 
+## Typed-edge backfill
+
+Preview derived relations in an existing database, or explicitly apply them to
+a disposable snapshot:
+
+```sh
+python -m living_memory.edge_backfill derive-edges --db ./living_memory.sqlite3
+python -m living_memory.edge_backfill derive-edges --db ./living_memory.sqlite3 --dry-run
+python -m living_memory.edge_backfill derive-edges --db ./snapshot.sqlite3 --apply
+```
+
+Default and `--dry-run` choose the existing SQLite `mode=ro` reader before
+opening the database. They do not create files or parent directories, initialize
+or migrate the schema, backfill fingerprints, seed weights, or write database
+data. Missing paths, invalid SQLite files and schemas that cannot support the
+backfill queries fail with a diagnostic on stderr and exit status 2, without a
+successful report. The operation closes its connection on success or failure.
+Normal SQLite WAL visibility and sidecar requirements apply; preview is not a
+frozen snapshot or a promise of no filesystem bookkeeping.
+
+The audit counts semantic relations using the shared relation policy. Preview
+projects both new rows and semantic replacements of technical rows; on unchanged
+input these match apply's totals and typed shares. Existing semantic relations
+keep their weights and metadata. `--annotate-derived-from` optionally adds R5a
+metadata without changing the existing edge's weight or type. Reapplying is a
+no-op. The reported rollback SQL removes only newly inserted marked rows;
+semantic replacements and R5a annotations remain.
+
+`--report audit.json` writes JSON and a matching Markdown report; `--md` selects
+the Markdown path when `--report` is used. Without `--report`, JSON goes to
+stdout. `--apply` retains ordinary writable-store initialization and writes the
+derived changes in one transaction. Applying to live `global.sqlite3` remains
+operator-only. CLI source updates require no LM service restart.
+
+Disposable checks: `python -m pytest tests/test_edge_backfill.py`.
+
 ## Post-session insight evaluation
 
 `scripts/postsession_insights.py` evaluates the gate and proposes insight
