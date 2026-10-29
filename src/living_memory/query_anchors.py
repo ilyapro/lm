@@ -661,7 +661,7 @@ def migrate_anchor_edges(
     """Re-point every anchor edge on ``from_target`` onto ``to_target``.
 
     The explicit entry point, for callers that know the replacement without
-    having written a ``supersedes`` edge — era displacement, backfills, repair.
+    having written a ``supersedes`` edge — explicit derivative displacement, backfills, repair.
     The write paths that *do* write such an edge are covered automatically by
     ``MemoryStore._insert_connection``.
 
@@ -710,23 +710,12 @@ def migrate_anchor_edges_for_exclusions(
     *,
     now: str | datetime | None = None,
 ) -> int:
-    """Follow era displacement, given ``_EraAssessment.excluded`` verbatim.
+    """Follow source exclusions that explicitly identify a replacement.
 
-    Consolidation drops era-displaced members from derivation without writing
-    any edge, so there is nothing for the ``supersedes`` hook to catch. This
-    takes its exclusion mapping — ``{node_id: reason}`` — and moves the anchor
-    edges of the members whose reason names a replacement:
-
-    * ``superseded-by:<id>`` or ``replaced-by:<id>`` — the named node is
-      the replacement, with exact-copy bookkeeping included only in the latter;
-    * ``displaced-via:<id>`` — the member was folded into a consolidated node
-      that has since been superseded, so the replacement is whatever now
-      replaces that consolidated node.
-
-    ``corrected`` and ``obsolete-era`` are deliberately skipped: both mark a
-    member as no longer speaking for the current era without naming anything
-    that speaks for it instead, and inventing a destination would be worse than
-    leaving the edge where a later supersedes or sweep can find it.
+    ``superseded-by:<id>`` and ``replaced-by:<id>`` name the replacement
+    directly. ``displaced-via:<id>`` names a superseded derivative whose
+    replacement now speaks for its cited input. Reasons without a replacement
+    leave the anchor edge unchanged.
 
     Returns the number of edge rows moved.
     """
