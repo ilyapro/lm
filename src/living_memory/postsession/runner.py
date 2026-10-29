@@ -54,16 +54,20 @@ and ``source_transcript_sha256``. Corrections go only through
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
+import os
+import tempfile
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from .client import ClientError, LiveMemoryClient, McpMemoryIndex
+from .client import ClientError, LiveMemoryClient, McpMemoryIndex, PreDispatchError
 from .corrections import (
     DEFAULT_CONFIG as DEFAULT_CORRECTIONS,
     DetectionResult,
@@ -502,13 +506,18 @@ def op_fingerprint(op: ProposedOp) -> str:
     ).hexdigest()
 
 
-class Ledger:
-    """Append-only JSONL of executed ops, keyed (transcript sha256, fingerprint).
+class LedgerError(RuntimeError):
+    """Operation state could not be read or durably saved. Do not dispatch."""
 
-    Corrupt or truncated lines are skipped on load: the ledger is an
-    optimization and a bootstrap counter, and the write path behind it re-checks
-    against the live server anyway. Thread-safe because proposal workers may
-    consult it concurrently.
+
+class Ledger:
+    """Durable operation state keyed by (transcript sha256, fingerprint).
+
+    A locked read/modify/replace serializes CLI writers sharing this state dir.
+    UNKNOWN is saved before dispatch; only a proven pre-dispatch failure makes
+    it retryable. The lock covers local state, never a network call. Atomic
+    replacement and file/directory fsync preserve the previous complete state
+    across interruption. Unreadable state fails closed instead of losing keys.
     """
 
     def __init__(self, state_dir: Path) -> None:
@@ -521,62 +530,153 @@ class Ledger:
     def _load(self) -> None:
         try:
             raw = self.path.read_text(encoding="utf-8")
-        except OSError:
+        except FileNotFoundError:
+            self._seen = {}
             return
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
+        except (OSError, UnicodeError) as exc:
+            raise LedgerError(f"cannot read {self.path}: {exc}") from exc
+        seen = {}
+        try:
+            for line in raw.splitlines():
+                if not line.strip():
+                    continue
                 entry = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(entry, dict):
-                continue
-            sha = str(entry.get("transcript_sha256") or "")
-            fingerprint = str(entry.get("fingerprint") or "")
-            if sha and fingerprint:
-                self._seen[(sha, fingerprint)] = entry
+                key = (entry["transcript_sha256"], entry["fingerprint"])
+                if not all(isinstance(k, str) and k for k in key):
+                    raise ValueError("missing operation identity")
+                # Original ledger entries recorded only completed operations.
+                entry.setdefault("state", "applied")
+                if entry["state"] not in {"applied", "unknown", "ready"}:
+                    raise ValueError("invalid operation state")
+                if entry["kind"] not in {"remember", "teach", "attest"}:
+                    raise ValueError("invalid operation kind")
+                if entry["state"] != "applied":
+                    op = ProposedOp.from_dict(entry["operation"]).validate()
+                    if (op.provenance.transcript_sha256, op_fingerprint(op)) != key:
+                        raise ValueError("saved operation identity mismatch")
+                    if op.kind != entry["kind"] or not isinstance(entry["recipient"], str):
+                        raise ValueError("invalid saved operation")
+                seen[key] = entry
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise LedgerError(f"invalid operation state in {self.path}: {exc}") from exc
+        self._seen = seen
+
+    @staticmethod
+    def _sync_dir(path: Path) -> None:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+    @contextmanager
+    def _locked(self):
+        with self._lock:
+            try:
+                missing = []
+                parent = self.state_dir
+                while not parent.exists():
+                    missing.append(parent)
+                    parent = parent.parent
+                for path in reversed(missing):
+                    path.mkdir(mode=0o700, exist_ok=True)
+                    self._sync_dir(path.parent)
+                with open(self.state_dir / "ledger.lock", "a", encoding="utf-8") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                    self._load()
+                    yield
+            except OSError as exc:
+                raise LedgerError(f"cannot persist {self.path}: {exc}") from exc
+
+    def _save(self) -> None:
+        # Keep the lock on a separate inode: ledger.jsonl itself is replaced.
+        fd, name = tempfile.mkstemp(prefix=".ledger-", dir=self.state_dir)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                for entry in self._seen.values():
+                    handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(name, self.path)
+            self._sync_dir(self.state_dir)
+        finally:
+            Path(name).unlink(missing_ok=True)
+
+    def entries(self) -> list[dict[str, Any]]:
+        with self._locked():
+            return [dict(entry) for entry in self._seen.values()]
 
     def __len__(self) -> int:
-        return len(self._seen)
+        return len(self.entries())
+
+    def get(self, transcript_sha256: str, fingerprint: str) -> dict[str, Any] | None:
+        with self._locked():
+            entry = self._seen.get((transcript_sha256, fingerprint))
+            return dict(entry) if entry else None
 
     def has(self, transcript_sha256: str, fingerprint: str) -> bool:
-        with self._lock:
-            return (transcript_sha256, fingerprint) in self._seen
+        entry = self.get(transcript_sha256, fingerprint)
+        return bool(entry and entry["state"] == "applied")
 
     def written_nodes_total(self) -> int:
-        """Nodes this extractor has ever created (remember + teach entries)."""
+        """Conservatively count possible writes towards the bootstrap bound."""
+        return sum(
+            entry["kind"] in ("remember", "teach") and entry["state"] != "ready"
+            for entry in self.entries()
+        )
 
-        with self._lock:
-            return sum(
-                1 for entry in self._seen.values() if entry.get("kind") in ("remember", "teach")
-            )
+    def begin(self, op: ProposedOp, recipient: str) -> tuple[bool, dict[str, Any]]:
+        """Claim one operation durably, or return its existing admission state."""
+        key = (op.provenance.transcript_sha256, op_fingerprint(op))
+        with self._locked():
+            prior = self._seen.get(key)
+            if prior and prior["state"] != "ready":
+                return False, dict(prior)
+            if prior and prior["recipient"] != recipient:
+                return False, dict(prior)
+            entry = dict(prior) if prior else {
+                "transcript_sha256": key[0], "fingerprint": key[1],
+                "kind": op.kind, "session_key": op.provenance.session_key,
+                "operation": op.to_dict(), "recipient": recipient,
+            }
+            entry.update(state="unknown", updated_at=datetime.now(UTC).isoformat())
+            self._seen[key] = entry
+            self._save()
+            return True, dict(entry)
+
+    def finish(
+        self, transcript_sha256: str, fingerprint: str, *, state: str,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        if state not in {"ready", "applied"}:
+            raise ValueError(state)
+        with self._locked():
+            entry = self._seen[(transcript_sha256, fingerprint)]
+            if entry["state"] == "applied":
+                return
+            entry.update(state=state, updated_at=datetime.now(UTC).isoformat())
+            if result is not None:
+                entry["result"] = result
+                entry["result_id"] = result.get("node_id") or (
+                    result.get("attestation") or {}
+                ).get("attestation_id", "")
+            self._save()
 
     def record(
-        self,
-        transcript_sha256: str,
-        fingerprint: str,
-        *,
-        kind: str,
-        session_key: str,
-        result_id: str = "",
-        written_at: str | None = None,
+        self, transcript_sha256: str, fingerprint: str, *, kind: str,
+        session_key: str, result_id: str = "", written_at: str | None = None,
     ) -> None:
-        entry = {
-            "transcript_sha256": transcript_sha256,
-            "fingerprint": fingerprint,
-            "kind": kind,
-            "session_key": session_key,
-            "result_id": result_id,
-            "written_at": written_at
-            or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        }
-        with self._lock:
-            self.state_dir.mkdir(parents=True, exist_ok=True)
-            with open(self.path, "a", encoding="utf-8") as handle:
-                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            self._seen[(transcript_sha256, fingerprint)] = entry
+        """Record an already confirmed result (including original ledger imports)."""
+        with self._locked():
+            key = (transcript_sha256, fingerprint)
+            entry = self._seen.get(key, {})
+            entry.update(
+                transcript_sha256=transcript_sha256, fingerprint=fingerprint,
+                kind=kind, session_key=session_key, result_id=result_id,
+                state="applied", written_at=written_at or datetime.now(UTC).isoformat(),
+            )
+            self._seen[key] = entry
+            self._save()
 
 
 # --------------------------------------------------------------------------
