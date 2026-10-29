@@ -222,3 +222,58 @@ def test_promotion_noop_does_not_prepare_or_replace_missing_chunks(store):
     store.set_chunk_embedder(no_encoding)
     assert c._cross_scope_promotion(store, members[0]) == []
     assert store.list_node_chunks(promoted.id) == []
+
+
+@pytest.mark.parametrize("policy", ["audit", "credit"])
+@pytest.mark.parametrize("failure", ["encode", "chunks", "closure"])
+def test_native_teach_retries_keep_marks_and_derivatives_in_one_transaction(tmp_path, monkeypatch, policy, failure):
+    from living_memory import server
+    from test_lookup import FakeMCP
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", policy)
+    monkeypatch.setattr(server, "_transport_session_id", lambda: "output-atomicity")
+    mcp = server.create_mcp_server(tmp_path / "feedback.sqlite3", mcp_factory=FakeMCP)
+    mcp.auto_consolidation.close()
+    store = mcp.memory_store
+    try:
+        members = sources(store)
+        left = derived(store, "left", members[:2])
+        right = derived(store, "right", [members[0], members[2]])
+        derived(store, "joined", [left, right])
+        context = {"scope": SCOPE, "agent": "inspector", "session_id": "output-atomicity"}
+        recalled = mcp.tools["memory_recall"](
+            "Harbor departure permit inspection", scope=SCOPE, ambient_context=context,
+        )
+        ids = [row["id"] for row in recalled["results"]]
+        assert ids
+        if failure == "closure":
+            store.connection.execute("""CREATE TRIGGER reject_closure
+                BEFORE UPDATE OF feedback_applied_at ON recall_events
+                WHEN NEW.feedback_applied_at IS NOT NULL
+                BEGIN SELECT RAISE(ABORT, 'required output failure'); END""")
+        before = list(store.connection.iterdump())
+        if failure == "encode":
+            original = store._chunk_embeddings_for
+            def fail(content, *args, **kwargs):
+                assert not store.connection.in_transaction
+                if content != CORRECTION:
+                    raise RuntimeError("required output failure")
+                return original(content, *args, **kwargs)
+            monkeypatch.setattr(store, "_chunk_embeddings_for", fail)
+        elif failure == "chunks":
+            original = store._replace_node_chunks
+            def fail(node_id, *args, **kwargs):
+                result = original(node_id, *args, **kwargs)
+                if node_id == right.id:
+                    raise RuntimeError("required output failure")
+                return result
+            monkeypatch.setattr(store, "_replace_node_chunks", fail)
+        with pytest.raises(Exception, match="required output failure"):
+            mcp.tools["memory_teach"](
+                members[0].id, CORRECTION, context=context, used=ids[:1], irrelevant=ids[1:],
+            )
+        assert list(store.connection.iterdump()) == before
+        assert not store.connection.in_transaction
+    finally:
+        store.close()
