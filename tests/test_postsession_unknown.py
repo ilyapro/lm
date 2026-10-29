@@ -142,6 +142,9 @@ def test_old_completed_entries_remain_completed(tmp_path):
         "session_key": "session", "result_id": "node",
     }) + "\n")
     assert Ledger(tmp_path).has("sha", "fp")
+    runner = ExtractionRunner(config=RunnerConfig(), ledger=Ledger(tmp_path))
+    completed = runner.reconcile(operation="sha:fp")[0]
+    assert (completed.reason, completed.node_id) == ("ledger_duplicate", "node")
 
 
 def test_client_distinguishes_dispatch_and_preserves_received_result(monkeypatch):

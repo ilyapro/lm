@@ -1136,6 +1136,13 @@ class ExtractionRunner:
             if entry["state"] == "applied" and not operation:
                 continue
             if "operation" not in entry:
+                decision = OpDecision(
+                    kind=entry["kind"], session_key=entry.get("session_key", ""),
+                    fingerprint=entry["fingerprint"], status="proposed",
+                    transcript_sha256=entry["transcript_sha256"],
+                )
+                self._prior(entry, decision)
+                decisions.append(decision)
                 continue
             op = ProposedOp.from_dict(entry["operation"])
             decision = self._decision(op)
