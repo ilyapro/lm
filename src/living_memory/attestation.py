@@ -404,11 +404,11 @@ def _apply_attestation(
         context=context,
     )
     if claimed is None:
-        # Another writer took the key between the read above and here. It owns
-        # the credit; this call replays its verdict and applies nothing.
+        # The unique key is the final credit guard. Replay only a recorded
+        # verdict; a failed claim never authorizes applying its effects.
         recorded = store.find_recall_attestation(event.id, digest)
-        if recorded is None:  # pragma: no cover - only a concurrent delete
-            raise AttestationError("attestation ledger key vanished mid-write")
+        if recorded is None:
+            raise AttestationError("attestation ledger key could not be claimed")
         return _verdict(recorded, event, replay=True)
 
     credited = False
