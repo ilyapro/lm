@@ -526,6 +526,16 @@ event and closed-event counts and their ratio; closure means
 
 ## Optional decay maintenance
 
+By default, a live concept or schema guards its `source_traces` from TTL decay.
+With the operator's `LM_DECAY_CONCEPT_COVERED` opt-in, sources unread since
+coverage can retire. Materializers keep each source's continuous coverage start
+in `provenance.source_coverage`: repeats preserve it, new or replacement IDs
+start at inclusion, and removed IDs lose their entries. Missing or invalid
+starts remain unknown across maintenance; owner creation and `consolidated_at`
+do not establish source age. Across live owners, unknown age takes precedence,
+otherwise the earliest start wins. A recorded read after that start (or with
+unknown age) prevents coverage retirement; the opt-in TTL fallback still applies.
+
 `memory_recall`, `memory_remember` and `memory_consolidate` each check the
 scope-agnostic decay interval once and include `auto_decay` in their response:
 

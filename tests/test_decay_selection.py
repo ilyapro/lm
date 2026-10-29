@@ -172,7 +172,7 @@ def test_live_cross_scope_coverage_guards_sources_unless_opted_in(level, coverag
         cover = store.create_node(
             level=level, content="live digest in another scope",
             context={"scope": "project:digest", "timestamp": "2026-10-20"},
-            provenance={"source_traces": ["covered"], "consolidated_at": "2026-10-20"},
+            provenance={"source_traces": ["covered"], "source_coverage": {"covered": "2026-10-20"}},
         )
         expired = soft_delete_expired(
             store, scope="project:decay", now=NOW, ttl_days=7,

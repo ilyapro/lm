@@ -106,6 +106,7 @@ def _cover(
         provenance={
             "source_traces": list(trace_ids),
             "consolidated_at": _iso(covered_at),
+            "source_coverage": dict.fromkeys(trace_ids, _iso(covered_at)),
         },
     )
     return concept.id
