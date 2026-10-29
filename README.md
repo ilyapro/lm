@@ -46,7 +46,12 @@ and exercises all nine registered core tools locally.
 
 `scripts/setup-python.sh`, `scripts/test.sh`, and `scripts/server.sh` use
 `.cache/python-deps` by default. Setup reuses a cache when its `pyproject.toml`
-fingerprint matches and `fastmcp` and `pytest` import successfully. A worktree
+fingerprint and target preparation format match and `fastmcp` and `pytest`
+import successfully. Preparation installs into an empty temporary directory,
+checks `fastmcp`, `pytest`, and `sentence_transformers`, then publishes the
+complete target with its readiness marker. Failed preparation leaves no ready
+marker; updates replace the whole dependency tree, including package metadata.
+Compatible reuse is read-only and does not install or load the encoder. A worktree
 without a cache can borrow a compatible main-checkout cache through a symlink.
 If a borrowed cache needs installation, setup replaces only the local symlink
 with a checkout-owned directory; the borrowed cache and its marker stay intact.

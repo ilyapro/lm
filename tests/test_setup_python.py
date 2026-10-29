@@ -38,7 +38,7 @@ class Setup:
             shutil.copy2(ROOT / "scripts" / name, scripts / name)
         spec = b'[project]\nname = "setup-fixture"\nversion = "0.0.0"\n'
         (self.root / "pyproject.toml").write_bytes(spec)
-        self.fingerprint = hashlib.sha256(spec).hexdigest()
+        self.fingerprint = "target-v1:" + hashlib.sha256(spec).hexdigest()
         package = self.root / "src" / "living_memory"
         package.mkdir(parents=True)
         (package / "__init__.py").write_text("")
@@ -66,6 +66,8 @@ class Setup:
             "    broken = os.environ.get('SETUP_TEST_FAIL') == 'imports'\n"
             "    (target / 'fastmcp.py').write_text('raise ImportError(\"unusable\")' if broken else '')\n"
             f"    (target / 'pytest.py').write_text({CONSUMER!r})\n"
+            "    (target / 'sentence_transformers.py').write_text(\n"
+            "        'raise ImportError(\"encoder unavailable\")' if os.environ.get('SETUP_TEST_FAIL') == 'encoder' else '')\n"
             "else:\n"
             "    os.execv(sys.executable, [sys.executable, '-S', *sys.argv[1:]])\n"
         )
@@ -84,10 +86,14 @@ class Setup:
             'raise ImportError("unusable")' if state == "imports" else ""
         )
         (path / "pytest.py").write_text(CONSUMER)
+        # Readiness must not load the encoder on the compatible fast path.
+        (path / "sentence_transformers.py").write_text('raise AssertionError("encoder loaded on reuse")')
         (path / "sentinel").write_text("owned by this cache")
         if state != "unmarked":
             (path / MARKER).write_text(
-                ("different-spec" if state == "mismatch" else self.fingerprint) + "\n"
+                ("different-spec" if state == "mismatch" else
+                 self.fingerprint.removeprefix("target-v1:") if state == "legacy" else
+                 self.fingerprint) + "\n"
             )
 
     def link(self) -> None:
@@ -103,6 +109,15 @@ class Setup:
 
     def calls(self) -> list[dict]:
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
+
+    def assert_install(self, target: Path) -> None:
+        installs = [call for call in self.calls() if "target" in call]
+        assert len(installs) == 1
+        stage = Path(installs[0]["target"])
+        assert stage.parent == target.parent
+        assert stage.name.startswith(target.name + ".tmp.")
+        assert installs[0]["resolved"] == str(stage)
+        assert not stage.exists()
 
 
 @pytest.fixture
@@ -193,7 +208,7 @@ def test_ready_cache_is_reused_without_writes(setup: Setup, cache: str) -> None:
 
 
 @pytest.mark.parametrize("linked", [False, True], ids=["new", "existing-link"])
-@pytest.mark.parametrize("state", ["mismatch", "imports", "unmarked"])
+@pytest.mark.parametrize("state", ["mismatch", "imports", "unmarked", "legacy"])
 def test_unusable_shared_cache_is_preserved(setup: Setup, linked: bool, state: str) -> None:
     setup.cache(setup.main, state)
     before = snapshot(setup.main)
@@ -204,7 +219,7 @@ def test_unusable_shared_cache_is_preserved(setup: Setup, linked: bool, state: s
     setup.run()
 
     assert not setup.deps.is_symlink()
-    assert setup.calls() == [{"target": str(setup.deps), "resolved": str(setup.deps)}]
+    setup.assert_install(setup.deps)
     assert (setup.deps / MARKER).read_text() == setup.fingerprint + "\n"
     assert snapshot(setup.main) == before
 
@@ -214,7 +229,7 @@ def test_dangling_borrowed_link_becomes_local(setup: Setup) -> None:
     setup.run()
     assert not setup.main.exists()
     assert not setup.deps.is_symlink()
-    assert setup.calls() == [{"target": str(setup.deps), "resolved": str(setup.deps)}]
+    setup.assert_install(setup.deps)
 
 
 @pytest.mark.parametrize("linked", [False, True], ids=["directory", "symlink"])
@@ -232,8 +247,11 @@ def test_explicit_override_owns_selected_target(setup: Setup, linked: bool, stat
     setup.run()
     setup.run()
 
-    expected = [] if state == "ready" else [{"target": str(selected), "resolved": str(target)}]
-    assert setup.calls() == expected
+    if state == "ready":
+        assert setup.calls() == []
+    else:
+        setup.assert_install(target)
+        assert not (target / "sentinel").exists()
     assert selected.is_symlink() == linked
     assert not setup.deps.exists()
     assert (target / MARKER).read_text() == setup.fingerprint + "\n"
@@ -252,14 +270,14 @@ def test_consumers_use_installed_directory(setup: Setup, script: str, override: 
 
     setup.run(script, "consumer-argument")
 
-    install, consumer = setup.calls()
-    assert install == {"target": str(selected), "resolved": str(selected)}
+    _, consumer = setup.calls()
+    setup.assert_install(selected)
     assert consumer["deps"] == str(selected / "fastmcp.py")
     assert consumer["args"] == ["consumer-argument"]
     assert snapshot(setup.main) == before
 
 
-@pytest.mark.parametrize("failure", ["pip", "imports"])
+@pytest.mark.parametrize("failure", ["pip", "imports", "encoder"])
 def test_failed_local_preparation_leaves_borrowed_cache_intact(setup: Setup, failure: str) -> None:
     setup.cache(setup.main, "mismatch")
     setup.link()
@@ -271,6 +289,18 @@ def test_failed_local_preparation_leaves_borrowed_cache_intact(setup: Setup, fai
     assert not setup.deps.is_symlink()
     assert not (setup.deps / MARKER).exists()
     assert snapshot(setup.main) == before
+
+
+@pytest.mark.parametrize("failure", ["pip", "imports", "encoder"])
+def test_failed_rebuild_removes_readiness_and_preserves_old_payload(setup: Setup, failure: str) -> None:
+    setup.cache(setup.deps, "imports")
+    setup.env["SETUP_TEST_FAIL"] = failure
+
+    setup.run(ok=False)
+
+    assert not (setup.deps / MARKER).exists()
+    assert (setup.deps / "sentinel").read_text() == "owned by this cache"
+    assert list(setup.deps.parent.glob("python-deps.tmp.*")) == []
 
 
 @pytest.mark.parametrize("consumer", ["conftest", "living_memory"])
