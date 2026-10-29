@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from functools import wraps
+from functools import lru_cache, wraps
 from hashlib import blake2b
 import importlib.util
 import logging
@@ -382,10 +382,11 @@ def cyrillic_stem_enabled() -> bool:
 
 
 def reset_cyrillic_stem_cache() -> None:
-    """Forget the cached ``LM_TOKENIZE_CYRILLIC_STEM`` reading."""
+    """Forget the cached Cyrillic policy and canonical token results."""
 
     global _CYRILLIC_STEM_ENABLED
     _CYRILLIC_STEM_ENABLED = None
+    _canonical_token_cached.cache_clear()
 
 
 def _is_russian_token(token: str) -> bool:
@@ -875,6 +876,8 @@ def tokenize(text: str, *, evidence: bool = False) -> list[str]:
 
     Evidence retains numbers (including identifier components) and conditions.
     The default features for search expansion and fallback vectors stay compact.
+    Both modes reuse bounded, immutable canonical results keyed by effective
+    Cyrillic policy; text bodies and output lists are never cached.
     """
 
     separated = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
@@ -956,18 +959,35 @@ def _embed_hash(text: str, dimensions: int) -> list[float]:
     return _normalize(vector)
 
 
+# Bound retained token text as well as entry count. Longer identifiers still
+# normalize in full, but do not occupy the process-local reuse cache.
+_CANONICAL_TOKEN_MAX_LENGTH = 128
+
+
 def _canonical_token(token: str) -> str:
+    normalize = (
+        _canonical_token_cached
+        if len(token) <= _CANONICAL_TOKEN_MAX_LENGTH
+        else _canonical_token_cached.__wrapped__
+    )
+    return normalize(token, cyrillic_stem_enabled())
+
+
+@lru_cache(maxsize=4096)
+def _canonical_token_cached(token: str, cyrillic: bool) -> str:
+    """Canonical form under an explicit policy, independent of environment."""
+
     direct = _SYNONYMS.get(token)
     if direct is not None:
         return direct
-    stemmed = _stem(token)
+    stemmed = _stem(token, cyrillic=cyrillic)
     canonical = _SYNONYMS.get(stemmed)
-    if canonical is None and cyrillic_stem_enabled():
+    if canonical is None and cyrillic:
         canonical = _CYRILLIC_STEM_SYNONYMS.get(stemmed)
     return stemmed if canonical is None else canonical
 
 
-def _stem(token: str) -> str:
+def _stem(token: str, *, cyrillic: bool | None = None) -> str:
     if len(token) <= 3:
         return token
     if _is_latin_token(token):
@@ -975,7 +995,9 @@ def _stem(token: str) -> str:
             if token.endswith(suffix) and len(token) - len(suffix) >= 3:
                 return token[: -len(suffix)]
         return token
-    if cyrillic_stem_enabled() and _is_russian_token(token):
+    if cyrillic is None:
+        cyrillic = cyrillic_stem_enabled()
+    if cyrillic and _is_russian_token(token):
         return _stem_russian(token)
     return token
 
