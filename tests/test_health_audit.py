@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -539,6 +540,54 @@ def test_audit_engine_path_input_opens_read_only(tmp_path: Path) -> None:
     assert result["latency"]["samples"] == 2
 
 
+@pytest.mark.parametrize("reporter", [memory_health, compute_health_audit])
+def test_health_reads_canonical_scopes_without_candidate_queries(
+    tmp_path: Path,
+    reporter: Callable[..., dict[str, Any]],
+) -> None:
+    scopes = (
+        "project:rise",
+        "project:breakthrough",
+        "project:ocpa-generative-action-substrate-v1",
+        "project:ordinary",
+        "global",
+    )
+    path = tmp_path / "canonical.sqlite3"
+    with MemoryStore(path) as store:
+        for index, scope in enumerate(scopes):
+            node = store.append_trace(f"content {index}", {"scope": scope})
+            event = store.record_recall_event(
+                query=f"query {index}", scope=scope, ambient_context={}, results=[]
+            )
+            if index < 2:
+                store.mark_recall_event_feedback(event.id, node.id)
+        store.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    before = path.read_bytes()
+    with open_read_only_store(path) as store:
+        statements: list[str] = []
+        store.connection.set_trace_callback(statements.append)
+        report = reporter(store)
+        store.connection.set_trace_callback(None)
+        assert store.connection.total_changes == 0
+
+    assert path.read_bytes() == before
+    assert "scope_hygiene" not in report
+    assert report["dedup"]["total_traces"] == len(scopes)
+    assert report["access"]["active_nodes"]["total"] == len(scopes)
+    assert report["feedback"]["recall_events"] == len(scopes)
+    assert report["feedback"]["feedback_applied"] == 2
+    assert statements
+    assert all(
+        statement.lstrip().split()[0].upper() in {"SELECT", "WITH", "PRAGMA"}
+        for statement in statements
+    )
+    assert not any(
+        "candidate_scopes" in statement or "active_candidate" in statement
+        for statement in statements
+    )
+
+
 # ---------------------------------------------------------------------------
 # Completeness + surface integration
 # ---------------------------------------------------------------------------
@@ -585,6 +634,8 @@ def test_memory_health_surface_includes_audit_sections(tmp_path: Path) -> None:
         "dedup",
         "staleness",
         "retrieval_policy",
+        "retrieval_skew",
+        "feedback_closure",
     )
     for key in existing_fields:
         assert key in report, f"existing memory_health field missing: {key}"
@@ -592,6 +643,7 @@ def test_memory_health_surface_includes_audit_sections(tmp_path: Path) -> None:
     audit_fields = ("feedback", "access", "storage", "latency", "instructions")
     for key in audit_fields:
         assert key in report, f"audit section missing from memory_health: {key}"
+    assert set(report) == set(existing_fields + audit_fields)
 
     assert report["feedback"] == direct["feedback"]
     assert report["access"] == direct["access"]
