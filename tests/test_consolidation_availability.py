@@ -4,6 +4,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from threading import Event, RLock
+import asyncio
 import json
 import sqlite3
 
@@ -34,7 +35,7 @@ class FakeMCP:
 
 
 @pytest.fixture
-def runtime(tmp_path, monkeypatch):
+def runtime(tmp_path, monkeypatch, request):
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     locks = []
     waiting = Event()
@@ -54,7 +55,7 @@ def runtime(tmp_path, monkeypatch):
             self.lock.release()
 
     monkeypatch.setattr(server, "RLock", Lock)
-    mcp = server.create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    mcp = server.create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=getattr(request, "param", FakeMCP))
     try:
         yield mcp, locks[0], waiting
     finally:
@@ -93,7 +94,10 @@ def procedure(store, group):
 
 
 @pytest.mark.parametrize("route", ["manual", "scheduled"])
+@pytest.mark.parametrize("runtime", [None], indirect=True)
 def test_native_procedural_pass_guards_every_sql_statement(runtime, monkeypatch, route):
+    from fastmcp import Client
+
     mcp, lock, _ = runtime
     store = mcp.memory_store
     traces, owner = procedure(store, "inspection")
@@ -115,7 +119,13 @@ def test_native_procedural_pass_guards_every_sql_statement(runtime, monkeypatch,
     store.connection.set_trace_callback(sql)
     try:
         if route == "manual":
-            result = mcp.tools["memory_consolidate"](scope=SCOPE)
+            async def consolidate():
+                async with Client(mcp) as client:
+                    response = await client.call_tool("memory_consolidate", {"scope": SCOPE})
+                    assert not response.is_error
+                    return response.data
+
+            result = asyncio.run(consolidate())
             assert [node["id"] for node in result["schemas_updated"]] == [owner.id]
         else:
             mcp.auto_consolidation.request(SCOPE)
