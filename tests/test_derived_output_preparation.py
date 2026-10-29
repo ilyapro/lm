@@ -299,3 +299,36 @@ def test_native_teach_retries_keep_marks_and_derivatives_in_one_transaction(tmp_
         assert not store.connection.in_transaction
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("change", ["scope", "level", "source_content"])
+def test_final_promotion_refresh_rechecks_current_selection_and_sources(store, change):
+    members = [store.create_node(
+        level="concept", content=f"Harbor scope {i} reports a distinct inspection fact.",
+        context={"scope": f"project:harbor-{i}"}, embedding=[1., 0., 0.],
+    ) for i in range(3)]
+    promoted, = c._cross_scope_promotion(store, members[0])
+    store.update_node(members[0].id, content="Harbor departure checks an electronic manifest.")
+    guard = RLock()
+    with preparing(store, guard) as (workers, entered, release, _):
+        work = workers.submit(c._refresh_promoted_global_concepts, store, step=lambda: guard)
+        assert entered.wait(10)
+        with MemoryStore(store.db_path) as writer:
+            if change == "scope":
+                writer.update_node(promoted.id, context={**promoted.context, "scope": SCOPE})
+            elif change == "level":
+                writer.update_node(promoted.id, level="schema")
+            else:
+                writer.update_node(members[1].id, content="Harbor departure verifies the cargo signature.")
+            preserved = writer.get_node(promoted.id)
+        release.set()
+        result = work.result(timeout=15)
+    current = store.get_node(promoted.id)
+    if change == "source_content":
+        assert [node.id for node in result] == [promoted.id]
+        assert "cargo signature" in current.content and "electronic manifest" in current.content
+        assert members[1].content not in current.content
+        assert_chunks(store, current)
+    else:
+        assert result == []
+        assert current == preserved
