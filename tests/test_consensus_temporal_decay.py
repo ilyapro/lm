@@ -96,14 +96,13 @@ def test_promotion_preserves_owner_metadata_without_copying_source_hints(tmp_pat
         first, = _cross_scope_promotion(store, sources[0])
         assert first.temporal_hint is None
         assert first.unique_agents == 3
-        store.update_node(first.id, stats={"temporal_hint": hint})
-        store.update_node(sources[0].id, stats={"usefulness_score": 0.6})
+        store.update_node(first.id, stats={"temporal_hint": hint, "usefulness_score": 0.6})
 
         memory_consolidate(store, scope="project:unrelated", force=True)
         updated, = store.list_nodes(level="concept", scope="global")
         assert updated.id == first.id
         assert updated.temporal_hint == hint
-        assert updated.usefulness_score == pytest.approx(0.2)
+        assert updated.usefulness_score == 0.0
         assert updated.content == first.content
         assert updated.unique_agents == first.unique_agents
         assert updated.confidence == first.confidence
