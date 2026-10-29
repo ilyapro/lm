@@ -397,10 +397,10 @@ def memory_health(
     duplicate_density = (duplicate_excess / total_traces) if total_traces > 0 else 0.0
 
     age_rows = store.connection.execute(
-        f"SELECT timestamp, last_accessed FROM nodes WHERE {trace_where}",
+        f"SELECT id, timestamp, last_accessed FROM nodes WHERE {trace_where}",
         trace_params,
     ).fetchall()
-    ages: list[float] = []
+    age_by_id: dict[str, float] = {}
     now_epoch = now.timestamp()
     for row in age_rows:
         ref = row["last_accessed"] or row["timestamp"]
@@ -410,19 +410,20 @@ def memory_health(
             parsed = datetime.fromisoformat(str(ref).replace("Z", "+00:00"))
         except ValueError:
             continue
-        ages.append(max(0.0, now_epoch - parsed.timestamp()))
+        age_by_id[str(row["id"])] = max(0.0, now_epoch - parsed.timestamp())
+    ages = list(age_by_id.values())
 
     stale_rows: list[Any] = []
-    if top_stale > 0:
+    if top_stale > 0 and age_by_id:
+        stale_ids = sorted(age_by_id, key=age_by_id.__getitem__, reverse=True)[:int(top_stale)]
         stale_rows = store.connection.execute(
             f"""
-            SELECT id, content, timestamp, access_count, last_accessed
-            FROM nodes WHERE {trace_where}
-            ORDER BY (CASE WHEN last_accessed IS NULL THEN 0 ELSE 1 END),
-                     timestamp ASC
-            LIMIT ?
+            SELECT nodes.id, content, timestamp, access_count, last_accessed
+            FROM json_each(?) AS selected JOIN nodes ON nodes.id = selected.value
+            WHERE {trace_where}
+            ORDER BY selected.key
             """,
-            list(trace_params) + [int(top_stale)],
+            [json.dumps(stale_ids), *trace_params],
         ).fetchall()
 
     counts = count_nodes(store, scope=normalized_scope)
@@ -538,8 +539,9 @@ def feedback_closure_metrics(
     """Windowed feedback-closure ratio partitioned by recall identity class.
 
     Each recall event lands in exactly one class, by precedence: ``explicit``
-    carries agent+task+session_id, ``transport_only`` carries only a
-    transport-derived session id, ``none`` carries neither. An event counts as
+    carries a nonblank persisted session_id (agent and task are optional),
+    ``transport_only`` has no such session but a nonempty transport-derived id,
+    ``none`` carries neither. An event counts as
     closed when ``feedback_applied = 1`` and its ``created_at`` is inside the
     window (feedback timing is not windowed separately).
     """
@@ -563,17 +565,13 @@ def feedback_closure_metrics(
     rows = store.connection.execute(
         f"""
         SELECT
-            CASE
-                WHEN agent IS NOT NULL AND task IS NOT NULL AND session_id IS NOT NULL
-                    THEN 'explicit'
-                WHEN transport_session_id IS NOT NULL THEN 'transport_only'
-                ELSE 'none'
-            END AS identity_class,
+            session_id,
+            COALESCE(transport_session_id, '') != '' AS has_transport,
             COUNT(*) AS events,
             SUM(CASE WHEN feedback_applied = 1 THEN 1 ELSE 0 END) AS closed
         FROM recall_events
         WHERE {' AND '.join(clauses)}
-        GROUP BY identity_class
+        GROUP BY session_id, has_transport
         """,
         params,
     ).fetchall()
@@ -583,13 +581,17 @@ def feedback_closure_metrics(
         for name in _FEEDBACK_CLOSURE_IDENTITY_CLASSES
     }
     for row in rows:
-        events = int(row["events"])
-        closed = int(row["closed"] or 0)
-        identity_coverage[str(row["identity_class"])] = {
-            "events": events,
-            "closed": closed,
-            "closure_ratio": (closed / events) if events > 0 else None,
-        }
+        # The writer has already resolved the session alias and stringified it.
+        # Use the explicit reconnect consumer's nonblank check on those bytes.
+        session_id = row["session_id"]
+        identity_class = ("explicit" if session_id and session_id.strip() else
+                          "transport_only" if row["has_transport"] else "none")
+        coverage = identity_coverage[identity_class]
+        coverage["events"] += int(row["events"])
+        coverage["closed"] += int(row["closed"] or 0)
+    for coverage in identity_coverage.values():
+        if coverage["events"]:
+            coverage["closure_ratio"] = coverage["closed"] / coverage["events"]
 
     total_events = sum(item["events"] for item in identity_coverage.values())
     total_closed = sum(item["closed"] for item in identity_coverage.values())

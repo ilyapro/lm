@@ -930,6 +930,15 @@ Output is a metrics report with `activity`, `counts`, `dedup`, `staleness`,
 `retrieval_policy`, `retrieval_skew`, `feedback`, `feedback_closure`,
 `access`, `storage`, `latency`, and `instructions` blocks.
 
+`staleness.age_seconds_p50`, `age_seconds_p90`, and `top_stale` use the same
+age for active traces in the selected scope: time since `last_accessed`, falling
+back to `timestamp` when the access date is absent or empty. Missing or
+unparseable reference dates are omitted; an invalid nonempty access date does
+not fall back to creation time. Future reference dates have age zero.
+`top_stale` lists at most the requested number of traces, oldest by that age
+first; zero disables the list. This diagnostic does not record accesses or
+change decay TTL or retrieval eligibility.
+
 `retrieval_skew.floors_in_effect` lists the configured family floors, including
 an empty mapping when none are configured. Each `scopes_at_risk` row separates
 normalized `raw` weights, `applicable_floors` for that scope's current evidence,
@@ -949,8 +958,8 @@ the identity each event carried:
 {
   "window_hours": 168,
   "recall_events_in_window": 1268,
-  "feedback_applied_in_window": 219,
-  "closure_ratio": 0.173,
+  "feedback_applied_in_window": 975,
+  "closure_ratio": 0.769,
   "identity_coverage": {
     "explicit": {"events": 120, "closed": 95, "closure_ratio": 0.792},
     "transport_only": {"events": 900, "closed": 850, "closure_ratio": 0.944},
@@ -959,12 +968,16 @@ the identity each event carried:
 }
 ```
 
-`explicit` events carry `agent`+`task`+`session_id`, `transport_only` events
-carry only the transport-derived stamp, and `none` events carry neither
-(legacy rows and non-request calls). A rising `transport_only` share with a
-high closure ratio is the observable effect of server-side identity
-derivation; regressions show up as events sliding back into `none` or the
-ratio dropping.
+`explicit` events carry a nonblank persisted `session_id`; `agent` and `task`
+are optional. The writer resolves the `session` alias and converts supplied
+values to strings before this classification. A saved session is sufficient
+identity for reconnect feedback, subject to the existing scope, compatible
+context, delivery and time checks. The class does not assert that any particular
+feedback request will match. `transport_only` events have no such session but
+carry a nonempty transport-derived stamp; `none` events carry neither usable
+identity. Agent or task alone does not make this diagnostic class `explicit`,
+even though a task can match implicit feedback. The partition describes the
+saved identity, independently of whether the event has been closed.
 
 ## Resources
 
