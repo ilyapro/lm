@@ -30,9 +30,10 @@ bearer token from ``--token``, then ``$LM_AUTH_TOKEN``, then
 Exit codes::
 
     0  ran to completion (a dry run counts)
-    1  ran, but at least one accepted op failed to write
+    1  at least one operation is known not sent; a later write run may retry
     2  usage or environment error (bad arguments, unreadable corpus, no seal)
     3  the consumption gate did not authorize the run; NOTHING was written
+    4  at least one effect is UNKNOWN; reconcile saved state before continuation
 """
 
 from __future__ import annotations
@@ -85,8 +86,10 @@ from living_memory.postsession.runner import (  # noqa: E402
     EXIT_GATE,
     EXIT_OK,
     EXIT_USAGE,
+    EXIT_UNKNOWN,
     ExtractionRunner,
     Ledger,
+    LedgerError,
     RunnerConfig,
     build_report,
     evaluate_gate,
@@ -133,6 +136,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="session key to look up in the corpus index (repeatable)",
     )
     what.add_argument("--split", choices=SPLITS, help="run over one corpus split")
+    what.add_argument(
+        "--reconcile", action="store_true",
+        help="reconcile saved operations once, without a transcript or judge; "
+        "--write also resumes known unsent requests and receiver-idempotent attests",
+    )
+    what.add_argument("--operation", help="limit reconciliation to SHA:FINGERPRINT")
+    what.add_argument("--node-id", help="recipient node id to verify for --operation")
 
     corpus = parser.add_argument_group("corpus")
     corpus.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
@@ -306,16 +316,31 @@ def select_records(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except (LedgerError, OSError) as exc:
+        print(f"State/output error: {exc}. Preserve the ledger and reconcile; "
+              "missing local output does not authorize a repeat.", file=sys.stderr)
+        return EXIT_USAGE
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     def log(message: str) -> None:
         print(message, file=sys.stderr, flush=True)
 
-    chosen = [bool(args.transcript), bool(args.session), bool(args.split)]
+    chosen = [bool(args.transcript), bool(args.session), bool(args.split), args.reconcile]
+    if (args.operation or args.node_id) and not args.reconcile:
+        log("--operation and --node-id require --reconcile")
+        return EXIT_USAGE
+    if args.node_id and not args.operation:
+        log("--node-id requires --operation SHA:FINGERPRINT")
+        return EXIT_USAGE
     if sum(chosen) != 1:
         parser.print_usage(sys.stderr)
-        log("pick exactly one of --transcript, --session, --split")
+        log("pick exactly one of --transcript, --session, --split, --reconcile")
         return EXIT_USAGE
 
     # The seal, before anything is opened.
@@ -330,6 +355,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     dry_run = not args.write
     stages = tuple(s.strip() for s in args.stages.split(",") if s.strip())
     ledger = Ledger(args.state_dir.expanduser())
+
+    if args.reconcile and not args.write:
+        return _reconcile(args, ledger, log)
 
     # The gate, before any session is read or any judge is paid.
     gate_decision = evaluate_gate(
@@ -364,6 +392,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"GATE PASS ({gate_decision.mode}): "
         + "; ".join(gate_decision.reasons or ("bar cleared",))
     )
+
+    if args.reconcile:
+        return _reconcile(args, ledger, log, gate_decision=gate_decision)
 
     try:
         records, splits_read, notes = select_records(args, log)
@@ -433,10 +464,53 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{attests['applied']} applied, {attests['grounded_results']} grounded results"
     )
     log(f"judge: {report['judge']['calls']} calls, ${report['judge']['total_cost_usd']}")
-    failed = report["ops"]["by_status"].get("failed", 0) + report["attestations"][
-        "by_status"
-    ].get("failed", 0)
-    return EXIT_OK if not failed else 1
+    return _outcome(ledger, decisions, log)
+
+
+def _outcome(ledger: Ledger, decisions, log, *, operation: str = "") -> int:
+    pending = [
+        entry for entry in ledger.entries()
+        if entry["state"] != "applied" and (
+            not operation or operation == f"{entry['transcript_sha256']}:{entry['fingerprint']}"
+        )
+    ]
+    for entry in pending:
+        log(f"{entry['state'].upper()} {entry['transcript_sha256']}:{entry['fingerprint']} "
+            f"({entry['kind']}); run --reconcile with the same --state-dir and --url")
+    if any(e["state"] == "unknown" for e in pending) or any(d.status == "unknown" for d in decisions):
+        return EXIT_UNKNOWN
+    if pending or any(d.status == "failed" for d in decisions):
+        return 1
+    return EXIT_OK
+
+
+def _reconcile(args, ledger: Ledger, log, *, gate_decision=None) -> int:
+    client = LiveMemoryClient(
+        args.url, token=resolve_token(args.token, env_file=args.env_file), timeout=args.timeout,
+    )
+    runner = ExtractionRunner(
+        config=RunnerConfig(
+            dry_run=not args.write,
+            max_ops_per_session=args.max_ops_per_session,
+            max_total_ops=args.max_total_ops,
+            max_attests_per_session=args.max_attests_per_session,
+            max_total_attests=args.max_total_attests,
+        ), ledger=ledger, client=client,
+    )
+    try:
+        decisions = runner.reconcile(operation=args.operation or "", node_id=args.node_id or "")
+    except ValueError as exc:
+        log(str(exc))
+        return EXIT_USAGE
+    report = {
+        "mode": "reconcile", "gate": gate_decision.to_dict() if gate_decision else None,
+        "decisions": [d.to_dict() for d in decisions], "ledger": str(ledger.path),
+    }
+    if args.out:
+        _write_report(args.out, report, splits_read=[])
+    for decision in decisions:
+        log(f"{decision.status}: {decision.fingerprint} {decision.reason} {decision.detail}")
+    return _outcome(ledger, decisions, log, operation=args.operation or "")
 
 
 def _write_report(path: Path, report: dict[str, Any], *, splits_read: Sequence[str]) -> None:
