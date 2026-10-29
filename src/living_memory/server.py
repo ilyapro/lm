@@ -622,11 +622,14 @@ def _server_instructions(default_scope: str, map_section: str = "") -> str:
         "defers tool schemas, you MUST load the Living Memory tools NOW and "
         "recall the task at hand.\n\n"
         "## Scope and context\n\n"
-        "Write with a specific scope: `context.scope='project:<name>'` for "
-        "project facts, `global` for universal knowledge. Read broad: omit "
-        "`scope` to transfer across scopes. For feedback after reconnect, keep "
+        "Write knowledge to `context.scope='project:<name>'` for project facts, "
+        "`global` for universal knowledge. Read broad across scopes: omit BOTH "
+        "`scope` and `ambient_context.scope`; ambient `project` is only a "
+        "preference. For feedback after reconnect, keep "
         "the same caller-unique `session_id` in recall's `ambient_context` and "
-        "writes' `context`, with compatible `task`, `agent` and scope. Without "
+        "writes' `context`, with compatible `task` and `agent`. A saved broad "
+        "read accepts a different write scope; a restricted read requires "
+        "matching scope. Without "
         "that durable session, prior-transport feedback cannot be attributed.\n"
         f"Your default scope is {default_scope}.\n"
     )
@@ -645,11 +648,11 @@ _RECALL_DESCRIPTION = (
     "searches/measurements, design choices, new tasks/messages. You MUST "
     "recall MID-WORK for nearby knowledge; stuck or surprised means overdue, "
     "'if only I knew' means recall NOW. When uncertain, recall. Query "
-    "identifiers; omit scope for cross-project knowledge. Depth 'causal' "
+    "identifiers; omit both scope and ambient_context.scope for cross-project "
+    "knowledge. Depth 'causal' "
     "when debugging. "
     + MEMORY_GUIDANCE
-    + " If delivered knowledge is insufficient, use content_ref via "
-    "memory_lookup for full content."
+    + " For full content, use content_ref via memory_lookup."
     " below_threshold is an unqualified reference."
 )
 

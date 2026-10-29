@@ -111,8 +111,11 @@ stdio, SSE, and in-memory transports).
 
 Explicit `used`/`irrelevant` marks have a stricter reconnect contract: retain a
 caller-unique `session_id` in recall's `ambient_context` and writes' `context`,
-with compatible task, agent and scope. A shared task alone does not identify
-the recipient of an earlier delivery. Without a session saved on both sides,
+with compatible task and agent. A saved broad read permits a different write
+destination (`context.scope`); a restricted read requires matching scope.
+To read broadly, omit both `scope` and `ambient_context.scope`; ambient project
+is only a preference. A shared task alone does not identify the recipient of
+an earlier delivery. Without a session saved on both sides,
 old-transport marks are `not_delivered`; identity cannot be inferred after the
 fact. Same-transport marks and transport-only lookup credit retain their
 contracts. See [explicit feedback](explicit-feedback.md#resolution).
@@ -381,7 +384,7 @@ serialization only, preserving retrieval, ranking, and feedback events.
 
 Scope: an explicit `scope` (the argument or `ambient_context.scope`)
 restricts the search to it — a `session:<id>` scope also sees the ambient
-project — and `global`. Without one the whole store is searched, and the
+project — and `global`. Omit both scope forms to search the whole store; the
 ambient `session_id`, project (`project`/`workspace`/`cwd`) or the configured
 default project only rank first; the plan records this as a trailing `*`
 (`global > *`). Nothing is inferred from the query text. Retrieval combines

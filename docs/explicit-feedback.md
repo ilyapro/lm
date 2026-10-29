@@ -49,20 +49,32 @@ only if an eligible `recall_events` row delivered it. The current transport's
 deliveries remain eligible regardless of context or scope. For a delivery on
 another transport, both calls must declare the same nonblank `session_id`
 (`session` is also supported). Both-present `task` or `agent` conflicts reject
-that match, and the current scope must equal the event's `scope` or
-`requested_scope`. Agent names, query text and a shared task alone never
-establish explicit delivery attribution across transports.
+that match. The current scope must equal the event's `scope` or
+`requested_scope`, unless the saved read was broad (its scope plan contains
+`*`). Breadth removes only this scope comparison: identity, delivered-id
+membership and the bounded window still apply. Named `resolved_scopes` entries
+alone never authorize attribution. Agent names, query text and a shared task
+alone never establish explicit delivery attribution across transports.
 
 To preserve feedback over reconnect, choose a session unique to the logical
 caller and retain it in `memory_recall.ambient_context` and in
 `memory_remember.context` / `memory_teach.context`. Independent callers need
-distinct sessions even when working on the same task. Keep the scope compatible:
-recall's explicit `scope` takes precedence over `ambient_context.scope`; otherwise
-the ordinary scope resolver uses context, including `session:<id>` when only
-session is supplied. Writes use that same context scope resolution for explicit
-marks. Teach uses the current call's context, never the corrected source's
-identity. For example, use `{"session_id":"caller-run", "scope":"project:demo"}`
-on both sides. No additional tool argument or caller registry is required.
+distinct sessions even when working on the same task. Read broadly by omitting
+both top-level `scope` and `ambient_context.scope`; ambient project is only a
+preference. The saved broad read's preferred scope, often `session:<id>`, does
+not restrict the new knowledge's destination. For example, recall with
+`ambient_context={"session_id":"caller-run", "project":"demo"}`, then remember
+or teach after reconnect with
+`context={"session_id":"caller-run", "scope":"project:demo"}` and the marks.
+No auxiliary recall is needed.
+
+An explicit read filter still restricts retrieval; top-level `scope` takes
+precedence over `ambient_context.scope`. For such a saved read, the current
+call's scope resolution must match its `scope` or `requested_scope`, even if
+its search included other scopes as fallbacks. Teach uses the current call's
+context, never the corrected source's identity. Implicit pending-recall closure
+keeps its separate matching contract. No new tool argument or caller registry
+is required.
 
 Without that durable identity, a previous transport's delivery is not
 attributable. Supplying identity only after reconnect cannot recover it. Do not

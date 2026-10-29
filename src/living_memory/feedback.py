@@ -743,8 +743,9 @@ def resolve_explicit_marks(
     session to join), ``not_delivered`` (no eligible recall event within the
     lookup-credit window and event limit delivered it). Context may identify
     a previous transport's delivery by equal session and compatible task,
-    agent and scope. An accepted mark resolves to the *newest* delivery using
-    the same bounded join as lookup credit.
+    agent, and matching scope unless that delivery was a broad read. An
+    accepted mark resolves to the *newest* delivery using the same bounded
+    join as lookup credit.
     """
 
     marks = _explicit_mark_requests(used, irrelevant, transport_session_id)

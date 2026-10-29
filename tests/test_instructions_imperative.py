@@ -328,6 +328,13 @@ def test_cross_project_transfer_explicit(union: str) -> None:
     assert "omit" in lowered and "scope" in lowered, (
         "read-broad guidance must say to omit scope when investigating"
     )
+    assert "omit both scope and ambient_context.scope" in _RECALL_DESCRIPTION
+    for phrase in ("omit BOTH `scope` and `ambient_context.scope`",
+                   "ambient `project` is only a preference",
+                   "Write knowledge to `context.scope=",
+                   "A saved broad read accepts a different write scope",
+                   "a restricted read requires matching scope"):
+        assert phrase in _server_instructions("project:demo")
 
 
 # ── memory_recall description: the BEFORE hooks ─────────────────────────────

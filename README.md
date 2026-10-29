@@ -256,8 +256,20 @@ Similar text and equal agent names alone never establish that a recall was
 shown to this work. Without a compatible recall, new knowledge is still saved
 without implicit provenance, credit or query anchors. `memory_teach` takes
 identity from the current call, preserving the source's subject and step
-location without inheriting its author/session/task. Explicit `used` and
-`irrelevant` marks retain their same-transport delivery contract.
+location without inheriting its author/session/task.
+
+Explicit `used` / `irrelevant` feedback can follow a reconnect when both calls
+retain the same nonblank, caller-unique `session_id` in recall's
+`ambient_context` and writes' `context`; both-present task or agent conflicts
+reject attribution. To read broadly, omit both `scope` and
+`ambient_context.scope`: ambient `project` is only a preference. Such a saved
+read can receive marks on a write to any knowledge destination, for example
+`context.scope='project:demo'`. A restricted read requires the current scope to
+match its saved scope. Named read fallbacks alone do not authorize feedback.
+The marked id must belong to the saved delivery within the bounded time/event
+window; repeating a mark cannot earn credit twice. Missing session identity
+cannot be inferred after reconnect. Same-transport marks retain their contract;
+lookup credit remains transport-only.
 
 Request `memory_recall(..., view="full")` to inspect ranked entries with their
 `node`, scores, compacted metadata, and recall-map selection accounting (`sel`).

@@ -970,7 +970,7 @@ def test_both_prompt_arms_fit_the_budget_and_keep_the_law(arm: str) -> None:
         "conventions",
         "concept before inventing",
         "action plus target",
-        "omit scope for cross-project knowledge",
+        "omit both scope and ambient_context.scope for cross-project knowledge",
     ):
         assert phrase in recall, (arm, phrase)
     # The register bans of tests/test_instructions_imperative.py.
