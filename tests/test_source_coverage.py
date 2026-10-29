@@ -110,8 +110,9 @@ def test_expansion_keeps_old_sources_and_dates_only_the_new_input(store, clock, 
     for trace in [*traces, added]:
         store.record_access(trace.id)
     clock[0] = 12
-    # The owner retains sources outside the visited prefix.
-    consolidate(store, kind, recent_limit=1)
+    # Cluster admission needs an overlapping input; the remaining old sources
+    # stay outside this visited prefix and must survive in the owner's union.
+    consolidate(store, kind, recent_limit=2 if kind == "cluster" else 1)
     expected = {**{trace.id: stamp(10) for trace in traces}, added.id: stamp(12)}
     assert store.get_node(owner.id).provenance["source_coverage"] == expected
 
