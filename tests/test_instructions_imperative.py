@@ -331,9 +331,9 @@ def test_cross_project_transfer_explicit(union: str) -> None:
     assert "omit both scope and ambient_context.scope" in _RECALL_DESCRIPTION
     for phrase in ("omit BOTH `scope` and `ambient_context.scope`",
                    "ambient `project` is only a preference",
-                   "Write knowledge to `context.scope=",
-                   "A saved broad read accepts a different write scope",
-                   "a restricted read requires matching scope"):
+                   "Write project facts to `context.scope=",
+                   "Broad reads accept different write scopes",
+                   "restricted reads require matching scope"):
         assert phrase in _server_instructions("project:demo")
 
 
