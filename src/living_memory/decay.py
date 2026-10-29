@@ -179,18 +179,20 @@ def concept_coverage(store: MemoryStore) -> dict[str, datetime | None]:
     rule is a 42% cut of the working set, taken in
     :data:`MAX_PER_SWEEP_ENV`-sized steps, and belongs to the operator.
 
-    The moment returned is the concept's ``provenance.consolidated_at`` where
-    present, else its creation. ``updated_at`` is deliberately not used: it
-    moves on every access bump, which would keep sliding coverage forward and
-    make ever more traces look unread since it. When several concepts cover
-    the same trace the earliest moment wins, so "unread since coverage" means
-    unread since the trace was *first* covered.
+    Each owner's ``provenance.source_coverage`` maps current source IDs to
+    their continuous coverage start. Maintenance preserves retained entries;
+    new or replacement sources start at their inclusion. Missing or malformed
+    entries have unknown age: owner creation, consolidation and access dates
+    cannot establish when an individual source joined. Across live owners the
+    earliest start wins, with unknown age taking precedence. A recorded read
+    then prevents coverage retirement when its relation to coverage is unknown;
+    the opt-in TTL fallback still applies.
     """
 
     placeholders = ", ".join("?" for _ in _COVERING_LEVELS)
     rows = store.connection.execute(
         f"""
-        SELECT source_traces, provenance, created_at, timestamp
+        SELECT source_traces, provenance
         FROM nodes
         WHERE decayed = 0 AND level IN ({placeholders})
         """,
@@ -199,8 +201,12 @@ def concept_coverage(store: MemoryStore) -> dict[str, datetime | None]:
 
     coverage: dict[str, datetime | None] = {}
     for row in rows:
-        covered_at = _coverage_moment(row)
+        try:
+            provenance = json.loads(row["provenance"])
+        except (TypeError, ValueError):
+            provenance = None
         for trace_id in _json_list(row["source_traces"]):
+            covered_at = _coverage_moment(provenance, trace_id)
             if trace_id not in coverage:
                 coverage[trace_id] = covered_at
                 continue
@@ -358,21 +364,12 @@ def _read_since(row: Any, covered_at: datetime | None) -> bool:
     return read_at > covered_at
 
 
-def _coverage_moment(row: Any) -> datetime | None:
-    provenance = row["provenance"]
-    consolidated_at = None
-    if provenance:
-        try:
-            parsed = json.loads(provenance)
-        except (TypeError, ValueError):
-            parsed = None
-        if isinstance(parsed, dict):
-            consolidated_at = parsed.get("consolidated_at")
-    return (
-        parse_timestamp(consolidated_at)
-        or parse_timestamp(row["created_at"])
-        or parse_timestamp(row["timestamp"])
-    )
+def _coverage_moment(provenance: Any, trace_id: str) -> datetime | None:
+    """Only an explicit per-source start establishes coverage age."""
+
+    coverage = provenance.get("source_coverage") if isinstance(provenance, dict) else None
+    moment = coverage.get(trace_id) if isinstance(coverage, dict) else None
+    return parse_timestamp(moment) if isinstance(moment, str) else None
 
 
 def _json_list(raw: Any) -> list[str]:

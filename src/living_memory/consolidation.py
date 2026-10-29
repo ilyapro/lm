@@ -1135,9 +1135,8 @@ def _refresh_derived_node(
             key = replace(key, trigger=str(node.context.get("trigger") or key.trigger))
             declared = [member for member in members if _declares_step(member)]
             binding = node.level == "schema" and len(declared) == len(members)
-            current = replace(node, source_traces=[member.id for member in members])
             updated, _ = _create_or_update_schema(
-                store, node.scope, key, members, current,
+                store, node.scope, key, members, node,
                 era=assessment if binding else None,
                 observation=observation,
             )
@@ -1335,6 +1334,27 @@ def _procedure_key(trace: Node) -> _ProcedureKey | None:
     )
 
 
+def _source_coverage(
+    existing: Node | None, sources: Iterable[str], covered_at: str,
+) -> dict[str, str | None]:
+    """Keep each current source's continuous coverage start for this owner.
+
+    Source IDs name append-only traces; a correction has a new ID. Retained
+    membership keeps its recorded start, including an unknown start. Neither
+    an owner's creation nor its latest maintenance dates an existing source.
+    Removed entries disappear, so a later readmission starts at that write.
+    """
+
+    previous = set(existing.source_traces) if existing else set()
+    recorded = existing.provenance.get("source_coverage") if existing else None
+    recorded = recorded if isinstance(recorded, dict) else {}
+    coverage = {}
+    for source in sources:
+        moment = recorded.get(source) if source in previous else covered_at
+        coverage[source] = moment if isinstance(moment, str) and parse_timestamp(moment) else None
+    return coverage
+
+
 def _create_or_update_schema(
     store: MemoryStore,
     scope: str,
@@ -1388,8 +1408,9 @@ def _create_or_update_schema(
     if era_block is not None:
         context["era_status"] = "current"
 
-    cited = existing.source_traces if existing else []
-    sources = sorted({*cited, *(trace.id for trace in traces)} - excluded_ids)
+    # Callers supply the full revalidated union, including retained inputs
+    # outside this pass. Re-adding old citations would restore removed sources.
+    sources = sorted({trace.id for trace in traces} - excluded_ids)
     content = (
         _format_schema_content(trigger, steps)
         if era is not None
@@ -1399,6 +1420,7 @@ def _create_or_update_schema(
         **(existing.provenance if existing else {}),
         **base_provenance,
         "source_traces": sources,
+        "source_coverage": _source_coverage(existing, sources, base_provenance["consolidated_at"]),
         "cluster_size": len(sources),
     }
     level = "schema" if era is not None else "concept"
@@ -1953,12 +1975,14 @@ def _write_cluster_concept(
     cluster_key = prepared_digest.cluster_key
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
+    consolidated_at = _utc_now()
     provenance = {
         **(existing.provenance if existing else {}),
         "source_traces": source_traces,
+        "source_coverage": _source_coverage(existing, source_traces, consolidated_at),
         "cluster_key": cluster_key,
         "cluster_size": len(source_traces),
-        "consolidated_at": _utc_now(),
+        "consolidated_at": consolidated_at,
         "strategy": strategy,
     }
     if assessment.filtered:
@@ -2325,10 +2349,12 @@ def _write_global_promotion(
     digest = prepared_digest.content
     source_scopes = _source_scopes(project_sources)
     source_concepts = _source_concept_ids(project_sources)
+    source_traces = _source_trace_ids(project_sources)
     promoted_at = _utc_now()
     provenance = dict(existing.provenance) if existing else {}
     provenance.update({
-        "source_traces": _source_trace_ids(project_sources),
+        "source_traces": source_traces,
+        "source_coverage": _source_coverage(existing, source_traces, promoted_at),
         "promoted_from": source_scopes,
         "source_concepts": source_concepts,
         "active_promoted_from": source_scopes,
@@ -2344,7 +2370,7 @@ def _write_global_promotion(
     }
     if existing is not None and existing.content == digest and all(
         existing.provenance.get(key) == provenance[key]
-        for key in ("source_concepts", "active_source_concepts", "active_promoted_from")
+        for key in ("source_concepts", "active_source_concepts", "active_promoted_from", "source_coverage")
     ) and existing.source_traces == provenance["source_traces"] and all(
         getattr(existing, key) == value for key, value in stats.items()
     ):

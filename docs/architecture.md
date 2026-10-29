@@ -209,6 +209,27 @@ Uniform storage for traces, concepts, and schemas.
 Raw trace content is append-only. Consolidation creates concept nodes and
 connections; it does not rewrite source traces.
 
+Live concepts and schemas cover the IDs in `source_traces`. Cluster, procedural
+and cross-scope promotion writers record each source's continuous inclusion time
+in `provenance.source_coverage`, a map from source ID to an ISO timestamp or
+`null` for unknown age. An unchanged source keeps its start through maintenance
+and membership expansion; new and replacement IDs start at the current write.
+Removed IDs lose their entries, and readmission starts a new interval. Promotion
+records coverage by that owner, independently of its project owners' clocks.
+The map is written with the current revalidated sources in the existing owner
+transaction. Legacy or incomplete provenance retains unknown age for existing
+sources; owner creation, `consolidated_at`, promotion dates and access timestamps
+do not supply missing starts. `consolidated_at` dates the latest materialization.
+
+Decay retains its default guard for sources of any non-decayed concept or schema,
+including owners in other scopes. With operator opt-in `LM_DECAY_CONCEPT_COVERED`,
+coverage retirement compares the source's last access to the earliest start among
+its live owners; unknown age takes precedence over dated coverage. An access
+strictly after that start preserves evidence of use. Unknown age with a recorded
+access also prevents coverage retirement; a source with no recorded access can
+still retire. The opt-in TTL fallback, TTL anchor, sweep cap and supersession
+rules remain independent of coverage age.
+
 Schema nodes (`level='schema'`) materialize repeating procedural patterns:
 when three or more traces share a normalized `context.procedure_id` (or
 `context.task_pattern`), consolidation emits one schema node whose `context`
