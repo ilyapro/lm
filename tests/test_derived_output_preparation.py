@@ -322,6 +322,10 @@ def test_final_promotion_refresh_rechecks_current_selection_and_sources(store, c
                 writer.update_node(promoted.id, level="schema")
             elif change == "deleted":
                 with writer.transaction():
+                    writer.connection.execute(
+                        "DELETE FROM connections WHERE source_id=? OR target_id=?", (promoted.id, promoted.id),
+                    )
+                    writer.delete_node_chunks(promoted.id)
                     writer.connection.execute("DELETE FROM nodes WHERE id=?", (promoted.id,))
             elif change == "decayed":
                 writer.soft_delete_node(promoted.id, "retired promotion")

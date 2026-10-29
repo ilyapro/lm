@@ -24,12 +24,15 @@ def promotion(store, node_id, **kwargs):
     )
 
 
-@pytest.mark.parametrize("column", ["context", "embedding", "source_traces", "corrections"])
-def test_scoped_refresh_does_not_read_unrelated_bodies(store, monkeypatch, column):
+@pytest.mark.parametrize("column,raw", [
+    ("context", "null"), ("embedding", "{broken"),
+    ("source_traces", "{broken"), ("corrections", "{broken"),
+])
+def test_scoped_refresh_does_not_read_unrelated_bodies(store, monkeypatch, column, raw):
     unrelated = store.create_node(level="concept", content="Unrelated global knowledge.")
     needed = promotion(store, "needed")
     with store.transaction():
-        store.connection.execute(f"UPDATE nodes SET {column}=? WHERE id=?", ("{broken", unrelated.id))
+        store.connection.execute(f"UPDATE nodes SET {column}=? WHERE id=?", (raw, unrelated.id))
     hydrate = storage._node_from_row
     reads = []
 
@@ -123,7 +126,7 @@ def test_required_errors_remain_visible_and_leave_transaction_unchanged(store, m
     if failure != "storage":
         node_id = owner.id if failure == "owner_body" else source.id
         with store.transaction():
-            store.connection.execute("UPDATE nodes SET context=? WHERE id=?", ("{broken", node_id))
+            store.connection.execute("UPDATE nodes SET embedding=? WHERE id=?", ("{broken", node_id))
         expected = json.JSONDecodeError
     else:
         def fail(*args, **kwargs):
