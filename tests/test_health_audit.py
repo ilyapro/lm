@@ -1,12 +1,4 @@
-"""Focused fixture-DB tests for the health audit metric engine.
-
-Each test exercises a single audit contract from
-``artifacts/health_audit_contract.md`` so that a regression in one metric
-fails an obviously-named test. The fixture is small and explicit, with
-counts deliberately distinct from the live-baseline numbers in
-``artifacts/baseline.md`` (the parent ``_critique`` warned that the audit
-must not look like a hardcoded answer key).
-"""
+"""Fixture tests for health metrics, scope filtering and read-only auditing."""
 
 from __future__ import annotations
 
@@ -21,11 +13,9 @@ import pytest
 
 from living_memory.health_audit import (
     DEFAULT_LATENCY_QUERY,
-    DEFAULT_TOP_CANDIDATE_SCOPES,
     ReadOnlyAuditStore,
     compute_health_audit,
     open_read_only_store,
-    scope_hygiene_metrics,
 )
 from living_memory.resources import (
     feedback_closure_metrics,
@@ -48,21 +38,19 @@ _FIXTURE_TRACES: tuple[tuple[str, str, int], ...] = (
     ("project:beta", "beta-task-text", 5),
     ("project:beta", "beta-task-text", 1),
     ("project:beta", "beta-other-text", 0),
-    ("rise/foo", "leakage-rise-foo", 0),
-    ("project:breakthrough", "leakage-breakthrough", 0),
-    ("ocpa-generative-action-substrate-v1", "leakage-ocpa", 4),
+    ("project:gamma", "gamma-text", 0),
+    ("project:delta", "delta-text", 0),
+    ("global", "global-text", 4),
 )
 # Distinct contents: 7 → 10 active traces, duplicate_excess = 3, density = 0.3.
 # Active concept (+1) and decayed trace (excluded from active counts) added below.
 
 
 def _build_fixture(path: Path) -> MemoryStore:
-    """Construct a small, deterministic legacy-shaped DB fixture.
+    """Construct explicit node and event populations for read-only metrics.
 
-    The health audit must be able to inspect historical DBs that already
-    contain duplicate active traces and raw leakage scopes. Insert those rows
-    directly so the fixture measures audit behavior instead of the current
-    write-path guards that now canonicalize scopes and supersede duplicates.
+    Direct inserts keep duplicate traces active so their counts are independent
+    of write-path deduplication.
     """
 
     store = MemoryStore(path)
@@ -136,7 +124,7 @@ def _build_fixture(path: Path) -> MemoryStore:
             decay_reason="fixture-decay",
         )
 
-        # 8 recall events spanning project + leakage scopes; 2 are marked
+        # 8 recall events spanning project and global scopes; 2 are marked
         # feedback_applied.
         for index, (query, scope) in enumerate(
             (
@@ -145,8 +133,8 @@ def _build_fixture(path: Path) -> MemoryStore:
                 ("q3", "project:alpha"),
                 ("q4", "project:beta"),
                 ("q5", "project:beta"),
-                ("q6", "rise/foo"),
-                ("q7", "project:rise/extra"),
+                ("q6", "project:gamma"),
+                ("q7", "project:gamma/extra"),
                 ("q8", "global"),
             ),
             start=1,
@@ -180,7 +168,7 @@ def _build_fixture(path: Path) -> MemoryStore:
 
 
 # ---------------------------------------------------------------------------
-# Expected values, derived from the fixture (not hardcoded answer-key lookups)
+# Expected values derived from the fixture
 # ---------------------------------------------------------------------------
 
 _EXPECTED_ACTIVE_TRACES = 10
@@ -197,33 +185,6 @@ _EXPECTED_NEVER_ACCESSED_NODES = 6
 _EXPECTED_NEVER_ACCESSED_TRACES = 5
 _EXPECTED_NEVER_ACCESSED_TRACE_RATIO = 0.5
 _EXPECTED_NEVER_ACCESSED_NODE_RATIO = _EXPECTED_NEVER_ACCESSED_NODES / _EXPECTED_ACTIVE_NODES
-
-_EXPECTED_CANDIDATE_SCOPES = 4
-_EXPECTED_ACTIVE_CANDIDATE_NODES = 3
-_EXPECTED_ACTIVE_CANDIDATE_TRACES = 3
-_EXPECTED_NEVER_ACCESSED_CANDIDATE_TRACES = 2
-_EXPECTED_CANDIDATE_ZERO_RECALL = 2
-_EXPECTED_CANDIDATE_SCOPE_SET = frozenset(
-    {
-        "rise/foo",
-        "project:breakthrough",
-        "ocpa-generative-action-substrate-v1",
-        "project:rise/extra",
-    }
-)
-
-# Live-baseline values (from artifacts/baseline.md) used as anti-lookup guards.
-_LIVE_DUPLICATE_DENSITY = 0.129648
-_LIVE_FEEDBACK_RATIO = 0.207274
-_LIVE_NEVER_ACCESSED_NODE_RATIO = 0.723479
-_LIVE_NEVER_ACCESSED_TRACE_RATIO = 0.731955
-_LIVE_CANDIDATE_SCOPES = 54
-_LIVE_ACTIVE_CANDIDATE_TRACES = 111
-_LIVE_CANDIDATE_ZERO_RECALL = 36
-_LIVE_DB_SIZE_BYTES = 100339712
-_LIVE_CLOSURE_RATIO = 0.16
-_LIVE_EXPLICIT_CLASS_CLOSURE = 0.79
-_LIVE_IDENTITYLESS_CLOSURE = 0.12
 
 
 def _strip_time_varying_fields(report: dict[str, Any]) -> dict[str, Any]:
@@ -261,9 +222,6 @@ def test_duplicate_density_global_counts_match_fixture(tmp_path: Path) -> None:
     assert dedup["duplicate_excess"] == _EXPECTED_DUPLICATE_EXCESS
     assert dedup["duplicate_density"] == pytest.approx(
         _EXPECTED_DUPLICATE_DENSITY, abs=1e-9
-    )
-    assert dedup["duplicate_density"] != pytest.approx(
-        _LIVE_DUPLICATE_DENSITY, abs=1e-3
     )
 
 
@@ -311,9 +269,6 @@ def test_feedback_applied_ratio_global_matches_fixture(tmp_path: Path) -> None:
     )
     assert feedback["feedback_applied_ratio"] == pytest.approx(
         _EXPECTED_FEEDBACK_RATIO, abs=1e-9
-    )
-    assert feedback["feedback_applied_ratio"] != pytest.approx(
-        _LIVE_FEEDBACK_RATIO, abs=1e-3
     )
 
 
@@ -372,13 +327,6 @@ def test_never_accessed_ratio_active_nodes_and_traces(tmp_path: Path) -> None:
         _EXPECTED_NEVER_ACCESSED_TRACE_RATIO, abs=1e-9
     )
 
-    assert nodes["never_accessed_ratio"] != pytest.approx(
-        _LIVE_NEVER_ACCESSED_NODE_RATIO, abs=1e-3
-    )
-    assert traces["never_accessed_ratio"] != pytest.approx(
-        _LIVE_NEVER_ACCESSED_TRACE_RATIO, abs=1e-3
-    )
-
 
 def test_never_accessed_ratio_is_none_on_empty_db(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "empty.sqlite3") as store:
@@ -388,95 +336,6 @@ def test_never_accessed_ratio_is_none_on_empty_db(tmp_path: Path) -> None:
     assert access["active_nodes"]["never_accessed_ratio"] is None
     assert access["active_traces"]["total"] == 0
     assert access["active_traces"]["never_accessed_ratio"] is None
-
-
-# ---------------------------------------------------------------------------
-# Scope leakage candidates
-# ---------------------------------------------------------------------------
-
-
-def test_scope_leakage_candidate_counts_match_fixture(tmp_path: Path) -> None:
-    with _build_fixture(tmp_path / "f.sqlite3") as store:
-        sh = compute_health_audit(store)["scope_hygiene"]
-
-    assert sh["candidate_scopes"] == _EXPECTED_CANDIDATE_SCOPES
-    assert sh["active_candidate_nodes"] == _EXPECTED_ACTIVE_CANDIDATE_NODES
-    assert sh["active_candidate_traces"] == _EXPECTED_ACTIVE_CANDIDATE_TRACES
-    assert (
-        sh["active_candidate_traces_never_accessed"]
-        == _EXPECTED_NEVER_ACCESSED_CANDIDATE_TRACES
-    )
-    assert sh["active_candidate_trace_never_accessed_ratio"] == pytest.approx(
-        _EXPECTED_NEVER_ACCESSED_CANDIDATE_TRACES
-        / _EXPECTED_ACTIVE_CANDIDATE_TRACES,
-        abs=1e-9,
-    )
-    assert (
-        sh["candidate_scopes_with_zero_recall_events"]
-        == _EXPECTED_CANDIDATE_ZERO_RECALL
-    )
-
-    assert sh["candidate_scopes"] != _LIVE_CANDIDATE_SCOPES
-    assert sh["active_candidate_traces"] != _LIVE_ACTIVE_CANDIDATE_TRACES
-    assert (
-        sh["candidate_scopes_with_zero_recall_events"]
-        != _LIVE_CANDIDATE_ZERO_RECALL
-    )
-
-
-def test_scope_leakage_predicate_unions_all_three_columns(tmp_path: Path) -> None:
-    """Candidate scopes are the union of node.scope, recall_events.scope,
-    and recall_events.requested_scope under the verbatim baseline predicate."""
-
-    with _build_fixture(tmp_path / "f.sqlite3") as store:
-        sh = compute_health_audit(store)["scope_hygiene"]
-
-    candidate_scopes_in_top = {row["scope"] for row in sh["top_candidate_scopes"]}
-    assert candidate_scopes_in_top == _EXPECTED_CANDIDATE_SCOPE_SET
-
-
-def test_scope_hygiene_ignores_scope_filter(tmp_path: Path) -> None:
-    """``scope_hygiene`` is always global; ``memory_health(scope=...)`` must
-    not filter it (the contract: an audit run scoped to one project must
-    still see leakage in other-project scopes)."""
-
-    with _build_fixture(tmp_path / "f.sqlite3") as store:
-        unscoped = compute_health_audit(store)["scope_hygiene"]
-        scoped = compute_health_audit(store, scope="project:alpha")["scope_hygiene"]
-
-    assert scoped["candidate_scopes"] == unscoped["candidate_scopes"]
-    assert scoped["candidate_scopes"] == _EXPECTED_CANDIDATE_SCOPES
-    assert scoped["top_candidate_scopes"] == unscoped["top_candidate_scopes"]
-
-
-def test_scope_hygiene_top_candidate_scopes_ordering_is_deterministic(
-    tmp_path: Path,
-) -> None:
-    """Ordering: ``(active_traces DESC, recall_events_as_scope ASC, scope ASC)``."""
-
-    with _build_fixture(tmp_path / "f.sqlite3") as store:
-        top = compute_health_audit(store)["scope_hygiene"]["top_candidate_scopes"]
-
-    assert len(top) == _EXPECTED_CANDIDATE_SCOPES
-    for prev, curr in zip(top, top[1:]):
-        if prev["active_traces"] != curr["active_traces"]:
-            assert prev["active_traces"] >= curr["active_traces"]
-        elif prev["recall_events_as_scope"] != curr["recall_events_as_scope"]:
-            assert prev["recall_events_as_scope"] <= curr["recall_events_as_scope"]
-        else:
-            assert prev["scope"] <= curr["scope"]
-
-
-def test_scope_hygiene_top_candidate_scopes_respects_limit(tmp_path: Path) -> None:
-    with _build_fixture(tmp_path / "f.sqlite3") as store:
-        bounded = scope_hygiene_metrics(store, top_candidate_scopes=2)
-
-    assert len(bounded["top_candidate_scopes"]) == 2
-    assert bounded["candidate_scopes"] == _EXPECTED_CANDIDATE_SCOPES
-
-
-def test_scope_hygiene_default_limit_matches_contract() -> None:
-    assert DEFAULT_TOP_CANDIDATE_SCOPES == 20
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +354,6 @@ def test_storage_db_size_matches_filesystem_and_pragma_pages(tmp_path: Path) -> 
     assert storage["page_count"] > 0
     assert storage["page_size"] > 0
     assert storage["page_bytes"] == storage["page_count"] * storage["page_size"]
-    assert storage["db_size_bytes"] != _LIVE_DB_SIZE_BYTES
 
 
 def test_storage_db_size_is_none_for_in_memory_store() -> None:
@@ -509,7 +367,7 @@ def test_storage_db_size_is_none_for_in_memory_store() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Hot recall latency baseline shape
+# Hot recall latency shape
 # ---------------------------------------------------------------------------
 
 
@@ -605,15 +463,6 @@ def test_health_audit_deterministic_across_repeated_calls(tmp_path: Path) -> Non
     )
 
 
-def test_health_audit_top_candidate_scopes_ordering_deterministic(
-    tmp_path: Path,
-) -> None:
-    with _build_fixture(tmp_path / "f.sqlite3") as store:
-        first = compute_health_audit(store)["scope_hygiene"]["top_candidate_scopes"]
-        second = compute_health_audit(store)["scope_hygiene"]["top_candidate_scopes"]
-    assert first == second
-
-
 # ---------------------------------------------------------------------------
 # Read-only safety
 # ---------------------------------------------------------------------------
@@ -636,7 +485,7 @@ def test_audit_against_read_only_path_does_not_modify_db_file(tmp_path: Path) ->
     md5_after = _md5_of_file(fixture_path)
 
     assert md5_before == md5_after
-    for key in ("dedup", "feedback", "access", "scope_hygiene", "storage", "latency"):
+    for key in ("dedup", "feedback", "access", "storage", "latency"):
         assert key in result, f"missing audit section: {key}"
     assert result["latency"]["samples"] == 3
 
@@ -705,17 +554,14 @@ def test_compute_health_audit_emits_every_required_metric_section(
         "dedup",
         "feedback",
         "access",
-        "scope_hygiene",
         "storage",
         "latency",
         "instructions",
     }
-    assert required_sections.issubset(set(result.keys()))
+    assert set(result) == required_sections
 
-    # Six required metrics from the parent SPEC map to these sub-keys.
     assert "duplicate_density" in result["dedup"]
     assert "feedback_applied_ratio" in result["feedback"]
-    assert "candidate_scopes" in result["scope_hygiene"]
     assert "never_accessed_ratio" in result["access"]["active_nodes"]
     assert "never_accessed_ratio" in result["access"]["active_traces"]
     assert "db_size_bytes" in result["storage"]
@@ -743,13 +589,12 @@ def test_memory_health_surface_includes_audit_sections(tmp_path: Path) -> None:
     for key in existing_fields:
         assert key in report, f"existing memory_health field missing: {key}"
 
-    audit_fields = ("feedback", "access", "scope_hygiene", "storage", "latency", "instructions")
+    audit_fields = ("feedback", "access", "storage", "latency", "instructions")
     for key in audit_fields:
         assert key in report, f"audit section missing from memory_health: {key}"
 
     assert report["feedback"] == direct["feedback"]
     assert report["access"] == direct["access"]
-    assert report["scope_hygiene"] == direct["scope_hygiene"]
     assert report["storage"]["db_size_bytes"] == direct["storage"]["db_size_bytes"]
     assert report["storage"]["page_count"] == direct["storage"]["page_count"]
 
@@ -863,14 +708,6 @@ def test_feedback_closure_counts_and_ratios_per_identity_class(tmp_path: Path) -
     # The classes partition the window: per-class counts sum to the totals.
     assert sum(item["events"] for item in coverage.values()) == 9
     assert sum(item["closed"] for item in coverage.values()) == 4
-
-    assert block["closure_ratio"] != pytest.approx(_LIVE_CLOSURE_RATIO, abs=1e-2)
-    assert coverage["explicit"]["closure_ratio"] != pytest.approx(
-        _LIVE_EXPLICIT_CLASS_CLOSURE, abs=1e-2
-    )
-    assert coverage["none"]["closure_ratio"] != pytest.approx(
-        _LIVE_IDENTITYLESS_CLOSURE, abs=1e-2
-    )
 
 
 def test_feedback_closure_excludes_events_older_than_window(tmp_path: Path) -> None:

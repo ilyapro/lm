@@ -20,28 +20,10 @@ from living_memory.storage import MemoryStore
 DEFAULT_LATENCY_QUERY = (
     "Living Memory hot recall latency baseline duplicate density feedback applied"
 )
-DEFAULT_TOP_CANDIDATE_SCOPES = 20
 INSTRUCTIONS_CONTRACT_COMMAND = (
     "PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 pytest -q "
     "tests/test_instructions_imperative.py -p no:cacheprovider"
 )
-
-_LEAKAGE_SCOPE_PATTERNS = (
-    ("=", "rise"),
-    ("LIKE", "rise/%"),
-    ("LIKE", "scope:rise%"),
-    ("=", "breakthrough"),
-    ("LIKE", "breakthrough/%"),
-    ("=", "ocpa-generative-action-substrate-v1"),
-    ("LIKE", "ocpa-generative-action-substrate-v1/%"),
-    ("=", "project:rise"),
-    ("LIKE", "project:rise/%"),
-    ("=", "project:breakthrough"),
-    ("LIKE", "project:breakthrough/%"),
-    ("=", "project:ocpa-generative-action-substrate-v1"),
-    ("LIKE", "project:ocpa-generative-action-substrate-v1/%"),
-)
-
 
 StoreSource = MemoryStore | sqlite3.Connection | str | Path
 
@@ -50,7 +32,6 @@ def health_audit_metrics(
     source: StoreSource,
     *,
     scope: str | None = None,
-    top_candidate_scopes: int = DEFAULT_TOP_CANDIDATE_SCOPES,
     latency_samples: int = 0,
     latency_query: str = DEFAULT_LATENCY_QUERY,
     instructions_text: str | None = None,
@@ -69,10 +50,6 @@ def health_audit_metrics(
             "dedup": duplicate_density(store, scope=normalized_scope),
             "feedback": feedback_metrics(store, scope=normalized_scope),
             "access": access_metrics(store, scope=normalized_scope),
-            "scope_hygiene": scope_hygiene_metrics(
-                store,
-                top_candidate_scopes=top_candidate_scopes,
-            ),
             "storage": storage_metrics(store),
             "latency": hot_recall_latency(
                 store,
@@ -160,132 +137,6 @@ def access_metrics(store: MemoryStore, *, scope: str | None = None) -> dict[str,
             ["level = 'trace'"],
             scope=scope,
         ),
-    }
-
-
-def scope_hygiene_metrics(
-    store: MemoryStore,
-    *,
-    top_candidate_scopes: int = DEFAULT_TOP_CANDIDATE_SCOPES,
-) -> dict[str, Any]:
-    """Return baseline-compatible scope leakage candidate metrics."""
-
-    candidate_cte = _candidate_scope_cte()
-    candidate_count = int(
-        store.connection.execute(
-            f"{candidate_cte} SELECT COUNT(*) AS c FROM candidate_scopes"
-        ).fetchone()["c"]
-    )
-
-    node_predicate = _scope_leakage_predicate("scope")
-    row = store.connection.execute(
-        f"""
-        SELECT COUNT(*) AS active_candidate_nodes,
-               SUM(CASE WHEN level = 'trace' THEN 1 ELSE 0 END)
-                   AS active_candidate_traces,
-               SUM(
-                   CASE
-                   WHEN level = 'trace' AND access_count = 0 THEN 1
-                   ELSE 0
-                   END
-               ) AS active_candidate_traces_never_accessed
-        FROM nodes
-        WHERE decayed = 0 AND ({node_predicate})
-        """
-    ).fetchone()
-    active_candidate_nodes = int(row["active_candidate_nodes"])
-    active_candidate_traces = int(row["active_candidate_traces"] or 0)
-    active_candidate_traces_never_accessed = int(
-        row["active_candidate_traces_never_accessed"] or 0
-    )
-
-    zero_recall = int(
-        store.connection.execute(
-            f"""
-            {candidate_cte}
-            SELECT COUNT(*) AS c
-            FROM candidate_scopes AS cs
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM recall_events AS r
-                WHERE r.scope = cs.scope
-                   OR r.requested_scope = cs.scope
-            )
-            """
-        ).fetchone()["c"]
-    )
-
-    top_rows = store.connection.execute(
-        f"""
-        {candidate_cte},
-        active_trace_counts AS (
-            SELECT scope,
-                   COUNT(*) AS active_traces,
-                   SUM(CASE WHEN access_count = 0 THEN 1 ELSE 0 END)
-                       AS active_candidate_traces_never_accessed
-            FROM nodes
-            WHERE decayed = 0
-              AND level = 'trace'
-              AND ({node_predicate})
-            GROUP BY scope
-        ),
-        recall_scope_counts AS (
-            SELECT scope, COUNT(*) AS recall_events_as_scope
-            FROM recall_events
-            WHERE {_scope_leakage_predicate('scope')}
-            GROUP BY scope
-        ),
-        recall_requested_counts AS (
-            SELECT requested_scope AS scope,
-                   COUNT(*) AS recall_events_as_requested_scope
-            FROM recall_events
-            WHERE {_scope_leakage_predicate('requested_scope')}
-            GROUP BY requested_scope
-        )
-        SELECT cs.scope AS scope,
-               COALESCE(atc.active_traces, 0) AS active_traces,
-               COALESCE(atc.active_candidate_traces_never_accessed, 0)
-                   AS active_candidate_traces_never_accessed,
-               COALESCE(rsc.recall_events_as_scope, 0)
-                   AS recall_events_as_scope,
-               COALESCE(rrc.recall_events_as_requested_scope, 0)
-                   AS recall_events_as_requested_scope
-        FROM candidate_scopes AS cs
-        LEFT JOIN active_trace_counts AS atc ON atc.scope = cs.scope
-        LEFT JOIN recall_scope_counts AS rsc ON rsc.scope = cs.scope
-        LEFT JOIN recall_requested_counts AS rrc ON rrc.scope = cs.scope
-        ORDER BY active_traces DESC, recall_events_as_scope ASC, cs.scope ASC
-        LIMIT ?
-        """,
-        (max(0, int(top_candidate_scopes)),),
-    ).fetchall()
-
-    return {
-        "candidate_scopes": candidate_count,
-        "active_candidate_nodes": active_candidate_nodes,
-        "active_candidate_traces": active_candidate_traces,
-        "active_candidate_traces_never_accessed": (
-            active_candidate_traces_never_accessed
-        ),
-        "active_candidate_trace_never_accessed_ratio": _ratio(
-            active_candidate_traces_never_accessed,
-            active_candidate_traces,
-        ),
-        "candidate_scopes_with_zero_recall_events": zero_recall,
-        "top_candidate_scopes": [
-            {
-                "scope": str(row["scope"]),
-                "active_traces": int(row["active_traces"]),
-                "active_candidate_traces_never_accessed": int(
-                    row["active_candidate_traces_never_accessed"]
-                ),
-                "recall_events_as_scope": int(row["recall_events_as_scope"]),
-                "recall_events_as_requested_scope": int(
-                    row["recall_events_as_requested_scope"]
-                ),
-            }
-            for row in top_rows
-        ],
     }
 
 
@@ -582,37 +433,6 @@ def _never_accessed_metric(
         "never_accessed": never_accessed,
         "never_accessed_ratio": _ratio(never_accessed, total),
     }
-
-
-def _candidate_scope_cte() -> str:
-    return f"""
-    WITH candidate_scopes(scope) AS (
-        SELECT DISTINCT scope
-        FROM nodes
-        WHERE {_scope_leakage_predicate('scope')}
-        UNION
-        SELECT DISTINCT scope
-        FROM recall_events
-        WHERE {_scope_leakage_predicate('scope')}
-        UNION
-        SELECT DISTINCT requested_scope AS scope
-        FROM recall_events
-        WHERE {_scope_leakage_predicate('requested_scope')}
-    )
-    """
-
-
-def _scope_leakage_predicate(column: str) -> str:
-    if column not in {"scope", "requested_scope"}:
-        raise ValueError(f"unsupported scope column: {column}")
-    parts: list[str] = []
-    for operator, value in _LEAKAGE_SCOPE_PATTERNS:
-        parts.append(f"{column} {operator} {_sql_literal(value)}")
-    return " OR ".join(parts)
-
-
-def _sql_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
 
 
 def _ratio(numerator: int, denominator: int) -> float | None:

@@ -928,7 +928,7 @@ Input:
 
 Output is a metrics report with `activity`, `counts`, `dedup`, `staleness`,
 `retrieval_policy`, `retrieval_skew`, `feedback`, `feedback_closure`,
-`access`, `scope_hygiene`, `storage`, `latency`, and `instructions` blocks.
+`access`, `storage`, `latency`, and `instructions` blocks.
 
 `retrieval_skew.floors_in_effect` lists the configured family floors, including
 an empty mapping when none are configured. Each `scopes_at_risk` row separates

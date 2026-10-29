@@ -10,12 +10,10 @@ import json
 from living_memory.config import RetrievalSkewThresholds
 from living_memory.health_audit import (
     DEFAULT_LATENCY_QUERY,
-    DEFAULT_TOP_CANDIDATE_SCOPES,
     access_metrics,
     feedback_metrics,
     hot_recall_latency,
     instructions_metrics,
-    scope_hygiene_metrics,
     storage_metrics,
 )
 from living_memory.models import (
@@ -335,7 +333,6 @@ def memory_health(
     scope: str | None = None,
     window_hours: int = 168,
     top_stale: int = 5,
-    top_candidate_scopes: int = DEFAULT_TOP_CANDIDATE_SCOPES,
     latency_samples: int = 0,
     latency_query: str = DEFAULT_LATENCY_QUERY,
     instructions_text: str | None = None,
@@ -480,10 +477,6 @@ def memory_health(
         {
             "feedback": feedback_metrics(store, scope=normalized_scope),
             "access": access_metrics(store, scope=normalized_scope),
-            "scope_hygiene": scope_hygiene_metrics(
-                store,
-                top_candidate_scopes=top_candidate_scopes,
-            ),
             "storage": storage_metrics(store),
             "latency": hot_recall_latency(
                 store,
