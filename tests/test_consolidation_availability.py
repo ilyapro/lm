@@ -250,10 +250,47 @@ def test_procedural_write_rechecks_snapshot_and_preserves_independent_owner(runt
         elif change == "source_union":
             assert added.id in current.source_traces
             assert added.content in current.content
-    if change.startswith("duplicate") or change in ("owner", "owner_decay", "owner_group"):
+    if change.startswith("duplicate") or change in ("owner", "owner_decay", "owner_group", "source", "source_decay"):
         assert store.get_node(duplicate.id) == current_duplicate
     else:
         assert store.get_node(duplicate.id).decay_reason == "procedural: duplicate group"
+
+
+def test_procedural_grouping_and_between_owner_reads_release_the_guard(runtime):
+    mcp, lock, _ = runtime
+    store = mcp.memory_store
+    traces, owner = procedure(store, "inspection")
+    others, independent = procedure(store, "navigation")
+    between, resume = Event(), Event()
+    steps = 0
+
+    def snapshot():
+        assert not lock.lock._is_owned()
+        yield from traces + others
+
+    @contextmanager
+    def step():
+        nonlocal steps
+        with lock:
+            yield
+        steps += 1
+        assert not store.connection.in_transaction
+        if steps == 2:
+            between.set()
+            assert resume.wait(15)
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        work = workers.submit(c._materialize_procedural_schemas, store, snapshot(), min_cluster_size=3, step=step)
+        try:
+            assert between.wait(10)
+            read = workers.submit(mcp.tools["memory_lookup"], node_ids=[owner.id, independent.id])
+            assert len(read.result(timeout=10)["results"]) == 2
+            assert not work.done()
+        finally:
+            resume.set()
+        result = work.result(timeout=15)
+    assert steps == 3  # one discovery snapshot, then each owner separately
+    assert {node.id for node, _ in result} == {owner.id, independent.id}
 
 
 def test_reader_waits_for_one_complete_owner_then_proceeds_before_the_next(memory, monkeypatch):
