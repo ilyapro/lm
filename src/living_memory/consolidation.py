@@ -1351,8 +1351,10 @@ def _normalize_trigger(procedure_id: str) -> str:
 
 
 def _procedure_steps(traces: Iterable[Node]) -> list[str]:
-    """One step per declared position, restated by its latest record, then
-    the steps declared by text alone, in write order."""
+    """Keep each declared position, restated by its latest record.
+
+    Text-only declarations follow in write order, omitting already present text.
+    """
 
     written = sorted(
         traces, key=lambda trace: (trace.timestamp or "", trace.created_at or "", trace.id)
@@ -1364,7 +1366,14 @@ def _procedure_steps(traces: Iterable[Node]) -> list[str]:
             continue
         position = _step_order(trace)
         slots[(0, position) if position is not None else (1, index)] = step
-    return list(dict.fromkeys(slots[slot] for slot in sorted(slots)))
+    steps: list[str] = []
+    seen: set[str] = set()
+    for slot in sorted(slots):
+        step = slots[slot]
+        if slot[0] == 0 or step not in seen:
+            steps.append(step)
+            seen.add(step)
+    return steps
 
 
 def _declares_step(trace: Node) -> bool:
