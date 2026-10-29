@@ -101,8 +101,8 @@ def test_selection_filters_order_and_cap_precede_source_scope(tmp_path, monkeypa
             if decayed:
                 store.soft_delete_node(node_id, reason="excluded fixture")
         expected_provenance = [
-            {key: value for key, value in node.provenance.items()
-             if key not in ("source_traces", "corrections")}
+            (node.id, {key: value for key, value in node.provenance.items()
+             if key not in ("source_traces", "corrections")})
             for node in store.list_nodes(level="concept", scope="global", limit=limit)
         ]
         assert store.list_global_concept_provenance(limit=limit) == expected_provenance

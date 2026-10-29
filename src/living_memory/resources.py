@@ -264,7 +264,7 @@ def promotion_summary(store: MemoryStore, scope: str | None = None) -> dict[str,
     promoted_concepts = 0
     promotion_events = 0
     source_scopes: set[str] = set()
-    for provenance in provenances:
+    for _node_id, provenance in provenances:
         promoted_from = string_list(provenance.get("promoted_from"))
         if not promoted_from:
             continue

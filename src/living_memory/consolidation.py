@@ -2481,7 +2481,11 @@ def _refresh_promoted_global_concepts(
     store: MemoryStore, *, step: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> list[Node]:
     with step():
-        owners = store.list_nodes(level="concept", scope="global", include_decayed=False, limit=100_000)
+        owners = []
+        for node_id, provenance in store.list_global_concept_provenance(limit=100_000):
+            reference = Node(id=node_id, level="concept", content="", provenance=provenance)
+            if reference.materializer == "cross-scope-promotion":
+                owners.append(node_id)
     preparation = _DerivationPreparation({}, {})
     result = []
     for selected in owners:
@@ -2490,7 +2494,7 @@ def _refresh_promoted_global_concepts(
                 with step():
                     nested = store.connection.in_transaction
                     with store.transaction():
-                        node = store.get_node(selected.id)
+                        node = store.get_node(selected)
                         if (node is None or node.decayed or node.corrections
                                 or node.scope != "global" or node.level != "concept"
                                 or node.materializer != "cross-scope-promotion"

@@ -1771,11 +1771,16 @@ class MemoryStore:
         ).fetchall()
         return [_node_from_row(row) for row in rows]
 
-    def list_global_concept_provenance(self, *, limit: int) -> list[dict[str, Any]]:
-        """Read provenance for the newest active global concepts, up to the limit."""
+    def list_global_concept_provenance(self, *, limit: int) -> list[tuple[str, dict[str, Any]]]:
+        """Read identity/provenance for the newest active global concept prefix.
+
+        Apply the limit before consumer-specific admission. Observation counts
+        promotion metadata; refresh admits recorded materializer owners and
+        rereads their full current state in its writer transaction.
+        """
         rows = self._conn.execute(
             """
-            SELECT provenance FROM nodes
+            SELECT id, provenance FROM nodes
             WHERE level = 'concept' AND scope = 'global' AND decayed = 0
             ORDER BY timestamp DESC, id DESC LIMIT ?
             """,
@@ -1786,7 +1791,7 @@ class MemoryStore:
             provenance = _json_loads(row["provenance"], {})
             if not isinstance(provenance, dict):
                 raise TypeError("node provenance must be a JSON object")
-            result.append(provenance)
+            result.append((str(row["id"]), provenance))
         return result
 
     def schema_triggers(self, scope: str | None) -> list[tuple[str, str]]:
