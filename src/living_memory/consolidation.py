@@ -541,9 +541,8 @@ def memory_consolidate(
 
     ``guard`` lets a caller that shares ``store`` across threads run the pass
     beside other work: every step that touches the store runs inside
-    ``guard()``, one atomic owner at a time (or one encode batch), and the
-    clustering itself — pure computation on the snapshot the pass loaded —
-    runs outside it. Without a guard the pass runs exactly as one block.
+    ``guard()``, one atomic owner at a time. Encoding and clustering the
+    loaded snapshot run outside it; the embedder serializes its shared model.
     """
 
     if min_cluster_size is not None and min_cluster_size < 1:
@@ -1441,12 +1440,11 @@ def _trace_embeddings(
 ) -> dict[str, list[float]]:
     """Whole-content vector per trace, encoding only what the cache lacks.
 
-    Traces are append-only, so a trace encoded by an earlier pass keeps its
-    vector: a pass pays the model for the traces written since, not for the
-    whole scope. Each encode batch runs inside ``step`` — the encoder is
-    shared with the recall path — and the fresh vectors are cached for the
-    next pass, unless the encoder changed under the pass (a model that fell
-    back to the hashed encoder mid-pass must not poison the cache).
+    Cache reads and writes run inside ``step`` and qualify vectors by content
+    fingerprint and encoder identity. Encoding and identity resolution use
+    the embedder's shared encoder lock outside the store guard. Fresh vectors
+    are cached only if the encoder stayed the same throughout preparation;
+    a pass that falls back to hashing must not cache mixed encoder outputs.
     """
 
     if embedder is None:
@@ -1468,20 +1466,18 @@ def _trace_embeddings(
     to_encode = [trace for trace in missing if trace.id not in vectors]
     fresh: list[tuple[Node, list[float]]] = []
     for start in range(0, len(to_encode), _ENCODE_BATCH):
+        batch = to_encode[start : start + _ENCODE_BATCH]
+        encoded = embedder.embed_batch([trace.content for trace in batch])
+        for trace, vector in zip(batch, encoded, strict=True):
+            vectors[trace.id] = vector
+            fresh.append((trace, vector))
+    if fresh and embedder.encoder_id() == encoder:
         with step():
-            batch = to_encode[start : start + _ENCODE_BATCH]
-            encoded = embedder.embed_batch([trace.content for trace in batch])
-            for trace, vector in zip(batch, encoded, strict=True):
-                vectors[trace.id] = vector
-                fresh.append((trace, vector))
-    if fresh:
-        with step():
-            if embedder.encoder_id() == encoder:
-                try:
-                    store.put_consolidation_embeddings(fresh, encoder)
-                except Exception:
-                    # A cache write is an optimization; the pass has its vectors.
-                    _LOG.warning("could not cache consolidation embeddings", exc_info=True)
+            try:
+                store.put_consolidation_embeddings(fresh, encoder)
+            except Exception:
+                # A cache write is an optimization; the pass has its vectors.
+                _LOG.warning("could not cache consolidation embeddings", exc_info=True)
     return vectors
 
 
