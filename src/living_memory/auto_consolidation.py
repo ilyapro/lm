@@ -193,9 +193,9 @@ class AutoConsolidationScheduler:
             return dict(entry) if entry is not None else None
 
     def wait_idle(self, timeout: float | None = None, *, include_retries: bool = False) -> bool:
-        """Block until nothing runs and nothing is ready to run.
+        """Block until no pass runs and no request awaits save or execution.
 
-        Scopes waiting out a retry back-off count as idle unless
+        Accepted passes waiting out a retry back-off count as idle unless
         ``include_retries``. Returns False on timeout.
         """
 
