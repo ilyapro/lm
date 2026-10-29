@@ -214,21 +214,27 @@ def test_nondependent_corruption_does_not_veto_source_change(
 
 @pytest.mark.parametrize("operation", ["teach", "forget"])
 @pytest.mark.parametrize("required", ["owner", "input", "explicit"])
-def test_required_corruption_still_fails_preparation_and_atomic_write(store, operation, required):
+@pytest.mark.parametrize("column,value,error", [
+    ("embedding", "broken", ValueError), ("provenance", "[]", TypeError),
+])
+def test_required_corruption_still_fails_preparation_and_atomic_write(
+    store, operation, required, column, value, error,
+):
     members = sources(store)
     owner = derived(store, "release", members)
+    store.create_connection(owner.id, members[0].id, "related", metadata={"kind": "derived_from"})
     explicit = store.create_node(level="schema", content="Required opaque dependency.")
     store.create_connection(explicit.id, members[0].id, "related", metadata={"kind": "derived_from"})
     preparation = prepare(store, members[0], operation)
     damaged = {"owner": owner, "input": members[1], "explicit": explicit}[required]
     with store.transaction():
-        store.connection.execute("UPDATE nodes SET embedding = 'broken' WHERE id = ?", (damaged.id,))
+        store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (value, damaged.id))
     before = list(store.connection.iterdump())
-    with pytest.raises(ValueError):
+    with pytest.raises(error):
         prepare(store, members[0], operation)
     assert list(store.connection.iterdump()) == before
     for captured in (None, preparation):
-        with pytest.raises(ValueError):
+        with pytest.raises(error):
             change(store, members[0], operation, captured)
         assert list(store.connection.iterdump()) == before
         assert not store.connection.in_transaction
