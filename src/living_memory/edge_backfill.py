@@ -41,15 +41,19 @@ CLI::
         [--dry-run | --apply] [--report OUT.json] [--md OUT.md] \
         [--annotate-derived-from] [--sample-size N]
 
-Dry-run is the default: it prints/writes the full audit and touches nothing.
-Open the CLI against a *copy* of the live database — applying to the live
-``global.sqlite3`` is an operator action, out of scope for automated runs.
+Dry-run is the default: it opens an existing database read-only, without
+initialization, migrations or backfills, and prints/writes the full audit.
+Missing or unsupported databases fail instead of being created or repaired.
+Ordinary SQLite WAL visibility and sidecar requirements apply. Applying to the
+live ``global.sqlite3`` is an operator action, out of scope for automated runs;
+automated apply checks use disposable databases.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from argparse import ArgumentParser
 from collections import defaultdict
@@ -71,6 +75,7 @@ from living_memory.edge_derivation import (
     rule_r6_content_reference,
 )
 from living_memory.models import Connection, Node
+from living_memory.health_audit import open_read_only_store
 from living_memory.relations import is_semantic_relation, semantic_relation_sql
 from living_memory.storage import (
     MemoryStore,
@@ -744,10 +749,15 @@ def run_backfill(
     annotate_derived_from: bool = False,
     sample_size: int = DEFAULT_SAMPLE_SIZE,
 ) -> dict[str, Any]:
-    """Open the store at ``db_path`` and run the backfill (default dry-run)."""
+    """Own a reader for preview or a writer for explicit apply until completion."""
 
     config = MemoryConfig(db_path=Path(db_path))
-    with MemoryStore(config) as store:
+    store = (
+        MemoryStore(config)
+        if apply
+        else open_read_only_store(config.db_path, config=config)
+    )
+    with store:
         return backfill_edges(
             store,
             apply=apply,
@@ -763,12 +773,19 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("missing command")
         return 2
 
-    report = run_backfill(
-        args.db or args.sqlite_file,
-        apply=args.apply,
-        annotate_derived_from=args.annotate_derived_from,
-        sample_size=args.sample_size,
-    )
+    db_path = args.db or args.sqlite_file
+    if not db_path:
+        parser.error("provide --db or a positional SQLite path")
+    try:
+        report = run_backfill(
+            db_path,
+            apply=args.apply,
+            annotate_derived_from=args.annotate_derived_from,
+            sample_size=args.sample_size,
+        )
+    except (OSError, sqlite3.Error) as exc:
+        print(f"derive-edges: {exc}", file=sys.stderr)
+        return 2
 
     payload = json.dumps(report, ensure_ascii=True, sort_keys=True, indent=2)
     if args.report:
@@ -793,17 +810,17 @@ def main(argv: list[str] | None = None) -> int:
 def _build_parser() -> ArgumentParser:
     parser = ArgumentParser(
         prog="python3 -m living_memory.edge_backfill",
-        description="Additive-only, idempotent, audited typed-edge corpus backfill.",
+        description="Idempotent, audited typed-edge corpus backfill.",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
     derive = subcommands.add_parser(
         "derive-edges",
-        help="Derive typed edges for the existing corpus on a snapshot copy.",
+        help="Preview or apply typed edges for an existing database.",
     )
     derive.add_argument(
         "sqlite_file",
         nargs="?",
-        help="SQLite database file (a snapshot COPY, not the live DB).",
+        help="Existing SQLite database file (live apply is operator-only).",
     )
     derive.add_argument("--db", dest="db", help="SQLite database file. Overrides the positional path.")
     derive.add_argument("--report", help="Write the JSON audit to this path.")
@@ -823,7 +840,7 @@ def _build_parser() -> ArgumentParser:
     mode.add_argument(
         "--dry-run",
         action="store_true",
-        help="Audit without writing (the default).",
+        help="Audit an existing database read-only, without initialization (the default).",
     )
     mode.add_argument(
         "--apply",
