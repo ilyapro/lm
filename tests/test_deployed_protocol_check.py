@@ -15,7 +15,9 @@ Three layers:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.util
+import json
 import os
 import signal
 import socket
@@ -23,12 +25,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterator
 
 import httpx
 import pytest
 
 from living_memory import server as lm_server
+from living_memory.instructions_map import compose_map_section
 from living_memory.storage import MemoryStore
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -254,6 +258,160 @@ def test_json_verdict_reports_per_text_equality(
     )
 
 
+@pytest.mark.parametrize("arm", ["optional", "mandatory"])
+@pytest.mark.parametrize("addition", ["canonical", "malformed", "repeated", "whitespace"])
+def test_complete_instructions_determine_both_reports(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_env_file: Path,
+    arm: str,
+    addition: str,
+) -> None:
+    expected = checker.expected_texts(LIVE_SCOPE, arm)
+    tail = "\n" + compose_map_section([{
+        "clusters": [{"label": "another consumer task", "count": 3}],
+    }]) + "\n"
+    assert "## Memory nearby" in tail
+    suffix = {
+        "canonical": tail,
+        "malformed": tail + "Unexpected private history.\n",
+        "repeated": tail * 2,
+        "whitespace": " \n",
+    }[addition]
+    served = dict(expected)
+    served[checker.INSTRUCTIONS_KEY] += suffix
+    _stub_fetch(monkeypatch, served)
+    arguments = ["--env-file", str(no_env_file), "--default-scope", LIVE_SCOPE,
+                 "--prompt-arm", arm]
+
+    assert checker.main(arguments) == 1
+    report = capsys.readouterr().out
+    assert report.startswith("DRIFT:")
+    assert "1 of 5 protocol texts differ: server instructions." in report
+    assert "host data" not in report
+    full_text = served[checker.INSTRUCTIONS_KEY]
+    digest = hashlib.sha256(full_text.encode("utf-8")).hexdigest()
+    assert f"served {len(full_text)} chars" in report
+    assert f"served {len(full_text.encode('utf-8'))}" in report
+    assert f"served sha256: {digest}" in report
+
+    assert checker.main([*arguments, "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["differences"] == [checker.INSTRUCTIONS_KEY]
+    assert "host_data" not in payload
+    measurement = payload["texts"][checker.INSTRUCTIONS_KEY]
+    assert measurement["equal"] is False
+    assert measurement["served_chars"] == len(full_text)
+    assert measurement["served_bytes"] == len(full_text.encode("utf-8"))
+    assert measurement["served_sha256"] == digest
+    assert measurement["expected_chars"] == len(expected[checker.INSTRUCTIONS_KEY])
+    assert measurement["expected_bytes"] == len(expected[checker.INSTRUCTIONS_KEY].encode("utf-8"))
+    assert measurement["expected_sha256"] == hashlib.sha256(
+        expected[checker.INSTRUCTIONS_KEY].encode("utf-8")
+    ).hexdigest()
+
+
+class _ProtocolClient(SimpleNamespace):
+    async def __aenter__(self) -> Any:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        pass
+
+    async def list_tools(self) -> list[SimpleNamespace]:
+        return [SimpleNamespace(name=name, description=text)
+                for name, text in checker.expected_texts().items()
+                if name in checker.PROTOCOL_TOOLS]
+
+
+@pytest.mark.parametrize("interface", ["modern", "legacy"])
+@pytest.mark.parametrize("value", ["protocol", "", None])
+def test_client_reads_supported_instructions_without_masking_empty_values(
+    monkeypatch: pytest.MonkeyPatch,
+    interface: str,
+    value: str | None,
+) -> None:
+    import fastmcp
+
+    expected = checker.expected_texts()
+    instructions = expected[checker.INSTRUCTIONS_KEY] if value == "protocol" else value
+    if interface == "modern":
+        # A legacy result must not override an explicitly empty modern value.
+        client = _ProtocolClient(instructions=instructions, initialize_result=None)
+    else:
+        client = _ProtocolClient(initialize_result=SimpleNamespace(instructions=instructions))
+    observed: dict[str, Any] = {}
+
+    def make_client(url: str, **kwargs: Any) -> _ProtocolClient:
+        observed.update(kwargs)
+        return client
+
+    monkeypatch.setattr(fastmcp, "Client", make_client)
+    served = checker.fetch_served_texts("http://test.invalid/mcp/", token=TOKEN,
+                                       verify=False, timeout=2.0)
+    assert observed == {"auth": TOKEN, "verify": False, "timeout": 2.0, "init_timeout": 2.0}
+    assert served[checker.INSTRUCTIONS_KEY] == (instructions if instructions is not None else "")
+    assert set(served) == set(expected)
+    assert [item.name for item in checker.compare(expected, served)] == (
+        [] if value == "protocol" else [checker.INSTRUCTIONS_KEY]
+    )
+
+
+def test_modern_empty_instructions_do_not_fall_back_to_legacy_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import fastmcp
+
+    client = _ProtocolClient(instructions=None, initialize_result=SimpleNamespace(
+        instructions=checker.expected_texts()[checker.INSTRUCTIONS_KEY],
+    ))
+    monkeypatch.setattr(fastmcp, "Client", lambda *args, **kwargs: client)
+    served = checker.fetch_served_texts("http://test.invalid/mcp/")
+    assert served[checker.INSTRUCTIONS_KEY] == ""
+
+
+@pytest.mark.parametrize("attributes", [{}, {"initialize_result": None},
+                                       {"initialize_result": SimpleNamespace()},
+                                       {"instructions": 42}])
+def test_unavailable_or_invalid_instructions_are_cannot_check(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_env_file: Path,
+    attributes: dict[str, Any],
+) -> None:
+    import fastmcp
+
+    monkeypatch.setattr(fastmcp, "Client", lambda *args, **kwargs: _ProtocolClient(**attributes))
+    assert checker.main(["--env-file", str(no_env_file), "--json"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("CANNOT CHECK:")
+
+
+def test_instruction_read_failure_does_not_fall_back_or_disclose_exception_data(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_env_file: Path,
+) -> None:
+    import fastmcp
+
+    class UnreadableClient(_ProtocolClient):
+        @property
+        def instructions(self) -> str:
+            raise RuntimeError(TOKEN)
+
+    client = UnreadableClient(initialize_result=SimpleNamespace(
+        instructions=checker.expected_texts()[checker.INSTRUCTIONS_KEY],
+    ))
+    monkeypatch.setattr(fastmcp, "Client", lambda *args, **kwargs: client)
+    assert checker.main(["--env-file", str(no_env_file), "--token", TOKEN]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "RuntimeError" in captured.err
+    assert TOKEN not in captured.err
+
+
 def test_unreachable_host_exits_two_without_claiming_drift(
     capsys: pytest.CaptureFixture[str], no_env_file: Path
 ) -> None:
@@ -389,8 +547,6 @@ def test_real_fastmcp_projection_keeps_history_private_and_detects_drift(
     arm: str,
 ) -> None:
     """Private synthetic history must not enter a new client's initialization."""
-    from fastmcp import Client
-
     path = tmp_path / "synthetic.sqlite3"
     with MemoryStore(path) as store:
         store.record_recall_event(
@@ -411,22 +567,15 @@ def test_real_fastmcp_projection_keeps_history_private_and_detects_drift(
     monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
     mcp = lm_server.create_mcp_server(path, default_scope=LIVE_SCOPE)
 
-    async def read_protocol() -> dict[str, str]:
-        async with Client(mcp) as client:
-            result = {"server instructions": client.initialize_result.instructions or ""}
-            result.update({tool.name: tool.description or "" for tool in await client.list_tools()
-                           if tool.name in checker.PROTOCOL_TOOLS})
-            return result
-
     try:
-        served = asyncio.run(read_protocol())
+        served = asyncio.run(checker._fetch_async(mcp, token=None, verify=None, timeout=10))
     finally:
         mcp.auto_consolidation.close()
         mcp.memory_store.close()
     assert "deploy recipes" not in served["server instructions"]
     expected = checker.expected_texts(LIVE_SCOPE, arm)
     assert checker.compare(expected, served) == []
-    assert checker._memory_nearby_section(served["server instructions"])[1] is None
+    assert "## Memory nearby" not in served["server instructions"]
 
     wrong_arm = "mandatory" if arm == "optional" else "optional"
     assert [item.name for item in checker.compare(
@@ -605,8 +754,11 @@ def test_live_server_rejects_a_wrong_token_without_claiming_drift(
         LIVE_SCOPE,
         "--timeout",
         "10",
+        "--prompt-arm",
+        "optional",
     )
 
     assert result.returncode == 2, result.stdout + result.stderr
     assert result.stdout == ""
     assert result.stderr.startswith("CANNOT CHECK:")
+    assert "not-the-token" not in result.stderr
