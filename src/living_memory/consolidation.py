@@ -1050,7 +1050,7 @@ def _refresh_derived_node(
     elif materializer == "cross-scope-promotion":
         return _write_global_promotion(
             store, members, existing=node, prepared_digest=prepared_digest,
-            source_inputs=source_inputs,
+            source_inputs=source_inputs, observation=observation,
         )
 
     # An explicit derived_from edge proves dependency, but cannot specify how
@@ -2220,6 +2220,7 @@ def _write_global_promotion(
     similarities: Mapping[str, float] | None = None,
     prepared_digest: _PreparedDigest | None = None,
     source_inputs: dict[str, _DigestSource] | None = None,
+    observation: _SourceObservation | None = None,
 ) -> Node:
     """One writer for a promotion's content, current inputs and validity stats."""
 
@@ -2244,9 +2245,10 @@ def _write_global_promotion(
         "strategy": "cross-scope-promotion",
     })
     provenance.setdefault("promoted_at", promoted_at)
+    unique_agents = _promoted_unique_agents(store, project_sources, observation=observation)
     stats = {
-        "confidence": _active_promotion_confidence(project_sources),
-        "unique_agents": _promoted_unique_agents(project_sources),
+        "confidence": _active_promotion_confidence(project_sources, unique_agents),
+        "unique_agents": unique_agents,
         "temporal_hint": _promoted_temporal_hint(project_sources),
         "usefulness_score": _promoted_usefulness(project_sources),
     }
@@ -2367,8 +2369,54 @@ def _promoted_confidence(project_sources: Iterable[Node]) -> float:
 
 
 
-def _promoted_unique_agents(project_sources: Iterable[Node]) -> int:
-    return sum(max(1, source.unique_agents) for source in project_sources)
+def _promoted_unique_agents(
+    store: MemoryStore, project_sources: Iterable[Node],
+    *, observation: _SourceObservation | None = None,
+) -> int:
+    """Union current original authors through the recorded derivation graph.
+
+    An unresolved identity retains the existing maximum declared support policy;
+    neither aggregate counts nor missing inputs establish disjoint author sets.
+    Materializer identities never contribute an original author.
+    """
+
+    reader = observation or _SourceObservation(store, ())
+    resolved: dict[str, tuple[set[str], int]] = {}
+
+    def evidence(node: Node) -> tuple[set[str], int]:
+        if node.id in resolved:
+            return resolved[node.id]
+        # A cycle cannot establish identities, but does not prove no support.
+        resolved[node.id] = (set(), max(1, node.unique_agents))
+        inputs = _derivation_sources(reader, node)
+        agents: set[str] = set()
+        unknown = 0
+        if inputs:
+            current = _current_sources(store, inputs, observation=reader)
+            if set(inputs) - {source.id for source in current.recorded}:
+                unknown = 1
+            for source in current.live:
+                authors, declared = evidence(source)
+                agents.update(authors)
+                unknown = max(unknown, declared)
+        elif not node.materializer and node.agent and node.agent != "memory_consolidate":
+            agents.add(node.agent)
+            if node.unique_agents > 1:
+                unknown = node.unique_agents
+        else:
+            unknown = 1
+        if unknown:
+            unknown = max(unknown, node.unique_agents)
+        resolved[node.id] = (agents, unknown)
+        return agents, unknown
+
+    agents: set[str] = set()
+    declared = 1
+    for source in project_sources:
+        authors, unknown = evidence(source)
+        agents.update(authors)
+        declared = max(declared, unknown)
+    return max(len(agents), declared)
 
 
 def _promoted_usefulness(project_sources: Iterable[Node]) -> float:
@@ -2421,13 +2469,16 @@ def _refresh_promoted_global_concepts(
     return result
 
 
-def _active_promotion_confidence(project_sources: Iterable[Node]) -> float:
+def _active_promotion_confidence(project_sources: Iterable[Node], unique_agents: int) -> float:
     sources = list(project_sources)
     if not sources:
         return 0.5
     if len(_source_scopes(sources)) < 3:
-        return round(max(source.confidence for source in sources), 6)
-    return _promoted_confidence(sources)
+        confidence = round(max(source.confidence for source in sources), 6)
+    else:
+        confidence = _promoted_confidence(sources)
+    # Compare the effective stored value so a capped promotion remains a no-op.
+    return min(confidence, 0.5) if unique_agents <= 1 else confidence
 
 
 def _trace_embedding(trace: Node, embedder: LocalEmbeddingModel | None) -> list[float] | None:
