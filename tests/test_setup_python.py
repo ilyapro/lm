@@ -279,17 +279,19 @@ def test_consumers_use_installed_directory(setup: Setup, script: str, override: 
 
 
 @pytest.mark.parametrize("failure", ["pip", "imports", "encoder"])
-def test_failed_local_preparation_leaves_borrowed_cache_intact(setup: Setup, failure: str) -> None:
+@pytest.mark.parametrize("script", ["setup-python.sh", "server.sh"])
+def test_failed_local_preparation_leaves_borrowed_cache_intact(setup: Setup, failure: str, script: str) -> None:
     setup.cache(setup.main, "mismatch")
     setup.link()
     before = snapshot(setup.main)
     setup.env["SETUP_TEST_FAIL"] = failure
 
-    setup.run(ok=False)
+    setup.run(script, ok=False)
 
     assert not setup.deps.is_symlink()
     assert not (setup.deps / MARKER).exists()
     assert snapshot(setup.main) == before
+    assert all("consumer" not in call for call in setup.calls())
 
 
 @pytest.mark.parametrize("failure", ["pip", "imports", "encoder"])
