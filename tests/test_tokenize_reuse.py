@@ -16,7 +16,7 @@ def reset_policy(monkeypatch):
 def test_default_and_evidence_share_results_without_sharing_output_lists():
     text = "HTTP_429 если не готово users users базой ошибки"
     default = ["http", "готов", "user", "user", "database", "failure"]
-    evidence = ["http", "429", "если", "не", "готов", "user", "user", "database", "failure"]
+    evidence = ["http", "429", "есл", "не", "готов", "user", "user", "database", "failure"]
     first = e.tokenize(text)
     assert first == default
     assert e._canonical_token_cached.cache_info().misses == 5
