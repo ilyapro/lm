@@ -364,9 +364,9 @@ def test_lookup_keeps_repeated_actions_at_distinct_positions(
         "Verify the pressure gauge reads zero; if it does not, stop.",
     ]
 
-    def append(position: int, text: str, minute: int):
+    def append(position: int, text: str, minute: int, agent: str = "agent-a"):
         return store.append_trace(text, {
-            **context, position_key: str(position), "timestamp": _moment(minute),
+            **context, "agent": agent, position_key: str(position), "timestamp": _moment(minute),
         })
 
     def assert_lookup(schema_id: str, expected: list[str]) -> None:
@@ -392,7 +392,7 @@ def test_lookup_keeps_repeated_actions_at_distinct_positions(
         assert_lookup(schema.id, steps)
         assert store.get_node(schema.id).provenance["source_coverage"] == coverage
 
-        sources.append(append(3, steps[2], 3))
+        sources.append(append(3, steps[2], 3, agent="agent-b"))
         memory_consolidate(store, scope=SCOPE, min_cluster_size=100)
         assert_lookup(schema.id, steps)
 
