@@ -62,4 +62,3 @@ def detect_temporal_hint(observations: Iterable[Any]) -> str | None:
     for observation in observations:
         timestamps.append(getattr(observation, "timestamp", observation))
     return detect_weekly_hint(timestamps)
-

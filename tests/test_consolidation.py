@@ -701,8 +701,11 @@ def test_consolidation_excludes_taught_traces_from_concept(tmp_path: Path) -> No
         assert set(selection["excluded_sources"].values()) == {"no current source"}
 
 
-def test_consolidation_preserves_independent_sources_across_a_later_correction(tmp_path: Path) -> None:
-    """A later correction replaces only the source it explicitly supersedes."""
+@pytest.mark.parametrize("relation", ["supersedes", "contradicts"])
+def test_consolidation_preserves_independent_sources_across_a_later_relation(
+    tmp_path: Path, relation: str,
+) -> None:
+    """Only explicit supersession excludes a source, regardless of timestamps."""
 
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         old_traces = []
@@ -731,17 +734,20 @@ def test_consolidation_preserves_independent_sources_across_a_later_correction(t
                     feedback={"confidence": 0.4, "usefulness_score": 0.2},
                 )
             )
-        store.create_connection(new_traces[0].id, old_traces[0].id, "supersedes")
+        store.create_connection(new_traces[0].id, old_traces[0].id, relation)
 
         result = memory_consolidate(store, scope="project:alpha", min_cluster_size=10)
 
         assert len(result.concepts_created) == 1
         concept = result.concepts_created[0]
-        expected = {trace.id for trace in [*old_traces[1:], *new_traces]}
+        retained = old_traces[1:] if relation == "supersedes" else old_traces
+        expected = {trace.id for trace in [*retained, *new_traces]}
         assert set(concept.source_traces) == expected
         selection = concept.provenance["source_selection"]
         assert selection["policy"] == "current-sources"
-        assert selection["excluded_sources"] == {old_traces[0].id: f"replaced-by:{new_traces[0].id}"}
+        assert selection["excluded_sources"] == (
+            {old_traces[0].id: f"replaced-by:{new_traces[0].id}"} if relation == "supersedes" else {}
+        )
         assert "legacy" in concept.content
         assert "adaptive" in concept.content
 
