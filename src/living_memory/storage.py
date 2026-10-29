@@ -5111,19 +5111,29 @@ class MemoryStore:
         return row is not None
 
     def _has_graph_evidence(self, scope: str) -> bool:
+        """Whether an active scoped node has a semantic edge to an active node."""
         row = self._conn.execute(
             f"""
             SELECT 1
-            FROM connections c
-            JOIN nodes source ON source.id = c.source_id
-            JOIN nodes target ON target.id = c.target_id
-            WHERE source.decayed = 0
-              AND target.decayed = 0
-              AND (source.scope = ? OR target.scope = ?)
-              AND {semantic_relation_sql("c")}
+            FROM nodes selected
+            WHERE selected.scope = ? AND selected.decayed = 0
+              AND (
+                EXISTS (
+                    SELECT 1 FROM connections c
+                    JOIN nodes target ON target.id = c.target_id
+                    WHERE c.source_id = selected.id AND target.decayed = 0
+                      AND {semantic_relation_sql("c")}
+                )
+                OR EXISTS (
+                    SELECT 1 FROM connections c
+                    JOIN nodes source ON source.id = c.source_id
+                    WHERE c.target_id = selected.id AND source.decayed = 0
+                      AND {semantic_relation_sql("c")}
+                )
+              )
             LIMIT 1
             """,
-            (scope, scope),
+            (scope,),
         ).fetchone()
         return row is not None
 
