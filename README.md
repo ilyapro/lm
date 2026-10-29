@@ -19,6 +19,21 @@ fallback. The default runtime never downloads model weights.
 - End-to-end acceptance tests in `tests/test_acceptance_contract.py`.
 - Developer docs in `docs/architecture.md` and `docs/mcp-interface.md`.
 
+## Recall and feedback
+
+`memory_recall` commits selected-node access and its durable event only after
+required passage reads, correction references and response shaping succeed.
+A failure leaves no new consumption event for later explicit or implicit
+feedback. Marks resolve against earlier eligible events before the current
+event exists. Optional recall maps, formed-delivery receipts and index
+maintenance can fail without cancelling the required answer or its attribution.
+Forming and saving an answer does not prove network delivery; an interrupted
+transport has an unknown outcome and does not authorize automatic replay.
+
+Search and model preparation precede the short consumption transaction. Direct
+Python callers retain independent `log_access` and `log_event` controls;
+disabling both opens no consumption transaction.
+
 ## Layout
 
 - `src/living_memory/` - server, store, retrieval, consolidation, resources,
