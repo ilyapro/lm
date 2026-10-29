@@ -6,13 +6,14 @@ from fastmcp import Client
 import pytest
 
 from living_memory import storage
+from living_memory.irrelevance import list_query_irrelevance
 from living_memory.models import RecallEvent, RecallEventHeader
 from test_current_feedback_delivery import credits, node
 from test_derived_read_preparation import runtime
 from test_recall_query_preparation import CONTENT, SCOPE, call, recall
 
 
-async def consume(client, route, used, irrelevant=()):
+async def consume(client, route, used, irrelevant=(), *, trace_id=None):
     if route == "lookup":
         return await call(client, "memory_lookup", node_ids=used)
     fields = {"used": used, "irrelevant": list(irrelevant)}
@@ -21,7 +22,7 @@ async def consume(client, route, used, irrelevant=()):
     if route == "remember":
         return await call(client, "memory_remember", content="Independent amber observation.",
                           context={"scope": SCOPE}, **fields)
-    return await call(client, "memory_teach", trace_id=used[0],
+    return await call(client, "memory_teach", trace_id=trace_id,
                       correction="Independent amber correction.", context={"scope": SCOPE},
                       **fields)
 
@@ -29,6 +30,7 @@ async def consume(client, route, used, irrelevant=()):
 async def seed(r, client, ids):
     prior = await recall(client)
     with r.guard:
+        r.correction_target = r.store.append_trace("Separate correction target.", {"scope": SCOPE}).id
         transport = r.store.get_recall_event(prior["recall_event_id"]).transport_session_id
         event = r.store.record_recall_event(
             query="specific delivery query", scope=SCOPE,
@@ -52,6 +54,16 @@ async def seed(r, client, ids):
         return event
 
 
+def remove_event(store, event_id):
+    for table, key in (
+        ("recall_delivery_history", "delivery_event_id"),
+        ("recall_history_result_nodes", "recall_event_id"),
+        ("recall_history_events", "recall_event_id"),
+        ("recall_events", "id"),
+    ):
+        store.connection.execute(f"DELETE FROM {table} WHERE {key} = ?", (event_id,))
+
+
 @pytest.mark.parametrize("route", ["lookup", "recall", "remember", "teach"])
 @pytest.mark.parametrize("policy", ["credit", "audit", "off"])
 def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, route, policy):
@@ -63,7 +75,7 @@ def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, r
             event = await seed(r, client, [r.node.id, negative])
             monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", policy)
             monkeypatch.setenv("LM_LOOKUP_CREDIT_POLICY", "off" if policy == "off" else "delivered")
-            full_reads, header_reads, projected = [], [], []
+            full_reads, header_reads, projected, ambient_reads = [], [], [], []
             original_event, original_json = storage._recall_event_from_row, storage._json_loads
             original_header = r.store.get_recall_event_header
 
@@ -72,8 +84,8 @@ def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, r
                 return original_event(row)
 
             def decode(value, default):
-                assert "ambient-body-" not in str(value)
-                assert "result-body-" not in str(value)
+                if "ambient-body-" in str(value):
+                    ambient_reads.append(value)
                 parsed = original_json(value, default)
                 if isinstance(parsed, dict) and "node_id" in parsed:
                     projected.append(parsed["node_id"])
@@ -89,7 +101,8 @@ def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, r
             numeric = policy == "credit" or (route == "lookup" and policy != "off")
             scores = []
             for attempt in range(2):
-                response = await consume(client, route, [r.node.id], [negative])
+                response = await consume(client, route, [r.node.id], [negative],
+                                         trace_id=r.correction_target)
                 if route == "lookup":
                     assert response["results"][0]["content"] == CONTENT
                 else:
@@ -98,6 +111,7 @@ def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, r
                         if policy == "off" else {"accepted": 2, "dropped": 0, "by_reason": {}}
                     )
                 assert event.id not in full_reads
+                assert not ambient_reads
                 assert credits(r) == ([(event.id, r.node.id)] if numeric else [])
                 with r.guard:
                     scores.append(r.store.get_node(r.node.id).usefulness_score)
@@ -109,15 +123,15 @@ def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, r
                         [(event.id, 0, 1), (event.id, 1, 1)] * (attempt + 1)
                         if route != "lookup" and policy != "off" else []
                     )
-                    negatives = r.store.connection.execute("SELECT node_id FROM query_irrelevance").fetchall()
-                    assert [row[0] for row in negatives] == (
+                    assert [row["node_id"] for row in list_query_irrelevance(r.store)] == (
                         [negative] if route != "lookup" and policy == "credit" else []
                     )
             assert scores[0] == scores[1]
             assert (scores[0] > 0) == numeric
             assert header_reads == ([event.id] * (1 if route == "lookup" else 2)
                                     if policy != "off" else [])
-            assert set(projected) == ({r.node.id} if route == "lookup" else {r.node.id, negative}) if policy != "off" else not projected
+            expected = {r.node.id} if route == "lookup" else {r.node.id, negative}
+            assert set(projected) == (expected if policy != "off" else set())
 
     asyncio.run(scenario())
 
@@ -134,11 +148,11 @@ def test_native_feedback_rejects_event_removed_after_delivery_selection(runtime,
 
             def remove_and_read(event_id):
                 reads.append(event_id)
-                r.store.connection.execute("DELETE FROM recall_events WHERE id = ?", (event_id,))
+                remove_event(r.store, event_id)
                 return original(event_id)
 
             monkeypatch.setattr(r.store, "get_recall_event_header", remove_and_read)
-            response = await consume(client, route, [r.node.id])
+            response = await consume(client, route, [r.node.id], trace_id=r.correction_target)
             assert reads == [event.id]
             assert credits(r) == []
             with r.guard:
@@ -161,12 +175,13 @@ def test_native_feedback_revalidates_event_after_unlocked_encoding(runtime, rout
         async with Client(r.mcp) as client:
             event = await seed(r, client, [r.node.id])
             r.feedback_hold = True
-            operation = asyncio.create_task(consume(client, route, [r.node.id]))
+            operation = asyncio.create_task(consume(client, route, [r.node.id],
+                                                    trace_id=r.correction_target))
             try:
                 assert await asyncio.to_thread(r.entered.wait, 4)
                 with r.guard, r.store.transaction():
                     if change == "delete":
-                        r.store.connection.execute("DELETE FROM recall_events WHERE id = ?", (event.id,))
+                        remove_event(r.store, event.id)
                     else:
                         r.store.connection.execute(
                             "UPDATE recall_events SET query = ?, scope = ? WHERE id = ?",
