@@ -260,7 +260,7 @@ def test_pending_discovery_and_hydration_sql_read_errors_still_raise(mcp, column
 @pytest.mark.parametrize("change", ["content", "scope", "decay", "delete", "index"])
 def test_pending_hydration_uses_current_source_after_discovery(mcp, change):
     store = mcp.memory_store
-    node = store.append_trace("Violet botanical inventory.", {"scope": SCOPE})
+    node = store.create_node(level="concept", content="Violet botanical inventory.", context={"scope": SCOPE})
     service = MemoryRecallService(store)
     changed = False
     expected_chunks = []
