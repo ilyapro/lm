@@ -392,16 +392,6 @@ entering the encoder. Encoding and chunk-write failures remain required failures
 Unchanged content with current chunks avoids re-encoding. Procedural outputs and
 refreshes without a representative retain their existing lazy invalidation.
 
-Teach and forget discover consumers from a projection of recorded writer and
-source fields before loading full nodes. Admission uses the same materializer
-policy as refresh, including legacy cluster records; explicit `derived_from`
-edges supply inputs only for nodes without a recognized writer. Ordinary recall
-citations do not require their bodies, context or full provenance to be decoded.
-Discovery crosses scopes and follows correction and duplicate predecessors;
-required source failures still abort the atomic change. Preparation and the
-authoritative writer each discover current dependencies. This uses the existing
-citation query and primary-key body reads, without a separate dependency index.
-
 Preparation reads existing project representatives once per pass and compares
 each candidate with materialized concepts in the same group. Total work grows
 with those inputs; guarded reads and retained per-scope matches are bounded

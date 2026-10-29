@@ -333,6 +333,16 @@ These rules apply to new derived writes and ordinary source-based refreshes,
 including consolidation, correction and promotion. Reading or opening a store
 does not rewrite existing derived content; there is no bulk migration.
 
+Teach and forget discover consumers from a projection of recorded writer and
+source fields before loading full nodes. Admission uses the same materializer
+policy as refresh, including legacy cluster records; explicit `derived_from`
+edges supply inputs only for nodes without a recognized writer. Ordinary recall
+citations do not require their bodies, context or full provenance to be decoded.
+Discovery crosses scopes and follows correction and duplicate predecessors;
+required source failures still abort the atomic change. Preparation and the
+authoritative writer each discover current dependencies. This uses the existing
+citation query and primary-key body reads, without a separate dependency index.
+
 Evidence passages retain their source labels and heading. Semantic retrieval
 carries the winning chunk's verified source address into delivery. All conservative
 passages overlapping that address are budgeted together before optional enclosing
