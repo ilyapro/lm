@@ -120,6 +120,60 @@ def test_qualification_stops_at_the_selected_cut(monkeypatch):
     assert inspected == []
 
 
+@pytest.mark.parametrize("form", ["drop", "stub"])
+def test_unqualified_exact_twins_remain_unqualified_references(monkeypatch, form):
+    monkeypatch.setenv("LM_RECALL_GATE_FORM", form)
+    ranked = [row(str(i), "A", 0) for i in range(4)]
+    evidence = QueryRelevance(ranked)
+    limited, residual = apply_score_gate(ranked, 2, relevance=evidence)
+    assert _select_distinct_results(
+        limited, residual, 2, DeliveryHistory(), relevance=evidence,
+    ) == (limited, residual)
+    assert all(r.withheld == "below_threshold" for r in limited)
+
+
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+def test_native_correction_decay_and_scope_during_replacement(tmp_path, monkeypatch, view):
+    monkeypatch.setenv("LM_RECALL_GATE_FORM", "drop")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3")
+    store = mcp.memory_store
+    scope = "project:cobalt"
+    twins = [store.create_node(level=level, content="Cobalt routing requires approval.",
+                               context={"scope": scope}) for level in ("trace", "concept")]
+    original = store.append_trace("Cobalt routing requires inventory.", {"scope": scope})
+    foreign = store.append_trace("Cobalt routing requires approval.", {"scope": "project:foreign"})
+
+    async def scenario():
+        async with Client(mcp) as client:
+            taught = (await client.call_tool("memory_teach", {
+                "trace_id": original.id, "correction": "Cobalt routing requires receipts.",
+                "context": {"scope": scope},
+            })).structured_content
+            correction_id = taught["corrective_trace"]["id"]
+            args = {"query": "cobalt routing approval", "scope": scope, "depth": 0,
+                    "max_results": 2, "view": view}
+            active = (await client.call_tool("memory_recall", args)).structured_content
+            assert [e.get("node", e)["id"] for e in active["results"]] == [twins[0].id, correction_id]
+            assert [e["delivery"] for e in active["results"]] == ["full", "full"]
+            store.soft_delete_node(correction_id, "expired synthetic correction")
+            decayed = (await client.call_tool("memory_recall", args)).structured_content
+            assert [e.get("node", e)["id"] for e in decayed["results"]] == [n.id for n in twins]
+            assert store.get_node(foreign.id).access_count == 0
+            assert store.get_node(correction_id).access_count == 1
+            looked_up = (await client.call_tool("memory_lookup", {
+                "node_id": original.id, "scope": scope,
+            })).structured_content["results"][0]
+            assert looked_up["superseded"] is True
+            assert looked_up["superseded_by"] == [correction_id]
+            assert looked_up["provenance"]["corrections"]
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
+
+
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("form", ["drop", "stub"])
 @pytest.mark.parametrize("threshold", ["0.35", "0.7"])
