@@ -1071,6 +1071,18 @@ query, the section is omitted entirely. The optional `decision_history`
 section appears only when task recall finds primary traces with rejected
 alternatives.
 
+The three selectors run separate recalls with their own limits, depth, ranking
+and qualification, sharing one `MemoryRecallService` for query and corpus
+preparation. Each recall checks current corpus revisions, scope and validity.
+The Python builder creates a service for the operation unless its caller passes
+`recall_service` for the same store; standalone selectors accept the same optional
+argument and retain their default pending-index repair behavior.
+
+The native prompt uses its persistent preparation service, including the cyclic
+pending-index cursor across requests. Query encoding and bounded pending repair
+run before the runtime lock. Selectors run under the lock with
+`repair_pending=False`, so late invalidation cannot encode content there.
+
 The direct Python selectors return `ContextConcept`, `ContextSchema` and
 `DecisionHistory` entries with the same `withheld` field as `RecallResult`.
 Their source nodes remain available for identity and validity; consumers must

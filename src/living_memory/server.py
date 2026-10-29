@@ -1801,6 +1801,7 @@ def _register_prompts(mcp: Any, store: MemoryStore, runtime_lock: Any) -> None:
                 agent=agent,
                 ambient_context=ambient_context,
                 repair_pending=False,
+                recall_service=recall_service,
             )
 
 

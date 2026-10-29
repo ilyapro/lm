@@ -67,14 +67,16 @@ def retrieval_context_prompt(
     agent: str | None = None,
     ambient_context: dict[str, Any] | None = None,
     repair_pending: bool = True,
+    recall_service: MemoryRecallService | None = None,
 ) -> str:
     """Build active context; guarded callers prepare pending indexes beforehand."""
 
+    service = recall_service or MemoryRecallService(store)
     query = task.text if isinstance(task, _PreparedQuery) else str(task or "").strip()
     if not isinstance(task, _PreparedQuery):
         task = query
         if query and (int(max_concepts) > 0 or int(max_schemas) > 0):
-            task = MemoryRecallService(store).prepare_query(query)
+            task = service.prepare_query(query)
     ambient = dict(ambient_context or {})
     if agent:
         ambient["agent"] = agent
@@ -88,6 +90,7 @@ def retrieval_context_prompt(
         retrieval_policy=retrieval_policy,
         ambient_context=ambient,
         repair_pending=repair_pending,
+        recall_service=service,
     )
     schemas = select_context_schemas(
         store,
@@ -97,6 +100,7 @@ def retrieval_context_prompt(
         min_confidence=min_confidence,
         ambient_context=ambient,
         repair_pending=repair_pending,
+        recall_service=service,
     )
     decisions = select_decision_history(
         store,
@@ -105,6 +109,7 @@ def retrieval_context_prompt(
         max_items=max_concepts,
         ambient_context=ambient,
         repair_pending=repair_pending,
+        recall_service=service,
     )
     return format_retrieval_context(
         concepts,
@@ -128,6 +133,7 @@ def select_context_concepts(
     retrieval_policy: str = "balanced",
     ambient_context: dict[str, Any] | None = None,
     repair_pending: bool = True,
+    recall_service: MemoryRecallService | None = None,
 ) -> list[ContextConcept]:
     """Select from task recall, or rank scoped concepts for an empty-task browse."""
 
@@ -139,7 +145,7 @@ def select_context_concepts(
     selected: dict[str, ContextConcept] = {}
     query = task.text if isinstance(task, _PreparedQuery) else task
     if query.strip():
-        service = MemoryRecallService(store)
+        service = recall_service or MemoryRecallService(store)
         recall_results = service.memory_recall(
             task,
             scope=plan.recall_scope,
@@ -205,6 +211,7 @@ def select_context_schemas(
     min_confidence: float = 0.0,
     ambient_context: dict[str, Any] | None = None,
     repair_pending: bool = True,
+    recall_service: MemoryRecallService | None = None,
 ) -> list[ContextSchema]:
     """Select schema nodes whose trigger matches the task."""
 
@@ -216,7 +223,7 @@ def select_context_schemas(
         return []
 
     min_confidence = max(0.0, min(1.0, float(min_confidence)))
-    service = MemoryRecallService(store)
+    service = recall_service or MemoryRecallService(store)
     recall_results = service.memory_recall(
         task,
         scope=plan.recall_scope,
@@ -256,6 +263,7 @@ def select_decision_history(
     max_items: int = DEFAULT_CONTEXT_CONCEPTS,
     ambient_context: dict[str, Any] | None = None,
     repair_pending: bool = True,
+    recall_service: MemoryRecallService | None = None,
 ) -> list[DecisionHistory]:
     """Return primary traces that have rejected alternatives relevant to the task."""
 
@@ -264,7 +272,7 @@ def select_decision_history(
     if limit == 0 or not query.strip():
         return []
 
-    service = MemoryRecallService(store)
+    service = recall_service or MemoryRecallService(store)
     recall_results = service.memory_recall(
         task,
         scope=plan.recall_scope,
