@@ -288,6 +288,11 @@ class ReadOnlyAuditStore(MemoryStore):
 
         return []
 
+    def list_unchunked_node_positions(self, *args: Any, **kwargs: Any) -> list[tuple[str, str]]:
+        """Read-only recall has no repair candidates, including undecoded ones."""
+
+        return []
+
     def update_node(self, *args: Any, **kwargs: Any) -> Node:
         raise RuntimeError("health audit latency probe is read-only")
 

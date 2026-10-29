@@ -9,6 +9,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 import pytest
 
+from living_memory import retrieval
 from living_memory.retrieval import LAZY_CHUNK_NODE_LIMIT, MemoryRecallService
 from living_memory.server import create_mcp_server
 
@@ -295,6 +296,30 @@ def test_pending_hydration_uses_current_source_after_discovery(mcp, change):
     else:
         assert store.list_node_chunks(node.id) == expected_chunks
     assert not store.connection.in_transaction
+
+
+def test_empty_pending_selection_resets_position_without_encoder_setup(mcp, monkeypatch):
+    store = mcp.memory_store
+    service = MemoryRecallService(store)
+    monkeypatch.setattr(retrieval, "LAZY_CHUNK_NODE_LIMIT", 1)
+    store.append_trace("Violet botanical inventory.", {
+        "scope": SCOPE, "timestamp": "2026-01-02T00:00:00Z",
+    })
+    service.refresh_pending_chunks(scope=SCOPE)
+    with monkeypatch.context() as patch:
+        def unexpected_share():
+            pytest.fail("empty selection must not initialize the encoder")
+        patch.setattr(service, "_share_embedder_with_store", unexpected_share)
+        service.refresh_pending_chunks(scope=SCOPE)
+    earlier = store.append_trace("Amber mineral inventory.", {
+        "scope": SCOPE, "timestamp": "2026-01-01T00:00:00Z",
+    })
+    later = store.append_trace("Indigo floral inventory.", {
+        "scope": SCOPE, "timestamp": "2026-01-03T00:00:00Z",
+    })
+    service.refresh_pending_chunks(scope=SCOPE)
+    assert store.node_chunks_are_current(earlier.id)
+    assert not store.node_chunks_are_current(later.id)
 
 
 @pytest.mark.parametrize("fault", ["global", "selected_nodes"])
