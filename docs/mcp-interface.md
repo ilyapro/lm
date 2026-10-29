@@ -356,6 +356,14 @@ Input:
 ```
 
 The returned connection is stored in the SQLite adjacency table.
+An explicit `supersedes` connection from a live, distinct replacement refreshes
+the target's recorded derivatives in the same transaction, using the same
+materializers as `memory_teach` and `memory_forget`. Derivatives without a known
+materializer become decayed and remain available by exact lookup. Preparation
+runs outside the runtime lock; any required refresh or preparation failure leaves
+the connection and its consequences uncommitted. The call creates no corrective
+trace and preserves both endpoints, their scopes and provenance. Inferred-only
+or bookkeeping relations do not apply corrections.
 
 ### `memory_recall`
 

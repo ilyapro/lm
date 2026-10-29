@@ -214,6 +214,7 @@ from dataclasses import dataclass, field, replace
 from math import log2, sqrt
 from typing import Any, Callable
 
+from living_memory.consolidation import memory_connect
 from living_memory.edge_derivation import CONTENT_REFERENCE_KIND, DERIVED_FROM_KIND
 from living_memory.embeddings import (
     LocalEmbeddingModel,
@@ -938,13 +939,16 @@ class MemoryRecallService:
         *,
         weight: float = 1.0,
         metadata: dict[str, Any] | None = None,
+        guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
     ) -> Connection:
-        return self.store.create_connection(
+        return memory_connect(
+            self.store,
             id_a,
             id_b,
             relation_type,
             weight=weight,
             metadata=metadata,
+            guard=guard,
         )
 
     def rank_candidates(
@@ -1849,24 +1853,6 @@ def memory_recall(
         max_results=max_results,
         log_access=log_access,
         log_event=log_event,
-    )
-
-
-def memory_connect(
-    store: MemoryStore,
-    id_a: str,
-    id_b: str,
-    relation_type: ConnectionType,
-    *,
-    weight: float = 1.0,
-    metadata: dict[str, Any] | None = None,
-) -> Connection:
-    return store.create_connection(
-        id_a,
-        id_b,
-        relation_type,
-        weight=weight,
-        metadata=metadata,
     )
 
 

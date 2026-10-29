@@ -1209,17 +1209,17 @@ def _register_tools(
         weight: float = 1.0,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Connect two existing memory nodes."""
+        """Connect existing nodes, refreshing derivatives of explicit corrections."""
 
-        with runtime_lock:
-            connection = recall_service.memory_connect(
-                id_a,
-                id_b,
-                relation_type,
-                weight=weight,
-                metadata=metadata,
-            )
-            return {"connection": connection_to_dict(connection)}
+        connection = recall_service.memory_connect(
+            id_a,
+            id_b,
+            relation_type,
+            weight=weight,
+            metadata=metadata,
+            guard=lambda: runtime_lock,
+        )
+        return {"connection": connection_to_dict(connection)}
 
     @mcp.tool(description=protocol_texts["memory_recall"])
     @mark_fields

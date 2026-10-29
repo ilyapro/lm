@@ -41,7 +41,7 @@ from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
 from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_feedback
 from living_memory.models import Connection, ConnectionType, Node, string_list
 from living_memory.query_anchors import resolve_replacement
-from living_memory.relations import CLUSTER_MEMBERSHIP_WEIGHT, DERIVED_FROM_WEIGHT
+from living_memory.relations import CLUSTER_MEMBERSHIP_WEIGHT, DERIVED_FROM_WEIGHT, is_correction
 from living_memory.storage import MemoryStore, _node_read_batches, new_ulid
 from living_memory.source_text import PASSAGE_SEPARATOR, passage_spans
 from living_memory.temporal import detect_temporal_hint, parse_timestamp, split_time_regimes
@@ -803,6 +803,54 @@ def _prepare_derivation_digests(
         )
         digests[node.id] = _prepare_digest(node.scope, members, best, prepared)
     return _DerivationPreparation(source_inputs, digests)
+
+
+def memory_connect(
+    store: MemoryStore,
+    id_a: str,
+    id_b: str,
+    relation_type: ConnectionType,
+    *,
+    weight: float = 1.0,
+    metadata: dict[str, Any] | None = None,
+    guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+) -> Connection:
+    """Connect existing nodes and atomically refresh explicit correction consumers.
+
+    The edge retains replacement-write semantics. Only a live, distinct explicit
+    replacement changes derivation inputs; internal materializers keep using the
+    storage writer. Detached preparation and retries share teach/forget's refresh.
+    """
+
+    with guard():
+        if not is_correction(relation_type, metadata) or id_a == id_b:
+            return store.create_connection(id_a, id_b, relation_type, weight=weight, metadata=metadata)
+        replacement = store.get_node(id_a)
+        if replacement is None:
+            raise KeyError(id_a)
+        if replacement.decayed:
+            return store.create_connection(id_a, id_b, relation_type, weight=weight, metadata=metadata)
+        if store.get_node(id_b) is None:
+            raise KeyError(id_b)
+        nested = store.connection.in_transaction
+        snapshots = [] if nested else _derivation_snapshots(store, id_b, replacement=replacement)
+
+    preparation = _prepare_derivation_digests(snapshots)
+    while True:
+        try:
+            with guard(), store.transaction():
+                connection = store.create_connection(
+                    id_a, id_b, relation_type, weight=weight, metadata=metadata,
+                )
+                # Preparation is advisory: replacement validity and the entire
+                # recorded derivation graph belong to this write transaction.
+                if not store.get_node(id_a).decayed:
+                    _refresh_derived_from(store, id_b, preparation=preparation)
+                return connection
+        except _DerivedOutputRequired as needed:
+            if nested:
+                raise
+            needed.prepare(store, preparation)
 
 
 def memory_forget(
