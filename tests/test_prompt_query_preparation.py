@@ -360,6 +360,22 @@ def test_empty_native_prompt_does_not_prepare_pending_content(pending_content):
     assert not r.store.node_chunks_are_current(r.pending.id)
 
 
+@pytest.mark.parametrize("consumer", [
+    prompts.retrieval_context_prompt, prompts.select_context_concepts,
+    prompts.select_context_schemas, prompts.select_decision_history,
+])
+def test_standalone_prompt_consumers_still_repair_pending_without_runtime_guard(pending_content, consumer):
+    r = pending_content
+    r.release.set()
+    arguments = ({"scope": SCOPE} if consumer is prompts.retrieval_context_prompt else
+                 {"plan": resolve_scope(scope=SCOPE, store=r.store)})
+    consumer(r.store, task=TASK, **arguments)
+    assert r.store.node_chunks_are_current(r.pending.id)
+    assert r.content_encodes == [r.pending.content]
+    assert r.encoder_guard_owned == [False]
+    assert r.store.list_recall_events() == []
+
+
 def test_native_prompt_reads_scope_content_and_validity_after_preparation(runtime):
     r = runtime
     r.hold = True
