@@ -111,6 +111,24 @@ def test_python_connect_refreshes_existing_replacement_row(tmp_path, entry):
         assert replacement.id in current.source_traces
 
 
+def test_connect_refreshes_cross_scope_promotion(tmp_path):
+    from test_teach_derivation import cluster
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        store.set_chunk_embedder(lambda texts: [[1., 0.] for _ in texts])
+        traces, concept = cluster(store, SCOPE, STEPS)
+        _, other = cluster(store, "project:other", ["Workshop inventory is checked weekly."])
+        _, third = cluster(store, "project:third", ["Workshop tools are kept dry."])
+        promoted, = c._cross_scope_promotion(store, concept)
+        replacement = store.append_trace(CORRECTION, {"scope": SCOPE})
+        memory_connect(store, replacement.id, traces[0].id, "supersedes")
+        for owner in (concept, promoted):
+            current = store.get_node(owner.id)
+            assert current.scope == owner.scope and not current.decayed
+            assert CORRECTION in current.content and STEPS[0] not in current.content
+        assert store.get_node(other.id) == other and store.get_node(third.id) == third
+
+
 @pytest.mark.parametrize("case", ["related", "caused", "requires", "contradicts", "inferred", "duplicate", "self", "decayed"])
 def test_inapplicable_connections_do_not_refresh(tmp_path, monkeypatch, case):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
@@ -152,6 +170,8 @@ def test_failed_connect_rolls_back_relation_anchors_and_derivatives(native, monk
     for trace in traces:
         store.update_node(trace.id, embedding=[1., 0.])
     new = store.append_trace("Harbor crane requires the electronic manifest.", {"scope": traces[0].scope})
+    store.update_node(new.id, embedding=[1., 0.])
+    store.create_connection(new.id, traces[0].id, "supersedes", metadata={"rule": "R1c"})
     upsert_anchor(store, "Harbor crane", traces[0].scope, [1., 0.], [traces[0].id])
     if failure == "snapshot":
         target = "_prepare_derivation_digests"
