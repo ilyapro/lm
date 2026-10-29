@@ -94,10 +94,12 @@ def test_selection_filters_order_and_cap_precede_source_scope(tmp_path, monkeypa
             ("schema", "schema", "global", False),
         ):
             store.create_node(
-                node_id=node_id, level=level, content=f"excluded {node_id}", decayed=decayed,
+                node_id=node_id, level=level, content=f"excluded {node_id}",
                 context={"scope": scope, "timestamp": "2026-01-01T00:00:00Z"},
                 provenance={"promoted_from": [node_id]},
             )
+            if decayed:
+                store.soft_delete_node(node_id, reason="excluded fixture")
         expected_provenance = [
             {key: value for key, value in node.provenance.items()
              if key not in ("source_traces", "corrections")}
