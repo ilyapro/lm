@@ -347,6 +347,92 @@ def test_schemas_carry_exactly_the_declared_procedure(tmp_path: Path, group_set:
             assert {trace.id for trace in written[group.name]} <= found
 
 
+@pytest.mark.parametrize("position_key", ["step_order", "step"])
+def test_lookup_keeps_repeated_actions_at_distinct_positions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, position_key: str,
+) -> None:
+    from living_memory.server import create_mcp_server
+    from test_transport_identity import FakeMCP
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    mcp = create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store = mcp.memory_store
+    context = {"scope": SCOPE, "procedure_id": "valve_check", "agent": "agent-a"}
+    steps = [
+        "Verify the pressure gauge reads zero; if it does not, stop.",
+        "Open the isolation valve only after the check passes.",
+        "Verify the pressure gauge reads zero; if it does not, stop.",
+    ]
+
+    def append(position: int, text: str, minute: int):
+        return store.append_trace(text, {
+            **context, position_key: str(position), "timestamp": _moment(minute),
+        })
+
+    def assert_lookup(schema_id: str, expected: list[str]) -> None:
+        for selector in ({"view": "full"}, {"context_key": "procedure"}):
+            result, = mcp.tools["memory_lookup"](node_id=schema_id, **selector)["results"]
+            assert result["context"]["procedure"] == expected
+            assert result["content"] == "Procedure: valve check\n" + "\n".join(
+                f"{index}. {step}" for index, step in enumerate(expected, start=1)
+            )
+
+    try:
+        sources = [append(index + 1, steps[index], minute)
+                   for minute, index in enumerate((2, 0, 1))]
+        first = memory_consolidate(store, scope=SCOPE, min_cluster_size=100)
+        schema, = first.schemas_created
+        coverage = schema.provenance["source_coverage"]
+        assert len({source.id for source in sources}) == 3
+        assert_lookup(schema.id, steps)
+
+        second = memory_consolidate(store, scope=SCOPE, min_cluster_size=100)
+        assert second.schemas_created == []
+        assert [node.id for node in second.schemas_updated] == [schema.id]
+        assert_lookup(schema.id, steps)
+        assert store.get_node(schema.id).provenance["source_coverage"] == coverage
+
+        sources.append(append(3, steps[2], 3))
+        memory_consolidate(store, scope=SCOPE, min_cluster_size=100)
+        assert_lookup(schema.id, steps)
+
+        replacement = "Verify the pressure gauge and alarm both read zero; otherwise stop."
+        sources.append(append(3, replacement, 4))
+        memory_consolidate(store, scope=SCOPE, min_cluster_size=100)
+        assert_lookup(schema.id, [*steps[:2], replacement])
+        current = store.get_node(schema.id)
+        assert current.source_traces == sorted(source.id for source in sources)
+        assert set(current.provenance["source_coverage"]) == set(current.source_traces)
+        assert all(current.provenance["source_coverage"][key] == value
+                   for key, value in coverage.items())
+        assert [node.id for node in store.list_nodes(level="schema", scope=SCOPE)] == [schema.id]
+        for source in sources:
+            kept = store.get_node(source.id)
+            assert not kept.decayed and kept.content == source.content
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
+
+
+@pytest.mark.parametrize("positioned", [False, True])
+def test_text_only_declarations_do_not_add_repeated_actions(tmp_path: Path, positioned: bool) -> None:
+    steps = ["Check the seal before opening.", "Close the valve if the seal is broken."]
+    records = [
+        ("First inspection rationale", {"step_description": steps[0]}),
+        ("Valve handling rationale", {"step_content": steps[1]}),
+        ("Second inspection rationale", {"step_description": steps[0]}),
+        ("Second valve handling rationale", {"step_content": steps[1]}),
+    ]
+    if positioned:
+        records.extend([(text, {"step_order": index + 1}) for index, text in enumerate(steps)])
+    group = Group("seal", "seal-check", "seal_check", records, steps)
+    store, written = _consolidated(tmp_path, [group])
+    with store:
+        assert _active_steps(store, group) == steps
+        schema, = _schemas_for(store, group.task_pattern)
+        assert schema.source_traces == sorted(source.id for source in written[group.name])
+
+
 def test_negative_controls_fail_the_oracle(tmp_path: Path) -> None:
     groups = dev_groups() + holdout_groups()
     store, _written = _consolidated(tmp_path, groups)
