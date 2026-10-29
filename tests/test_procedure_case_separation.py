@@ -535,14 +535,11 @@ def test_negative_control_dropping_unmarked_instructions_fails_the_recipe_oracle
     assert recipe_obtained(mcp) != RECIPE_V2
 
 
-# Supervisor #1329 oracles, fixed before any further repair. A legacy
-# case-history schema is often the only thing that carried a current recipe to
-# the user: agents marked the recipe's own record irrelevant on unrelated
-# questions, so a live valve keeps that record out of recall while the schema,
-# bundled with unrelated cases, still reached the user. Retiring the schema
-# must not be a new loss of the current recipe on the query that obtained it
-# before, and an orphan schema (a group with no records left for a pass to
-# visit) must be repaired by the same ordinary pass.
+# A current recipe remains obtainable whole, either directly or through its
+# group's carrier. Marks on unrelated questions do not establish that its own
+# record is unavailable for the recipe query. A carrier-loss control therefore
+# uses the named-query fixture below, whose query reaches the recipe through
+# the group's name. Orphan groups must also survive an ordinary pass.
 UNRELATED_QUESTIONS = (
     "which queue does the billing export use",
     "how is the search index compacted",
@@ -604,8 +601,7 @@ def _legacy_schema(store: MemoryStore, records: list, trigger: str, pattern: str
 
 
 def _carried_recipe_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """The recipe fixture as the live store holds it: a legacy schema carries the
-    current recipe, whose own record the hub valve demotes."""
+    """A current recipe and its legacy carrier, with unrelated query marks."""
 
     monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.1")
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.35")
@@ -700,13 +696,12 @@ def test_ordinary_pass_retires_duplicate_group_nodes(tmp_path: Path) -> None:
 def test_carried_recipe_oracle_detects_a_mutant_that_drops_its_carrier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The oracle is sensitive to carrier loss: with the legacy schema the
-    current recipe is obtained; a mutant that only drops that schema loses it."""
+    """Removing the query's carrier loses the recipe despite its live trace."""
 
-    mcp, _current, schema = _carried_recipe_server(tmp_path, monkeypatch)
-    assert recipe_obtained_whole(mcp)
+    mcp, schema = _named_recipe_server(tmp_path, monkeypatch)
+    assert recipe_obtained_whole(mcp, NAMED_QUERY, NAMED_V2) == "schema"
     mcp.memory_store.soft_delete_node(schema.id, "mutant: carrier dropped")
-    assert not recipe_obtained_whole(mcp)
+    assert not recipe_obtained_whole(mcp, NAMED_QUERY, NAMED_V2)
 
 
 def test_ordinary_pass_keeps_every_recipe_its_legacy_schema_carried(
@@ -722,12 +717,12 @@ def test_ordinary_pass_keeps_every_recipe_its_legacy_schema_carried(
 def test_carried_recipe_oracle_detects_a_pass_that_retires_the_carrier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Mutant of the first landing: the ordinary pass retires the schema
-    instead of turning it into a carrier. The recipe is lost."""
+    """Retiring the query's carrier loses the recipe across an ordinary pass."""
 
     import living_memory.consolidation as consolidation
 
-    mcp, _current, schema = _carried_recipe_server(tmp_path, monkeypatch)
+    mcp, schema = _named_recipe_server(tmp_path, monkeypatch)
+    assert recipe_obtained_whole(mcp, NAMED_QUERY, NAMED_V2) == "schema"
     monkeypatch.setattr(
         consolidation,
         "_create_or_update_schema",
@@ -735,7 +730,7 @@ def test_carried_recipe_oracle_detects_a_pass_that_retires_the_carrier(
     )
     mcp.tools["memory_consolidate"](scope=SCOPE, force=True)
     assert mcp.memory_store.get_node(schema.id).decayed
-    assert not recipe_obtained_whole(mcp)
+    assert not recipe_obtained_whole(mcp, NAMED_QUERY, NAMED_V2)
 
 
 # The accumulated state: the group's case-history schema is live and is the
