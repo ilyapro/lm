@@ -32,8 +32,8 @@ if [[ -z "${LIVING_MEMORY_DEPS_DIR:-}" && ! -e "${DEPS_DIR}" && ! -L "${DEPS_DIR
     common_git="$(git -C "${ROOT_DIR}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
     if [[ -n "${common_git}" ]]; then
         main_deps="$(dirname "${common_git}")/.cache/python-deps"
-        if [[ -d "${main_deps}" && "${main_deps}" != "${DEPS_DIR}" \
-              ]] && _deps_ready "${main_deps}"; then
+        if [[ -d "${main_deps}" && "${main_deps}" != "${DEPS_DIR}" ]] \
+            && _deps_ready "${main_deps}"; then
             mkdir -p "${ROOT_DIR}/.cache"
             ln -s "${main_deps}" "${DEPS_DIR}"
             exit 0

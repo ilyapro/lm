@@ -11,7 +11,9 @@ _SRC_PACKAGE = _REPO_ROOT / "src" / "living_memory"
 if _SRC_PACKAGE.exists():
     __path__.append(str(_SRC_PACKAGE))
 
-_DEPS_DIR = Path(os.environ.get("LIVING_MEMORY_DEPS_DIR") or _REPO_ROOT / ".cache" / "python-deps")
+_DEPS_DIR = Path(
+    os.environ.get("LIVING_MEMORY_DEPS_DIR") or _REPO_ROOT / ".cache" / "python-deps"
+)
 if _DEPS_DIR.exists():
     _deps = str(_DEPS_DIR)
     if _deps not in sys.path:
