@@ -1811,6 +1811,49 @@ def _partition_sources(
     return assigned, unowned
 
 
+def _cluster_admission(
+    store: MemoryStore, cluster: _TraceCluster,
+) -> tuple[list[Node], dict[str, set[str]], dict[tuple[str, str | None], list[Node]], _EraAssessment]:
+    """Select current recorded owners and compatible unowned evidence."""
+
+    current = _current_sources(store, (member.id for member in cluster.traces))
+    members = {member.id: member for member in current.live}
+    if not members:
+        return [], {}, {}, current
+    ancestors = _source_ancestors(store, current.live)
+    owners = [
+        node for node in store.list_nodes(
+            level="concept", scope=cluster.scope, source_ids=ancestors, limit=100_000,
+        )
+        if node.materializer == "cluster" and node.source_traces
+        and not node.corrections and not _is_superseded(store, node.id)
+    ]
+    assigned, unowned = _partition_sources(owners, current.live, ancestors)
+
+    fresh = _assess_cluster_eras(store, cluster.traces)
+    admitted = {member.id for member in fresh.live}
+    admitted.update(
+        member.id for member in current.live
+        if any(
+            source_id in ancestors and member.id in ancestors[source_id]
+            and (reason == "corrected" or reason.startswith("superseded-by:"))
+            for source_id, reason in fresh.excluded.items()
+        )
+    )
+    unowned.intersection_update(admitted)
+    if len(assigned) == 1:
+        owner = next(owner for owner in owners if owner.id in assigned)
+        compatible = {source for source in unowned if _cluster_group(members[source]) == _cluster_group(owner)}
+        assigned[owner.id].update(compatible)
+        unowned.difference_update(compatible)
+
+    groups: dict[tuple[str, str | None], list[Node]] = {}
+    for source in sorted(unowned):
+        member = members[source]
+        groups.setdefault(_cluster_group(member), []).append(member)
+    return owners, assigned, groups, fresh
+
+
 def _materialize_cluster(
     store: MemoryStore, cluster: _TraceCluster, *, min_cluster_size: int,
     step: Callable[[], AbstractContextManager[Any]] = nullcontext,
@@ -1833,45 +1876,8 @@ def _materialize_cluster(
             with step():
                 nested = store.connection.in_transaction
                 with store.transaction():
-                    current = _current_sources(store, (member.id for member in cluster.traces))
-                    members = {member.id: member for member in current.live}
-                    if not members:
-                        return []
-                    ancestors = _source_ancestors(store, current.live)
-                    owners = [
-                        node for node in store.list_nodes(
-                            level="concept", scope=cluster.scope, source_ids=ancestors, limit=100_000,
-                        )
-                        if node.materializer == "cluster" and node.source_traces
-                        and not node.corrections and not _is_superseded(store, node.id)
-                    ]
-                    assigned, unowned = _partition_sources(owners, current.live, ancestors)
-
-                    fresh = _assess_cluster_eras(store, cluster.traces)
-                    admitted = {member.id for member in fresh.live}
-                    admitted.update(
-                        member.id for member in current.live
-                        if any(
-                            source_id in ancestors and member.id in ancestors[source_id]
-                            and (reason == "corrected" or reason.startswith("superseded-by:"))
-                            for source_id, reason in fresh.excluded.items()
-                        )
-                    )
-                    unowned.intersection_update(admitted)
-                    if len(assigned) == 1:
-                        owner = next(owner for owner in owners if owner.id in assigned)
-                        compatible = {source for source in unowned if _cluster_group(members[source]) == _cluster_group(owner)}
-                        assigned[owner.id].update(compatible)
-                        unowned.difference_update(compatible)
-
-                    updates = [
-                        (owner.id, sorted(assigned[owner.id]))
-                        for owner in owners if owner.id in assigned
-                    ]
-                    groups: dict[tuple[str, str | None], list[Node]] = {}
-                    for source in sorted(unowned):
-                        member = members[source]
-                        groups.setdefault(_cluster_group(member), []).append(member)
+                    owners, assigned, groups, fresh = _cluster_admission(store, cluster)
+                    updates = [owner.id for owner in owners if owner.id in assigned]
                     # New owners and their admission share the same observation. No other
                     # materializer can claim these sources between selection and creation.
                     created: list[tuple[Node, bool]] = []
@@ -1894,18 +1900,18 @@ def _materialize_cluster(
             needed.prepare(store, preparation)
 
     result: list[tuple[Node, bool]] = []
-    for owner_id, source_ids in updates:
+    for owner_id in updates:
         while True:
             try:
                 with step():
                     nested = store.connection.in_transaction
                     with store.transaction():
-                        owner = store.get_node(owner_id)
-                        if (owner is None or owner.decayed or owner.corrections
-                                or owner.materializer != "cluster" or _is_superseded(store, owner_id)):
+                        owners, assigned, _, _ = _cluster_admission(store, cluster)
+                        owner = next((node for node in owners if node.id == owner_id), None)
+                        if owner is None or owner_id not in assigned:
                             break
                         assessment = _current_derivation(
-                            store, owner, additional=store.get_nodes(source_ids).values(),
+                            store, owner, additional=store.get_nodes(sorted(assigned[owner_id])).values(),
                         )
                         if not assessment.live:
                             store.soft_delete_node(owner_id, "derivation: no current sources")
