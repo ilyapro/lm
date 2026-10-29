@@ -2,8 +2,8 @@
 """check_deployed_protocol.py — does a deployed host serve *this* checkout's protocol?
 
 The checker compares the effective static protocol for a selected configuration
-with the complete texts MCP serves. Text equality does not establish the loaded code revision;
-``/admin/info`` and ``/health`` expose boot and code identity separately.
+with the complete texts MCP serves. Text equality does not establish the loaded
+code revision; ``/admin/info`` and ``/health`` expose boot and code identity separately.
 
 Expected texts come from the same effective projection used by the server's
 tool registration. Local defaults read the service's env file; other targets
@@ -26,7 +26,7 @@ Exit codes::
 
     0  the host serves the selected effective static protocol
     1  drift: a text differs, a tool is missing, or configuration differs
-    2  cannot check: transport, auth, or unknown expectations
+    2  cannot check: transport, auth, unavailable instructions, or unknown expectations
 
 See docs/deployment.md for the rollout procedure this check verifies.
 """

@@ -189,8 +189,8 @@ initialization result or a client read error means the check cannot be performed
 * exit `0` — the host serves the checkout's selected static protocol;
 * exit `1` — measured text or selected configuration differs, or a protocol
   tool is missing; the report names and diffs the differences;
-* exit `2` — transport/auth or instruction reading failed, or the target's expected configuration is
-  unknown. This is never reported as drift or success.
+* exit `2` — transport/auth or instruction reading failed, or the target's
+  expected configuration is unknown. This is never reported as drift or success.
 
 Those four tools are the default-visible protocol surface, so the checker does
 not require operator exposure. In particular, it does not expect hidden
