@@ -823,7 +823,7 @@ def memory_connect(
     """
 
     with guard():
-        if not is_correction(relation_type, metadata) or id_a == id_b:
+        if not is_correction(relation_type, metadata or {}) or id_a == id_b:
             return store.create_connection(id_a, id_b, relation_type, weight=weight, metadata=metadata)
         replacement = store.get_node(id_a)
         if replacement is None:
