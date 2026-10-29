@@ -120,14 +120,17 @@ def test_native_reconnect_requires_session_and_rejects_context_conflicts(runtime
     asyncio.run(scenario())
 
 
-def test_native_equal_queries_and_tasks_keep_independent_sessions_isolated(runtime):
+@pytest.mark.parametrize("broad", [False, True])
+def test_native_equal_queries_and_tasks_keep_independent_sessions_isolated(runtime, broad):
     r = runtime
     contexts = [{"scope": SCOPE, "task": "shared", "agent": "worker", "session_id": name}
                 for name in ("caller-a", "caller-b")]
 
     async def scenario():
         async with Client(r.mcp) as a, Client(r.mcp) as b:
-            prior = [await recall(client, ambient_context=context)
+            prior = [await recall(client, scope=None if broad else SCOPE,
+                                  ambient_context={k: v for k, v in context.items()
+                                                   if k != "scope" or not broad})
                      for client, context in zip((a, b), contexts, strict=True)]
         async with Client(r.mcp) as a, Client(r.mcp) as b:
             # B's event is newer; it must not consume A's marks or credit.
@@ -286,9 +289,13 @@ NOW = "2026-10-27T12:00:00Z"
 CONTEXT = {"scope": SCOPE, "session_id": "caller", "task": "task", "agent": "agent"}
 
 
-def delivery(r, transport, ids, *, context=CONTEXT, at=NOW, scope=SCOPE):
+def delivery(r, transport, ids, *, context=CONTEXT, at=NOW, scope=SCOPE, broad=False):
+    if broad:
+        context = {k: v for k, v in context.items() if k != "scope"}
+        scope = f"session:{context['session_id']}"
     event = r.store.record_recall_event(
         query=QUERY, scope=scope, ambient_context={**context, "transport_session_id": transport},
+        resolved_scopes=[scope, "global", "*"] if broad else None,
         results=[{"node_id": target, "vector_score": 0.8} for target in ids],
     )
     with r.store.transaction():
@@ -298,16 +305,19 @@ def delivery(r, transport, ids, *, context=CONTEXT, at=NOW, scope=SCOPE):
 
 
 @pytest.mark.parametrize("filler_time", [NOW, "invalid", "9999-01-01"])
-def test_reconnect_uses_one_combined_cap_before_id_and_time_filters(runtime, monkeypatch, filler_time):
+@pytest.mark.parametrize("broad", [False, True])
+def test_reconnect_uses_one_combined_cap_before_id_and_time_filters(runtime, monkeypatch, filler_time, broad):
     r = runtime
     boundary = node(r, "boundary")
     with r.guard:
-        delivery(r, "old", [r.node.id])
-        last_eligible = delivery(r, "old", [boundary])
+        delivery(r, "old", [r.node.id], broad=broad)
+        last_eligible = delivery(r, "old", [boundary], broad=broad)
         for index in range(199):
-            delivery(r, "current" if index % 2 else "old", [f"unrelated-{index}"], at=filler_time)
+            delivery(r, "current" if index % 2 else "old", [f"unrelated-{index}"], at=filler_time,
+                     broad=broad)
         for _ in range(205):
-            delivery(r, "peer", [r.node.id, boundary], context={**CONTEXT, "session_id": "peer"})
+            delivery(r, "peer", [r.node.id, boundary], context={**CONTEXT, "session_id": "peer"},
+                     broad=broad)
         materialized, projected, statements = [], [], []
         original_event, original_json = storage._recall_event_from_row, storage._json_loads
 
@@ -341,7 +351,8 @@ def test_reconnect_uses_one_combined_cap_before_id_and_time_filters(runtime, mon
             )
 
 
-def test_reconnect_preserves_time_boundaries_text_order_and_first_result_rank(runtime):
+@pytest.mark.parametrize("broad", [False, True])
+def test_reconnect_preserves_time_boundaries_text_order_and_first_result_rank(runtime, broad):
     r = runtime
     cases = [
         ("2026-10-26T12:00:00.999999Z", True),
@@ -355,14 +366,14 @@ def test_reconnect_preserves_time_boundaries_text_order_and_first_result_rank(ru
         expected = {}
         for index, (at, eligible) in enumerate(cases):
             target = str(index)
-            event_id = delivery(r, "old", [target], at=at)
+            event_id = delivery(r, "old", [target], at=at, broad=broad)
             if eligible:
                 expected[target] = (event_id, 0)
         delivery(r, "current", ["tie"])
-        latest = delivery(r, "old", ["other", "tie", "tie"])
+        latest = delivery(r, "old", ["other", "tie", "tie"], broad=broad)
         expected["tie"] = (latest, 1)
         delivery(r, "current", ["offset"], at="2026-10-27T11:30:00Z")
-        lexical = delivery(r, "old", ["offset"], at="2026-10-27T13:00:00+02:00")
+        lexical = delivery(r, "old", ["offset"], at="2026-10-27T13:00:00+02:00", broad=broad)
         expected["offset"] = (lexical, 0)
         marks = resolve_explicit_marks(r.store, [*(str(i) for i in range(len(cases))), "tie", "offset"],
                                        None, "current", NOW, context=CONTEXT)
