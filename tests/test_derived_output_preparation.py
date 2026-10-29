@@ -246,6 +246,32 @@ def test_promotion_noop_does_not_prepare_or_replace_missing_chunks(store):
     assert store.list_node_chunks(promoted.id) == []
 
 
+@pytest.mark.parametrize("phase", ["create", "refresh"])
+def test_promotion_rechecks_original_authors_after_detached_preparation(store, phase):
+    members = sources(store)
+    projects = [derived(store, f"project {i}", [member]) for i, member in enumerate(members)]
+    projects = [store.update_node(
+        project.id, context={"scope": f"project:harbor-{i}", "agent": "memory_consolidate"},
+    ) for i, project in enumerate(projects)]
+    owner = None
+    if phase == "refresh":
+        owner, = c._cross_scope_promotion(store, projects[0])
+        assert owner.unique_agents == 3
+        store.update_node(projects[0].id, content=CORRECTION)
+    guard = RLock()
+    with preparing(store, guard) as (workers, entered, release, _):
+        work = workers.submit(c._cross_scope_promotion, store, projects[0], step=lambda: guard)
+        assert entered.wait(10)
+        with MemoryStore(store.db_path) as writer:
+            for member in members:
+                writer.update_node(member.id, context={**member.context, "agent": "same-inspector"})
+        release.set()
+        current, = work.result(timeout=15)
+    assert current.unique_agents == 1 and current.confidence == .5
+    if owner is not None:
+        assert current.id == owner.id
+
+
 @pytest.mark.parametrize("policy", ["audit", "credit"])
 @pytest.mark.parametrize("failure", ["encode", "chunks", "closure"])
 def test_native_teach_retries_keep_marks_and_derivatives_in_one_transaction(tmp_path, monkeypatch, policy, failure):

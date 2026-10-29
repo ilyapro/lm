@@ -2380,7 +2380,10 @@ def _promoted_unique_agents(
     Materializer identities never contribute an original author.
     """
 
-    reader = observation or _SourceObservation(store, ())
+    sources = list(project_sources)
+    reader = observation or _SourceObservation(store, (
+        source for node in sources for source in _derivation_sources(store, node)
+    ))
     resolved: dict[str, tuple[set[str], int]] = {}
 
     def evidence(node: Node) -> tuple[set[str], int]:
@@ -2412,7 +2415,7 @@ def _promoted_unique_agents(
 
     agents: set[str] = set()
     declared = 1
-    for source in project_sources:
+    for source in sources:
         authors, unknown = evidence(source)
         agents.update(authors)
         declared = max(declared, unknown)

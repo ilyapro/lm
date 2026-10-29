@@ -159,3 +159,28 @@ def test_declared_leaf_support_is_a_maximum_not_a_sum(store):
                 for i in range(3)]
     promoted, = c._cross_scope_promotion(store, projects[0])
     assert promoted.unique_agents == 3
+
+
+def test_current_leaf_validity_overrides_stale_derived_counts(store):
+    traces = [store.append_trace(f"{TOPIC}. Observation {i}.", {"agent": author})
+              for i, author in enumerate(("A", "B", "C"))]
+    projects = [project_concept(store, f"project:scope-{i}", [trace.id for trace in traces], count=3)
+                for i in range(3)]
+    promoted, = c._cross_scope_promotion(store, projects[0])
+    assert promoted.unique_agents == 3
+    store.soft_delete_node(traces[1].id, "obsolete source")
+    store.add_correction(traces[2].id, old=traces[2].content, new="Unsupported.", by="A")
+    c.memory_consolidate(store, scope="project:unrelated", force=True)
+    current = store.get_node(promoted.id)
+    assert current.unique_agents == 1 and current.confidence == .5
+
+
+def test_original_trace_recall_citations_do_not_supply_authors(store):
+    cited = store.append_trace("Unrelated recalled evidence.", {"agent": "other-author"})
+    original = store.create_node(
+        level="trace", content=f"{TOPIC}. Original evidence.", context={"agent": "A"},
+        provenance={"source_traces": [cited.id]},
+    )
+    projects = [project_concept(store, f"project:scope-{i}", [original.id]) for i in range(3)]
+    promoted, = c._cross_scope_promotion(store, projects[0])
+    assert promoted.unique_agents == 1 and promoted.confidence == .5
