@@ -301,7 +301,9 @@ def test_native_teach_retries_keep_marks_and_derivatives_in_one_transaction(tmp_
         store.close()
 
 
-@pytest.mark.parametrize("change", ["scope", "level", "source_content"])
+@pytest.mark.parametrize("change", [
+    "scope", "level", "source_content", "deleted", "decayed", "reowned", "corrected", "superseded",
+])
 def test_final_promotion_refresh_rechecks_current_selection_and_sources(store, change):
     members = [store.create_node(
         level="concept", content=f"Harbor scope {i} reports a distinct inspection fact.",
@@ -318,6 +320,19 @@ def test_final_promotion_refresh_rechecks_current_selection_and_sources(store, c
                 writer.update_node(promoted.id, context={**promoted.context, "scope": SCOPE})
             elif change == "level":
                 writer.update_node(promoted.id, level="schema")
+            elif change == "deleted":
+                with writer.transaction():
+                    writer.connection.execute("DELETE FROM nodes WHERE id=?", (promoted.id,))
+            elif change == "decayed":
+                writer.soft_delete_node(promoted.id, "retired promotion")
+            elif change == "reowned":
+                writer.update_node(promoted.id, provenance={**promoted.provenance, "strategy": "procedural"})
+            elif change == "corrected":
+                writer.update_node(promoted.id, provenance={
+                    **promoted.provenance, "corrections": [{"new": "replacement"}],
+                })
+            elif change == "superseded":
+                writer.create_connection(members[0].id, promoted.id, "supersedes")
             else:
                 writer.update_node(members[1].id, content="Harbor departure verifies the cargo signature.")
             preserved = writer.get_node(promoted.id)

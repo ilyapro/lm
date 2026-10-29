@@ -171,6 +171,11 @@ without changing the other surface.
    are omitted as duplicates. A source that cannot fit remains addressable by
    its recorded id. Source membership and group identify a derived owner;
    similarity and equal digest text do not merge independent derivations.
+   After project-source writes, promotion refresh selects owner identities
+   through the same bounded global concept identity/provenance projection used
+   by promotion summaries. The timestamp/id cap precedes materializer admission;
+   only selected owners need full reads, with current ownership and source
+   validity rechecked in the existing writer transaction.
    It additionally groups
    traces by normalized `context.procedure_id` (or `context.task_pattern`) and
    materializes one `level='schema'` node per group of three or more
