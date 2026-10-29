@@ -51,7 +51,7 @@ class Setup:
         python = bin_dir / "python"
         python.write_text(
             f"#!{sys.executable}\n"
-            "import json, os, pathlib, sys\n"
+            "import json, os, pathlib, sys, time\n"
             "if sys.argv[1:3] == ['-m', 'pip']:\n"
             "    target = pathlib.Path(sys.argv[sys.argv.index('--target') + 1])\n"
             "    with open(os.environ['SETUP_TEST_LOG'], 'a') as log:\n"
@@ -62,6 +62,7 @@ class Setup:
             "                 '--no-index', '--no-deps', *map(str, wheels)])\n"
             "    if os.environ.get('SETUP_TEST_FAIL') == 'pip':\n"
             "        sys.exit(1)\n"
+            "    time.sleep(float(os.environ.get('SETUP_TEST_DELAY', '0')))\n"
             "    target.mkdir(parents=True, exist_ok=True)\n"
             "    broken = os.environ.get('SETUP_TEST_FAIL') == 'imports'\n"
             "    (target / 'fastmcp.py').write_text('raise ImportError(\"unusable\")' if broken else '')\n"
@@ -301,6 +302,22 @@ def test_failed_rebuild_removes_readiness_and_preserves_old_payload(setup: Setup
     assert not (setup.deps / MARKER).exists()
     assert (setup.deps / "sentinel").read_text() == "owned by this cache"
     assert list(setup.deps.parent.glob("python-deps.tmp.*")) == []
+
+
+def test_concurrent_preparation_reuses_the_completed_target(setup: Setup) -> None:
+    setup.env["SETUP_TEST_DELAY"] = "0.2"
+    processes = [
+        subprocess.Popen(
+            ["bash", str(setup.root / "scripts" / "setup-python.sh")],
+            cwd=setup.root, env=setup.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        for _ in range(2)
+    ]
+    for process in processes:
+        output = process.communicate(timeout=20)
+        assert process.returncode == 0, output
+    setup.assert_install(setup.deps)
+    assert (setup.deps / MARKER).read_text() == setup.fingerprint + "\n"
 
 
 @pytest.mark.parametrize("consumer", ["conftest", "living_memory"])
