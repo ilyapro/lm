@@ -2,8 +2,7 @@
 """check_deployed_protocol.py — does a deployed host serve *this* checkout's protocol?
 
 The checker compares the effective static protocol for a selected configuration
-with what MCP serves. The bounded, data-derived Memory nearby tail is reported
-as host data. Text equality does not establish the loaded code revision;
+with the complete texts MCP serves. Text equality does not establish the loaded code revision;
 ``/admin/info`` and ``/health`` expose boot and code identity separately.
 
 Expected texts come from the same effective projection used by the server's
@@ -26,7 +25,7 @@ Usage::
 Exit codes::
 
     0  the host serves the selected effective static protocol
-    1  drift: a core text differs, a tool is missing, or configuration differs
+    1  drift: a text differs, a tool is missing, or configuration differs
     2  cannot check: transport, auth, or unknown expectations
 
 See docs/deployment.md for the rollout procedure this check verifies.
@@ -56,7 +55,6 @@ for candidate in (ROOT, ROOT / "src"):
         sys.path.insert(0, value)
 
 from living_memory import server as lm_server  # noqa: E402
-from living_memory import instructions_map as lm_map  # noqa: E402
 
 # Defaults describe the local user unit (see docs/deployment.md): HTTP on
 # loopback 8765, --default-scope global, bearer token in the EnvironmentFile.
@@ -221,9 +219,18 @@ async def _fetch_async(
         kwargs["verify"] = verify
     client = Client(url, **kwargs)
     async with client:  # __aenter__ performs the MCP initialize handshake.
-        initialize_result = client.initialize_result
+        unavailable = object()
+        instructions = getattr(client, "instructions", unavailable)
+        if instructions is unavailable:
+            # FastMCP 3 exposes instructions through its initialization result.
+            initialize_result = getattr(client, "initialize_result", None)
+            instructions = getattr(initialize_result, "instructions", unavailable)
+        if instructions is unavailable:
+            raise CheckError("client did not expose server instructions")
+        if instructions is not None and not isinstance(instructions, str):
+            raise CheckError("client exposed invalid server instructions")
         served: dict[str, str] = {
-            INSTRUCTIONS_KEY: getattr(initialize_result, "instructions", None) or ""
+            INSTRUCTIONS_KEY: instructions if instructions is not None else ""
         }
         for tool in await client.list_tools():
             if tool.name in PROTOCOL_TOOLS:
@@ -254,47 +261,8 @@ def fetch_served_texts(
                 "host requires one)"
             )
         raise CheckError(
-            f"could not read the protocol from {url}: {exc!r}{hint}"
+            f"could not read the protocol from {url}: {type(exc).__name__}{hint}"
         ) from exc
-
-
-def _memory_nearby_section(text: str) -> tuple[str, str | None]:
-    """Separate only the canonical, bounded data tail from instructions.
-
-    A malformed heading, extra line or suffix remains part of the compared
-    core. This boundary must never excuse edits elsewhere in instructions.
-    """
-    boundary = "\n" + lm_map.HEADING + "\n"
-    if text.count(boundary) != 1:
-        return text, None
-    core, tail = text.split(boundary, 1)
-    suffix = "\n" + lm_map.CLOSING + "\n"
-    if not tail.endswith(suffix):
-        return text, None
-    line = tail[: -len(suffix)]
-    if not line.startswith(lm_map.LINE_PREFIX) or "\n" in line:
-        return text, None
-    section = lm_map.HEADING + "\n" + tail
-    if len(section.rstrip("\n")) > lm_map.MAX_SECTION_CHARS:
-        return text, None
-    data = line[len(lm_map.LINE_PREFIX) :]
-    if data.endswith(lm_map.MORE_MARKER):
-        data = data[: -len(lm_map.MORE_MARKER)]
-    items = data.split(lm_map.SEPARATOR)
-    if not 1 <= len(items) <= lm_map.MAX_LABELS:
-        return text, None
-    for item in items:
-        label, separator, count = item.rpartition("(")
-        if (
-            separator != "("
-            or not count.endswith(")")
-            or not count[:-1].isdigit()
-            or not 0 < int(count[:-1]) <= lm_map.MAX_COUNT
-            or not 1 <= len(label) <= lm_map.MAX_LABEL_CHARS
-            or not all(char.isalpha() or char in " …" for char in label)
-        ):
-            return text, None
-    return core, section
 
 
 def compare(expected: dict[str, str], served: dict[str, str]) -> list[Difference]:
@@ -303,8 +271,6 @@ def compare(expected: dict[str, str], served: dict[str, str]) -> list[Difference
     differences: list[Difference] = []
     for name, expected_text in expected.items():
         served_text = served.get(name)
-        if name == INSTRUCTIONS_KEY and served_text is not None:
-            served_text, _ = _memory_nearby_section(served_text)
         if served_text != expected_text:
             differences.append(
                 Difference(name=name, expected=expected_text, served=served_text)
@@ -381,6 +347,12 @@ def _text_report(difference: Difference) -> list[str]:
         f"    expected {len(difference.expected)} chars (this checkout) "
         f"vs served {len(served)} chars (host)"
     )
+    lines.append(
+        f"    UTF-8 bytes: expected {len(difference.expected.encode('utf-8'))}, "
+        f"served {len(served.encode('utf-8'))}"
+    )
+    lines.append(f"    expected sha256: {_sha256(difference.expected)}")
+    lines.append(f"    served sha256: {_sha256(served)}")
     note = _scope_only_note(difference)
     if note:
         lines.append(note)
@@ -440,13 +412,6 @@ def render_report(
     header = f"checkout: {source} @ {revision}"
     scope = _served_scope(expected[INSTRUCTIONS_KEY])
     settings = f"expected configuration: default scope={scope}, prompt arm={prompt_arm}"
-    _, map_section = _memory_nearby_section(served.get(INSTRUCTIONS_KEY, ""))
-    host_data = (
-        f"host data: canonical Memory nearby section present "
-        f"({len(map_section)} chars, sha256={_sha256(map_section)}); "
-        "excluded from static-text comparison"
-        if map_section is not None else "host data: no canonical Memory nearby section"
-    )
     if not differences:
         return "\n".join(
             [
@@ -454,7 +419,6 @@ def render_report(
                 f"({len(expected)} checked: {', '.join(sorted(expected))}).",
                 header,
                 settings,
-                host_data,
             ]
         )
     names = ", ".join(difference.name for difference in differences)
@@ -462,7 +426,6 @@ def render_report(
         f"DRIFT: {url} differs from this checkout's selected static protocol.",
         header,
         settings,
-        host_data,
         f"{len(differences)} of {len(expected)} protocol texts differ: {names}.",
         "",
     ]
@@ -511,7 +474,6 @@ def render_json(
     prompt_arm: str,
 ) -> str:
     different_names = {difference.name for difference in differences}
-    _, map_section = _memory_nearby_section(served.get(INSTRUCTIONS_KEY, ""))
     payload = {
         "url": url,
         "ok": not differences,
@@ -521,28 +483,20 @@ def render_json(
             "default_scope": _served_scope(expected[INSTRUCTIONS_KEY]),
             "prompt_arm": prompt_arm,
         },
-        "host_data": {
-            "memory_nearby_present": map_section is not None,
-            "memory_nearby_chars": len(map_section) if map_section else 0,
-            "memory_nearby_sha256": _sha256(map_section),
-        },
         "checked": sorted(expected),
         "texts": {
             name: {
                 "equal": name not in different_names,
                 "expected_chars": len(text),
                 "served_chars": (
-                    None if served.get(name) is None else len(
-                        _memory_nearby_section(served[name])[0]
-                        if name == INSTRUCTIONS_KEY else served[name]
-                    )
+                    None if served.get(name) is None else len(served[name])
+                ),
+                "expected_bytes": len(text.encode("utf-8")),
+                "served_bytes": (
+                    None if served.get(name) is None else len(served[name].encode("utf-8"))
                 ),
                 "expected_sha256": _sha256(text),
-                "served_sha256": _sha256(
-                    _memory_nearby_section(served[name])[0]
-                    if name == INSTRUCTIONS_KEY and name in served
-                    else served.get(name)
-                ),
+                "served_sha256": _sha256(served.get(name)),
             }
             for name, text in sorted(expected.items())
         },

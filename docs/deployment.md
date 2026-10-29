@@ -175,15 +175,21 @@ selected configuration. It opens an MCP session, reads the server
 instructions and the four protocol-bearing tool descriptions (`memory_recall`,
 `memory_remember`, `memory_teach`, `memory_lookup`) as the host actually
 serves them. It compares the static instructions and descriptions with the
-server's effective text projection from the checkout. The bounded, canonical
-`## Memory nearby` tail is store-derived host data; the report shows its size
-and hash separately. Other instruction edits, including malformed or extra
-tail text, remain drift.
+server's effective text projection from the checkout, without stripping or
+normalizing any content. Initialization has no current-work identity and must
+not include persisted history: any added `## Memory nearby` tail, canonical or
+malformed, is drift. Reported lengths and SHA-256 hashes cover the complete
+compared texts, encoded as UTF-8 for byte counts and hashes.
+
+The checker reads the connected client's `instructions` interface, falling back
+to `initialize_result.instructions` when that interface is absent. An explicitly
+empty or omitted instructions value is measured as empty text; an unavailable
+initialization result or a client read error means the check cannot be performed.
 
 * exit `0` — the host serves the checkout's selected static protocol;
 * exit `1` — measured text or selected configuration differs, or a protocol
   tool is missing; the report names and diffs the differences;
-* exit `2` — transport/auth failed or the target's expected configuration is
+* exit `2` — transport/auth or instruction reading failed, or the target's expected configuration is
   unknown. This is never reported as drift or success.
 
 Those four tools are the default-visible protocol surface, so the checker does
