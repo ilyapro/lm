@@ -654,12 +654,14 @@ class _DerivedOutputRequired(Exception):
     def __init__(
         self, kind: str, scope: str, members: Sequence[Node], best: Node,
         existing: Node | None, digest: _PreparedDigest | None, chunks: bool,
+        current_content: str | None = None,
     ) -> None:
         super().__init__("derived output changed; prepare outside the write transaction")
         self.key = _output_key(kind, scope, members, existing)
         self.scope, self.members, self.best = scope, list(members), best
         self.identity = _output_identity(scope, members, existing)
         self.digest, self.chunks = digest, chunks
+        self.current_content = current_content
 
     def prepare(self, store: MemoryStore, preparation: _DerivationPreparation) -> None:
         digest = self.digest
@@ -669,7 +671,7 @@ class _DerivedOutputRequired(Exception):
                 _digest_sources(self.members, preparation.source_inputs),
             )
         chunks = None
-        if self.chunks:
+        if self.chunks and digest.content != self.current_content:
             chunks = tuple((chunk, tuple(vector)) for chunk, vector in
                            store._chunk_embeddings_for(digest.content, None, require_complete=True))
             if not chunks:
@@ -683,7 +685,12 @@ def _derived_digest(
     prepared: _PreparedDigest | None,
 ) -> _PreparedDigest:
     if prepared is None or not prepared.matches(members, best, scope):
-        raise _DerivedOutputRequired(kind, scope, members, best, existing, None, bool(representative))
+        current_content = existing.content if (
+            representative and existing is not None and store.node_chunks_are_current(existing.id)
+        ) else None
+        raise _DerivedOutputRequired(
+            kind, scope, members, best, existing, None, bool(representative), current_content,
+        )
     needs_chunks = bool(representative) and (
         existing is None or existing.content != prepared.content or not store.node_chunks_are_current(existing.id)
     )
@@ -1885,14 +1892,14 @@ def _write_cluster_concept(
 
     members = assessment.live
     best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
-    if prepared_digest is None or not prepared_digest.matches(members, best_trace):
-        prepared = _digest_sources(members, source_inputs)
-        prepared_digest = _prepare_digest(scope, members, best_trace, prepared)
+    representative = best_trace.embedding or (embeddings or {}).get(best_trace.id)
+    prepared_digest = _derived_digest(
+        store, "cluster", scope, members, best_trace, existing, representative, prepared_digest,
+    )
     digest = prepared_digest.content
     cluster_key = prepared_digest.cluster_key
     source_traces = sorted({trace.id for trace in members})
     unique_agents = _unique_agent_count(members)
-    representative = best_trace.embedding or (embeddings or {}).get(best_trace.id)
     provenance = {
         **(existing.provenance if existing else {}),
         "source_traces": source_traces,
@@ -1918,10 +1925,12 @@ def _write_cluster_concept(
             concept = store.create_node(
                 level="concept", content=digest, context=context,
                 representative_embedding=representative, stats=stats, provenance=provenance,
+                prepared_chunks=prepared_digest.chunks,
             )
         else:
             concept = store.update_node(
                 existing.id, content=digest, representative_embedding=representative,
+                prepared_chunks=prepared_digest.chunks,
                 stats=stats, provenance=provenance,
             )
         _update_edge_weights_from_co_access(store, concept, members)
@@ -2244,14 +2253,11 @@ def _write_global_promotion(
     """One writer for a promotion's content, current inputs and validity stats."""
 
     best_source = _highest_confidence_source(project_sources)
-    digest = (
-        prepared_digest.content
-        if prepared_digest is not None and prepared_digest.matches(project_sources, best_source)
-        else _synthesize_digest(
-            project_sources, best=best_source,
-            prepared_sources=_digest_sources(project_sources, source_inputs),
-        )
+    prepared_digest = _derived_digest(
+        store, "cross-scope-promotion", "global", project_sources, best_source,
+        existing, best_source.embedding, prepared_digest,
     )
+    digest = prepared_digest.content
     source_scopes = _source_scopes(project_sources)
     source_concepts = _source_concept_ids(project_sources)
     promoted_at = _utc_now()
@@ -2295,10 +2301,12 @@ def _write_global_promotion(
                 level="concept", content=digest,
                 context=context,
                 representative_embedding=best_source.embedding, stats=stats, provenance=provenance,
+                prepared_chunks=prepared_digest.chunks,
             )
         else:
             global_concept = store.update_node(
                 existing.id, content=digest, representative_embedding=best_source.embedding,
+                prepared_chunks=prepared_digest.chunks,
                 stats=stats, provenance=provenance,
             )
         _connect_project_concepts_to_global(
