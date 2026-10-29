@@ -39,6 +39,7 @@ __all__ = [
     "DEFAULT_ENV_FILE",
     "DEFAULT_URL",
     "ClientError",
+    "PreDispatchError",
     "LiveMemoryClient",
     "McpMemoryIndex",
     "resolve_token",
@@ -50,7 +51,11 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 
 
 class ClientError(RuntimeError):
-    """One MCP call failed; the message says which tool and why."""
+    """A call has no confirmed result; a mutation may have been applied."""
+
+
+class PreDispatchError(ClientError):
+    """The mutation tool was never invoked; retry is safe."""
 
 
 def resolve_token(
@@ -119,18 +124,23 @@ class LiveMemoryClient:
         self.calls: list[str] = []
 
     async def _call_async(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        dispatched = False
         try:
             from fastmcp import Client
-        except ImportError as exc:  # pragma: no cover - environment without fastmcp
-            raise ClientError(f"fastmcp is required to reach the server: {exc}") from exc
 
-        kwargs: dict[str, Any] = {"timeout": self.timeout, "init_timeout": self.timeout}
-        if self.token:
-            kwargs["auth"] = self.token
-        client = Client(self.url, **kwargs)
-        async with client:
-            result = await client.call_tool(tool, arguments)
-        return _payload(result)
+            kwargs: dict[str, Any] = {"timeout": self.timeout, "init_timeout": self.timeout}
+            if self.token:
+                kwargs["auth"] = self.token
+            client = Client(self.url, **kwargs)
+            async with client:
+                dispatched = True
+                result = await client.call_tool(tool, arguments)
+            if getattr(result, "is_error", False):
+                raise ClientError(f"{tool} returned a tool error")
+            return _payload(result)
+        except Exception as exc:
+            error = ClientError if dispatched else PreDispatchError
+            raise error(f"{tool} against {self.url} failed: {exc}") from exc
 
     def call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Run one tool call to completion. Raises :class:`ClientError`."""
