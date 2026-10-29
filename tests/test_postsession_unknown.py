@@ -341,7 +341,7 @@ def test_process_interruption_preserves_unknown_before_and_after_effect(live_ser
         assert reconciled[0].node_id == json.loads(result_path.read_text())["corrective_trace"]["id"]
 
 
-def test_attest_unknown_replays_receiver_identity_without_duplicate_credit(live_server, tmp_path):
+def test_attest_unknown_replays_receiver_identity_without_duplicate_credit(live_server, tmp_path, monkeypatch):
     client = LostReplyClient(live_server["url"], token=TOKEN)
     seeded = client.remember(ORIGINAL_FACT, {"scope": "project:attest-unknown"})["node"]["id"]
     event = client.recall(ORIGINAL_FACT, scope="project:attest-unknown")["recall_event_id"]
@@ -355,6 +355,12 @@ def test_attest_unknown_replays_receiver_identity_without_duplicate_credit(live_
         before = db.execute("SELECT usefulness_score FROM nodes WHERE id = ?", (seeded,)).fetchone()[0]
     client.lost_tool = ""
     runner = ExtractionRunner(config=RunnerConfig(dry_run=False), ledger=Ledger(tmp_path), client=client)
+    with monkeypatch.context() as patch:
+        def not_sent(*args, **kwargs):
+            raise PreDispatchError("replay connection failed")
+        patch.setattr(client, "attest", not_sent)
+        assert runner.reconcile()[0].status == "unknown"
+        assert Ledger(tmp_path).entries()[0]["state"] == "unknown"
     result = runner.reconcile()[0]
     assert result.status == "written"
     assert result.attestation["replay"] is True
@@ -447,4 +453,18 @@ def test_normal_cli_reports_unknown_even_when_no_proposal_survives(tmp_path, mon
     args = ["--transcript", "unused", "--state-dir", str(tmp_path), "--write", "--judge", "none", "--stages", ""]
     assert cli.main(args) == EXIT_UNKNOWN
     assert "UNKNOWN" in capsys.readouterr().err
+    assert len(client.effects) == 1
+
+
+def test_unconfirmed_response_does_not_complete_or_reopen_operation(tmp_path):
+    class IncompleteRecipient(Recipient):
+        def remember(self, content, context):
+            super().remember(content, context)
+            return {}
+
+    client = IncompleteRecipient()
+    record = make_record()
+    op = make_remember(record, "A payload without an applied identity is unconfirmed.")
+    assert run(tmp_path, client, record, [op])[0].status == "unknown"
+    assert run(tmp_path, client, record, [op])[0].status == "unknown"
     assert len(client.effects) == 1

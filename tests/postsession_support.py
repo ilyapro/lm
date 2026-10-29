@@ -20,20 +20,10 @@ from living_memory.postsession.session import (
 )
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-
-
 SRC_DIR = ROOT_DIR / "src"
-
-
 DEPS_DIR = ROOT_DIR / ".cache" / "python-deps"
-
-
 SCRIPT = ROOT_DIR / "scripts" / "post_session_extract.py"
-
-
 TOKEN = "runner-live-test-token"
-
-
 READY_TIMEOUT_SECONDS = 60.0
 
 
@@ -216,4 +206,3 @@ def _live_record(recall_event_id: str, node_id: str) -> SessionRecord:
         )
     )
     return record
-
