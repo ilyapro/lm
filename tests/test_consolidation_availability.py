@@ -10,8 +10,9 @@ import sqlite3
 
 import pytest
 
-from living_memory import consolidation as c, server
+from living_memory import consolidation as c, embeddings, server
 from living_memory.auto_consolidation import PENDING_KV_KEY
+from living_memory.embeddings import LocalEmbeddingModel
 
 SCOPE = "project:harbor"
 
@@ -91,6 +92,124 @@ def procedure(store, group):
     results = c._materialize_procedural_schemas(store, traces, min_cluster_size=3)
     owner = next(node for node, _ in results if node.context["task_pattern"] == group)
     return traces, owner
+
+
+@pytest.mark.parametrize("route", ["manual", "scheduled"])
+@pytest.mark.parametrize("stage", ["inference", "batch_wait", "final_identity"])
+@pytest.mark.parametrize("runtime", [None], indirect=True)
+def test_native_encoder_work_leaves_exact_lookup_available(runtime, monkeypatch, route, stage):
+    from fastmcp import Client
+
+    mcp, lock, _ = runtime
+    store = mcp.memory_store
+    traces = [store.append_trace(
+        f"Harbor inspection checks marker {i} before departure.",
+        {"scope": SCOPE, "agent": f"inspector-{i}"},
+    ) for i in range(3)]
+    ready, entered, release, encoder_waiting = (Event() for _ in range(4))
+    encoder_lock = embeddings._ENCODER_LOCK
+
+    class ObservedEncoderLock:
+        def __enter__(self):
+            if not encoder_lock.acquire(blocking=False):
+                encoder_waiting.set()
+                encoder_lock.acquire()
+
+        def __exit__(self, *args):
+            encoder_lock.release()
+
+    class Backend:
+        def __init__(self, block):
+            self.block = block
+
+        def encode(self, texts, **kwargs):
+            if self.block:
+                entered.set()
+                ready.set()
+                assert release.wait(30)
+            return [[1.0, 0.0, 0.0] for _ in texts] if isinstance(texts, list) else [1.0, 0.0, 0.0]
+
+    def model(block):
+        result = LocalEmbeddingModel(dimensions=3, backend="auto", model_name="harbor-fixture")
+        result._model = Backend(block)
+        result._load_attempted = True
+        return result
+
+    encoder, other = model(stage == "inference"), model(True)
+    batch, identity = encoder.embed_batch, encoder.encoder_id
+    identities = 0
+
+    def wait_for_other():
+        ready.set()
+        assert entered.wait(15)
+
+    def encode(texts):
+        if stage == "batch_wait":
+            wait_for_other()
+        return batch(texts)
+
+    def encoder_id():
+        nonlocal identities
+        identities += 1
+        if stage == "final_identity" and identities == 2:
+            wait_for_other()
+        return identity()
+
+    monkeypatch.setattr(embeddings, "_ENCODER_LOCK", ObservedEncoderLock())
+    monkeypatch.setattr(encoder, "embed_batch", encode)
+    monkeypatch.setattr(encoder, "encoder_id", encoder_id)
+    monkeypatch.setattr(c, "LocalEmbeddingModel", lambda **kwargs: encoder)
+    mcp.auto_consolidation._retry_delays = ()
+    unguarded = []
+    store.connection.set_trace_callback(
+        lambda sql: unguarded.append(sql) if not lock.lock._is_owned() else None
+    )
+
+    def call(name, arguments):
+        async def request():
+            async with Client(mcp) as client:
+                response = await client.call_tool(name, arguments)
+                assert not response.is_error
+                return response.data
+        return asyncio.run(request())
+
+    def consolidate():
+        if route == "manual":
+            return call("memory_consolidate", {"scope": SCOPE})
+        mcp.auto_consolidation.request(SCOPE)
+        assert mcp.auto_consolidation.wait_idle(40, include_retries=True)
+        assert mcp.auto_consolidation.last_result(SCOPE)["status"] == "completed"
+
+    try:
+        with ThreadPoolExecutor(max_workers=3) as workers:
+            work = workers.submit(consolidate)
+            contender = None
+            try:
+                assert ready.wait(15)
+                if stage != "inference":
+                    contender = workers.submit(other.embed, "Independent encoder inference")
+                    assert encoder_waiting.wait(15)
+                read = workers.submit(call, "memory_lookup", {"node_id": traces[0].id})
+                response = read.result(timeout=10)
+                assert response["results"][0]["content"] == traces[0].content
+                assert not release.is_set()
+                assert not work.done()
+                if contender is not None:
+                    assert not contender.done()
+            finally:
+                release.set()
+            work.result(timeout=15)
+            if contender is not None:
+                contender.result(timeout=15)
+    finally:
+        store.connection.set_trace_callback(None)
+    assert unguarded == []
+    concepts = store.list_nodes(level="concept", scope=SCOPE)
+    assert len(concepts) == 1
+    assert set(concepts[0].source_traces) == {trace.id for trace in traces}
+    assert store.get_consolidation_embeddings(traces, identity()) == {
+        trace.id: [1.0, 0.0, 0.0] for trace in traces
+    }
 
 
 @pytest.mark.parametrize("route", ["manual", "scheduled"])
