@@ -2,12 +2,12 @@
 
 The write path only schedules; one worker thread per server runs the passes.
 Pending scopes are saved before starting the worker. If it cannot start, a
-later request or server start retries without repeating the knowledge write.
+later committed write or server start retries the existing queue.
 
 Guarantees:
 
-- One pass per scope at a time. A scope made due while its pass is queued or
-  running is coalesced into a single follow-up pass, not queued once per write.
+- One pass per scope at a time. A scope made due while queued joins that pass;
+  while running it is coalesced into a single follow-up pass.
 - A failed pass loses no writes (the traces were committed before the pass was
   scheduled) and does not leave the scope without a next pass: it is retried
   after a back-off, and the pending mark is persisted, so a pass that never
@@ -123,6 +123,23 @@ class AutoConsolidationScheduler:
             report["worker_start_pending"] = True
         return report
 
+    def retry_pending(self) -> None:
+        """Restart a missing worker without admitting work or changing back-off.
+
+        Ordinary writes may call this even when they make no new pass due.
+        Re-save before launch: the queue can survive a failed pending save.
+        """
+
+        with self._persist_guard, self._cond:
+            if self._closed or not self._queue:
+                return
+            if self._thread is not None and self._thread.is_alive():
+                return
+            if self._save_pending is not None:
+                self._save_pending(json.dumps(self._persisted, sort_keys=True))
+            self._ensure_worker()
+            self._cond.notify_all()
+
     def resume(self) -> list[str]:
         """Queue every scope a previous process left pending. Returns them."""
 
@@ -216,7 +233,7 @@ class AutoConsolidationScheduler:
             _LOG.warning("could not start auto-consolidation worker; scopes remain pending", exc_info=True)
             return False
         # Only started threads may be joined by close(). A failed start leaves
-        # the queue intact for the next request or resume, without a retry loop.
+        # the queue intact for a later write or resume, without a retry loop.
         self._thread = thread
         return True
 

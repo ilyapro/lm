@@ -2041,20 +2041,23 @@ def _schedule_auto_consolidation_if_due(
     *,
     admitted_traces: int = 1,
 ) -> dict[str, Any] | None:
-    """Schedule the pass this write made due; report, never run it.
+    """Schedule newly due work or restart an existing pending queue.
 
     The write path answers at write time: the report says the pass is
     ``scheduled`` (``coalesced`` when it joins one already queued or
     running), and the pass's own summary lands in the scheduler's
     ``last_result(scope)`` when the worker finishes it.
 
-    Both write tools call this after their required transaction commits.
+    A non-boundary write only retries a missing worker; it admits no new pass
+    and returns no new scheduling report. Both write tools call this after
+    their required transaction commits.
     Optional scheduling failures are logged and cannot replace that outcome.
     """
 
     try:
         trace_count = _auto_consolidation_due(store, scope, admitted_traces)
         if trace_count is None:
+            scheduler.retry_pending()
             return None
         return scheduler.request(scope, trace_count=trace_count)
     except Exception:
