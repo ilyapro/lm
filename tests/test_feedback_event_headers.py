@@ -45,6 +45,8 @@ async def seed(r, client, ids):
         # implicit consumer needs these bodies during the following calls.
         with r.store.transaction():
             r.store.connection.execute("UPDATE recall_events SET feedback_applied = 1")
+            r.store.connection.execute("UPDATE recall_events SET results = '[]' WHERE id = ?",
+                                       (prior["recall_event_id"],))
         header = r.store.get_recall_event_header(event.id)
         assert type(header) is RecallEventHeader
         assert (header.id, header.query, header.scope) == (event.id, event.query, event.scope)
@@ -128,10 +130,11 @@ def test_native_optional_feedback_reads_no_unneeded_body(runtime, monkeypatch, r
                     )
             assert scores[0] == scores[1]
             assert (scores[0] > 0) == numeric
+            resolves = policy != "off" or route == "recall"
             assert header_reads == ([event.id] * (1 if route == "lookup" else 2)
-                                    if policy != "off" else [])
+                                    if resolves else [])
             expected = {r.node.id} if route == "lookup" else {r.node.id, negative}
-            assert set(projected) == (expected if policy != "off" else set())
+            assert set(projected) == (expected if resolves else set())
 
     asyncio.run(scenario())
 
