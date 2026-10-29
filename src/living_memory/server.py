@@ -596,11 +596,10 @@ def _with_transport_identity(data: dict[str, Any] | None) -> dict[str, Any] | No
     return stamped
 
 
-def _server_instructions(default_scope: str, map_section: str = "") -> str:
+def _server_instructions(default_scope: str) -> str:
     # Instructions carry the bootstrap, laws and knowledge/authority boundary.
-    # Keep the data-derived map last so client clipping preserves that contract.
     # Tool descriptions also carry the boundary for clients omitting instructions.
-    static = (
+    return (
         "You and Living Memory form ONE cognitive system: you supply ephemeral "
         "reasoning, LM durable memory. Recall is perception — without it you "
         "act blind, inventing what memory already holds; remember is learning, "
@@ -634,10 +633,6 @@ def _server_instructions(default_scope: str, map_section: str = "") -> str:
         "that durable session, prior-transport feedback cannot be attributed.\n"
         f"Your default scope is {default_scope}.\n"
     )
-    section = map_section.strip()
-    if not section:
-        return static
-    return f"{static}\n{section}\n"
 
 
 # MCP-visible protocol must fit the per-tool client budget of 1024 chars.
@@ -779,8 +774,6 @@ def _effective_protocol_texts(default_scope: str, prompt_arm: str) -> dict[str, 
 
     The lookup docstring remains its single source. Inspecting the nested code
     object avoids constructing a store (and loading a model) just to check it.
-    The data-derived Memory nearby section is deliberately outside this static
-    projection; ``_server_instructions`` appends it at its canonical boundary.
     """
     if prompt_arm not in EXPLICIT_FEEDBACK_PROMPT_ARMS:
         raise ValueError(f"unknown explicit-feedback prompt arm: {prompt_arm}")
