@@ -747,7 +747,7 @@ applied — an over-cap submission is rejected, never silently truncated:
 
 | Cap | Value | Meaning |
 | --- | ---: | --- |
-| `EVIDENCE_MAX_ITEMS` | 32 | items per attestation |
+| `EVIDENCE_MAX_ITEMS` | 64 | items per attestation |
 | `EVIDENCE_MAX_ITEM_CHARS` | 600 | characters per canonical item |
 | `EVIDENCE_MAX_TOTAL_CHARS` | 19200 | characters across all items |
 
