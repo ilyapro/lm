@@ -4996,8 +4996,14 @@ class MemoryStore:
         if floors is None:
             return None, normalized
 
-        vector_min = floors.vector_min if self._has_vector_evidence(scope) else 0.0
-        graph_min = floors.graph_min if self._has_graph_evidence(scope) else 0.0
+        vector_min = (
+            floors.vector_min
+            if floors.vector_min > 0.0 and self._has_vector_evidence(scope) else 0.0
+        )
+        graph_min = (
+            floors.graph_min
+            if floors.graph_min > 0.0 and self._has_graph_evidence(scope) else 0.0
+        )
         # bm25 is a lexical channel that is always available, so its floor is
         # enforced unconditionally (no evidence gate). Without it, winner-take-all
         # feedback (feedback._method_signals) drives bm25 to 0 and exact-keyword /
