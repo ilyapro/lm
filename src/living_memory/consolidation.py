@@ -596,10 +596,10 @@ def memory_consolidate(
                 _cross_scope_promotion(store, concept, candidates=candidates[concept.id], step=step)
             )
 
+    # Existing promotions consume current project digests even if no new
+    # group has sufficient evidence for admission.
+    _refresh_promoted_global_concepts(store, step=step)
     with step():
-        # Existing promotions consume current project digests even if no new
-        # group has sufficient evidence for admission.
-        _refresh_promoted_global_concepts(store)
         decay_result: DecayResult = apply_decay(store, scope=scope)
     result.decayed.extend(decay_result.nodes)
     return result
@@ -1805,79 +1805,100 @@ def _materialize_cluster(
     owners. A failed pass can resume without exposing a partial owner.
     """
 
-    source_inputs: dict[str, _DigestSource] = {}
-    with step(), store.transaction():
-        current = _current_sources(store, (member.id for member in cluster.traces))
-        members = {member.id: member for member in current.live}
-        if not members:
-            return []
-        ancestors = _source_ancestors(store, current.live)
-        owners = [
-            node for node in store.list_nodes(
-                level="concept", scope=cluster.scope, source_ids=ancestors, limit=100_000,
-            )
-            if node.materializer == "cluster" and node.source_traces
-            and not node.corrections and not _is_superseded(store, node.id)
-        ]
-        assigned, unowned = _partition_sources(owners, current.live, ancestors)
+    preparation = _DerivationPreparation({}, {})
+    source_inputs = preparation.source_inputs
+    while True:
+        try:
+            with step():
+                nested = store.connection.in_transaction
+                with store.transaction():
+                    current = _current_sources(store, (member.id for member in cluster.traces))
+                    members = {member.id: member for member in current.live}
+                    if not members:
+                        return []
+                    ancestors = _source_ancestors(store, current.live)
+                    owners = [
+                        node for node in store.list_nodes(
+                            level="concept", scope=cluster.scope, source_ids=ancestors, limit=100_000,
+                        )
+                        if node.materializer == "cluster" and node.source_traces
+                        and not node.corrections and not _is_superseded(store, node.id)
+                    ]
+                    assigned, unowned = _partition_sources(owners, current.live, ancestors)
 
-        fresh = _assess_cluster_eras(store, cluster.traces)
-        admitted = {member.id for member in fresh.live}
-        admitted.update(
-            member.id for member in current.live
-            if any(
-                source_id in ancestors and member.id in ancestors[source_id]
-                and (reason == "corrected" or reason.startswith("superseded-by:"))
-                for source_id, reason in fresh.excluded.items()
-            )
-        )
-        unowned.intersection_update(admitted)
-        if len(assigned) == 1:
-            owner = next(owner for owner in owners if owner.id in assigned)
-            compatible = {source for source in unowned if _cluster_group(members[source]) == _cluster_group(owner)}
-            assigned[owner.id].update(compatible)
-            unowned.difference_update(compatible)
+                    fresh = _assess_cluster_eras(store, cluster.traces)
+                    admitted = {member.id for member in fresh.live}
+                    admitted.update(
+                        member.id for member in current.live
+                        if any(
+                            source_id in ancestors and member.id in ancestors[source_id]
+                            and (reason == "corrected" or reason.startswith("superseded-by:"))
+                            for source_id, reason in fresh.excluded.items()
+                        )
+                    )
+                    unowned.intersection_update(admitted)
+                    if len(assigned) == 1:
+                        owner = next(owner for owner in owners if owner.id in assigned)
+                        compatible = {source for source in unowned if _cluster_group(members[source]) == _cluster_group(owner)}
+                        assigned[owner.id].update(compatible)
+                        unowned.difference_update(compatible)
 
-        updates = [
-            (owner.id, sorted(assigned[owner.id]))
-            for owner in owners if owner.id in assigned
-        ]
-        groups: dict[tuple[str, str | None], list[Node]] = {}
-        for source in sorted(unowned):
-            member = members[source]
-            groups.setdefault(_cluster_group(member), []).append(member)
-        # New owners and their admission share the same observation. No other
-        # materializer can claim these sources between selection and creation.
-        created: list[tuple[Node, bool]] = []
-        for (scope, _group), new_members in groups.items():
-            if len(new_members) < min_cluster_size and (
-                assigned or len(groups) > 1 or len(cluster.traces) < min_cluster_size
-            ):
-                continue
-            assessment = replace(fresh, live=new_members)
-            created.append((_write_cluster_concept(
-                store, scope, assessment, strategy=cluster.strategy,
-                embeddings=cluster.embeddings_by_trace_id,
-                source_inputs=source_inputs,
-            ), True))
+                    updates = [
+                        (owner.id, sorted(assigned[owner.id]))
+                        for owner in owners if owner.id in assigned
+                    ]
+                    groups: dict[tuple[str, str | None], list[Node]] = {}
+                    for source in sorted(unowned):
+                        member = members[source]
+                        groups.setdefault(_cluster_group(member), []).append(member)
+                    # New owners and their admission share the same observation. No other
+                    # materializer can claim these sources between selection and creation.
+                    created: list[tuple[Node, bool]] = []
+                    for (scope, _group), new_members in groups.items():
+                        if len(new_members) < min_cluster_size and (
+                            assigned or len(groups) > 1 or len(cluster.traces) < min_cluster_size
+                        ):
+                            continue
+                        assessment = replace(fresh, live=new_members)
+                        created.append((_write_cluster_concept(
+                            store, scope, assessment, strategy=cluster.strategy,
+                            embeddings=cluster.embeddings_by_trace_id,
+                            source_inputs=source_inputs,
+                            prepared_digest=preparation.digests.get(_output_key("cluster", scope, new_members, None)),
+                        ), True))
+            break
+        except _DerivedOutputRequired as needed:
+            if nested:
+                raise
+            needed.prepare(store, preparation)
 
     result: list[tuple[Node, bool]] = []
     for owner_id, source_ids in updates:
-        with step(), store.transaction():
-            owner = store.get_node(owner_id)
-            if owner is None or owner.decayed or owner.corrections or _is_superseded(store, owner_id):
-                continue
-            assessment = _current_derivation(
-                store, owner, additional=store.get_nodes(source_ids).values(),
-            )
-            if not assessment.live:
-                store.soft_delete_node(owner_id, "derivation: no current sources")
-                continue
-            result.append((_write_cluster_concept(
-                store, owner.scope, assessment, existing=owner, strategy=cluster.strategy,
-                embeddings=cluster.embeddings_by_trace_id,
-                source_inputs=source_inputs,
-            ), False))
+        while True:
+            try:
+                with step():
+                    nested = store.connection.in_transaction
+                    with store.transaction():
+                        owner = store.get_node(owner_id)
+                        if owner is None or owner.decayed or owner.corrections or _is_superseded(store, owner_id):
+                            break
+                        assessment = _current_derivation(
+                            store, owner, additional=store.get_nodes(source_ids).values(),
+                        )
+                        if not assessment.live:
+                            store.soft_delete_node(owner_id, "derivation: no current sources")
+                            break
+                        result.append((_write_cluster_concept(
+                            store, owner.scope, assessment, existing=owner, strategy=cluster.strategy,
+                            embeddings=cluster.embeddings_by_trace_id,
+                            source_inputs=source_inputs,
+                            prepared_digest=preparation.digests.get(owner_id),
+                        ), False))
+                break
+            except _DerivedOutputRequired as needed:
+                if nested:
+                    raise
+                needed.prepare(store, preparation)
     return [*result, *created]
 
 
@@ -2190,55 +2211,67 @@ def _cross_scope_promotion(
     if len(sources_by_scope) < 3:
         return []
 
-    with step(), store.transaction():
-        concept = store.get_node(concept.id)
-        if not _promotion_source(concept) or _is_superseded(store, concept.id):
-            return []
-        group = _cluster_group(concept)[1]
-        current = _current_sources(store, (source.id for source, _ in sources_by_scope.values())).live
-        members = {source.id: source for source in current
-                   if _promotion_source(source) and not _is_superseded(store, source.id)
-                   and _cluster_group(source)[1] == group
-                   and cosine_similarity(concept.embedding, source.embedding) >= CROSS_SCOPE_PROMOTION_THRESHOLD}
-        if len(_source_scopes(members.values())) < 3:
-            return []
-        similarities = {source.id: cosine_similarity(concept.embedding, source.embedding)
-                        for source in members.values()}
-        sources = list(members.values())
-        ancestors = _source_ancestors(store, sources)
-        owners = [
-            node for node in store.list_nodes(
-                level="concept", scope="global", source_ids=ancestors, limit=100_000,
-            )
-            if node.materializer == "cross-scope-promotion"
-            and not node.corrections and not _is_superseded(store, node.id)
-        ]
-        assigned, unowned = _partition_sources(owners, sources, ancestors)
-        if len(assigned) == 1:
-            owner = next(owner for owner in owners if owner.id in assigned)
-            if _cluster_group(owner)[1] == group:
-                assigned[owner.id].update(unowned)
-                unowned.clear()
-        source_inputs: dict[str, _DigestSource] = {}
-        result = []
-        for owner in owners:
-            if owner.id not in assigned:
-                continue
-            current = _current_derivation(
-                store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
-            ).live
-            updated = _write_global_promotion(
-                store, current, existing=owner, similarities=similarities,
-                source_inputs=source_inputs,
-            )
-            if updated != owner:
-                result.append(updated)
-        remaining = [members[source] for source in sorted(unowned)]
-        if len(_source_scopes(remaining)) >= 3:
-            result.append(_write_global_promotion(
-                store, remaining, similarities=similarities, source_inputs=source_inputs,
-            ))
-        return result
+    preparation = _DerivationPreparation({}, {})
+    while True:
+        try:
+            with step():
+                nested = store.connection.in_transaction
+                with store.transaction():
+                    concept = store.get_node(concept.id)
+                    if not _promotion_source(concept) or _is_superseded(store, concept.id):
+                        return []
+                    group = _cluster_group(concept)[1]
+                    current = _current_sources(store, (source.id for source, _ in sources_by_scope.values())).live
+                    members = {source.id: source for source in current
+                               if _promotion_source(source) and not _is_superseded(store, source.id)
+                               and _cluster_group(source)[1] == group
+                               and cosine_similarity(concept.embedding, source.embedding) >= CROSS_SCOPE_PROMOTION_THRESHOLD}
+                    if len(_source_scopes(members.values())) < 3:
+                        return []
+                    similarities = {source.id: cosine_similarity(concept.embedding, source.embedding)
+                                    for source in members.values()}
+                    sources = list(members.values())
+                    ancestors = _source_ancestors(store, sources)
+                    owners = [
+                        node for node in store.list_nodes(
+                            level="concept", scope="global", source_ids=ancestors, limit=100_000,
+                        )
+                        if node.materializer == "cross-scope-promotion"
+                        and not node.corrections and not _is_superseded(store, node.id)
+                    ]
+                    assigned, unowned = _partition_sources(owners, sources, ancestors)
+                    if len(assigned) == 1:
+                        owner = next(owner for owner in owners if owner.id in assigned)
+                        if _cluster_group(owner)[1] == group:
+                            assigned[owner.id].update(unowned)
+                            unowned.clear()
+                    result = []
+                    for owner in owners:
+                        if owner.id not in assigned:
+                            continue
+                        current = _current_derivation(
+                            store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
+                        ).live
+                        updated = _write_global_promotion(
+                            store, current, existing=owner, similarities=similarities,
+                            source_inputs=preparation.source_inputs,
+                            prepared_digest=preparation.digests.get(owner.id),
+                        )
+                        if updated != owner:
+                            result.append(updated)
+                    remaining = [members[source] for source in sorted(unowned)]
+                    if len(_source_scopes(remaining)) >= 3:
+                        result.append(_write_global_promotion(
+                            store, remaining, similarities=similarities, source_inputs=preparation.source_inputs,
+                            prepared_digest=preparation.digests.get(
+                                _output_key("cross-scope-promotion", "global", remaining, None),
+                            ),
+                        ))
+                    return result
+        except _DerivedOutputRequired as needed:
+            if nested:
+                raise
+            needed.prepare(store, preparation)
 
 
 def _write_global_promotion(
@@ -2408,13 +2441,35 @@ def _promoted_temporal_hint(project_sources: Iterable[Node]) -> str | None:
     return Counter(hints).most_common(1)[0][0]
 
 
-def _refresh_promoted_global_concepts(store: MemoryStore) -> list[Node]:
-    return [
-        _refresh_derived_node(store, node)
-        for node in store.list_nodes(level="concept", scope="global", include_decayed=False, limit=100_000)
-        if node.provenance.get("strategy") == "cross-scope-promotion"
-        and not node.corrections and not _is_superseded(store, node.id)
-    ]
+def _refresh_promoted_global_concepts(
+    store: MemoryStore, *, step: Callable[[], AbstractContextManager[Any]] = nullcontext,
+) -> list[Node]:
+    with step():
+        owners = store.list_nodes(level="concept", scope="global", include_decayed=False, limit=100_000)
+    preparation = _DerivationPreparation({}, {})
+    result = []
+    for selected in owners:
+        while True:
+            try:
+                with step():
+                    nested = store.connection.in_transaction
+                    with store.transaction():
+                        node = store.get_node(selected.id)
+                        if (node is None or node.decayed or node.corrections
+                                or node.materializer != "cross-scope-promotion"
+                                or _is_superseded(store, node.id)):
+                            break
+                        updated = _refresh_derived_node(
+                            store, node, source_inputs=preparation.source_inputs,
+                            prepared_digest=preparation.digests.get(node.id),
+                        )
+                result.append(updated)
+                break
+            except _DerivedOutputRequired as needed:
+                if nested:
+                    raise
+                needed.prepare(store, preparation)
+    return result
 
 
 def _active_promotion_confidence(project_sources: Iterable[Node]) -> float:
