@@ -24,7 +24,7 @@ FACT = (
     "to one line, which is why the ValueError in src/app.py looked like a silent pass."
 )
 SCOPE = "project:demo"
-SOURCE = ("b" * 64, "claude:/tmp/synthetic.jsonl:10")
+SOURCE = ("b" * 64, SourceSpan("claude", "/tmp/synthetic.jsonl", 10, "result").locator())
 
 
 @pytest.fixture
