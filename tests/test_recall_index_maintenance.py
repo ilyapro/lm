@@ -103,7 +103,8 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
                 "SELECT provenance FROM nodes WHERE id = ?", (blocker.id,),
             ).fetchone()[0]
             if fault == "hydration":
-                store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (blocker.id,))
+                with store.transaction():
+                    store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (blocker.id,))
             before_blocker = tuple(store.connection.execute(
                 "SELECT * FROM nodes WHERE id = ?", (blocker.id,),
             ).fetchone())
@@ -158,7 +159,8 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
                     store.list_unchunked_nodes(scope=SCOPE)
                 with pytest.raises(TypeError):
                     store.get_node(blocker.id)
-                store.connection.execute("UPDATE nodes SET provenance = ? WHERE id = ?", (provenance, blocker.id))
+                with store.transaction():
+                    store.connection.execute("UPDATE nodes SET provenance = ? WHERE id = ?", (provenance, blocker.id))
             else:
                 assert [n.id for n in store.list_unchunked_nodes(scope=SCOPE)] == [blocker.id]
                 store.connection.execute("DROP TRIGGER refuse_index")
@@ -193,7 +195,8 @@ def test_direct_recall_preserves_healthy_result_and_retries_malformed_source(
     service.refresh_pending_chunks(scope=SCOPE)
     blocker = store.create_node(level="concept", content="Violet botanical inventory.", context={"scope": SCOPE})
     original = store.connection.execute(f"SELECT {column} FROM nodes WHERE id = ?", (blocker.id,)).fetchone()[0]
-    store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (malformed, blocker.id))
+    with store.transaction():
+        store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (malformed, blocker.id))
     arguments = ARGUMENTS | {"log_access": False, "log_event": False}
     baseline = service.memory_recall(**arguments, repair_pending=False)
     assert [result.node_id for result in baseline] == [target.id]
@@ -206,7 +209,8 @@ def test_direct_recall_preserves_healthy_result_and_retries_malformed_source(
     warnings = [record for record in caplog.records if "lazy chunk indexing deferred" in record.message]
     assert len(warnings) == 2
     assert all("1/1 nodes" in record.message for record in warnings)
-    store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (original, blocker.id))
+    with store.transaction():
+        store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (original, blocker.id))
     assert service.memory_recall(**arguments)[0].node_id == target.id
     assert store.node_chunks_are_current(blocker.id)
 
@@ -215,7 +219,8 @@ def test_direct_recall_preserves_healthy_result_and_retries_malformed_source(
 def test_required_malformed_knowledge_still_raises(mcp, route):
     store = mcp.memory_store
     target = store.append_trace(CONTENT, {"scope": SCOPE})
-    store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (target.id,))
+    with store.transaction():
+        store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (target.id,))
     if route == "direct":
         with pytest.raises(TypeError):
             MemoryRecallService(store).memory_recall(**ARGUMENTS)
@@ -274,7 +279,8 @@ def test_pending_hydration_uses_current_source_after_discovery(mcp, change):
         elif change == "decay":
             store.soft_delete_node(node.id)
         elif change == "delete":
-            store.connection.execute("DELETE FROM nodes WHERE id = ?", (node.id,))
+            with store.transaction():
+                store.connection.execute("DELETE FROM nodes WHERE id = ?", (node.id,))
         else:
             store.update_node(node.id, embedding=service.embedder.embed(node.content))
             expected_chunks = store.list_node_chunks(node.id)
