@@ -120,7 +120,11 @@ def test_selection_stops_after_all_requested_ids_and_never_writes(store):
     newest = delivery(store, ["other", "a", "a"])
     before = snapshot(store)
     changes = store.connection.total_changes
-    hits = select(store, ["a", "b"])
+    store.connection.execute("PRAGMA query_only = ON")
+    try:
+        hits = select(store, ["a", "b"])
+    finally:
+        store.connection.execute("PRAGMA query_only = OFF")
     assert {key: (hit["event_id"], hit["rank"]) for key, hit in hits.items()} == {
         "a": (newest, 1), "b": (middle, 0),
     }

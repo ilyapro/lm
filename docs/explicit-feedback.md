@@ -94,7 +94,8 @@ Closed events remain eligible; the credit ledger decides once-only credit.
 Each preparation, guarded revalidation and application reads current facts.
 Only matching result JSON and event/query/scope/claim facts reach preparation;
 application loads full events only for selected deliveries it needs. The selector
-checks each candidate's time before reading its membership and stops once all
+reads candidate identity and membership in one read snapshot. It checks each
+candidate's time before reading its membership and stops once all
 requested ids have a proven delivery. Older unnecessary result bodies do not
 affect that selection. Malformed JSON in a still-needed eligible event and
 required storage errors propagate; non-array bodies and non-object elements

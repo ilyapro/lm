@@ -457,7 +457,8 @@ lookup credit remains transport-only.
 
 Delivery selection caps the newest caller events before filtering by time or
 requested id. It reads eligible event membership in order and stops when every
-requested id has a proven delivery. An older unnecessary malformed result body
+requested id has a proven delivery. Identity and membership share one read
+snapshot. An older unnecessary malformed result body
 does not block that selection. A malformed body still needed to resolve a mark,
 or a required storage failure, remains an error. Non-array bodies and non-object
 result elements cannot prove delivery; absent eligible membership remains
