@@ -239,10 +239,13 @@ def test_memory_health_staleness_uses_time_since_access(tmp_path, health_now):
         ]:
             store.create_node(
                 node_id=name, level=level, content=name, context={"scope": scope},
-                timestamp=ago(created), stats={"decayed": decayed,
+                timestamp=ago(created), stats={
                     "last_accessed": ago(accessed) if accessed is not None else None,
                     "access_count": int(accessed is not None)},
             )
+            if decayed:
+                with store.transaction():
+                    store.connection.execute("UPDATE nodes SET decayed = 1 WHERE id = ?", (name,))
         before = list(store.connection.iterdump())
         report = memory_health(store, scope="project:alpha", top_stale=1)
         stale = report["staleness"]
