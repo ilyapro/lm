@@ -73,7 +73,7 @@ def test_ordinary_recall_discovers_pending_without_reading_completed_text(mcp, m
     store = mcp.memory_store
     trimmed = []
     discovering = False
-    original = store.list_unchunked_nodes
+    original = store.list_unchunked_node_positions
 
     def trim(content, chars):
         if discovering:
@@ -89,7 +89,7 @@ def test_ordinary_recall_discovers_pending_without_reading_completed_text(mcp, m
             discovering = False
 
     store.connection.create_function("trim", 2, trim)
-    monkeypatch.setattr(store, "list_unchunked_nodes", discover)
+    monkeypatch.setattr(store, "list_unchunked_node_positions", discover)
 
     async def scenario():
         async with Client(mcp) as client:

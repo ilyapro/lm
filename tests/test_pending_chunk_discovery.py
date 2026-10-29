@@ -76,6 +76,9 @@ def test_pending_filters_order_limit_and_covered_reads(tmp_path, scope, level, p
         for limit in (0, 1, 3, -1):
             result = store.list_unchunked_nodes(scope=scope, level=level, limit=limit, after=after)
             assert result == (wanted if limit < 0 else wanted[:limit])
+            assert store.list_unchunked_node_positions(
+                scope=scope, level=level, limit=limit, after=after,
+            ) == [(node.timestamp, node.id) for node in result]
         store.connection.set_trace_callback(None)
         assert not {n.content for n in completed}.intersection(trimmed)
 

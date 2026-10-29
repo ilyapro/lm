@@ -9,7 +9,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 import pytest
 
-from living_memory.retrieval import LAZY_CHUNK_NODE_LIMIT
+from living_memory.retrieval import LAZY_CHUNK_NODE_LIMIT, MemoryRecallService
 from living_memory.server import create_mcp_server
 
 
@@ -73,8 +73,9 @@ def event_for(store, response):
 
 @pytest.mark.parametrize("view", ["knowledge", "full"])
 @pytest.mark.parametrize("feedback_policy", ["audit", "credit"])
+@pytest.mark.parametrize("fault", ["index", "hydration"])
 def test_unrelated_index_failure_preserves_delivery_and_feedback(
-    mcp, monkeypatch, caplog, view, feedback_policy,
+    mcp, monkeypatch, caplog, view, feedback_policy, fault,
 ):
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", feedback_policy)
     store = mcp.memory_store
@@ -98,14 +99,21 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
             initial_score = event_for(store, baseline).results[0]["vector_score"]
             assert initial_score > 0
             store.update_node(blocker.id, content="Violet botanical inventory. " * 160)
-            before_blocker = asdict(store.get_node(blocker.id))
+            provenance = store.connection.execute(
+                "SELECT provenance FROM nodes WHERE id = ?", (blocker.id,),
+            ).fetchone()[0]
+            if fault == "hydration":
+                store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (blocker.id,))
+            before_blocker = tuple(store.connection.execute(
+                "SELECT * FROM nodes WHERE id = ?", (blocker.id,),
+            ).fetchone())
             earlier = store.append_trace("Amber mineral inventory.", {
                 "scope": "global", "timestamp": "2026-02-01T00:00:00Z",
             })
             later = store.append_trace("Indigo floral inventory.", {
                 "scope": SCOPE, "timestamp": "2026-02-03T00:00:00Z",
             })
-            attempts = deny_index(store, blocker, ordinal=1)
+            attempts = deny_index(store, blocker, ordinal=1) if fault == "index" else []
             access = store.get_node(target.id).access_count
             events = len(store.list_recall_events())
             usefulness = store.get_node(target.id).usefulness_score
@@ -135,17 +143,25 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
             credits = store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
             assert len(credits) == (1 if feedback_policy == "credit" else 0)
             assert (store.get_node(target.id).usefulness_score > usefulness) == (feedback_policy == "credit")
-            # Each selected node is independent: both neighbors commit while
-            # the failing node rolls back even its first chunk.
-            assert attempts == [0, 1]
+            # Both neighbors commit while the failing source stays unchanged.
+            assert attempts == ([0, 1] if fault == "index" else [])
             assert store.node_chunks_are_current(earlier.id)
             assert store.count_node_chunks(blocker.id) == 0
-            assert asdict(store.get_node(blocker.id)) == before_blocker
+            assert tuple(store.connection.execute(
+                "SELECT * FROM nodes WHERE id = ?", (blocker.id,),
+            ).fetchone()) == before_blocker
             assert store.node_chunks_are_current(later.id)
             assert not store.node_chunks_are_current(foreign.id)
             assert not store.connection.in_transaction
-            assert [n.id for n in store.list_unchunked_nodes(scope=SCOPE)] == [blocker.id]
-            store.connection.execute("DROP TRIGGER refuse_index")
+            if fault == "hydration":
+                with pytest.raises(TypeError):
+                    store.list_unchunked_nodes(scope=SCOPE)
+                with pytest.raises(TypeError):
+                    store.get_node(blocker.id)
+                store.connection.execute("UPDATE nodes SET provenance = ? WHERE id = ?", (provenance, blocker.id))
+            else:
+                assert [n.id for n in store.list_unchunked_nodes(scope=SCOPE)] == [blocker.id]
+                store.connection.execute("DROP TRIGGER refuse_index")
             recovered = await recall(client, view=view)
             assert body(recovered)["id"] == target.id
             assert body(recovered)["content"] == CONTENT
@@ -159,10 +175,81 @@ def test_unrelated_index_failure_preserves_delivery_and_feedback(
         asyncio.run(scenario())
     warnings = [r for r in caplog.records if "lazy chunk indexing deferred" in r.message]
     assert len(warnings) == 1
-    assert "IntegrityError" in warnings[0].message
+    assert ("IntegrityError" if fault == "index" else "TypeError") in warnings[0].message
     assert len(warnings[0].message) < 150 and warnings[0].exc_info is None
     assert "private diagnostic" not in caplog.text
     assert CONTENT not in caplog.text
+
+
+@pytest.mark.parametrize("column, malformed, error", [
+    ("provenance", "[]", TypeError), ("embedding", "not-json", ValueError),
+])
+def test_direct_recall_preserves_healthy_result_and_retries_malformed_source(
+    mcp, caplog, column, malformed, error,
+):
+    store = mcp.memory_store
+    target = store.append_trace(CONTENT, {"scope": SCOPE})
+    service = MemoryRecallService(store)
+    service.refresh_pending_chunks(scope=SCOPE)
+    blocker = store.create_node(level="concept", content="Violet botanical inventory.", context={"scope": SCOPE})
+    original = store.connection.execute(f"SELECT {column} FROM nodes WHERE id = ?", (blocker.id,)).fetchone()[0]
+    store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (malformed, blocker.id))
+    arguments = ARGUMENTS | {"log_access": False, "log_event": False}
+    baseline = service.memory_recall(**arguments, repair_pending=False)
+    assert [result.node_id for result in baseline] == [target.id]
+    with caplog.at_level(logging.WARNING, logger="living_memory.retrieval"):
+        for _ in range(2):
+            assert service.memory_recall(**arguments) == baseline
+            assert store.count_node_chunks(blocker.id) == 0
+            with pytest.raises(error):
+                store.list_unchunked_nodes(scope=SCOPE)
+    warnings = [record for record in caplog.records if "lazy chunk indexing deferred" in record.message]
+    assert len(warnings) == 2
+    assert all("1/1 nodes" in record.message for record in warnings)
+    store.connection.execute(f"UPDATE nodes SET {column} = ? WHERE id = ?", (original, blocker.id))
+    assert service.memory_recall(**arguments)[0].node_id == target.id
+    assert store.node_chunks_are_current(blocker.id)
+
+
+@pytest.mark.parametrize("route", ["direct", "native"])
+def test_required_malformed_knowledge_still_raises(mcp, route):
+    store = mcp.memory_store
+    target = store.append_trace(CONTENT, {"scope": SCOPE})
+    store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (target.id,))
+    if route == "direct":
+        with pytest.raises(TypeError):
+            MemoryRecallService(store).memory_recall(**ARGUMENTS)
+    else:
+        async def scenario():
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError, match="list indices"):
+                    await recall(client)
+        asyncio.run(scenario())
+    assert store.list_recall_events() == []
+    assert store.connection.execute("SELECT access_count FROM nodes WHERE id = ?", (target.id,)).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("column", ["content_fingerprint", "provenance"])
+def test_pending_discovery_and_hydration_sql_read_errors_still_raise(mcp, column):
+    store = mcp.memory_store
+    store.append_trace("Violet botanical inventory.", {"scope": SCOPE})
+    denied = []
+
+    def authorize(action, table, field, *_):
+        if action == sqlite3.SQLITE_READ and table == "nodes" and field == column:
+            denied.append(field)
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    store.connection.set_authorizer(authorize)
+    try:
+        with pytest.raises(sqlite3.DatabaseError, match="prohibited|authorized"):
+            MemoryRecallService(store).refresh_pending_chunks(scope=SCOPE)
+    finally:
+        store.connection.set_authorizer(None)
+    assert denied
+    assert store.list_recall_events() == []
+    assert not store.connection.in_transaction
 
 
 @pytest.mark.parametrize("fault", ["global", "selected_nodes"])
