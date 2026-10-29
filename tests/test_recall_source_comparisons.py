@@ -91,12 +91,19 @@ def test_selection_keeps_available_replacements_and_ranked_fillers(
 @pytest.mark.parametrize("distinction", [
     "context", "provenance", "sources", "corrections", "unknown_derivation",
     "derivation_sources", "derivation_group", "bookkeeping", "level", "known_derivation",
+    "scope", "meaning", "restriction",
 ])
 def test_collisions_keep_complete_source_equality(view, gate, distinction):
     first, second, later = row("first"), row("second"), row("later", "Later fact.")
     first, second, later = [replace(result, lexical_score=1.0) for result in (first, second, later)]
     if distinction == "context":
         second.node.context = {"procedure": "independent"}
+    elif distinction == "scope":
+        second.node.scope = "project:other"
+    elif distinction in ("meaning", "restriction"):
+        first.node.content = "Deployment is allowed."
+        second.node.content = ("Deployment is forbidden." if distinction == "meaning"
+                               else "Deployment is allowed only after approval.")
     elif distinction == "provenance":
         second.node.provenance = {"unrelated": "independent"}
     elif distinction == "sources":
@@ -124,12 +131,13 @@ def test_collisions_keep_complete_source_equality(view, gate, distinction):
             [first, second], [later], 2, DeliveryHistory(),
             relevance=QueryRelevance([first, second, later], threshold=0.35) if gate else None,
         )
-    assert selection_work["ids"] == ["first", "second"]
+    compared = [] if distinction in ("scope", "meaning", "restriction") else ["first", "second"]
+    assert selection_work["ids"] == compared
     assert selected == ([first, later] if twins else [first, second])
     assert residual == ([second] if twins else [later])
     with identity_work() as shaping_work:
         shaped = shape([first, second, later], view)
-    assert shaping_work["ids"] == ["first", "second"]
+    assert shaping_work["ids"] == compared
     assert [entry["delivery"] for entry in shaped] == ["full", "twin_duplicate" if twins else "full", "full"]
     if twins:
         assert shaped[1]["content_ref"]["duplicate_of"] == first.node.id
@@ -150,11 +158,16 @@ def test_withheld_and_empty_content_cannot_create_a_collision_or_bearer(view):
     assert shaped[-1]["content_ref"]["duplicate_of"] == "visible"
 
 
-def test_session_repeat_keeps_its_slot_and_delivery_uses_the_first_bearer():
+@pytest.mark.parametrize("gate", [False, True])
+def test_session_repeat_keeps_its_slot_and_delivery_uses_the_first_bearer(gate):
     first, twin, later = row("first"), row("twin"), row("later", "Later fact.")
+    first, twin, later = [replace(result, lexical_score=1.0) for result in (first, twin, later)]
     records = recall_delivery_records([twin], shape([twin]))
     history = DeliveryHistory([{"node_id": key, "delivery": value} for key, value in records.items()])
-    selected, residual = _select_distinct_results([first, twin], [later], 2, history)
+    selected, residual = _select_distinct_results(
+        [first, twin], [later], 2, history,
+        relevance=QueryRelevance([first, twin, later], threshold=0.35) if gate else None,
+    )
     assert selected == [first, twin] and residual == [later]
     shaped = shape(selected, history=history)
     assert [entry["delivery"] for entry in shaped] == ["full", "twin_duplicate"]
