@@ -358,8 +358,9 @@ than inferring capabilities from corpus size.
 
 Consolidation uses the configured local encoder for the selected active traces,
 reusing whole-content vectors cached by source content and encoder identity.
-Missing vectors are encoded in guarded batches of eight; clustering runs outside
-the shared-store guard. The existing merge floor, similarity thresholds, scope
+Missing vectors are encoded in batches of eight under the encoder lock;
+encoding, encoder identity waits and clustering run outside the shared-store
+guard. The existing merge floor, similarity thresholds, scope
 and procedure grouping, current-source checks and atomic derivation writers
 determine admission. `force` expands the trace selection to an explicitly
 requested cluster floor when needed; it does not waive evidence requirements.
@@ -376,6 +377,20 @@ indexes. Each writer rechecks current source validity, grouping and similarity
 inside its transaction. Missing representatives cannot authorize promotion.
 Existing global derivations still refresh from their recorded current sources
 when there is insufficient evidence to create a new global concept.
+
+Derived search chunks encode the exact output digest independently of its
+clustering representative. The shared cluster and promotion writers accept
+prepared content vectors. A missing or changed output returns detached inputs
+through the caller's preparation boundary: its ordinary transaction rolls back,
+the caller releases the store guard, prepares the content, and retries against
+current owners and sources. Cluster admission is checked again, including
+competing owners and group compatibility. Source corrections and explicit forget
+retain source-first derivative refresh in the same transaction; native teach
+also rolls back and reapplies its accompanying feedback together. A caller-owned
+outer transaction receives an unresolved preparation requirement without
+entering the encoder. Encoding and chunk-write failures remain required failures.
+Unchanged content with current chunks avoids re-encoding. Procedural outputs and
+refreshes without a representative retain their existing lazy invalidation.
 
 Preparation reads existing project representatives once per pass and compares
 each candidate with materialized concepts in the same group. Total work grows
