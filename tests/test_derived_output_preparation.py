@@ -83,7 +83,7 @@ def preparing(store, guard):
             release.set()
 
 
-@pytest.mark.parametrize("change", ["source_content", "source_decay", "source_correction", "union", "owner_scope"])
+@pytest.mark.parametrize("change", ["source_content", "source_decay", "source_correction", "union"])
 def test_changed_sources_and_owner_are_prepared_again(store, change):
     members = sources(store, level="concept" if change == "source_content" else "trace")
     owner = derived(store, "inspection", members)
@@ -103,8 +103,6 @@ def test_changed_sources_and_owner_are_prepared_again(store, change):
                 writer.update_node(owner.id, provenance={
                     **owner.provenance, "source_traces": [*owner.source_traces, added.id],
                 })
-            else:
-                writer.update_node(owner.id, context={**owner.context, "scope": "project:new-harbor"})
         release.set()
         (current, created), = work.result(timeout=15)
     assert not created and current.id == owner.id
@@ -118,11 +116,9 @@ def test_changed_sources_and_owner_are_prepared_again(store, change):
         assert members[0].id not in current.source_traces and members[0].content not in current.content
     elif change == "union":
         assert added.id in current.source_traces and added.content in current.content
-    else:
-        assert current.scope == "project:new-harbor"
 
 
-@pytest.mark.parametrize("change", ["decay", "correction", "materializer"])
+@pytest.mark.parametrize("change", ["decay", "correction", "materializer", "scope"])
 def test_invalidated_owner_is_not_overwritten_after_preparation(store, change):
     members = sources(store)
     owner = derived(store, "inspection", members)
@@ -135,12 +131,38 @@ def test_invalidated_owner_is_not_overwritten_after_preparation(store, change):
                 writer.soft_delete_node(owner.id, "retired owner")
             elif change == "correction":
                 writer.add_correction(owner.id, old=owner.content, new=CORRECTION, by="inspector")
-            else:
+            elif change == "materializer":
                 writer.update_node(owner.id, provenance={**owner.provenance, "strategy": "procedural"})
+            else:
+                writer.update_node(owner.id, context={**owner.context, "scope": "project:new-harbor"})
             preserved = writer.get_node(owner.id)
         release.set()
         assert work.result(timeout=15) == []
     assert store.get_node(owner.id) == preserved
+
+
+@pytest.mark.parametrize("change", ["group", "competing_owner"])
+def test_new_source_admission_is_rechecked_after_preparation(store, change):
+    members = sources(store)
+    owner = derived(store, "inspection", members[:2])
+    guard = RLock()
+    group = c._TraceCluster(SCOPE, members, Counter())
+    with preparing(store, guard) as (workers, entered, release, _):
+        work = workers.submit(c._materialize_cluster, store, group, min_cluster_size=3, step=lambda: guard)
+        assert entered.wait(10)
+        with MemoryStore(store.db_path) as writer:
+            if change == "group":
+                writer.update_node(owner.id, context={**owner.context, "task_pattern": "independent"})
+            else:
+                competing = derived(writer, "other inspection", members[2:])
+        release.set()
+        (current, created), = work.result(timeout=15)
+    assert not created and current.id == owner.id
+    assert set(current.source_traces) == {member.id for member in members[:2]}
+    assert members[2].content not in current.content
+    assert_chunks(store, current)
+    if change == "competing_owner":
+        assert store.get_node(competing.id).source_traces == [members[2].id]
 
 
 def test_new_owner_during_create_preparation_receives_the_current_union(store):
