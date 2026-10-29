@@ -805,36 +805,40 @@ class MemoryRecallService:
             scopes = plan.search_scopes
             after = self._pending_chunk_positions.get(scopes)
             pending = sorted(
-                (node for item in scopes for node in self.store.list_unchunked_nodes(
+                (position for item in scopes for position in self.store.list_unchunked_node_positions(
                     scope=item, limit=LAZY_CHUNK_NODE_LIMIT, after=after,
                 )),
-                key=lambda node: (after is not None and (node.timestamp, node.id) <= after,
-                                  node.timestamp, node.id),
+                key=lambda position: (after is not None and position <= after, *position),
             )[:LAZY_CHUNK_NODE_LIMIT]
             if not pending:
                 self._pending_chunk_positions.pop(scopes, None)
                 return
             # Advance under the selection guard before model work releases it,
             # even when a selected source fails or changes before application.
-            last = pending[-1]
-            self._pending_chunk_positions[scopes] = (last.timestamp, last.id)
+            self._pending_chunk_positions[scopes] = pending[-1]
             self._pending_chunk_positions.move_to_end(scopes)
             if len(self._pending_chunk_positions) > LAZY_CHUNK_PLAN_LIMIT:
                 self._pending_chunk_positions.popitem(last=False)
             self._share_embedder_with_store()
-        deferred_count = 0
-        first_error = ""
-        for node in pending:
+        deferred_errors: list[str] = []
+        for _, node_id in pending:
             try:
-                self._rechunk_node(node, guard=guard)
+                with guard():
+                    node = self.store.get_node(node_id)
+            except (TypeError, ValueError) as error:
+                # Malformed source data is local; storage read failures remain
+                # explicit, just like failures in pending discovery.
+                deferred_errors.append(type(error).__name__)
+                continue
+            try:
+                if node is not None and not node.decayed and plan.allows(node.scope):
+                    self._rechunk_node(node, guard=guard)
             except Exception as error:
-                deferred_count += 1
-                if not first_error:
-                    first_error = type(error).__name__
-        if deferred_count:
+                deferred_errors.append(type(error).__name__)
+        if deferred_errors:
             logging.getLogger(__name__).warning(
                 "lazy chunk indexing deferred for %d/%d nodes (first error: %s); using available index",
-                deferred_count, len(pending), first_error,
+                len(deferred_errors), len(pending), deferred_errors[0],
             )
 
     def refresh_legacy_passages(

@@ -4266,6 +4266,35 @@ class MemoryStore:
     ) -> list[Node]:
         """Active nodes whose chunks are missing or stale, oldest work first.
 
+        Full-node decoding is strict. Optional repair can select positions with
+        :meth:`list_unchunked_node_positions` before hydrating individual sources.
+        """
+
+        return [_node_from_row(row) for row in self._unchunked_node_rows(
+            scope=scope, level=level, limit=limit, after=after, positions_only=False,
+        )]
+
+    def list_unchunked_node_positions(
+        self,
+        *,
+        scope: str | None = None,
+        level: NodeLevel | None = None,
+        limit: int = 200,
+        after: tuple[str, str] | None = None,
+    ) -> list[tuple[str, str]]:
+        """Pending timestamp/id positions, without decoding source bodies."""
+
+        return [(str(row["timestamp"]), str(row["id"]))
+                for row in self._unchunked_node_rows(
+                    scope=scope, level=level, limit=limit, after=after, positions_only=True,
+                )]
+
+    def _unchunked_node_rows(
+        self, *, scope: str | None, level: NodeLevel | None, limit: int,
+        after: tuple[str, str] | None, positions_only: bool,
+    ) -> list[sqlite3.Row]:
+        """Select current pending sources with either full rows or positions.
+
         The v6 analogue of :meth:`list_unembedded_nodes`, and deliberately not
         the same question: a node whose content was edited still has a
         ``nodes.embedding`` and so is invisible to the legacy query, but its
@@ -4301,7 +4330,7 @@ class MemoryStore:
             order = "(n.timestamp, n.id) <= (?, ?) ASC, " + order
             params.extend(after)
         params.append(int(limit))
-        rows = self._conn.execute(
+        return self._conn.execute(
             f"""
             WITH pending AS MATERIALIZED (
                 SELECT n.id FROM nodes n
@@ -4312,14 +4341,14 @@ class MemoryStore:
                       AND c.content_fingerprint = n.content_fingerprint
                   )
             )
-            SELECT n.* FROM pending p JOIN nodes n ON n.id = p.id
+            SELECT {'n.timestamp, n.id' if positions_only else 'n.*'}
+            FROM pending p JOIN nodes n ON n.id = p.id
             WHERE TRIM(n.content, {_SQL_WHITESPACE}) != ''
             ORDER BY {order}
             LIMIT ?
             """,
             params,
         ).fetchall()
-        return [_node_from_row(row) for row in rows]
 
     def delete_node_chunks(self, node_id: str) -> int:
         """Remove every chunk of one node. Returns the number of rows deleted."""

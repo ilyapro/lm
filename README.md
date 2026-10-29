@@ -386,6 +386,10 @@ Before retrieval, recall attempts at most 16 sources with missing or stale
 chunk indexes. Each service keeps a cyclic timestamp/id position for up to 128
 recent search-scope sets, shared across MCP clients. Selection reads current
 pending identities, advances past failed sources and wraps so they can retry.
+Each body is decoded separately after selection; malformed unrelated pending
+input is deferred with a bounded diagnostic and stays eligible for retry.
+Strict maintenance lists, pending discovery and storage read errors, and errors
+decoding knowledge required by retrieval remain explicit.
 Different scope sets have independent positions. Restarting the service or
 evicting an inactive position starts that scope set at its oldest pending source;
 progress is not persisted. Source and index revalidation, atomic replacement and
