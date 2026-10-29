@@ -1906,15 +1906,19 @@ def _materialize_cluster(
                 with step():
                     nested = store.connection.in_transaction
                     with store.transaction():
-                        owners, assigned, _, _ = _cluster_admission(store, cluster)
-                        owner = next((node for node in owners if node.id == owner_id), None)
-                        if owner is None or owner_id not in assigned:
+                        owner = store.get_node(owner_id)
+                        if (owner is None or owner.decayed or owner.corrections
+                                or owner.scope != cluster.scope or owner.level != "concept"
+                                or owner.materializer != "cluster" or _is_superseded(store, owner_id)):
                             break
+                        _, assigned, _, _ = _cluster_admission(store, cluster)
                         assessment = _current_derivation(
-                            store, owner, additional=store.get_nodes(sorted(assigned[owner_id])).values(),
+                            store, owner, additional=store.get_nodes(sorted(assigned.get(owner_id, ()))).values(),
                         )
                         if not assessment.live:
                             store.soft_delete_node(owner_id, "derivation: no current sources")
+                            break
+                        if owner_id not in assigned:
                             break
                         result.append((_write_cluster_concept(
                             store, owner.scope, assessment, existing=owner, strategy=cluster.strategy,
