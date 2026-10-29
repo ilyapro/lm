@@ -5112,6 +5112,7 @@ class MemoryStore:
 
     def _has_graph_evidence(self, scope: str) -> bool:
         """Whether an active scoped node has a semantic edge to an active node."""
+        relation = semantic_relation_sql("c")
         row = self._conn.execute(
             f"""
             SELECT 1
@@ -5122,13 +5123,13 @@ class MemoryStore:
                     SELECT 1 FROM connections c
                     JOIN nodes target ON target.id = c.target_id
                     WHERE c.source_id = selected.id AND target.decayed = 0
-                      AND {semantic_relation_sql("c")}
+                      AND {relation}
                 )
                 OR EXISTS (
                     SELECT 1 FROM connections c
                     JOIN nodes source ON source.id = c.source_id
                     WHERE c.target_id = selected.id AND source.decayed = 0
-                      AND {semantic_relation_sql("c")}
+                      AND {relation}
                 )
               )
             LIMIT 1
