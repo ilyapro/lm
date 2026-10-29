@@ -299,11 +299,11 @@ def test_cross_scope_promotion_refreshes_confidence_after_source_decay(
         assert refreshed is not None
         assert refreshed.confidence < original_confidence
         assert refreshed.unique_agents == 2
-        assert refreshed.provenance["active_promoted_from"] == [
+        assert refreshed.provenance["promoted_from"] == [
             "project:alpha",
             "project:beta",
         ]
-        assert refreshed.provenance["active_source_concepts"] == sorted([alpha.id, beta.id])
+        assert refreshed.provenance["source_concepts"] == sorted([alpha.id, beta.id])
 
 
 def test_cross_scope_promotion_requires_three_project_scopes(

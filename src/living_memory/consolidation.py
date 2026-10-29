@@ -2235,8 +2235,6 @@ def _write_global_promotion(
         "source_coverage": _source_coverage(existing, source_traces, promoted_at),
         "promoted_from": source_scopes,
         "source_concepts": source_concepts,
-        "active_promoted_from": source_scopes,
-        "active_source_concepts": source_concepts,
         "strategy": "cross-scope-promotion",
     })
     provenance.setdefault("promoted_at", promoted_at)
@@ -2248,11 +2246,13 @@ def _write_global_promotion(
     }
     if existing is not None and existing.content == digest and all(
         existing.provenance.get(key) == provenance[key]
-        for key in ("source_concepts", "active_source_concepts", "active_promoted_from", "source_coverage")
+        for key in ("source_concepts", "promoted_from", "source_coverage")
     ) and existing.source_traces == provenance["source_traces"] and all(
         getattr(existing, key) == value for key, value in stats.items()
     ):
         return existing
+    provenance.pop("active_promoted_from", None)
+    provenance.pop("active_source_concepts", None)
     prepared_digest = _derived_digest(
         store, "cross-scope-promotion", "global", project_sources, best_source,
         existing, best_source.embedding, prepared_digest, source_inputs,

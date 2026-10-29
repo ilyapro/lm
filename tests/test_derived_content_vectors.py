@@ -131,7 +131,7 @@ def test_cross_scope_create_update_and_teach_reach_warm_recall(tmp_path):
             memory_consolidate(store, scope=sources[0].scope, min_cluster_size=10)
         promoted, = store.list_nodes(level="concept", scope="global")
         assert promoted.materializer == "cross-scope-promotion"
-        assert set(promoted.provenance["active_promoted_from"]) == {SCOPE, "project:beta", "project:gamma"}
+        assert set(promoted.provenance["promoted_from"]) == {SCOPE, "project:beta", "project:gamma"}
         assert len(promoted.materializer_sources) == 3
         assert_content_vectors(store, promoted, encoder)
         service = MemoryRecallService(store, embedder=encoder)

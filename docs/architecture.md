@@ -418,6 +418,12 @@ inside its transaction. Missing representatives cannot authorize promotion.
 Existing global derivations still refresh from their recorded current sources
 when there is insufficient evidence to create a new global concept.
 
+Promotion provenance records current project inputs in `source_concepts` and
+their scopes in `promoted_from`. Materializer identity and promotion summaries
+read these fields. `source_traces` and `source_coverage` describe current evidence;
+`promotion_events` retains promotion history. Unchanged content, current sources,
+scopes, coverage and validity stats leave the promotion untouched.
+
 Derived search chunks encode the exact output digest independently of its
 clustering representative. The shared cluster and promotion writers accept
 prepared content vectors. A missing or changed output returns detached inputs
