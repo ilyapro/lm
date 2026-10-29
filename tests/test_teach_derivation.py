@@ -8,11 +8,11 @@ import pytest
 from living_memory import consolidation
 from living_memory.consolidation import (
     _current_sources,
-    memory_consolidate,
     _cross_scope_promotion,
     _materialize_procedural_schemas,
     _materialize_cluster,
     _TraceCluster,
+    memory_consolidate,
     memory_teach,
 )
 from living_memory.config import MemoryConfig

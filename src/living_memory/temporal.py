@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 WEEKDAY_HINTS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
+
 def parse_timestamp(value: Any) -> datetime | None:
     """Parse common ISO-like timestamps used by memory nodes."""
 

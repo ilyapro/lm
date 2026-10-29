@@ -661,7 +661,8 @@ def migrate_anchor_edges(
     """Re-point every anchor edge on ``from_target`` onto ``to_target``.
 
     The explicit entry point, for callers that know the replacement without
-    having written a ``supersedes`` edge — explicit derivative displacement, backfills, repair.
+    having written a ``supersedes`` edge — explicit derivative displacement,
+    backfills, repair.
     The write paths that *do* write such an edge are covered automatically by
     ``MemoryStore._insert_connection``.
 
