@@ -137,6 +137,29 @@ def test_successful_numeric_effect_is_applied_once(recalled, handler):
     assert numeric_state(store, ids) == after
 
 
+@pytest.mark.parametrize("first,second", [("remember", "lookup"), ("lookup", "remember")])
+def test_failed_pair_remains_available_to_another_credit_basis(recalled, monkeypatch, first, second):
+    _mcp, store, ids, event_id, call = recalled
+    with monkeypatch.context() as fault:
+        inject_numeric_failure(fault, store, "after_weights")
+        assert call(first, ids[:1]).credited == []
+    assert call(second, ids[:1]).credited == [(event_id, ids[0])]
+    after = numeric_state(store, ids)
+    assert call(first, ids[:1]).credited == []
+    assert numeric_state(store, ids) == after
+
+
+def test_lookup_cannot_spend_credit_without_its_event(recalled, monkeypatch):
+    _mcp, store, ids, event_id, call = recalled
+    before = numeric_state(store, ids)
+    with monkeypatch.context() as fault:
+        fault.setattr(store, "get_recall_event", lambda event_id: None)
+        assert call("lookup", ids[:1]).credited == []
+    assert store.credited_node_ids(event_id) == set()
+    assert numeric_state(store, ids) == before
+    assert call("lookup", ids[:1]).credited == [(event_id, ids[0])]
+
+
 @pytest.mark.parametrize("handler", ["remember", "lookup"])
 def test_failed_pair_preserves_other_pairs_and_their_outcomes(recalled, monkeypatch, handler):
     _mcp, store, ids, event_id, call = recalled

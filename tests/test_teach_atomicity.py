@@ -111,17 +111,23 @@ def test_one_commit_is_visible_before_scheduling(mcp, monkeypatch):
         scheduled.append(True)
 
     monkeypatch.setattr(server, "_schedule_auto_consolidation_if_due", schedule)
-    store.connection.set_trace_callback(statements.append)
+    store.connection.set_trace_callback(
+        lambda statement: statements.append((statement, store.connection.total_changes))
+    )
     result = teach(mcp, ids)
     assert_outcome(mcp, ids, event_id, result)
     assert scheduled == [True]
     depth = commits = 0
-    for statement in statements:
+    changes_before = store.connection.total_changes
+    for statement, changes in statements:
         if statement.startswith("SAVEPOINT "):
+            if depth == 0:
+                changes_before = changes
             depth += 1
         elif statement.startswith("RELEASE "):
             depth -= 1
-            commits += depth == 0
+            # Preparation can release read-only delivery snapshots.
+            commits += depth == 0 and changes != changes_before
         assert not statement.startswith(("COMMIT", "END TRANSACTION"))
     assert depth == 0
     assert commits == 1
