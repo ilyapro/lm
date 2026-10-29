@@ -269,7 +269,7 @@ def test_complete_instructions_determine_both_reports(
 ) -> None:
     expected = checker.expected_texts(LIVE_SCOPE, arm)
     tail = "\n" + compose_map_section([{
-        "clusters": [{"label": "another consumer task", "count": 3}],
+        "recall_map": {"clusters": [{"label": "another consumer task", "count": 3}]},
     }]) + "\n"
     assert "## Memory nearby" in tail
     suffix = {
@@ -337,7 +337,6 @@ def test_client_reads_supported_instructions_without_masking_empty_values(
     expected = checker.expected_texts()
     instructions = expected[checker.INSTRUCTIONS_KEY] if value == "protocol" else value
     if interface == "modern":
-        # A legacy result must not override an explicitly empty modern value.
         client = _ProtocolClient(instructions=instructions, initialize_result=None)
     else:
         client = _ProtocolClient(initialize_result=SimpleNamespace(instructions=instructions))
