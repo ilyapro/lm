@@ -683,8 +683,11 @@ def _derived_digest(
     store: MemoryStore, kind: str, scope: str, members: Sequence[Node], best: Node,
     existing: Node | None, representative: Sequence[float] | None,
     prepared: _PreparedDigest | None,
+    source_inputs: dict[str, _DigestSource] | None,
 ) -> _PreparedDigest:
     if prepared is None or not prepared.matches(members, best, scope):
+        if not representative:
+            return _prepare_digest(scope, members, best, _digest_sources(members, source_inputs))
         current_content = existing.content if (
             representative and existing is not None and store.node_chunks_are_current(existing.id)
         ) else None
@@ -803,10 +806,18 @@ def memory_forget(
 ) -> Node:
     """Atomically forget a source and refresh its recorded derivatives."""
 
-    with store.transaction():
-        forgotten = store.soft_delete_node(node_id, reason or "manual forget")
-        _refresh_derived_from(store, node_id, preparation=preparation)
-    return forgotten
+    nested = store.connection.in_transaction
+    preparation = preparation or _DerivationPreparation({}, {})
+    while True:
+        try:
+            with store.transaction():
+                forgotten = store.soft_delete_node(node_id, reason or "manual forget")
+                _refresh_derived_from(store, node_id, preparation=preparation)
+                return forgotten
+        except _DerivedOutputRequired as needed:
+            if nested:
+                raise
+            needed.prepare(store, preparation)
 
 
 def memory_teach(
@@ -820,75 +831,83 @@ def memory_teach(
 ) -> TeachResult:
     """Atomically correct a source and refresh its recorded derivatives."""
 
-    with store.transaction():
-        original = store.get_node(trace_id)
-        if original is None:
-            raise KeyError(trace_id)
+    nested = store.connection.in_transaction
+    preparation = preparation or _TeachPreparation({}, {}, new_ulid())
+    while True:
+        try:
+            with store.transaction():
+                original = store.get_node(trace_id)
+                if original is None:
+                    raise KeyError(trace_id)
 
-        correction_text = _correction_text(correction)
-        if not correction_text:
-            raise ValueError("correction must be non-empty")
+                correction_text = _correction_text(correction)
+                if not correction_text:
+                    raise ValueError("correction must be non-empty")
 
-        # Preserve the subject and step location, but identity belongs to the
-        # current correction call, never to the author of the corrected source.
-        current_identity = {"agent", "task", "session_id", "session", "transport_session_id"}
-        context_data = {
-            key: value for key, value in original.context.items()
-            if key not in _STEP_TEXT_KEYS and key not in current_identity
-        }
-        context_data.update(dict(context or {}))
-        context_data.setdefault("scope", original.scope)
-        context_data["timestamp"] = _utc_now()
-        teacher = str(context_data.get("agent") or "teacher")
-        context_data["agent"] = teacher
+                # Preserve the subject and step location, but identity belongs to the
+                # current correction call, never to the author of the corrected source.
+                current_identity = {"agent", "task", "session_id", "session", "transport_session_id"}
+                context_data = {
+                    key: value for key, value in original.context.items()
+                    if key not in _STEP_TEXT_KEYS and key not in current_identity
+                }
+                context_data.update(dict(context or {}))
+                context_data.setdefault("scope", original.scope)
+                context_data["timestamp"] = _utc_now()
+                teacher = str(context_data.get("agent") or "teacher")
+                context_data["agent"] = teacher
 
-        requested_confidence = 0.5 if confidence is None else float(confidence)
-        feedback = {
-            "confidence": requested_confidence,
-            "unique_agents": 1,
-            "usefulness_score": max(1.0, original.usefulness_score + 1.0),
-        }
-        corrective_trace = store.append_trace(
-            correction_text, context_data, feedback=feedback,
-            node_id=preparation.corrective_id if preparation is not None else None,
-        )
+                requested_confidence = 0.5 if confidence is None else float(confidence)
+                feedback = {
+                    "confidence": requested_confidence,
+                    "unique_agents": 1,
+                    "usefulness_score": max(1.0, original.usefulness_score + 1.0),
+                }
+                corrective_trace = store.append_trace(
+                    correction_text, context_data, feedback=feedback,
+                    node_id=preparation.corrective_id if preparation is not None else None,
+                )
 
-        supersedes = store.create_connection(
-            corrective_trace.id,
-            original.id,
-            "supersedes",
-            merge=True,
-            weight=1.0,
-            metadata={"by": teacher, "correction": correction_text},
-        )
+                supersedes = store.create_connection(
+                    corrective_trace.id,
+                    original.id,
+                    "supersedes",
+                    merge=True,
+                    weight=1.0,
+                    metadata={"by": teacher, "correction": correction_text},
+                )
 
-        corrected_original = store.add_correction(
-            original.id,
-            old=original.content,
-            new=correction_text,
-            by=teacher,
-            stats={
-                "confidence": min(original.confidence, 0.25),
-                "unique_agents": original.unique_agents,
-                "usefulness_score": min(original.usefulness_score, -0.25),
-            },
-        )
-        if preparation is None:
-            _refresh_derived_from(store, original.id)
-        else:
-            _refresh_derived_from(store, original.id, preparation=preparation)
-        implicit_feedback = apply_pending_recall_feedback(
-            store,
-            corrective_trace,
-            reinforce_results=False,
-        )
-        corrective_trace = implicit_feedback.trace
-        return TeachResult(
-            corrective_trace=corrective_trace,
-            supersedes=supersedes,
-            original=corrected_original,
-            implicit_feedback=implicit_feedback,
-        )
+                corrected_original = store.add_correction(
+                    original.id,
+                    old=original.content,
+                    new=correction_text,
+                    by=teacher,
+                    stats={
+                        "confidence": min(original.confidence, 0.25),
+                        "unique_agents": original.unique_agents,
+                        "usefulness_score": min(original.usefulness_score, -0.25),
+                    },
+                )
+                if preparation is None:
+                    _refresh_derived_from(store, original.id)
+                else:
+                    _refresh_derived_from(store, original.id, preparation=preparation)
+                implicit_feedback = apply_pending_recall_feedback(
+                    store,
+                    corrective_trace,
+                    reinforce_results=False,
+                )
+                corrective_trace = implicit_feedback.trace
+                return TeachResult(
+                    corrective_trace=corrective_trace,
+                    supersedes=supersedes,
+                    original=corrected_original,
+                    implicit_feedback=implicit_feedback,
+                )
+        except _DerivedOutputRequired as needed:
+            if nested:
+                raise
+            needed.prepare(store, preparation)
 
 
 def _derivation_sources(store: MemoryStore | _SourceObservation, node: Node) -> list[str]:
@@ -1915,7 +1934,7 @@ def _write_cluster_concept(
     best_trace = max(members, key=lambda trace: (_trace_quality(trace), trace.id))
     representative = best_trace.embedding or (embeddings or {}).get(best_trace.id)
     prepared_digest = _derived_digest(
-        store, "cluster", scope, members, best_trace, existing, representative, prepared_digest,
+        store, "cluster", scope, members, best_trace, existing, representative, prepared_digest, source_inputs,
     )
     digest = prepared_digest.content
     cluster_key = prepared_digest.cluster_key
@@ -2288,7 +2307,7 @@ def _write_global_promotion(
     best_source = _highest_confidence_source(project_sources)
     prepared_digest = _derived_digest(
         store, "cross-scope-promotion", "global", project_sources, best_source,
-        existing, best_source.embedding, prepared_digest,
+        existing, best_source.embedding, prepared_digest, source_inputs,
     )
     digest = prepared_digest.content
     source_scopes = _source_scopes(project_sources)

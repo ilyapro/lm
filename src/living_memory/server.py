@@ -34,6 +34,7 @@ from living_memory.chunking import TextChunk
 from living_memory.config import MemoryConfig, load_config
 from living_memory.consolidation import (
     _correction_text,
+    _DerivedOutputRequired,
     DEFAULT_MIN_CLUSTER_SIZE,
     ConsolidationResult,
     ConsolidationService,
@@ -1146,57 +1147,61 @@ def _register_tools(
             store, trace_id, correction, confidence=confidence, guard=lambda: runtime_lock,
         )
         context = _with_transport_identity(context)
-        with prepared_feedback(
-            store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
-            transport_session_id=_context_transport(context),
-            context=context,
-        ) as feedback_preparation:
-            with store.transaction():
-                # Marks must precede implicit feedback, before the corrective
-                # trace exists. A failed required write also rolls them back.
-                marks = None
-                if (
-                    has_explicit_marks(used, irrelevant)
-                    and store.get_node(trace_id) is not None
-                    and _correction_text(correction)
-                ):
-                    marks = apply_explicit_marks(
-                        store,
-                        used,
-                        irrelevant,
-                        via_tool="memory_teach",
-                        source_id="",
-                        context=context,
-                        transport_session_id=_context_transport(context),
-                        agent=_ambient_text(context, "agent"),
-                        preparation=feedback_preparation,
-                    )
-                taught = consolidation_service.memory_teach(
-                    trace_id,
-                    correction,
-                    confidence=confidence,
+        while True:
+            try:
+                with prepared_feedback(
+                    store, guard=lambda: runtime_lock, used=used, irrelevant=irrelevant,
+                    transport_session_id=_context_transport(context),
                     context=context,
-                    preparation=preparation,
-                )
-                indexing = _index_written_traces(store, [taught.corrective_trace], prepared)
-                if marks is not None:
-                    try:
-                        store.set_feedback_marks_source(
-                            marks.mark_ids, taught.corrective_trace.id
+                ) as feedback_preparation:
+                    with store.transaction():
+                        # Marks must precede implicit feedback, before the corrective
+                        # trace exists. A failed required write also rolls them back.
+                        marks = None
+                        if (
+                            has_explicit_marks(used, irrelevant)
+                            and store.get_node(trace_id) is not None
+                            and _correction_text(correction)
+                        ):
+                            marks = apply_explicit_marks(
+                                store,
+                                used,
+                                irrelevant,
+                                via_tool="memory_teach",
+                                source_id="",
+                                context=context,
+                                transport_session_id=_context_transport(context),
+                                agent=_ambient_text(context, "agent"),
+                                preparation=feedback_preparation,
+                            )
+                        taught = consolidation_service.memory_teach(
+                            trace_id,
+                            correction,
+                            confidence=confidence,
+                            context=context,
+                            preparation=preparation,
                         )
-                    except Exception:
-                        pass
-            response = _teach_result_to_dict(taught)
-            # The corrective trace counts toward the scope's cadence like any
-            # write; the pass it makes due is scheduled, never run here.
-            response["auto_consolidation"] = _schedule_auto_consolidation_if_due(
-                store, auto_consolidation, taught.corrective_trace.scope
-            )
-            if marks is not None:
-                response["feedback_marks"] = marks.summary()
-            if indexing is not None:
-                response["indexing"] = indexing
-            return response
+                        indexing = _index_written_traces(store, [taught.corrective_trace], prepared)
+                        if marks is not None:
+                            try:
+                                store.set_feedback_marks_source(
+                                    marks.mark_ids, taught.corrective_trace.id
+                                )
+                            except Exception:
+                                pass
+                    response = _teach_result_to_dict(taught)
+                    # The corrective trace counts toward the scope's cadence like any
+                    # write; the pass it makes due is scheduled, never run here.
+                    response["auto_consolidation"] = _schedule_auto_consolidation_if_due(
+                        store, auto_consolidation, taught.corrective_trace.scope
+                    )
+                    if marks is not None:
+                        response["feedback_marks"] = marks.summary()
+                    if indexing is not None:
+                        response["indexing"] = indexing
+                    return response
+            except _DerivedOutputRequired as needed:
+                needed.prepare(store, preparation)
 
     @mcp.tool
     @_track_latency("memory_connect")
@@ -1687,9 +1692,13 @@ def _register_tools(
         """Forget a source and refresh its derivatives, preserving stored history."""
 
         preparation = prepare_forget(store, id, guard=lambda: runtime_lock)
-        with runtime_lock:
-            node = consolidation_service.memory_forget(id, reason, preparation=preparation)
-            return {"node": node_to_dict(node)}
+        while True:
+            try:
+                with runtime_lock, store.transaction():
+                    node = consolidation_service.memory_forget(id, reason, preparation=preparation)
+                    return {"node": node_to_dict(node)}
+            except _DerivedOutputRequired as needed:
+                needed.prepare(store, preparation)
 
     @mcp.tool
     @_track_latency("memory_status")
