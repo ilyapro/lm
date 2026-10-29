@@ -359,8 +359,17 @@ def test_overlapping_promotions_follow_ancestors_without_broadcasting_new_source
                           context={"scope": f"project:{scope}"}, embedding=[1.0, 0.0])
         for scope in ("alpha", "beta", "gamma", "delta")
     ]
-    left = c._write_global_promotion(store, sources[:3])
-    right = c._write_global_promotion(store, sources[1:])
+    def owner(members):
+        best = c._highest_confidence_source(members)
+        return store.create_node(
+            level="concept", content=c._synthesize_digest(members, best=best),
+            context={"scope": "global"}, representative_embedding=best.embedding,
+            provenance={"strategy": "cross-scope-promotion",
+                        "source_concepts": [member.id for member in members]},
+        )
+
+    left = owner(sources[:3])
+    right = owner(sources[1:])
     replacement = store.create_node(
         level="concept", content="Release alpha uses the electronic archive.",
         context={"scope": sources[0].scope}, embedding=[1.0, 0.0],
