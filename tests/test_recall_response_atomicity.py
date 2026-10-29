@@ -89,7 +89,9 @@ def fault(store, monkeypatch, stage):
         return authorizer
 
     with monkeypatch.context() as patch:
-        if stage == "passage":
+        if stage == "source":
+            store.connection.set_authorizer(deny("nodes", "content"))
+        elif stage == "passage":
             store.connection.set_authorizer(deny("node_chunk_embeddings", "char_start"))
         elif stage == "correction":
             original = server.correction_references
@@ -124,10 +126,11 @@ def fault(store, monkeypatch, stage):
                 store.connection.execute("DROP TRIGGER reject_required")
 
 
-@pytest.mark.parametrize("stage", ["passage", "correction", "shape", "access", "event"])
+@pytest.mark.parametrize("stage", ["source", "passage", "correction", "shape", "access", "event"])
 @pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("mark", ["used", "irrelevant"])
 def test_required_failure_has_no_consumption_or_later_explicit_attribution(
-    runtime, monkeypatch, stage, view,
+    runtime, monkeypatch, stage, view, mark,
 ):
     store, node, correction, call = runtime
     before = snapshot(store)
@@ -138,7 +141,7 @@ def test_required_failure_has_no_consumption_or_later_explicit_attribution(
     assert not store.connection.in_transaction
     assert snapshot(store) == before
 
-    recovered = call(view=view, used=[node.id])
+    recovered = call(view=view, **{mark: [node.id]})
     assert recovered["feedback_marks"] == {
         "accepted": 0, "dropped": 1, "by_reason": {"not_delivered": 1},
     }
@@ -200,23 +203,58 @@ def test_failed_call_preserves_prior_explicit_eligibility_and_mark_source(
     assert claim["source_id"] == f"mark:{mark['id']}"
 
 
-def test_optional_receipt_failure_keeps_formed_answer_eligible(runtime, monkeypatch):
+def test_optional_receipt_failure_keeps_formed_answer_eligible(runtime):
     store, node, correction, call = runtime
-    original = store.record_recall_delivery
-
-    def fail(*args, **kwargs):
-        raise sqlite3.OperationalError("optional receipt unavailable")
-
-    monkeypatch.setattr(store, "record_recall_delivery", fail)
+    store.connection.execute("""CREATE TEMP TRIGGER reject_receipt
+        BEFORE UPDATE OF results ON recall_events
+        BEGIN SELECT RAISE(ABORT, 'optional receipt unavailable'); END""")
     first = call()
     assert first["results"][0]["content"] == CONTENT
     assert store.recall_delivery_history("fixture-transport") == []
-    monkeypatch.setattr(store, "record_recall_delivery", original)
+    store.connection.execute("DROP TRIGGER reject_receipt")
     second = call(used=[node.id])
     assert second["feedback_marks"]["accepted"] == 1
     assert second["results"][0]["delivery"] == "full"
     claim, = store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
     assert claim["recall_event_id"] == first["recall_event_id"]
+
+
+def test_optional_maintenance_failure_preserves_success(runtime, monkeypatch):
+    store, node, correction, call = runtime
+
+    def fail(*args, **kwargs):
+        assert not store.connection.in_transaction
+        raise sqlite3.OperationalError("optional maintenance unavailable")
+
+    monkeypatch.setattr(MemoryRecallService, "refresh_legacy_passages", fail)
+    response = call()
+    assert response["results"][0]["content"] == CONTENT
+    event, = store.list_recall_events()
+    assert event.id == response["recall_event_id"] and event.result_ids == [node.id]
+    assert store.get_node(node.id).access_count == 1
+    assert call(used=[node.id])["feedback_marks"]["accepted"] == 1
+
+
+def test_direct_response_boundary_starts_after_selection_and_rolls_back_projection(runtime):
+    store, node, correction, call = runtime
+    service = MemoryRecallService(store)
+    before = snapshot(store)
+
+    def select(limited, residual, maximum, relevance):
+        assert not store.connection.in_transaction
+        return limited, residual
+
+    with pytest.raises(ValueError, match="projection unavailable"):
+        with service.recall_response(
+            QUERY, scope=SCOPE, depth=0, max_results=1, select_results=select,
+        ) as results:
+            assert store.connection.in_transaction
+            assert results[0].node.access_count == 1
+            assert results[0].recall_event_id == service.last_recall_event_id
+            assert snapshot(store) == before
+            raise ValueError("projection unavailable")
+    assert not store.connection.in_transaction
+    assert service.last_recall_event_id is None and snapshot(store) == before
 
 
 @pytest.mark.parametrize("log_access,log_event", [(False, False), (True, False), (False, True), (True, True)])
