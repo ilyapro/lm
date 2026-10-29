@@ -1,7 +1,9 @@
 """Batch inference preserves the scalar encoder and consumer mapping contracts."""
 
-from contextlib import nullcontext
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from threading import Event, RLock
 from typing import Any
 import zlib
 
@@ -191,6 +193,122 @@ def test_consolidation_uses_existing_bounded_batches_and_cache(tmp_path: Path) -
         encoder.calls.clear()
         assert consolidation._trace_embeddings(store, nodes, model, nullcontext) == expected
         assert encoder.calls == []
+
+
+@pytest.mark.parametrize("transition", [
+    "stable", "scalar", "before_batch", "during_batch", "before_identity", "before_write",
+])
+def test_consolidation_cache_keeps_vector_identity_across_preparation(tmp_path, monkeypatch, transition):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+
+    class Encoder(BatchEncoder):
+        def encode(self, texts, **kwargs):
+            if isinstance(texts, list) and transition in ("scalar", "during_batch"):
+                raise TypeError("scalar backend")
+            if texts == "fail" or (transition == "during_batch" and texts == "Harbor record 2"):
+                raise RuntimeError("encoder unavailable")
+            return super().encode(texts, **kwargs)
+
+    backend = Encoder()
+    model = model_with(backend)
+    model.dimensions = 3
+    initial_identity = model.encoder_id()
+    reference = model_with(BatchEncoder())
+    hashed = LocalEmbeddingModel(dimensions=3, backend="hash")
+    guard = RLock()
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        nodes = [store.append_trace(f"Harbor record {i}") for i in range(10)]
+        expected = {node.id: reference.embed(node.content) for node in nodes}
+        store.put_consolidation_embeddings([(nodes[0], expected[nodes[0].id])], initial_identity)
+        steps = 0
+        batch = model.embed_batch
+
+        def encode(texts):
+            assert not guard._is_owned()
+            assert not store.connection.in_transaction
+            result = batch(texts)
+            if transition == "before_identity" and texts[-1] == nodes[-1].content:
+                model.embed("fail")
+            return result
+
+        monkeypatch.setattr(model, "embed_batch", encode)
+
+        @contextmanager
+        def step():
+            nonlocal steps
+            steps += 1
+            if steps == 2 and transition == "before_write":
+                model.embed("fail")
+            with guard:
+                yield
+            if steps == 1 and transition == "before_batch":
+                model.embed("fail")
+
+        vectors = consolidation._trace_embeddings(store, nodes, model, step)
+        first_hash = {"before_batch": 1, "during_batch": 2}.get(transition, len(nodes))
+        for node in nodes[first_hash:]:
+            expected[node.id] = hashed.embed(node.content)
+        assert vectors == expected
+        cached = store.get_consolidation_embeddings(nodes, initial_identity)
+        if transition in ("stable", "scalar", "before_write"):
+            assert cached == vectors
+        else:
+            assert cached == {nodes[0].id: vectors[nodes[0].id]}
+        if transition in ("stable", "scalar"):
+            assert model.encoder_id() == initial_identity
+            calls = list(backend.calls)
+            assert consolidation._trace_embeddings(store, nodes, model, lambda: guard) == vectors
+            assert backend.calls == calls
+        else:
+            assert model.encoder_id() == "hash:3"
+            assert store.get_consolidation_embeddings(nodes, model.encoder_id()) == {}
+            expected_hash = {node.id: hashed.embed(node.content) for node in nodes}
+            assert consolidation._trace_embeddings(store, nodes, model, lambda: guard) == expected_hash
+            assert store.get_consolidation_embeddings(nodes, model.encoder_id()) == expected_hash
+
+
+def test_consolidation_cache_rejects_changed_content_after_encoding_gap(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    entered, release = Event(), Event()
+
+    class Encoder(BatchEncoder):
+        def encode(self, texts, **kwargs):
+            entered.set()
+            assert release.wait(30)
+            return super().encode(texts, **kwargs)
+
+    model = model_with(Encoder())
+    model.dimensions = 3
+    identity = model.encoder_id()
+    guard = RLock()
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        # Isolate content indexing from the whole-content consolidation encoder.
+        store.set_chunk_embedder(lambda texts: [[0.0, 1.0, 0.0] for _ in texts])
+        source = store.append_trace("Harbor checks the original manifest.")
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            work = workers.submit(consolidation._trace_embeddings, store, [source], model, lambda: guard)
+
+            def edit():
+                with guard:
+                    # Derived sources may change content while retaining their id.
+                    store.update_node(source.id, level="concept")
+                    return store.update_node(source.id, content="Harbor checks the revised manifest.")
+
+            try:
+                assert entered.wait(10)
+                current = workers.submit(edit).result(timeout=10)
+                assert not work.done()
+            finally:
+                release.set()
+            vectors = work.result(timeout=15)
+        assert store.get_consolidation_embeddings([source], identity) == vectors
+        assert store.get_consolidation_embeddings([current], identity) == {}
+        refreshed = consolidation._trace_embeddings(store, [current], model, lambda: guard)
+        assert refreshed == {current.id: model.embed(current.content)}
+        assert refreshed != vectors
+        assert store.get_consolidation_embeddings([current], identity) == refreshed
+        assert store.get_consolidation_embeddings([source], identity) == {}
 
 
 def test_feedback_queries_reach_model_in_one_batch(tmp_path: Path, monkeypatch) -> None:
