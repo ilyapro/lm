@@ -73,7 +73,6 @@ PROCEDURAL_MIN_CLUSTER_SIZE = 3
 _STEP_TEXT_KEYS = ("step_description", "step_content")
 DIGEST_MAX_CHARS = 1200
 DIGEST_LEAD_MAX_CHARS = 600
-DIGEST_FACT_PREFIX = "• "
 
 _STOP_WORDS = {
     "a",
@@ -1965,6 +1964,7 @@ def _synthesize_digest(
     Exact repeated passages share a slot. Token novelty ranks the remaining
     passages but never establishes identity; conditions and contrasting claims
     remain eligible even when their token sets or embeddings are identical.
+    Selected passages retain their literal text, separated by blank paragraphs.
     Source identities and complete contents remain available through provenance.
     Persisted digests change only through source-based materialization; reading
     them cannot recover lost boundaries from ambiguous soft newlines.
@@ -1995,17 +1995,15 @@ def _synthesize_digest(
     while True:
         added = False
         for source in ordered:
-            prefix = DIGEST_FACT_PREFIX if lines else ""
             separator_length = len(PASSAGE_SEPARATOR) if lines else 0
             passage = _most_distinctive_passage(
                 source.passages, covered_significant, covered_raw, included_passages,
-                max_chars=max_chars - length - separator_length - len(prefix),
+                max_chars=max_chars - length - separator_length,
             )
             if passage is None:
                 continue
-            line = prefix + passage
-            lines.append(line)
-            length += separator_length + len(line)
+            lines.append(passage)
+            length += separator_length + len(passage)
             covered_significant |= _significant_tokens(passage)
             covered_raw.update(_raw_tokens(passage))
             included_passages.add(passage)

@@ -166,9 +166,11 @@ without changing the other surface.
 9. `memory_consolidate` clusters recent active traces, creates or updates
    concept nodes, computes consensus confidence,
    refreshes related-edge weights, and applies decay. Concept content is a
-   deterministic extractive digest of complete source sentences, capped at
-   1200 characters. Token novelty ranks sentences; only exact sentence repeats
-   are omitted as duplicates. A source that cannot fit remains addressable by
+   deterministic extractive digest of complete source passages, capped at
+   1200 characters. Token novelty ranks passages; only exact passage repeats
+   are omitted as duplicates. Selected passages keep their literal text,
+   including authored bullets, with blank paragraphs between them.
+   A source that cannot fit remains addressable by
    its recorded id. Source membership and group identify a derived owner;
    similarity and equal digest text do not merge independent derivations.
    After project-source writes, promotion refresh selects owner identities

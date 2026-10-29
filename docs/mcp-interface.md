@@ -879,9 +879,12 @@ weights, and applies decay. `stats.temporal_hint` is opaque optional metadata:
 new derived nodes default to null, and consolidation and promotion preserve
 existing values without inferring recurrence or copying source hints. Explicit
 strings such as `2026-Q3` remain available through `memory_lookup(view="full")`.
-Concept content is a deterministic extractive digest of the cluster. It selects complete source
-sentences within a 1200-character budget, using token novelty to rank sentences
-and exact equality to skip repeats. Distinct conditions are never replaced by
+Concept content is a deterministic extractive digest of the cluster. It selects
+complete source
+passages within a 1200-character budget, using token novelty to rank passages
+and exact equality to skip repeats. Selected passages keep their literal text,
+including authored bullets, with blank paragraphs between them.
+Distinct conditions are never replaced by
 novel-token fragments. A source that cannot fit remains available by its
 recorded id; the budget does not guarantee that every claim appears in the
 digest. The direct `memory_consolidate` response reports created/updated

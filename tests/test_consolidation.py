@@ -452,10 +452,10 @@ def test_consolidation_near_identical_cluster_digest_stays_compact_and_distinct(
         assert len(result.concepts_created) == 1
         concept = result.concepts_created[0]
         assert all(concept.content != trace.content for trace in traces)
-        assert "\n• " in concept.content
+        assert "\n\n" in concept.content
         assert len(concept.content) <= DIGEST_MAX_CHARS
         source_contents = {trace.content for trace in traces}
-        assert all(passage.removeprefix("• ") in source_contents
+        assert all(passage in source_contents
                    for passage in concept.content.split("\n\n"))
 
 
@@ -614,7 +614,7 @@ def test_synthesize_digest_keeps_wrapped_and_semicolon_qualifications(tmp_path, 
         lead = store.append_trace("Service availability depends on operator scheduling.")
         source = store.append_trace(statement)
 
-        assert _synthesize_digest([lead, source], best=lead) == lead.content + "\n\n• " + statement
+        assert _synthesize_digest([lead, source], best=lead) == lead.content + "\n\n" + statement
 
 
 def test_synthesize_digest_deduplicates_exact_sentences_and_keeps_later_claims(tmp_path: Path) -> None:
@@ -654,7 +654,7 @@ def test_synthesize_digest_caps_total_length(tmp_path: Path) -> None:
         digest = _synthesize_digest(sources, best=sources[0])
 
         assert len(digest) <= DIGEST_MAX_CHARS
-        assert digest.count("\n• ") >= 2
+        assert digest.count("\n\n") >= 2
         assert all(digest != source.content for source in sources)
 
 
