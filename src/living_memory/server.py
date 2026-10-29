@@ -1340,7 +1340,7 @@ def _register_tools(
                     "could not read recall delivery history", exc_info=True,
                 )
                 delivery_history = DeliveryHistory()
-            results = recall_service.memory_recall(
+            with recall_service.recall_response(
                 prepared_query,
                 repair_pending=False,
                 scope=scope,
@@ -1350,34 +1350,34 @@ def _register_tools(
                 select_results=lambda limited, residual, limit, relevance: _select_distinct_results(
                     limited, residual, limit, delivery_history, relevance=relevance
                 ),
-            )
-            shaped = shape_recall_results(
-                results,
-                correction_refs=correction_references(
-                    store,
-                    {result.node.id: result.correction_ids for result in results},
-                    resolve_scope(scope=scope, ambient_context=ambient_context, store=store),
-                ),
-                view=view,
-                query=query,
-                delivery_history=delivery_history,
-                snippet_max_chars=snippet_max_chars_from_env(),
-                context_value_max_chars=context_value_max_chars_from_env(),
-                session_dedup=session_dedup,
-                snippet_ladder=snippet_ladder_from_env(),
-                full_node_diet=full_node_diet_enabled_from_env(),
-                provenance_value_max_chars=provenance_value_max_chars_from_env(),
-                stats_compaction=stats_compaction_enabled_from_env(),
-                sparse_entries=sparse_entries_enabled_from_env(),
-            )
-            response: dict[str, Any] = {
-                "query": query,
-                "scope": scope,
-                "recall_event_id": recall_service.last_recall_event_id,
-                "count": len(shaped),
-                "results": shaped,
-                "auto_decay": auto_decay,
-            }
+            ) as results:
+                shaped = shape_recall_results(
+                    results,
+                    correction_refs=correction_references(
+                        store,
+                        {result.node.id: result.correction_ids for result in results},
+                        resolve_scope(scope=scope, ambient_context=ambient_context, store=store),
+                    ),
+                    view=view,
+                    query=query,
+                    delivery_history=delivery_history,
+                    snippet_max_chars=snippet_max_chars_from_env(),
+                    context_value_max_chars=context_value_max_chars_from_env(),
+                    session_dedup=session_dedup,
+                    snippet_ladder=snippet_ladder_from_env(),
+                    full_node_diet=full_node_diet_enabled_from_env(),
+                    provenance_value_max_chars=provenance_value_max_chars_from_env(),
+                    stats_compaction=stats_compaction_enabled_from_env(),
+                    sparse_entries=sparse_entries_enabled_from_env(),
+                )
+                response: dict[str, Any] = {
+                    "query": query,
+                    "scope": scope,
+                    "recall_event_id": recall_service.last_recall_event_id,
+                    "count": len(shaped),
+                    "results": shaped,
+                    "auto_decay": auto_decay,
+                }
             if pending_marks is not None:
                 marks = apply_explicit_marks(
                     store,
@@ -1435,10 +1435,15 @@ def _register_tools(
                     )
         # Finish this call's event, feedback, map and delivery while last_* still
         # belongs to it. Optional repair may wait without holding up store reads.
-        recall_service.refresh_legacy_passages([
-            result for result, entry in zip(results, shaped, strict=True)
-            if entry["delivery"] == DELIVERY_SNIPPET
-        ], guard=lambda: runtime_lock)
+        try:
+            recall_service.refresh_legacy_passages([
+                result for result, entry in zip(results, shaped, strict=True)
+                if entry["delivery"] == DELIVERY_SNIPPET
+            ], guard=lambda: runtime_lock)
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "could not maintain recall passages", exc_info=True,
+            )
         return response
 
     # memory_attest is NOT registered by default (expose_attest=False). Field

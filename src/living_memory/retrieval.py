@@ -209,7 +209,7 @@ import logging
 import os
 from collections import OrderedDict, deque
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from math import log2, sqrt
 from typing import Any, Callable
@@ -645,16 +645,48 @@ class MemoryRecallService:
         repair_pending: bool = True,
         select_results: Callable[[list[RecallResult], list[RecallResult], int, QueryRelevance], tuple[list[RecallResult], list[RecallResult]]] | None = None,
     ) -> list[RecallResult]:
+        """Retrieve and commit a complete direct response."""
+        with self.recall_response(
+            query, scope=scope, ambient_context=ambient_context, depth=depth,
+            max_results=max_results, log_access=log_access, log_event=log_event,
+            repair_pending=repair_pending, select_results=select_results,
+        ) as results:
+            return results
+
+    @contextmanager
+    def recall_response(
+        self,
+        query: str | _PreparedQuery,
+        *,
+        scope: str | None = None,
+        ambient_context: dict[str, Any] | None = None,
+        depth: int | str | None = 1,
+        max_results: int = 10,
+        log_access: bool = True,
+        log_event: bool | None = None,
+        repair_pending: bool = True,
+        select_results: Callable[[list[RecallResult], list[RecallResult], int, QueryRelevance], tuple[list[RecallResult], list[RecallResult]]] | None = None,
+    ) -> Iterator[list[RecallResult]]:
+        """Form a response within the short consumption rollback boundary.
+
+        Search, encoding and selection precede the transaction. The caller may
+        read required metadata and shape the selected results before leaving
+        this context; failure rolls back access and event/history together.
+        Optional work and transport belong after it. No transaction is opened
+        when both logging flags are disabled.
+        """
         self.last_recall_event_id = None
         self.last_residual = []
         self.last_query_relevance = None
         if max_results <= 0:
-            return []
+            yield []
+            return
 
         prepared = query if isinstance(query, _PreparedQuery) else self.prepare_query(query)
         query = prepared.text
         if not query:
-            return []
+            yield []
+            return
         query_embedding = prepared.embedding
 
         if repair_pending:
@@ -754,27 +786,6 @@ class MemoryRecallService:
             limited, self.last_residual = select_results(
                 limited, self.last_residual, max_results, self.last_query_relevance
             )
-        if log_event is None:
-            log_event = log_access
-        if log_access or log_event:
-            nodes, event = self.store.record_recall(
-                nodes=[result.node for result in limited],
-                log_access=log_access,
-                log_event=log_event,
-                query=query,
-                scope=plan.requested_scope,
-                requested_scope=plan.requested_scope,
-                resolved_scopes=plan.scopes,
-                ambient_context=ambient_context,
-                depth=depth,
-                max_results=max_results,
-                results=[_recall_result_summary(index, result) for index, result in enumerate(limited)],
-            )
-            self.last_recall_event_id = event.id if event is not None else None
-            limited = [
-                replace(result, node=node, recall_event_id=self.last_recall_event_id)
-                for result, node in zip(limited, nodes, strict=True)
-            ]
         chunk_ids = {
             result.node_id: candidates[result.node_id].chunk_id
             for result in limited
@@ -782,11 +793,38 @@ class MemoryRecallService:
             and candidates[result.node_id].chunk_id is not None
         }
         passages = self.store.get_chunk_passages(list(chunk_ids.values()))
-        return [
+        limited = [
             replace(result, semantic_passage=passages.get(chunk_ids.get(result.node_id)),
                     scored_chunk_id=chunk_ids.get(result.node_id))
             for result in limited
         ]
+        if log_event is None:
+            log_event = log_access
+        try:
+            with self.store.transaction() if log_access or log_event else nullcontext():
+                if log_access or log_event:
+                    nodes, event = self.store.record_recall(
+                        nodes=[result.node for result in limited],
+                        log_access=log_access,
+                        log_event=log_event,
+                        query=query,
+                        scope=plan.requested_scope,
+                        requested_scope=plan.requested_scope,
+                        resolved_scopes=plan.scopes,
+                        ambient_context=ambient_context,
+                        depth=depth,
+                        max_results=max_results,
+                        results=[_recall_result_summary(index, result) for index, result in enumerate(limited)],
+                    )
+                    self.last_recall_event_id = event.id if event is not None else None
+                    limited = [
+                        replace(result, node=node, recall_event_id=self.last_recall_event_id)
+                        for result, node in zip(limited, nodes, strict=True)
+                    ]
+                yield limited
+        except BaseException:
+            self.last_recall_event_id = None
+            raise
 
     def refresh_pending_chunks(
         self, *, scope: str | None = None,
