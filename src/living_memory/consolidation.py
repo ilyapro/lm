@@ -2488,7 +2488,7 @@ def _refresh_promoted_global_concepts(
                     with store.transaction():
                         node = store.get_node(selected.id)
                         if (node is None or node.decayed or node.corrections
-                                or node.scope != "global"
+                                or node.scope != "global" or node.level != "concept"
                                 or node.materializer != "cross-scope-promotion"
                                 or _is_superseded(store, node.id)):
                             break
