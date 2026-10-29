@@ -133,9 +133,31 @@ trailing whitespace per line, and drops leading/trailing blank lines.
 re-derives byte-identical evidence (`evidence.py` is deterministic by
 construction) and therefore the same digest, so the repeat returns the recorded
 verdict with `replay: true` and applies nothing — no second credit, no second
-anchor reinforcement, no second `linked_count` flip. The claim-then-complete
-sequence means a concurrent duplicate loses the key and replays rather than
-double-crediting.
+anchor reinforcement, no second `linked_count` flip. The transaction reserves
+the writer before checking the key, so a concurrent duplicate sees and replays
+the committed verdict.
+
+**Atomic outcome.** `attest_recall_usage` owns one `MemoryStore.transaction`
+covering the claim, numeric credit, optional anchor effects, requested closure
+and completed receipt. A required write or commit failure rolls back the new
+operation; an identical retry can then apply it once. Success and replay return
+after commit. Direct API calls inside an enclosing transaction are rejected,
+so consumers cannot mistake a provisional nested result for a committed one.
+Callers sharing a store connection supply its serialization `guard`; the MCP
+handler supplies the runtime lock.
+
+Only immutable missing-anchor vectors are prepared outside that guard and the
+SQLite transaction, using the shared feedback preparation. Existing anchors need
+no encoding. Application rereads the event, ledger, source nodes and consuming
+trace under the transaction, using the event's current scope and server-side
+grounding. Missing or decayed result nodes are skipped. Existing closure retains
+its first `feedback_trace_id`. Optional anchor preparation or write failure does
+not cancel otherwise valid numeric credit.
+
+Any existing ledger row is replayed conservatively, including an incomplete
+claim. `credited: false` alone does not prove that no earlier effects occurred;
+it never authorizes another credit. Replay reports the stored receipt without
+repairing or reapplying it.
 
 **What it does not cover.** The key is over *bytes*, not over *meaning*:
 

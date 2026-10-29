@@ -82,16 +82,19 @@ evidence_sha256)`` — not ``feedback_applied``.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, ExitStack, nullcontext
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 import hashlib
+import logging
 
 from living_memory import feedback
 from living_memory.grounding import ground_results
 from living_memory.models import Node, RecallEvent
 from living_memory.storage import MemoryStore, RecallAttestation, recall_fingerprint
+
+_LOG = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Canonicalization: a published contract
@@ -313,7 +316,21 @@ def attest_recall_usage(
             return {}
         return {(event.scope, recall_fingerprint(event.query, event.scope)): event.query}
 
-    with feedback.prepared_feedback(store, guard=guard, query_source=queries) as preparation:
+    with ExitStack() as stack:
+        try:
+            preparation = stack.enter_context(feedback.prepared_feedback(
+                store, guard=guard, query_source=queries,
+            ))
+        except AttestationError:
+            raise
+        except Exception:
+            # Anchor preparation is optional; current required inputs are
+            # resolved again below even when no vector could be prepared.
+            _LOG.warning("attestation anchor preparation failed", exc_info=True)
+            stack.enter_context(guard())
+            preparation = {}
+        if store.connection.in_transaction:
+            raise RuntimeError("attestation must own its transaction")
         with store.transaction(immediate=True):
             event, recorded, trace_node, graded = _resolve_attestation(
                 store, recall_event_id, items, digest, trace_id,
