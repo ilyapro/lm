@@ -3661,16 +3661,10 @@ class MemoryStore:
     # ------------------------------------------------------------------
     # Grounded-usage attestation ledger (schema v8)
     #
-    # Two-step by design: ``claim_recall_attestation`` takes the
-    # (event, evidence) key and records the verdict the server computed,
-    # ``complete_recall_attestation`` records what that verdict was allowed to
-    # change once the writes have actually happened. Claiming first is what
-    # makes the ledger a real guard: the key is unavailable for the whole
-    # window in which credit is being applied, so a concurrent or retried
-    # submission of the same evidence replays instead of crediting twice. The
-    # failure mode this leaves is a claimed-but-uncredited row after a crash
-    # mid-apply, i.e. under-crediting — the conservative direction for a signal
-    # whose whole purpose is to not be inflatable.
+    # Claim and completion compose with the attestation's required transaction.
+    # The unique (event, evidence) key guards credit, while completion records
+    # its durable verdict. Existing rows always replay conservatively: an
+    # incomplete claim does not prove the absence of earlier effects.
     # ------------------------------------------------------------------
 
     def find_recall_attestation(

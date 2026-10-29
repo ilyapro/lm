@@ -1049,6 +1049,7 @@ def prepared_feedback(
     lookup_ids: Sequence[str] | None = None, trace_content: str | None = None,
     trace_context: Mapping[str, Any] | None = None,
     context: Mapping[str, Any] | None = None,
+    query_source: Callable[[], Mapping[tuple[str, str], str]] | None = None,
 ) -> Iterator[Mapping[tuple[str, str], tuple[float, ...]]]:
     """Enter authoritative feedback work with current inputs already prepared.
 
@@ -1059,13 +1060,15 @@ def prepared_feedback(
     inputs or an anchor removed during encoding. Continued churn fails before
     authoritative feedback work, leaving claims and closure for a caller retry.
     Encoder failures remain optional and do not suppress existing anchors.
+    A query_source supplies operation-specific candidates under the same guard;
+    its authoritative eligibility must still be resolved in the transaction.
     """
     vectors: dict[tuple[str, str], tuple[float, ...]] = {}
     for attempt in range(3):
         with guard():
             if store.connection.in_transaction:
                 raise RuntimeError("feedback preparation must precede the operation transaction")
-            queries = _feedback_queries(
+            queries = query_source() if query_source is not None else _feedback_queries(
                 store, used=used, irrelevant=irrelevant, transport_session_id=transport_session_id,
                 occurred_at=occurred_at, lookup_ids=lookup_ids,
                 trace_content=trace_content, trace_context=trace_context,

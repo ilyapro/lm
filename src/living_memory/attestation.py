@@ -81,7 +81,8 @@ evidence_sha256)`` — not ``feedback_applied``.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
@@ -89,8 +90,8 @@ import hashlib
 
 from living_memory import feedback
 from living_memory.grounding import ground_results
-from living_memory.models import RecallEvent
-from living_memory.storage import MemoryStore, RecallAttestation
+from living_memory.models import Node, RecallEvent
+from living_memory.storage import MemoryStore, RecallAttestation, recall_fingerprint
 
 # ---------------------------------------------------------------------------
 # Canonicalization: a published contract
@@ -279,19 +280,19 @@ def attest_recall_usage(
     *,
     context: Mapping[str, Any] | None = None,
     trace_id: str | None = None,
+    guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> dict[str, Any]:
     """Grade one recall event against submitted evidence and credit what it used.
 
     Returns the verdict dict the ``memory_attest`` tool serves. See the module
-    docstring for the rules; the order below is load-bearing:
+    docstring for the rules. Immutable anchor vectors are prepared outside the
+    guard and transaction. The event, ledger, nodes and trace are read again in
+    one immediate transaction covering claim, credit, optional anchors, closure
+    and completion. A required failure rolls back the entire new attestation.
 
-    1. canonicalise and digest the evidence — a rejected submission must cost
-       no reads and no writes;
-    2. load the event and check the ledger — a repeat replays before anything
-       is resolved;
-    3. resolve the event's results *from the store* and recompute containment;
-    4. claim the ledger key, then apply credit, anchors and (optionally)
-       closure, then record what was applied.
+    This API owns its commit and rejects an enclosing transaction: a returned
+    verdict is durable, never a provisional nested result. Callers sharing a
+    connection supply its guard; independent connections serialize via SQLite.
 
     Results whose node has since decayed or been forgotten are skipped
     silently: a node disappearing between recall and attestation is ordinary,
@@ -302,13 +303,43 @@ def attest_recall_usage(
     if not items:
         raise AttestationError("evidence carries no gradable item")
 
+    def queries() -> dict[tuple[str, str], str]:
+        event, recorded, _trace, graded = _resolve_attestation(
+            store, recall_event_id, items, digest, trace_id,
+        )
+        if recorded is not None or not event.query.strip():
+            return {}
+        if not any(entry.grounded for entry in graded):
+            return {}
+        return {(event.scope, recall_fingerprint(event.query, event.scope)): event.query}
+
+    with feedback.prepared_feedback(store, guard=guard, query_source=queries) as preparation:
+        with store.transaction(immediate=True):
+            event, recorded, trace_node, graded = _resolve_attestation(
+                store, recall_event_id, items, digest, trace_id,
+            )
+            if recorded is not None:
+                result = _verdict(recorded, event, replay=True)
+            else:
+                result = _apply_attestation(
+                    store, event, items, digest, trace_node, graded, context, preparation,
+                )
+    return result
+
+
+def _resolve_attestation(
+    store: MemoryStore, recall_event_id: str, items: Sequence[str], digest: str,
+    trace_id: str | None,
+) -> tuple[RecallEvent, RecallAttestation | None, Node | None, list[_Graded]]:
+    """Resolve current server-owned inputs; a recorded verdict takes priority."""
+
     event = store.get_recall_event(str(recall_event_id))
     if event is None:
         raise AttestationError(f"unknown recall_event_id {str(recall_event_id)!r}")
 
     recorded = store.find_recall_attestation(event.id, digest)
     if recorded is not None:
-        return _verdict(recorded, event, replay=True)
+        return event, recorded, None, []
 
     trace_node = None
     if trace_id is not None:
@@ -325,11 +356,21 @@ def attest_recall_usage(
         if not node_id:
             continue
         node = store.get_node(node_id)
-        if node is None:
+        if node is None or node.decayed:
             continue
         resolved.append((rank, dict(result), node))
 
-    graded = _grade(items, resolved)
+    return event, None, trace_node, _grade(items, resolved)
+
+
+def _apply_attestation(
+    store: MemoryStore, event: RecallEvent, items: Sequence[str], digest: str,
+    trace_node: Node | None, graded: Sequence[_Graded],
+    context: Mapping[str, Any] | None,
+    preparation: Mapping[tuple[str, str], tuple[float, ...]],
+) -> dict[str, Any]:
+    """Apply a new verdict inside the caller's required transaction."""
+
     grounded_ids: list[str] = []
     for entry in graded:
         if entry.grounded and entry.node_id not in grounded_ids:
@@ -376,7 +417,8 @@ def attest_recall_usage(
     # whatever the event happened to deliver.
     anchor_ids = (
         feedback._apply_query_feedback(
-            store, [(event, tuple(grounded_ids), tuple(grounded_ids))]
+            store, [(event, tuple(grounded_ids), tuple(grounded_ids))],
+            preparation=preparation,
         )
         if grounded_ids
         else []

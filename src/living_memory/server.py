@@ -1466,14 +1466,14 @@ def _register_tools(
             Full contract: docs/post-session-attestation.md."""
 
             context = _with_transport_identity(context)
-            with runtime_lock:
-                return attest_recall_usage(
-                    store,
-                    recall_event_id,
-                    evidence,
-                    context=context,
-                    trace_id=trace_id,
-                )
+            return attest_recall_usage(
+                store,
+                recall_event_id,
+                evidence,
+                context=context,
+                trace_id=trace_id,
+                guard=lambda: runtime_lock,
+            )
 
 
     @mcp.tool(description=protocol_texts["memory_lookup"])
