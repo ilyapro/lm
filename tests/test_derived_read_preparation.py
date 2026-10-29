@@ -89,14 +89,17 @@ def pending_source(r, clustered):
 
 
 @pytest.mark.parametrize("clustered", [False, True])
-@pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("view", ["knowledge", "full", "prompt"])
 def test_pending_index_keeps_exact_read_available_and_preserves_representative(runtime, clustered, view):
     r = runtime
     node = pending_source(r, clustered)
 
     async def scenario():
         async with Client(r.mcp) as owner, Client(r.mcp) as reader:
-            operation = asyncio.create_task(recall(owner, view=view))
+            operation = asyncio.create_task(
+                owner.get_prompt("memory://prompt/retrieval_context", {"task": QUERY, "scope": SCOPE})
+                if view == "prompt" else recall(owner, view=view)
+            )
             try:
                 assert await asyncio.to_thread(r.entered.wait, 4)
                 lookup = await asyncio.wait_for(call(reader, "memory_lookup", node_id=r.node.id), 3)
@@ -114,9 +117,13 @@ def test_pending_index_keeps_exact_read_available_and_preserves_representative(r
                 current = r.store.get_node(node.id)
                 assert current.embedding == (node.embedding if clustered else VECTOR)
                 assert current.provenance == node.provenance
-                event = r.store.get_recall_event(result["recall_event_id"])
-                assert len(r.store.recall_delivery_history(event.transport_session_id)) == 1
-                assert event.result_ids == [entry(result)["id"]]
+                if view == "prompt":
+                    assert node.id in result.messages[0].content.text
+                    assert r.store.list_recall_events() == []
+                else:
+                    event = r.store.get_recall_event(result["recall_event_id"])
+                    assert len(r.store.recall_delivery_history(event.transport_session_id)) == 1
+                    assert event.result_ids == [entry(result)["id"]]
             assert (node.content in r.encoded) == (not clustered)
 
     asyncio.run(scenario())
