@@ -94,7 +94,7 @@ class DedupVerdict:
 class NullMemoryIndex:
     """No memory to compare against.
 
-    Used when the eval run has no database snapshot. It returns nothing rather
+    Used when the eval run has no database path. It returns nothing rather
     than pretending everything is new, and :class:`Deduper` marks the verdict
     ``available=False`` so the report can say "dedup did not run" instead of
     silently reporting zero duplicates.
@@ -137,7 +137,7 @@ class StaticMemoryIndex:
 
 
 class StoreMemoryIndex:
-    """Bounded FTS candidates from a caller-owned store."""
+    """Bounded FTS candidates from a caller-owned store; read errors propagate."""
 
     available = True
 
@@ -149,10 +149,7 @@ class StoreMemoryIndex:
         self, content: str, *, scope: str | None = None, limit: int = 20
     ) -> Sequence[NodeSnapshot]:
         query = " ".join(hard_identifiers(content)[:8]) or content[:200]
-        try:
-            rows = self.store.search_content(query, level=self.level, scope=scope, limit=limit)
-        except Exception:  # pragma: no cover - a malformed FTS query must not abort a run
-            return ()
+        rows = self.store.search_content(query, level=self.level, scope=scope, limit=limit)
         return [
             NodeSnapshot(
                 node_id=node.id,

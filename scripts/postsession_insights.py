@@ -48,13 +48,15 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
+from contextlib import contextmanager
 from datetime import UTC, datetime
 import hashlib
 import json
 from pathlib import Path
+import sqlite3
 import sys
 import time
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Iterator, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = REPO_ROOT / "src"
@@ -276,21 +278,25 @@ def build_judge(name: str, *, model: str | None, cassette: Path | None) -> Any:
     raise SystemExit(f"unknown judge backend: {name}")
 
 
-def build_deduper(db: Path | None) -> Deduper:
-    """A real store when one is given, otherwise a deduper that says so.
+@contextmanager
+def build_deduper(db: Path | None) -> Iterator[Deduper]:
+    """Own a read-only memory connection for one extraction operation.
 
-    ``--db`` should point at a *copy* of the live database: ``MemoryStore``
-    opens read-write and runs migrations on open, and this script has no
-    business migrating the operator's live memory. The copy is the caller's
-    job, not this function's -- silently copying a 500 MB file would be worse
-    than saying so.
+    An existing database is opened without initialization or migration; no
+    preliminary copy is required. The caller keeps this context open until
+    all extraction workers finish. Omitting the path makes dedup unavailable.
     """
 
     if db is None:
-        return Deduper(NullMemoryIndex(), config=DEFAULT_DEDUP)
-    from living_memory.storage import MemoryStore
+        yield Deduper(NullMemoryIndex(), config=DEFAULT_DEDUP)
+        return
+    from living_memory.health_audit import open_read_only_store
 
-    return Deduper(StoreMemoryIndex(MemoryStore(db)), config=DEFAULT_DEDUP)
+    with open_read_only_store(db) as store:
+        index = StoreMemoryIndex(store)
+        # Check the search schema even if extraction produces no proposals.
+        index.candidates("postsession", scope="global", limit=0)
+        yield Deduper(index, config=DEFAULT_DEDUP)
 
 
 def run_extraction(
@@ -596,7 +602,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--judge", default="claude", choices=("claude", "cassette", "fake"))
     parser.add_argument("--model", default="sonnet")
     parser.add_argument("--cassette", default=None)
-    parser.add_argument("--db", default=None, help="Living Memory sqlite for dedup")
+    parser.add_argument(
+        "--db", default=None,
+        help="existing Living Memory SQLite database, opened read-only for extraction dedup",
+    )
     parser.add_argument("--judge-budget", type=int, default=400)
     parser.add_argument("--max-judge-calls", type=int, default=DEFAULT_EXTRACTION.max_judge_calls)
     parser.add_argument("--workers", type=int, default=6)
@@ -629,7 +638,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     mining_report = None
     results: list[SessionExtraction] = []
     judges: list[Any] = []
-    deduper = build_deduper(Path(args.db) if args.db else None)
+    dedup_available = False
 
     if do_calibrate:
         splits_read.extend(ALLOWED_SPLITS)
@@ -652,20 +661,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if args.progress:
             print(f"extracting over {len(entries)} eval sessions", file=sys.stderr)
-        results, mining_report, judges = run_extraction(
-            entries,
-            judge_factory=lambda: build_judge(
-                args.judge,
-                model=args.model,
-                cassette=Path(args.cassette) if args.cassette else None,
-            ),
-            deduper=deduper,
-            gate=gate,
-            config=config,
-            judge_budget=args.judge_budget,
-            workers=args.workers,
-            progress=args.progress,
-        )
+        try:
+            with build_deduper(Path(args.db) if args.db else None) as deduper:
+                dedup_available = deduper.available
+                results, mining_report, judges = run_extraction(
+                    entries,
+                    judge_factory=lambda: build_judge(
+                        args.judge,
+                        model=args.model,
+                        cassette=Path(args.cassette) if args.cassette else None,
+                    ),
+                    deduper=deduper,
+                    gate=gate,
+                    config=config,
+                    judge_budget=args.judge_budget,
+                    workers=args.workers,
+                    progress=args.progress,
+                )
+        except sqlite3.Error as exc:
+            print(f"postsession dedup: {exc}", file=sys.stderr)
+            return 2
 
     report = build_report(
         splits_read=sorted(dict.fromkeys(splits_read)),
@@ -674,7 +689,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         mining_report=mining_report,
         results=results,
         judges=judges,
-        dedup_available=deduper.available,
+        dedup_available=dedup_available,
         elapsed_s=time.monotonic() - started,
         max_ops=args.max_ops,
     )
