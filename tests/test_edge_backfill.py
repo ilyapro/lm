@@ -553,6 +553,90 @@ def test_r5a_dry_run_writes_no_annotation(tmp_path: Path) -> None:
         assert _edge_rows(store) == before  # but not written
 
 
+@pytest.mark.parametrize("annotate", [False, True])
+def test_path_preview_matches_apply_semantics_and_rollback(tmp_path, annotate):
+    path = tmp_path / "memory.sqlite3"
+    with MemoryStore(path) as store:
+        nodes = _seed_typed_material(store)
+        history = store.create_connection(
+            nodes["stale"].id, nodes["correction"].id, "caused",
+            metadata={"rule": "R2a", "kind": "failure_resolution"},
+        )
+        technical = store.create_connection(
+            nodes["referee_note"].id, nodes["referrer"].id, "related",
+            weight=0.3, metadata={"basis": "implicit_recall_feedback"},
+        )
+        manual = store.create_connection(
+            nodes["problem"].id, nodes["fix"].id, "caused",
+            weight=0.42, metadata={"basis": "explicit", "note": "operator evidence"},
+        )
+        _schema, _trace, source_edge = _seed_schema_with_source_edge(store)
+    before = _snapshot(path)
+    plan = run_backfill(path, annotate_derived_from=annotate)
+    assert _snapshot(path) == before
+    flags = ["--annotate-derived-from"] if annotate else []
+    result = _cli(path, "--apply", *flags)
+    assert result.returncode == 0, result.stderr
+    applied = json.loads(result.stdout)
+    assert applied["mode"] == "apply"
+    assert applied["applied"] is True
+    assert plan["totals"] == applied["totals"] == {
+        "new_rows": 3, "semantic_updates": 1, "new_rows_by_type": {"related": 3},
+        "net_new_connectivity": 3, "multi_rule_rows": 0, "r5a_annotations": int(annotate),
+    }
+    assert plan["edges_by_type"] == applied["edges_by_type"]
+    assert plan["edges_by_type"]["before"] == {
+        "related": 1, "caused": 1, "contradicts": 0, "supersedes": 0,
+        "requires": 0, "total": 2,
+    }
+    assert plan["edges_by_type"]["after"] == {
+        "related": 5, "caused": 1, "contradicts": 0, "supersedes": 0,
+        "requires": 0, "total": 6,
+    }
+    assert plan["typed_share"]["before"] == applied["typed_share"]["before"]
+    projected = dict(plan["typed_share"]["after"])
+    assert projected.pop("projected") is True
+    assert projected == applied["typed_share"]["after"]
+    assert projected["strict_typed"] == 1
+    assert projected["provenance_derived"] == 5 + int(annotate)
+    assert plan["rules"]["R6"]["semantic_updates"] == 1
+    for rule in ("R4a", "R4b", "R6"):
+        assert plan["rules"][rule] == applied["rules"][rule]
+    if annotate:
+        assert plan["rules"]["R5a"]["eligible"] == 1
+        assert plan["rules"]["R5a"]["applied"] is False
+        assert applied["rules"]["R5a"]["applied"] is True
+
+    with open_read_only_store(path) as store:
+        assert store.get_connection(history.id) == history
+        assert store.get_connection(manual.id) == manual
+        semantic = store.get_connection(technical.id)
+        assert semantic.weight == 0.9
+        assert semantic.metadata["kind"] == CONTENT_REFERENCE_KIND
+        assert semantic.metadata.get("basis") != BACKFILL_BASIS
+        source = store.get_connection(source_edge.id)
+        assert source.weight == source_edge.weight
+        assert source.type == source_edge.type
+        if annotate:
+            assert source.metadata == {
+                **source_edge.metadata, "kind": DERIVED_FROM_KIND, "rule": "R5a",
+            }
+        else:
+            assert source == source_edge
+    after = _snapshot(path)
+    again = run_backfill(path, apply=True, annotate_derived_from=annotate)
+    assert again["totals"]["new_rows"] == 0
+    assert again["totals"]["semantic_updates"] == 0
+    assert again["totals"]["r5a_annotations"] == 0
+    assert _snapshot(path) == after
+    with MemoryStore(path) as store, store.connection:
+        assert store.connection.execute(applied["rollback"]).rowcount == 3
+        assert store.get_connection(history.id) == history
+        assert store.get_connection(manual.id) == manual
+        assert store.get_connection(technical.id) == semantic
+        assert store.get_connection(source_edge.id) == source
+
+
 # --- caps / exclusions carried from the shared rules --------------------------
 
 
