@@ -34,15 +34,14 @@ authorizing and the runner demands a measurement of its own cohort — an
 extractor whose traces are not recalled must signal and stop, not keep
 writing.
 
-**Idempotency.** Every executed op lands in a per-``(transcript sha256, op
-fingerprint)`` ledger under the state dir; a re-run over the same transcript
-proposes the same ops and skips them all. The ledger is a cache, not the
-proof: if it is lost, the write path still asks the *server* what exists —
-``memory_attest`` is idempotent per (event, evidence) on the server's own
-ledger, and remember/teach proposals are checked against live memory through
-:class:`~.client.McpMemoryIndex` (recall + full-content lookup), by extraction
-identity (transcript sha plus source span or corrected node), equal scope and
-exact content. Similarity only finds candidates for this identity check.
+**Mutation recovery.** The per-``(transcript sha256, op fingerprint)`` ledger
+is admission state. It durably saves the request and UNKNOWN before dispatch;
+only a proven pre-dispatch failure makes that operation retryable. A confirmed
+result completes the same operation. Candidate absence never clears UNKNOWN.
+Exact content, scope and provenance can identify a prior extraction; teach
+reconciliation also verifies the recipient's correction relation. Attestation
+alone supports receiver-side replay by (event, evidence). Losing the ledger
+loses this protection: bounded search cannot prove that a write never happened.
 
 **Attribution.** :func:`enforce_attribution` stamps every write context with
 ``agent="extractor:<cli>"``, ``task``, ``session_id``,
@@ -455,7 +454,7 @@ def evaluate_gate(
 
 
 # --------------------------------------------------------------------------
-# idempotency ledger
+# operation ledger
 # --------------------------------------------------------------------------
 
 
@@ -1125,7 +1124,7 @@ class ExtractionRunner:
 
         Read-only reconciliation can complete confirmed results locally. A
         write-enabled call can resume ready requests and attest replays; its
-        caller must enforce the consumption gate and ordinary write budgets.
+        CLI caller must enforce the consumption gate; ordinary budgets apply.
         """
         decisions = []
         attempts = {"ops": 0, "attests": 0}
@@ -1366,6 +1365,10 @@ def build_report(
             "path": str(ledger.path),
             "entries": len(ledger),
             "written_nodes_total": ledger.written_nodes_total(),
+            "pending": [
+                {k: entry[k] for k in ("transcript_sha256", "fingerprint", "kind", "state")}
+                for entry in ledger.entries() if entry["state"] != "applied"
+            ],
         },
         "decisions": [d.to_dict() for d in decisions],
     }

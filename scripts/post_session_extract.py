@@ -205,7 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--state-dir",
         type=Path,
         default=DEFAULT_STATE_DIR,
-        help="idempotency ledger directory (default: %(default)s)",
+        help="durable operation state directory (default: %(default)s)",
     )
 
     budget = parser.add_argument_group("budget")

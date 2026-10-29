@@ -14,12 +14,12 @@ import pytest
 from living_memory.postsession.client import ClientError, LiveMemoryClient, PreDispatchError
 from living_memory.postsession.evidence import proposed_attestations
 from living_memory.postsession.runner import (
-    EXIT_GATE, EXIT_UNKNOWN, ExtractionRunner, Ledger, LedgerError, RunnerConfig,
+    EXIT_GATE, EXIT_UNKNOWN, ExtractionRunner, Ledger, RunnerConfig,
     SessionProposals, enforce_attribution, op_fingerprint,
 )
 from test_postsession_runner import (
     ORIGINAL_FACT, TOKEN, _live_record, _load_cli, live_server,
-    make_record, make_remember, make_teach, write_verdict,
+    make_record, make_remember, make_teach,
 )
 
 
@@ -262,6 +262,7 @@ def _native_op(client, kind, tag):
 @pytest.mark.parametrize("unavailable", [False, True])
 def test_native_applied_lost_reply_and_finite_confirmation(live_server, tmp_path, kind, tag, unavailable):
     client = LostReplyClient(live_server["url"], token=TOKEN)
+    tag = tag if not unavailable else {"12": "9a", "34": "bc"}[tag]
     record, op = _native_op(client, kind, tag)
     client.lost_tool = f"memory_{kind}"
     assert run(tmp_path, client, record, [op])[0].status == "unknown"
@@ -372,4 +373,57 @@ def test_cli_unknown_is_visible_without_a_proposal_or_paid_judge(tmp_path, monke
     assert "UNKNOWN" in capsys.readouterr().err
     # Mutation continuation still enforces the existing gate.
     assert cli.main(args + ["--write", "--gate-verdict", str(tmp_path / "missing")]) == EXIT_GATE
+    assert len(client.effects) == 1
+
+
+def test_native_pre_dispatch_auth_failure_can_resume(live_server, tmp_path):
+    record = make_record(transcript_sha256="de" * 32)
+    op = make_remember(record, "A connection authentication refusal does not send a tool mutation.")
+    rejected = LiveMemoryClient(live_server["url"], token="invalid-test-token", timeout=2)
+    decision = run(tmp_path, rejected, record, [op])[0]
+    assert (decision.status, decision.reason) == ("failed", "pre_dispatch")
+    assert Ledger(tmp_path).entries()[0]["state"] == "ready"
+    accepted = LiveMemoryClient(live_server["url"], token=TOKEN)
+    assert ExtractionRunner(
+        config=RunnerConfig(dry_run=False), ledger=Ledger(tmp_path), client=accepted,
+    ).reconcile()[0].status == "written"
+    assert len(Ledger(tmp_path)) == 1
+
+
+def test_teach_confirmation_requires_the_actual_relation(live_server, tmp_path):
+    client = LiveMemoryClient(live_server["url"], token=TOKEN)
+    record, op = _native_op(client, "teach", "ef")
+    op = enforce_attribution(op, record, task="test")
+    # Equal text and even supplied correction metadata do not create an edge.
+    twin = client.remember(op.payload["correction"], {
+        **op.payload["context"], "scope": "project:demo",
+    })["node"]["id"]
+    ledger = Ledger(tmp_path)
+    assert ledger.begin(op, client.url)[0]
+    runner = ExtractionRunner(config=RunnerConfig(), ledger=ledger, client=client)
+    key = f"{record.transcript_sha256}:{op_fingerprint(op)}"
+    assert runner.reconcile(operation=key, node_id=twin)[0].status == "unknown"
+    assert ledger.entries()[0]["state"] == "unknown"
+
+
+def test_cli_missing_output_does_not_reopen_applied_operation(tmp_path, monkeypatch):
+    cli = _load_cli()
+    client = Recipient()
+    record = make_record()
+    op = make_remember(record, "The report is not write admission state.")
+    # Use a known unsent request so --reconcile --write exercises the CLI's
+    # output handling without proposal generation or a paid judge.
+    client.failure = PreDispatchError("not connected")
+    run(tmp_path / "state", client, record, [op])
+    client.failure = None
+    monkeypatch.setattr(cli, "LiveMemoryClient", lambda *args, **kwargs: client)
+    from living_memory.postsession.runner import GateDecision
+    monkeypatch.setattr(cli, "evaluate_gate", lambda *args, **kwargs: GateDecision("PASS"))
+    blocked_output = tmp_path / "output"
+    blocked_output.mkdir()
+    args = ["--reconcile", "--write", "--state-dir", str(tmp_path / "state"), "--out", str(blocked_output)]
+    assert cli.main(args) == 2
+    assert len(client.effects) == 1
+    assert Ledger(tmp_path / "state").entries()[0]["state"] == "applied"
+    assert cli.main(args[:-2]) == 0
     assert len(client.effects) == 1
