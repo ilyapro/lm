@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict, replace
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -201,6 +202,13 @@ def test_recent_feedback_pressure_counts_dominant_methods(tmp_path: Path) -> Non
         ("default", "both", (0, 0, 1), (0.10, 0.15, 0.75), {"bm25", "vector"}),
         ("custom", "none", (0, 0, 1), (0.20, 0, 0.80), {"bm25"}),
         ("zero_minima", "both", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("zero_minima", "none", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("lexical_only", "both", (0, 0, 1), (0.20, 0, 0.80), {"bm25"}),
+        ("lexical_only", "none", (0, 0, 1), (0.20, 0, 0.80), {"bm25"}),
+        ("vector_only", "both", (0.98, 0.02, 0), (0.60, 0.40, 0), {"bm25", "vector"}),
+        ("vector_only", "graph", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
+        ("graph_only", "both", (0.98, 0.02, 0), (0.60, 0.02, 0.38), {"bm25", "graph"}),
+        ("graph_only", "vector", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
         ("other_family", "both", (0.98, 0.02, 0), (0.98, 0.02, 0), set()),
         ("default", "both", (98, 2, 0), (0.80, 0.15, 0.05), {"bm25", "vector", "graph"}),
         ("default", "both", (0, 0, 0), (0.80, 0.15, 0.05), {"bm25", "vector", "graph"}),
@@ -230,6 +238,13 @@ def test_native_health_matches_floor_application_and_feedback_update(
         )
     elif policy == "other_family":
         config = replace(config, retrieval_policy_floors={"global": custom})
+    elif policy in {"lexical_only", "vector_only", "graph_only"}:
+        config = replace(config, retrieval_policy_floors={"project": RetrievalPolicyFloors(
+            bm25_max=0.60,
+            vector_min=0.25 if policy == "vector_only" else 0,
+            graph_min=0.10 if policy == "graph_only" else 0,
+            bm25_min=0.20,
+        )})
     mcp = create_mcp_server(config=config, expose_operator_tools=True)
     store = mcp.memory_store
     scope = "project:health"
@@ -240,6 +255,11 @@ def test_native_health_matches_floor_application_and_feedback_update(
         _seed_floor_evidence(store, scope, evidence)
         assert store._has_vector_evidence(scope) == (evidence in {"vector", "both"})
         assert store._has_graph_evidence(scope) == (evidence in {"graph", "both"})
+        evidence_reads = {}
+        for channel in ("vector", "graph"):
+            name = f"_has_{channel}_evidence"
+            evidence_reads[channel] = Mock(wraps=getattr(store, name))
+            monkeypatch.setattr(store, name, evidence_reads[channel])
         saved = store.set_retrieval_weights(
             scope, bm25=raw[0], vector=raw[1], graph=raw[2], learning_rate=0.07,
         )
@@ -256,6 +276,12 @@ def test_native_health_matches_floor_application_and_feedback_update(
                 return response.data
 
         report = asyncio.run(health())
+        configured = config.retrieval_policy_floors.get("project")
+        for channel, read in evidence_reads.items():
+            enabled = configured is not None and getattr(configured, f"{channel}_min") > 0
+            assert read.call_count == int(enabled)
+            if enabled:
+                read.assert_called_with(scope)
         assert store.connection.total_changes == changes
         assert list(store.connection.iterdump()) == before
         store.connection.execute("PRAGMA query_only = OFF")
@@ -283,6 +309,9 @@ def test_native_health_matches_floor_application_and_feedback_update(
             }
         applied = store.apply_retrieval_weight_floors(scope, saved)
         updated = store.update_retrieval_weights(scope)
+        for channel, read in evidence_reads.items():
+            enabled = configured is not None and getattr(configured, f"{channel}_min") > 0
+            assert read.call_count == 3 * int(enabled)
         assert _triplet(applied) == pytest.approx(expected)
         assert _triplet(updated) == pytest.approx(expected)
         assert _triplet(store.get_retrieval_weights(scope)) == pytest.approx(expected)
