@@ -11,7 +11,7 @@ import pytest
 
 ROOT_DIR = Path(__file__).resolve().parent
 SRC_DIR = ROOT_DIR / "src"
-DEPS_DIR = ROOT_DIR / ".cache" / "python-deps"
+DEPS_DIR = Path(os.environ.get("LIVING_MEMORY_DEPS_DIR") or ROOT_DIR / ".cache" / "python-deps")
 
 if SRC_DIR.exists():
     src = str(SRC_DIR)

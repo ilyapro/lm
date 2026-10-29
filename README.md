@@ -44,6 +44,18 @@ npm run server -- ./living_memory.sqlite3
 that instantiates the server, verifies the four-tool default discovery surface,
 and exercises all nine registered core tools locally.
 
+`scripts/setup-python.sh`, `scripts/test.sh`, and `scripts/server.sh` use
+`.cache/python-deps` by default. Setup reuses a cache when its `pyproject.toml`
+fingerprint matches and `fastmcp` and `pytest` import successfully. A worktree
+without a cache can borrow a compatible main-checkout cache through a symlink.
+If a borrowed cache needs installation, setup replaces only the local symlink
+with a checkout-owned directory; the borrowed cache and its marker stay intact.
+
+Set `LIVING_MEMORY_DEPS_DIR` to select a different writable dependency directory.
+This explicit override also authorizes installation through a symlink at that
+path. Setup, test/server scripts, and checkout imports use the same override;
+an unset or empty value selects the default directory.
+
 ## Reading memory
 
 `memory_recall(query=...)` returns knowledge directly in `results`: identity,
