@@ -2954,10 +2954,14 @@ class MemoryStore:
         """Newest delivery facts for requested ids in a bounded session window.
 
         The event cap precedes all id/time filtering, including closed events.
-        SQL projects only matching results, without transferring unrelated
-        result bodies or ambient context. Time eligibility uses the same parsed
-        UTC seconds as feedback; ordering remains stored created_at, rowid,
-        then result position. The first eligible occurrence of each id wins.
+        Candidates are selected before their membership is read, in stored
+        created_at/rowid order. Time eligibility uses the same parsed UTC
+        seconds as feedback. SQL projects matching objects from each eligible
+        result array, in result position order, until every requested id has
+        a delivery. Unneeded bodies are never parsed; malformed necessary JSON
+        and storage errors propagate. Non-array bodies and non-object results
+        cannot prove delivery. No unrelated bodies or ambient context are
+        transferred. The first eligible occurrence of each id wins.
         No delivery-history projection or its availability state is consulted.
         Transport always identifies its own deliveries. Explicit callers may
         also supply a durable session: reconnects require equal session, no
@@ -2973,7 +2977,6 @@ class MemoryStore:
             **_recall_identity(context),
             "transport_session_id": str(transport_session_id),
             "limit": int(limit),
-            "requested": _json_dumps(sorted(requested)),
         }
         predicates = ["transport_session_id = :transport_session_id"]
         if params["session_id"] and params["session_id"].strip():
@@ -3002,47 +3005,59 @@ class MemoryStore:
             )"""
             for predicate in predicates
         )
-        rows = self._conn.execute(
+        events = self._conn.execute(
             f"""
             WITH recent AS MATERIALIZED (
                 SELECT * FROM ({probes})
                 ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
             )
-            SELECT event.id AS event_id, event.query, event.scope, recent.created_at,
-                   json_extract(result.value, '$.node_id') AS node_id,
-                   result.key AS rank, result.value AS result,
-                   EXISTS(SELECT 1 FROM {RECALL_CREDIT_LEDGER_TABLE} AS credit
-                          WHERE credit.recall_event_id = event.id
-                            AND credit.node_id = json_extract(result.value, '$.node_id'))
-                   OR EXISTS(SELECT 1 FROM {RECALL_EXPLICIT_CREDIT_TABLE} AS credit
-                             WHERE credit.recall_event_id = event.id
-                               AND credit.node_id = json_extract(result.value, '$.node_id'))
-                   AS credited
-            FROM recent
-            JOIN recall_events AS event ON event.rowid = recent.event_rowid
-            JOIN json_each(event.results) AS result
-            WHERE CAST(json_extract(result.value, '$.node_id') AS TEXT)
-                  IN (SELECT value FROM json_each(:requested))
-            ORDER BY recent.created_at DESC, recent.event_rowid DESC, result.key
+            SELECT * FROM recent ORDER BY created_at DESC, event_rowid DESC
             """,
             params,
-        )
+        ).fetchall()
         hits: dict[str, dict[str, Any]] = {}
-        try:
-            for row in rows:
-                instant = parse_timestamp(row["created_at"])
-                if instant is None or not earliest <= instant.replace(microsecond=0) <= latest:
-                    continue
-                if str(row["node_id"] or "") in hits:
-                    continue
-                result = _json_loads(row["result"], {})
-                node_id = str(result.get("node_id") or "")
-                if node_id in requested and node_id not in hits:
-                    hits[node_id] = {**dict(row), "result": result}
-                    if len(hits) == len(requested):
-                        break
-        finally:
-            rows.close()
+        for event in events:
+            instant = parse_timestamp(event["created_at"])
+            if instant is None or not earliest <= instant.replace(microsecond=0) <= latest:
+                continue
+            # Keep the ordered event choice outside the JSON query: sorting a
+            # session-wide join can evaluate older bodies before its first hit.
+            rows = self._conn.execute(
+                f"""
+                SELECT event.id AS event_id, event.query, event.scope, event.created_at,
+                       json_extract(result.value, '$.node_id') AS node_id,
+                       result.key AS rank, result.value AS result,
+                       EXISTS(SELECT 1 FROM {RECALL_CREDIT_LEDGER_TABLE} AS credit
+                              WHERE credit.recall_event_id = event.id
+                                AND credit.node_id = json_extract(result.value, '$.node_id'))
+                       OR EXISTS(SELECT 1 FROM {RECALL_EXPLICIT_CREDIT_TABLE} AS credit
+                                 WHERE credit.recall_event_id = event.id
+                                   AND credit.node_id = json_extract(result.value, '$.node_id'))
+                       AS credited
+                FROM recall_events AS event
+                JOIN json_each(CASE json_type(event.results)
+                    WHEN 'array' THEN event.results ELSE '[]' END) AS result
+                WHERE event.rowid = :event_rowid
+                  AND CASE WHEN result.type = 'object'
+                      THEN json_type(result.value, '$.node_id') END = 'text'
+                  AND CASE WHEN result.type = 'object'
+                      THEN json_extract(result.value, '$.node_id') END
+                      IN (SELECT value FROM json_each(:requested))
+                ORDER BY result.key
+                """,
+                {"event_rowid": event["event_rowid"],
+                 "requested": _json_dumps(sorted(requested - hits.keys()))},
+            )
+            try:
+                for row in rows:
+                    result = _json_loads(row["result"], {})
+                    node_id = str(result.get("node_id") or "")
+                    if node_id in requested and node_id not in hits:
+                        hits[node_id] = {**dict(row), "result": result}
+            finally:
+                rows.close()
+            if len(hits) == len(requested):
+                break
         return hits
 
     def _record_recall_history_event(
