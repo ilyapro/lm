@@ -1092,18 +1092,27 @@ def _materialize_procedural_schemas(
     # node (recall's dedup reads the title instead). The oldest node of
     # a group is its node, a later one a duplicate. A taught or superseded node
     # belongs to a dead era; updating it would resurrect corrected content.
+    with step():
+        triggered = store.get_nodes([node_id for node_id, _trigger in store.schema_triggers(None)])
+        owners = [
+            node for node in triggered.values()
+            if node.provenance.get("strategy") == "procedural"
+            and not node.corrections and not _is_superseded(store, node.id)
+        ]
+        cited = store.get_nodes([
+            source for node in owners if node.level == "schema" for source in node.source_traces
+        ])
+    # Owner validity and cited records share one guarded snapshot. Grouping
+    # needs only those values; each write below reads its current facts again.
     nodes: dict[tuple[str, str], list[Node]] = {}
-    triggered = store.get_nodes([node_id for node_id, _trigger in store.schema_triggers(None)])
-    for node in sorted(triggered.values(), key=lambda node: (node.created_at, node.id)):
-        dead = node.corrections or _is_superseded(store, node.id)
-        if node.provenance.get("strategy") == "procedural" and not dead:
-            nodes.setdefault((node.scope, _schema_group_id(node)), []).append(node)
+    for node in sorted(owners, key=lambda node: (node.created_at, node.id)):
+        nodes.setdefault((node.scope, _schema_group_id(node)), []).append(node)
     # A legacy node is repaired from its own records even when no visited trace
     # reaches its group; a record it cites from another group joins that group.
     legacy = {group: owned[0] for group, owned in nodes.items() if owned[0].level == "schema"}
-    cited = store.get_nodes([source for node in legacy.values() for source in node.source_traces])
+    legacy_sources = {source for node in legacy.values() for source in node.source_traces}
     groups: dict[tuple[str, str], dict[str, Node]] = {group: {} for group in legacy}
-    for trace in [*traces, *cited.values()]:
+    for trace in [*traces, *(node for source, node in cited.items() if source in legacy_sources)]:
         key = _procedure_key(trace)
         if key and not trace.decayed:
             groups.setdefault((trace.scope, key.group_id), {})[trace.id] = trace
@@ -1116,9 +1125,15 @@ def _materialize_procedural_schemas(
             # The pass can yield between loading its snapshot and writing this
             # group. A committed correction and the group's current sources
             # are authoritative at the write boundary.
-            existing = store.get_node(existing.id) if existing else None
-            if existing and (existing.decayed or existing.corrections or _is_superseded(store, existing.id)):
-                continue
+            if existing is not None:
+                existing = store.get_node(existing.id)
+                if (
+                    existing is None or existing.decayed or existing.corrections
+                    or existing.materializer != "procedural"
+                    or (existing.scope, _schema_group_id(existing)) != (group_scope, group_id)
+                    or _is_superseded(store, existing.id)
+                ):
+                    continue
             if existing:
                 assessment = _current_derivation(store, existing, additional=by_id.values())
                 group_traces = assessment.live
@@ -1150,7 +1165,11 @@ def _materialize_procedural_schemas(
             )
             _connect_schema_to_traces(store, schema, assessment.live)
             for duplicate in duplicates:
-                store.soft_delete_node(duplicate.id, "procedural: duplicate group")
+                current = store.get_node(duplicate.id)
+                # A changed record no longer supports the snapshot's duplicate
+                # decision. Supersedes edges can also change independently.
+                if current == duplicate and not _is_superseded(store, duplicate.id):
+                    store.soft_delete_node(duplicate.id, "procedural: duplicate group")
         schemas.append((schema, created))
     return schemas
 
