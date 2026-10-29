@@ -74,7 +74,7 @@ from .corrections import (
     DetectorConfig,
     detect_corrections,
 )
-from .dedup import DEFAULT_DEDUP, Deduper, NullMemoryIndex
+from .dedup import DEFAULT_DEDUP, Deduper, NodeSnapshot, NullMemoryIndex
 from .evidence import proposed_attestations
 from .gate import DEFAULT_GATE, Gate
 from .insights import (
@@ -94,6 +94,8 @@ __all__ = [
     "EXIT_GATE",
     "EXIT_OK",
     "EXIT_USAGE",
+    "EXIT_UNKNOWN",
+    "LedgerError",
     "ExtractionRunner",
     "GateDecision",
     "Ledger",
@@ -108,6 +110,7 @@ __all__ = [
 
 EXIT_OK = 0
 EXIT_USAGE = 2
+EXIT_UNKNOWN = 4
 #: The gate did not authorize this run: verdict failed, inconclusive, missing
 #: or stale. The runner exits with this code having written NOTHING.
 EXIT_GATE = 3
@@ -717,6 +720,7 @@ def enforce_attribution(
     context.setdefault("source_session_key", record.session_key)
     context.setdefault("source_span", op.provenance.source_span)
     context.setdefault("extraction_runner", RUNNER_VERSION)
+    context["extraction_fingerprint"] = op_fingerprint(op)
     payload["context"] = context
     return ProposedOp(
         kind=op.kind, payload=payload, provenance=op.provenance, evidence=op.evidence
@@ -753,6 +757,7 @@ class OpDecision:
     session_key: str
     fingerprint: str
     status: str
+    transcript_sha256: str = ""
     reason: str = ""
     detail: str = ""
     locator: str = ""
@@ -766,6 +771,7 @@ class OpDecision:
             "kind": self.kind,
             "session_key": self.session_key,
             "fingerprint": self.fingerprint,
+            "transcript_sha256": self.transcript_sha256,
             "status": self.status,
             "reason": self.reason,
             "detail": self.detail,
@@ -909,13 +915,14 @@ class ExtractionRunner:
 
     # ---- decide + execute --------------------------------------------------
 
-    def _lm_duplicate(self, op: ProposedOp) -> tuple[str, dict[str, Any]]:
+    def _lm_duplicate(
+        self, op: ProposedOp, *, node_id: str = "", confirm_effect: bool = False,
+    ) -> tuple[str, dict[str, Any]]:
         """Ask the live server whether this write already exists.
 
         Returns ``(reason, details)``; an empty reason means "not a duplicate
-        as far as the server shows". This is the fallback that holds when the
-        local ledger is lost. Attest ops skip it: the server's own attestation
-        ledger replays them idempotently.
+        as far as the server shows"; it never proves absence. A known node id
+        bypasses bounded candidate search. Attest ops use receiver replay.
         """
 
         if self.client is None or op.kind == "attest":
@@ -926,9 +933,9 @@ class ExtractionRunner:
             fact = str(payload.get("content") or "")
         else:
             correction = payload.get("correction")
-            fact = correction if isinstance(correction, str) else canonical_json(
-                correction, indent=None
-            )
+            from living_memory.consolidation import _correction_text
+
+            fact = _correction_text(correction)
             # The corrective trace lands in the ORIGINAL node's scope, so that
             # is where its twin must be searched for; a scope-less recall would
             # resolve to global only and miss it.
@@ -938,10 +945,21 @@ class ExtractionRunner:
                 if results and results[0].get("scope"):
                     scope = results[0]["scope"]
             except ClientError:
-                pass
+                results = []
+            if confirm_effect and not results:
+                return "", {"checked": 0, "error": "original node unavailable"}
         index = McpMemoryIndex(self.client)
         try:
-            snapshots = index.candidates(fact, scope=scope, limit=8)
+            if node_id:
+                nodes = self.client.lookup_nodes([node_id], view="full").get("results") or []
+                snapshots = [
+                    NodeSnapshot(node_id=n["id"], content=n.get("content", ""),
+                                 scope=n.get("scope"))
+                    for n in nodes if n.get("id") == node_id
+                ]
+                index.last_contexts = {n["id"]: n.get("context") or {} for n in nodes}
+            else:
+                snapshots = index.candidates(fact, scope=scope, limit=8)
         except ClientError as exc:
             return "", {"checked": 0, "error": str(exc)[:200]}
         for snapshot in snapshots:
@@ -960,6 +978,13 @@ class ExtractionRunner:
             same_operation = same_correction if op.kind == "teach" else (
                 same_span and not context.get("corrected_node_id")
             )
+            fingerprint = context.get("extraction_fingerprint")
+            if fingerprint and fingerprint != op_fingerprint(op):
+                continue
+            if confirm_effect and op.kind == "teach" and snapshot.node_id not in (
+                results[0].get("superseded_by") or []
+            ):
+                continue
             if same_transcript and same_operation:
                 return "lm_prior_extraction", {
                     "node_id": snapshot.node_id,
@@ -976,6 +1001,8 @@ class ExtractionRunner:
         if op.kind == "remember":
             response = self.client.remember(str(payload["content"]), dict(context))
             decision.node_id = str((response.get("node") or {}).get("id") or "")
+            if not decision.node_id:
+                raise ClientError("memory_remember returned no applied node id")
             decision.status = "written"
         elif op.kind == "teach":
             response = self.client.teach(
@@ -990,13 +1017,18 @@ class ExtractionRunner:
             decision.supersedes_edge_id = str(
                 (response.get("supersedes") or {}).get("id") or ""
             )
+            if not decision.node_id or not decision.supersedes_edge_id:
+                raise ClientError("memory_teach returned no confirmed correction and edge")
             decision.status = "written"
         else:
             response = self.client.attest(
                 str(payload["recall_event_id"]),
                 [str(item) for item in payload.get("evidence") or []],
                 context=dict(context),
+                trace_id=payload.get("trace_id"),
             )
+            if not response.get("attestation_id"):
+                raise ClientError("memory_attest returned no attestation id")
             decision.attestation = {
                 "attestation_id": response.get("attestation_id"),
                 "grounded_node_ids": list(response.get("grounded_node_ids") or []),
@@ -1005,6 +1037,132 @@ class ExtractionRunner:
                 "replay": bool(response.get("replay")),
             }
             decision.status = "written"
+
+    @staticmethod
+    def _decision(op: ProposedOp) -> OpDecision:
+        return OpDecision(
+            kind=op.kind, session_key=op.provenance.session_key,
+            fingerprint=op_fingerprint(op), status="proposed",
+            transcript_sha256=op.provenance.transcript_sha256,
+            locator=op.provenance.source_span, preview=_op_preview(op),
+        )
+
+    def _prior(
+        self, entry: dict[str, Any] | None, decision: OpDecision, *,
+        node_id: str = "", persist: bool = False,
+    ) -> bool:
+        """Resolve existing state. False means that dispatch may be considered."""
+        if entry is None:
+            return False
+        if entry.get("recipient") and entry["recipient"] != getattr(self.client, "url", ""):
+            decision.status, decision.reason = "unknown", "recipient_mismatch"
+            decision.detail = "Use the saved recipient URL; changing targets cannot resolve this operation."
+            return True
+        if entry["state"] == "applied":
+            decision.status, decision.reason = "skipped", "ledger_duplicate"
+            decision.node_id = entry.get("result_id", "") if entry["kind"] != "attest" else ""
+            return True
+        if entry["state"] == "ready":
+            return False
+        op = ProposedOp.from_dict(entry["operation"])
+        if op.kind == "attest" and not self.config.dry_run:
+            return False  # Receiver replay uses the exact saved event/evidence.
+        reason, detail = self._lm_duplicate(op, node_id=node_id, confirm_effect=True)
+        if reason:
+            decision.status, decision.reason = "reconciled", reason
+            decision.node_id = detail["node_id"]
+            if persist:
+                self.ledger.finish(
+                    decision.transcript_sha256, decision.fingerprint,
+                    state="applied", result=decision.to_dict(),
+                )
+        else:
+            decision.status, decision.reason = "unknown", "unconfirmed_effect"
+            decision.detail = (
+                "No confirmed result. Mutation is blocked. Use --reconcile, optionally "
+                "--operation SHA:FINGERPRINT --node-id ID from the recipient. "
+                "A missing candidate or failed lookup does not authorize retry."
+            )
+        return True
+
+    def _dispatch(self, op: ProposedOp, decision: OpDecision) -> None:
+        if self.config.dry_run:
+            decision.status = "would_write"
+            return
+        if self.client is None:
+            decision.status, decision.reason = "failed", "no_client"
+            return
+        claimed, entry = self.ledger.begin(op, getattr(self.client, "url", ""))
+        if not claimed and self._prior(entry, decision, persist=True):
+            return
+        # Reuse the saved request, even if a new proposal changed attribution.
+        op = ProposedOp.from_dict(entry["operation"])
+        try:
+            self._execute(op, decision)
+        except PreDispatchError as exc:
+            # A failure of an attest replay cannot disprove its earlier effect.
+            if claimed:
+                self.ledger.finish(
+                    decision.transcript_sha256, decision.fingerprint, state="ready",
+                )
+            decision.status = "failed" if claimed else "unknown"
+            decision.reason = "pre_dispatch" if claimed else "unconfirmed_effect"
+            decision.detail = str(exc)[:300]
+            return
+        except Exception as exc:  # A tool error may follow a committed effect.
+            decision.status, decision.reason = "unknown", "unconfirmed_effect"
+            decision.detail = str(exc)[:300]
+            return
+        self.ledger.finish(
+            decision.transcript_sha256, decision.fingerprint,
+            state="applied", result=decision.to_dict(),
+        )
+
+    def reconcile(
+        self, *, operation: str = "", node_id: str = "",
+    ) -> list[OpDecision]:
+        """One finite pass over saved requests, without transcripts or a judge.
+
+        Read-only reconciliation can complete confirmed results locally. A
+        write-enabled call can resume ready requests and attest replays; its
+        caller must enforce the consumption gate and ordinary write budgets.
+        """
+        decisions = []
+        attempts = {"ops": 0, "attests": 0}
+        sessions: dict[tuple[str, str], int] = {}
+        for entry in self.ledger.entries():
+            key = f"{entry['transcript_sha256']}:{entry['fingerprint']}"
+            if operation and operation != key:
+                continue
+            if entry["state"] == "applied" and not operation:
+                continue
+            if "operation" not in entry:
+                continue
+            op = ProposedOp.from_dict(entry["operation"])
+            decision = self._decision(op)
+            decisions.append(decision)
+            try:
+                if self._prior(entry, decision, node_id=node_id, persist=True):
+                    continue
+                if self.config.dry_run:
+                    decision.status, decision.reason = "failed", "pre_dispatch"
+                    decision.detail = "Not sent. Resume the saved operation with --reconcile --write."
+                    continue
+                group = "attests" if op.kind == "attest" else "ops"
+                skey = (op.provenance.session_key, group)
+                if (attempts[group] >= getattr(self.config, f"max_total_{group}") or
+                        sessions.get(skey, 0) >= getattr(self.config, f"max_{group}_per_session")):
+                    decision.status, decision.reason = "dropped", "budget_reconcile"
+                    continue
+                attempts[group] += 1
+                sessions[skey] = sessions.get(skey, 0) + 1
+                self._dispatch(op, decision)
+            except LedgerError as exc:
+                decision.status, decision.reason = "unknown", "ledger_error"
+                decision.detail = str(exc)
+        if operation and not decisions:
+            raise ValueError("saved operation not found")
+        return decisions
 
     def decide_and_execute(
         self, all_proposals: Sequence[SessionProposals]
@@ -1027,15 +1185,19 @@ class ExtractionRunner:
             for op in proposals.ops + proposals.attests:
                 op = enforce_attribution(op, record, task=self.config.task)
                 fingerprint = op_fingerprint(op)
-                decision = OpDecision(
-                    kind=op.kind,
-                    session_key=record.session_key,
-                    fingerprint=fingerprint,
-                    status="proposed",
-                    locator=op.provenance.source_span,
-                    preview=_op_preview(op),
-                )
+                decision = self._decision(op)
                 decisions.append(decision)
+                sha = op.provenance.transcript_sha256
+                try:
+                    entry = self.ledger.get(sha, fingerprint)
+                    if self._prior(entry, decision, persist=not self.config.dry_run):
+                        continue
+                    if entry:
+                        op = ProposedOp.from_dict(entry["operation"])
+                except LedgerError as exc:
+                    decision.status, decision.reason = "unknown", "ledger_error"
+                    decision.detail = str(exc)
+                    continue
 
                 if op.kind == "attest":
                     if session_attests >= self.config.max_attests_per_session:
@@ -1056,17 +1218,21 @@ class ExtractionRunner:
                         decision.reason = "budget_total_ops"
                         continue
 
-                sha = op.provenance.transcript_sha256
-                if self.ledger.has(sha, fingerprint):
-                    decision.status = "skipped"
-                    decision.reason = "ledger_duplicate"
-                    continue
-
                 reason, detail = self._lm_duplicate(op)
                 if reason:
                     decision.status = "skipped"
                     decision.reason = reason
                     decision.detail = canonical_json(detail, indent=None)
+                    decision.node_id = detail.get("node_id", "")
+                    if not self.config.dry_run:
+                        try:
+                            self.ledger.record(
+                                sha, fingerprint, kind=op.kind,
+                                session_key=record.session_key, result_id=decision.node_id,
+                            )
+                        except LedgerError as exc:
+                            decision.status, decision.reason = "unknown", "ledger_error"
+                            decision.detail = str(exc)
                     continue
 
                 # The op is accepted; it consumes budget whether or not this
@@ -1079,29 +1245,12 @@ class ExtractionRunner:
                     session_ops += 1
                     total_ops += 1
 
-                if self.config.dry_run:
-                    decision.status = "would_write"
-                    continue
-
-                if self.client is None:
-                    decision.status = "failed"
-                    decision.reason = "no_client"
-                    continue
                 try:
-                    self._execute(op, decision)
-                except ClientError as exc:
-                    decision.status = "failed"
-                    decision.reason = "client_error"
-                    decision.detail = str(exc)[:300]
-                    continue
-                self.ledger.record(
-                    sha,
-                    fingerprint,
-                    kind=op.kind,
-                    session_key=record.session_key,
-                    result_id=decision.node_id
-                    or str(decision.attestation.get("attestation_id") or ""),
-                )
+                    self._dispatch(op, decision)
+                except LedgerError as exc:
+                    decision.status, decision.reason = "unknown", "ledger_error"
+                    decision.detail = str(exc)
+
         return decisions
 
 
