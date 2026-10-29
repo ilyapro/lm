@@ -221,6 +221,143 @@ def test_native_lookup_finishes_with_encoder_held_and_store_reads_guarded(runtim
     assert r.encoded == [TASK]
 
 
+@pytest.fixture
+def pending_content(runtime, monkeypatch):
+    r = runtime
+    r.pending = r.store.create_node(
+        level="schema", content="Cobalt release rollback pending checklist.",
+        context={"scope": SCOPE, "trigger": TASK}, stats={"confidence": 0.9},
+    )
+    assert not r.store.node_chunks_are_current(r.pending.id)
+    r.content_encodes = []
+    r.encoder_guard_owned = []
+    encode = embeddings._embed_hash
+
+    def held_content(text, dimensions):
+        if text != TASK:
+            r.content_encodes.append(text)
+            r.encoder_guard_owned.append(r.guard._is_owned())
+        if text == r.pending.content:
+            r.entered.set()
+            assert r.release.wait(10), "pending content encoder was not released"
+        return encode(text, dimensions)
+
+    monkeypatch.setattr(embeddings, "_embed_hash", held_content)
+    return r
+
+
+@pytest.mark.parametrize("max_concepts", [0, 5])
+def test_native_pending_content_keeps_exact_lookup_available(pending_content, monkeypatch, max_concepts):
+    r = pending_content
+    recalls = []
+    recall = MemoryRecallService.memory_recall
+
+    def guarded_recall(self, *args, **kwargs):
+        assert r.guard._is_owned() and r.release.is_set()
+        assert kwargs["repair_pending"] is False
+        recalls.append((kwargs.get("depth", 1), kwargs["max_results"],
+                        kwargs["log_access"], kwargs.get("log_event")))
+        return recall(self, *args, **kwargs)
+
+    monkeypatch.setattr(MemoryRecallService, "memory_recall", guarded_recall)
+
+    async def scenario():
+        async with Client(r.mcp) as owner, Client(r.mcp) as peer:
+            pending = asyncio.create_task(get_prompt(owner, max_concepts=max_concepts))
+            try:
+                assert await asyncio.to_thread(r.entered.wait, 5)
+                assert not r.store.connection.in_transaction
+                lookup = await asyncio.wait_for(peer.call_tool("memory_lookup", {
+                    "node_id": r.pending.id,
+                }), 3)
+                assert lookup.data["results"][0]["content"] == r.pending.content
+                assert not pending.done() and not r.release.is_set()
+            finally:
+                r.release.set()
+            actual = await asyncio.wait_for(pending, 5)
+            assert r.pending.content in actual
+            assert r.store.node_chunks_are_current(r.pending.id)
+            return actual
+
+    actual = asyncio.run(scenario())
+    assert recalls == ([(1, 30, False, None)] if max_concepts else []) + [
+        (1, 12, False, False),
+    ] + ([("decision", 30, False, None)] if max_concepts else [])
+    assert r.encoded == [TASK]
+    assert r.content_encodes == [r.pending.content]
+    assert r.encoder_guard_owned == [False]
+    monkeypatch.setattr(MemoryRecallService, "memory_recall", recall)
+    assert actual == standalone_context(r.store, max_concepts=max_concepts)
+
+
+@pytest.mark.parametrize("change", ["content", "scope", "decay", "correction", "default_scope"])
+def test_native_pending_gap_reads_current_sources_without_fallback(pending_content, change):
+    r = pending_content
+    updated = "Cobalt release rollback requires a current countersignature."
+    new_scope = "project:current-prompt"
+    scope = None if change == "default_scope" else SCOPE
+
+    async def scenario():
+        async with Client(r.mcp) as owner, Client(r.mcp) as peer:
+            pending = asyncio.create_task(get_prompt(owner, scope=scope))
+            try:
+                assert await asyncio.to_thread(r.entered.wait, 5)
+                lookup = await asyncio.wait_for(peer.call_tool("memory_lookup", {
+                    "node_id": r.pending.id,
+                }), 3)
+                assert lookup.data["results"][0]["content"] == r.pending.content
+                with r.guard:
+                    if change == "content":
+                        r.store.update_node(r.pending.id, content=updated)
+                    elif change in {"scope", "default_scope"}:
+                        r.store.update_node(r.pending.id, context={"scope": new_scope, "trigger": TASK})
+                        if change == "default_scope":
+                            r.store.config = replace(r.store.config, default_scope=new_scope)
+                    elif change == "decay":
+                        r.store.soft_delete_node(r.pending.id, "expired during preparation")
+                    else:
+                        r.store.connect_nodes(r.correction.id, r.pending.id, "supersedes")
+                    late = r.store.create_node(
+                        level="schema", content="Cobalt release rollback late checklist.",
+                        context={"scope": scope or new_scope, "trigger": TASK},
+                        stats={"confidence": 0.9},
+                    )
+                assert not pending.done()
+            finally:
+                r.release.set()
+            actual = await asyncio.wait_for(pending, 5)
+            assert late.content in actual
+            assert not r.store.node_chunks_are_current(late.id)
+            if change in {"scope", "decay"}:
+                assert r.pending.id not in actual
+            elif change == "content":
+                assert updated in actual and r.pending.content not in actual
+            elif change == "default_scope":
+                assert f"scope_plan: {new_scope} > global > *" in actual
+                assert f"id={r.pending.id} scope={new_scope}" in actual
+            else:
+                line = next(line for line in actual.splitlines() if f"id={r.pending.id} " in line)
+                assert f'superseded=true superseded_by=["{r.correction.id}"]' in line
+            assert r.store.node_chunks_are_current(r.pending.id) == (change == "correction")
+            assert r.content_encodes == [r.pending.content]
+            assert r.encoder_guard_owned == [False]
+            assert r.encoded == [TASK]
+
+    asyncio.run(scenario())
+
+
+def test_empty_native_prompt_does_not_prepare_pending_content(pending_content):
+    r = pending_content
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            assert r.concept.content in await get_prompt(client, task=" \n\t")
+
+    asyncio.run(scenario())
+    assert not r.entered.is_set() and not r.content_encodes and not r.encoded
+    assert not r.store.node_chunks_are_current(r.pending.id)
+
+
 def test_native_prompt_reads_scope_content_and_validity_after_preparation(runtime):
     r = runtime
     r.hold = True
