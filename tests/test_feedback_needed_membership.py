@@ -7,6 +7,7 @@ import sqlite3
 from fastmcp.exceptions import ToolError
 import pytest
 
+from living_memory import storage
 from living_memory.feedback import resolve_explicit_marks
 from living_memory.storage import MemoryStore
 from test_recall_response_atomicity import CONTENT, CONTEXT, runtime, snapshot
@@ -187,6 +188,30 @@ def test_unreadable_newest_cannot_attribute_to_older_healthy_event(store):
     replace_results(store, newest, "{")
     with pytest.raises(sqlite3.OperationalError, match="malformed JSON"):
         select(store, ["a"])
+
+
+def test_identity_and_membership_share_one_read_snapshot(store, monkeypatch):
+    event = delivery(store, [])
+    parse = storage.parse_timestamp
+    changed = False
+
+    def concurrent_change(value):
+        nonlocal changed
+        if not changed:
+            changed = True
+            # Neither committed state delivers a to this caller: before the
+            # write membership is empty; after it the transport is foreign.
+            with sqlite3.connect(store.db_path) as writer:
+                writer.execute("""UPDATE recall_events SET transport_session_id = 'foreign',
+                                  results = ? WHERE id = ?""",
+                               (json.dumps([{"node_id": "a"}]), event))
+        return parse(value)
+
+    monkeypatch.setattr(storage, "parse_timestamp", concurrent_change)
+    assert select(store, ["a"]) == {}
+    assert changed
+    assert select(store, ["a"]) == {}
+    assert not store.connection.in_transaction
 
 
 @pytest.mark.parametrize("table,column", [
