@@ -91,7 +91,7 @@ def test_changed_sources_and_owner_are_prepared_again(store, change):
     with preparing(store, guard) as (workers, entered, release, encoded):
         work = workers.submit(materialize, store, members, guard)
         assert entered.wait(10)
-        with MemoryStore(store.db_path) as writer:
+        with MemoryStore(store.db_path, chunk_embedder=LocalEmbeddingModel(backend="hash", dimensions=3).embed_batch) as writer:
             if change == "source_content":
                 writer.update_node(members[0].id, content=CORRECTION)
             elif change == "source_decay":
@@ -108,7 +108,9 @@ def test_changed_sources_and_owner_are_prepared_again(store, change):
         release.set()
         (current, created), = work.result(timeout=15)
     assert not created and current.id == owner.id
-    assert len(encoded) >= 2
+    # A concurrent teach has already committed the new digest and its chunks;
+    # the resumed materializer must keep that current index without encoding.
+    assert len(encoded) == 1 if change == "source_correction" else len(encoded) >= 2
     assert_chunks(store, current)
     if change in ("source_content", "source_correction"):
         assert CORRECTION in current.content and members[0].content not in current.content
