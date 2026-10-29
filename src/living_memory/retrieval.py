@@ -643,7 +643,7 @@ class MemoryRecallService:
         log_access: bool = True,
         log_event: bool | None = None,
         repair_pending: bool = True,
-        select_results: Callable[[list[RecallResult], list[RecallResult], int], tuple[list[RecallResult], list[RecallResult]]] | None = None,
+        select_results: Callable[[list[RecallResult], list[RecallResult], int, QueryRelevance], tuple[list[RecallResult], list[RecallResult]]] | None = None,
     ) -> list[RecallResult]:
         self.last_recall_event_id = None
         self.last_residual = []
@@ -747,12 +747,12 @@ class MemoryRecallService:
             relevance=self.last_query_relevance,
         )
         # Selection belongs before access and event writes: their result ids
-        # must describe the answer that the caller actually delivers. A score
-        # gate may leave rejected candidates in the residual, so the delivery
-        # selector is used only with the plain, ungated cut.
-        if select_results is not None and min_score_from_env() is None:
+        # must describe the answer that the caller actually delivers. Share
+        # the gate's evidence so replacements obey the same qualification,
+        # including relevance inherited by present corrections.
+        if select_results is not None:
             limited, self.last_residual = select_results(
-                limited, self.last_residual, max_results
+                limited, self.last_residual, max_results, self.last_query_relevance
             )
         if log_event is None:
             log_event = log_access

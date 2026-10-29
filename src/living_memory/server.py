@@ -75,6 +75,7 @@ from living_memory.resources import (
 )
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import ScopePlan, normalize_scope, resolve_scope
+from living_memory.score_gate import QueryRelevance
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.feedback import (
     apply_explicit_marks,
@@ -1346,8 +1347,8 @@ def _register_tools(
                 ambient_context=ambient_context,
                 depth=depth,
                 max_results=max_results,
-                select_results=lambda limited, residual, limit: _select_distinct_results(
-                    limited, residual, limit, delivery_history
+                select_results=lambda limited, residual, limit, relevance: _select_distinct_results(
+                    limited, residual, limit, delivery_history, relevance=relevance
                 ),
             )
             shaped = shape_recall_results(
@@ -1842,27 +1843,45 @@ def _select_distinct_results(
     residual: list[Any],
     max_results: int,
     delivery_history: DeliveryHistory,
+    *,
+    relevance: QueryRelevance | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Spend a bounded cut on distinct knowledge when a repeat hides a fact.
 
     Keep the ordinary cut unless a classified repeat can actually be replaced
     by a later independent result. Session repeats remain selectable: a caller
     may intentionally ask again for the prior fact. Only exact content with
-    matching scope and source identity can release a slot.
+    matching scope and source identity can release a slot. Replacement content
+    must pass the same query gate; withheld references keep their original slots
+    and cannot act as duplicate bearers. The residual window stays bounded
+    before qualification, and is evaluated only while a replacement is needed.
     """
 
     if len(limited) < max_results or not residual:
         return limited, residual
     pool = limited + residual[:max_results]
     selected: list[Any] = []
-    for result, bearer in zip(pool, duplicate_bearers([result.node for result in pool])):
+    bearers = duplicate_bearers([result.node for result in pool if not result.withheld])
+    selected_groups: set[str] = set()
+    for index, result in enumerate(pool):
         node = result.node
+        bearer = None if result.withheld else next(bearers)
+        if index >= len(limited) and (
+            result.withheld or (relevance is not None and relevance.threshold is not None
+                                and not relevance.passes(result))
+        ):
+            continue
+        # The first member of an exact-identity group may have failed the gate.
+        # Its id still names the group, but only selected content occupies it.
+        group = bearer or node.id
         if (
-            bearer in {item.node.id for item in selected}
+            group in selected_groups
             and not delivery_history.has_content(node)
         ):
             continue
         selected.append(result)
+        if not result.withheld:
+            selected_groups.add(group)
         if len(selected) == max_results:
             break
     selected_ids = {result.node.id for result in selected}

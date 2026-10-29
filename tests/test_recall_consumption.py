@@ -73,7 +73,7 @@ def test_selected_order_access_metadata_and_one_tail_transaction(store, limit):
     selected = []
     sql = []
 
-    def select(limited, residual, maximum):
+    def select(limited, residual, maximum, relevance):
         chosen = [residual[0], *reversed(limited[1:])]
         selected.extend(chosen)
         sql.clear()
