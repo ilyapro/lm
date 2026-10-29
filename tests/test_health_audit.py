@@ -274,12 +274,7 @@ def test_feedback_applied_ratio_global_matches_fixture(tmp_path: Path) -> None:
 
 
 def test_feedback_applied_ratio_filters_by_scope_only(tmp_path: Path) -> None:
-    """When scope is set, only ``recall_events.scope = ?`` matches.
-
-    A ``project:rise/extra`` recall event with ``scope == "project:rise/extra"``
-    must not bleed into ``project:alpha`` results just because the global
-    ``requested_scope`` overlap was relaxed.
-    """
+    """Each project reports feedback only for its own recall events."""
 
     with _build_fixture(tmp_path / "f.sqlite3") as store:
         alpha = compute_health_audit(store, scope="project:alpha")["feedback"]
