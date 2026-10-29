@@ -455,6 +455,14 @@ window; repeating a mark cannot earn credit twice. Missing session identity
 cannot be inferred after reconnect. Same-transport marks retain their contract;
 lookup credit remains transport-only.
 
+Delivery selection caps the newest caller events before filtering by time or
+requested id. It reads eligible event membership in order and stops when every
+requested id has a proven delivery. An older unnecessary malformed result body
+does not block that selection. A malformed body still needed to resolve a mark,
+or a required storage failure, remains an error. Non-array bodies and non-object
+result elements cannot prove delivery; absent eligible membership remains
+`not_delivered`. Selection itself writes nothing.
+
 Request `memory_recall(..., view="full")` to inspect ranked entries with their
 `node`, scores, compacted metadata, and recall-map selection accounting (`sel`).
 The knowledge view keeps the map's navigation, filtered labels and limitations;
