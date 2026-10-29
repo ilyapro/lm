@@ -320,6 +320,23 @@ def test_concurrent_preparation_reuses_the_completed_target(setup: Setup) -> Non
     assert (setup.deps / MARKER).read_text() == setup.fingerprint + "\n"
 
 
+def test_failed_publication_restores_payload_without_readiness(setup: Setup) -> None:
+    setup.cache(setup.deps, "mismatch")
+    mv = Path(setup.env["PYTHON"]).parent / "mv"
+    mv.write_text(
+        '#!/bin/sh\ncase "$3" in\n'
+        '  *.previous) ;;\n  *.tmp.*) exit 1 ;;\nesac\n'
+        f'exec {shutil.which("mv")} "$@"\n'
+    )
+    mv.chmod(0o755)
+
+    setup.run(ok=False)
+
+    assert not (setup.deps / MARKER).exists()
+    assert (setup.deps / "sentinel").read_text() == "owned by this cache"
+    assert list(setup.deps.parent.glob("python-deps.tmp.*")) == []
+
+
 @pytest.mark.parametrize("consumer", ["conftest", "living_memory"])
 @pytest.mark.parametrize("override", ["unset", "empty", "selected"])
 def test_checkout_imports_use_selected_directory(tmp_path: Path, consumer: str, override: str) -> None:
