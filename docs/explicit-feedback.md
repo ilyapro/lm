@@ -177,6 +177,18 @@ Explicit credit, applied only under `credit`: `source_id` is
 `scope = event.scope`, and then one anchor per event with edges to the
 marked nodes only, the same as lookup credit. With weight 0 the pair is
 claimed and nothing moves.
+The claim and required node/weight changes share one `MemoryStore.transaction`.
+A numeric failure rolls back that pair, so a later still-eligible ordinary call
+can apply it once. Other successful pairs remain successful. Audit attribution
+is independent: `accepted` means that the mark matched a delivery, not that
+numeric credit was applied. The internal `credited` outcome lists only completed
+numeric effects, excluding zero-weight claims. Lookup uses the same per-pair
+boundary; required implicit feedback remains part of the knowledge transaction
+with event closure and provenance. Optional anchor or cancellation failure does
+not undo numeric credit, and numeric failure does not suppress independent
+cancellation or negative marks. All optional failures remain nonfatal to the
+carrying tool.
+
 An accepted `used` mark also cancels query-relative irrelevance for that
 question under `credit`, even if a prior lookup claimed the pair's numeric
 credit. Repeated marks remain in the audit table but add no numeric credit or

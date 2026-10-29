@@ -415,6 +415,10 @@ def apply_pending_recall_feedback(
 
     The same grounded subset also becomes a query anchor per consumed event —
     the graph's entry from query space. See the anchor note above it.
+
+    The caller owns the required knowledge transaction: claims, numeric
+    feedback, event closure and provenance succeed or roll back together.
+    Only derived query feedback failures are swallowed here.
     """
 
     events = store.pending_recall_events(
@@ -600,11 +604,11 @@ def apply_lookup_credit(
     this claim has spent the pair's numeric credit.
 
     Policy ``off`` or a missing transport identity returns before any read.
-    Any failure is logged and swallowed, as an anchor write's is: a credit is
-    derived from the lookup and must never fail it. Because the row is
-    claimed before the credit is applied, a failure between the two leaves
-    the pair claimed and uncredited — under-crediting, the conservative
-    direction (the attestation ledger's rule).
+    Each claim and its node/weight updates share a store transaction. A failed
+    pair rolls back and remains available to a later eligible call; other
+    pairs keep their effects. Failures are logged and swallowed, because
+    derived credit must never fail the lookup. Optional anchor work follows
+    numeric credit independently and cannot roll it back.
     """
 
     outcome = LookupCredit(lookup_event_id=str(lookup_event_id))
@@ -632,26 +636,34 @@ def apply_lookup_credit(
         anchor_work: dict[str, tuple[RecallEvent, list[str]]] = {}
         for node_id, hit in hits.items():
             event_id, rank, result = hit["event_id"], hit["rank"], hit["result"]
-            if not store.claim_recall_credit(
-                event_id, node_id, basis="lookup", source_id=str(lookup_event_id)
-            ):
+            try:
+                with store.transaction():
+                    event = events.get(event_id) or store.get_recall_event(event_id)
+                    if event is None:
+                        continue
+                    events[event_id] = event
+                    if not store.claim_recall_credit(
+                        event_id, node_id, basis="lookup", source_id=str(lookup_event_id)
+                    ):
+                        continue
+                    apply_retrieval_feedback(
+                        store,
+                        SimpleNamespace(
+                            node_id=node_id,
+                            bm25_score=float(result.get("bm25_score", 0.0) or 0.0),
+                            vector_score=float(result.get("vector_score", 0.0) or 0.0),
+                            graph_score=float(result.get("graph_score", 0.0) or 0.0),
+                        ),
+                        useful=True,
+                        signal=max(0.2, 1.0 / (rank + 1)),
+                        scope=event.scope,
+                    )
+            except Exception:
+                _LOG.warning(
+                    "lookup credit failed for lookup event %s, pair (%s, %s)",
+                    lookup_event_id, event_id, node_id, exc_info=True,
+                )
                 continue
-            event = events.get(event_id) or store.get_recall_event(event_id)
-            if event is None:
-                continue
-            events[event_id] = event
-            apply_retrieval_feedback(
-                store,
-                SimpleNamespace(
-                    node_id=node_id,
-                    bm25_score=float(result.get("bm25_score", 0.0) or 0.0),
-                    vector_score=float(result.get("vector_score", 0.0) or 0.0),
-                    graph_score=float(result.get("graph_score", 0.0) or 0.0),
-                ),
-                useful=True,
-                signal=max(0.2, 1.0 / (rank + 1)),
-                scope=event.scope,
-            )
             outcome.credited.append((event.id, node_id))
             anchor_work.setdefault(event.id, (event, []))[1].append(node_id)
 
@@ -697,7 +709,8 @@ class ExplicitMarks:
     marks: list[ExplicitMark] = field(default_factory=list)
     #: ``recall_feedback_marks`` row ids, parallel to ``marks``.
     mark_ids: list[int] = field(default_factory=list)
-    #: ``(recall_event_id, node_id)`` pairs explicit credit was claimed for.
+    #: ``(recall_event_id, node_id)`` pairs successfully claimed and reinforced.
+    #: Empty for zero-weight claims, repeats and failed numeric updates.
     credited: list[tuple[str, str]] = field(default_factory=list)
     anchor_ids: list[str] = field(default_factory=list)
 
@@ -854,8 +867,13 @@ def apply_explicit_marks(
     ``_apply_query_feedback`` per event. Global usefulness never moves
     down for an irrelevant mark.
 
-    A failure is logged and swallowed: marks are derived from the call and
-    must never fail the write or recall that carried them.
+    Each claim and its required node/weight updates share a store transaction;
+    a failed pair rolls back without losing audit or other pairs' effects.
+    A later eligible call can claim that pair again. Outcomes report numeric
+    effects only after successful application; a zero-weight mark still spends
+    the claim without numeric reinforcement. Optional anchor/cancellation and
+    irrelevant marks run independently of numeric success. Failures are logged
+    and swallowed: marks must never fail the write or recall carrying them.
     """
 
     policy = _explicit_feedback_policy()
@@ -907,26 +925,35 @@ def apply_explicit_marks(
             event = mark.event
             entry = anchor_work.setdefault(event.id, (event, [], []))
             entry[2].append(mark.node_id)
-            if not store.claim_recall_credit(
-                event.id, mark.node_id, basis="explicit", source_id=f"mark:{mark_id}"
-            ):
-                continue
-            outcome.credited.append((event.id, mark.node_id))
-            rank = int(mark.rank or 0)
-            signal = max(0.2, 1.0 / (rank + 1)) * weight
-            if signal > 0.0:
-                apply_retrieval_feedback(
-                    store,
-                    SimpleNamespace(
-                        node_id=mark.node_id,
-                        bm25_score=float(mark.result.get("bm25_score", 0.0) or 0.0),
-                        vector_score=float(mark.result.get("vector_score", 0.0) or 0.0),
-                        graph_score=float(mark.result.get("graph_score", 0.0) or 0.0),
-                    ),
-                    useful=True,
-                    signal=signal,
-                    scope=event.scope,
+            try:
+                with store.transaction():
+                    if not store.claim_recall_credit(
+                        event.id, mark.node_id, basis="explicit", source_id=f"mark:{mark_id}"
+                    ):
+                        continue
+                    rank = int(mark.rank or 0)
+                    signal = max(0.2, 1.0 / (rank + 1)) * weight
+                    if signal > 0.0:
+                        apply_retrieval_feedback(
+                            store,
+                            SimpleNamespace(
+                                node_id=mark.node_id,
+                                bm25_score=float(mark.result.get("bm25_score", 0.0) or 0.0),
+                                vector_score=float(mark.result.get("vector_score", 0.0) or 0.0),
+                                graph_score=float(mark.result.get("graph_score", 0.0) or 0.0),
+                            ),
+                            useful=True,
+                            signal=signal,
+                            scope=event.scope,
+                        )
+            except Exception:
+                _LOG.warning(
+                    "explicit credit failed for %s %s, pair (%s, %s)",
+                    via_tool, source_id, event.id, mark.node_id, exc_info=True,
                 )
+                continue
+            if signal > 0.0:
+                outcome.credited.append((event.id, mark.node_id))
                 entry[1].append(mark.node_id)
         outcome.anchor_ids.extend(
             _apply_query_feedback(

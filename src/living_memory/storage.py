@@ -642,18 +642,17 @@ TRANSCRIPT_GROUNDING_SCHEMA_SQL = f"""
 
 #: Recall credit ledger (additive to schema v8; goal feedback-usage-signal,
 #: lookup-credit). One row per (recall event, node) pair that has been
-#: *credited* — its usefulness, its scope's retrieval weights and a query
-#: anchor edge reinforced — by whichever usage signal arrived first: the
+#: *credited* — its usefulness and its scope's retrieval weights updated —
+#: by whichever usage signal arrived first: the
 #: consuming trace grounding the node's content (``basis = 'grounded'``,
 #: ``source_id`` is the trace id) or a same-session ``memory_lookup`` of the
 #: delivered id (``basis = 'lookup'``, ``source_id`` is the lookup event id).
 #: ``UNIQUE(recall_event_id, node_id)`` is the whole dedup rule: the second
 #: signal for a pair finds the row taken and applies nothing, so credit is at
 #: most once per pair no matter which signal comes first, and the row says
-#: which one did. Claimed *before* the credit is applied, as the attestation
-#: ledger is: a crash mid-apply leaves a claimed-but-uncredited pair, i.e.
-#: under-crediting, the conservative direction for a signal that must not be
-#: inflatable.
+#: which one did. Consumers compose the claim and numeric updates in one
+#: store transaction, so a failed effect leaves the pair available to a later
+#: eligible call. Optional query-anchor work is independent of numeric credit.
 #:
 #: Private like ``_RECALL_ATTESTATION_SCHEMA_SQL``: only ``_initialize_schema``
 #: runs it. No ``_migrate_pre_v9_schema`` and no ``SCHEMA_VERSION`` bump, for
@@ -2771,12 +2770,14 @@ class MemoryStore:
     ) -> bool:
         """Take the (event, node) credit for ``basis``; True only when new.
 
-        One ``INSERT OR IGNORE``, committed: a pair already credited — by an
+        One ``INSERT OR IGNORE`` in a composable transaction. Consumers must
+        include the claim and numeric updates in their enclosing transaction.
+        A pair already credited — by an
         earlier grounding, lookup or explicit mark — leaves the rows as they
         were and returns False, and the caller must then apply nothing.
         ``basis`` is ``'grounded'`` (``source_id`` is the consuming trace id),
         ``'lookup'`` (the lookup event id) or ``'explicit'`` (the id of the
-        call that carried the ``used`` mark). The first two land in
+        audit row as ``mark:<id>``). The first two land in
         ``recall_credit_ledger``, ``explicit`` in ``recall_explicit_credit``;
         each insert carries a ``NOT EXISTS`` probe of the other table in the
         same statement, so the pair is claimed at most once across all three

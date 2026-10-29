@@ -783,7 +783,8 @@ def test_zero_weight_credit_still_cancels_and_records_negatives_once_prepared(
     result = _apply_marks(store, [nodes[0]], [nodes[1]])
 
     assert calls == []
-    assert result.credited == [(event_id, nodes[0])] and result.anchor_ids == []
+    assert result.credited == [] and result.anchor_ids == []
+    assert store.credited_node_ids(event_id) == {nodes[0]}
     assert (_usefulness(store, nodes), _weights(store), store.list_query_anchors(scope=SCOPE)) == before
     rows = {row["node_id"]: row for row in list_query_irrelevance(store)}
     assert rows[nodes[0]]["cancels"] == 1 and rows[nodes[0]]["weight"] == 0

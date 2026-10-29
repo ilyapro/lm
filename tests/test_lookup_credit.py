@@ -734,9 +734,7 @@ def test_failed_credit_leaves_the_lookup_and_its_record_intact(
     assert _usefulness(store, node_ids) == before
     assert _anchors(store) == []
     assert any("lookup credit failed" in record.message for record in caplog.records)
-    # Claimed before applied, as the attestation ledger does: the pair reads
-    # as spent, which under-credits rather than ever crediting twice.
-    assert _ledger(store) == [(event_id, used, "lookup", events[0]["lookup_event_id"])]
+    assert _ledger(store) == []
 
 
 # ---------------------------------------------------------------------------
