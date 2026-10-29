@@ -9,7 +9,7 @@ from fastmcp import Client
 from mcp.shared.exceptions import McpError
 import pytest
 
-from living_memory import embeddings, prompts, server
+from living_memory import embeddings, prompts, retrieval, server
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import resolve_scope
 from living_memory.storage import MemoryStore
@@ -91,16 +91,23 @@ def runtime(tmp_path, monkeypatch):
         store.close()
 
 
-def standalone_context(store, *, task=TASK, scope=SCOPE, max_concepts=5, max_schemas=3):
+def standalone_context(store, *, task=TASK, scope=SCOPE, max_concepts=5, max_schemas=3,
+                       min_confidence=0.0, retrieval_policy="balanced", ambient_context=None):
     """Compose the independent string selector APIs as a comparison consumer."""
     task = task.strip()
-    plan = resolve_scope(scope=scope, store=store)
-    concepts = prompts.select_context_concepts(store, task=task, plan=plan, max_concepts=max_concepts)
-    schemas = prompts.select_context_schemas(store, task=task, plan=plan, max_schemas=max_schemas)
-    decisions = prompts.select_decision_history(store, task=task, plan=plan, max_items=max_concepts)
+    plan = resolve_scope(scope=scope, ambient_context=ambient_context, store=store)
+    arguments = dict(task=task, plan=plan, ambient_context=ambient_context)
+    concepts = prompts.select_context_concepts(
+        store, **arguments, max_concepts=max_concepts, min_confidence=min_confidence,
+        retrieval_policy=retrieval_policy,
+    )
+    schemas = prompts.select_context_schemas(
+        store, **arguments, max_schemas=max_schemas, min_confidence=min_confidence,
+    )
+    decisions = prompts.select_decision_history(store, **arguments, max_items=max_concepts)
     return prompts.format_retrieval_context(
         concepts, schemas=schemas, decision_history=decisions, task=task, plan=plan,
-        store=store, min_confidence=0.0, retrieval_policy="balanced",
+        store=store, min_confidence=min_confidence, retrieval_policy=retrieval_policy,
     )
 
 
@@ -448,3 +455,111 @@ def test_preparation_preserves_recall_state_and_encoding_errors_propagate(runtim
 def test_direct_prompt_rejects_invalid_arguments(runtime, arguments, error):
     with pytest.raises(ValueError, match=error):
         prompts.retrieval_context_prompt(runtime.store, task=TASK, **arguments)
+
+
+@pytest.mark.parametrize("native", [False, True], ids=["builder", "native"])
+def test_prompt_shares_chunk_and_anchor_preparation(runtime, monkeypatch, native):
+    r = runtime
+    vector = MemoryRecallService(r.store).prepare_query(TASK).embedding
+    r.store.insert_query_anchor(
+        anchor_id="rollback-anchor", scope=SCOPE, query=TASK,
+        fingerprint="rollback-anchor", embedding=vector,
+    )
+    r.store.upsert_query_anchor_edge("rollback-anchor", r.concept.id, weight=1.0)
+    counts = dict(builds=0, chunk_reads=0, rows=0, vector_bytes=0, anchor_builds=0)
+    build = MemoryRecallService._build_chunk_index
+    rows = r.store.iter_chunk_embedding_rows
+    anchors = retrieval._prepare_anchor_vectors
+
+    def counted_build(*args, **kwargs):
+        counts["builds"] += 1
+        return build(*args, **kwargs)
+
+    def counted_rows(*args, **kwargs):
+        counts["chunk_reads"] += 1
+        for row in rows(*args, **kwargs):
+            counts["rows"] += 1
+            counts["vector_bytes"] += len(row[2])
+            yield row
+
+    def counted_anchors(*args, **kwargs):
+        counts["anchor_builds"] += 1
+        return anchors(*args, **kwargs)
+
+    monkeypatch.setattr(MemoryRecallService, "_build_chunk_index", counted_build)
+    monkeypatch.setattr(r.store, "iter_chunk_embedding_rows", counted_rows)
+    monkeypatch.setattr(retrieval, "_prepare_anchor_vectors", counted_anchors)
+    before = list(r.store.connection.iterdump())
+    expected = standalone_context(r.store)
+    independent_counts = counts.copy()
+    counts.update(dict.fromkeys(counts, 0))
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            return await get_prompt(client)
+
+    actual = (asyncio.run(scenario()) if native else
+              prompts.retrieval_context_prompt(r.store, task=TASK, scope=SCOPE))
+    assert actual == expected
+    assert counts["builds"] == counts["chunk_reads"] == 2
+    assert counts["anchor_builds"] > 0 and counts["rows"] > 0
+    assert independent_counts == {key: 3 * count for key, count in counts.items()}
+    assert list(r.store.connection.iterdump()) == before
+
+
+def test_shared_service_keeps_scope_query_and_selector_parameters_live(runtime):
+    r = runtime
+    service = MemoryRecallService(r.store)
+    for arguments in (
+        dict(scope=SCOPE, max_concepts=1, max_schemas=1),
+        dict(scope="project:foreign", max_concepts=7, min_confidence=0.95),
+        dict(scope="global", max_schemas=0),
+        dict(scope=None, ambient_context={"project": "foreign"}, retrieval_policy="project"),
+        dict(scope=None, task="migration snapshot", min_confidence=0.4),
+        dict(scope=SCOPE, max_concepts=0, max_schemas=0),
+        dict(scope=SCOPE, task="", retrieval_policy="recent"),
+        dict(scope=SCOPE),
+    ):
+        options = dict(task=TASK, **{k: v for k, v in arguments.items() if k != "task"})
+        options["task"] = arguments.get("task", TASK)
+        assert prompts.retrieval_context_prompt(
+            r.store, recall_service=service, **options,
+        ) == standalone_context(r.store, **options)
+
+
+@pytest.mark.parametrize("change", ["content", "scope", "decay", "correction", "default_scope"])
+def test_native_warm_prompt_rechecks_changed_corpus(runtime, change):
+    r = runtime
+    updated = "Cobalt release rollback uses a new countersignature."
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            before = await get_prompt(client)
+            assert r.concept.content in before
+            with MemoryStore(r.store.db_path) as writer:
+                if change == "content":
+                    writer.update_node(r.concept.id, content=updated)
+                elif change == "scope":
+                    writer.update_node(r.concept.id, context={"scope": "project:foreign"})
+                elif change == "decay":
+                    writer.soft_delete_node(r.concept.id, "expired")
+                elif change == "correction":
+                    writer.connect_nodes(r.correction.id, r.concept.id, "supersedes")
+            scope = SCOPE
+            if change == "default_scope":
+                r.store.config = replace(r.store.config, default_scope="project:foreign")
+                scope = None
+            actual = await get_prompt(client, scope=scope)
+            assert actual != before
+            assert actual == standalone_context(r.store, scope=scope)
+            if change in {"scope", "decay"}:
+                assert r.concept.id not in actual
+            elif change == "content":
+                assert updated in actual and r.concept.content not in actual
+            elif change == "correction":
+                line = next(line for line in actual.splitlines() if f"id={r.concept.id} " in line)
+                assert f'superseded=true superseded_by=["{r.correction.id}"]' in line
+            else:
+                assert "scope_plan: project:foreign > global > *" in actual
+
+    asyncio.run(scenario())
