@@ -71,9 +71,10 @@ def test_native_qualified_replacement_and_accounting(tmp_path, monkeypatch, view
             assert [store.get_node(node.id).access_count for node in nodes] == [
                 int(node.id in selected) for node in nodes
             ]
-            assert event.recall_map["sel"]["n"] == len(residual)
+            recorded_map = store.recent_recall_map_history()[0]["recall_map"]
+            assert recorded_map["sel"]["n"] == len(residual)
             assert first["recall_map"] == {
-                key: value for key, value in event.recall_map.items()
+                key: value for key, value in recorded_map.items()
                 if view == "full" or key != "sel"
             }
             full_ids = [node_id for node_id, delivery in zip(selected, expected_deliveries)
