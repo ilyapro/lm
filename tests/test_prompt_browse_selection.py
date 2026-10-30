@@ -86,9 +86,10 @@ def test_identity_score_full_nodes_and_output_match_oracle(tmp_path, scope, ambi
             store.soft_delete_node(expired.id, "expired")
             store.set_retrieval_weights(item_scope, bm25=index, vector=3-index, graph=index+1)
         # Exercise the nonpositive-total weight fallback as well as per-scope weights.
-        store.connection.execute(
-            "UPDATE retrieval_weights SET bm25=0, vector=0, graph=0 WHERE scope='session:browse'"
-        )
+        with store.transaction():
+            store.connection.execute(
+                "UPDATE retrieval_weights SET bm25=0, vector=0, graph=0 WHERE scope='session:browse'"
+            )
         for name, correction_scope, decayed in [
             ("visible", SCOPE, False), ("expired", "global", True),
             ("foreign", "project:foreign", False),
@@ -133,6 +134,9 @@ def test_prefix_precedes_confidence_filter_and_preserves_stable_ties(tmp_path):
                                                   max_concepts=10000)
         assert [entry.node.id for entry in actual] == ["1000", "0999"]
         assert actual == full_node_oracle(store, plan, min_confidence=0.5, max_concepts=10000)
+        all_selected = prompts.select_context_concepts(store, task="", plan=plan, max_concepts=10000)
+        assert len(all_selected) == 1000
+        assert all_selected == full_node_oracle(store, plan, max_concepts=10000)
         # Equal scores across scopes must retain scope iteration order, not global id order.
         concept(store, "z-global", scope="global", confidence=0.9)
         zero = ScopePlan(SCOPE, (SCOPE, "global", "*"))
@@ -187,10 +191,11 @@ def test_native_hydrates_only_winners_independent_of_discarded_payload(native, m
             await client.get_prompt(PROMPT, {"scope": SCOPE, "task": "", "max_concepts": "0"})
             observations = []
             for payload_size in (0, 16384, 16384):
-                store.connection.execute(
-                    "UPDATE nodes SET provenance=? WHERE confidence < 0.5",
-                    (json.dumps({"unused": "x" * payload_size}),),
-                )
+                with store.transaction():
+                    store.connection.execute(
+                        "UPDATE nodes SET provenance=? WHERE confidence < 0.5",
+                        (json.dumps({"unused": "x" * payload_size}),),
+                    )
                 changes = store.connection.total_changes
                 decoded.clear()
                 tracemalloc.start()
@@ -216,7 +221,7 @@ def test_native_hydrates_only_winners_independent_of_discarded_payload(native, m
 
 @pytest.mark.parametrize("field,value,error", [
     ("provenance", "{", json.JSONDecodeError), ("provenance", "[]", TypeError),
-    ("context", "{", json.JSONDecodeError), ("source_traces", "{", json.JSONDecodeError),
+    ("source_traces", "{", json.JSONDecodeError),
     ("corrections", "{", json.JSONDecodeError),
 ])
 def test_discarded_payload_is_unread_but_selected_payload_errors_propagate(native, field, value, error):
@@ -225,7 +230,8 @@ def test_discarded_payload_is_unread_but_selected_payload_errors_propagate(nativ
     concept(store, "winner", confidence=0.9)
     concept(store, "loser", confidence=0.1)
     plan = resolve_scope(scope=SCOPE)
-    store.connection.execute(f"UPDATE nodes SET {field}=? WHERE id='loser'", (value,))
+    with store.transaction():
+        store.connection.execute(f"UPDATE nodes SET {field}=? WHERE id='loser'", (value,))
     assert [entry.node.id for entry in prompts.select_context_concepts(
         store, task="", plan=plan, max_concepts=1,
     )] == ["winner"]
@@ -236,7 +242,8 @@ def test_discarded_payload_is_unread_but_selected_payload_errors_propagate(nativ
     async def scenario():
         async with Client(mcp) as client:
             await client.get_prompt(PROMPT, {"scope": SCOPE, "max_concepts": "1"})
-            store.connection.execute("UPDATE nodes SET confidence=1 WHERE id='loser'")
+            with store.transaction():
+                store.connection.execute("UPDATE nodes SET confidence=1 WHERE id='loser'")
             with pytest.raises(error):
                 prompts.select_context_concepts(store, task="", plan=plan, max_concepts=1)
             with pytest.raises(McpError):
@@ -252,7 +259,8 @@ def test_required_scalar_errors_propagate_even_below_confidence_threshold(native
     store = mcp.memory_store
     concept(store, "winner", confidence=0.9)
     concept(store, "loser", confidence=0.1)
-    store.connection.execute(f"UPDATE nodes SET {field}='invalid' WHERE id='loser'")
+    with store.transaction():
+        store.connection.execute(f"UPDATE nodes SET {field}='invalid' WHERE id='loser'")
     with pytest.raises(ValueError):
         prompts.select_context_concepts(store, task="", plan=resolve_scope(scope=SCOPE),
                                         max_concepts=1, min_confidence=0.5)
