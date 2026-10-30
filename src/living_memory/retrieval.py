@@ -207,6 +207,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections import OrderedDict, deque
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
@@ -279,11 +280,9 @@ DEFAULT_VECTOR_SCAN_LIMIT = 50_000
 SCOPE_RANK_BOOST_STEP = 0.2
 STRONG_VECTOR_MATCH = 0.65
 # Admission gate for candidates outside the plan's narrow scopes: without
-# it the broad tail of a narrow-scope plan crowds out max_results, because
-# _collect_bm25 normalizes rank scores per scope and therefore mints
-# bm25 = 1.0 for the broadest scope's top FTS hit however weak the lexical
-# match really is — which is why bm25 evidence deliberately does NOT admit a
-# cross-scope candidate. Deliberate evidence does: an applicable schema trigger, a strong
+# it the broad tail of a narrow-scope plan can crowd out max_results.
+# Lexical overlap, including a matching task label, alone does not establish
+# cross-scope applicability. Deliberate evidence does: an applicable schema trigger, a strong
 # graph connection, or vector similarity that is strong in absolute terms or
 # comparable to the best ungated match. Requested-scope candidates are never
 # gated (structural retention guarantee), and under a session plan neither
@@ -345,6 +344,8 @@ class RecallResult:
 
     node: Node
     score: float
+    # Query coverage in content/task for FTS discoveries. The channel name
+    # is shared with stored retrieval weights and feedback event records.
     bm25_score: float = 0.0
     vector_score: float = 0.0
     graph_score: float = 0.0
@@ -708,7 +709,7 @@ class MemoryRecallService:
         if not by_name:
             self._collect_schema_triggers(query, plan, candidates)
 
-        query_terms = set(tokenize(query, evidence=True))
+        query_terms = _lexical_terms(query)
         for candidate in candidates.values():
             candidate.lexical_score = _lexical_support(query_terms, candidate.node.content)
         lexical_ids = set(candidates)
@@ -1132,30 +1133,35 @@ class MemoryRecallService:
     ) -> None:
         per_scope_limit = max(25, max_results * 8)
         expanded_query = _expanded_query(query)
-        # Reciprocal FTS rank is a discovery score, not lexical support.
-        # Named scopes keep their own ranking, as a restricted plan ranks
-        # them; a whole-store plan adds
-        # one pass over everything, where an unnamed scope competes on the
-        # corpus-wide ranking instead of getting a rank 1 of its own.
+        query_terms = _lexical_terms(query)
+        # FTS order selects the bounded discovery set. Score admitted sources
+        # by query coverage, independently of that order or corpus statistics.
+        # Named scopes retain their own discovery limits; a whole-store plan
+        # also searches scopes that were not explicitly named.
         scopes = plan.search_scopes if plan.restricted else (*plan.named_scopes, None)
-        scores: dict[str, float] = {}
+        discovered: dict[str, None] = {}
         # Keep discovery and admitted bodies in one short read snapshot. IDs
-        # carry rank only; the current scoped/live reader still admits bodies.
+        # carry membership only; the current scoped/live reader admits bodies.
         with self.store.transaction():
             for scope in scopes:
                 rows = self.store.search_content_ids(expanded_query, scope=scope, limit=per_scope_limit)
-                for rank, (node_id, _raw_score) in enumerate(rows):
-                    scores[node_id] = max(scores.get(node_id, 0.0), 1.0 / (rank + 1))
+                discovered.update((node_id, None) for node_id, _raw_score in rows)
             fetched = self.store.get_recall_nodes(
-                (node_id for node_id in scores if node_id not in candidates), plan,
+                (node_id for node_id in discovered if node_id not in candidates), plan,
             )
-        for node_id, score in scores.items():
+        for node_id in discovered:
             candidate = candidates.get(node_id)
             if candidate is None:
                 node = fetched.get(node_id)
                 if node is None:
                     continue
                 candidate = candidates[node_id] = _Candidate(node=node)
+            # Recorded task is lexical discovery evidence. Qualification uses
+            # the same coverage function on content alone, so a task label
+            # cannot qualify an unrelated source body.
+            score = _lexical_support(
+                query_terms, candidate.node.content + "\n" + (candidate.node.task or ""),
+            )
             candidate.bm25_score = max(candidate.bm25_score, score)
 
     def _collect_vector(
@@ -1674,8 +1680,7 @@ class MemoryRecallService:
         # signal and waste cycles on super-hub expansions.
         seed_candidates = sorted(
             candidates.values(),
-            key=lambda c: max(c.bm25_score, c.vector_score, 0.0),
-            reverse=True,
+            key=lambda c: (-max(c.bm25_score, c.vector_score, 0.0), c.node.id),
         )[:GRAPH_SEED_LIMIT]
         roots = [
             (candidate.node.id, max(candidate.bm25_score, candidate.vector_score))
@@ -2069,12 +2074,28 @@ def _is_causal_query(query: str) -> bool:
     )
 
 
+_LEXICAL_IDENTIFIER_RE = re.compile(r"\w+(?:[-/._]\w+)+")
+
+
+def _lexical_terms(text: str) -> set[str]:
+    """Normalized terms plus exact compound identifiers as distinct evidence.
+
+    Keeping the compound spelling distinguishes a path or task identifier
+    from its component words scattered through unrelated text. Individual
+    terms still admit partial matches and retain synonym/stem support.
+    """
+
+    return set(tokenize(text, evidence=True)) | {
+        identifier.casefold() for identifier in _LEXICAL_IDENTIFIER_RE.findall(text)
+    }
+
+
 def _lexical_support(query_terms: set[str], content: str) -> float:
     """Query coverage by source terms, without corpus counts or discovery rank."""
 
     if not query_terms:
         return 0.0
-    return len(query_terms.intersection(tokenize(content, evidence=True))) / len(query_terms)
+    return len(query_terms.intersection(_lexical_terms(content))) / len(query_terms)
 
 
 def _expanded_query(query: str) -> str:
@@ -2221,8 +2242,9 @@ def _blend_candidate_score(
 
     Returns 0.0 for a candidate no channel scored, which is the caller's cue
     to drop it. Qualification reads lexical coverage, source activation and
-    source restrictions; ranking retains reciprocal FTS rank, effective
-    activation and feedback rewards.
+    source restrictions; ranking uses coverage of FTS-indexed content/task,
+    effective activation and feedback rewards. FTS position is not evidence
+    on either scale.
     """
 
     bm25_weight = weights.bm25
