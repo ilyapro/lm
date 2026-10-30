@@ -849,19 +849,24 @@ def _recent_feedback_pressure(
         WHERE {' AND '.join(clauses)}
         """,
         params,
-    ).fetchall()
+    )
 
     counts = {"bm25": 0, "vector": 0, "graph": 0}
-    for row in rows:
-        for result in _json_result_list(row["results"]):
-            dominant = _dominant_result_method(result)
-            if dominant is not None:
-                counts[dominant] += 1
+    consumed = 0
+    try:
+        for row in rows:
+            consumed += 1
+            for result in _json_result_list(row["results"]):
+                dominant = _dominant_result_method(result)
+                if dominant is not None:
+                    counts[dominant] += 1
+    finally:
+        rows.close()
 
     total = sum(counts.values())
     return {
         "window_hours": window_hours,
-        "consumed_recall_events": len(rows),
+        "consumed_recall_events": consumed,
         "dominant_method_counts": counts,
         "bm25_dominance_ratio": (counts["bm25"] / total) if total > 0 else None,
     }

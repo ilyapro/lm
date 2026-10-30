@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import tracemalloc
+from datetime import UTC, datetime, timedelta
 from dataclasses import asdict, replace
 from pathlib import Path
 from unittest.mock import Mock
@@ -178,6 +181,71 @@ def test_recent_feedback_pressure_counts_dominant_methods(tmp_path: Path) -> Non
     assert empty["consumed_recall_events"] == 0
     assert empty["dominant_method_counts"] == {"bm25": 0, "vector": 0, "graph": 0}
     assert empty["bm25_dominance_ratio"] is None
+
+
+def test_feedback_pressure_preserves_window_scope_and_payload_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    instant = datetime(2030, 1, 2, tzinfo=UTC)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant
+
+    monkeypatch.setattr("living_memory.resources.datetime", Clock)
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for scope, applied, hours, payload in [
+            ("project:pressure", 1, 24, '[{"bm25_score": 1, "vector_score": 1}]'),
+            ("project:pressure", 1, 1, '[{"methods": ["unknown", "graph"]}, 7]'),
+            ("project:pressure", 1, 1, 'invalid JSON'),
+            ("project:pressure", 1, 1, '{"methods": ["vector"]}'),
+            ("project:pressure", 1, 25, '[{"methods": ["vector"]}]'),
+            ("project:pressure", 0, 1, '[{"methods": ["vector"]}]'),
+            ("project:other", 1, 1, '[{"methods": ["vector"]}]'),
+        ]:
+            event = store.record_recall_event(query="pressure", scope=scope)
+            stamp = (instant - timedelta(hours=hours)).isoformat().replace("+00:00", "Z")
+            with store.transaction():
+                store.connection.execute(
+                    "UPDATE recall_events SET feedback_applied=?, feedback_applied_at=?, results=? WHERE id=?",
+                    (applied, stamp, payload, event.id),
+                )
+        before = store.connection.total_changes
+        report = memory_health(store, scope="project:pressure", window_hours=168)
+        assert store.connection.total_changes == before
+        assert report["retrieval_skew"]["recent_feedback_pressure"] == {
+            "window_hours": 24, "consumed_recall_events": 4,
+            "dominant_method_counts": {"bm25": 1, "vector": 0, "graph": 1},
+            "bm25_dominance_ratio": 0.5,
+        }
+
+
+def test_feedback_pressure_does_not_retain_the_window_payloads(tmp_path: Path) -> None:
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for _ in range(96):
+            store.record_recall_event(query="pressure", scope="project:pressure")
+        with store.transaction():
+            store.connection.execute(
+                "UPDATE recall_events SET feedback_applied=1, feedback_applied_at=created_at"
+            )
+        peaks = []
+        for padding in (0, 32_768):
+            payload = json.dumps([{"methods": ["vector"], "unused": "x" * padding}])
+            with store.transaction():
+                store.connection.execute("UPDATE recall_events SET results=?", (payload,))
+            tracemalloc.start()
+            try:
+                pressure = retrieval_skew_metrics(store, scope="project:pressure")[
+                    "recent_feedback_pressure"
+                ]
+                peaks.append(tracemalloc.get_traced_memory()[1])
+            finally:
+                tracemalloc.stop()
+            assert pressure["consumed_recall_events"] == 96
+            assert pressure["dominant_method_counts"] == {"bm25": 0, "vector": 96, "graph": 0}
+        # A row may be decoded, but unused fields must not retain the whole window.
+        assert peaks[1] - peaks[0] < 16 * 32_768
 
 
 # Expected distributions are independent of the production floor calculation.
