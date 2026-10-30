@@ -82,7 +82,7 @@ def test_recall_prepares_each_body_once_and_reads_fresh_source(tmp_path, monkeyp
                 context["task"] = QUERY
             if name == "trigger":
                 context["trigger"] = QUERY
-            store.create_node(node_id=name, level="schema" if name == "trigger" else "trace",
+            store.create_node(node_id=name, level="schema" if name == "trigger" else "concept",
                               content=content, context=context, embedding=encoder.embed(content))
         store.create_connection("content", "graph", "requires")
         service = retrieval.MemoryRecallService(store, embedder=encoder, anchor_seeding=False)
