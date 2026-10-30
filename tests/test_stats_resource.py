@@ -39,7 +39,8 @@ def test_registered_stats_population(tmp_path, case, level_counts, scope_counts)
             ]:
                 store.create_node(
                     node_id=node_id, level=level, content=node_id,
-                    context={"scope": scope}, stats={"confidence": confidence},
+                    context={"scope": scope},
+                    stats={"confidence": confidence, "unique_agents": 2},
                     provenance={
                         "promoted_from": ["project:Бета", "project:alpha"],
                         "promotion_events": [1, 2],
