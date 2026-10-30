@@ -199,17 +199,21 @@ class ModelTokenizer:
 
     def token_spans(self, text: str) -> list[TokenSpan]:
         encoding = self._tokenizer.encode(text, add_special_tokens=False)  # type: ignore[attr-defined]
-        spans: list[TokenSpan] = []
+        # Encoding.offsets is a detached list; writes never overtake reads.
+        spans = encoding.offsets
         cursor = 0
-        for start, end in encoding.offsets:
+        written = 0
+        for start, end in spans:
             # Normalizers can emit empty or out-of-order offsets; force the
             # stream to stay non-empty and ascending so spans stay usable.
             start = max(int(start), cursor)
             end = int(end)
             if end <= start:
                 continue
-            spans.append(TokenSpan(start, end))
+            spans[written] = TokenSpan(start, end)
+            written += 1
             cursor = end
+        del spans[written:]
         return spans
 
 

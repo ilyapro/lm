@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,7 @@ from living_memory.chunking import (
     HeuristicTokenizer,
     ModelTokenizer,
     TextChunk,
+    TokenSpan,
     Tokenizer,
     chunk_text,
     count_tokens,
@@ -421,6 +423,80 @@ def test_unavailable_model_tokenizer_falls_back_to_the_heuristic_one(
     assert tokenizer.name == "heuristic"
     assert chunk_text(REAL_SHAPED_NODE, tokenizer=tokenizer)
     reset_tokenizer_cache()
+
+
+@pytest.mark.parametrize(
+    ("offsets", "expected"),
+    [
+        ([], []),
+        ([(0, 0), (3, 2)], []),
+        ([(0, 1), (1, 2)], [TokenSpan(0, 1), TokenSpan(1, 2)]),
+        (
+            [(0, 0), (0, 1), (0, 1), (0, 3), (4, 2), (5, 6), (6, 6)],
+            [TokenSpan(0, 1), TokenSpan(1, 3), TokenSpan(5, 6)],
+        ),
+        (
+            [("-2", "3"), (1.9, 5.9), ("7", "9")],
+            [TokenSpan(0, 3), TokenSpan(3, 5), TokenSpan(7, 9)],
+        ),
+    ],
+)
+def test_model_tokenizer_normalizes_offsets(offsets, expected) -> None:
+    backing = SimpleNamespace(
+        encode=lambda *args, **kwargs: SimpleNamespace(offsets=list(offsets))
+    )
+    tokenizer = ModelTokenizer(backing, "test")
+
+    assert tokenizer.token_spans("text") == expected
+    assert tokenizer.token_spans("text") == expected
+
+
+@pytest.mark.parametrize(
+    ("offset", "invalid"),
+    [(("bad", None), "bad"), ((0, "bad"), "bad"), ((None, 4), None), ((0, None), None)],
+)
+def test_model_tokenizer_preserves_offset_conversion_errors(offset, invalid) -> None:
+    backing = SimpleNamespace(
+        encode=lambda *args, **kwargs: SimpleNamespace(offsets=[(0, 1), offset])
+    )
+    tokenizer = ModelTokenizer(backing, "test")
+    with pytest.raises((TypeError, ValueError)) as expected:
+        int(invalid)
+
+    with pytest.raises(type(expected.value)) as actual:
+        tokenizer.token_spans("text")
+
+    assert str(actual.value) == str(expected.value)
+
+
+def test_model_tokenizer_owns_offsets_and_returned_spans(
+    model_tokenizer: Tokenizer,
+) -> None:
+    text = "one два e\u0301 你好 🙂"
+    encoding = model_tokenizer._tokenizer.encode(text, add_special_tokens=False)
+    offsets = encoding.offsets
+    original = encoding.offsets
+    state = encoding.__getstate__()
+    assert type(offsets) is list
+    assert offsets is not original
+    offsets[0] = (-1, -1)
+    del offsets[1:]
+    assert encoding.offsets == original
+    assert encoding.__getstate__() == state
+
+    # Reuse one real Encoding to expose any mutation of its backing state.
+    tokenizer = ModelTokenizer(
+        SimpleNamespace(encode=lambda *args, **kwargs: encoding), "test"
+    )
+    first = tokenizer.token_spans(text)
+    second = tokenizer.token_spans(text)
+    assert first == second
+    assert first is not second
+    assert first
+    first.clear()
+    assert tokenizer.token_spans(text) == second
+    assert encoding.offsets == original
+    assert encoding.__getstate__() == state
 
 
 def test_model_tokenizer_counts_past_the_configured_sequence_limit(
