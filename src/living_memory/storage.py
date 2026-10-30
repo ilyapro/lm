@@ -6,8 +6,8 @@ from array import array
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, closing, contextmanager, nullcontext
 from dataclasses import dataclass, replace
-from pathlib import Path
 from itertools import groupby
+from pathlib import Path
 from threading import RLock
 from typing import Any, Literal
 import hashlib
@@ -4372,7 +4372,9 @@ class MemoryStore:
                         for row in node_rows:
                             # Validate every selected row, including unused widths.
                             int(row["chunk_index"])
-                            chunks.append(unpack_chunk_embedding(row["embedding"], int(row["dimensions"])))
+                            chunks.append(unpack_chunk_embedding(
+                                row["embedding"], int(row["dimensions"]),
+                            ))
                         yield node_id, chunks
                         del chunks
                 finally:

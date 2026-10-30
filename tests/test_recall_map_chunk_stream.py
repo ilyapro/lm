@@ -161,6 +161,23 @@ def test_equal_similarity_chooses_first_ranked_leader(store):
     assert rest == []
 
 
+def test_first_nonempty_ordinal_sets_width(store):
+    result = pool(store, count=1)[0]
+    store.replace_node_chunks(result.node.id, [
+        (replace(CHUNK, chunk_index=i), vector)
+        for i, vector in enumerate(([1.0], [3.0, 4.0], [1.0, 0.0, 0.0]))
+    ])
+    store.connection.execute("PRAGMA ignore_check_constraints = ON")
+    with store.connection:
+        store.connection.execute(
+            "UPDATE node_chunk_embeddings SET dimensions=0, embedding=X'' WHERE chunk_index=0"
+        )
+    member = _Member(0, result.node)
+    groups, vectors, rest = RecallMapBuilder(store)._embedding_membership([member])
+    assert groups == [[member]] and rest == []
+    assert vectors == {result.node.id: [0.6, 0.8]}
+
+
 @pytest.mark.parametrize("column,value", [("chunk_index", "bad"), ("dimensions", "bad"),
                                          ("embedding", b"bad")])
 def test_unused_widths_are_validated_after_an_earlier_node_is_reduced(store, column, value):
@@ -246,7 +263,7 @@ def test_stream_closes_actual_cursors_before_result_or_failure(store, monkeypatc
     assert not connection.in_transaction
     # The live connection cannot keep a read descriptor/lock via the stream.
     with sqlite3.connect(store.db_path, timeout=0) as writer:
-        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        assert writer.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone() == (0, 0, 0)
 
 
 def test_empty_stream_does_not_probe_storage(store):
