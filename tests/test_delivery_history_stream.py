@@ -1,6 +1,7 @@
 """Streaming delivery evidence over disposable events and native MCP recalls."""
 
 import asyncio
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 import gc
@@ -278,15 +279,20 @@ def test_native_recall_finishes_history_before_response_and_discards_partial_pro
                 pytest.fail("native recall must consume the stream")
 
             monkeypatch.setattr(store, "recall_delivery_history", forbid_list)
-            if failure == "reduce":
-                class FailedHistory(DeliveryHistory):
-                    def __init__(self, results=()):
-                        def interrupted():
-                            for result in results:
-                                yield result
+            class CheckedHistory(DeliveryHistory):
+                def __init__(self, results=()):
+                    if results:
+                        assert isinstance(results, Iterator)
+
+                    def checked():
+                        for result in results:
+                            yield result
+                            if watch.failure == "reduce":
                                 raise ValueError("synthetic late history reducer")
-                        super().__init__(interrupted())
-                monkeypatch.setattr(server, "DeliveryHistory", FailedHistory)
+
+                    super().__init__(checked())
+
+            monkeypatch.setattr(server, "DeliveryHistory", CheckedHistory)
 
             _, entry, body = await recall()
             assert watch.cursors[-1].reads >= 1
@@ -297,7 +303,6 @@ def test_native_recall_finishes_history_before_response_and_discards_partial_pro
             else:
                 assert watch.cursors[-1].reads == 2
             watch.failure = None
-            monkeypatch.setattr(server, "DeliveryHistory", DeliveryHistory)
             if failure == "parse":
                 with store.transaction():
                     store.connection.execute("UPDATE recall_events SET results = ? WHERE id = ?",
