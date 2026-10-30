@@ -520,10 +520,11 @@ class _ChunkGatherPlan:
 
 @dataclass(frozen=True, slots=True)
 class _AnchorVectorCache:
-    """One revision's corpus, filled lazily by query width and scope.
+    """One revision's prepared rows, grown lazily by query width and scope.
 
-    A narrow layout reserves scan-order rows without reading their vectors.
-    Only admitted scopes are decoded; filled rows survive scope switches.
+    Layouts retain only identities and scopes. Numerical storage covers only
+    prepared rows, merged in scan order when another scope is admitted.
+    Warm broad queries reuse that single matrix without a full gather.
     Source BLOBs and selected matrices are not retained. Metadata and targets
     always read through to the store.
     """
@@ -532,43 +533,43 @@ class _AnchorVectorCache:
     store: MemoryStore
     by_width: dict[int, _PreparedAnchorVectors]
     has_anchors: bool
-    ready: dict[int, set[str]] = field(default_factory=dict)
+    layouts: dict[int, list[tuple[str, str]]] = field(default_factory=dict)
+    pending: dict[int, set[str]] = field(default_factory=dict)
 
     def query_anchor_corpus(
         self, width: int, scopes: Sequence[str] | None = None,
     ) -> _PreparedAnchorVectors:
         corpus = self.by_width.get(width)
         requested = None if scopes is None else set(map(normalize_scope, scopes))
-        ready = self.ready.setdefault(width, set())
         if corpus is not None and (
-            (corpus.by_scope.keys() if requested is None else requested & corpus.by_scope.keys())
-            <= ready
+            not self.pending[width] if requested is None else
+            not requested.intersection(self.pending[width])
         ):
             return corpus
 
         cacheable = not self.store.connection.in_transaction
         with self.store.transaction():
-            # Layout and newly filled rows must belong to the same revision,
+            # Layout and newly prepared rows must belong to the same revision,
             # even if another writer committed after the source was selected.
             if not cacheable or self.store.query_anchor_revision() != self.revision:
                 return _prepare_anchor_vectors(
                     self.store.iter_query_anchor_vectors(scopes, dimensions=width),
                     width, index_scopes=True,
                 )
+            if width not in self.layouts:
+                self.layouts[width] = self.store.query_anchor_vector_layout(width)
+                self.pending[width] = {scope for _anchor_id, scope in self.layouts[width]}
             if corpus is None:
-                corpus = _PreparedAnchorVectors.reserve(
-                    self.store.query_anchor_vector_layout(width), width,
-                )
-                self.by_width[width] = corpus
-            missing = [scope for scope in corpus.by_scope
-                       if scope not in ready and (requested is None or scope in requested)]
+                corpus = _PreparedAnchorVectors((), (), (), ())
+            missing = self.pending[width] if requested is None else requested & self.pending[width]
             if missing:
                 prepared = _prepare_anchor_vectors(
-                    self.store.iter_query_anchor_vectors(missing, dimensions=width),
+                    self.store.iter_query_anchor_vectors(sorted(missing), dimensions=width),
                     width, index_scopes=True,
                 )
-                corpus.fill(prepared)
-                ready.update(missing)
+                corpus = corpus.extend(prepared, self.layouts[width])
+                self.pending[width].difference_update(missing)
+            self.by_width[width] = corpus
         return corpus
 
     def __getattr__(self, name: str) -> Any:

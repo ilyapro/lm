@@ -100,12 +100,14 @@ def test_scope_and_width_changes_reuse_prepared_rows_without_sql(tmp_path, monke
         match(service, [1.0, 0.0])
         cache = service._anchor_vectors
         matrix = weakref.ref(cache.by_width[2].matrix)
-        assert sum(c.matrix.nbytes for c in cache.by_width.values()) == 4 * 4
-        assert cache.ready == {2: {"global"}}
+        assert sum(c.matrix.nbytes for c in cache.by_width.values()) == 2 * 4
+        assert cache.pending == {2: {"project:demo"}}
         match(service, [1.0, 0.0], ["project:demo"])
+        assert matrix() is None
         match(service, [1.0, 0.0, 0.0], ["project:demo"])
-        assert cache.ready == {2: {"global", "project:demo"}, 3: {"project:demo"}}
+        assert cache.pending == {2: set(), 3: set()}
         assert sum(c.matrix.nbytes for c in cache.by_width.values()) == 7 * 4
+        matrix = weakref.ref(cache.by_width[2].matrix)
 
         def no_preparation(*args, **kwargs):
             pytest.fail("scope or width selection must reuse the prepared corpus")
@@ -232,7 +234,7 @@ def test_missing_scope_fill_uses_one_revision_snapshot(tmp_path, monkeypatch):
         with writer.transaction():
             writer.connection.execute("UPDATE query_anchors SET scope='global' WHERE id='a'")
         assert [m.anchor.id for m in qa.match_anchors(source, [1.0, 0.0], "global")] == ["a", "c"]
-        assert "global" not in source.ready[2]
+        assert "global" in source.pending[2]
 
 
 def test_scope_selection_preserves_scan_order_and_uses_contiguous_views(tmp_path):
