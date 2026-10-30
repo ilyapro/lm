@@ -77,6 +77,7 @@ def durable_state(store):
 @pytest.mark.parametrize("route", ["direct", "native"])
 @pytest.mark.parametrize("stage", [
     "claim", "numeric", "closure", "completion", "after_completion", "commit",
+    "endpoint_id", "endpoint_decayed",
 ])
 def test_required_failure_rolls_back_then_retry_and_replay_are_honest(
     runtime, monkeypatch, route, stage,
@@ -89,7 +90,23 @@ def test_required_failure_rolls_back_then_retry_and_replay_are_honest(
         "after_completion": "complete_recall_attestation",
     }.get(stage)
     with monkeypatch.context() as fault:
-        if method:
+        if stage.startswith("endpoint_"):
+            original = r.store.mark_recall_event_feedback
+            column = stage.removeprefix("endpoint_")
+
+            def fail(*args, **kwargs):
+                def authorize(action, table, name, *_):
+                    return (sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ
+                            and table == "nodes" and name == column else sqlite3.SQLITE_OK)
+
+                r.store.connection.set_authorizer(authorize)
+                try:
+                    return original(*args, **kwargs)
+                finally:
+                    r.store.connection.set_authorizer(None)
+
+            fault.setattr(r.store, "mark_recall_event_feedback", fail)
+        elif method:
             original = getattr(r.store, method)
 
             def fail(*args, **kwargs):
@@ -124,6 +141,16 @@ def test_required_failure_rolls_back_then_retry_and_replay_are_honest(
     committed = durable_state(r.store)
     assert attest(r, route, trace_id=r.trace.id) == dict(result, replay=True)
     assert durable_state(r.store) == committed
+
+
+def test_native_attestation_accepts_decayed_closing_trace(runtime):
+    r = runtime
+    r.store.soft_delete_node(r.trace.id)
+    result = attest(r, "native", trace_id=r.trace.id)
+    assert result["credited"] and result["closed_by_attestation"]
+    assert result["feedback_trace_id"] == r.trace.id
+    assert r.store.get_node(r.trace.id).decayed
+    assert r.store.get_recall_event(r.event.id).feedback_trace_id == r.trace.id
 
 
 def test_direct_api_never_returns_a_provisional_nested_receipt(runtime):

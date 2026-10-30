@@ -1,6 +1,7 @@
 """Teach, its provenance and accompanying marks have one durable outcome."""
 
 import asyncio
+import inspect
 import json
 import os
 import sqlite3
@@ -133,6 +134,45 @@ def test_one_commit_is_visible_before_scheduling(mcp, monkeypatch):
     assert commits == 1
 
 
+@pytest.mark.parametrize("decayed", [False, True])
+@pytest.mark.parametrize("marks", [None, "used_empty", "irrelevant_empty", "populated"])
+def test_teach_guard_preserves_explicit_presence_without_loading_body(mcp, monkeypatch, decayed, marks):
+    store = mcp.memory_store
+    original = store.append_trace(CONTENTS[0], CONTEXT, node_id="1")
+    if decayed:
+        store.soft_delete_node(original.id)
+    get_node, get_endpoints = store.get_node, store.get_node_endpoints
+    guard_reads, body_readers = [], []
+
+    def read_node(node_id):
+        caller = inspect.currentframe().f_back.f_code
+        assert not (caller.co_filename == server.__file__ and caller.co_name == "memory_teach")
+        body_readers.append(caller.co_name)
+        return get_node(node_id)
+
+    def read_endpoints(node_ids):
+        caller = inspect.currentframe().f_back.f_code
+        if caller.co_filename == server.__file__ and caller.co_name == "memory_teach":
+            assert store.connection.in_transaction
+            guard_reads.append(node_ids)
+        return get_endpoints(node_ids)
+
+    monkeypatch.setattr(store, "get_node", read_node)
+    monkeypatch.setattr(store, "get_node_endpoints", read_endpoints)
+    arguments = {
+        None: {}, "used_empty": {"used": []}, "irrelevant_empty": {"irrelevant": []},
+        "populated": {"used": [original.id]},
+    }[marks]
+    result = mcp.tools["memory_teach"](1, CORRECTION, context=CONTEXT, **arguments)
+    assert guard_reads == ([] if marks is None else [[1]])
+    assert ("feedback_marks" in result) == (marks is not None)
+    assert {"prepare_teach", "memory_teach"} <= set(body_readers)
+    assert result["original"]["id"] == original.id
+    assert store.get_node(original.id).decayed == decayed
+    assert store.get_node(result["corrective_trace"]["id"]).content == CORRECTION
+    assert not store.connection.in_transaction
+
+
 @pytest.mark.parametrize("stage", FAULTS)
 def test_required_failure_rolls_back_marks_and_retry_succeeds(mcp, monkeypatch, stage):
     ids, event_id = seed(mcp)
@@ -149,6 +189,41 @@ def test_required_failure_rolls_back_marks_and_retry_succeeds(mcp, monkeypatch, 
     store.connection.execute("DROP TRIGGER reject_teach")
     assert_outcome(mcp, ids, event_id, teach(mcp, ids))
     assert scheduled == [True]
+
+
+@pytest.mark.parametrize("stage", ["guard", "closure"])
+@pytest.mark.parametrize("column", ["id", "decayed"])
+def test_required_endpoint_error_rolls_back_teach(mcp, monkeypatch, stage, column):
+    ids, event_id = seed(mcp)
+    store = mcp.memory_store
+    before = snapshot(store.db_path)
+    get_endpoints = store.get_node_endpoints
+
+    def read_endpoints(node_ids):
+        caller = inspect.currentframe().f_back.f_code
+        selected = (caller.co_filename == server.__file__ and caller.co_name == "memory_teach"
+                    if stage == "guard" else caller.co_name == "mark_recall_event_feedback")
+        if not selected:
+            return get_endpoints(node_ids)
+        assert store.connection.in_transaction
+
+        def authorize(action, table, name, *_):
+            return (sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ
+                    and table == "nodes" and name == column else sqlite3.SQLITE_OK)
+
+        store.connection.set_authorizer(authorize)
+        try:
+            return get_endpoints(node_ids)
+        finally:
+            store.connection.set_authorizer(None)
+
+    with monkeypatch.context() as fault:
+        fault.setattr(store, "get_node_endpoints", read_endpoints)
+        with pytest.raises(sqlite3.DatabaseError, match=f"nodes.{column}"):
+            teach(mcp, ids)
+    assert not store.connection.in_transaction
+    assert snapshot(store.db_path) == before
+    assert_outcome(mcp, ids, event_id, teach(mcp, ids))
 
 
 @pytest.mark.parametrize("stage", ["marks", "credit", "source"])
