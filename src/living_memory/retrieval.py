@@ -1362,8 +1362,9 @@ class MemoryRecallService:
 
         Scope is the ``ScopePlan``'s, handed to ``match_anchors`` so the SQL
         never returns an anchor from outside it: an anchor seeds only where its
-        own scope is admitted. The targets it names are filtered against the
-        same plan downstream, exactly as every other channel's candidates are.
+        own scope is admitted. Target scopes are checked before the seed cap,
+        so only targets admitted by the plan compete for its slots. Downstream
+        admission still checks current scope and liveness before body use.
 
         Returns ``{}`` on a pre-v7 database, with anchor seeding switched off,
         with no live anchor, and when nothing clears the match floor.
@@ -1379,6 +1380,12 @@ class MemoryRecallService:
                 activation = match.similarity * min(1.0, max(0.0, weight))
                 if activation > seeds.get(target_id, 0.0):
                     seeds[target_id] = activation
+        if seeds and plan.restricted:
+            scopes = self.store.get_node_scopes(seeds)
+            seeds = {
+                target_id: activation for target_id, activation in seeds.items()
+                if target_id in scopes and plan.allows(scopes[target_id])
+            }
         if len(seeds) <= GRAPH_SEED_LIMIT:
             return seeds
         # The same bound the seed block applies to every other seed, applied
