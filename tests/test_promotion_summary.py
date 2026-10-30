@@ -4,6 +4,7 @@ import asyncio
 import json
 import sqlite3
 from threading import RLock
+from weakref import WeakValueDictionary
 
 from fastmcp import Client
 import pytest
@@ -13,6 +14,210 @@ from living_memory.storage import MemoryStore
 
 
 EMPTY = {"promoted_concepts": 0, "promotion_events": 0, "source_scopes": []}
+
+
+class Retention:
+    def __init__(self):
+        self.live = WeakValueDictionary()
+        self.peak = 0
+
+    def track(self, value):
+        self.live[id(value)] = value
+        self.peak = max(self.peak, len(self.live))
+        return value
+
+
+class RawProvenance(str):
+    pass
+
+
+class DecodedProvenance(dict):
+    pass
+
+
+class ProvenanceCursor:
+    def __init__(self, cursor, watch):
+        self.cursor, self.watch = cursor, watch
+        self.reads = 0
+        self.closed = self.exhausted = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        assert self.watch.guard._is_owned()
+        if self.watch.failure == "read" and self.reads == 1:
+            raise sqlite3.OperationalError("late provenance read")
+        try:
+            row = next(self.cursor)
+        except StopIteration:
+            self.exhausted = True
+            raise
+        self.reads += 1
+        return {"id": row["id"], "provenance": self.watch.raw.track(RawProvenance(row["provenance"]))}
+
+    def fetchall(self):
+        pytest.fail("promotion traversal must not collect encoded rows")
+
+    def close(self):
+        assert self.watch.guard._is_owned()
+        self.cursor.close()
+        self.closed = True
+        if self.watch.failure == "close":
+            raise sqlite3.OperationalError("late provenance close")
+
+
+class ProvenanceConnection:
+    def __init__(self, connection, guard):
+        self.connection, self.guard = connection, guard
+        self.cursors = []
+        self.failure = None
+        self.raw, self.decoded = Retention(), Retention()
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+    def execute(self, sql, *args):
+        cursor = self.connection.execute(sql, *args)
+        if " ".join(sql.split()).startswith("SELECT id, provenance FROM nodes"):
+            assert self.guard._is_owned()
+            cursor = ProvenanceCursor(cursor, self)
+            self.cursors.append(cursor)
+        return cursor
+
+
+@pytest.fixture
+def promotion_runtime(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
+    guard = RLock()
+    monkeypatch.setattr(server, "RLock", lambda: guard)
+    mcp = server.create_mcp_server(tmp_path / "native.sqlite3")
+    store = mcp.memory_store
+    watch = ProvenanceConnection(store.connection, guard)
+    monkeypatch.setattr(store, "_conn", watch)
+    decode = storage._json_loads
+
+    def tracked(raw, default):
+        value = decode(raw, default)
+        if isinstance(raw, RawProvenance) and isinstance(value, dict):
+            return watch.decoded.track(DecodedProvenance(value))
+        return value
+
+    monkeypatch.setattr(storage, "_json_loads", tracked)
+    try:
+        yield mcp, guard, watch
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
+
+
+def padded_provenances(store, count=96):
+    for index in range(count):
+        store.create_node(
+            node_id=f"metadata-{index:04}", level="concept", content=f"Metadata fixture {index}.",
+            provenance={"padding": "x" * 16384, "promoted_from": ["project:a", "project:b"],
+                        "promotion_events": [1, 2]},
+        )
+
+
+@pytest.mark.parametrize("consumer", ["status", "stats"])
+def test_native_summary_releases_previous_provenance(promotion_runtime, consumer):
+    mcp, guard, watch = promotion_runtime
+    store = mcp.memory_store
+    padded_provenances(store)
+    before, changes = list(store.connection.iterdump()), store.connection.total_changes
+    store.connection.execute("PRAGMA query_only=ON")
+
+    async def exercise():
+        async with Client(mcp) as client:
+            if consumer == "status":
+                result = (await client.call_tool("memory_status", {"scope": "project:a"})).data
+            else:
+                result = json.loads((await client.read_resource("memory://stats"))[0].text)
+            assert result["promotions"] == {
+                "promoted_concepts": 96, "promotion_events": 192,
+                "source_scopes": ["project:a", "project:b"],
+            }
+
+    asyncio.run(exercise())
+    cursor, = watch.cursors
+    assert cursor.reads == 96 and cursor.exhausted and cursor.closed
+    assert watch.raw.peak <= 2 and watch.decoded.peak <= 2
+    assert not watch.raw.live and not watch.decoded.live
+    assert store.connection.total_changes == changes
+    assert list(store.connection.iterdump()) == before
+
+
+@pytest.mark.parametrize("failure", [None, "read", "close", "parse", "object", "reduce", "cancel"])
+@pytest.mark.parametrize("consumer", ["status", "stats"])
+def test_summary_late_failures_close_cursor(promotion_runtime, monkeypatch, failure, consumer):
+    mcp, guard, watch = promotion_runtime
+    store = mcp.memory_store
+    for node_id in ("a-unrelated", "z-promotion"):
+        store.create_node(
+            node_id=node_id, level="concept", content=node_id,
+            context={"timestamp": "2026-01-01T00:00:00Z"},
+            provenance={"promoted_from": ["project:a"]} if node_id.startswith("z") else {},
+        )
+    if failure in ("parse", "object"):
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET provenance=? WHERE id='a-unrelated'",
+                                     ("{broken" if failure == "parse" else "[]",))
+    watch.failure = failure
+    if failure in ("reduce", "cancel"):
+        original = resources.string_list
+
+        def fail(value):
+            if value is None:
+                if failure == "cancel":
+                    raise asyncio.CancelledError()
+                raise ValueError("late reducer failure")
+            return original(value)
+
+        monkeypatch.setattr(resources, "string_list", fail)
+    before, changes = list(store.connection.iterdump()), store.connection.total_changes
+    with guard:
+        call = (lambda: resources.memory_status(store, "project:a")) if consumer == "status" else (
+            lambda: resources.memory_stats(store))
+        errors = {"parse": json.JSONDecodeError, "object": TypeError, "reduce": ValueError,
+                  "cancel": asyncio.CancelledError, "read": sqlite3.OperationalError,
+                  "close": sqlite3.OperationalError}
+        if failure:
+            with pytest.raises(errors[failure]):
+                call()
+        else:
+            assert call()["promotions"]["promoted_concepts"] == 1
+    cursor, = watch.cursors
+    assert cursor.reads == (1 if failure == "read" else 2) and cursor.closed
+    assert store.connection.total_changes == changes
+    assert list(store.connection.iterdump()) == before
+
+
+@pytest.mark.parametrize("failure", [None, RuntimeError, asyncio.CancelledError])
+def test_traversal_early_exit_releases_row_and_cursor(promotion_runtime, failure):
+    mcp, guard, watch = promotion_runtime
+    padded_provenances(mcp.memory_store, count=2)
+
+    def consume():
+        with guard, mcp.memory_store.stream_global_concept_provenance(limit=2) as rows:
+            assert next(rows)[1]["promoted_from"] == ["project:a", "project:b"]
+            if failure:
+                raise failure()
+        return rows
+
+    if failure:
+        with pytest.raises(failure):
+            consume()
+    else:
+        assert list(consume()) == []
+    cursor, = watch.cursors
+    assert cursor.reads == 1 and cursor.closed and not cursor.exhausted
+    assert not watch.raw.live and not watch.decoded.live
+    with pytest.raises(sqlite3.ProgrammingError):
+        next(cursor.cursor)
 
 
 @pytest.mark.parametrize(
