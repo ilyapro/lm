@@ -40,6 +40,11 @@ def prepare(store, case):
         store.create_connection(
             "replacement", target, "related", metadata={"kind": "duplicate_content"},
         )
+        # A live destination can still have exact-copy bookkeeping.
+        with store.connection:
+            store.connection.execute(
+                "UPDATE nodes SET decayed = 0, decay_reason = NULL WHERE id = ?", (target,),
+            )
     store.insert_query_anchor(
         scope=SCOPE, query=QUERY, fingerprint=recall_fingerprint(QUERY, SCOPE),
         embedding=[1.0, 0.0], anchor_id="anchor", now=STAMP,
