@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from typing import Any
+import heapq
 import json
 
 from living_memory.config import RetrievalSkewThresholds
@@ -396,26 +398,40 @@ def memory_health(
     duplicate_excess = max(0, total_traces - distinct_contents)
     duplicate_density = (duplicate_excess / total_traces) if total_traces > 0 else 0.0
 
-    age_rows = store.connection.execute(
+    ages: list[float] = []
+    now_epoch = now.timestamp()
+
+    def dated_traces() -> Iterator[tuple[str, float]]:
+        for row in age_rows:
+            ref = row["last_accessed"] or row["timestamp"]
+            if not ref:
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(ref).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            age = max(0.0, now_epoch - parsed.timestamp())
+            ages.append(age)
+            yield str(row["id"]), age
+
+    with closing(store.connection.execute(
         f"SELECT id, timestamp, last_accessed FROM nodes WHERE {trace_where}",
         trace_params,
-    ).fetchall()
-    age_by_id: dict[str, float] = {}
-    now_epoch = now.timestamp()
-    for row in age_rows:
-        ref = row["last_accessed"] or row["timestamp"]
-        if not ref:
-            continue
-        try:
-            parsed = datetime.fromisoformat(str(ref).replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        age_by_id[str(row["id"])] = max(0.0, now_epoch - parsed.timestamp())
-    ages = list(age_by_id.values())
+    )) as age_rows:
+        if top_stale >= 1:
+            stale_ids = [
+                node_id for node_id, _ in heapq.nlargest(
+                    int(top_stale), dated_traces(), key=lambda item: item[1],
+                )
+            ]
+        else:
+            for _ in dated_traces():
+                pass
+            stale_ids = []
+    ages.sort()
 
     stale_rows: list[Any] = []
-    if top_stale > 0 and age_by_id:
-        stale_ids = sorted(age_by_id, key=age_by_id.__getitem__, reverse=True)[:int(top_stale)]
+    if stale_ids:
         stale_rows = store.connection.execute(
             f"""
             SELECT nodes.id, content, timestamp, access_count, last_accessed
@@ -451,8 +467,8 @@ def memory_health(
         },
         "staleness": {
             "decay_rate": decay_rate,
-            "age_seconds_p50": _percentile(ages, 0.5),
-            "age_seconds_p90": _percentile(ages, 0.9),
+            "age_seconds_p50": ages[round(0.5 * (len(ages) - 1))] if ages else None,
+            "age_seconds_p90": ages[round(0.9 * (len(ages) - 1))] if ages else None,
             "top_stale": [
                 {
                     "id": str(row["id"]),
@@ -680,16 +696,6 @@ def recall_event_to_dict(event: RecallEvent) -> dict[str, Any]:
         "feedback_applied": event.feedback_applied,
         "created_at": event.created_at,
     }
-
-
-def _percentile(values: list[float], quantile: float) -> float | None:
-    if not values:
-        return None
-    if not 0.0 <= quantile <= 1.0:
-        raise ValueError("quantile must be in [0, 1]")
-    ordered = sorted(values)
-    idx = max(0, min(len(ordered) - 1, int(round(quantile * (len(ordered) - 1)))))
-    return ordered[idx]
 
 
 def weights_to_dict(weights: RetrievalWeights) -> dict[str, Any]:
