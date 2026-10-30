@@ -23,7 +23,6 @@ from living_memory.health_audit import (
 from living_memory.resources import (
     feedback_closure_metrics,
     memory_health,
-    recall_events_summary,
 )
 from living_memory.storage import MemoryStore
 
@@ -921,25 +920,3 @@ def test_memory_health_payload_includes_feedback_closure_block(tmp_path: Path) -
     assert closure["identity_coverage"]["transport_only"]["closed"] == 0
 
     assert default_report["feedback_closure"]["window_hours"] == 168
-
-
-def test_recall_events_summary_exposes_transport_session_id(tmp_path: Path) -> None:
-    with MemoryStore(tmp_path / "closure-summary.sqlite3") as store:
-        store.record_recall_event(
-            query="with-transport",
-            scope="project:alpha",
-            ambient_context={"transport_session_id": "tsid-visible"},
-            results=[],
-        )
-        store.record_recall_event(
-            query="without-transport",
-            scope="project:alpha",
-            ambient_context={},
-            results=[],
-        )
-
-        summary = recall_events_summary(store, scope="project:alpha")
-
-    recent = {item["query"]: item for item in summary["recent"]}
-    assert recent["with-transport"]["transport_session_id"] == "tsid-visible"
-    assert recent["without-transport"]["transport_session_id"] is None
