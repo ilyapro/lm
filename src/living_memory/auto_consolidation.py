@@ -2,8 +2,8 @@
 
 The write path only schedules; one worker thread per server runs the passes.
 Pending scopes are loaded and merged before replacement saves and admission.
-A later committed write retries failed reads, admission or startup; server
-start resumes durable pending work.
+A later committed write retries failed reads, snapshot saves or startup;
+server start resumes durable pending work.
 
 Guarantees:
 
@@ -83,6 +83,8 @@ class AutoConsolidationScheduler:
         self._queue: dict[str, _QueuedPass] = {}
         # scope -> first request time (ISO) of the not-yet-completed pass.
         self._persisted: dict[str, str] = {}
+        # The current snapshot still needs saving, including completed removals.
+        self._pending_dirty = False
         self._attempts: dict[str, int] = {}
         self._running: str | None = None
         self._last: dict[str, dict[str, Any]] = {}
@@ -144,15 +146,17 @@ class AutoConsolidationScheduler:
             if self._closed:
                 return
             self._load_and_merge_pending()
-            if not self._queue:
-                return
-            if (
-                self._thread is not None and self._thread.is_alive()
-                and all(queued.requested_at is None for queued in self._queue.values())
-            ):
-                return
+            if not self._pending_dirty:
+                if not self._queue:
+                    return
+                if (
+                    self._thread is not None and self._thread.is_alive()
+                    and all(queued.requested_at is None for queued in self._queue.values())
+                ):
+                    return
             self._save_and_admit()
-            self._ensure_worker()
+            if self._queue:
+                self._ensure_worker()
             self._cond.notify_all()
 
     def resume(self) -> list[str]:
@@ -166,9 +170,10 @@ class AutoConsolidationScheduler:
             try:
                 self._load_and_merge_pending()
                 scopes = list(self._queue)
-                if scopes:
+                if scopes or self._pending_dirty:
                     self._save_and_admit()
-                    self._ensure_worker()
+                    if scopes:
+                        self._ensure_worker()
                     self._cond.notify_all()
             except Exception:
                 _LOG.warning("could not resume pending auto-consolidation scopes", exc_info=True)
@@ -183,6 +188,7 @@ class AutoConsolidationScheduler:
                 "running": self._running,
                 "queued": list(self._queue),
                 "passes_completed": self._passes_completed,
+                "pending_save": self._pending_dirty,
                 "last": {scope: dict(entry) for scope, entry in self._last.items()},
             }
 
@@ -192,16 +198,21 @@ class AutoConsolidationScheduler:
             return dict(entry) if entry is not None else None
 
     def wait_idle(self, timeout: float | None = None, *, include_retries: bool = False) -> bool:
-        """Block until no pass runs and no request awaits save or execution.
+        """Block until no pass runs and no request or snapshot awaits work.
 
         Accepted passes waiting out a retry back-off count as idle unless
-        ``include_retries``. Returns False on timeout.
+        ``include_retries``. Unsaved settlement is never idle; a later write
+        retries its save without rerunning the completed pass. Returns False
+        on timeout.
         """
 
         deadline = None if timeout is None else self._clock() + timeout
         with self._cond:
             while True:
-                if self._running is None and not self._ready_or_waiting(include_retries):
+                if (
+                    self._running is None and not self._pending_dirty
+                    and not self._ready_or_waiting(include_retries)
+                ):
                     return True
                 remaining = None if deadline is None else deadline - self._clock()
                 if remaining is not None and remaining <= 0:
@@ -301,10 +312,12 @@ class AutoConsolidationScheduler:
             if scope not in self._queue:
                 # Only a pass that started after the last request settles it.
                 persist = self._persisted.pop(scope, None) is not None
+                if persist:
+                    self._pending_dirty = True
         if persist:
             self._persist()
-        # Idle only once the settled mark is written: a waiter that sees the
-        # worker idle must also see the pending set it left behind.
+        # Pass completion and durable settlement are separate: a failed save
+        # leaves pending work for ordinary recovery, not another pass.
         with self._cond:
             self._running = None
             self._cond.notify_all()
@@ -356,9 +369,11 @@ class AutoConsolidationScheduler:
     def _save_and_admit(self) -> None:
         """Save and admit requests with both the guard and condition held."""
 
+        self._pending_dirty = True
         self._load_and_merge_pending()
         if self._save_pending is not None:
             self._save_pending(json.dumps(self._persisted, sort_keys=True))
+        self._pending_dirty = False
         for scope, queued in self._queue.items():
             if queued.requested_at is not None:
                 # A saved due request overrides backoff and starts a fresh pass.
