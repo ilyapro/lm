@@ -33,6 +33,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from heapq import nsmallest
 from typing import Any, Iterable
 
 from living_memory.relations import correction_sql
@@ -267,49 +268,51 @@ def soft_delete_expired(
     cutoff = moment - timedelta(days=ttl)
     coverage = concept_coverage(store, include_dates=coverage_rule)
 
-    candidates: list[tuple[datetime, str, str]] = []
-    for level in levels:
-        clauses = ["decayed = 0"]
-        params: list[str] = []
-        if level is not None:
-            if level not in NODE_LEVELS:
-                raise ValueError(f"invalid node level: {level}")
-            clauses.append("level = ?")
-            params.append(level)
-        if scope is not None:
-            clauses.append("scope = ?")
-            params.append(scope)
-        # Eligibility needs dates and identity, not content or provenance.
-        # Full nodes are read by soft_delete_node only for selected retirements.
-        rows = store.connection.execute(
-            f"""
-            SELECT id, timestamp, created_at, last_accessed FROM nodes
-            WHERE {' AND '.join(clauses)}
-            """,
-            params,
-        )
-        for row in rows:
-            node_id = str(row["id"])
-            reference = _ttl_reference(row, anchor)
-            if node_id in coverage:
-                if not coverage_rule:
-                    # The invariant: no trace listed in a live concept's
-                    # source_traces is decayed. Its digest points back here.
-                    continue
-                if not _read_since(row, coverage[node_id]):
-                    candidates.append(
-                        (reference or moment, node_id, CONCEPT_COVERED_REASON)
-                    )
-                    continue
-            if reference is not None and reference < cutoff:
-                candidates.append((reference, node_id, TTL_EXPIRED_REASON))
+    def eligible_candidates() -> Iterable[tuple[datetime, str, str]]:
+        for level in levels:
+            clauses = ["decayed = 0"]
+            params: list[str] = []
+            if level is not None:
+                if level not in NODE_LEVELS:
+                    raise ValueError(f"invalid node level: {level}")
+                clauses.append("level = ?")
+                params.append(level)
+            if scope is not None:
+                clauses.append("scope = ?")
+                params.append(scope)
+            # Eligibility needs dates and identity, not content or provenance.
+            # Full nodes are read by soft_delete_node only for selected retirements.
+            rows = store.connection.execute(
+                f"""
+                SELECT id, timestamp, created_at, last_accessed FROM nodes
+                WHERE {' AND '.join(clauses)}
+                """,
+                params,
+            )
+            for row in rows:
+                node_id = str(row["id"])
+                reference = _ttl_reference(row, anchor)
+                if node_id in coverage:
+                    if not coverage_rule:
+                        # The invariant: no trace listed in a live concept's
+                        # source_traces is decayed. Its digest points back here.
+                        continue
+                    if not _read_since(row, coverage[node_id]):
+                        yield (reference or moment, node_id, CONCEPT_COVERED_REASON)
+                        continue
+                if reference is not None and reference < cutoff:
+                    yield (reference, node_id, TTL_EXPIRED_REASON)
 
     # Oldest reference first, id as tie-breaker: whatever the cap defers is the
     # youngest of the batch, and the next sweep resumes exactly where this one
     # stopped instead of re-picking an arbitrary subset.
-    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]))
+    # Both selectors exhaust eligibility before any mutation. A finite cap
+    # retains only O(cap) candidates; the key keeps exact ties stable without
+    # comparing reasons, including repeated visits through duplicated levels.
     if cap:
-        candidates = candidates[:cap]
+        candidates = nsmallest(cap, eligible_candidates(), key=lambda candidate: (candidate[0], candidate[1]))
+    else:
+        candidates = sorted(eligible_candidates(), key=lambda candidate: (candidate[0], candidate[1]))
 
     return [store.soft_delete_node(node_id, reason) for _, node_id, reason in candidates]
 
