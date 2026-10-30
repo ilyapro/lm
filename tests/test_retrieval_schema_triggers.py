@@ -98,6 +98,24 @@ def test_no_matching_triggers_read_no_bodies(tmp_path, monkeypatch, query):
         assert candidates == {}
 
 
+@pytest.mark.parametrize("existing", [False, True])
+def test_partial_trigger_overlap_keeps_coverage_and_prior_maxima(tmp_path, existing):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        partial = node(store, "partial", trigger="harbor weather")
+        node(store, "below-overlap", trigger="harbor weather forecast")
+        candidates = {partial.id: _Candidate(node=partial)} if existing else {}
+        retriever = service(store)
+        plan = ScopePlan(SCOPE, (SCOPE, "global", SCOPE))
+        retriever._collect_schema_triggers(QUERY, plan, candidates)
+        assert set(candidates) == {partial.id}
+        candidate = candidates[partial.id]
+        assert candidate.trigger_score == pytest.approx(SCHEMA_TRIGGER_BASE_SCORE + 0.025)
+        assert candidate.trigger_coverage == 0.5
+        candidate.trigger_score, candidate.trigger_coverage = 1.0, 0.9
+        retriever._collect_schema_triggers(QUERY, plan, candidates)
+        assert (candidate.trigger_score, candidate.trigger_coverage) == (1.0, 0.9)
+
+
 def test_trigger_only_admission_keeps_reader_order_across_sql_batches(tmp_path):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         with store.transaction():
@@ -237,3 +255,43 @@ def test_required_trigger_read_errors_abort_before_consumption(tmp_path, monkeyp
         assert retriever.last_recall_event_id is None
         assert not store.connection.in_transaction
         assert list(store.connection.iterdump()) == before
+
+
+def test_native_trigger_read_failure_keeps_feedback_available_for_retry(tmp_path, monkeypatch):
+    from living_memory import server
+    from test_explicit_feedback import FakeMCP
+
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "off")
+    monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
+    monkeypatch.setenv("LM_RECALL_MAP", "0")
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    monkeypatch.setattr(server, "_transport_session_id", lambda: "trigger-client")
+    mcp = server.create_mcp_server(tmp_path / "memory.sqlite3", mcp_factory=FakeMCP)
+    store = mcp.memory_store
+    try:
+        selected = node(store, "selected", level="concept")
+        call = mcp.tools["memory_recall"]
+        first = call(QUERY, scope=SCOPE, depth=0)
+        assert first["results"][0]["id"] == selected.id
+        before = list(store.connection.iterdump())
+        collect = MemoryRecallService._collect_schema_triggers
+
+        def fail(self, query, plan, candidates):
+            def unavailable(ids):
+                raise sqlite3.OperationalError("trigger identity read unavailable")
+
+            with monkeypatch.context() as fault:
+                fault.setattr(self.store, "get_node_scopes", unavailable)
+                return collect(self, query, plan, candidates)
+
+        with monkeypatch.context() as fault:
+            fault.setattr(MemoryRecallService, "_collect_schema_triggers", fail)
+            with pytest.raises(sqlite3.OperationalError, match="identity read unavailable"):
+                call(QUERY, scope=SCOPE, depth=0, used=[selected.id])
+        assert list(store.connection.iterdump()) == before
+        retried = call(QUERY, scope=SCOPE, depth=0, used=[selected.id])
+        assert retried["feedback_marks"]["accepted"] == 1
+        assert store.credited_node_ids(first["recall_event_id"]) == {selected.id}
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
