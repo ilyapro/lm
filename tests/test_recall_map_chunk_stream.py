@@ -1,6 +1,5 @@
 """Selected chunk reduction preserves rank order and owns its read lifetime."""
 
-from contextlib import contextmanager
 from dataclasses import replace
 from math import inf, nextafter, sqrt
 import sqlite3
@@ -85,11 +84,12 @@ def test_reduction_retains_only_one_decoded_node_and_build_recounts(store, monke
     for hit in (False, True):
         built = builder.build(results, scope=SCOPE, task="survey")
         assert builder.last_cache_hit is hit
-        assert [list(cluster.member_ids) for cluster in built.clusters] == expected_groups
-        assert [cluster.medoid.node_id for cluster in built.clusters] == [g[0] for g in expected_groups]
+        # The ordinary wire budget carries the first two of the four groups.
+        assert [list(cluster.member_ids) for cluster in built.clusters] == expected_groups[:2]
+        assert [cluster.medoid.node_id for cluster in built.clusters] == [g[0] for g in expected_groups[:2]]
         assert {cluster.stage for cluster in built.clusters} == {STAGE_EMBEDDING}
-        assert built.pool_size == built.covered == len(results)
-        assert built.to_dict()["filtered"] == {"withheld": 0, "dropped": 0}
+        assert built.pool_size == len(results) and built.covered == len(results) // 2
+        assert built.withheld == 0 and built.dropped == 2
         assert live == 0 and peak == chunks
         if not hit:
             expected = built
