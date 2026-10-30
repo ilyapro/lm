@@ -302,13 +302,15 @@ def test_all_scope_repair_ignores_invalid_owners_and_keeps_shared_sources(store,
 
 
 def test_cited_body_takes_precedence_over_visited_snapshot_for_grouping(store):
-    source = cited_trace(store, "source")
-    owner = procedural_owner(store, "owner", "inspection", [source.id, source.id])
-    stale = replace(source, decayed=True)
-    result = c._materialize_procedural_schemas(store, [stale], min_cluster_size=3)
-    assert [node.id for node, _ in result] == [owner.id]
-    assert result[0][0].source_traces == [source.id]
-    assert source.content in result[0][0].content
+    sources = [cited_trace(store, f"source-{i}") for i in range(3)]
+    owner = procedural_owner(store, "owner", "orphan", [node.id for node in sources])
+    stale = [replace(source, decayed=True) for source in sources]
+    result = c._materialize_procedural_schemas(store, stale, min_cluster_size=3)
+    assert [node.context["task_pattern"] for node, _ in result] == ["orphan", "inspection"]
+    assert result[0][0].id == owner.id
+    for node, _ in result:
+        assert node.source_traces == [source.id for source in sources]
+        assert all(source.content in node.content for source in sources)
 
 
 def test_cited_source_groups_keep_full_reader_order_across_batches(store, monkeypatch):
@@ -323,8 +325,9 @@ def test_cited_source_groups_keep_full_reader_order_across_batches(store, monkey
     for group, ids in (("early", early), ("late", late)):
         for source in ids:
             store.update_node(source, context={"scope": "project:harbor", "task_pattern": group})
-    owner = procedural_owner(store, "a-orphan", "orphan", [*early, *late])
-    procedural_owner(store, "z-duplicate", "orphan", all_ids)
+    owner = procedural_owner(store, "z-orphan", "orphan", [*early, *late])
+    store.connection.execute("UPDATE nodes SET created_at='2026-01-01T00:00:00Z' WHERE id=?", (owner.id,))
+    procedural_owner(store, "a-duplicate", "orphan", all_ids)
     # Reconstruct the exact source iterable used by discovery, including repeats.
     owners = store.get_nodes(node_id for node_id, _ in store.schema_triggers(None, strategy="procedural"))
     full_order = list(store.get_nodes(source for node in owners.values() for source in node.source_traces))
@@ -364,10 +367,13 @@ def test_only_required_cited_bodies_must_decode(store, needed):
         store.get_node(source.id)
 
 
-@pytest.mark.parametrize("boundary", ["discovery", "validity", "identity", "body", "write"])
+@pytest.mark.parametrize("boundary", ["discovery", "validity", "identity", "unused_identity", "body", "write"])
 def test_required_procedural_sql_failures_propagate(store, monkeypatch, boundary):
     source = cited_trace(store, "source")
-    owner = procedural_owner(store, "owner", "inspection", [source.id])
+    owner = procedural_owner(store, "owner", "inspection", [source.id],
+                             level="concept" if boundary == "unused_identity" else "schema")
+    if boundary == "unused_identity":
+        procedural_owner(store, "z-duplicate", "inspection", [source.id])
     before = list(store.connection.iterdump())
 
     def deny(table, field):
@@ -380,7 +386,7 @@ def test_required_procedural_sql_failures_propagate(store, monkeypatch, boundary
     if boundary == "discovery":
         deny("nodes", "context")
     else:
-        method = {"validity": "list_connections", "identity": "get_node_scopes",
+        method = {"validity": "list_connections", "identity": "get_node_scopes", "unused_identity": "get_node_scopes",
                   "body": "get_nodes", "write": "get_node"}[boundary]
         original = getattr(store, method)
 
@@ -391,7 +397,7 @@ def test_required_procedural_sql_failures_propagate(store, monkeypatch, boundary
                     deny("nodes", "content")
             elif boundary == "validity":
                 deny("connections", "target_id")
-            elif boundary == "identity":
+            elif boundary in ("identity", "unused_identity"):
                 deny("nodes", "scope")
             elif args[0] == owner.id:
                 deny("nodes", "content")

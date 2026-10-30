@@ -304,7 +304,7 @@ def test_procedural_discovery_waits_for_transaction_and_reads_one_snapshot(runti
 
 
 @pytest.mark.parametrize("change", [
-    "source", "owner", "owner_decay", "owner_group", "source_decay", "source_union",
+    "source", "owner", "owner_decay", "owner_group", "owner_edge", "source_decay", "source_union",
     "duplicate", "duplicate_decay", "duplicate_group", "duplicate_content", "duplicate_edge", "unchanged",
 ])
 def test_procedural_write_rechecks_snapshot_and_preserves_independent_owner(runtime, change):
@@ -348,9 +348,10 @@ def test_procedural_write_rechecks_snapshot_and_preserves_independent_owner(runt
                         store.update_node(target.id, context={**target.context, "procedure_key": "independent revision", "task_pattern": "independent revision"})
                     elif change == "duplicate_content":
                         store.update_node(duplicate.id, content="Harbor departure checks the revised inspection record.")
-                    elif change == "duplicate_edge":
+                    elif change in ("owner_edge", "duplicate_edge"):
                         replacement = store.append_trace("Harbor departure replaces the duplicate procedure.", {"scope": SCOPE})
-                        store.create_connection(replacement.id, duplicate.id, "supersedes")
+                        target = owner if change == "owner_edge" else duplicate
+                        store.create_connection(replacement.id, target.id, "supersedes")
                     elif change == "source_union":
                         added = store.append_trace("Harbor departure records the final manifest.", {**traces[0].context, "step_order": 4})
                         store.update_node(owner.id, provenance={**owner.provenance, "source_traces": [*owner.source_traces, added.id]})
@@ -364,7 +365,7 @@ def test_procedural_write_rechecks_snapshot_and_preserves_independent_owner(runt
     assert independent.id in updated
     assert store.get_node(independent.id).context["procedure"] == [trace.content for trace in others]
     current = store.get_node(owner.id)
-    if change in ("owner", "owner_decay", "owner_group"):
+    if change in ("owner", "owner_decay", "owner_group", "owner_edge"):
         assert current == current_owner
         assert owner.id not in updated
     else:
@@ -379,7 +380,7 @@ def test_procedural_write_rechecks_snapshot_and_preserves_independent_owner(runt
         elif change == "source_union":
             assert added.id in current.source_traces
             assert added.content in current.content
-    if change.startswith("duplicate") or change in ("owner", "owner_decay", "owner_group", "source", "source_decay"):
+    if change.startswith("duplicate") or change in ("owner", "owner_decay", "owner_group", "owner_edge", "source", "source_decay"):
         assert store.get_node(duplicate.id) == current_duplicate
     else:
         assert store.get_node(duplicate.id).decay_reason == "procedural: duplicate group"
