@@ -188,7 +188,10 @@ def test_native_embedding_read_finishes_before_map_writes(tmp_path, monkeypatch,
     mcp = create_mcp_server(tmp_path / "embedding.sqlite3")
     store = mcp.memory_store
     for index in range(32):
-        store.create_node(level="trace", content=f"quarterly ledger reconciliation {index}")
+        store.create_node(
+            level="trace", content=f"quarterly ledger reconciliation {index}",
+            embedding=[float(axis == 10) for axis in range(384)],
+        )
     for index in range(12):
         topic = "orbital telemetry calibration" if index % 2 else "orchard harvest rotation"
         store.create_node(
@@ -256,7 +259,8 @@ def test_native_embedding_read_finishes_before_map_writes(tmp_path, monkeypatch,
                 else:
                     assert hits == [False, True] and len(completed) == 1
                     stored = json.loads(recorded)
-                    stored.pop("sel")
+                    if view == "knowledge":
+                        stored.pop("sel")
                     assert stored == second["recall_map"] == first["recall_map"]
             assert not store.connection.in_transaction
 
