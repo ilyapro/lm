@@ -11,7 +11,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 import pytest
 
-from living_memory import feedback, server, storage
+from living_memory import feedback, query_anchors, server, storage
 from living_memory.models import RecallEvent
 from living_memory.storage import MemoryStore, recall_fingerprint
 from test_derived_read_preparation import runtime
@@ -120,6 +120,7 @@ def test_actual_remember_matches_full_preflight_without_materializing_bodies(tmp
     monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "grounded")
     monkeypatch.setattr(server, "_transport_session_id", lambda: "pending-inputs-transport")
     monkeypatch.setattr(storage, "_utc_now", lambda: "2026-01-01T00:00:00Z")
+    monkeypatch.setattr(query_anchors, "_timestamp", lambda value: "2026-01-01T00:00:00Z")
     monkeypatch.setattr(feedback, "_anchor_embedder", lambda store: lambda texts: [[1.0, 0.0] for _ in texts])
     original_queries, original_decode = feedback._feedback_queries, storage._json_loads
     snapshots, query_outputs, full_outcomes = [], [], []
