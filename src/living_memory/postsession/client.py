@@ -29,9 +29,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from .dedup import NodeSnapshot, extraction_identity
 
@@ -48,6 +48,7 @@ __all__ = [
 DEFAULT_URL = "http://127.0.0.1:8765/mcp/"
 DEFAULT_ENV_FILE = Path.home() / ".config" / "living-memory" / "env"
 DEFAULT_TIMEOUT_SECONDS = 30.0
+_Result = TypeVar("_Result")
 
 
 class ClientError(RuntimeError):
@@ -123,7 +124,9 @@ class LiveMemoryClient:
         self.timeout = timeout
         self.calls: list[str] = []
 
-    async def _call_async(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _request_async(
+        self, operation: str, request: Callable[[Any], Awaitable[_Result]],
+    ) -> _Result:
         dispatched = False
         payload = None
         try:
@@ -135,32 +138,50 @@ class LiveMemoryClient:
             client = Client(self.url, **kwargs)
             async with client:
                 dispatched = True
-                result = await client.call_tool(tool, arguments)
-                if getattr(result, "is_error", False):
-                    raise ClientError(f"{tool} returned a tool error")
-                payload = _payload(result)
+                payload = await request(client)
             return payload
         except Exception as exc:
             if payload is not None:
                 return payload  # Connection cleanup cannot undo a received result.
             error = ClientError if dispatched else PreDispatchError
-            raise error(f"{tool} against {self.url} failed: {exc}") from exc
+            raise error(f"{operation} against {self.url} failed: {exc}") from exc
+
+    async def _call_async(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        async def request(client: Any) -> dict[str, Any]:
+            result = await client.call_tool(tool, arguments)
+            if getattr(result, "is_error", False):
+                raise ClientError(f"{tool} returned a tool error")
+            return _payload(result)
+
+        return await self._request_async(tool, request)
+
+    def _run(self, operation: str, request: Coroutine[Any, Any, _Result]) -> _Result:
+        self.calls.append(operation)
+        try:
+            return asyncio.run(request)
+        except ClientError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - any transport/tool failure
+            raise ClientError(f"{operation} against {self.url} failed: {exc}") from exc
 
     def call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Run one tool call to completion. Raises :class:`ClientError`."""
 
-        self.calls.append(tool)
-        try:
-            return asyncio.run(self._call_async(tool, arguments))
-        except ClientError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - any transport/tool failure
-            raise ClientError(f"{tool} against {self.url} failed: {exc}") from exc
+        return self._run(tool, self._call_async(tool, arguments))
 
-    def ping(self) -> dict[str, Any]:
-        """Cheapest liveness probe that proves auth works: memory_status."""
+    def ping(self) -> bool:
+        """Confirm authenticated MCP liveness, not database or tool readiness.
 
-        return self.call("memory_status", {})
+        Returns True on protocol acknowledgement; failures raise ClientError.
+        Uses the same host, credentials and timeouts as tool calls.
+        """
+
+        async def request(client: Any) -> bool:
+            if not await client.ping():
+                raise ClientError("ping returned no acknowledgement")
+            return True
+
+        return self._run("ping", self._request_async("ping", request))
 
     def remember(self, content: str, context: dict[str, Any]) -> dict[str, Any]:
         return self.call("memory_remember", {"content": content, "context": context})
