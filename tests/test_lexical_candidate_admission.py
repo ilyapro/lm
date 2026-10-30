@@ -47,6 +47,8 @@ def collect_full_bodies(service, query, plan, candidates, *, max_results):
                 assert node.content.startswith(QUERY)
                 candidate = candidates.setdefault(node.id, _Candidate(node=node))
                 candidate.bm25_score = max(candidate.bm25_score, 1.0)
+                candidate.lexical_score = 1.0
+                candidate.lexical_score_prepared = True
 
 
 def test_search_projections_share_order_filters_task_and_validation(tmp_path):
@@ -188,7 +190,8 @@ def test_body_admission_rechecks_live_scope_and_scores_surviving_source(tmp_path
         monkeypatch.setattr(storage, "_node_from_row", count)
         candidates = {}
         service._collect_bm25(QUERY, resolve_scope(scope=SCOPE), candidates, max_results=2)
-        assert candidates == {survivor.id: _Candidate(node=survivor, bm25_score=1.0)}
+        assert candidates == {survivor.id: _Candidate(node=survivor, bm25_score=1.0,
+                                                       lexical_score=1.0, lexical_score_prepared=True)}
         assert decoded == [survivor.id]
 
 
@@ -223,7 +226,8 @@ def test_discovery_and_bodies_share_snapshot_but_next_collection_reads_current_s
             patch.setattr(store, "get_recall_nodes", concurrent_write)
             candidates = {}
             service._collect_bm25(QUERY, plan, candidates, max_results=2)
-        assert candidates == {original.id: _Candidate(node=original, bm25_score=1.0)}
+        assert candidates == {original.id: _Candidate(node=original, bm25_score=1.0,
+                                                       lexical_score=1.0, lexical_score_prepared=True)}
         assert not store.connection.in_transaction
         fresh = {}
         service._collect_bm25(QUERY, plan, fresh, max_results=2)
@@ -244,7 +248,8 @@ def test_lexical_snapshot_accepts_read_only_connection(tmp_path):
         MemoryRecallService(store, embedder=Encoder())._collect_bm25(
             QUERY, resolve_scope(scope=SCOPE), candidates, max_results=2,
         )
-        assert candidates == {original.id: _Candidate(node=original, bm25_score=1.0)}
+        assert candidates == {original.id: _Candidate(node=original, bm25_score=1.0,
+                                                       lexical_score=1.0, lexical_score_prepared=True)}
         assert not store.connection.in_transaction
 
 
@@ -268,5 +273,6 @@ def test_lexical_snapshot_preserves_outer_writes_rollback_and_failure(tmp_path):
         store.connection.rollback()
         candidates = {}
         service._collect_bm25(QUERY, plan, candidates, max_results=2)
-        assert candidates == {original.id: _Candidate(node=original, bm25_score=1.0)}
+        assert candidates == {original.id: _Candidate(node=original, bm25_score=1.0,
+                                                       lexical_score=1.0, lexical_score_prepared=True)}
         assert not store.connection.in_transaction
