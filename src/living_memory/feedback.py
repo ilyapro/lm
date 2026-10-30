@@ -824,6 +824,7 @@ def _current_deliveries(
     store: MemoryStore, node_ids: Iterable[str], transport_session_id: str | None,
     occurred_at: str | datetime | None,
     *, context: Mapping[str, Any] | None = None,
+    query_inputs_only: bool = False,
 ) -> dict[str, dict[str, Any]]:
     requested = tuple(node_ids)
     if not transport_session_id or not requested:
@@ -836,6 +837,7 @@ def _current_deliveries(
     return store.recall_deliveries(
         transport_session_id, requested, earliest=instant - _lookup_credit_window(),
         latest=instant, limit=_LOOKUP_CREDIT_EVENT_LIMIT, context=context,
+        query_inputs_only=query_inputs_only,
     )
 
 
@@ -1012,6 +1014,7 @@ def _feedback_queries(
             store, [mark.node_id for mark in marks if mark.reject_reason is None],
             transport_session_id, occurred_at,
             context=context if lookup_ids is None else None,
+            query_inputs_only=True,
         )
         for mark in marks:
             if mark.reject_reason is not None:

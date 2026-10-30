@@ -3037,6 +3037,7 @@ class MemoryStore:
         latest: datetime,
         limit: int = 200,
         context: Mapping[str, Any] | None = None,
+        query_inputs_only: bool = False,
     ) -> dict[str, dict[str, Any]]:
         """Newest delivery facts for requested ids in a bounded session window.
 
@@ -3056,10 +3057,22 @@ class MemoryStore:
         or a saved broad read. A broad read's preferred scope does not restrict
         the destination of new knowledge. Lookup omits context and retains
         its transport-only selection.
+
+        Preparation may request query_inputs_only to avoid decoding unused
+        matching result bodies. The default retains complete result objects
+        for authoritative feedback, including scores and ExplicitMark.result.
         """
         requested = set(node_ids)
         if not transport_session_id or not requested or limit <= 0:
             return {}
+        # Membership uses SQLite's first node_id key; hit insertion below uses
+        # Python's last key. As in pending_recall_query_inputs, keep raw ID JSON
+        # and fall back to the full object for duplicate keys. Do not import the
+        # pending reader's broader dict(item) shapes into delivery eligibility.
+        result_projection = """CASE WHEN (
+            SELECT count(*) FROM json_each(result.value) WHERE key = 'node_id'
+        ) <= 1 THEN json_object('node_id', result.value -> '$.node_id')
+        ELSE result.value END""" if query_inputs_only else "result.value"
         params = {
             **_recall_identity(context),
             "transport_session_id": str(transport_session_id),
@@ -3115,7 +3128,7 @@ class MemoryStore:
                     f"""
                     SELECT event.id AS event_id, event.query, event.scope, event.created_at,
                            json_extract(result.value, '$.node_id') AS node_id,
-                           result.key AS rank, result.value AS result,
+                           result.key AS rank, {result_projection} AS result,
                            EXISTS(SELECT 1 FROM {RECALL_CREDIT_LEDGER_TABLE} AS credit
                                   WHERE credit.recall_event_id = event.id
                                     AND credit.node_id = json_extract(result.value, '$.node_id'))
