@@ -349,7 +349,7 @@ def test_procedural_write_rechecks_snapshot_and_preserves_independent_owner(runt
                     elif change == "duplicate_content":
                         store.update_node(duplicate.id, content="Harbor departure checks the revised inspection record.")
                     elif change in ("owner_edge", "duplicate_edge"):
-                        replacement = store.append_trace("Harbor departure replaces the duplicate procedure.", {"scope": SCOPE})
+                        replacement = store.append_trace("Harbor departure replaces the stored procedure.", {"scope": SCOPE})
                         target = owner if change == "owner_edge" else duplicate
                         store.create_connection(replacement.id, target.id, "supersedes")
                     elif change == "source_union":

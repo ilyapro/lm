@@ -306,7 +306,8 @@ def test_cited_body_takes_precedence_over_visited_snapshot_for_grouping(store):
     owner = procedural_owner(store, "owner", "orphan", [node.id for node in sources])
     stale = [replace(source, decayed=True) for source in sources]
     result = c._materialize_procedural_schemas(store, stale, min_cluster_size=3)
-    assert [node.context["task_pattern"] for node, _ in result] == ["orphan", "inspection"]
+    assert [created for _, created in result] == [False, True]
+    assert all(node.context["task_pattern"] == "inspection" for node, _ in result)
     assert result[0][0].id == owner.id
     for node, _ in result:
         assert node.source_traces == [source.id for source in sources]
