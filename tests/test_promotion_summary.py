@@ -105,7 +105,8 @@ def test_selection_filters_order_and_cap_precede_source_scope(tmp_path, monkeypa
              if key not in ("source_traces", "corrections")})
             for node in store.list_nodes(level="concept", scope="global", limit=limit)
         ]
-        assert store.list_global_concept_provenance(limit=limit) == expected_provenance
+        with store.stream_global_concept_provenance(limit=limit) as provenances:
+            assert list(provenances) == expected_provenance
         monkeypatch.setattr(resources, "DEFAULT_CONCEPT_LIMIT", limit)
         assert resources.memory_stats(store)["promotions"] == {
             "promoted_concepts": len(selected), "promotion_events": len(selected),

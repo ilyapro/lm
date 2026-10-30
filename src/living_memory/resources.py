@@ -262,21 +262,21 @@ def coverage_summary(store: MemoryStore, scope: str | None = None) -> dict[str, 
 def promotion_summary(store: MemoryStore, scope: str | None = None) -> dict[str, Any]:
     """Summarize promotions within the newest active global concept limit."""
 
-    provenances = store.list_global_concept_provenance(limit=DEFAULT_CONCEPT_LIMIT)
     promoted_concepts = 0
     promotion_events = 0
     source_scopes: set[str] = set()
-    for _node_id, provenance in provenances:
-        promoted_from = string_list(provenance.get("promoted_from"))
-        if not promoted_from:
-            continue
-        if scope not in (None, "global") and scope not in promoted_from:
-            continue
+    with store.stream_global_concept_provenance(limit=DEFAULT_CONCEPT_LIMIT) as provenances:
+        for _node_id, provenance in provenances:
+            promoted_from = string_list(provenance.get("promoted_from"))
+            if not promoted_from:
+                continue
+            if scope not in (None, "global") and scope not in promoted_from:
+                continue
 
-        promoted_concepts += 1
-        source_scopes.update(promoted_from)
-        events = provenance.get("promotion_events")
-        promotion_events += len(events) if isinstance(events, list) else 1
+            promoted_concepts += 1
+            source_scopes.update(promoted_from)
+            events = provenance.get("promotion_events")
+            promotion_events += len(events) if isinstance(events, list) else 1
 
     return {
         "promoted_concepts": promoted_concepts,

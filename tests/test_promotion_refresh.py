@@ -104,14 +104,14 @@ def test_refresh_cap_precedes_owner_filter(store, monkeypatch, limit, expected):
         promotion(store, node_id, context={"timestamp": "2024-01-01T00:00:00Z"})
     store.create_node(level="concept", content="Newest unrelated concept.",
                       context={"timestamp": "2025-01-01T00:00:00Z"})
-    project = store.list_global_concept_provenance
+    project = store.stream_global_concept_provenance
 
     def bounded(*, limit: int):
         assert limit == 100_000
         return project(limit=cap)
 
     cap = limit
-    monkeypatch.setattr(store, "list_global_concept_provenance", bounded)
+    monkeypatch.setattr(store, "stream_global_concept_provenance", bounded)
     result = c._refresh_promoted_global_concepts(store)
     assert [node.id for node in result] == expected
     assert all(node.decayed for node in result)

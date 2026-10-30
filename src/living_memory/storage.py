@@ -1829,28 +1829,33 @@ class MemoryStore:
             access_count=int(row["access_count"]), timestamp=str(row["timestamp"]),
         ) for row in rows]
 
-    def list_global_concept_provenance(self, *, limit: int) -> list[tuple[str, dict[str, Any]]]:
-        """Read identity/provenance for the newest active global concept prefix.
+    @contextmanager
+    def stream_global_concept_provenance(
+        self, *, limit: int,
+    ) -> Iterator[Iterator[tuple[str, dict[str, Any]]]]:
+        """Traverse identity/provenance for the active global concept prefix.
 
-        Apply the limit before consumer-specific admission. Observation counts
-        promotion metadata; refresh admits recorded materializer owners and
-        rereads their full current state in its writer transaction.
+        The limit precedes consumer admission. Consume inside the context and
+        exhaust the selected prefix to validate even unrelated metadata before
+        any writes. Context exit releases the row and cursor on every path.
         """
-        rows = self._conn.execute(
+        with closing(self._conn.execute(
             """
             SELECT id, provenance FROM nodes
             WHERE level = 'concept' AND scope = 'global' AND decayed = 0
             ORDER BY timestamp DESC, id DESC LIMIT ?
             """,
             (int(limit),),
-        ).fetchall()
-        result = []
-        for row in rows:
-            provenance = _json_loads(row["provenance"], {})
-            if not isinstance(provenance, dict):
-                raise TypeError("node provenance must be a JSON object")
-            result.append((str(row["id"]), provenance))
-        return result
+        )) as cursor:
+            def records() -> Iterator[tuple[str, dict[str, Any]]]:
+                for row in cursor:
+                    provenance = _json_loads(row["provenance"], {})
+                    if not isinstance(provenance, dict):
+                        raise TypeError("node provenance must be a JSON object")
+                    yield str(row["id"]), provenance
+
+            with closing(records()) as rows:
+                yield rows
 
     def schema_triggers(
         self, scope: str | None, *, strategy: str | None = None,

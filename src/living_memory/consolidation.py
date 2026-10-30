@@ -2454,10 +2454,11 @@ def _refresh_promoted_global_concepts(
 ) -> list[Node]:
     with step():
         owners = []
-        for node_id, provenance in store.list_global_concept_provenance(limit=100_000):
-            reference = Node(id=node_id, level="concept", content="", provenance=provenance)
-            if reference.materializer == "cross-scope-promotion":
-                owners.append(node_id)
+        with store.stream_global_concept_provenance(limit=100_000) as provenances:
+            for node_id, provenance in provenances:
+                reference = Node(id=node_id, level="concept", content="", provenance=provenance)
+                if reference.materializer == "cross-scope-promotion":
+                    owners.append(node_id)
     preparation = _DerivationPreparation({}, {})
     result = []
     for selected in owners:
