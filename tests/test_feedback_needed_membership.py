@@ -1,6 +1,7 @@
 """Delivery selection reads membership only while a requested fact is needed."""
 
 from datetime import datetime, timezone
+from functools import partial
 import json
 import sqlite3
 
@@ -91,9 +92,10 @@ def test_no_current_membership_cannot_use_history_or_foreign_delivery(runtime):
     assert not store.connection.execute("SELECT * FROM recall_explicit_credit").fetchall()
 
 
-@pytest.fixture
-def store(tmp_path):
+@pytest.fixture(params=[False, True], ids=["full", "query-inputs"])
+def store(tmp_path, request):
     with MemoryStore(tmp_path / "selection.sqlite3") as store:
+        store.recall_deliveries = partial(store.recall_deliveries, query_inputs_only=request.param)
         yield store
 
 
