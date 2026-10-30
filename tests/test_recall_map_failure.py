@@ -1,6 +1,7 @@
 """Optional map failures preserve the required recall and its feedback."""
 
 import asyncio
+from contextlib import contextmanager
 import json
 import os
 import sqlite3
@@ -174,6 +175,94 @@ def test_required_failures_remain_errors(tmp_path, stage):
         assert not store.connection.in_transaction
     finally:
         store.connection.set_authorizer(None)
+        mcp.auto_consolidation.close()
+        store.close()
+
+
+@pytest.mark.parametrize("failure", [None, "read", "reduce", "close"])
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+def test_native_embedding_read_finishes_before_map_writes(tmp_path, monkeypatch, failure, view):
+    from fastmcp import Client
+
+    monkeypatch.setenv("LM_DELIVERY_SESSION_DEDUP", "0")
+    mcp = create_mcp_server(tmp_path / "embedding.sqlite3")
+    store = mcp.memory_store
+    for index in range(32):
+        store.create_node(level="trace", content=f"quarterly ledger reconciliation {index}")
+    for index in range(12):
+        topic = "orbital telemetry calibration" if index % 2 else "orchard harvest rotation"
+        store.create_node(
+            node_id=f"vector-{index:02}", level="trace", content=f"{MAP_QUERY} {topic} {index}",
+            context={"scope": MAP_SCOPE},
+            embedding=[float(axis == index % 2) for axis in range(384)],
+        )
+    original_stream = store.iter_node_chunk_vectors
+    original_reduce = RecallMapBuilder._node_vector
+    original_build = RecallMapBuilder.build
+    completed, reductions, hits = [], [], []
+    active = False
+
+    @contextmanager
+    def stream(ids):
+        with original_stream(ids) as groups:
+            def rows():
+                for index, group in enumerate(groups):
+                    if active and failure == "read" and index == 1:
+                        raise sqlite3.OperationalError("late embedding read")
+                    yield group
+            yield rows()
+        completed.append(True)
+        if active and failure == "close":
+            raise sqlite3.OperationalError("late embedding close")
+
+    def reduce(builder, node, chunks):
+        reductions.append(node.id)
+        if active and failure == "reduce" and len(reductions) == 2:
+            raise ValueError("late embedding reducer")
+        vector = original_reduce(builder, node, chunks)
+        assert vector == [float(axis == int(node.id[-2:]) % 2) for axis in range(384)]
+        return vector
+
+    def build(builder, *args, **kwargs):
+        result = original_build(builder, *args, **kwargs)
+        assert completed  # No usable build precedes stream exhaustion and exit.
+        hits.append(builder.last_cache_hit)
+        return result
+
+    monkeypatch.setattr(store, "iter_node_chunk_vectors", stream)
+    monkeypatch.setattr(RecallMapBuilder, "_node_vector", reduce)
+    monkeypatch.setattr(RecallMapBuilder, "build", build)
+
+    async def scenario():
+        nonlocal active
+        arguments = {"query": MAP_QUERY, "scope": MAP_SCOPE, "max_results": 3,
+                     "view": view, "ambient_context": {"task": "embedding survey"}}
+        async with Client(mcp) as client:
+            first = (await client.call_tool("memory_recall", arguments)).structured_content
+            assert first["recall_map"]["clusters"] and hits == [False]
+            assert reductions and len(completed) == 1
+            reductions.clear()
+            completed.clear()
+            active = True
+            second = (await client.call_tool("memory_recall", arguments)).structured_content
+            assert second["count"] == first["count"] == 3
+            assert reductions
+            with sqlite3.connect(store.db_path) as reader:
+                recorded, = reader.execute("SELECT recall_map FROM recall_events WHERE id=?",
+                                           (second["recall_event_id"],)).fetchone()
+                if failure:
+                    assert "recall_map" not in second and recorded is None
+                    assert hits == [False]
+                else:
+                    assert hits == [False, True] and len(completed) == 1
+                    stored = json.loads(recorded)
+                    stored.pop("sel")
+                    assert stored == second["recall_map"] == first["recall_map"]
+            assert not store.connection.in_transaction
+
+    try:
+        asyncio.run(scenario())
+    finally:
         mcp.auto_consolidation.close()
         store.close()
 
