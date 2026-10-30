@@ -238,7 +238,8 @@ def test_native_recall_finishes_history_before_response_and_discards_partial_pro
         monkeypatch.setenv(key, value)
     mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
     store = mcp.memory_store
-    node = store.append_trace("Cobalt release requires the verified signature.", {"scope": "project:synthetic"})
+    node = store.create_node(level="concept", content="Cobalt release requires the verified signature.",
+                             context={"scope": "project:synthetic"})
     args = {"query": "cobalt release signature", "scope": node.scope,
             "depth": 0, "max_results": 1, "view": view}
 
