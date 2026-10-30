@@ -895,6 +895,14 @@ def recall_fingerprint(query: str, requested_scope: str | None) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class NodeEndpoint:
+    """Stored identity and decay flag for reference-edge candidates."""
+
+    id: str
+    decayed: bool
+
+
+@dataclass(frozen=True, slots=True)
 class NodeContent:
     """Source identity, content and level for grounding and trace provenance."""
 
@@ -1666,6 +1674,19 @@ class MemoryStore:
             ).fetchall()
             scopes.update((str(row["id"]), str(row["scope"])) for row in rows)
         return scopes
+
+    def get_node_endpoints(self, node_ids: Iterable[str]) -> dict[str, NodeEndpoint]:
+        """Read current reference endpoints without materializing node bodies."""
+        endpoints: dict[str, NodeEndpoint] = {}
+        for chunk in _node_read_batches(node_ids):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                f"SELECT id, decayed FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
+            ).fetchall()
+            for row in rows:
+                endpoint = NodeEndpoint(id=str(row["id"]), decayed=bool(row["decayed"]))
+                endpoints[endpoint.id] = endpoint
+        return endpoints
 
     def get_node_contents(self, node_ids: Iterable[str]) -> dict[str, NodeContent]:
         """Read source facts without context or statistics, including decayed nodes."""

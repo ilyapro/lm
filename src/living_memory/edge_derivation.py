@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from living_memory.models import Connection, ConnectionType, Node
 from living_memory.relations import CONTENT_REFERENCE_WEIGHT, shared_files_weight
-from living_memory.storage import _node_from_row
+from living_memory.storage import NodeEndpoint, _node_from_row
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from living_memory.storage import MemoryStore
@@ -89,7 +89,7 @@ def node_files(node: Node) -> list[str]:
 
 
 def rule_r6_content_reference(
-    node: Node, candidates: Mapping[str, Node]
+    node: Node, candidates: Mapping[str, Node | NodeEndpoint]
 ) -> list[DerivedEdge]:
     """R6: content ULID reference ⇒ directed ``related``.
 
@@ -291,7 +291,7 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
 
     ulids = [ulid for ulid in dict.fromkeys(ULID_RE.findall(node.content or "")) if ulid != node.id]
     if ulids:
-        candidates = store.get_nodes(ulids)
+        candidates = store.get_node_endpoints(ulids)
         edges.extend(rule_r6_content_reference(node, candidates))
 
     prefix = commit_prefix(node)
