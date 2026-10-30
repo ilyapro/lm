@@ -1363,27 +1363,6 @@ class MemoryStore:
         self._chunk_table_cache = None
         self._anchor_tables_cache = None
 
-    def get_kv(self, key: str) -> str | None:
-        row = self._conn.execute(
-            "SELECT value FROM kv WHERE key = ?",
-            (str(key),),
-        ).fetchone()
-        return str(row["value"]) if row else None
-
-    def set_kv(self, key: str, value: str) -> None:
-        now = _utc_now()
-        with self.transaction():
-            self._conn.execute(
-                """
-                INSERT INTO kv (key, value, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value,
-                    updated_at = excluded.updated_at
-                """,
-                (str(key), str(value), now),
-            )
-
     def get_last_decay_sweep_at(self) -> str | None:
         return self.get_kv("last_decay_sweep_at")
 
