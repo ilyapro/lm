@@ -9,7 +9,7 @@ candidate rows and return :class:`DerivedEdge` specs, so the write path and
 the corpus backfill CLI share one implementation with identical caps and
 exclusions. :func:`derive_edges_for_new_trace` performs the bounded candidate
 lookups (primary-key fetches for content ULIDs, an indexed commit-prefix
-lookup and per-file citation lookups over the files-bearing subset) and persists
+lookup and grouped citation lookups over the files-bearing subset) and persists
 results through the shared storage writer: weight max-merge and metadata merge. Edges to decayed nodes are never created; both-rejected-alternative
 pairs are skipped for the undirected rules.
 """
@@ -34,6 +34,7 @@ ULID_RE = re.compile(r"\b01[0-9A-HJKMNP-TV-Z]{24}\b")
 
 MAX_COMMIT_GROUP = 10
 MAX_FILE_FANOUT = 20
+_FILE_CITATION_BATCH_SIZE = 32
 COMMIT_PREFIX_LENGTH = 7
 
 # Edge metadata kinds/bases emitted by the rules. retrieval._traversal keys
@@ -302,7 +303,7 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
 
     All lookups are bounded: primary-key fetches for content ULIDs, an
     expression-indexed commit-prefix probe capped at the group limit,
-    per-file citation probes capped at the fanout limit over the partial
+    grouped citation probes capped per file at the fanout limit over the partial
     files-present index. The recall query path is untouched.
     """
 
@@ -365,12 +366,57 @@ def _file_citation_candidates(
     ``json_each`` yields one row per array element, so a node listing a file
     twice counts twice — identical to the miner's occurrence-based fanout.
     Fetching ``MAX_FILE_FANOUT + 1`` rows is enough for the rule to detect
-    and skip an over-fanout file. String entries only, like the miner's
-    ``isinstance(files, list)`` + ``str(f)`` postings.
+    and skip an over-fanout file. Membership uses SQLite's JSON value equality
+    against the string identities from :func:`node_files`.
+
+    A request-local predicate caps admission before selected JSON is read.
+    Each batch scans the files-present subset once, returning at most 21 rows
+    per file; the SQL LIMIT also stops before any lookahead past a fully
+    saturated batch. No candidate bodies, sorting or match materialization
+    are needed. Single-file requests retain the direct LIMIT probe.
     """
 
     citing: dict[str, list[_RuleCandidate]] = {}
-    for fname in files:
+    names = list(dict.fromkeys(files))
+    if len(names) > 1:
+        for start in range(0, len(names), _FILE_CITATION_BATCH_SIZE):
+            batch = names[start:start + _FILE_CITATION_BATCH_SIZE]
+            remaining = dict.fromkeys(batch, MAX_FILE_FANOUT + 1)
+            citing.update((fname, []) for fname in batch)
+
+            def admit(fname: str) -> bool:
+                left = remaining.get(fname, 0)
+                if left:
+                    remaining[fname] = left - 1
+                return bool(left)
+
+            store.connection.create_function("_lm_file_citation_admit", 1, admit)
+            try:
+                placeholders = ",".join("?" for _ in batch)
+                cursor = store.connection.execute(
+                    f"""
+                    SELECT n.id, n.decayed, entry.value AS file,
+                           n.context -> '$.is_rejected_alternative' AS is_rejected_alternative
+                    FROM nodes AS n, json_each(n.context, '$.files') AS entry
+                    WHERE json_extract(n.context, '$.files') IS NOT NULL
+                      AND n.decayed = 0
+                      AND json_type(n.context, '$.files') = 'array'
+                      AND entry.value IN ({placeholders})
+                      AND _lm_file_citation_admit(entry.value)
+                    LIMIT ?
+                    """,
+                    (*batch, len(batch) * (MAX_FILE_FANOUT + 1)),
+                )
+                try:
+                    for row in cursor:
+                        citing[row["file"]].append(_candidate_from_row(row))
+                finally:
+                    cursor.close()
+            finally:
+                store.connection.create_function("_lm_file_citation_admit", 1, None)
+        return citing
+
+    for fname in names:
         rows = store.connection.execute(
             """
             SELECT n.id, n.decayed,
