@@ -54,14 +54,14 @@ def test_buried_rule_keeps_its_source(
     _assert_sourced_answer(content)
 
     if control == "record_leads":
-        passages = delivery._passages
+        passages = delivery.passage_spans
         # Retaining only each record's introduction loses its applicable rule.
-        monkeypatch.setattr(delivery, "_passages", lambda body: passages(body)[:1])
+        monkeypatch.setattr(delivery, "passage_spans", lambda body: passages(body)[:1])
     elif control == "wrong_source":
         excerpt = delivery._relevant_excerpt
         monkeypatch.setattr(
             delivery, "_relevant_excerpt",
-            lambda body, budget, query: excerpt(body, budget, query).replace(
+            lambda body, budget, query, passage=None: excerpt(body, budget, query, passage).replace(
                 f"- {SOURCE}: ", f"- 01SYNTH{0:020d}: "
             ),
         )

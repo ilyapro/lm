@@ -23,7 +23,7 @@ def _assert_sourced_answer(content: str) -> None:
     ), "recall must contain the sourced pressure answer"
 
 
-def _word_overlap_excerpt(content: str, budget: int, query: str | None) -> str:
+def _word_overlap_excerpt(content: str, budget: int, query: str | None, semantic_passage=None) -> str:
     """Negative selector: word coverage alone cannot distinguish these records."""
     heading, *records = content.splitlines()
     words = set(re.findall(r"\w+", (query or "").casefold()))
@@ -67,7 +67,7 @@ def test_answer_survives_topical_decoys(
         excerpt = delivery._relevant_excerpt
         monkeypatch.setattr(
             delivery, "_relevant_excerpt",
-            lambda body, budget, query: excerpt(body, budget, query).replace(
+            lambda body, budget, query, passage=None: excerpt(body, budget, query, passage).replace(
                 f"- {SOURCE}: ", f"- 01SYNTH{0:020d}: "
             ),
         )
