@@ -163,7 +163,9 @@ def max_expired_per_sweep() -> int:
     return max(0, value)
 
 
-def concept_coverage(store: MemoryStore) -> dict[str, datetime | None]:
+def concept_coverage(
+    store: MemoryStore, *, include_dates: bool = True,
+) -> dict[str, datetime | None]:
     """Map sources of live concepts and schemas to their coverage start.
 
     Coverage is recorded as the concept's ``provenance.source_traces``, which
@@ -177,6 +179,10 @@ def concept_coverage(store: MemoryStore) -> dict[str, datetime | None]:
     evidence; retiring unused covered sources is an explicit operator choice,
     bounded by :data:`MAX_PER_SWEEP_ENV` just like TTL retirement.
 
+    With ``include_dates=False``, read only source membership and return
+    ``None`` for every value. The guard needs no provenance or coverage dates.
+    Both projections include live owners across all scopes.
+
     Each owner's ``provenance.source_coverage`` maps current source IDs to
     their continuous coverage start. Maintenance preserves retained entries;
     new or replacement sources start at their inclusion. Missing or malformed
@@ -188,22 +194,27 @@ def concept_coverage(store: MemoryStore) -> dict[str, datetime | None]:
     """
 
     placeholders = ", ".join("?" for _ in _COVERING_LEVELS)
+    columns = "source_traces, provenance" if include_dates else "source_traces"
     rows = store.connection.execute(
         f"""
-        SELECT source_traces, provenance
+        SELECT {columns}
         FROM nodes
         WHERE decayed = 0 AND level IN ({placeholders})
         """,
         list(_COVERING_LEVELS),
-    ).fetchall()
+    )
 
     coverage: dict[str, datetime | None] = {}
     for row in rows:
+        source_ids = _json_list(row["source_traces"])
+        if not include_dates:
+            coverage.update(dict.fromkeys(source_ids))
+            continue
         try:
             provenance = json.loads(row["provenance"])
         except (TypeError, ValueError):
             provenance = None
-        for trace_id in _json_list(row["source_traces"]):
+        for trace_id in source_ids:
             covered_at = _coverage_moment(provenance, trace_id)
             if trace_id not in coverage:
                 coverage[trace_id] = covered_at
@@ -254,7 +265,7 @@ def soft_delete_expired(
 
     moment = now or datetime.now(UTC)
     cutoff = moment - timedelta(days=ttl)
-    coverage = concept_coverage(store)
+    coverage = concept_coverage(store, include_dates=coverage_rule)
 
     candidates: list[tuple[datetime, str, str]] = []
     for level in levels:
