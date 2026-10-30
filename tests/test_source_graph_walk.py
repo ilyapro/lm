@@ -17,13 +17,14 @@ PLAN = resolve_scope(scope="project:graph")
 
 
 def _source_fixture(store):
-    for name in ("discovery", "source", "target", "strong", "weak", "join", "later"):
+    for name in ("discovery", "history-a", "history-b", "source", "target", "strong", "weak", "join", "later"):
         node(store, name, content="needle" if name == "source" else name)
     node(store, "foreign", scope="project:other")
     node(store, "dead")
     store.soft_delete_node("dead", "expired")
-    store.create_connection("discovery", "target", "related", metadata={"basis": "co_access"})
+    store.create_connection("discovery", "history-a", "related", metadata={"basis": "co_access"})
     for left, right, weight in (
+        ("history-a", "history-b", 1), ("history-b", "target", 1),
         ("source", "strong", 0.8), ("source", "weak", 0.4),
         ("strong", "join", 0.9), ("weak", "join", 0.9),
         ("join", "target", 0.7), ("join", "source", 0.1),
@@ -107,8 +108,8 @@ def test_full_ordered_recall_matches_materialized_admission(tmp_path, monkeypatc
         if depth == 3:
             target = actual["candidates"]["target"]
             assert target["source_graph_score"] == pytest.approx(0.8 * 0.9 * 0.7 * 0.85**3 * 0.72**3)
-            assert target["graph_score"] == pytest.approx(0.65)
-            assert target["path"] == ("discovery", "target")
+            assert target["graph_score"] == pytest.approx(0.65 * 0.85**2 * 0.72**3)
+            assert target["path"] == ("discovery", "history-a", "history-b", "target")
         if depth == "decision":
             assert actual["candidates"]["target"]["source_graph_score"] == pytest.approx(0.6)
 
@@ -182,9 +183,10 @@ def test_source_only_corrupt_bodies_are_not_required(tmp_path, monkeypatch, body
         expected = collect()
         assert expected["target"]["source_graph_score"] > 0
         assert "strong" not in expected
+        invalid_text = "x'22ff22'" if body == "context" else "x'ff'"
         with store.transaction():
             store.connection.execute(
-                f"UPDATE nodes SET {body} = CAST(x'ff' AS TEXT) WHERE id = 'strong'",
+                f"UPDATE nodes SET {body} = CAST({invalid_text} AS TEXT) WHERE id = 'strong'",
             )
         assert collect() == expected
 
@@ -203,3 +205,67 @@ def test_required_selected_bodies_still_fail(tmp_path, monkeypatch, entry):
                 PLAN, _candidates(store), max_depth=3, causal_mode=False,
                 anchor_seeds={"strong": 1} if entry == "anchor" else {},
             )
+
+
+@pytest.mark.parametrize("change", ["scope", "decay", "delete"])
+def test_source_admission_observes_changes_after_adjacency(tmp_path, change):
+    with MemoryStore(tmp_path / "fresh.sqlite3") as store:
+        for name in ("root", "intermediate", "target"):
+            node(store, name)
+        candidates = {name: _Candidate(node=store.get_node(name)) for name in ("root", "target")}
+
+        def neighbors(ids):
+            if "root" in ids:
+                if change == "scope":
+                    store.update_node("intermediate", context={"scope": "project:other"})
+                elif change == "decay":
+                    store.soft_delete_node("intermediate", "expired")
+                else:
+                    store.delete_node("intermediate")
+            graph = {"root": [("intermediate", 1)], "intermediate": [("target", 1)], "target": []}
+            return {name: graph[name] for name in ids}
+
+        MemoryRecallService(store, embedder=Encoder())._walk_graph(
+            PLAN, candidates, [("root", 1)], max_depth=2, neighbors_for_nodes=neighbors,
+            anchor_pass=False, source_pass=True,
+        )
+        assert candidates["target"].source_graph_score == 0
+        assert set(candidates) == {"root", "target"}
+
+
+def test_source_admission_misses_are_cached_only_for_one_walk(tmp_path, monkeypatch):
+    with MemoryStore(tmp_path / "miss.sqlite3") as store:
+        for name in ("root", "branch", "target"):
+            node(store, name)
+        graph = {
+            "root": [("missing", 1), ("branch", 0.8)],
+            "branch": [("missing", 1)], "missing": [("target", 1)], "target": [],
+        }
+        original = store.get_recall_node_ids
+        reads = []
+
+        def identities(ids, plan):
+            ids = tuple(ids)
+            reads.extend(ids)
+            return original(ids, plan)
+
+        def neighbors(ids):
+            if "branch" in ids and store.get_node("missing") is None:
+                node(store, "missing")
+            return {name: graph[name] for name in ids}
+
+        monkeypatch.setattr(store, "get_recall_node_ids", identities)
+        service = MemoryRecallService(store, embedder=Encoder())
+
+        def walk():
+            candidates = {name: _Candidate(node=store.get_node(name)) for name in ("root", "target")}
+            service._walk_graph(
+                PLAN, candidates, [("root", 1)], max_depth=3, neighbors_for_nodes=neighbors,
+                anchor_pass=False, source_pass=True,
+            )
+            return candidates["target"].source_graph_score
+
+        assert walk() == 0
+        assert reads.count("missing") == 1
+        assert walk() == pytest.approx(0.72)
+        assert reads.count("missing") == 2
