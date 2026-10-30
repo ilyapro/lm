@@ -34,6 +34,16 @@ Search and model preparation precede the short consumption transaction. Direct
 Python callers retain independent `log_access` and `log_event` controls;
 disabling both opens no consumption transaction.
 
+Explicit `used` / `irrelevant` feedback goes on the next naturally needed
+`memory_recall`, `memory_remember` or `memory_teach` call. A necessary
+`memory_lookup` can come first; it has no mark fields and leaves feedback
+pending. Do not add a recall or fabricate a write solely for marks. Mark actual
+use and query-relative irrelevance; relevant unused results need neither mark.
+The optional arm requests marks and the mandatory arm requires them, using the
+shared protocol producer in `server.py`. Caller/session attribution and the
+once-only credit shared by lookup, explicit use and grounded feedback retain
+their ordinary boundaries.
+
 ## Layout
 
 - `src/living_memory/` - server, store, retrieval, consolidation, resources,
