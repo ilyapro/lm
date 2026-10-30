@@ -1448,20 +1448,25 @@ class MemoryStore:
             provenance=provenance_data, source_traces=source_traces,
             corrections=corrections, scope=scope,
         )
-        duplicate_ids = [
-            str(row["id"])
-            for row in self._conn.execute(
-                """
-                SELECT * FROM nodes
-                WHERE level = ?
-                  AND scope = ?
-                  AND content_fingerprint = ?
-                  AND decayed = 0
-                """,
-                (level, scope, fingerprint),
-            ).fetchall()
-            if _same_content_identity(candidate, _node_from_row(row))
-        ]
+        duplicate_ids = []
+        identity_ready = False
+        identity = None
+        for row in self._conn.execute(
+            """
+            SELECT * FROM nodes
+            WHERE level = ?
+              AND scope = ?
+              AND content_fingerprint = ?
+              AND decayed = 0
+            """,
+            (level, scope, fingerprint),
+        ).fetchall():
+            peer = _node_from_row(row)
+            if not identity_ready:
+                identity = content_identity(candidate)
+                identity_ready = True
+            if identity is not None and identity == content_identity(peer):
+                duplicate_ids.append(str(row["id"]))
 
         content_vector = None if embedding is None else list(embedding)
         vector = (
@@ -6955,11 +6960,6 @@ def _row_value(row: sqlite3.Row, column: str, default: Any = None) -> Any:
         return row[column]
     except IndexError:
         return default
-
-
-def _same_content_identity(left: Node, right: Node) -> bool:
-    identity = content_identity(left)
-    return identity is not None and identity == content_identity(right)
 
 
 def duplicate_replacements(connection: sqlite3.Connection, node_id: str) -> list[Node]:
