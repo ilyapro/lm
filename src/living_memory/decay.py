@@ -310,9 +310,13 @@ def soft_delete_expired(
     # retains only O(cap) candidates; the key keeps exact ties stable without
     # comparing reasons, including repeated visits through duplicated levels.
     if cap:
-        candidates = nsmallest(cap, eligible_candidates(), key=lambda candidate: (candidate[0], candidate[1]))
+        candidates = nsmallest(
+            cap, eligible_candidates(), key=lambda candidate: (candidate[0], candidate[1])
+        )
     else:
-        candidates = sorted(eligible_candidates(), key=lambda candidate: (candidate[0], candidate[1]))
+        candidates = sorted(
+            eligible_candidates(), key=lambda candidate: (candidate[0], candidate[1])
+        )
 
     return [store.soft_delete_node(node_id, reason) for _, node_id, reason in candidates]
 
