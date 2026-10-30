@@ -118,6 +118,7 @@ def test_actual_remember_matches_full_preflight_without_materializing_bodies(tmp
     monkeypatch.setenv("LM_DECAY_SWEEP_INTERVAL_SEC", "0")
     monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
     monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "grounded")
+    monkeypatch.setattr(server, "_transport_session_id", lambda: "pending-inputs-transport")
     monkeypatch.setattr(storage, "_utc_now", lambda: "2026-01-01T00:00:00Z")
     monkeypatch.setattr(feedback, "_anchor_embedder", lambda store: lambda texts: [[1.0, 0.0] for _ in texts])
     original_queries, original_decode = feedback._feedback_queries, storage._json_loads
@@ -199,6 +200,53 @@ def test_actual_remember_matches_full_preflight_without_materializing_bodies(tmp
     assert query_outputs[0] == query_outputs[1]
     assert full_outcomes[0] == full_outcomes[1]
     assert snapshots[0] == snapshots[1]
+
+
+@pytest.mark.parametrize("change", ["inputs", "identity", "closed", "malformed"])
+def test_pending_inputs_are_reread_after_unlocked_encoding(runtime, change):
+    r = runtime
+    with r.guard:
+        other = r.store.create_node(level="concept", content=CONTENT + " Verified.",
+                                    context=CONTEXT, embedding=[1.0, 0.0, 0.0])
+        event = r.store.record_recall_event(query="first query", scope=SCOPE, ambient_context=CONTEXT,
+                                            results=[{"node_id": r.node.id}])
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            r.feedback_hold = True
+            pending = asyncio.create_task(call(client, "memory_remember", content=CONTENT, context=CONTEXT))
+            try:
+                assert await asyncio.to_thread(r.entered.wait, 4)
+                with MemoryStore(r.store.db_path) as writer, writer.transaction():
+                    if change == "inputs":
+                        writer.connection.execute("UPDATE recall_events SET query = ?, results = ? WHERE id = ?",
+                                                  ("current query", json.dumps([{"node_id": other.id}]), event.id))
+                    elif change == "identity":
+                        writer.connection.execute("UPDATE recall_events SET task = 'foreign' WHERE id = ?", (event.id,))
+                    elif change == "closed":
+                        writer.connection.execute("UPDATE recall_events SET feedback_applied = 1 WHERE id = ?", (event.id,))
+                    else:
+                        writer.connection.execute("UPDATE recall_events SET results = '{' WHERE id = ?", (event.id,))
+            finally:
+                r.release.set()
+            if change == "malformed":
+                with pytest.raises(ToolError, match="Expecting property name"):
+                    await asyncio.wait_for(pending, 5)
+            else:
+                response = await asyncio.wait_for(pending, 5)
+                assert response["implicit_feedback"]["recall_event_ids"] == ([event.id] if change == "inputs" else [])
+            with r.guard:
+                assert r.store.credited_node_ids(event.id) == ({other.id} if change == "inputs" else set())
+                anchors = r.store.list_query_anchors()
+                assert [anchor.query for anchor in anchors] == (["current query"] if change == "inputs" else [])
+                assert r.store.get_node(r.node.id).usefulness_score == 0
+                assert r.store.connection.execute("SELECT count(*) FROM nodes").fetchone()[0] == (
+                    2 if change == "malformed" else 3
+                )
+                assert not r.store.connection.in_transaction
+            assert r.batches == [("first query",)] + ([("current query",)] if change == "inputs" else [])
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("field,value,error", [
