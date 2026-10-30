@@ -141,7 +141,17 @@ def test_current_target_validity_survives_scope_selection(state):
             expected["replacement"] = 1.0
         seeds = service._collect_anchor_seeds(resolve_scope(scope="global"), [1.0, 0.0])
         assert seeds == expected
-        assert {row.node.id for row in recall(service, scope="global")} == set(expected)
+        results = recall(service, scope="global")
+        if state == "corrected":
+            # Supersedes edges also let the walk reach live historical nodes.
+            # They remain flagged and rank below the correction.
+            stale = {f"strong-{i:03d}" for i in range(50)}
+            assert {row.node.id for row in results} == set(expected) | stale
+            assert {row.node.id for row in results if row.superseded} == stale
+            ids = [row.node.id for row in results]
+            assert all(ids.index("replacement") < ids.index(key) for key in stale)
+        else:
+            assert {row.node.id for row in results} == set(expected)
 
 
 @pytest.mark.parametrize("change", ["scope", "decay", "delete"])
