@@ -17,6 +17,7 @@ from array import array
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from heapq import nsmallest
 from typing import Any, NamedTuple, Protocol
 import math
 
@@ -296,8 +297,8 @@ def match_anchors(
     covering membership and vector changes. Reinforcement of a live anchor
     preserves this revision. Stores without it use the uncached scan.
 
-    Ranked by descending similarity, ties broken by anchor id so the order is
-    stable. ``targets`` holds live targets only, heaviest first; an anchor whose
+    Selected and ranked by descending similarity, then anchor id, including
+    ties at the limit. ``targets`` holds live targets only, heaviest first; an anchor whose
     every target has decayed still matches, with an empty target list, so a
     caller can tell "no anchor" from "anchor with nothing live to offer".
 
@@ -347,15 +348,10 @@ def _rank_anchors(
 ) -> list[tuple[str, float]]:
     """Top ``limit`` live anchors at or above ``min_similarity``, best first.
 
-    Thresholding and truncation happen *inside* the vectorized step on purpose.
-    Materializing one Python float and one tuple per anchor and then sorting
-    the lot costs about four times the scan it decorates (measured at 4,000
-    anchors x 384 dims: 19.8 ms that way against 4.7 ms this way), and the
-    result is thrown away a line later — a caller wants five anchors, not four
-    thousand scores. Only the survivors are converted.
-
-    Ties break by anchor id so the order is stable across runs; that comparison
-    only ever runs over the handful of survivors.
+    NumPy computes scores, threshold admission and the cutoff without Python
+    score tuples. If a tie crosses the cutoff, the smallest anchor IDs fill
+    its remaining slots. Only the selected scores become Python candidates;
+    their final ordering uses the same similarity-descending, ID comparator.
     """
 
     if _np is not None:
@@ -395,15 +391,24 @@ def _rank_anchors(
         surviving = _np.flatnonzero(scores >= min_similarity)
         if surviving.size == 0:
             return []
+        selected_ids = (
+            range(len(corpus.ids))[indices] if isinstance(indices, slice) else indices
+        )
         if surviving.size > limit:
             kept = surviving[
                 _np.argpartition(-scores[surviving], limit - 1)[:limit]
             ]
+            cutoff = scores[kept].min()
+            stronger = kept[scores[kept] > cutoff]
+            remaining = limit - stronger.size
+            tied = _np.flatnonzero(scores == cutoff)
+            if tied.size > remaining:
+                boundary = nsmallest(
+                    remaining, tied, key=lambda index: corpus.ids[selected_ids[index]],
+                )
+                kept = _np.concatenate((stronger, boundary))
         else:
             kept = surviving
-        selected_ids = (
-            range(len(corpus.ids))[indices] if isinstance(indices, slice) else indices
-        )
         candidates = [
             (corpus.ids[selected_ids[index]], float(scores[index])) for index in kept
         ]
