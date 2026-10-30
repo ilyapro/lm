@@ -314,7 +314,7 @@ def test_partition_gather_preserves_order_width_and_normalization(tmp_path, monk
                        if block.dimension == len(query)]
             assert len(gathered) == len(scanned) == 1
             query_array = retrieval._as_query_array(query)
-            assert retrieval._pooled_chunk_similarities(gathered[0], query, query_array) == (
+            assert list(retrieval._pooled_chunk_similarities(gathered[0], query, query_array)) == list(
                 retrieval._pooled_chunk_similarities(scanned[0], query, query_array)
             )
         assert recall(warm) == recall(service(store))
@@ -382,6 +382,6 @@ def test_nonfinite_norm_preserves_the_complete_blocks_normalization_rule(tmp_pat
         assert not gathered.needs_normalization and not scanned.needs_normalization
         query = [1.0, 0.0, 0.0]
         q_arr = retrieval._as_query_array(query)
-        actual = dict((node_id, score) for score, node_id in retrieval._pooled_chunk_similarities(gathered, query, q_arr))
-        expected = dict((node_id, score) for score, node_id in retrieval._pooled_chunk_similarities(scanned, query, q_arr))
+        actual = dict((node_id, score) for score, node_id, _chunk_id in retrieval._pooled_chunk_similarities(gathered, query, q_arr))
+        expected = dict((node_id, score) for score, node_id, _chunk_id in retrieval._pooled_chunk_similarities(scanned, query, q_arr))
         assert actual["a"] == expected["a"] == 3.0
