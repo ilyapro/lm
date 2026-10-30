@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from living_memory import feedback, query_anchors, server, storage
+from living_memory import consolidation, feedback, irrelevance, query_anchors, server, storage
 from living_memory.storage import MemoryStore
 from test_lookup import FakeMCP
 
@@ -83,7 +83,7 @@ def policies(monkeypatch):
     ('[{"node_id":42}]', ["42"], set()),
     ('null', ["a"], set()), ('{}', ["a"], set()), ('"a"', ["a"], set()),
 ])
-def test_raw_id_membership_and_hit_insertion_match_full(store_unused=None, *, monkeypatch, raw, requested, expected):
+def test_raw_id_membership_and_hit_insertion_match_full(monkeypatch, raw, requested, expected):
     with MemoryStore(":memory:") as store:
         event(store, raw=raw)
         options = dict(earliest=feedback._lookup_instant("2026-10-29"), latest=feedback._lookup_instant(NOW))
@@ -206,12 +206,14 @@ def test_consumers_match_full_preflight_outputs_feedback_and_tables(tmp_path, mo
     monkeypatch.setattr(server, "_transport_session_id", lambda: "transport")
     monkeypatch.setattr(storage, "_utc_now", lambda: NOW)
     monkeypatch.setattr(query_anchors, "_timestamp", lambda value: NOW)
+    monkeypatch.setattr(irrelevance, "_now", lambda: NOW)
     monkeypatch.setattr(feedback, "_anchor_embedder", lambda store: lambda texts: [[1.0, 0.0] for _ in texts])
     original_queries, original_decode = feedback._feedback_queries, storage._json_loads
     outcomes = []
     for projected in (False, True):
         ids = itertools.count()
         monkeypatch.setattr(storage, "new_ulid", lambda: f"test-{next(ids):04d}")
+        monkeypatch.setattr(consolidation, "new_ulid", storage.new_ulid)
         mcp = server.create_mcp_server(tmp_path / f"{projected}.sqlite3", mcp_factory=FakeMCP)
         store = mcp.memory_store
         try:
