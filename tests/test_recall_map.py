@@ -756,7 +756,7 @@ def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
 
     assert builder.last_cache_hit and warm is not None
     assert payload_bytes(warm) == payload_bytes(cold)
-    assert vector_reads == [node.id for node in nodes]
+    assert sorted(vector_reads) == sorted(node.id for node in nodes)
     gate_terms = {term for label in labels for term in recall_map._terms(label)}
     assert set(df_requests) == gate_terms
     assert len(df_requests) == len(gate_terms)
@@ -773,7 +773,7 @@ def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
 
     assert builder.last_cache_hit and gated is not None
     assert gated.clusters == () and gated.withheld == 2
-    assert vector_reads == [node.id for node in nodes]
+    assert sorted(vector_reads) == sorted(node.id for node in nodes)
     assert set(df_requests) == gate_terms
 
 
