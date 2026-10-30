@@ -38,6 +38,7 @@ from living_memory.models import (
     NodeLevel,
     RecallEvent,
     RecallEventHeader,
+    RecallQueryInputs,
     RetrievalPolicyFloors,
     RetrievalWeights,
     SourcePassage,
@@ -3708,6 +3709,58 @@ class MemoryStore:
     ) -> list[RecallEvent]:
         """Return bounded pending recalls with compatible work or transport identity."""
 
+        return [_recall_event_from_row(row) for row in self._pending_recall_rows(
+            scope=scope, context=context, limit=limit, columns="event.*",
+        )]
+
+    def pending_recall_query_inputs(
+        self,
+        *,
+        scope: str,
+        context: Mapping[str, Any] | None = None,
+        limit: int = 1,
+    ) -> list[RecallQueryInputs]:
+        """Project preparation inputs from the same current pending selection.
+
+        Ordinary results send only node_id JSON to Python. Keep raw JSON types
+        until Python applies RecallEvent.result_ids truthiness and str(), so
+        booleans, large integers and composite IDs retain their meaning.
+        Noncanonical results use the existing dict(item) decoding contract:
+        pair lists, duplicate node_id keys and Python's nonfinite JSON values
+        must not silently acquire SQLite's different semantics. Invalid JSON
+        and invalid result shapes still raise; no storage failure means empty.
+
+        Unneeded event metadata is decoded by the full authoritative reader in
+        apply_pending_recall_feedback, inside the required knowledge transaction.
+        Its failures still roll back the trace/correction and feedback together.
+        """
+        rows = self._pending_recall_rows(
+            scope=scope, context=context, limit=limit,
+            columns="""event.id, event.query, event.scope,
+                CASE WHEN json_valid(event.results) THEN
+                    CASE WHEN json_type(event.results) = 'array' THEN (
+                        SELECT json_group_array(json(CASE
+                            WHEN result.type = 'object' AND (
+                                SELECT count(*) FROM json_each(result.value)
+                                WHERE key = 'node_id'
+                            ) <= 1 THEN json_object('node_id', result.value -> '$.node_id')
+                            ELSE event.results -> ('$[' || result.key || ']')
+                        END)) FROM json_each(event.results) AS result
+                    ) ELSE event.results END
+                ELSE event.results END AS results""",
+        )
+        return [RecallQueryInputs(
+            id=str(row["id"]), query=str(row["query"]), scope=str(row["scope"]),
+            result_ids=_recall_result_node_ids([
+                dict(item) for item in _json_loads(row["results"], [])
+            ]),
+        ) for row in rows]
+
+    def _pending_recall_rows(
+        self, *, scope: str, context: Mapping[str, Any] | None, limit: int,
+        columns: str,
+    ) -> list[sqlite3.Row]:
+        """Select identities once, then project within the same SQL statement."""
         params = {
             **_recall_identity(context),
             "scope": scope,
@@ -3726,19 +3779,18 @@ class MemoryStore:
             )"""
             for index, predicate in matches
         )
-        rows = self._conn.execute(
+        return self._conn.execute(
             f"""
             WITH selected AS (
                 SELECT * FROM ({probes})
                 ORDER BY created_at DESC, event_rowid DESC LIMIT :limit
             )
-            SELECT event.* FROM selected
+            SELECT {columns} FROM selected
             JOIN recall_events AS event ON event.rowid = selected.event_rowid
             ORDER BY selected.created_at DESC, selected.event_rowid DESC
             """,
             params,
         ).fetchall()
-        return [_recall_event_from_row(row) for row in rows]
 
     def mark_recall_event_feedback(self, event_id: str, trace_id: str) -> RecallEvent:
         if not self.get_node_endpoints([trace_id]):

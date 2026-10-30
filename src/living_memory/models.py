@@ -231,6 +231,13 @@ class RecallEventHeader:
 
 
 @dataclass(slots=True)
+class RecallQueryInputs(RecallEventHeader):
+    """Current pending query and ordered result identities for preparation."""
+
+    result_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class RecallEvent(RecallEventHeader):
     """Durable provenance record for one recall interaction."""
 

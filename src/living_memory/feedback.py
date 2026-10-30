@@ -1024,7 +1024,7 @@ def _feedback_queries(
         context = dict(trace_context or {})
         scope = normalize_scope(str(context.get("scope") or store.config.default_scope))
         events = [
-            event for event in store.pending_recall_events(
+            event for event in store.pending_recall_query_inputs(
                 scope=scope, context=context, limit=_DEFAULT_PENDING_RECALL_LIMIT,
             )
             if not store.has_query_anchor(event.scope, recall_fingerprint(event.query, event.scope))
