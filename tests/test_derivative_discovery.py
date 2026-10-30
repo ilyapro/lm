@@ -421,6 +421,6 @@ def test_native_teach_required_group_read_rolls_back_and_retry_succeeds(tmp_path
             assert CORRECTION in current.content and members[0].content not in current.content
             assert {edge.target_id for edge in store.list_connections(
                 source_id=owner.id, relation_type="related",
-            ) if edge.metadata.get("kind") == "derived_from"} == inputs
+            ) if edge.metadata.get("basis") == "cluster"} == inputs
     finally:
         store.close()
