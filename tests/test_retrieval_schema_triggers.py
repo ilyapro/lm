@@ -28,9 +28,9 @@ def ordinary_recall(monkeypatch):
     monkeypatch.delenv("LM_RECALL_SCHEMA_DEDUP", raising=False)
 
 
-def node(store, name, *, level="schema", scope=SCOPE, trigger=QUERY, content=QUERY):
+def node(store, name, *, level="schema", scope=SCOPE, trigger=QUERY, content=None):
     return store.create_node(
-        node_id=name, level=level, content=content,
+        node_id=name, level=level, content=content if content is not None else f"{QUERY} {name}",
         context={"scope": scope, "trigger": trigger},
     )
 
@@ -104,6 +104,7 @@ def test_trigger_only_admission_keeps_reader_order_across_sql_batches(tmp_path):
             for index in range(1005):
                 node(store, f"n{index:04}")
         discovered = dict(store.schema_triggers(SCOPE))
+        assert len(discovered) == 1005
         ordered = store.get_nodes(discovered)
         existing = dict(list(ordered.items())[::2])
         candidates = {name: _Candidate(node=body) for name, body in existing.items()}
@@ -217,11 +218,12 @@ def test_required_trigger_read_errors_abort_before_consumption(tmp_path, monkeyp
 
         def discover_then_deny(scope):
             found = discover(scope)
-            store.connection.set_authorizer(
-                lambda action, table, field, *_: sqlite3.SQLITE_DENY
-                if action == sqlite3.SQLITE_READ and table == "nodes" and field == column
-                else sqlite3.SQLITE_OK
-            )
+            if scope == "global":
+                store.connection.set_authorizer(
+                    lambda action, table, field, *_: sqlite3.SQLITE_DENY
+                    if action == sqlite3.SQLITE_READ and table == "nodes" and field == column
+                    else sqlite3.SQLITE_OK
+                )
             return found
 
         monkeypatch.setattr(store, "schema_triggers", discover_then_deny)
