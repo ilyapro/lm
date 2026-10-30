@@ -145,27 +145,34 @@ def test_actual_remember_matches_full_preflight_without_materializing_bodies(tmp
                 monkeypatch.setattr(store, "pending_recall_query_inputs", store.pending_recall_events)
             observed_queries = []
             original_rows = store._pending_recall_rows
+            original_inputs = store.pending_recall_query_inputs
 
             def preflight(*args, **kwargs):
-                def decode(value, default):
-                    if projected:
+                def inputs(**kwargs):
+                    def decode(value, default):
                         assert BODY not in str(value) and AMBIENT not in str(value)
-                    return original_decode(value, default)
+                        return original_decode(value, default)
 
-                def rows(**kwargs):
-                    result = original_rows(**kwargs)
-                    for row in result:
-                        assert set(row.keys()) == {"id", "query", "scope", "results"}
-                        assert BODY not in str(tuple(row)) and AMBIENT not in str(tuple(row))
-                    return result
+                    def rows(**kwargs):
+                        result = original_rows(**kwargs)
+                        for row in result:
+                            assert set(row.keys()) == {"id", "query", "scope", "results"}
+                            assert BODY not in str(tuple(row)) and AMBIENT not in str(tuple(row))
+                        return result
+
+                    with monkeypatch.context() as check:
+                        check.setattr(storage, "_json_loads", decode)
+                        check.setattr(store, "_pending_recall_rows", rows)
+                        return original_inputs(**kwargs)
 
                 with monkeypatch.context() as check:
-                    check.setattr(storage, "_json_loads", decode)
                     if projected:
                         def no_full_event(row):
                             pytest.fail("preflight materialized a full RecallEvent")
                         check.setattr(storage, "_recall_event_from_row", no_full_event)
-                        check.setattr(store, "_pending_recall_rows", rows)
+                        # Optional explicit marks still read their matched result
+                        # for scores. This assertion covers pending preparation.
+                        check.setattr(store, "pending_recall_query_inputs", inputs)
                     result = original_queries(*args, **kwargs)
                     observed_queries.append(result)
                     return result
@@ -200,6 +207,33 @@ def test_actual_remember_matches_full_preflight_without_materializing_bodies(tmp
     assert query_outputs[0] == query_outputs[1]
     assert full_outcomes[0] == full_outcomes[1]
     assert snapshots[0] == snapshots[1]
+
+
+@pytest.mark.parametrize("raw,error", [
+    ("{", "Expecting property name"), ("null", "not iterable"), ('["abc"]', "length 1"),
+])
+def test_pending_result_errors_abort_native_remember_before_knowledge_write(runtime, monkeypatch, raw, error):
+    r = runtime
+    with r.guard:
+        r.store.record_recall_event(query="query", scope=SCOPE, ambient_context=CONTEXT)
+        with r.store.transaction():
+            r.store.connection.execute("UPDATE recall_events SET results = ?", (raw,))
+        before = list(r.store.connection.iterdump())
+
+    def no_write(*args, **kwargs):
+        pytest.fail("knowledge write preceded the required pending result error")
+
+    monkeypatch.setattr(r.store, "append_trace", no_write)
+
+    async def scenario():
+        async with Client(r.mcp) as client:
+            with pytest.raises(ToolError, match=error):
+                await call(client, "memory_remember", content=CONTENT, context=CONTEXT)
+
+    asyncio.run(scenario())
+    with r.guard:
+        assert list(r.store.connection.iterdump()) == before
+        assert not r.store.connection.in_transaction
 
 
 @pytest.mark.parametrize("change", ["inputs", "identity", "closed", "malformed"])
