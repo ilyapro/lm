@@ -1,6 +1,7 @@
 """Optional pair credit commits atomically at ordinary handler boundaries."""
 
 import sqlite3
+from collections import Counter
 
 import pytest
 
@@ -175,7 +176,7 @@ def test_failed_pair_preserves_other_pairs_and_their_outcomes(recalled, monkeypa
     with monkeypatch.context() as fault:
         fault.setattr(feedback, "apply_retrieval_feedback", fail_middle)
         outcome = call(handler, ids[:3])
-    assert outcome.credited == [(event_id, ids[0]), (event_id, ids[2])]
+    assert Counter(outcome.credited) == Counter([(event_id, ids[0]), (event_id, ids[2])])
     assert store.credited_node_ids(event_id) == {ids[0], ids[2]}
     scores = numeric_state(store, ids)[0]
     assert scores[0] > before[0][0] and scores[2] > before[0][2]

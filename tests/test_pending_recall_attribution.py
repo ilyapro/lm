@@ -63,6 +63,7 @@ def test_only_current_delivery_contributes_provenance_credit_and_anchors(mcp, to
                 "UPDATE recall_events SET created_at = '2000-01-01T00:00:00Z' WHERE id = ?",
                 (strangers[0].id,),
             )
+            store.connection.commit()
             before = [store.get_recall_event(event.id) for event in strangers]
             arguments = {"context": {"scope": SCOPE, "agent": "shared"}}
             if tool == "memory_remember":
