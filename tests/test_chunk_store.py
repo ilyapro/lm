@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import sqlite3
 import struct
-import threading
 import zlib
 from pathlib import Path
 from typing import Sequence
@@ -328,17 +327,16 @@ def test_a_single_window_node_reuses_the_vector_it_was_given(store: MemoryStore)
 
 
 @pytest.mark.parametrize("iterator_vectors", [False, True])
-def test_prepared_chunks_own_reused_encoder_vectors(store, monkeypatch, iterator_vectors):
-    lock = threading.Lock()
-    monkeypatch.setattr(store, "_chunk_embedder_lock", lock)
+def test_prepared_chunks_own_reused_encoder_vectors(store, iterator_vectors):
+    lock = store._chunk_embedder_lock
     buffer = [0.0, 0.5]
 
     def values():
-        assert lock.locked()
+        assert lock._is_owned()
         yield from buffer
 
     def embed(texts):
-        assert lock.locked()
+        assert lock._is_owned()
         for index, _text in enumerate(texts):
             buffer[:] = [float(index), 0.5]
             yield values() if iterator_vectors else buffer
