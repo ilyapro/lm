@@ -149,9 +149,23 @@ def hub_counts(
     present = _present(conn)
     if _MARKS not in present:
         return []
+
+    def shared_rows(cursor: sqlite3.Cursor) -> list[tuple[Any, ...]]:
+        # Share raw text only within this read; finish the statement before
+        # observing anchors so a WAL reader does not retain its older snapshot.
+        strings: dict[str, str] = {}
+        try:
+            return [
+                tuple(strings.setdefault(value, value) if type(value) is str else value
+                      for value in row)
+                for row in cursor
+            ]
+        finally:
+            cursor.close()
+
     clause, params = _before_clause("m.marked_at", before)
     if _EVENTS in present:
-        rows = conn.execute(
+        rows = shared_rows(conn.execute(
             f"""
             SELECT m.node_id, m.recall_event_id, MIN(m.marked_at), COUNT(*),
                    e.query, e.scope
@@ -160,11 +174,11 @@ def hub_counts(
             GROUP BY m.node_id, m.recall_event_id
             """,
             params,
-        ).fetchall()
+        ))
     else:
         rows = [
             (node_id, event_id, marked_at, count, None, None)
-            for node_id, event_id, marked_at, count in conn.execute(
+            for node_id, event_id, marked_at, count in shared_rows(conn.execute(
                 f"""
                 SELECT m.node_id, m.recall_event_id, MIN(m.marked_at), COUNT(*)
                 FROM {_MARKS} m
@@ -172,7 +186,7 @@ def hub_counts(
                 GROUP BY m.node_id, m.recall_event_id
                 """,
                 params,
-            ).fetchall()
+            ))
         ]
     if not rows:
         return []
