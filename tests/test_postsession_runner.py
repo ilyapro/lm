@@ -20,14 +20,18 @@ Layers:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from living_memory.postsession.client import ClientError, LiveMemoryClient, McpMemoryIndex
+from living_memory.postsession.client import (
+    ClientError, LiveMemoryClient, McpMemoryIndex, PreDispatchError, resolve_token,
+)
 from living_memory.postsession.judge import FakeJudge
 from living_memory.postsession.runner import (
     DEFAULT_BOOTSTRAP_ALLOWANCE,
@@ -35,6 +39,7 @@ from living_memory.postsession.runner import (
     EXIT_USAGE,
     REQUIRED_CONTEXT_KEYS,
     ExtractionRunner,
+    GateDecision,
     Ledger,
     LedgerError,
     OpDecision,
@@ -493,6 +498,151 @@ def test_cli_dry_run_is_the_default_and_reports(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 # live end-to-end against a throwaway server
 # --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["ok", "connect", "timeout", "negative", "cleanup"])
+def test_preflight_transport_contract(monkeypatch, mode):
+    import fastmcp
+
+    events = []
+
+    class Transport:
+        def __init__(self, url, **kwargs):
+            assert url == "http://127.0.0.1:9876/mcp/"
+            assert kwargs == {"auth": TOKEN, "timeout": 0.25, "init_timeout": 0.25}
+
+        async def __aenter__(self):
+            if mode == "connect":
+                raise TimeoutError("initialization timed out")
+            return self
+
+        async def ping(self):
+            events.append("ping")
+            if mode == "timeout":
+                raise TimeoutError("ping timed out")
+            return mode != "negative"
+
+        async def call_tool(self, *args):
+            pytest.fail("preflight must not dispatch a tool")
+
+        async def __aexit__(self, *args):
+            if mode == "cleanup":
+                raise OSError("cleanup failed")
+
+    monkeypatch.setattr(fastmcp, "Client", Transport)
+    client = LiveMemoryClient("http://127.0.0.1:9876/mcp/", token=TOKEN, timeout=0.25)
+    if mode in {"ok", "cleanup"}:
+        assert client.ping() is True
+    else:
+        with pytest.raises(ClientError) as caught:
+            client.ping()
+        assert isinstance(caught.value, PreDispatchError) == (mode == "connect")
+    assert events == ([] if mode == "connect" else ["ping"])
+    assert client.calls == ["ping"]
+
+
+def test_preflight_token_resolution(tmp_path):
+    env_file = tmp_path / "env"
+    env_file.write_text("LM_AUTH_TOKEN='file-token'\n")
+    assert resolve_token("explicit", environ={"LM_AUTH_TOKEN": "env"}, env_file=env_file) == "explicit"
+    assert resolve_token(environ={"LM_AUTH_TOKEN": "env"}, env_file=env_file) == "env"
+    assert resolve_token(environ={}, env_file=env_file) == "file-token"
+    assert resolve_token(environ={}, env_file=None) is None
+
+
+@pytest.mark.parametrize("token", [TOKEN, "invalid-test-token", None])
+def test_preflight_http_auth(live_server, token):
+    client = LiveMemoryClient(live_server["url"], token=token, timeout=2)
+    if token == TOKEN:
+        assert client.ping() is True
+    else:
+        with pytest.raises(PreDispatchError):
+            client.ping()
+    assert client.calls == ["ping"]
+
+
+def test_preflight_unavailable_host():
+    # Reserve a port without listening so no other process can accept the call.
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        client = LiveMemoryClient(
+            f"http://127.0.0.1:{sock.getsockname()[1]}/mcp/", token=TOKEN, timeout=0.25,
+        )
+        with pytest.raises(PreDispatchError):
+            client.ping()
+
+
+def test_preflight_protocol_timeout():
+    from fastmcp import FastMCP
+    from mcp import types
+
+    server = FastMCP("slow-ping")
+    received = []
+
+    async def slow_ping(request):
+        received.append(request)
+        await asyncio.sleep(1)
+        return types.ServerResult(types.EmptyResult())
+
+    server._mcp_server.request_handlers[types.PingRequest] = slow_ping
+    client = LiveMemoryClient(server, timeout=0.1)
+    with pytest.raises(ClientError, match="Timed out") as caught:
+        client.ping()
+    assert not isinstance(caught.value, PreDispatchError)
+    assert len(received) == 1
+
+
+def test_preflight_needs_no_status_report_or_sql(tmp_path, monkeypatch):
+    from living_memory import server as server_module
+
+    server = server_module.create_mcp_server(tmp_path / "preflight.sqlite3")
+    store = server.memory_store
+    client = LiveMemoryClient(server)
+    sql = []
+    status_calls = []
+
+    def unavailable_report(*args, **kwargs):
+        status_calls.append("memory_status")
+        raise RuntimeError("report unavailable")
+
+    try:
+        store.connection.set_trace_callback(sql.append)
+        assert client.call("memory_status", {})
+        assert sql, "the real report still reads the database"
+        monkeypatch.setattr(server_module, "status_view", unavailable_report)
+        with pytest.raises(ClientError):
+            client.call("memory_status", {})
+        assert status_calls == ["memory_status"]
+        status_calls.clear()
+        sql.clear()
+        assert client.ping() is True
+        assert status_calls == []
+        assert sql == []
+    finally:
+        store.connection.set_trace_callback(None)
+        server.auto_consolidation.close()
+        store.close()
+
+
+@pytest.mark.parametrize("flag", ["--write", "--lm-dedup"])
+def test_cli_failed_preflight_stops_before_judge_and_write(
+    live_server, tmp_path, monkeypatch, capsys, flag,
+):
+    cli = _load_cli()
+    monkeypatch.setattr(cli, "evaluate_gate", lambda *args, **kwargs: GateDecision("PASS"))
+    monkeypatch.setattr(cli, "select_records", lambda *args: ([make_record()], [], {}))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("failed preflight must stop before judge or runner construction")
+
+    monkeypatch.setattr(cli, "make_judge_factory", forbidden)
+    monkeypatch.setattr(cli, "ExtractionRunner", forbidden)
+    assert cli.main([
+        "--transcript", "unused", "--state-dir", str(tmp_path), flag,
+        "--url", live_server["url"], "--token", "invalid-test-token", "--timeout", "0.5",
+    ]) == EXIT_USAGE
+    assert "cannot reach the Living Memory host" in capsys.readouterr().err
+    assert not (tmp_path / "ledger.jsonl").exists()
 
 
 def test_live_write_scenario_attribution_idempotency_and_ledger_loss(

@@ -28,6 +28,13 @@ hooks or timers. The field gate remains INCONCLUSIVE (see §4), and enabling
 production extraction requires a separate decision. CLI updates need no restart
 of the Living Memory service.
 
+With `--write` or `--lm-dedup`, the CLI checks authenticated MCP liveness using
+protocol ping before creating the judge or proposing operations. It uses the
+same URL, token resolution and initialization/request timeout as tool calls,
+without requesting `memory_status`. A failed preflight exits with code 2.
+Successful ping confirms protocol communication, not database/tool readiness
+or the success of a later mutation; `memory_status` remains the statistics report.
+
 This document specifies **when and how the stage could be invoked after a session
 ends** — the integration point with AE — precisely enough that the hook can be
 installed by a separate goal without touching this stage's core. Nothing in
