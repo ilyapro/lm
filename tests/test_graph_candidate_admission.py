@@ -13,7 +13,7 @@ from living_memory import query_anchors, server, storage
 from living_memory.retrieval import MemoryRecallService
 from living_memory.scope import ScopePlan, resolve_scope
 from living_memory.storage import MemoryStore
-from test_recall_feedback_loop import FakeMCP
+from test_lookup import FakeMCP
 from test_recall_graph_preparation import Encoder, anchor, node, recall
 
 
