@@ -147,6 +147,15 @@ def test_preflight_storage_errors_match_full(monkeypatch, table, column):
             store.connection.set_authorizer(None)
 
 
+@pytest.mark.parametrize("credited_id", ["a", "b"])
+def test_duplicate_id_credit_stays_bound_to_sql_membership(monkeypatch, credited_id):
+    with MemoryStore(":memory:") as store:
+        item = event(store, raw='[{"node_id":"a","node_id":"b"}]')
+        store.claim_recall_credit(item.id, credited_id, basis="lookup", source_id="lookup")
+        result = compare_queries(store, monkeypatch, lookup_ids=["a", "b"])
+        assert bool(result) == (credited_id != "a")
+
+
 @pytest.mark.parametrize("fail_decode", [False, True])
 def test_narrow_rows_exclude_bodies_and_close_cursor_on_decode_failure(monkeypatch, fail_decode):
     with MemoryStore(":memory:") as store:
@@ -205,6 +214,7 @@ def test_consumers_match_full_preflight_outputs_feedback_and_tables(tmp_path, mo
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(server, "_transport_session_id", lambda: "transport")
     monkeypatch.setattr(storage, "_utc_now", lambda: NOW)
+    monkeypatch.setattr(consolidation, "_utc_now", lambda: NOW)
     monkeypatch.setattr(query_anchors, "_timestamp", lambda value: NOW)
     monkeypatch.setattr(irrelevance, "_now", lambda: NOW)
     monkeypatch.setattr(feedback, "_anchor_embedder", lambda store: lambda texts: [[1.0, 0.0] for _ in texts])
