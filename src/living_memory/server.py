@@ -648,7 +648,7 @@ _RECALL_DESCRIPTION = (
     "knowledge. Depth 'causal' "
     "when debugging. "
     + MEMORY_GUIDANCE
-    + " For full content, use content_ref via memory_lookup."
+    + " If content is insufficient, use content_ref via memory_lookup."
     " below_threshold is an unqualified reference."
 )
 
@@ -696,23 +696,32 @@ DEFAULT_EXPLICIT_FEEDBACK_PROMPT_ARM = "optional"
 
 _RECALL_DESCRIPTION_MANDATORY = (
     _RECALL_DESCRIPTION
-    + " You MUST mark each recall's results on your next call: used ids as "
+    + " You MUST mark on the next natural recall/remember/teach: used ids as "
     "used, off-topic ids as irrelevant."
 )
 
+_FEEDBACK_CALL_GUIDANCE = (
+    " Use your next natural memory_recall, memory_remember or memory_teach; "
+    "needed memory_lookup may come first. Do not make calls solely for marks."
+)
 _USED_FIELD_DESCRIPTION = (
     "Optional: ids of results from your earlier recalls this session that "
     "you used."
+    + _FEEDBACK_CALL_GUIDANCE
 )
 _IRRELEVANT_FIELD_DESCRIPTION = (
     "Optional: ids of earlier recall results that did not fit their query."
+    " Unused relevant results are not irrelevant."
+    + _FEEDBACK_CALL_GUIDANCE
 )
 _USED_FIELD_DESCRIPTION_MANDATORY = (
-    "REQUIRED after a recall: ids of the previous recall's results you used."
+    "REQUIRED: ids of earlier recall results you actually used."
+    + _FEEDBACK_CALL_GUIDANCE
 )
 _IRRELEVANT_FIELD_DESCRIPTION_MANDATORY = (
-    "REQUIRED after a recall: ids of the previous recall's results that were "
-    "off-topic for its query."
+    "REQUIRED: ids of earlier recall results off-topic for their query."
+    " Unused relevant results are not irrelevant."
+    + _FEEDBACK_CALL_GUIDANCE
 )
 
 

@@ -446,8 +446,13 @@ The default `view="knowledge"` returns each result directly:
 identity and links survive; oversized correction text may be shortened, with
 original details available through `memory_lookup(..., view="full")`.
 `content_ref` is present on every knowledge result, including complete
-content, so metadata remains addressable. Use `id` in the next call's `used`
-or `irrelevant` feedback. Content excerpts and duplicate previews retain
+content, so metadata remains addressable. Send feedback ids on the next natural
+`memory_recall`, `memory_remember` or `memory_teach` call. A needed
+`memory_lookup` may come first; it accepts no mark fields. Do not make an extra
+recall or a fabricated write solely for feedback. Mark actual use as `used`
+and query-relative off-topic results as `irrelevant`; relevant unused results
+need neither mark. The optional arm requests these marks; the mandatory arm
+requires them. Content excerpts and duplicate previews retain
 `delivery`, `full_content_chars`, and any `duplicate_of` reference.
 
 `view="full"` returns diagnostic ranked entries: `node`, `score`,

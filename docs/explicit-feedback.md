@@ -17,6 +17,14 @@ fields:
 Both default to `None`. When both are omitted, the response has no
 `feedback_marks` key and no mark row is written.
 
+Send marks on the next natural recall, remember or teach call, after any
+lookup needed to finish reading. Do not insert a recall or fabricate a
+remember/teach solely to carry marks. `used` means actual use; a relevant result
+that was not used is not `irrelevant` and needs no mark. If no such call is
+otherwise needed, the protocol does not require an extra call. Lookup leaves
+pending feedback available for the ordinary later call, subject to the existing
+attribution boundaries and window below.
+
 ### Why these three tools and not `memory_lookup`
 
 - `memory_recall`: the next recall is the one call an agent almost always
@@ -251,13 +259,15 @@ refutations. A schema's type grants no authority; complete recipes and
 
 - **optional** (default): feedback field descriptions request ids used and ids
   that did not fit their recall query.
-- **mandatory**: `_RECALL_DESCRIPTION_MANDATORY` adds: "You MUST mark each
-  recall's results on your next call: used ids as used, off-topic ids as
-  irrelevant." Feedback fields on recall, remember and teach say "REQUIRED
-  after a recall: …". Remember and teach descriptions are shared by both arms.
+- **mandatory**: `_RECALL_DESCRIPTION_MANDATORY` requires actual-use and
+  query-relative off-topic marks on the next natural recall/remember/teach.
+  Feedback fields say "REQUIRED". Both arms share the field guidance allowing
+  needed lookup first and forbidding calls solely for marks. Remember and teach
+  descriptions are shared by both arms. The producer in `server.py` supplies
+  these descriptions and field schemas to every registered tool and consumer.
 
 The client budget is 1024 characters per tool description. The shared recall
-text is 872 characters; the mandatory arm is 974. Tests check both lengths and
+text and mandatory arm stay below it. Tests check both lengths and
 the causal debugging hint, action triggers, knowledge boundary and lookup path.
 The deployed-protocol checker selects the expected arm from the local service's
 env file, or from `--prompt-arm` for an explicit target. Serving the other arm

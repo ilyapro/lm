@@ -19,7 +19,7 @@ def test_both_arms_keep_causal_hint_within_budget() -> None:
 def test_mandatory_arm_extends_the_shared_recall_protocol() -> None:
     assert _RECALL_DESCRIPTION_MANDATORY == (
         _RECALL_DESCRIPTION
-        + " You MUST mark each recall's results on your next call: used ids as "
+        + " You MUST mark on the next natural recall/remember/teach: used ids as "
         "used, off-topic ids as irrelevant."
     )
 

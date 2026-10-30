@@ -988,7 +988,7 @@ def test_feedback_arms_share_guidance_and_keep_distinct_mark_requirements() -> N
         _IRRELEVANT_FIELD_DESCRIPTION,
     )
     assert mandatory["recall"] is _RECALL_DESCRIPTION_MANDATORY
-    assert "You MUST mark each recall's results" in mandatory["recall"]
+    assert "You MUST mark on the next natural recall/remember/teach" in mandatory["recall"]
     assert "used" in mandatory["recall"] and "irrelevant" in mandatory["recall"]
     assert (mandatory["used"], mandatory["irrelevant"]) == (
         _USED_FIELD_DESCRIPTION_MANDATORY,
@@ -996,6 +996,18 @@ def test_feedback_arms_share_guidance_and_keep_distinct_mark_requirements() -> N
     )
     assert mandatory["remember"] == optional["remember"]
     assert mandatory["teach"] == optional["teach"]
+    for texts in (optional, mandatory):
+        for field in ("used", "irrelevant"):
+            assert "next natural memory_recall, memory_remember or memory_teach" in texts[field]
+            assert "needed memory_lookup may come first" in texts[field]
+            assert "Do not make calls solely for marks" in texts[field]
+        assert "Unused relevant results are not irrelevant" in texts["irrelevant"]
+    assert optional["used"].startswith("Optional:")
+    assert optional["irrelevant"].startswith("Optional:")
+    assert mandatory["used"].startswith("REQUIRED:")
+    assert mandatory["irrelevant"].startswith("REQUIRED:")
+    assert "actually used" in mandatory["used"]
+    assert "off-topic for their query" in mandatory["irrelevant"]
 
 
 @pytest.mark.parametrize("arm", ["optional", "mandatory"])
@@ -1012,17 +1024,105 @@ def test_server_registers_the_active_arm(
     assert texts["used"] in repr(annotation)
 
 
+@pytest.mark.parametrize("arm", ["optional", "mandatory"])
 def test_real_fastmcp_schema_carries_optional_fields(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str
 ) -> None:
     import asyncio
+    from fastmcp import Client
 
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_PROMPT", arm)
     mcp = create_mcp_server(tmp_path / "real.sqlite3")
-    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+
+    async def discover() -> Any:
+        async with Client(mcp) as client:
+            return await client.list_tools()
+
+    tools = {tool.name: tool for tool in asyncio.run(discover())}
+    assert set(tools) == {"memory_recall", "memory_remember", "memory_teach", "memory_lookup"}
+    texts = _explicit_feedback_texts(arm)
     for name in ("memory_recall", "memory_remember", "memory_teach"):
-        properties = tools[name].parameters["properties"]
-        required = set(tools[name].parameters.get("required", []))
+        assert tools[name].description == texts[name.removeprefix("memory_")]
+        properties = tools[name].inputSchema["properties"]
+        required = set(tools[name].inputSchema.get("required", []))
         for field in ("used", "irrelevant"):
             assert field in properties, (name, field)
             assert field not in required
-    assert "used" not in tools["memory_lookup"].parameters["properties"]
+            assert properties[field]["default"] is None
+            assert properties[field]["description"] == texts[field]
+    assert not {"used", "irrelevant"} & tools["memory_lookup"].inputSchema["properties"].keys()
+
+
+@pytest.mark.parametrize("arm", ["optional", "mandatory"])
+@pytest.mark.parametrize("view", ["knowledge", "full"])
+@pytest.mark.parametrize("carrier", ["memory_recall", "memory_remember", "memory_teach"])
+def test_needed_lookup_precedes_marks_on_the_next_natural_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, view: str, carrier: str,
+) -> None:
+    import asyncio
+    from fastmcp import Client
+    from test_transport_identity import _structured
+
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_PROMPT", arm)
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", "credit")
+    mcp = create_mcp_server(tmp_path / "reading.sqlite3")
+    store = mcp.memory_store
+    needed = store.append_trace(
+        "Quartz rotor handbook.\n\n" + "General rotor background. " * 180
+        + "\n\nThe exception code is ORBIT-73; use the revised stop rule.",
+        {"scope": SCOPE},
+    )
+    off_topic = store.append_trace(
+        "Quartz rotor handbook is a songbook for a band, unrelated to machine calibration.",
+        {"scope": SCOPE},
+    )
+    unused = store.append_trace("Quartz rotor handbook: replace the seal annually.", {"scope": SCOPE})
+    old = store.append_trace("Olive latch material is plastic.", {"scope": SCOPE})
+
+    async def scenario() -> None:
+        async with Client(mcp) as client:
+            recalled = _structured(await client.call_tool("memory_recall", {
+                "query": "quartz rotor handbook", "scope": SCOPE, "max_results": 3,
+                "depth": 0, "view": view, "ambient_context": AMBIENT,
+            }))
+            entries = {entry.get("node", entry)["id"]: entry for entry in recalled["results"]}
+            assert set(entries) == {needed.id, off_topic.id, unused.id}
+            entry = entries[needed.id]
+            assert entry["delivery"] == "snippet"
+            assert "ORBIT-73" not in entry.get("node", entry)["content"]
+            event_id = recalled["recall_event_id"]
+            fetched = _structured(await client.call_tool("memory_lookup", {
+                "node_id": entry["content_ref"]["node_id"],
+            }))
+            assert fetched["results"][0]["content"] == needed.content
+            assert "feedback_marks" not in fetched and _marks(store) == []
+            assert not store.get_recall_event(event_id).feedback_applied
+            assert _ledger(store) == [(event_id, needed.id, "lookup")]
+            usefulness = store.get_node(needed.id).usefulness_score
+
+            arguments = {
+                "memory_recall": {"query": "olive latch material", "scope": SCOPE,
+                                  "ambient_context": AMBIENT},
+                "memory_remember": {"content": "Exception ORBIT-73 identifies the revised stop rule.",
+                                    "context": {"scope": SCOPE, **AMBIENT}},
+                "memory_teach": {"trace_id": old.id, "correction": "Olive latch material is ceramic.",
+                                 "context": {"scope": SCOPE, **AMBIENT}},
+            }[carrier]
+            marked = _structured(await client.call_tool(carrier, {
+                **arguments, "used": [needed.id], "irrelevant": [off_topic.id],
+            }))
+            assert marked["feedback_marks"] == {"accepted": 2, "dropped": 0, "by_reason": {}}
+            rows = _marks(store)
+            assert {(row["node_id"], row["mark"]) for row in rows} == {
+                (needed.id, "used"), (off_topic.id, "irrelevant"),
+            }
+            assert {row["recall_event_id"] for row in rows} == {event_id}
+            assert {row["via_tool"] for row in rows} == {carrier}
+            assert _ledger(store) == [(event_id, needed.id, "lookup")]
+            assert _explicit(store) == []
+            assert store.get_node(needed.id).usefulness_score == usefulness
+            assert store.get_recall_event(event_id).feedback_applied == (carrier != "memory_recall")
+            count = store.connection.execute("SELECT count(*) FROM recall_events").fetchone()[0]
+            assert count == (2 if carrier == "memory_recall" else 1)
+
+    asyncio.run(scenario())
