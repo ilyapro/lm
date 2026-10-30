@@ -84,6 +84,7 @@ def test_untriggered_inactive_and_out_of_scope_rows_do_not_validate_provenance(
     store, context, level, decayed, scope,
 ):
     store.create_node(level=level, node_id="owner", content="Unselected harbor record.")
+    store.connection.execute("CREATE TEMP TABLE nodes AS SELECT * FROM main.nodes")
     store.connection.execute(
         "UPDATE nodes SET context=?, provenance='{bad', decayed=?", (context, decayed),
     )
