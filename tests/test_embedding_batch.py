@@ -145,6 +145,67 @@ def test_empty_backend_vectors_keep_current_dimension() -> None:
     assert model.dimensions == 384
 
 
+@pytest.mark.parametrize("output", ["aliased", "numpy", "ragged", "nonfinite"])
+def test_batch_detaches_retained_backend_rows_and_matches_scalar_exactly(output) -> None:
+    raw = [[3.0, 4.0]] * 3
+    if output == "numpy":
+        import numpy as np
+        raw = np.asarray(raw, dtype=np.float32)
+    elif output == "ragged":
+        raw = [[], [3.0, 4.0], [], [1.0, 2.0, 2.0], []]
+    elif output == "nonfinite":
+        raw = [[0.0, -0.0], [float("inf"), 1.0], [float("nan"), 0.0]]
+    retained = repr(raw)
+    texts = [str(index) for index in range(len(raw))]
+
+    class Encoder:
+        def encode(self, texts, **kwargs):
+            return raw if isinstance(texts, list) else raw[int(texts)]
+
+    scalar = model_with(Encoder())
+    expected = [[value.hex() for value in scalar.embed(text)] for text in texts]
+    model = model_with(Encoder())
+    initial_dimensions = model.dimensions
+    result = model.embed_batch(texts)
+    assert [[value.hex() for value in row] for row in result] == expected
+    assert model.dimensions == scalar.dimensions
+    assert result is not raw
+    assert len({id(row) for row in result}) == len(result)
+    assert all(row is not source for row in result for source in raw)
+    result[0][0] = 999.0
+    assert [[value.hex() for value in row] for row in result[1:]] == expected[1:]
+    assert repr(raw) == retained
+    # Empty rows use the dimension reached at that point in this call.
+    model.dimensions = initial_dimensions
+    again = model.embed_batch(texts)
+    assert [[value.hex() for value in row] for row in again] == expected
+    assert all(row is not previous for row in again for previous in result)
+    assert repr(raw) == retained
+    assert texts == [str(index) for index in range(len(raw))]
+
+
+def test_batch_normalization_error_does_not_retry_scalar_or_switch_encoder(monkeypatch) -> None:
+    encoder = BatchEncoder()
+    model = model_with(encoder)
+    normalize = model._normalize_embedding
+    calls = 0
+
+    def fail_second(vector):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ArithmeticError("normalization failed")
+        return normalize(vector)
+
+    monkeypatch.setattr(model, "_normalize_embedding", fail_second)
+    with pytest.raises(ArithmeticError, match="normalization failed"):
+        model.embed_batch(TEXTS)
+    assert calls == 2
+    assert encoder.calls == [TEXTS]
+    assert model.dimensions == 3
+    assert model.encoder_id().startswith("st:")
+
+
 @pytest.mark.parametrize("wiring", ["store", "retrieval", "consolidation"])
 def test_multichunk_write_reaches_one_model_batch(tmp_path: Path, monkeypatch, wiring) -> None:
     monkeypatch.setenv("LIVING_MEMORY_CHUNK_TOKENIZER", "heuristic")

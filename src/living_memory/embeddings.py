@@ -648,7 +648,9 @@ class LocalEmbeddingModel:
             except Exception:
                 _LOG.debug("batch encode unavailable; using scalar encoding", exc_info=True)
             else:
-                return [self._normalize_embedding(vector) for vector in vectors]
+                for index, vector in enumerate(vectors):
+                    vectors[index] = self._normalize_embedding(vector)
+                return vectors
         return [self.embed(text) for text in texts]
 
     def _normalize_embedding(self, vector: list[float]) -> list[float]:
