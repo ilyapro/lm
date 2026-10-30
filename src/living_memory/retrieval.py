@@ -155,7 +155,7 @@ closed again.
 
 Both factors of the activation live in [0, 1] and the product is a confidence,
 so an anchor seed lands in exactly the numeric range seeds already occupied
-(a bm25 rank score, a cosine) rather than inflating the channel. One grounded
+(lexical coverage, a cosine) rather than inflating the channel. One grounded
 consumption is worth ``ANCHOR_EDGE_WEIGHT`` (0.25), so a link the operator's
 work has confirmed once seeds weakly and one confirmed four times seeds at full
 strength -- the calibration is the edge weight's, not a new constant here.
@@ -1367,8 +1367,8 @@ class MemoryRecallService:
         ``{node_id: activation}``, where activation is the matched anchor's
         cosine times the weight of its edge to that node. Both factors are in
         [0, 1] and their product is a confidence, so the value lands in the
-        same range ``_collect_graph``'s existing seeds occupy -- a bm25 rank
-        score, a cosine -- and blends through the same learned ``graph``
+        same range ``_collect_graph``'s existing seeds occupy -- lexical
+        coverage, a cosine -- and blends through the same learned ``graph``
         weight. A node reachable from two matched anchors keeps the stronger
         claim rather than accumulating, so a query that happens to sit near
         several anchors cannot manufacture activation the edges do not carry.
@@ -2355,8 +2355,8 @@ def _cross_scope_admissible(
 ) -> bool:
     """Deliberate evidence that admits a candidate from outside the ungated scopes.
 
-    bm25 rank scores never qualify (per-scope normalization makes them
-    incomparable across scopes; see the gate constants above). ``graph_score``
+    Lexical overlap alone does not qualify (see the gate constants above).
+    ``graph_score``
     is passed in for the same reason ``_blend_candidate_score`` takes it: the
     anchors-off counterfactual has to be able to ask this question about the
     activation it is scoring, not about the one the anchor added.
