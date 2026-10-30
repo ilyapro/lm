@@ -414,6 +414,8 @@ class _Candidate:
     anchor_score: float = 0.0
     source_graph_score: float = 0.0
     lexical_score: float = 0.0
+    # A prepared zero is valid content evidence, including task-only matches.
+    lexical_score_prepared: bool = False
 
     @property
     def combined_graph_score(self) -> float:
@@ -711,7 +713,8 @@ class MemoryRecallService:
 
         query_terms = _lexical_terms(query)
         for candidate in candidates.values():
-            candidate.lexical_score = _lexical_support(query_terms, candidate.node.content)
+            if not candidate.lexical_score_prepared:
+                candidate.lexical_score = _lexical_support(query_terms, candidate.node.content)
         lexical_ids = set(candidates)
 
         graph_depth, causal_mode = _parse_depth(depth, query)
@@ -1156,12 +1159,17 @@ class MemoryRecallService:
                 if node is None:
                     continue
                 candidate = candidates[node_id] = _Candidate(node=node)
-            # Recorded task is lexical discovery evidence. Qualification uses
-            # the same coverage function on content alone, so a task label
-            # cannot qualify an unrelated source body.
-            score = _lexical_support(
-                query_terms, candidate.node.content + "\n" + (candidate.node.task or ""),
-            )
+            # Prepare each body once, retaining only scalar coverage. Task
+            # terms extend discovery after content qualification is fixed.
+            score = 0.0
+            candidate.lexical_score = 0.0
+            if query_terms:
+                source_terms = _lexical_terms(candidate.node.content)
+                candidate.lexical_score = len(query_terms.intersection(source_terms)) / len(query_terms)
+                if candidate.node.task:
+                    source_terms.update(_lexical_terms(candidate.node.task))
+                score = len(query_terms.intersection(source_terms)) / len(query_terms)
+            candidate.lexical_score_prepared = True
             candidate.bm25_score = max(candidate.bm25_score, score)
 
     def _collect_vector(
