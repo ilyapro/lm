@@ -255,8 +255,61 @@ def test_scope_selection_preserves_scan_order_and_uses_contiguous_views(tmp_path
         assert source.query_anchor_corpus(2) is corpus
 
 
+@pytest.mark.parametrize("broad_first", [False, True], ids=["narrow-first", "broad-first"])
+def test_scope_growth_keeps_one_compact_corpus_and_reuses_warm_broad(tmp_path, monkeypatch, broad_first):
+    np = pytest.importorskip("numpy")
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for index in range(41):
+            scope = "project:alpha" if index < 3 else "project:beta" if index < 5 else "global"
+            anchor(store, f"a{index:02d}", [1.0] + [0.0] * 16, scope)
+        anchor(store, "other-width", [1.0] * 9, "project:alpha")
+        service = retrieval.MemoryRecallService(store)
+        prepare = retrieval._prepare_anchor_vectors
+        prepared_matrices = []
+        preparation_rows = []
+
+        def counted(*args, **kwargs):
+            corpus = prepare(*args, **kwargs)
+            preparation_rows.append(len(corpus.ids))
+            prepared_matrices.append(weakref.ref(corpus.matrix))
+            return corpus
+
+        monkeypatch.setattr(retrieval, "_prepare_anchor_vectors", counted)
+        phases = [(None, 41)] if broad_first else [
+            (["project:absent"], 0), (["project:alpha"], 3), (["project:alpha"], 3),
+            (["project:beta"], 5), (["project:alpha"], 5), (None, 41),
+        ]
+        phases += [(None, 41), (["project:alpha"], 41), (None, 41)]
+        previous = None
+        previous_rows = 0
+        for scopes, count in phases:
+            matches = match(service, [1.0] + [0.0] * 16, scopes)
+            assert bool(matches) == bool(count)
+            cache = service._anchor_vectors
+            assert set(cache.by_width) == {17}
+            corpus = cache.by_width[17]
+            assert len(corpus.ids) == count
+            if not count:
+                assert corpus.matrix == corpus.safe_norms == corpus.nonzero == ()
+                continue
+            assert corpus.matrix.shape == (count, 17)
+            assert corpus.matrix.nbytes + corpus.safe_norms.nbytes + corpus.nonzero.nbytes == count * (17 * 4 + 5)
+            if previous is not None:
+                if count == previous_rows:
+                    assert previous() is corpus.matrix
+                else:
+                    assert previous() is None
+            assert all(ref() is None or ref() is corpus.matrix for ref in prepared_matrices)
+            if scopes is None:
+                assert np.shares_memory(corpus.matrix[corpus.select(None)], corpus.matrix)
+            previous = weakref.ref(corpus.matrix)
+            previous_rows = count
+            del corpus
+        assert preparation_rows == ([41] if broad_first else [3, 2, 36])
+
+
 @pytest.mark.parametrize("numpy", [True, False], ids=["numpy", "python"])
-def test_lazy_scope_fills_preserve_full_corpus_thresholds_and_order(tmp_path, monkeypatch, numpy):
+def test_scope_growth_preserves_independent_full_selection_thresholds_and_order(tmp_path, monkeypatch, numpy):
     np = pytest.importorskip("numpy")
     if not numpy:
         monkeypatch.setattr(qa, "_np", None)
@@ -269,24 +322,40 @@ def test_lazy_scope_fills_preserve_full_corpus_thresholds_and_order(tmp_path, mo
             vector = [rng.uniform(-1.0, 1.0) for _ in range(width)]
             anchor(store, f"a{index:03d}", vector, rng.choice(scopes))
         rows = list(store.iter_query_anchor_vectors())
-        corpora = {width: qa._prepare_anchor_vectors(rows, width, index_scopes=True)
-                   for width in widths}
+        vectors = {name: np.frombuffer(blob, dtype="<f4") for name, _scope, _width, blob in rows}
+        layouts = {width: store.query_anchor_vector_layout(width) for width in widths}
 
-        class FullCorpus:
-            def query_anchor_corpus(self, width, scopes):
-                return corpora[width]
+        def full_selection(vector, selection, threshold=-1.0, limit=100):
+            layout = layouts[len(vector)]
+            names = [name for name, _scope in layout] if selection is None else [
+                name for requested in dict.fromkeys(selection)
+                for name, scope in layout if scope == requested
+            ]
+            if not names:
+                return []
+            if numpy:
+                matrix = np.asarray([vectors[name] for name in names], dtype="<f4")
+                query = np.asarray(vector, dtype="<f4")
+                norms = np.linalg.norm(matrix, axis=1)
+                scores = np.where(
+                    norms > 0.0,
+                    (matrix @ query) / (np.where(norms > 0.0, norms, 1.0) * float(np.linalg.norm(query))),
+                    0.0,
+                )
+                admitted = [(name, float(score)) for name, score in zip(names, scores) if score >= threshold]
+            else:
+                scores = [cosine_similarity(vector, vectors[name].tolist()) for name in names]
+                admitted = [(name, score) for name, score in zip(names, scores) if score >= threshold]
+            ranked = sorted(admitted, key=lambda item: (-item[1], item[0]))[:limit]
+            return [qa.AnchorMatch(store.get_query_anchor(name), score, ()) for name, score in ranked]
 
-            def __getattr__(self, name):
-                return getattr(store, name)
-
-        full = FullCorpus()
         service = retrieval.MemoryRecallService(store)
         for selection in (["project:beta"], ["global"], ["project:alpha", "global"],
                           ["project:beta", "global", "project:alpha"], None,
                           ["project:beta", "project:beta"], ["project:absent"]):
             for width in widths:
                 vector = [rng.uniform(-1.0, 1.0) for _ in range(width)]
-                expected = qa.match_anchors(full, vector, selection, limit=100, min_similarity=-1.0)
+                expected = full_selection(vector, selection)
                 assert match(service, vector, selection, limit=100, min_similarity=-1.0) == expected
                 for item in expected[:3]:
                     for threshold in (
@@ -296,8 +365,8 @@ def test_lazy_scope_fills_preserve_full_corpus_thresholds_and_order(tmp_path, mo
                     ):
                         for limit in (1, 5, 100):
                             assert match(service, vector, selection, limit=limit,
-                                         min_similarity=threshold) == qa.match_anchors(
-                                full, vector, selection, limit=limit, min_similarity=threshold,
+                                         min_similarity=threshold) == full_selection(
+                                vector, selection, threshold, limit,
                             )
 
 
