@@ -1068,8 +1068,8 @@ def test_needed_lookup_precedes_marks_on_the_next_natural_call(
     mcp = create_mcp_server(tmp_path / "reading.sqlite3")
     store = mcp.memory_store
     needed = store.append_trace(
-        "Quartz rotor handbook.\n\n" + "General rotor background. " * 180
-        + "\n\nThe exception code is ORBIT-73; use the revised stop rule.",
+        "Quartz rotor handbook: " + "general rotor background " * 180
+        + "the exception code is ORBIT-73; use the revised stop rule.",
         {"scope": SCOPE},
     )
     off_topic = store.append_trace(
