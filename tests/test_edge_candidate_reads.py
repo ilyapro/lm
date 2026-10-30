@@ -281,10 +281,10 @@ def test_grouped_files_preserve_occurrences_sql_values_and_input_order(tmp_path)
 
 def test_grouped_files_bound_each_file_before_selected_json(tmp_path, monkeypatch):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        hub = store.append_trace("Hub", {"files": ["hot"] * 21})
-        overflow = store.append_trace("Overflow", {"files": ["hot"] * 100})
-        peer = store.append_trace("Peer", {"files": ["cold"]})
-        note = store.append_trace("Source", {"files": ["hot", "cold"]})
+        hub = store.create_node(level="trace", node_id="a-hub", content="Hub", context={"files": ["hot"] * 21})
+        overflow = store.create_node(level="trace", node_id="b-overflow", content="Overflow", context={"files": ["hot"] * 100})
+        peer = store.create_node(level="trace", node_id="c-peer", content="Peer", context={"files": ["cold"]})
+        note = store.create_node(level="trace", node_id="d-source", content="Source", context={"files": ["hot", "cold"]})
         decode = ed._candidate_from_row
         decoded = []
 
