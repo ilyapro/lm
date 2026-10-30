@@ -3,10 +3,12 @@
 import asyncio
 import itertools
 import json
+import re
 import sqlite3
 from dataclasses import asdict
 
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 import pytest
 
 from living_memory import feedback, server, storage
@@ -45,7 +47,8 @@ def queries(store):
 def test_result_ids_match_full_reader_including_legacy_shapes(raw):
     with MemoryStore(":memory:") as store:
         store.record_recall_event(query="query", scope=SCOPE, ambient_context=CONTEXT)
-        store.connection.execute("UPDATE recall_events SET results = ?", (raw,))
+        with store.transaction():
+            store.connection.execute("UPDATE recall_events SET results = ?", (raw,))
         full, = store.pending_recall_events(scope=SCOPE, context=CONTEXT)
         narrow, = store.pending_recall_query_inputs(scope=SCOPE, context=CONTEXT)
         assert (narrow.id, narrow.query, narrow.scope, narrow.result_ids) == (
@@ -66,7 +69,8 @@ def test_selected_results_errors_propagate_before_preflight_yields(raw, error, e
             store.insert_query_anchor(scope=SCOPE, query=event.query,
                                       fingerprint=recall_fingerprint(event.query, SCOPE),
                                       embedding=[1.0, 0.0])
-        store.connection.execute("UPDATE recall_events SET results = ?", (raw,))
+        with store.transaction():
+            store.connection.execute("UPDATE recall_events SET results = ?", (raw,))
         with pytest.raises(error) as full:
             store.pending_recall_events(scope=SCOPE, context=CONTEXT)
         with pytest.raises(error) as narrow:
@@ -139,6 +143,7 @@ def test_actual_remember_matches_full_preflight_without_materializing_bodies(tmp
             if not projected:
                 monkeypatch.setattr(store, "pending_recall_query_inputs", store.pending_recall_events)
             observed_queries = []
+            original_rows = store._pending_recall_rows
 
             def preflight(*args, **kwargs):
                 def decode(value, default):
@@ -146,12 +151,20 @@ def test_actual_remember_matches_full_preflight_without_materializing_bodies(tmp
                         assert BODY not in str(value) and AMBIENT not in str(value)
                     return original_decode(value, default)
 
+                def rows(**kwargs):
+                    result = original_rows(**kwargs)
+                    for row in result:
+                        assert set(row.keys()) == {"id", "query", "scope", "results"}
+                        assert BODY not in str(tuple(row)) and AMBIENT not in str(tuple(row))
+                    return result
+
                 with monkeypatch.context() as check:
                     check.setattr(storage, "_json_loads", decode)
                     if projected:
                         def no_full_event(row):
                             pytest.fail("preflight materialized a full RecallEvent")
                         check.setattr(storage, "_recall_event_from_row", no_full_event)
+                        check.setattr(store, "_pending_recall_rows", rows)
                     result = original_queries(*args, **kwargs)
                     observed_queries.append(result)
                     return result
@@ -171,6 +184,9 @@ def test_actual_remember_matches_full_preflight_without_materializing_bodies(tmp
             result = mcp.tools["memory_remember"](CONTENT, CONTEXT, used=[other.id] if explicit else None)
             assert result["implicit_feedback"]["recall_event_ids"] == [event.id for event in reversed(events)]
             assert store.get_node(source.id).usefulness_score > 0
+            if explicit:
+                assert result["feedback_marks"] == {"accepted": 1, "dropped": 0, "by_reason": {}}
+                assert other.id in store.credited_node_ids(events[-1].id)
             assert len(store.list_query_anchors()) == 5
             assert all(store.get_recall_event(event.id).feedback_applied for event in events)
             query_outputs.append(observed_queries)
@@ -198,16 +214,17 @@ def test_full_metadata_errors_remain_required_and_roll_back_native_write(runtime
         target = r.store.append_trace("Correction target.", CONTEXT)
         event = r.store.record_recall_event(query="query", scope=SCOPE, ambient_context=CONTEXT,
                                             results=[{"node_id": r.node.id}])
-        r.store.connection.execute(f"UPDATE recall_events SET {field} = ? WHERE id = ?", (value, event.id))
+        with r.store.transaction():
+            r.store.connection.execute(f"UPDATE recall_events SET {field} = ? WHERE id = ?", (value, event.id))
         # Unneeded metadata is checked by the unchanged authoritative reader.
         assert queries(r.store)
-        with pytest.raises(error):
+        with pytest.raises(error) as failure:
             r.store.pending_recall_events(scope=SCOPE, context=CONTEXT)
         before = list(r.store.connection.iterdump())
 
     async def scenario():
         async with Client(r.mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises(ToolError, match=re.escape(str(failure.value))):
                 if route == "remember":
                     await call(client, "memory_remember", content=CONTENT, context=CONTEXT)
                 else:
