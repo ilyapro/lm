@@ -55,9 +55,9 @@ def test_lexical_score_and_credit_ignore_fts_position_and_raw_scale(tmp_path, mo
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("depth", [0, 1])
 def test_partial_overlap_distractor_cannot_win_by_fts_order(tmp_path, reverse, depth):
-    target_text = QUERY + " " + "inspection notes record mineral samples " * 40
-    distractor_text = "amber"
-    encoder = FrozenEncoder({target_text: 0.6, distractor_text: 0.4})
+    target_text = QUERY + " " + "inspection notes record mineral samples " * 10
+    distractor_text = "amber quartz basalt"
+    encoder = FrozenEncoder({target_text: 0.6, distractor_text: 0.1})
     with MemoryStore(tmp_path / "corpus.sqlite3", chunk_embedder=encoder.embed_batch) as store:
         items = [("target", target_text), ("distractor", distractor_text)]
         for name, content in reversed(items) if reverse else items:
