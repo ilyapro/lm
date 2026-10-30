@@ -3741,7 +3741,7 @@ class MemoryStore:
         return [_recall_event_from_row(row) for row in rows]
 
     def mark_recall_event_feedback(self, event_id: str, trace_id: str) -> RecallEvent:
-        if self.get_node(trace_id) is None:
+        if not self.get_node_endpoints([trace_id]):
             raise KeyError(trace_id)
         with self.transaction():
             updated = self._conn.execute(

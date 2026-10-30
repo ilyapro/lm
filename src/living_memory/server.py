@@ -1166,7 +1166,7 @@ def _register_tools(
                         marks = None
                         if (
                             has_explicit_marks(used, irrelevant)
-                            and store.get_node(trace_id) is not None
+                            and store.get_node_endpoints([trace_id])
                             and _correction_text(correction)
                         ):
                             marks = apply_explicit_marks(
