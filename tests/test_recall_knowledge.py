@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
 
 import pytest
 from fastmcp import Client
 
+from living_memory import delivery
 from living_memory.delivery import shape_recall_results
 from test_delivery_shaping import delivered_history
 from living_memory.models import Node
@@ -16,6 +18,64 @@ from living_memory.postsession.client import LiveMemoryClient, McpMemoryIndex
 from living_memory.retrieval import RecallResult
 from living_memory.server import create_mcp_server
 from test_transport_identity import _structured
+
+
+@pytest.mark.parametrize("metadata_size", [0, 1000])
+def test_knowledge_does_not_materialize_diagnostic_metadata(monkeypatch, metadata_size):
+    class UncopiedMapping(Mapping):
+        def __init__(self, values):
+            self.values = values
+
+        def __getitem__(self, key):
+            return self.values[key]
+
+        def __len__(self):
+            return len(self.values)
+
+        def __iter__(self):
+            raise AssertionError("knowledge copied diagnostic metadata")
+
+    class UncopiedSources(list):
+        def __iter__(self):
+            raise AssertionError("knowledge copied source ids")
+
+    def diagnostic_read(*args):
+        raise AssertionError("knowledge constructed diagnostics")
+
+    nodes = [
+        Node(id="full", level="trace", content="Complete knowledge."),
+        Node(id="snippet", level="trace", content="Source passage. " * 300),
+        Node(id="schema", level="schema", content="Required step. " * 300),
+        Node(id="withheld", level="trace", content="Unqualified knowledge."),
+    ]
+    # Distinct content does not require source comparison for twin identity.
+    for node in nodes:
+        node.context = UncopiedMapping({str(i): "context" for i in range(metadata_size)})
+        node.source_traces = UncopiedSources(str(i) for i in range(metadata_size))
+        node.corrections = [{"id": "corrector", "text": "Use current knowledge."}]
+        node.provenance = UncopiedMapping({
+            **{str(i): "history" for i in range(metadata_size)},
+            "supersedes": "prior-node", "corrections": [{"wrong": "not authoritative"}],
+        })
+    monkeypatch.setattr(delivery, "node_to_dict", diagnostic_read)
+    monkeypatch.setattr(Node, "stats", property(diagnostic_read))
+    shaped = shape_recall_results(
+        [RecallResult(node, 1., withheld="below_threshold" if node.id == "withheld" else None)
+         for node in nodes],
+        delivery_history=delivery.DeliveryHistory(), snippet_max_chars=100,
+        context_value_max_chars=160, session_dedup=True, view="knowledge",
+    )
+    assert [item["delivery"] for item in shaped] == ["full", "snippet", "full", "below_threshold"]
+    assert [item["id"] for item in shaped] == [node.id for node in nodes]
+    assert shaped[0]["content"] == nodes[0].content
+    assert len(shaped[1]["content"]) < len(nodes[1].content)
+    assert shaped[2]["content"] == nodes[2].content
+    assert shaped[3]["content"] == ""
+    for item in shaped:
+        assert item["provenance"] == {
+            "corrections": [{"id": "corrector", "text": "Use current knowledge."}],
+            "supersedes": "prior-node",
+        }
 
 
 def test_knowledge_preserves_delivery_and_validity_without_diagnostics() -> None:

@@ -440,7 +440,9 @@ def knowledge_node(node: Node | Mapping[str, Any]) -> dict[str, Any]:
     """
 
     if isinstance(node, Node):
-        get = lambda key, default=None: getattr(node, key, default)
+        def get(key: str, default: Any = None) -> Any:
+            return getattr(node, key, default)
+
         corrections = node.corrections
     else:
         get = node.get

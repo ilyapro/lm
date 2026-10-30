@@ -129,6 +129,9 @@ def test_projection_uses_stored_corrections_and_shared_shaping(runtime):
     expected = knowledge_node(node_to_dict(store.get_node(node.id))) | {
         "superseded": False, "superseded_by": [],
     }
+    assert knowledge_node(store.get_node(node.id)) == knowledge_node(
+        store.get_node_knowledge([node.id])[node.id]
+    )
 
     async def scenario():
         async with Client(mcp) as client:
