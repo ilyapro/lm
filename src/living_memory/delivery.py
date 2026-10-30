@@ -101,7 +101,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .resources import node_to_dict
@@ -257,7 +257,7 @@ class DeliveryHistory:
     Metadata timestamps, legacy selections and duplicate previews prove neither.
     """
 
-    def __init__(self, results: Sequence[Mapping[str, Any]] = ()) -> None:
+    def __init__(self, results: Iterable[Mapping[str, Any]] = ()) -> None:
         self._versions: dict[tuple[str, str], set[str]] = {}
         for result in results:
             delivery = result.get("delivery")

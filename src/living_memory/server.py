@@ -1334,9 +1334,10 @@ def _register_tools(
             # Read only prior formed responses. Selection and shaping share
             # this bounded observation; recording the current event adds no proof.
             try:
-                delivery_history = DeliveryHistory(store.recall_delivery_history(
+                with store.stream_recall_delivery_history(
                     transport_session_id if session_dedup else None,
-                ))
+                ) as history_results:
+                    delivery_history = DeliveryHistory(history_results)
             except Exception:
                 logging.getLogger(__name__).warning(
                     "could not read recall delivery history", exc_info=True,

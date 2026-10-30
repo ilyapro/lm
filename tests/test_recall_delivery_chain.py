@@ -514,5 +514,5 @@ def test_legacy_selection_and_receipt_failure_do_not_suppress_content(tmp_path, 
     assert mcp.tools["memory_recall"](**args)["results"][0]["delivery"] == "session_duplicate"
     def fail(*args, **kwargs):
         raise OSError("synthetic history read failure")
-    monkeypatch.setattr(store, "recall_delivery_history", fail)
+    monkeypatch.setattr(store, "stream_recall_delivery_history", fail)
     assert mcp.tools["memory_recall"](**args)["results"][0]["content"] == node.content

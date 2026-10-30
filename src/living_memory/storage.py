@@ -3654,19 +3654,40 @@ class MemoryStore:
         content. The caller compares recorded bodies with the current candidate,
         not node ids.
         """
+        with self.stream_recall_delivery_history(
+            transport_session_id, max_events=max_events,
+        ) as results:
+            return list(results)
+
+    @contextmanager
+    def stream_recall_delivery_history(
+        self,
+        transport_session_id: str | None = None,
+        *,
+        max_events: int = 200,
+    ) -> Iterator[Iterator[dict[str, Any]]]:
+        """Yield delivery rows one event at a time within the cursor's lifetime.
+
+        Consume inside the context so exhaustion, failure and early termination
+        all close the cursor. Selected malformed events propagate to the caller.
+        """
         if not transport_session_id or max_events <= 0:
-            return []
-        rows = self._conn.execute(
+            yield iter(())
+            return
+        cursor = self._conn.execute(
             """
             SELECT results FROM recall_events WHERE transport_session_id = ?
             ORDER BY created_at DESC, rowid DESC LIMIT ?
             """,
             (transport_session_id, int(max_events)),
-        ).fetchall()
-        return [
-            item for row in rows for item in _json_loads(row["results"], [])
-            if isinstance(item, dict) and isinstance(item.get("delivery"), dict)
-        ]
+        )
+        try:
+            yield (
+                item for row in cursor for item in _json_loads(row["results"], [])
+                if isinstance(item, dict) and isinstance(item.get("delivery"), dict)
+            )
+        finally:
+            cursor.close()
 
     def record_recall_delivery(
         self, event_id: str, deliveries: Mapping[str, Mapping[str, str]],
