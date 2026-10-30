@@ -263,8 +263,8 @@ def _live_target(store: MemoryStore, node_id: str) -> str | None:
 
     replacement = resolve_replacement(store, node_id)
     candidate = replacement or node_id
-    node = store.get_node(candidate)
-    if node is None or node.decayed:
+    endpoint = store.get_node_endpoints([candidate]).get(candidate)
+    if endpoint is None or endpoint.decayed:
         return None
     return candidate
 
@@ -692,8 +692,8 @@ def migrate_anchor_edges(
     destination = str(to_target)
     if source == destination:
         return 0
-    node = store.get_node(destination)
-    if node is None or node.decayed:
+    endpoint = store.get_node_endpoints([destination]).get(destination)
+    if endpoint is None or endpoint.decayed:
         return 0
     if _reaches(store, destination, source):
         return 0
