@@ -1515,10 +1515,19 @@ class MemoryRecallService:
                 # tokenize() removes procedural filler such as "how to".
                 coverage = len(matching) / len(query_tokens)
                 coverages[schema_id] = max(coverages.get(schema_id, 0.0), coverage)
-        for schema in self.store.get_nodes(scores).values():
-            candidate = candidates.setdefault(schema.id, _Candidate(node=schema))
-            candidate.trigger_score = max(candidate.trigger_score, scores[schema.id])
-            candidate.trigger_coverage = max(candidate.trigger_coverage, coverages[schema.id])
+        # Keep surviving identities in the reader's order without reloading
+        # bodies already selected by another channel in this recall.
+        identities = self.store.get_node_scopes(scores)
+        missing = self.store.get_nodes(node_id for node_id in identities if node_id not in candidates)
+        for node_id in identities:
+            candidate = candidates.get(node_id)
+            if candidate is None:
+                node = missing.get(node_id)
+                if node is None:
+                    continue
+                candidate = candidates[node_id] = _Candidate(node=node)
+            candidate.trigger_score = max(candidate.trigger_score, scores[node_id])
+            candidate.trigger_coverage = max(candidate.trigger_coverage, coverages[node_id])
 
     def _named_schemas_first(
         self,
