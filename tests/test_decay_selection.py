@@ -259,7 +259,7 @@ def test_late_selection_error_precedes_any_retirement(cap, failure):
     with MemoryStore(":memory:") as store:
         for index in range(8):
             store.create_node(
-                level="trace", node_id=f"old-{index}", content="expired",
+                level="trace", node_id=f"old-{index}", content=f"expired {index}",
                 context={"timestamp": "2020-01-01"},
             )
         original_factory = store.connection.row_factory
@@ -297,7 +297,7 @@ def test_duplicate_levels_preserve_stable_candidates_and_reasons(monkeypatch, ca
     with MemoryStore(":memory:") as store:
         for node_id in ("b", "a"):
             store.create_node(
-                level="trace", node_id=node_id, content="expired source",
+                level="trace", node_id=node_id, content=f"expired source {node_id}",
                 context={"timestamp": "2020-01-01"},
             )
         store.create_node(
