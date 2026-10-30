@@ -28,6 +28,7 @@ from collections import Counter
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from itertools import islice
 from math import log1p
 from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 import logging
@@ -941,18 +942,29 @@ def _affected_derivatives(store: MemoryStore, source_id: str) -> dict[str, Node]
     affected: dict[str, Node] = {}
     pending = [source_id]
     visited: set[str] = set()
+    discovered: dict[str, list[Node]] = {}
     while pending:
         changed = pending.pop()
         if changed in visited:
             continue
         visited.add(changed)
+        if changed not in discovered:
+            # Keep one bounded lookahead group while retaining stack order.
+            # New descendants use individual reads until that group drains;
+            # depth must not accumulate groups of waiting sibling results.
+            batch = [changed]
+            if not discovered:
+                batch.extend(islice(dict.fromkeys(
+                    source for source in reversed(pending) if source not in visited
+                ), 63))
+            discovered.update(store.nodes_referencing_sources(batch))
         # A materializer may still cite an earlier version of this source.
         pending.extend(
             edge.target_id
             for edge in store.list_connections(source_id=changed, relation_type="supersedes")
         )
         pending.extend(node.id for node in store.list_duplicate_predecessors(changed))
-        for node in store.nodes_referencing_source(changed):
+        for node in discovered.pop(changed):
             if node.id == source_id or node.id in affected:
                 continue
             if changed not in _derivation_sources(store, node):

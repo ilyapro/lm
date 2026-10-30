@@ -1213,41 +1213,54 @@ class MemoryStore:
             self._conn.execute(f"RELEASE {name}")
 
     def nodes_referencing_source(self, source_id: str) -> list[Node]:
+        return self.nodes_referencing_sources([source_id])[source_id]
+
+    def nodes_referencing_sources(self, source_ids: Iterable[str]) -> dict[str, list[Node]]:
         """Load active recorded dependents after admitting their source identity.
 
         Project only the fields used by Node's materializer policy. Ordinary
         recall citations must not load a body, context or full provenance.
         Known writers own their inputs; explicit derived_from edges are the
         fallback for other nodes. Dependencies can cross scope boundaries.
+        Each bounded group shares one corpus scan and selected body read.
+        Preserve each source's discovery order independently of body order.
         """
 
+        result: dict[str, list[Node]] = {}
+        for batch in _node_read_batches(source_ids, batch_size=64):
+            result.update(self._nodes_referencing_source_batch(batch))
+        return result
+
+    def _nodes_referencing_source_batch(self, source_ids: list[str]) -> dict[str, list[Node]]:
+        placeholders = ",".join("?" for _ in source_ids)
         rows = self._conn.execute(
-            """
+            f"""
+            WITH explicit AS MATERIALIZED (
+                SELECT source_id, target_id FROM connections
+                WHERE target_id IN ({placeholders}) AND type = 'related'
+                  AND json_extract(metadata, '$.kind') = 'derived_from'
+            )
             SELECT n.id, n.level, n.source_traces,
                    n.provenance -> '$.strategy' AS strategy,
                    json_type(n.provenance, '$.cluster_key') IS NOT NULL AS has_cluster_key,
                    n.provenance -> '$.source_concepts' AS source_concepts,
-                   n.id IN (
-                       SELECT source_id FROM connections
-                       WHERE target_id = ? AND type = 'related'
-                         AND json_extract(metadata, '$.kind') = 'derived_from'
-                   ) AS explicit_dependency
+                   (SELECT json_group_array(target_id) FROM explicit
+                    WHERE source_id = n.id) AS explicit_dependencies
             FROM nodes n
             WHERE n.decayed = 0 AND (
-                EXISTS (SELECT 1 FROM json_each(n.source_traces) WHERE value = ?)
+                EXISTS (SELECT 1 FROM json_each(n.source_traces)
+                        WHERE value IN ({placeholders}))
                 OR EXISTS (
-                    SELECT 1 FROM json_each(n.provenance, '$.source_concepts') WHERE value = ?
+                    SELECT 1 FROM json_each(n.provenance, '$.source_concepts')
+                    WHERE value IN ({placeholders})
                 )
-                OR n.id IN (
-                    SELECT source_id FROM connections
-                    WHERE target_id = ? AND type = 'related'
-                      AND json_extract(metadata, '$.kind') = 'derived_from'
-                )
+                OR n.id IN (SELECT source_id FROM explicit)
             )
+            ORDER BY n.level, n.scope, n.id
             """,
-            (source_id, source_id, source_id, source_id),
-        ).fetchall()
-        admitted = []
+            source_ids * 3,
+        )
+        admitted: dict[str, list[str]] = {source: [] for source in source_ids}
         for row in rows:
             provenance = {
                 "strategy": _json_loads(row["strategy"], None),
@@ -1259,14 +1272,16 @@ class MemoryStore:
                 id=str(row["id"]), level=row["level"], content="",
                 source_traces=_json_loads(row["source_traces"], []), provenance=provenance,
             )
-            dependent = (
-                source_id in reference.materializer_sources
-                if reference.materializer else row["explicit_dependency"]
+            sources = (
+                reference.materializer_sources if reference.materializer
+                else _json_loads(row["explicit_dependencies"], [])
             )
-            if dependent:
-                admitted.append(reference.id)
-        nodes = self.get_nodes(admitted)
-        return [nodes[node_id] for node_id in admitted if node_id in nodes]
+            for source in source_ids:
+                if source in sources:
+                    admitted[source].append(reference.id)
+        nodes = self.get_nodes(node_id for ids in admitted.values() for node_id in ids)
+        return {source: [nodes[node_id] for node_id in ids if node_id in nodes]
+                for source, ids in admitted.items()}
 
     # ------------------------------------------------------------------
     # Schema-shape probes
