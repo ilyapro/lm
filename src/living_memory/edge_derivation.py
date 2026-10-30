@@ -377,7 +377,7 @@ def _file_citation_candidates(
     """
 
     citing: dict[str, list[_RuleCandidate]] = {}
-    names = list(dict.fromkeys(files))
+    names = list(dict.fromkeys(files)) if len(files) > 1 else files
     if len(names) > 1:
         for start in range(0, len(names), _FILE_CITATION_BATCH_SIZE):
             batch = names[start:start + _FILE_CITATION_BATCH_SIZE]
