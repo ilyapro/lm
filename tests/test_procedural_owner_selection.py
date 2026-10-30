@@ -46,12 +46,16 @@ def test_trigger_representations_match_discovery_before_hydration(store, context
                              (context, '{"strategy":"procedural"}'))
     expected = outcome(lambda: selection_after_hydration(store, None, "procedural"))
     assert outcome(lambda: store.schema_triggers(None, strategy="procedural")) == expected
+    if isinstance(expected, type):
+        with pytest.raises(expected):
+            c.memory_consolidate(store, scope="project:unrelated")
 
 
 @pytest.mark.parametrize("provenance", [
     None, "", "{bad", "null", "[]", '"procedural"', "1", "false", "{}",
     *[json.dumps({"strategy": strategy}) for strategy in
-      [None, "", False, 0, True, 1, "external", "procedural", [], {}, ["procedural"]]],
+      [None, "", False, 0, True, 1, "external", "procedural", [], {}, ["procedural"],
+       "procedural\0suffix", "\ud800"]],
     '{"strategy":"external","strategy":"procedural"}',
     '{"strategy":"procedural","strategy":"external"}',
     '{"strategy":"procedural","strategy":[]}',
@@ -103,12 +107,13 @@ def test_strategy_selector_matches_strings_without_coercing_other_types(store, s
     assert len(store.schema_triggers(None)) == 5
 
 
-def test_reader_projects_only_trigger_and_writer_for_large_unrelated_owners(store, monkeypatch):
-    marker = "unused payload " * 16000
+def test_reader_loads_only_selection_metadata_for_large_unrelated_owners(store, monkeypatch):
+    content, context, provenance = (label * 16000 for label in
+                                    ("unused content ", "unused context ", "writer metadata "))
     store.create_node(
-        level="schema", node_id="foreign", content=marker,
-        context={"trigger": "harbor", "unused": marker},
-        provenance={"strategy": "external", "unused": marker},
+        level="schema", node_id="foreign", content=content,
+        context={"trigger": "harbor", "unused": context},
+        provenance={"strategy": "external", "unused": provenance},
     )
     store.create_node(level="concept", node_id="owner", content="Harbor case records.",
                       context={"trigger": "harbor"}, provenance={"strategy": "procedural"})
@@ -131,8 +136,10 @@ def test_reader_projects_only_trigger_and_writer_for_large_unrelated_owners(stor
         store.connection.row_factory = sqlite3.Row
     assert len(rows) == 2
     assert all(len(row) == 3 for row in rows)
-    assert all(marker not in str(value) for row in rows for value in row)
-    assert decoded and all(marker not in raw for raw in decoded)
+    assert all(content not in str(value) and context not in str(value)
+               for row in rows for value in row)
+    assert any(provenance in raw for raw in decoded)
+    assert all(content not in raw and context not in raw for raw in decoded)
 
 
 def test_ordinary_consolidate_preserves_state_without_hydrating_foreign_bodies(store, monkeypatch):
