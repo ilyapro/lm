@@ -621,13 +621,19 @@ def test_compute_health_audit_emits_every_required_metric_section(
     # `latency` may be None by default; the key itself must be present.
 
 
-def test_memory_health_surface_includes_audit_sections(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "scope,recall_events",
+    [(None, 8), ("project:alpha", 3), (" alpha ", 3), ("project:gamma", 1), ("project:absent", 0)],
+)
+def test_memory_health_surface_includes_audit_sections(
+    tmp_path: Path, scope: str | None, recall_events: int,
+) -> None:
     """``memory_health`` (the existing MCP/CLI surface) must surface the audit
     sections without breaking pre-existing fields."""
 
     with _build_fixture(tmp_path / "f.sqlite3") as store:
-        report = memory_health(store)
-        direct = compute_health_audit(store)
+        report = memory_health(store, scope=scope)
+        direct = compute_health_audit(store, scope=scope)
 
     existing_fields = (
         "scope",
@@ -649,6 +655,9 @@ def test_memory_health_surface_includes_audit_sections(tmp_path: Path) -> None:
         assert key in report, f"audit section missing from memory_health: {key}"
     assert set(report) == set(existing_fields + audit_fields)
 
+    assert report["activity"]["recall_total"] == recall_events
+    assert report["activity"]["recall_total"] == report["feedback"]["recall_events"]
+    assert report["dedup"] == direct["dedup"]
     assert report["feedback"] == direct["feedback"]
     assert report["access"] == direct["access"]
     assert report["storage"]["db_size_bytes"] == direct["storage"]["db_size_bytes"]

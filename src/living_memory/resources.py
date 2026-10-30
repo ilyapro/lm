@@ -13,6 +13,7 @@ from living_memory.config import RetrievalSkewThresholds
 from living_memory.health_audit import (
     DEFAULT_LATENCY_QUERY,
     access_metrics,
+    duplicate_density,
     feedback_metrics,
     hot_recall_latency,
     instructions_metrics,
@@ -354,14 +355,7 @@ def memory_health(
     if normalized_scope:
         scope_clauses.append("scope = ?")
         scope_params.append(normalized_scope)
-    scope_where = (" WHERE " + " AND ".join(scope_clauses)) if scope_clauses else ""
-
-    recall_total = int(
-        store.connection.execute(
-            f"SELECT COUNT(*) AS c FROM recall_events{scope_where}",
-            scope_params,
-        ).fetchone()["c"]
-    )
+    feedback = feedback_metrics(store, scope=normalized_scope)
     window_clauses = list(scope_clauses) + ["created_at >= ?"]
     recall_window = int(
         store.connection.execute(
@@ -385,17 +379,7 @@ def memory_health(
     )
     ratio = (recall_window / remember_window) if remember_window > 0 else None
 
-    dup_row = store.connection.execute(
-        f"""
-        SELECT COUNT(*) AS total, COUNT(DISTINCT content) AS distinct_content
-        FROM nodes WHERE {trace_where}
-        """,
-        trace_params,
-    ).fetchone()
-    total_traces = int(dup_row["total"])
-    distinct_contents = int(dup_row["distinct_content"])
-    duplicate_excess = max(0, total_traces - distinct_contents)
-    duplicate_density = (duplicate_excess / total_traces) if total_traces > 0 else 0.0
+    dedup = duplicate_density(store, scope=normalized_scope)
 
     ages: list[float] = []
     now_epoch = now.timestamp()
@@ -453,17 +437,12 @@ def memory_health(
         "generated_at": now.isoformat().replace("+00:00", "Z"),
         "counts": counts,
         "activity": {
-            "recall_total": recall_total,
+            "recall_total": feedback["recall_events"],
             "recall_in_window": recall_window,
             "remember_in_window": remember_window,
             "recall_to_remember_ratio": ratio,
         },
-        "dedup": {
-            "total_traces": total_traces,
-            "distinct_contents": distinct_contents,
-            "duplicate_excess": duplicate_excess,
-            "duplicate_density": duplicate_density,
-        },
+        "dedup": dedup,
         "staleness": {
             "decay_rate": decay_rate,
             "age_seconds_p50": ages[round(0.5 * (len(ages) - 1))] if ages else None,
@@ -491,7 +470,7 @@ def memory_health(
     }
     report.update(
         {
-            "feedback": feedback_metrics(store, scope=normalized_scope),
+            "feedback": feedback,
             "access": access_metrics(store, scope=normalized_scope),
             "storage": storage_metrics(store),
             "latency": hot_recall_latency(
