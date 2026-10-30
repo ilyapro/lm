@@ -100,7 +100,7 @@ def _check_native_health(tmp_path, monkeypatch, naive_age, reverse_scan):
                     clause = " AND scope = ?" if scope else ""
                     # SQLite's actual input order is the tie contract, not ID order.
                     order = [row[0] for row in conn.execute(
-                        "SELECT id FROM nodes WHERE level = 'trace' AND decayed = 0" + clause,
+                        "SELECT id, timestamp, last_accessed FROM nodes WHERE level = 'trace' AND decayed = 0" + clause,
                         [scope] if scope else [],
                     )]
                     facts = {row[0]: row for row in fixtures}
