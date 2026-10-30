@@ -1092,20 +1092,23 @@ def _materialize_procedural_schemas(
             if node.provenance.get("strategy") == "procedural"
             and not node.corrections and not _is_superseded(store, node.id)
         ]
-        cited = store.get_nodes([
+        nodes: dict[tuple[str, str], list[Node]] = {}
+        for node in sorted(owners, key=lambda node: (node.created_at, node.id)):
+            nodes.setdefault((node.scope, _schema_group_id(node)), []).append(node)
+        # Repair a legacy owner even when no visited trace reaches its group.
+        legacy = {group: owned[0] for group, owned in nodes.items() if owned[0].level == "schema"}
+        legacy_sources = {source for node in legacy.values() for source in node.source_traces}
+        # Preserve the full reader's identity order before selecting bodies:
+        # set-derived batches sort within 999 IDs, and first-seen source groups
+        # determine write order. A subset can have a different batch order.
+        cited_order = store.get_node_scopes([
             source for node in owners if node.level == "schema" for source in node.source_traces
         ])
-    # Owner validity and cited records share one guarded snapshot. Grouping
-    # needs only those values; each write below reads its current facts again.
-    nodes: dict[tuple[str, str], list[Node]] = {}
-    for node in sorted(owners, key=lambda node: (node.created_at, node.id)):
-        nodes.setdefault((node.scope, _schema_group_id(node)), []).append(node)
-    # A legacy node is repaired from its own records even when no visited trace
-    # reaches its group; a record it cites from another group joins that group.
-    legacy = {group: owned[0] for group, owned in nodes.items() if owned[0].level == "schema"}
-    legacy_sources = {source for node in legacy.values() for source in node.source_traces}
+        cited = store.get_nodes(source for source in cited_order if source in legacy_sources)
+    # Owner selection and cited records share one guarded snapshot. Each write
+    # reads its current facts again; a cited record joins its own source group.
     groups: dict[tuple[str, str], dict[str, Node]] = {group: {} for group in legacy}
-    for trace in [*traces, *(node for source, node in cited.items() if source in legacy_sources)]:
+    for trace in [*traces, *(cited[source] for source in cited_order if source in cited)]:
         key = _procedure_key(trace)
         if key and not trace.decayed:
             groups.setdefault((trace.scope, key.group_id), {})[trace.id] = trace
