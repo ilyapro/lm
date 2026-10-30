@@ -115,7 +115,8 @@ def test_reference_hook_reads_only_endpoint_columns_and_matches_backfill(tmp_pat
         assert store.list_connections(source_id=note.id) == []
         backfill_edges(store, apply=True)
         assert sorted(edge_tuples(store.list_connections(source_id=note.id))) == sorted(
-            expected_edges(note.id, targets),
+            (source, target, relation, weight, {**metadata, "basis": "provenance_derivation"})
+            for source, target, relation, weight, metadata in expected_edges(note.id, targets)
         )
 
 
