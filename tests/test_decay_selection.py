@@ -2,9 +2,11 @@
 
 from datetime import UTC, datetime
 import sqlite3
+from weakref import WeakValueDictionary
 
 import pytest
 
+from living_memory import decay
 from living_memory.decay import soft_delete_expired
 from living_memory.storage import MemoryStore
 
@@ -17,6 +19,8 @@ NOW = datetime(2026, 10, 23, tzinfo=UTC)
     [
         ("2020-01-01", "2026-10-23", "2026-10-23", True, False),
         ("invalid", "2020-01-01", None, True, False),
+        ("", "2020-01-01", "", True, False),
+        ("", "", "", False, False),
         ("invalid", "invalid", "2020-01-01", False, True),
         ("2020-01-01", "2026-10-23", "invalid", True, True),
         ("2026-10-16T07:00:00+07:00", "2020-01-01", None, False, False),
@@ -124,7 +128,7 @@ def test_expired_trace_is_selected_among_100000_newer_live_traces(anchor):
 
 
 @pytest.mark.parametrize("anchor", ["created", "last_accessed"])
-@pytest.mark.parametrize("cap", [0, 2])
+@pytest.mark.parametrize("cap", [-1, 0, 1, 2, 20])
 def test_retirement_order_uses_parsed_anchor_and_fallback(anchor, cap):
     with MemoryStore(":memory:") as store:
         dates = [
@@ -148,7 +152,7 @@ def test_retirement_order_uses_parsed_anchor_and_fallback(anchor, cap):
         expected = ["fallback", "older", "tie-a", "tie-b"]
         if anchor == "created":
             expected.insert(0, "read-recent")
-        batches = [expected] if cap == 0 else [expected[i:i + cap] for i in range(0, len(expected), cap)]
+        batches = [expected] if cap <= 0 else [expected[i:i + cap] for i in range(0, len(expected), cap)]
         for batch in [*batches, []]:
             expired = soft_delete_expired(
                 store, now=NOW, ttl_days=7, ttl_anchor=anchor,
@@ -192,3 +196,123 @@ def test_live_cross_scope_coverage_guards_sources_unless_opted_in(level, coverag
             assert [(node.id, node.decay_reason) for node in expired] == [
                 ("covered", "ttl expired")
             ]
+
+
+@pytest.mark.parametrize("cap", [1, 7, 500, None])
+def test_candidate_retention_is_bounded_and_only_selected_nodes_are_loaded(monkeypatch, cap):
+    # Weak references count all live parsed candidates, even if a selector
+    # materializes its input internally. They do not keep those candidates alive.
+    class Reference(datetime):
+        pass
+
+    references = WeakValueDictionary()
+    parsed = 0
+    peak = 0
+    ttl_reference = decay._ttl_reference
+
+    def observe_reference(row, anchor):
+        nonlocal parsed, peak
+        value = Reference.fromisoformat(ttl_reference(row, anchor).isoformat())
+        references[parsed] = value
+        parsed += 1
+        peak = max(peak, len(references))
+        return value
+
+    monkeypatch.delenv(decay.MAX_PER_SWEEP_ENV, raising=False)
+    monkeypatch.setattr(decay, "_ttl_reference", observe_reference)
+    with MemoryStore(":memory:") as store:
+        with store.transaction():
+            store.connection.executemany(
+                """
+                INSERT INTO nodes (id, level, content, timestamp, created_at, updated_at)
+                VALUES (?, 'trace', 'expired', '2020-01-01', '2020-01-01', '2020-01-01')
+                """,
+                ((f"old-{index:06d}",) for index in reversed(range(5000))),
+            )
+        loaded = []
+        get_node = store.get_node
+
+        def observe_load(node_id):
+            loaded.append(node_id)
+            return get_node(node_id)
+
+        monkeypatch.setattr(store, "get_node", observe_load)
+        retired = soft_delete_expired(
+            store, now=NOW, ttl_days=7, ttl_anchor="created",
+            decay_concept_covered=False, max_expired=cap,
+        )
+        limit = 500 if cap is None else cap
+        expected = [f"old-{index:06d}" for index in range(limit)]
+        assert [(node.id, node.decay_reason) for node in retired] == [
+            (node_id, "ttl expired") for node_id in expected
+        ]
+        assert set(loaded) == set(expected)
+        assert parsed == 5000
+        # The selector and generator may also hold a constant number of current
+        # or just-replaced references in addition to the selected batch.
+        assert peak <= limit + 4
+
+
+@pytest.mark.parametrize("cap", [0, 1, 2])
+@pytest.mark.parametrize("failure", ["level", "read"])
+def test_late_selection_error_precedes_any_retirement(cap, failure):
+    with MemoryStore(":memory:") as store:
+        for index in range(8):
+            store.create_node(
+                level="trace", node_id=f"old-{index}", content="expired",
+                context={"timestamp": "2020-01-01"},
+            )
+        original_factory = store.connection.row_factory
+        reads = 0
+
+        def fail_late(cursor, values):
+            nonlocal reads
+            row = sqlite3.Row(cursor, values)
+            if set(row.keys()) == {"id", "timestamp", "created_at", "last_accessed"}:
+                reads += 1
+                if reads == 8:
+                    raise sqlite3.OperationalError("late candidate read failed")
+            return row
+
+        if failure == "read":
+            store.connection.row_factory = fail_late
+        try:
+            error, message = ((ValueError, "invalid node level") if failure == "level"
+                              else (sqlite3.OperationalError, "late candidate read failed"))
+            with pytest.raises(error, match=message):
+                soft_delete_expired(
+                    store, now=NOW, ttl_days=7, ttl_anchor="created",
+                    decay_concept_covered=False, max_expired=cap,
+                    levels=("trace", "invalid") if failure == "level" else ("trace",),
+                )
+        finally:
+            store.connection.row_factory = original_factory
+        assert store.connection.execute("SELECT COUNT(*) FROM nodes WHERE decayed=1").fetchone()[0] == 0
+        if failure == "read":
+            assert reads == 8
+
+
+@pytest.mark.parametrize("cap", [0, 1, 2, 3])
+def test_duplicate_levels_preserve_stable_candidates_and_reasons(monkeypatch, cap):
+    with MemoryStore(":memory:") as store:
+        for node_id in ("b", "a"):
+            store.create_node(
+                level="trace", node_id=node_id, content="expired source",
+                context={"timestamp": "2020-01-01"},
+            )
+        store.create_node(
+            level="concept", content="digest", provenance={"source_traces": ["a", "b"]},
+        )
+        # The second visit has the same date/ID key and a different reason.
+        # A reason tie-break or deduplicating levels would change these results.
+        read_since = iter([True, True, False, False])
+        monkeypatch.setattr(decay, "_read_since", lambda row, covered_at: next(read_since))
+        retired = soft_delete_expired(
+            store, now=NOW, ttl_days=7, ttl_anchor="created", levels=("trace", "trace"),
+            decay_concept_covered=True, max_expired=cap,
+        )
+        expected = [
+            ("a", "ttl expired"), ("a", "concept covered, unread since coverage"),
+            ("b", "ttl expired"), ("b", "concept covered, unread since coverage"),
+        ]
+        assert [(node.id, node.decay_reason) for node in retired] == (expected[:cap] if cap else expected)
