@@ -105,12 +105,11 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from .resources import node_to_dict
-from .models import SourcePassage, duplicate_bearers
+from .models import Node, SourcePassage, duplicate_bearers
 from .source_text import passage_spans
 from .validity import validity_fields
 
 if TYPE_CHECKING:
-    from .models import Node
     from .retrieval import RecallResult
 
 DELIVERY_FULL = "full"
@@ -339,7 +338,9 @@ def shape_recall_results(
     shaped: list[dict[str, Any]] = []
     bearer_position = 0
     for result in results:
-        node_dict = node_to_dict(result.node)
+        node_dict = (
+            knowledge_node(result.node) if view == "knowledge" else node_to_dict(result.node)
+        )
         node_id = node_dict["id"]
         content = node_dict["content"]
         full_chars = len(content)
@@ -375,7 +376,7 @@ def shape_recall_results(
                 bearer_position += 1
 
         if view == "knowledge":
-            entry = knowledge_node(node_dict)
+            entry = node_dict
             entry.update(validity)
             entry["delivery"] = delivery
             entry["content_ref"] = {"node_id": node_id}
@@ -429,30 +430,37 @@ def shape_recall_results(
     return shaped
 
 
-def knowledge_node(node: dict[str, Any]) -> dict[str, Any]:
+def knowledge_node(node: Node | Mapping[str, Any]) -> dict[str, Any]:
     """Stored content, identity and provenance shared by recall and id lookup.
 
+    Read a loaded recall Node or the narrow storage lookup mapping directly.
     Correction entries retain their keys and short values; long correction
     texts carry a bounded gist. Lookup's full view restores stored details.
     Callers add relation-derived supersession independently of this projection.
     """
 
-    provenance = node["provenance"]
+    if isinstance(node, Node):
+        get = lambda key, default=None: getattr(node, key, default)
+        corrections = node.corrections
+    else:
+        get = node.get
+        corrections = node["provenance"]["corrections"]
+    provenance = get("provenance")
     validity = {
         "corrections": _compact_corrections(
-            provenance["corrections"], DEFAULT_PROVENANCE_VALUE_MAX_CHARS
+            corrections, DEFAULT_PROVENANCE_VALUE_MAX_CHARS
         )
     }
     if "supersedes" in provenance:
         validity["supersedes"] = provenance["supersedes"]
     return {
-        "id": node["id"],
-        "level": node["level"],
-        "content": node["content"],
-        "scope": node["scope"],
+        "id": get("id"),
+        "level": get("level"),
+        "content": get("content"),
+        "scope": get("scope"),
         "provenance": validity,
-        "decayed": node.get("decayed", False),
-        "decay_reason": node.get("decay_reason"),
+        "decayed": get("decayed", False),
+        "decay_reason": get("decay_reason"),
     }
 
 
