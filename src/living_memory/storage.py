@@ -1794,23 +1794,53 @@ class MemoryStore:
             result.append((str(row["id"]), provenance))
         return result
 
-    def schema_triggers(self, scope: str | None) -> list[tuple[str, str]]:
+    def schema_triggers(
+        self, scope: str | None, *, strategy: str | None = None,
+    ) -> list[tuple[str, str]]:
         """``(id, trigger)`` of live triggered schemas and group carriers in ``scope`` (``None``: all).
 
         Reads two columns instead of whole nodes: a recall compares every
         trigger in its scopes and fetches only the schemas it matched.
+        A strategy selector also reads projected writer metadata, so a
+        materializer can discover its owners before hydrating their bodies.
         """
 
-        rows = self._conn.execute(
+        projection = ""
+        if strategy is not None:
+            # Python's provenance decoder keeps the last duplicate key. Only
+            # a string strategy can match; other JSON values stay unselected.
+            # Nonstandard/invalid JSON still reaches that decoder, preserving
+            # its accepted representations and mandatory failures.
+            projection = """,
+                CASE WHEN json_valid(provenance) AND json_type(provenance) = 'object'
+                THEN COALESCE((
+                    SELECT json_object('strategy', CASE WHEN type = 'text' THEN value END)
+                    FROM json_each(provenance) WHERE key = 'strategy'
+                    ORDER BY id DESC LIMIT 1
+                ), '{}')
+                ELSE provenance END AS owner_provenance
             """
-            SELECT id, JSON_EXTRACT(context, '$.trigger')
+        rows = self._conn.execute(
+            f"""
+            SELECT id, JSON_EXTRACT(context, '$.trigger') {projection}
             FROM nodes
             WHERE level IN ('schema', 'concept') AND (? IS NULL OR scope = ?) AND decayed = 0
               AND JSON_EXTRACT(context, '$.trigger') IS NOT NULL
             """,
             (scope, scope),
         ).fetchall()
-        return [(str(row[0]), str(row[1])) for row in rows if row[1]]
+        result = []
+        for row in rows:
+            if not row[1]:
+                continue
+            if strategy is not None:
+                provenance = _json_loads(row["owner_provenance"], {})
+                if not isinstance(provenance, dict):
+                    raise TypeError("node provenance must be a JSON object")
+                if provenance.get("strategy") != strategy:
+                    continue
+            result.append((str(row[0]), str(row[1])))
+        return result
 
     def list_nodes_by_context(
         self,

@@ -266,9 +266,9 @@ def test_procedural_discovery_waits_for_transaction_and_reads_one_snapshot(runti
     snapshots = []
     triggers, get_nodes = store.schema_triggers, store.get_nodes
 
-    def discover(scope):
+    def discover(scope, **kwargs):
         entered.set()
-        return triggers(scope)
+        return triggers(scope, **kwargs)
 
     def read(ids):
         nodes = get_nodes(ids)

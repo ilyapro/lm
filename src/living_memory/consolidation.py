@@ -1084,7 +1084,9 @@ def _materialize_procedural_schemas(
     # a group is its node, a later one a duplicate. A taught or superseded node
     # is historical; updating it would resurrect corrected content.
     with step():
-        triggered = store.get_nodes([node_id for node_id, _trigger in store.schema_triggers(None)])
+        triggered = store.get_nodes([
+            node_id for node_id, _trigger in store.schema_triggers(None, strategy="procedural")
+        ])
         owners = [
             node for node in triggered.values()
             if node.provenance.get("strategy") == "procedural"
