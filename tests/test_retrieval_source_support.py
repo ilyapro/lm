@@ -1,6 +1,5 @@
 """Lexical discovery order cannot stand in for current query support."""
 
-from dataclasses import replace
 import math
 
 import pytest
@@ -17,11 +16,12 @@ QUERY = "amber quartz basalt mica"
 
 
 class FrozenEncoder:
-    def __init__(self, scores):
+    def __init__(self, scores, query=QUERY):
         self.scores = scores
+        self.query = query
 
     def embed(self, text):
-        cosine = 1.0 if text == QUERY else self.scores.get(text, 0.0)
+        cosine = 1.0 if text == self.query else self.scores.get(text, 0.0)
         return [cosine, math.sqrt(1 - cosine**2)]
 
     def embed_batch(self, texts):
@@ -68,6 +68,8 @@ def test_partial_overlap_distractor_cannot_win_by_fts_order(tmp_path, reverse, d
         assert store.search_content_ids(QUERY, scope=SCOPE)[0][0] == "distractor"
         before = service.memory_recall(QUERY, **options)
         assert before[0].node.id == "target"
+        assert before[0].vector_score == pytest.approx(0.6)
+        assert next(item for item in before if item.node.id == "distractor").vector_score == pytest.approx(0.1)
         store.create_node(node_id="competitor", level="trace", content="amber amber",
                           context={"scope": SCOPE}, embedding=encoder.embed("amber amber"))
         after = service.memory_recall(QUERY, **options)
@@ -80,16 +82,17 @@ def test_partial_overlap_distractor_cannot_win_by_fts_order(tmp_path, reverse, d
 
 
 def test_task_identifier_support_does_not_qualify_unrelated_content(tmp_path):
-    with MemoryStore(tmp_path / "task.sqlite3") as store:
+    query = "marble-731-slate"
+    encoder = FrozenEncoder({}, query=query)
+    with MemoryStore(tmp_path / "task.sqlite3", chunk_embedder=encoder.embed_batch) as store:
         target = store.create_node(level="trace", content="Cafeteria inventory.",
                                    context={"scope": SCOPE, "task": "marble-731-slate"})
         other = store.create_node(level="trace", content="marble slate 731",
                                   context={"scope": SCOPE})
-        service = MemoryRecallService(store, embedder=FrozenEncoder({}))
-        candidates = {}
-        service._collect_bm25("marble-731-slate", resolve_scope(scope=SCOPE), candidates, max_results=2)
-        assert candidates[target.id].bm25_score == 1.0
-        assert 0 < candidates[other.id].bm25_score < 1.0
-        ranked = service.rank_candidates(candidates, resolve_scope(scope=SCOPE))
+        service = MemoryRecallService(store, embedder=encoder)
+        ranked = service.memory_recall(query, scope=SCOPE, depth=0, log_access=False, log_event=False)
         found = next(item for item in ranked if item.node.id == target.id)
-        assert gate_score(replace(found, lexical_score=0, vector_score=0)) == 0
+        assert found.bm25_score == 1.0
+        assert found.lexical_score == found.vector_score == 0
+        assert 0 < next(item for item in ranked if item.node.id == other.id).bm25_score < 1
+        assert gate_score(found) == 0
