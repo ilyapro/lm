@@ -323,7 +323,8 @@ def test_ordinary_write_preserves_pass_retry_policy(seeded, monkeypatch, tool, d
     assert scheduler.last_result(SCOPE) == last
 
 
-def test_request_and_completion_order_saves_guard_before_condition(tmp_path):
+@pytest.mark.parametrize("next_scope", ["project:first", "project:second"])
+def test_request_and_completion_order_saves_guard_before_condition(tmp_path, next_scope):
     # Pause completion just before it can acquire the store guard. A new
     # request must be saved first, and the older completion must snapshot the
     # current pending set rather than overwrite it with its earlier state.
@@ -332,6 +333,7 @@ def test_request_and_completion_order_saves_guard_before_condition(tmp_path):
     entered_second = threading.Event()
     lock = threading.RLock()
     saves = []
+    runs = []
 
     class Guard:
         def __enter__(self):
@@ -349,7 +351,8 @@ def test_request_and_completion_order_saves_guard_before_condition(tmp_path):
             store.set_kv(PENDING_KV_KEY, raw)
 
         def run_pass(scope):
-            if scope == "project:second":
+            runs.append(scope)
+            if len(runs) == 2:
                 entered_second.set()
                 assert release_second.wait(timeout=5)
             return {}
@@ -362,15 +365,16 @@ def test_request_and_completion_order_saves_guard_before_condition(tmp_path):
                 # Completion must release the condition before taking guard.
                 assert scheduler._cond.acquire(timeout=1)
                 scheduler._cond.release()
-                scheduler.request("project:second")
+                scheduler.request(next_scope)
             assert entered_second.wait(timeout=5)
             assert [set(saved) for saved in saves] == [
-                {"project:first"}, {"project:second"}, {"project:second"},
+                {"project:first"}, {next_scope}, {next_scope},
             ]
-            assert list(json.loads(store.get_kv(PENDING_KV_KEY))) == ["project:second"]
+            assert list(json.loads(store.get_kv(PENDING_KV_KEY))) == [next_scope]
             release_second.set()
             assert scheduler.wait_idle(timeout=5)
             assert saves[-1] == {} and store.get_kv(PENDING_KV_KEY) == "{}"
+            assert runs == ["project:first", next_scope]
         finally:
             release_second.set()
             scheduler.close()

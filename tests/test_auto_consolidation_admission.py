@@ -147,6 +147,84 @@ def test_completion_save_admits_outstanding_request(tmp_path, monkeypatch):
             scheduler.close()
 
 
+@pytest.mark.parametrize("unsaved_request", [False, True])
+def test_settlement_recovery_preserves_backoff_and_unsaved_scopes(tmp_path, monkeypatch, unsaved_request):
+    path = tmp_path / "memory.sqlite3"
+    third = "project:third"
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    runs, snapshots = [], []
+
+    def run(scope):
+        runs.append(scope)
+        snapshots.append(pending(path))
+        if scope == FIRST:
+            raise RuntimeError("pass fault")
+        if scope == SECOND:
+            entered.set()
+            assert release.wait(timeout=10)
+        return {}
+
+    with MemoryStore(path) as store:
+        scheduler = AutoConsolidationScheduler(
+            run, save_pending=lambda raw: store.set_kv(PENDING_KV_KEY, raw),
+            retry_delays=(3600,),
+        )
+        finish = scheduler._finish_ok
+
+        def finish_ok(scope, *args):
+            finish(scope, *args)
+            if scope == SECOND:
+                finished.set()
+
+        monkeypatch.setattr(scheduler, "_finish_ok", finish_ok)
+        try:
+            scheduler.request(FIRST)
+            assert scheduler.wait_idle(timeout=5)
+            retry, attempts, last = scheduler._queue[FIRST], dict(scheduler._attempts), scheduler.last_result(FIRST)
+            scheduler.request(SECOND)
+            assert entered.wait(timeout=5)
+            reject_saves(store)
+            if unsaved_request:
+                with pytest.raises(sqlite3.IntegrityError, match="pending save fault"):
+                    scheduler.request(third)
+            release.set()
+            assert finished.wait(timeout=5)
+            assert scheduler.last_result(SECOND)["status"] == "completed"
+            assert scheduler.status()["pending_save"] is True
+            assert set(pending(path)) == {FIRST, SECOND}
+            with pytest.raises(sqlite3.IntegrityError, match="pending save fault"):
+                scheduler.retry_pending()
+            assert runs == [FIRST, SECOND]
+            store.connection.execute("DROP TRIGGER reject_pending")
+            scheduler.retry_pending()
+            assert scheduler.wait_idle(timeout=5)
+            assert runs == [FIRST, SECOND] + ([third] if unsaved_request else [])
+            if unsaved_request:
+                assert set(snapshots[-1]) == {FIRST, third}
+            assert set(pending(path)) == {FIRST}
+            assert scheduler._queue[FIRST] == retry
+            assert scheduler._attempts == attempts
+            assert scheduler.last_result(FIRST) == last
+            assert scheduler.status()["pending_save"] is False
+            assert not scheduler.wait_idle(timeout=0, include_retries=True)
+        finally:
+            release.set()
+            scheduler.close()
+
+        resumed = []
+        cold = AutoConsolidationScheduler(
+            lambda scope: resumed.append(scope) or {},
+            load_pending=lambda: store.get_kv(PENDING_KV_KEY),
+            save_pending=lambda raw: store.set_kv(PENDING_KV_KEY, raw),
+        )
+        try:
+            assert cold.resume() == [FIRST]
+            assert cold.wait_idle(timeout=5, include_retries=True)
+            assert resumed == [FIRST] and pending(path) == {}
+        finally:
+            cold.close()
+
+
 @pytest.mark.parametrize("accepted", ["queued", "retry"])
 def test_failed_request_coalesces_into_an_accepted_pass(tmp_path, monkeypatch, accepted):
     path = tmp_path / "memory.sqlite3"

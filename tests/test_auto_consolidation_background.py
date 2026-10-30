@@ -10,9 +10,11 @@ from __future__ import annotations
 from contextlib import nullcontext
 from pathlib import Path
 import json
+import sqlite3
 import threading
 import time
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -273,3 +275,121 @@ def test_explicit_consolidate_stays_synchronous_and_full(
     assert payload["concepts_created"]
     assert isinstance(payload["concepts_created"][0], dict)  # full nodes, not ids
     assert mcp.auto_consolidation.status()["passes_completed"] == 0
+
+
+@pytest.mark.parametrize("tool", ["memory_remember", "memory_teach"])
+@pytest.mark.parametrize("next_scope", [SCOPE, "project:other"])
+@pytest.mark.parametrize("repeat_failures", [0, 2])
+def test_ordinary_write_settles_completed_pass_without_replay(
+    tmp_path, monkeypatch, caplog, tool, next_scope, repeat_failures,
+):
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", "fixed")
+    path = tmp_path / "memory.sqlite3"
+    mcp = create_mcp_server(path, mcp_factory=FakeMCP)
+    store, scheduler = mcp.memory_store, mcp.auto_consolidation
+    runs, saves = [], []
+    parked = threading.Event()
+    real_wait, real_save = scheduler._cond.wait, scheduler._save_pending
+
+    def wait(timeout=None):
+        if threading.current_thread() is scheduler._thread and runs:
+            parked.set()
+        return real_wait(timeout)
+
+    def save(raw):
+        saves.append(json.loads(raw))
+        real_save(raw)
+
+    def pending():
+        with sqlite3.connect(path) as reader:
+            return json.loads(reader.execute(
+                "SELECT value FROM kv WHERE key=?", (PENDING_KV_KEY,),
+            ).fetchone()[0])
+
+    def write(scope):
+        content = f"Harbor datum calibration observation {store.trace_count()}"
+        if tool == "memory_teach":
+            result = mcp.tools[tool](original, content, context={"scope": scope})
+            node_id = result["corrective_trace"]["id"]
+        else:
+            result = mcp.tools[tool](content, context={"scope": scope})
+            node_id = result["node"]["id"]
+        assert not store.connection.in_transaction
+        with sqlite3.connect(path) as reader:
+            assert reader.execute("SELECT content FROM nodes WHERE id=?", (node_id,)).fetchone() == (content,)
+            if tool == "memory_teach":
+                assert reader.execute(
+                    "SELECT target_id FROM connections WHERE source_id=? AND type='supersedes'",
+                    (node_id,),
+                ).fetchall() == [(original,)]
+        return result
+
+    monkeypatch.setattr(scheduler, "_run_pass", lambda scope: runs.append(scope) or {})
+    monkeypatch.setattr(scheduler, "_save_pending", save)
+    monkeypatch.setattr(scheduler._cond, "wait", wait)
+    try:
+        for index in range(99):
+            original = store.append_trace(f"Tide gauge measurement {index}", {"scope": SCOPE}).id
+        store.connection.execute(f"""CREATE TRIGGER reject_settlement BEFORE INSERT ON kv
+            WHEN NEW.key = '{PENDING_KV_KEY}' AND NEW.value = '{{}}'
+            BEGIN SELECT RAISE(ABORT, 'settlement save fault'); END""")
+        due = write(SCOPE)
+        assert due["auto_consolidation"]["trace_count"] == 100
+        assert parked.wait(timeout=5)  # the completed worker reached its ordinary wait
+        assert runs == [SCOPE] and len(saves) == 2
+        assert set(pending()) == {SCOPE}
+        state = scheduler.status()
+        assert state["running"] is None and state["queued"] == []
+        assert state["passes_completed"] == 1 and state["pending_save"] is True
+        assert scheduler.last_result(SCOPE)["status"] == "completed"
+        assert scheduler._attempts == {}
+        assert not scheduler.wait_idle(timeout=0, include_retries=True)
+        assert "could not persist pending auto-consolidation scopes" in caplog.text
+
+        for index in range(repeat_failures):
+            assert write(next_scope)["auto_consolidation"] is None
+            assert len(saves) == 3 + index  # one save per ordinary write, no spin
+            assert runs == [SCOPE] and set(pending()) == {SCOPE}
+            assert scheduler.status()["pending_save"] is True
+            assert not scheduler.wait_idle(timeout=0)
+        if repeat_failures:
+            assert "could not schedule post-commit auto-consolidation" in caplog.text
+
+        store.connection.execute("DROP TRIGGER reject_settlement")
+        start = Mock(wraps=scheduler._ensure_worker)
+        monkeypatch.setattr(scheduler, "_ensure_worker", start)
+        assert write(next_scope)["auto_consolidation"] is None
+        assert scheduler.wait_idle(timeout=5, include_retries=True)
+        assert pending() == {} and runs == [SCOPE]
+        assert len(saves) == 3 + repeat_failures
+        assert scheduler.status()["pending_save"] is False
+        assert scheduler.last_result(SCOPE) == state["last"][SCOPE]
+        start.assert_not_called()
+
+        # A settled idle write neither reads nor writes pending state.
+        load, save = Mock(wraps=scheduler._load_pending), Mock(wraps=scheduler._save_pending)
+        monkeypatch.setattr(scheduler, "_load_pending", load)
+        monkeypatch.setattr(scheduler, "_save_pending", save)
+        assert write(next_scope)["auto_consolidation"] is None
+        load.assert_not_called()
+        save.assert_not_called()
+        start.assert_not_called()
+        assert store.trace_count() == 102 + repeat_failures
+    finally:
+        scheduler.close()
+        store.close()
+
+    replayed = []
+    with MemoryStore(path) as reopened:
+        cold = AutoConsolidationScheduler(
+            lambda scope: replayed.append(scope) or {},
+            load_pending=lambda: reopened.get_kv(PENDING_KV_KEY),
+            save_pending=lambda raw: reopened.set_kv(PENDING_KV_KEY, raw),
+        )
+        try:
+            assert cold.resume() == []
+            assert cold.wait_idle(timeout=5, include_retries=True)
+            assert replayed == [] and pending() == {}
+        finally:
+            cold.close()
