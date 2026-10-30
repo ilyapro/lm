@@ -1,6 +1,7 @@
 """Vector discovery admits current source identities before decoding bodies."""
 
 from dataclasses import replace
+from math import sqrt
 import sqlite3
 import sys
 
@@ -24,10 +25,10 @@ class Encoder:
         return list(VECTOR)
 
 
-def put(store, node_id, *, scope=SCOPE):
+def put(store, node_id, *, scope=SCOPE, vector=VECTOR):
     return store.create_node(
         node_id=node_id, level="concept", content=f"Cobalt prism specimen {node_id}",
-        context={"scope": scope}, provenance={"detail": node_id}, embedding=VECTOR,
+        context={"scope": scope}, provenance={"detail": node_id}, embedding=vector,
         stats={"unique_agents": 2},
     )
 
@@ -309,7 +310,8 @@ def test_vector_discovery_retains_bounded_scores_and_winners(tmp_path, monkeypat
     with MemoryStore(tmp_path / "bounded.sqlite3") as store:
         with store.transaction():
             for number in range(10000):
-                put(store, f"n{number:05}")
+                score = 0.7 + (number % 100) * 0.003
+                put(store, f"n{number:05}", vector=[score, sqrt(1 - score * score), 0.0])
         service = MemoryRecallService(store, embedder=Encoder())
         plan = ScopePlan(SCOPE, (SCOPE,))
         blocks = service._chunk_blocks(plan, 3)
@@ -320,7 +322,8 @@ def test_vector_discovery_retains_bounded_scores_and_winners(tmp_path, monkeypat
         # fetch or decode it, even though its vector is fully scored.
         with store.transaction():
             store.connection.execute(
-                "UPDATE nodes SET provenance = '[]' WHERE id >= 'n00050' AND id != 'n09999'",
+                f"UPDATE nodes SET provenance = '[]' WHERE id NOT IN ({','.join('?' for _ in expected)})",
+                tuple(expected),
             )
         peak = measure_vector_state(lambda: service._collect_vector(VECTOR, plan, candidates, max_results=2))
         assert candidates == expected
