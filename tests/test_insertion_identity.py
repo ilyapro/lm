@@ -94,7 +94,8 @@ def test_selected_peer_and_duplicate_edge_failures_roll_back(writer, fault):
     store, write = writer
     peer = store.append_trace(CONTENT, CONTEXT).id
     if fault == "malformed_peer":
-        store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (peer,))
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (peer,))
         error = "list indices"
     else:
         store.connection.execute("""CREATE TRIGGER reject_duplicate AFTER INSERT ON connections
@@ -107,7 +108,8 @@ def test_selected_peer_and_duplicate_edge_failures_roll_back(writer, fault):
     assert list(store.connection.iterdump()) == before
     assert not store.connection.in_transaction
     if fault == "malformed_peer":
-        store.connection.execute("UPDATE nodes SET provenance = '{}' WHERE id = ?", (peer,))
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET provenance = '{}' WHERE id = ?", (peer,))
     else:
         store.connection.execute("DROP TRIGGER reject_duplicate")
     target = write(CONTEXT)
@@ -123,7 +125,8 @@ def test_peer_decode_precedes_lazy_identity_even_for_unknown_derivations(tmp_pat
                                    context={**CONTEXT, "source_slot": i}, provenance=provenance).id
                  for i in range(3)]
         if broken_index is not None:
-            store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (peers[broken_index],))
+            with store.transaction():
+                store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (peers[broken_index],))
         before = list(store.connection.iterdump())
         events = []
         decode, identity = storage._node_from_row, storage.content_identity
@@ -167,7 +170,8 @@ def test_peer_identity_failure_is_not_skipped_after_first_peer(tmp_path):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
         peers = [store.append_trace(CONTENT, {**CONTEXT, "source_slot": i}).id for i in range(2)]
         # Valid JSON decodes, but is not a source context mapping.
-        store.connection.execute("UPDATE nodes SET context = '[]' WHERE id = ?", (peers[1],))
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET context = '[]' WHERE id = ?", (peers[1],))
         before = list(store.connection.iterdump())
         with pytest.raises(AttributeError, match="items"):
             store.append_trace(CONTENT, {**CONTEXT, "source_slot": 999})
