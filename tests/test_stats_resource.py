@@ -44,8 +44,9 @@ def test_registered_stats_population(tmp_path, case, level_counts, scope_counts)
                         "promoted_from": ["project:Бета", "project:alpha"],
                         "promotion_events": [1, 2],
                     } if node_id == "promotion" else {},
-                    decayed=case == "decayed" or (case != "active" and decayed),
                 )
+                if case == "decayed" or (case != "active" and decayed):
+                    store.soft_delete_node(node_id)
         if case == "legacy":
             store.connection.execute("PRAGMA ignore_check_constraints=ON")
             with store.transaction():
