@@ -100,19 +100,27 @@ gate_score(result, demotions, *, plan=None, causal_mode=False)
     * demotions.get(node_id, 1.0)
 ```
 
-`lexical_score` is the fraction of distinct normalized query terms present in
-the source's current content. Empty query terms give zero support. The shared
+`lexical_score` is the fraction of distinct query terms present in the source's
+current content. Normalized words and exact compound identifier spellings each
+contribute a term, so scattered components do not fully support an identifier.
+Empty query terms give zero support. The shared
 tokenizer retains its splitting, synonyms and stemming; evidence normalization
 also keeps numbers, including identifier components, and conditions/negation.
 The same normalization supplies trigger overlap, query coverage and name matches.
 The default embedding and search-expansion features remain unchanged.
 
-Reciprocal FTS rank (`bm25_score`) still discovers and orders candidates. Neither
-it nor raw corpus-dependent BM25 scores qualify source content. Lexical coverage
-is computed for every found candidate, including vector, graph and anchor
-discoveries. A recognized schema name supplies complete lexical support under
+FTS order selects a bounded discovery set. Its admitted candidates receive
+`bm25_score` from the same coverage function over current content and recorded
+task; the channel name also identifies its learned weight and feedback share.
+FTS position and raw corpus-dependent BM25 scores do not enter the blend or
+graph activation. Task labels retain their discovery/ranking role but cannot
+qualify unrelated content. Source-only lexical coverage is computed for every
+found candidate, including vector, graph and anchor discoveries.
+A recognized schema name supplies complete lexical support under
 the existing name semantics. Coverage is textual correspondence, not semantic
-entailment or an interpretation of a condition's polarity.
+entailment or an interpretation of a condition's polarity. It does not measure
+term rarity or phrase relevance beyond compound identifier spelling. FTS bounds,
+learned weights, scope preferences and ranking feedback can still affect order.
 
 The same calculation retains the strong-vector floor (`vector >= 0.65`),
 graph-weight floor (0.25, or 0.75 in causal mode), scope boost and causal boost.

@@ -81,13 +81,13 @@ def test_fts_competition_changes_order_without_changing_source_qualification(tmp
         after = snapshot(store, service, QUERY)
         assert before["fts"].index("picnic") == 1
         assert after["fts"].index("picnic") == 2
-        assert before["results"]["picnic"].bm25_score == 0.5
-        assert after["results"]["picnic"].bm25_score == pytest.approx(1 / 3)
         for name in ("target", "picnic"):
             left, right = (arm["results"][name] for arm in (before, after))
             assert left.node.content == right.node.content
             assert left.lexical_score == right.lexical_score > 0
+            assert left.bm25_score == right.bm25_score == left.lexical_score
             assert left.vector_score == right.vector_score
+            assert left.score == right.score
             assert before["scores"][name] == after["scores"][name]
         for arm in (before, after):
             assert "target" in arm["qualified"] & arm["mapped"]
@@ -109,9 +109,10 @@ def test_genuine_relation_activation_survives_fts_competition(tmp_path, depth):
         before = snapshot(store, service, query, depth)
         add(store, encoder, "competitor", query + " alpha beta gamma delta")
         after = snapshot(store, service, query, depth)
-        assert before["results"]["root"].bm25_score > after["results"]["root"].bm25_score
-        assert before["results"]["leaf"].graph_score > after["results"]["leaf"].graph_score
+        assert before["fts"].index("root") < after["fts"].index("root")
+        assert before["results"]["root"].bm25_score == after["results"]["root"].bm25_score == 1
         for name in ("leaf", "tail"):
+            assert before["results"][name].graph_score == after["results"][name].graph_score > 0
             assert before["results"][name].source_graph_score == after["results"][name].source_graph_score > 0
             assert before["scores"][name] == after["scores"][name]
             assert (name in before["qualified"]) == (name in after["qualified"])
@@ -133,14 +134,14 @@ def test_source_seed_bound_does_not_use_fts_tie_order(tmp_path, monkeypatch):
         store.create_connection("a-root", "leaf", "requires")
         service = MemoryRecallService(store, embedder=encoder, anchor_seeding=False)
         before = snapshot(store, service, query, depth=1)
-        # Both sources have complete coverage. Only discovery prefers the
-        # short competitor; source seed ties use source identity.
+        # Both sources have complete coverage. FTS prefers the short
+        # competitor; both graph seed selections break ties by source identity.
         add(store, encoder, "z-competitor", query + " quartz pressure")
         after = snapshot(store, service, query, depth=1)
         # The leaf remains independently found through its frozen vector.
         assert after["fts"][0] == "z-competitor"
         leaf = after["results"]["leaf"]
-        assert leaf.graph_score == 0
+        assert leaf.graph_score == before["results"]["leaf"].graph_score == pytest.approx(0.85)
         assert leaf.source_graph_score == before["results"]["leaf"].source_graph_score == pytest.approx(0.85)
         assert before["scores"]["leaf"] == after["scores"]["leaf"]
 
@@ -158,7 +159,7 @@ def test_discovery_seed_floor_does_not_create_source_activation(tmp_path, query,
         service = MemoryRecallService(store, embedder=encoder, anchor_seeding=False)
         arm = snapshot(store, service, query, depth=1)
         leaf = arm["results"]["leaf"]
-        assert leaf.graph_score == pytest.approx(0.85)
+        assert leaf.graph_score == pytest.approx(0.05 * 0.85)
         assert leaf.source_graph_score == pytest.approx(coverage * 0.85)
         assert leaf.withheld is None  # ranked evidence is independent of selection
         assert arm["delivered"]["leaf"] == "below_threshold"

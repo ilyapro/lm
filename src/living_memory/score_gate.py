@@ -32,8 +32,9 @@ ranker's correction boost does not enter an individual gate score; a present
 correction instead qualifies when its original passes the gate.
 Transient ``source_graph_score`` excludes query anchors and historical edge
 reinforcement; its seeds use current lexical/vector support. ``lexical_score``
-measures query-term coverage in source text, while reciprocal FTS rank remains
-discovery evidence only. Access and the entire net usefulness accumulator stay
+measures query-term coverage in source text; ranking's lexical channel also
+admits recorded task text. FTS rank only selects discovery membership.
+Access and the entire net usefulness accumulator stay
 outside both qualification scales; positive confidence never lifts them. Historical signals
 retain their ranking and discovery roles.
 

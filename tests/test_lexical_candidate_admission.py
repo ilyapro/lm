@@ -1,4 +1,4 @@
-"""Lexical discovery preserves ranks while admitting each new body once."""
+"""Lexical discovery preserves membership while admitting each new body once."""
 
 from collections import Counter
 from dataclasses import replace
@@ -35,16 +35,18 @@ def put(store, node_id, *, scope=SCOPE, **kwargs):
 
 
 def collect_full_bodies(service, query, plan, candidates, *, max_results):
-    """Reference discovery using the public full-node search contract."""
+    """Full-node discovery control for this fixture's complete coverage."""
+    assert query == QUERY
     scopes = plan.search_scopes if plan.restricted else (*plan.named_scopes, None)
     for scope in scopes:
         rows = service.store.search_content(
             _expanded_query(query), scope=scope, limit=max(25, max_results * 8),
         )
-        for rank, (node, _) in enumerate(rows):
+        for node, _ in rows:
             if not node.decayed and plan.allows(node.scope):
+                assert node.content.startswith(QUERY)
                 candidate = candidates.setdefault(node.id, _Candidate(node=node))
-                candidate.bm25_score = max(candidate.bm25_score, 1.0 / (rank + 1))
+                candidate.bm25_score = max(candidate.bm25_score, 1.0)
 
 
 def test_search_projections_share_order_filters_task_and_validation(tmp_path):
@@ -155,7 +157,7 @@ def test_ordinary_recall_and_residual_match_full_body_discovery_with_vectors(
 
 
 @pytest.mark.parametrize("mutation", ["decay", "remove", "move"])
-def test_body_admission_rechecks_live_scope_without_closing_rank_holes(tmp_path, monkeypatch, mutation):
+def test_body_admission_rechecks_live_scope_and_scores_surviving_source(tmp_path, monkeypatch, mutation):
     with MemoryStore(tmp_path / "admission.sqlite3") as store:
         rejected = put(store, "rejected", stats={"confidence": 0.9})
         survivor = put(store, "survivor", stats={"confidence": 0.2})
@@ -186,7 +188,7 @@ def test_body_admission_rechecks_live_scope_without_closing_rank_holes(tmp_path,
         monkeypatch.setattr(storage, "_node_from_row", count)
         candidates = {}
         service._collect_bm25(QUERY, resolve_scope(scope=SCOPE), candidates, max_results=2)
-        assert candidates == {survivor.id: _Candidate(node=survivor, bm25_score=0.5)}
+        assert candidates == {survivor.id: _Candidate(node=survivor, bm25_score=1.0)}
         assert decoded == [survivor.id]
 
 

@@ -102,7 +102,8 @@ def test_embedding_similarity_handles_cross_language_deployment_failure() -> Non
     assert similarity > 0.5
 
 
-def test_cross_language_recall_finds_russian_and_english_traces(tmp_path: Path) -> None:
+@pytest.mark.parametrize("depth", [0, 1])
+def test_cross_language_recall_finds_russian_and_english_traces(tmp_path: Path, depth: int) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         russian = store.append_trace(
             "Развертывание упало из-за ошибки миграции базы данных",
@@ -119,12 +120,14 @@ def test_cross_language_recall_finds_russian_and_english_traces(tmp_path: Path) 
             store,
             "deployment failed database migration error",
             scope="project:alpha",
+            depth=depth,
             max_results=3,
         )
         russian_query = memory_recall(
             store,
             "ошибка конфигурации авторизации входа",
             scope="project:alpha",
+            depth=depth,
             max_results=3,
         )
 
