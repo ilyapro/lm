@@ -16,13 +16,15 @@ pairs are skipped for the undirected rules.
 
 from __future__ import annotations
 
+import json
 import re
+import sqlite3
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
 
 from living_memory.models import Connection, ConnectionType, Node
 from living_memory.relations import CONTENT_REFERENCE_WEIGHT, shared_files_weight
-from living_memory.storage import NodeEndpoint, _node_from_row
+from living_memory.storage import NodeEndpoint
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from living_memory.storage import MemoryStore
@@ -60,14 +62,34 @@ class DerivedEdge:
     rule: str
 
 
+@dataclass(frozen=True, slots=True)
+class _RuleCandidate:
+    """Identity, decay and selected context facts consumed by the R4 rules."""
+
+    id: str
+    decayed: bool
+    context: dict[str, Any]
+
+
+def _candidate_from_row(row: sqlite3.Row) -> _RuleCandidate:
+    # Raw JSON preserves Python truthiness and commit normalization, including
+    # false empty containers and the true string "false".
+    context = {
+        key: json.loads(row[key])
+        for key in ("commit", "is_rejected_alternative")
+        if key in row.keys() and row[key] is not None
+    }
+    return _RuleCandidate(str(row["id"]), bool(row["decayed"]), context)
+
+
 # --- node predicates and extractors -------------------------------------------
 
 
-def is_rejected_alternative(node: Node) -> bool:
+def is_rejected_alternative(node: Node | _RuleCandidate) -> bool:
     return bool(node.context.get("is_rejected_alternative"))
 
 
-def commit_prefix(node: Node) -> str | None:
+def commit_prefix(node: Node | _RuleCandidate) -> str | None:
     """Normalized 7-char commit prefix, or None when too short/absent."""
 
     commit = str(node.context.get("commit") or "").strip().lower()
@@ -120,7 +142,7 @@ def rule_r6_content_reference(
 
 def rule_r4a_same_commit(
     node: Node,
-    others: Sequence[Node],
+    others: Sequence[Node | _RuleCandidate],
     *,
     max_group: int = MAX_COMMIT_GROUP,
 ) -> list[DerivedEdge]:
@@ -136,7 +158,7 @@ def rule_r4a_same_commit(
     prefix = commit_prefix(node)
     if prefix is None:
         return []
-    members: list[Node] = []
+    members: list[Node | _RuleCandidate] = []
     seen_ids: set[str] = set()
     for other in others:
         if other.id == node.id or other.id in seen_ids:
@@ -171,7 +193,7 @@ def rule_r4a_same_commit(
 
 def rule_r4b_shared_files(
     node: Node,
-    citing_by_file: Mapping[str, Sequence[Node]],
+    citing_by_file: Mapping[str, Sequence[Node | _RuleCandidate]],
     *,
     max_fanout: int = MAX_FILE_FANOUT,
 ) -> list[DerivedEdge]:
@@ -310,7 +332,7 @@ def derive_edges_for_new_trace(store: "MemoryStore", node: Node) -> list[Connect
 
 def _commit_group_candidates(
     store: "MemoryStore", node: Node, prefix: str
-) -> list[Node]:
+) -> list[_RuleCandidate]:
     """Other active nodes sharing the commit prefix, capped at the group limit.
 
     The substr/lower/trim expression matches ``idx_nodes_commit_prefix``
@@ -321,7 +343,9 @@ def _commit_group_candidates(
 
     rows = store.connection.execute(
         """
-        SELECT * FROM nodes
+        SELECT id, decayed, context -> '$.commit' AS "commit",
+               context -> '$.is_rejected_alternative' AS is_rejected_alternative
+        FROM nodes
         WHERE substr(lower(trim(json_extract(context, '$.commit'))), 1, 7) = ?
           AND json_extract(context, '$.commit') IS NOT NULL
           AND decayed = 0
@@ -330,12 +354,12 @@ def _commit_group_candidates(
         """,
         (prefix, node.id, MAX_COMMIT_GROUP),
     ).fetchall()
-    return [_node_from_row(row) for row in rows]
+    return [_candidate_from_row(row) for row in rows]
 
 
 def _file_citation_candidates(
     store: "MemoryStore", files: Sequence[str]
-) -> dict[str, list[Node]]:
+) -> dict[str, list[_RuleCandidate]]:
     """Citing occurrence rows per file entry (the new node's own included).
 
     ``json_each`` yields one row per array element, so a node listing a file
@@ -345,11 +369,13 @@ def _file_citation_candidates(
     ``isinstance(files, list)`` + ``str(f)`` postings.
     """
 
-    citing: dict[str, list[Node]] = {}
+    citing: dict[str, list[_RuleCandidate]] = {}
     for fname in files:
         rows = store.connection.execute(
             """
-            SELECT n.* FROM nodes AS n, json_each(n.context, '$.files') AS entry
+            SELECT n.id, n.decayed,
+                   n.context -> '$.is_rejected_alternative' AS is_rejected_alternative
+            FROM nodes AS n, json_each(n.context, '$.files') AS entry
             WHERE json_extract(n.context, '$.files') IS NOT NULL
               AND n.decayed = 0
               AND json_type(n.context, '$.files') = 'array'
@@ -358,5 +384,5 @@ def _file_citation_candidates(
             """,
             (fname, MAX_FILE_FANOUT + 1),
         ).fetchall()
-        citing[fname] = [_node_from_row(row) for row in rows]
+        citing[fname] = [_candidate_from_row(row) for row in rows]
     return citing
