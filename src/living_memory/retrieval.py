@@ -1699,7 +1699,7 @@ class MemoryRecallService:
             # state: discovery strength must not hide a source path.
             # Extra source-only discoveries do not change ranking membership.
             self._walk_graph(
-                plan, dict(candidates), source_roots,
+                plan, candidates, source_roots,
                 max_depth=max_depth,
                 neighbors_for_nodes=lambda ids: neighbors_for_nodes(ids, source_only=True),
                 anchor_pass=False, source_pass=True,
@@ -1749,7 +1749,8 @@ class MemoryRecallService:
 
         The selected pass controls its score field and provenance updates.
         Traversal, bounds and arithmetic are shared. The source pass supplies
-        history-free relation contributions and never changes ranking paths.
+        history-free relation contributions and never changes ranking paths
+        or membership; its intermediate identities need admission only.
         """
 
         queue: deque[tuple[str, float, int, tuple[str, ...]]] = deque()
@@ -1759,10 +1760,11 @@ class MemoryRecallService:
             queue.append((node_id, seed, 0, (node_id,)))
             best_seen[node_id] = seed
 
-        # Cache neighbor lookups across the BFS so a node reached via multiple
-        # paths is fetched at most once. A None entry marks "fetched and
-        # filtered out" so we do not re-issue get_node on revisits.
+        # Each pass retains its own admission observations, including misses,
+        # so multiple paths fetch an identity at most once. Only discovery
+        # needs the bodies of newly admitted neighbors.
         node_cache: dict[str, Node | None] = {}
+        source_admission: dict[str, bool] = {}
 
         while queue:
             current_depth = queue[0][2]
@@ -1791,30 +1793,39 @@ class MemoryRecallService:
                         continue
 
                     transitions.append((neighbor_id, next_score, depth + 1, path + (neighbor_id,)))
-                    if neighbor_id not in node_cache and neighbor_id not in candidates:
+                    if (neighbor_id not in node_cache and neighbor_id not in source_admission
+                            and neighbor_id not in candidates):
                         needed_neighbor_ids.add(neighbor_id)
 
             # Admit missing neighbors before materializing their bodies.
             if needed_neighbor_ids:
-                fetched_nodes = self.store.get_recall_nodes(needed_neighbor_ids, plan)
-                for nid in needed_neighbor_ids:
-                    node_cache[nid] = fetched_nodes.get(nid)
+                if source_pass:
+                    admitted = self.store.get_recall_node_ids(needed_neighbor_ids, plan)
+                    source_admission.update((nid, nid in admitted) for nid in needed_neighbor_ids)
+                else:
+                    fetched_nodes = self.store.get_recall_nodes(needed_neighbor_ids, plan)
+                    for nid in needed_neighbor_ids:
+                        node_cache[nid] = fetched_nodes.get(nid)
 
             for neighbor_id, next_score, depth, path in transitions:
                 if next_score <= best_seen.get(neighbor_id, 0.0):
                     continue
 
-                neighbor = (
-                    node_cache[neighbor_id] if neighbor_id in node_cache
-                    else candidates[neighbor_id].node
-                )
-                if neighbor is None or neighbor.decayed or not plan.allows(neighbor.scope):
-                    continue
+                candidate = candidates.get(neighbor_id)
+                if source_pass and candidate is None:
+                    if not source_admission[neighbor_id]:
+                        continue
+                else:
+                    neighbor = candidate.node if candidate is not None else node_cache[neighbor_id]
+                    if neighbor is None or neighbor.decayed or not plan.allows(neighbor.scope):
+                        continue
+                    if candidate is None:
+                        candidate = candidates[neighbor_id] = _Candidate(node=neighbor)
 
                 best_seen[neighbor_id] = next_score
-                candidate = candidates.setdefault(neighbor_id, _Candidate(node=neighbor))
                 if source_pass:
-                    candidate.source_graph_score = max(candidate.source_graph_score, min(1.5, next_score))
+                    if candidate is not None:
+                        candidate.source_graph_score = max(candidate.source_graph_score, min(1.5, next_score))
                 elif anchor_pass:
                     reached = min(1.5, next_score)
                     # Provenance belongs to the strongest explanation across

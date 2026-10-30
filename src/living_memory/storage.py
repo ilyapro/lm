@@ -1668,21 +1668,29 @@ class MemoryStore:
         excluded node's body is neither returned nor decoded. Exact readers
         retain their independent full-node and decayed-history contracts.
         """
+        nodes: dict[str, Node] = {}
+        for row in self._recall_node_rows(node_ids, plan, columns="*"):
+            node = _node_from_row(row)
+            nodes[node.id] = node
+        return nodes
+
+    def get_recall_node_ids(self, node_ids: Iterable[str], plan: ScopePlan) -> set[str]:
+        """Read admitted identities for source paths without selecting bodies."""
+        return {str(row["id"]) for row in self._recall_node_rows(node_ids, plan, columns="id")}
+
+    def _recall_node_rows(
+        self, node_ids: Iterable[str], plan: ScopePlan, *, columns: Literal["*", "id"],
+    ) -> Iterator[sqlite3.Row]:
         scopes = plan.named_scopes if plan.restricted else ()
         if plan.restricted and not scopes:
-            return {}
+            return
         scope_filter = f" AND scope IN ({','.join('?' for _ in scopes)})" if scopes else ""
-        nodes: dict[str, Node] = {}
         for chunk in _node_read_batches(node_ids):
             placeholders = ",".join("?" for _ in chunk)
-            rows = self._conn.execute(
-                f"SELECT * FROM nodes WHERE id IN ({placeholders}) AND decayed = 0"
+            yield from self._conn.execute(
+                f"SELECT {columns} FROM nodes WHERE id IN ({placeholders}) AND decayed = 0"
                 f"{scope_filter} ORDER BY id", (*chunk, *scopes),
             ).fetchall()
-            for row in rows:
-                node = _node_from_row(row)
-                nodes[node.id] = node
-        return nodes
 
     def get_node_scopes(self, node_ids: Iterable[str]) -> dict[str, str]:
         """Read existing identities and authoritative scopes, including decayed nodes."""
