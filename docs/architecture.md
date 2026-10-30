@@ -123,10 +123,12 @@ without changing the other surface.
    while retaining the corrected source's subject and step location. Positive
    usefulness reinforcement carries diminishing returns: each increment is
    scaled by the node's remaining usefulness headroom (floored, never
-   zeroed) and divided by a logarithm of its access count, so entrenched,
-   frequently delivered nodes re-earn rank far more slowly than fresh ones
-   and the delivery → reinforcement → delivery loop stops concentrating
-   deliveries on a handful of saturated nodes. Explicit negative feedback
+   zeroed) and divided by an access factor of `1 + ln(1 + access_count)`, so
+   entrenched, frequently delivered nodes accrue further usefulness more
+   slowly than fresh ones. This damps the reinforcing advantage of repeated
+   delivery while keeping usefulness saturation and the same ranking cap
+   reachable; it does not guarantee a lower maximum delivery share for every
+   topic or query schedule. Explicit negative feedback
    (corrections) is exempt and always applies at full strength. Reinforcement
    is gated on *usage*, not on delivery: a result is credited when the
    consuming trace grounds its content (IDF containment at

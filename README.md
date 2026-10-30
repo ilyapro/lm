@@ -44,6 +44,15 @@ shared protocol producer in `server.py`. Caller/session attribution and the
 once-only credit shared by lookup, explicit use and grounded feedback retain
 their ordinary boundaries.
 
+Positive usefulness feedback has diminishing returns: higher usefulness and
+more recorded accesses reduce the next increment. Sustained evidence can still
+reach usefulness 1.0, and the ranking multiplier remains capped at 1.4; negative
+feedback retains full strength. The seeded closed-loop tests check lower mean
+per-topic top1/top3 shares and global top3 share, less capture of better matches,
+broader delivery and relevance preservation over their finite horizon. These
+checks do not guarantee a strict reduction in the largest delivery share or
+establish fleet recall quality, latency or token savings.
+
 ## Layout
 
 - `src/living_memory/` - server, store, retrieval, consolidation, resources,
