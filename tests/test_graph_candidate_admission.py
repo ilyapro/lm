@@ -50,9 +50,11 @@ def native(tmp_path, monkeypatch):
 
     @contextmanager
     def opened(name):
+        tool_service_index = len(services)
         mcp = server.create_mcp_server(tmp_path / name, mcp_factory=FakeMCP)
         try:
-            yield mcp, mcp.memory_store, services[-1], guard
+            # Tools register their service before the independent prompt service.
+            yield mcp, mcp.memory_store, services[tool_service_index], guard
         finally:
             mcp.auto_consolidation.close()
             mcp.memory_store.close()
