@@ -119,6 +119,82 @@ def test_admission_matches_materializer_policy_and_explicit_fallback(store, monk
     assert set(decoded) == expected and len(decoded) == len(expected)
 
 
+def test_grouped_sources_keep_writer_inputs_and_explicit_edges_separate(store, monkeypatch):
+    left, right = sources(store)
+    cluster = derived(store, "cluster", [left])
+    store.create_connection(cluster.id, right.id, "related", metadata={"kind": "derived_from"})
+    promotion = store.create_node(
+        level="concept", content="Global harbor promotion.", context={"scope": "global"},
+        provenance={"strategy": "cross-scope-promotion", "source_traces": [left.id],
+                    "source_concepts": [right.id]},
+    )
+    opaque = store.create_node(level="schema", content="Opaque shared dependency.")
+    for source in (left, right):
+        store.create_connection(opaque.id, source.id, "related", metadata={"kind": "derived_from"})
+    noise = incidental(store, left)
+    with store.transaction():
+        store.connection.execute("UPDATE nodes SET embedding = 'broken' WHERE id = ?", (noise.id,))
+    decoded = []
+    decode = storage._node_from_row
+
+    def counted(row):
+        decoded.append(row["id"])
+        return decode(row)
+
+    monkeypatch.setattr(storage, "_node_from_row", counted)
+    result = store.nodes_referencing_sources([right.id, left.id, right.id, "missing"])
+    assert {source: [node.id for node in nodes] for source, nodes in result.items()} == {
+        left.id: [cluster.id, opaque.id], right.id: [promotion.id, opaque.id], "missing": [],
+    }
+    assert Counter(decoded) == {cluster.id: 1, promotion.id: 1, opaque.id: 1}
+
+
+@pytest.mark.parametrize("width,depth,scans", [(0, 0, 1), (130, 1, 4), (1, 12, 13), (12, 4, 38)])
+def test_discovery_preserves_stack_order_with_bounded_pending_groups(
+    store, monkeypatch, width, depth, scans,
+):
+    root = store.append_trace("Harbor root evidence.")
+    paths = []
+    for branch in reversed(range(width)):
+        parent = root
+        path = []
+        for layer in range(depth):
+            parent = store.create_node(
+                node_id=f"owner-{branch:03}-{layer:03}", level="concept",
+                content=f"Harbor branch {branch} layer {layer}.",
+                provenance={"strategy": "token-jaccard", "source_traces": [parent.id]},
+            )
+            path.append(parent.id)
+        paths.insert(0, path)
+    for index in range(20):
+        incidental(store, root, index)
+    groups, decoded = [], []
+    read, decode = store.nodes_referencing_sources, storage._node_from_row
+
+    def grouped(ids):
+        groups.append(list(ids))
+        return read(ids)
+
+    def counted(row):
+        decoded.append(row["id"])
+        return decode(row)
+
+    monkeypatch.setattr(store, "nodes_referencing_sources", grouped)
+    monkeypatch.setattr(storage, "_node_from_row", counted)
+    before = store.connection.total_changes
+    result = c._affected_derivatives(store, root.id)
+    expected = [path[0] for path in paths] + [node for path in reversed(paths) for node in path[1:]]
+    assert list(result) == expected
+    assert Counter(decoded) == {node: 1 for node in expected}
+    assert store.connection.total_changes == before
+    assert len(groups) == scans
+    assert max(map(len, groups)) <= 64
+    if width > 1 and depth > 1:
+        # Waiting sibling results stay in one group while newly found depth
+        # uses individual reads, rather than retaining nested lookahead groups.
+        assert [len(group) for group in groups] == [1, width] + [1] * (width * (depth - 1))
+
+
 def citation_candidates(store, source):
     """Independent full-candidate reference for complete writer outcome parity."""
     rows = store.connection.execute("""
@@ -299,5 +375,52 @@ def test_native_source_change_admits_before_both_preparation_and_write(tmp_path,
         assert members[1].content in current.content
         if operation == "teach":
             assert CORRECTION in current.content
+    finally:
+        store.close()
+
+
+def test_native_teach_required_group_read_rolls_back_and_retry_succeeds(tmp_path, monkeypatch):
+    mcp = server.create_mcp_server(tmp_path / "native.sqlite3")
+    mcp.auto_consolidation.close()
+    store = mcp.memory_store
+    try:
+        members = sources(store)
+        left = derived(store, "left", members)
+        right = derived(store, "right", members)
+        joined = derived(store, "joined", [left, right], scope="global")
+        read = store.nodes_referencing_sources
+        failed_groups = []
+
+        def fail(ids):
+            if len(ids) > 1 and store.connection.in_transaction:
+                failed_groups.append(list(ids))
+                store.connection.execute("SELECT required_missing_column FROM nodes")
+            return read(ids)
+
+        monkeypatch.setattr(store, "nodes_referencing_sources", fail)
+        before = list(store.connection.iterdump())
+
+        async def scenario():
+            async with Client(mcp) as client:
+                arguments = {"trace_id": members[0].id, "correction": CORRECTION}
+                failed = await client.call_tool("memory_teach", arguments, raise_on_error=False)
+                assert failed.is_error
+                assert failed_groups
+                assert list(store.connection.iterdump()) == before
+                assert not store.connection.in_transaction
+                monkeypatch.setattr(store, "nodes_referencing_sources", read)
+                return (await client.call_tool("memory_teach", arguments)).data
+
+        result = asyncio.run(scenario())
+        replacement = result["corrective_trace"]["id"]
+        for owner, inputs in ((left, {replacement, members[1].id}),
+                              (right, {replacement, members[1].id}),
+                              (joined, {left.id, right.id})):
+            current = store.get_node(owner.id)
+            assert not current.decayed and set(current.source_traces) == inputs
+            assert CORRECTION in current.content and members[0].content not in current.content
+            assert {edge.target_id for edge in store.list_connections(
+                source_id=owner.id, relation_type="related",
+            ) if edge.metadata.get("kind") == "derived_from"} == inputs
     finally:
         store.close()
