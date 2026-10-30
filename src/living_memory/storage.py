@@ -911,6 +911,18 @@ class NodeContent:
     level: NodeLevel
 
 
+@dataclass(frozen=True, slots=True)
+class ConceptBrowseFields:
+    """Scalar source fields used to rank an empty-task concept browse."""
+
+    id: str
+    scope: str
+    confidence: float
+    usefulness_score: float
+    access_count: int
+    timestamp: str
+
+
 @dataclass(frozen=True)
 class QueryAnchor:
     """One remembered query: its text, its vector, and its reinforcement state.
@@ -1819,6 +1831,23 @@ class MemoryStore:
             params,
         ).fetchall()
         return [_node_from_row(row) for row in rows]
+
+    def list_concept_browse_fields(self, *, scope: str, limit: int) -> list[ConceptBrowseFields]:
+        """Read the newest active concept prefix before consumer filtering."""
+        rows = self._conn.execute(
+            """
+            SELECT id, scope, confidence, usefulness_score, access_count, timestamp
+            FROM nodes WHERE level = 'concept' AND scope = ? AND decayed = 0
+            ORDER BY timestamp DESC, id DESC LIMIT ?
+            """,
+            (scope, int(limit)),
+        ).fetchall()
+        return [ConceptBrowseFields(
+            id=str(row["id"]), scope=str(row["scope"]),
+            confidence=float(row["confidence"]),
+            usefulness_score=float(row["usefulness_score"]),
+            access_count=int(row["access_count"]), timestamp=str(row["timestamp"]),
+        ) for row in rows]
 
     def list_global_concept_provenance(self, *, limit: int) -> list[tuple[str, dict[str, Any]]]:
         """Read identity/provenance for the newest active global concept prefix.

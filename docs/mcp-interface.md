@@ -1083,6 +1083,10 @@ over references within each section's limit. Policy, confidence, history and
 rank do not independently admit sources absent from task recall.
 
 An empty task intentionally browses scoped concepts using `retrieval_policy`.
+It ranks scalar fields from the newest 1000 active concepts per named scope,
+then reads full source nodes only for the selected entries in the same read
+snapshot. The prefix precedes confidence filtering. Required scalar and selected
+source errors propagate; payloads of discarded candidates are not read or validated.
 Concepts and schemas respect the minimum confidence threshold and resolved
 scope. The `skills:` section appears only when the
 task tokens cover a schema's `trigger`; when no procedural patterns match the

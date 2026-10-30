@@ -10,7 +10,7 @@ import re
 from living_memory.models import REJECTED_ALTERNATIVE_KIND, Node
 from living_memory.retrieval import SCOPE_RANK_BOOST_STEP, MemoryRecallService, _PreparedQuery
 from living_memory.scope import ScopePlan, resolve_scope
-from living_memory.storage import MemoryStore
+from living_memory.storage import ConceptBrowseFields, MemoryStore
 from living_memory.validity import read_validity
 
 MEMORY_GUIDANCE = (
@@ -167,25 +167,35 @@ def select_context_concepts(
                 withheld=result.withheld,
             )
     else:
-        for item_scope in plan.named_scopes:
-            weights = store.get_retrieval_weights(item_scope).normalized()
-            for node in store.list_nodes(
-                level="concept",
-                scope=item_scope,
-                include_decayed=False,
-                limit=1_000,
-            ):
-                if node.confidence < min_confidence:
-                    continue
-                score = _browse_score(
-                    node,
-                    plan=plan,
-                    policy=retrieval_policy,
-                    bm25_weight=weights.bm25,
-                    vector_weight=weights.vector,
-                    graph_weight=weights.graph,
-                )
-                selected[node.id] = ContextConcept(node=node, score=score, methods=("policy",))
+        # Keep ranking facts and selected bodies in one read snapshot, including
+        # when another store connection writes while the runtime lock is held.
+        with store.transaction():
+            candidates: dict[str, tuple[ConceptBrowseFields, float]] = {}
+            for item_scope in plan.named_scopes:
+                weights = store.get_retrieval_weights(item_scope).normalized()
+                for fields in store.list_concept_browse_fields(scope=item_scope, limit=1_000):
+                    if fields.confidence < min_confidence:
+                        continue
+                    score = _browse_score(
+                        fields,
+                        plan=plan,
+                        policy=retrieval_policy,
+                        bm25_weight=weights.bm25,
+                        vector_weight=weights.vector,
+                        graph_weight=weights.graph,
+                    )
+                    candidates[fields.id] = (fields, score)
+            winners = sorted(
+                candidates.values(),
+                key=lambda item: (
+                    item[1], item[0].confidence, item[0].usefulness_score,
+                    item[0].access_count, item[0].timestamp,
+                ),
+                reverse=True,
+            )[:limit]
+            nodes = store.get_nodes(fields.id for fields, _ in winners)
+            return [ContextConcept(node=nodes[fields.id], score=score, methods=("policy",))
+                    for fields, score in winners]
 
     concepts = sorted(
         selected.values(),
@@ -398,7 +408,7 @@ def format_retrieval_context(
 
 
 def _browse_score(
-    node: Node,
+    node: Node | ConceptBrowseFields,
     *,
     plan: ScopePlan,
     policy: str,
