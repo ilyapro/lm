@@ -2,7 +2,6 @@
 
 import asyncio
 from collections import Counter
-import json
 import sqlite3
 from unittest.mock import patch
 
@@ -95,20 +94,20 @@ def test_selected_peer_and_duplicate_edge_failures_roll_back(writer, fault):
     store, write = writer
     peer = store.append_trace(CONTENT, CONTEXT).id
     if fault == "malformed_peer":
-        store.connection.execute("UPDATE nodes SET context = '{' WHERE id = ?", (peer,))
-        error = "Expecting property name"
+        store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (peer,))
+        error = "list indices"
     else:
         store.connection.execute("""CREATE TRIGGER reject_duplicate AFTER INSERT ON connections
             WHEN json_extract(NEW.metadata, '$.kind') = 'duplicate_content'
             BEGIN SELECT RAISE(ABORT, 'duplicate edge fault'); END""")
         error = "duplicate edge fault"
     before = list(store.connection.iterdump())
-    with pytest.raises((ValueError, sqlite3.IntegrityError, RuntimeError), match=error):
+    with pytest.raises((TypeError, sqlite3.IntegrityError, RuntimeError), match=error):
         write(CONTEXT)
     assert list(store.connection.iterdump()) == before
     assert not store.connection.in_transaction
     if fault == "malformed_peer":
-        store.connection.execute("UPDATE nodes SET context = ? WHERE id = ?", (json.dumps(CONTEXT), peer))
+        store.connection.execute("UPDATE nodes SET provenance = '{}' WHERE id = ?", (peer,))
     else:
         store.connection.execute("DROP TRIGGER reject_duplicate")
     target = write(CONTEXT)
@@ -124,7 +123,7 @@ def test_peer_decode_precedes_lazy_identity_even_for_unknown_derivations(tmp_pat
                                    context={**CONTEXT, "source_slot": i}, provenance=provenance).id
                  for i in range(3)]
         if broken_index is not None:
-            store.connection.execute("UPDATE nodes SET context = '{' WHERE id = ?", (peers[broken_index],))
+            store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (peers[broken_index],))
         before = list(store.connection.iterdump())
         events = []
         decode, identity = storage._node_from_row, storage.content_identity
@@ -145,7 +144,7 @@ def test_peer_decode_precedes_lazy_identity_even_for_unknown_derivations(tmp_pat
             if broken_index is None:
                 insert()
             else:
-                with pytest.raises(json.JSONDecodeError):
+                with pytest.raises(TypeError, match="list indices"):
                     insert()
         expected = []
         for i, peer in enumerate(peers):
