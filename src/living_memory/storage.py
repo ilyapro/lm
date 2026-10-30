@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from array import array
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextlib import AbstractContextManager, closing, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
+from itertools import groupby
 from threading import RLock
 from typing import Any, Literal
 import hashlib
@@ -4338,25 +4339,47 @@ class MemoryStore:
     ) -> dict[str, list[list[float]]]:
         """Read only vectors for selected nodes, in each node's chunk order."""
 
-        vectors: dict[str, list[list[float]]] = {}
-        if not node_ids or not self._chunk_table_present():
-            return vectors
-        batch_size = min(999, self._conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
-        for batch in _node_read_batches(map(str, node_ids), batch_size=batch_size):
-            placeholders = ",".join("?" for _ in batch)
-            rows = self._conn.execute(
-                f"""SELECT node_id, chunk_index, dimensions, embedding
-                FROM {CHUNK_EMBEDDING_TABLE}
-                WHERE node_id IN ({placeholders})
-                ORDER BY node_id, chunk_index""",
-                batch,
-            )
-            for row in rows:
-                # The ordinal determines which vector width a caller sees first.
-                int(row["chunk_index"])
-                vector = unpack_chunk_embedding(row["embedding"], int(row["dimensions"]))
-                vectors.setdefault(str(row["node_id"]), []).append(vector)
-        return vectors
+        with self.iter_node_chunk_vectors(node_ids) as groups:
+            return dict(groups)
+
+    @contextmanager
+    def iter_node_chunk_vectors(
+        self, node_ids: Sequence[str],
+    ) -> Iterator[Iterator[tuple[str, list[list[float]]]]]:
+        """Yield selected nodes' decoded chunks one node at a time.
+
+        Each node appears once, with all its chunks in ordinal order. Release
+        each group before advancing to bound decoded storage by the largest
+        selected node. Exiting the context closes any active batch cursor.
+        """
+
+        def groups() -> Iterator[tuple[str, list[list[float]]]]:
+            if not node_ids or not self._chunk_table_present():
+                return
+            batch_size = min(999, self._conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+            for batch in _node_read_batches(map(str, node_ids), batch_size=batch_size):
+                placeholders = ",".join("?" for _ in batch)
+                rows = self._conn.execute(
+                    f"""SELECT node_id, chunk_index, dimensions, embedding
+                    FROM {CHUNK_EMBEDDING_TABLE}
+                    WHERE node_id IN ({placeholders})
+                    ORDER BY node_id, chunk_index""",
+                    batch,
+                )
+                try:
+                    for node_id, node_rows in groupby(rows, key=lambda row: str(row["node_id"])):
+                        chunks = []
+                        for row in node_rows:
+                            # Validate every selected row, including unused widths.
+                            int(row["chunk_index"])
+                            chunks.append(unpack_chunk_embedding(row["embedding"], int(row["dimensions"])))
+                        yield node_id, chunks
+                        del chunks
+                finally:
+                    rows.close()
+
+        with closing(groups()) as iterator:
+            yield iterator
 
     def count_node_chunks(self, node_id: str | None = None) -> int:
         """Count chunk rows, for one node or for the whole database."""

@@ -1858,9 +1858,20 @@ class RecallMapBuilder:
         vectors: dict[str, list[float]] = {}
         clusterable: list[_Member] = []
         rest: list[_Member] = []
-        chunks = self.store.get_node_chunk_vectors([member.node.id for member in members])
-        for member in members:
-            vector = self._node_vector(member.node, chunks.get(member.node.id, ()))
+        positions: dict[str, list[int]] = {}
+        for index, member in enumerate(members):
+            positions.setdefault(member.node.id, []).append(index)
+        reduced: dict[int, list[float] | None] = {}
+        with self.store.iter_node_chunk_vectors(list(positions)) as groups:
+            for node_id, chunks in groups:
+                for index in positions[node_id]:
+                    reduced[index] = self._node_vector(members[index].node, chunks)
+                del chunks
+        # Complete reading and closure before clustering in the original rank
+        # order; storage's batch/node order must not choose the leaders.
+        for index, member in enumerate(members):
+            vector = (reduced[index] if index in reduced
+                      else self._node_vector(member.node, ()))
             if vector is None:
                 rest.append(member)
                 continue

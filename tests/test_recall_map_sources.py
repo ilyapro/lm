@@ -58,7 +58,7 @@ def test_build_reads_only_consumed_source_fields_and_stage_survivors(store, verd
     try:
         with (
             patch.object(builder, "_curtailment", return_value=verdict),
-            patch.object(store, "get_node_chunk_vectors", wraps=store.get_node_chunk_vectors) as vectors,
+            patch.object(store, "iter_node_chunk_vectors", wraps=store.iter_node_chunk_vectors) as vectors,
         ):
             actual = build(builder, results)
         assert actual == expected
