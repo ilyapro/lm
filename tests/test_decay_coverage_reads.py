@@ -16,7 +16,7 @@ SCOPE = "project:decay"
 
 def owner(store, node_id, sources, provenance, *, level="concept", decayed=False):
     store.create_node(
-        level=level, node_id=node_id, content="Source digest.",
+        level=level, node_id=node_id, content=f"Source digest {node_id}.",
         context={"scope": "project:other", "timestamp": "2026-10-23"},
     )
     with store.transaction():
@@ -40,7 +40,7 @@ def test_ordinary_sweep_projects_and_parses_only_required_coverage(tmp_path, mon
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
         for node_id in ("covered", "dated"):
             store.create_node(
-                level="trace", node_id=node_id, content="Read source.",
+                level="trace", node_id=node_id, content=f"Read source {node_id}.",
                 context={"scope": SCOPE, "timestamp": "2026-10-20"},
                 stats={"last_accessed": "2026-10-22"},
             )
