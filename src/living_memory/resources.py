@@ -82,12 +82,13 @@ def concepts_for_scope(
 def memory_stats(store: MemoryStore) -> dict[str, Any]:
     """Return current counts, confidence, promotions and retrieval weights."""
 
+    counts, scopes = _stats_population(store)
     return {
         "uri": "memory://stats",
-        "counts": count_nodes(store),
+        "counts": counts,
         "confidence": confidence_summary(store),
         "promotions": promotion_summary(store),
-        "scopes": scope_summary(store),
+        "scopes": scopes,
         "retrieval_weights": retrieval_weights_summary(store),
     }
 
@@ -285,23 +286,42 @@ def promotion_summary(store: MemoryStore, scope: str | None = None) -> dict[str,
     }
 
 
-def scope_summary(store: MemoryStore) -> list[dict[str, Any]]:
+def _stats_population(store: MemoryStore) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Reduce one population observation into stats counts and ordered scopes."""
+
     rows = store.connection.execute(
         """
-        SELECT scope, COUNT(*) AS count, SUM(CASE WHEN decayed = 0 THEN 1 ELSE 0 END) AS active
+        SELECT scope, level, decayed, COUNT(*) AS count
         FROM nodes
-        GROUP BY scope
-        ORDER BY scope
+        GROUP BY scope, level, decayed
+        ORDER BY scope, level
         """
     ).fetchall()
-    return [
-        {
-            "scope": str(row["scope"]),
-            "count": int(row["count"]),
-            "active": int(row["active"] or 0),
-        }
-        for row in rows
-    ]
+    by_level = {
+        "trace": {"active": 0, "decayed": 0, "total": 0},
+        "concept": {"active": 0, "decayed": 0, "total": 0},
+        "schema": {"active": 0, "decayed": 0, "total": 0},
+    }
+    scopes: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        scope = str(row["scope"])
+        level = str(row["level"])
+        state = "decayed" if int(row["decayed"]) else "active"
+        count = int(row["count"])
+        level_counts = by_level.setdefault(level, {"active": 0, "decayed": 0, "total": 0})
+        level_counts[state] += count
+        level_counts["total"] += count
+        scope_counts = scopes.setdefault(scope, {"scope": scope, "count": 0, "active": 0})
+        scope_counts["count"] += count
+        if state == "active":
+            scope_counts["active"] += count
+
+    return {
+        "by_level": by_level,
+        "total": sum(level_counts["total"] for level_counts in by_level.values()),
+        "active": sum(level_counts["active"] for level_counts in by_level.values()),
+        "decayed": sum(level_counts["decayed"] for level_counts in by_level.values()),
+    }, list(scopes.values())
 
 
 def retrieval_weights_summary(store: MemoryStore) -> list[dict[str, Any]]:
