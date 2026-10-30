@@ -112,7 +112,7 @@ def test_mcp_recall_delivery_and_feedback_ignore_unavailable_aggregate(tmp_path,
     async def scenario():
         async with Client(mcp) as client:
             tools = {tool.name: tool for tool in await client.list_tools()}
-            assert "REQUIRED after a recall" in tools["memory_recall"].inputSchema["properties"]["used"]["description"]
+            assert tools["memory_recall"].inputSchema["properties"]["used"]["description"].startswith("REQUIRED")
             first = await call(client, "memory_recall", query=QUERY, scope=SCOPE,
                                depth=0, max_results=1, view=view, used=[], irrelevant=[])
             assert first["results"][0]["delivery"] == "full"
@@ -149,7 +149,7 @@ def test_feedback_closure_preserves_attribution_and_rejects_missing_references(
 ):
     with MemoryStore(":memory:") as store:
         event = store.record_recall_event(
-            query=QUERY, scope=SCOPE, context={"session_id": "history-session"},
+            query=QUERY, scope=SCOPE, ambient_context={"session_id": "history-session"},
             results=[{"node_id": node_id, "bm25_score": 0.75}],
         )
         first = store.append_trace("first consumer", node_id=node_id)
