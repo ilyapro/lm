@@ -14,13 +14,18 @@ SCOPE = "project:pending"
 TEXT = "cobalt routing uses stable endpoint ownership"
 
 
+@pytest.fixture(params=["pending_recall_events", "pending_recall_query_inputs"])
+def reader(request):
+    return request.param
+
+
 @pytest.mark.parametrize("context", [
     {"session_id": "own"},
     {"task": "own"},
     {"transport_session_id": "own"},
     {"session_id": "own", "task": "own", "transport_session_id": "own"},
 ])
-def test_foreign_events_do_not_displace_current_work(context: dict[str, str]) -> None:
+def test_foreign_events_do_not_displace_current_work(context: dict[str, str], reader) -> None:
     with MemoryStore(":memory:") as store:
         own = store.record_recall_event(query=TEXT, scope=SCOPE, ambient_context=context)
         for i in range(120):
@@ -28,7 +33,7 @@ def test_foreign_events_do_not_displace_current_work(context: dict[str, str]) ->
                 query=TEXT, scope=SCOPE,
                 ambient_context={key: f"foreign-{i}" for key in context},
             )
-        assert [event.id for event in store.pending_recall_events(
+        assert [event.id for event in getattr(store, reader)(
             scope=SCOPE, context=context, limit=5,
         )] == [own.id]
 
@@ -64,20 +69,20 @@ def test_foreign_events_do_not_displace_current_work(context: dict[str, str]) ->
     ({}, {}, "global", 0),
 ])
 def test_shared_identity_and_conflict_precedence(
-    event_context, context, scope, expected,
+    event_context, context, scope, expected, reader,
 ) -> None:
     with MemoryStore(":memory:") as store:
         events = [store.record_recall_event(
             query=TEXT, scope=scope, ambient_context=event_context,
             resolved_scopes=[SCOPE],
         ) for _ in range(2)]
-        selected = store.pending_recall_events(
+        selected = getattr(store, reader)(
             scope=SCOPE, context=context, limit=5,
         )
         assert [event.id for event in selected] == [event.id for event in reversed(events)][:expected]
 
 
-def test_newest_first_limit_includes_only_shared_identity() -> None:
+def test_newest_first_limit_includes_only_shared_identity(reader) -> None:
     with MemoryStore(":memory:") as store:
         contexts = [{"task": "own"}, {}, {}, {"task": "own"}, {}, {"task": "foreign"}]
         events = [store.record_recall_event(
@@ -85,20 +90,20 @@ def test_newest_first_limit_includes_only_shared_identity() -> None:
         ) for context in contexts]
         # Equal timestamps still use descending insertion order.
         store.connection.execute("UPDATE recall_events SET created_at = '2026-01-01T00:00:00Z'")
-        for limit, positions in [(1, [3]), (2, [3, 0]), (5, [3, 0])]:
-            assert [event.id for event in store.pending_recall_events(
+        for limit, positions in [(0, [3]), (1, [3]), (2, [3, 0]), (5, [3, 0])]:
+            assert [event.id for event in getattr(store, reader)(
                 scope=SCOPE, context={"task": "own"}, limit=limit,
             )] == [events[i].id for i in positions]
 
 
-def test_anonymous_population_does_not_hide_older_compatible_events() -> None:
+def test_anonymous_population_does_not_hide_older_compatible_events(reader) -> None:
     with MemoryStore(":memory:") as store:
         strong = [store.record_recall_event(
             query=TEXT, scope=SCOPE, ambient_context={"task": "own"},
         ) for _ in range(8)]
         for _ in range(120):
             store.record_recall_event(query=TEXT, scope=SCOPE)
-        selected = store.pending_recall_events(
+        selected = getattr(store, reader)(
             scope=SCOPE, context={"task": "own"}, limit=5,
         )
         assert [event.id for event in selected] == [event.id for event in reversed(strong[-5:])]
@@ -161,7 +166,7 @@ def test_remember_consumes_own_event_once_amid_foreign_events(
     ({"agent": "own"}, {"agent": "own"}, SCOPE),
 ])
 def test_pending_selection_reads_current_identity_without_materializing_foreign_rows(
-    monkeypatch: pytest.MonkeyPatch, record_property, context, foreign_context, foreign_scope,
+    monkeypatch: pytest.MonkeyPatch, record_property, context, foreign_context, foreign_scope, reader,
 ) -> None:
     with MemoryStore(":memory:") as store:
         own = store.record_recall_event(query=TEXT, scope=SCOPE, ambient_context=context)
@@ -185,14 +190,14 @@ def test_pending_selection_reads_current_identity_without_materializing_foreign_
 
             store.connection.set_progress_handler(progress, 1)
             try:
-                result = store.pending_recall_events(scope=SCOPE, context=context, limit=5)
+                result = getattr(store, reader)(scope=SCOPE, context=context, limit=5)
             finally:
                 store.connection.set_progress_handler(None, 0)
             expected = [own.id] if any(context.get(key) for key in (
                 "task", "session_id", "transport_session_id",
             )) else []
             assert [event.id for event in result] == expected
-            assert decoded == expected
+            assert decoded == (expected if reader == "pending_recall_events" else [])
             return steps
 
         small = select_steps()
