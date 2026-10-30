@@ -4752,9 +4752,9 @@ class MemoryStore:
         if (max_chunks is not None or require_complete) and any(not vector for vector in vectors):
             raise ValueError("complete chunk indexing requires every chunk vector")
         return [
-            (chunk, list(vector))
+            (chunk, vector)
             for chunk, vector in zip(chunks, vectors, strict=True)
-            if list(vector)
+            if vector
         ]
 
     def _write_node_chunks(

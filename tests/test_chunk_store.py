@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sqlite3
 import struct
+import threading
 import zlib
 from pathlib import Path
 from typing import Sequence
@@ -324,6 +325,52 @@ def test_a_single_window_node_reuses_the_vector_it_was_given(store: MemoryStore)
     assert len(chunks) == 1
     assert chunks[0].embedding == [0.25, 0.5, 0.75]
     assert calls == []
+
+
+@pytest.mark.parametrize("iterator_vectors", [False, True])
+def test_prepared_chunks_own_reused_encoder_vectors(store, monkeypatch, iterator_vectors):
+    lock = threading.Lock()
+    monkeypatch.setattr(store, "_chunk_embedder_lock", lock)
+    buffer = [0.0, 0.5]
+
+    def values():
+        assert lock.locked()
+        yield from buffer
+
+    def embed(texts):
+        assert lock.locked()
+        for index, _text in enumerate(texts):
+            buffer[:] = [float(index), 0.5]
+            yield values() if iterator_vectors else buffer
+
+    store.set_chunk_embedder(embed)
+    pairs = store._chunk_embeddings_for(LONG_CONTENT, None)
+    windows = chunk_text(LONG_CONTENT)
+    assert len(windows) > 1
+    buffer[:] = [-1.0, -1.0]
+    assert [chunk for chunk, _vector in pairs] == windows
+    assert all(type(vector) is list for _chunk, vector in pairs)
+    assert [vector for _chunk, vector in pairs] == [
+        [float(index), 0.5] for index in range(len(windows))
+    ]
+    pairs[0][1][0] = -2.0
+    assert pairs[1][1] == [1.0, 0.5]
+
+    node = store.create_node(level="concept", content=LONG_CONTENT)
+    store.replace_node_chunks(node.id, pairs)
+    assert [chunk.embedding for chunk in store.list_node_chunks(node.id)] == [
+        vector for _chunk, vector in pairs
+    ]
+    assert store.node_chunks_are_current(node.id)
+
+
+def test_prepared_single_window_owns_the_supplied_vector(store):
+    supplied = [0.25, 0.5, 0.75]
+    pairs = store._chunk_embeddings_for("one short window", supplied)
+    supplied[0] = -1.0
+    assert pairs[0][1] == [0.25, 0.5, 0.75]
+    pairs[0][1][1] = -2.0
+    assert supplied == [-1.0, 0.5, 0.75]
 
 
 def test_chunk_dimension_is_recorded_not_assumed(store: MemoryStore) -> None:
