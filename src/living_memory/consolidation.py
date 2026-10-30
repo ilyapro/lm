@@ -948,22 +948,22 @@ def _affected_derivatives(store: MemoryStore, source_id: str) -> dict[str, Node]
         if changed in visited:
             continue
         visited.add(changed)
-        if changed not in discovered:
-            # Keep one bounded lookahead group while retaining stack order.
-            # New descendants use individual reads until that group drains;
-            # depth must not accumulate groups of waiting sibling results.
-            batch = [changed]
-            if not discovered:
-                batch.extend(islice(dict.fromkeys(
-                    source for source in reversed(pending) if source not in visited
-                ), 63))
-            discovered.update(store.nodes_referencing_sources(batch))
         # A materializer may still cite an earlier version of this source.
         pending.extend(
             edge.target_id
             for edge in store.list_connections(source_id=changed, relation_type="supersedes")
         )
         pending.extend(node.id for node in store.list_duplicate_predecessors(changed))
+        if changed not in discovered:
+            # Keep one bounded lookahead group while retaining stack order.
+            # New descendants use individual reads until that group drains;
+            # depth must not accumulate groups of waiting sibling results.
+            batch = [changed]
+            if not discovered:
+                batch.extend(dict.fromkeys(islice((
+                    source for source in reversed(pending) if source not in visited
+                ), 63)))
+            discovered.update(store.nodes_referencing_sources(batch))
         for node in discovered.pop(changed):
             if node.id == source_id or node.id in affected:
                 continue

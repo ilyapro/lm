@@ -241,10 +241,11 @@ def test_complete_writer_outcome_matches_separate_current_reads(store, monkeypat
 
 
 def order_consumers(store, monkeypatch, first):
-    read = store.nodes_referencing_source
-    monkeypatch.setattr(store, "nodes_referencing_source", lambda source: sorted(
-        read(source), key=lambda node: (node.id != first.id, node.id),
-    ))
+    read = store.nodes_referencing_sources
+    monkeypatch.setattr(store, "nodes_referencing_sources", lambda sources: {
+        source: sorted(nodes, key=lambda node: (node.id != first.id, node.id))
+        for source, nodes in read(sources).items()
+    })
 
 
 @pytest.mark.parametrize("prepared", [False, True])

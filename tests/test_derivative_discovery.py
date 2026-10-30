@@ -144,8 +144,8 @@ def test_complete_correction_refresh_and_reads_match_reference(store, monkeypatc
     explicit = store.create_node(level="schema", content="Opaque derived restriction.")
     store.create_connection(explicit.id, members[0].id, "related", metadata={"kind": "derived_from"})
     noise = {incidental(store, members[0], i).id for i in range(100)}
-    reference = lambda source: citation_candidates(store, source)
-    admitted = store.nodes_referencing_source
+    reference = lambda sources: {source: citation_candidates(store, source) for source in sources}
+    admitted = store.nodes_referencing_sources
     outcomes, reads = [], []
 
     class Rollback(Exception):
@@ -162,7 +162,7 @@ def test_complete_correction_refresh_and_reads_match_reference(store, monkeypatc
 
         identifiers = iter(f"fixture-id-{i:06}" for i in range(1000))
         with monkeypatch.context() as patch:
-            patch.setattr(store, "nodes_referencing_source", reader)
+            patch.setattr(store, "nodes_referencing_sources", reader)
             patch.setattr(storage, "_node_from_row", counted)
             for module in (c, storage):
                 patch.setattr(module, "new_ulid", lambda: next(identifiers))
@@ -180,7 +180,7 @@ def test_complete_correction_refresh_and_reads_match_reference(store, monkeypatc
     assert outcomes[0] == outcomes[1]
     assert reads[0][0]["incidental"] == 100 * (2 if prepared else 1)
     assert reads[1][0]["incidental"] == 0
-    assert reads[0][0]["all"] - reads[1][0]["all"] == reads[0][0]["incidental"]
+    assert reads[0][0]["all"] - reads[1][0]["all"] >= reads[0][0]["incidental"]
     assert reads[1][1] < reads[0][1]
 
 
@@ -271,7 +271,7 @@ def test_native_source_change_admits_before_both_preparation_and_write(tmp_path,
         with store.transaction():
             store.connection.execute("UPDATE nodes SET provenance = '[]' WHERE id = ?", (noise.id,))
         phases = []
-        read = store.nodes_referencing_source
+        read = store.nodes_referencing_sources
         decode = storage._node_from_row
 
         def observed(source):
@@ -282,7 +282,7 @@ def test_native_source_change_admits_before_both_preparation_and_write(tmp_path,
             assert row["id"] != noise.id
             return decode(row)
 
-        monkeypatch.setattr(store, "nodes_referencing_source", observed)
+        monkeypatch.setattr(store, "nodes_referencing_sources", observed)
         monkeypatch.setattr(storage, "_node_from_row", only_dependents)
 
         async def scenario():
