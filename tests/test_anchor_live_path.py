@@ -455,16 +455,16 @@ def test_existing_anchor_uses_one_grounding_verdict(tmp_path: Path, monkeypatch:
         scope=SCOPE, query=QUERY, fingerprint=recall_fingerprint(QUERY, SCOPE), embedding=[1.0, 0.0],
     )
     calls = []
-    ground = feedback_module.ground_results
+    ground = feedback_module.grounding.ground_token_sets
 
-    def counting(content, sources, **kwargs):
-        calls.append((content, set(sources)))
-        return ground(content, sources, **kwargs)
+    def counting(tokens, sources, **kwargs):
+        calls.append((tokens, set(sources)))
+        return ground(tokens, sources, **kwargs)
 
-    monkeypatch.setattr(feedback_module, "ground_results", counting)
+    monkeypatch.setattr(feedback_module.grounding, "ground_token_sets", counting)
     try:
         _consume(mcp)
-        assert calls == [(GROUNDED_TRACE, set(node_ids))]
+        assert calls == [(feedback_module.grounding.token_set(GROUNDED_TRACE), set(node_ids))]
         assert store.credited_node_ids(event_id) == {node_ids[USED_INDEX]}
         assert _edge_targets(store, existing.id) == {node_ids[USED_INDEX]: pytest.approx(ANCHOR_EDGE_WEIGHT)}
     finally:

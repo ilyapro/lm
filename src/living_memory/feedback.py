@@ -12,7 +12,8 @@ import os
 from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
-from living_memory.grounding import DEFAULT_MIN_CONTAINMENT, ground_results
+from living_memory import grounding
+from living_memory.grounding import DEFAULT_MIN_CONTAINMENT
 from living_memory.irrelevance import cancel_query_irrelevance, record_query_irrelevance
 from living_memory.models import Node, RecallEvent, RecallEventHeader, RetrievalWeights
 from living_memory import storage as storage_module
@@ -397,6 +398,41 @@ def apply_retrieval_feedback(
     return FeedbackUpdate(node=node, weights=weights)
 
 
+class _ObservedGrounding:
+    """Lazy tokens for one observation; IDF and verdicts remain per event.
+
+    Contents must come from the same source read throughout this instance's
+    lifetime. Only sources with a later consumer retain tokens between events;
+    single-use sources and the final use of repeated sources leave no cache.
+    Preparation and authoritative application each own a separate instance.
+    """
+
+    def __init__(self, trace_content: str, event_ids: Iterable[Iterable[str]]) -> None:
+        self._trace_content = trace_content
+        self._trace_tokens: frozenset[str] | None = None
+        self._last_use = {node_id: index for index, ids in enumerate(event_ids) for node_id in ids}
+        self._source_tokens: dict[str, frozenset[str]] = {}
+
+    def ground(self, index: int, contents: Mapping[str, str]) -> dict[str, grounding.Grounding]:
+        if not contents:
+            return {}
+        if self._trace_tokens is None:
+            self._trace_tokens = grounding.token_set(self._trace_content)
+        result_tokens = {}
+        for node_id, content in contents.items():
+            tokens = self._source_tokens.pop(node_id, None)
+            if tokens is None:
+                tokens = grounding.token_set(content)
+            result_tokens[node_id] = tokens
+            if self._last_use[node_id] > index:
+                self._source_tokens[node_id] = tokens
+            else:
+                del self._last_use[node_id]
+        return grounding.ground_token_sets(
+            self._trace_tokens, result_tokens, min_containment=RECALL_CREDIT_MIN_CONTAINMENT,
+        )
+
+
 def apply_pending_recall_feedback(
     store: MemoryStore,
     trace: Node,
@@ -444,8 +480,12 @@ def apply_pending_recall_feedback(
     sources = store.get_node_contents(
         node_id for event in events for node_id in event.result_ids if node_id != trace.id
     )
+    observed_grounding = (
+        _ObservedGrounding(trace.content, (event.result_ids for event in events))
+        if reinforce_results and policy != "all" else None
+    )
 
-    for event in events:
+    for event_index, event in enumerate(events):
         event_node_ids: list[str] = []
         # Per event, not accumulated across the batch: an anchor's edges may
         # only carry the results *its own* query earned.
@@ -475,11 +515,10 @@ def apply_pending_recall_feedback(
         # Grade the whole event at once: the IDF index is shared by its
         # results, and an ungraded event costs no tokenization at all.
         verdicts = {}
-        if reinforce_results and policy != "all" and resolved:
-            verdicts = ground_results(
-                trace.content,
+        if observed_grounding is not None and resolved:
+            verdicts = observed_grounding.ground(
+                event_index,
                 {node.id: node.content for _rank, _result, node in resolved},
-                min_containment=RECALL_CREDIT_MIN_CONTAINMENT,
             )
 
         for rank, result, node in resolved:
@@ -1033,11 +1072,11 @@ def _feedback_queries(
             if not store.has_query_anchor(event.scope, recall_fingerprint(event.query, event.scope))
         ]
         sources = store.get_node_contents(node_id for event in events for node_id in event.result_ids)
-        for event in events:
-            verdicts = ground_results(
-                trace_content, {node_id: sources[node_id].content for node_id in event.result_ids
-                                if node_id in sources},
-                min_containment=RECALL_CREDIT_MIN_CONTAINMENT,
+        observed_grounding = _ObservedGrounding(trace_content, (event.result_ids for event in events))
+        for event_index, event in enumerate(events):
+            verdicts = observed_grounding.ground(
+                event_index, {node_id: sources[node_id].content for node_id in event.result_ids
+                              if node_id in sources},
             )
             if any(verdict.grounded for verdict in verdicts.values()):
                 add(event.query, event.scope)

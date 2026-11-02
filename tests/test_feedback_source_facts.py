@@ -1,11 +1,14 @@
 """Implicit feedback preserves each event's corpus, ranks and source lineage."""
 
+import math
 import sqlite3
+import weakref
+from collections import Counter
 from dataclasses import replace
 
 import pytest
 
-from living_memory import feedback
+from living_memory import feedback, grounding
 from living_memory.server import create_mcp_server
 from living_memory.storage import recall_fingerprint
 from test_anchor_live_path import FakeMCP
@@ -62,13 +65,21 @@ def test_overlapping_events_keep_individual_grounding_ranks_and_credit(sources, 
     events = overlapping_events(store, nodes, existing=existing)
     a, b, c, d = [node.id for node in nodes]
     signals = []
+    grades = []
     apply = feedback.apply_retrieval_feedback
+    ground = grounding.ground_token_sets
+
+    def record_grounding(*args, **kwargs):
+        graded = ground(*args, **kwargs)
+        grades.append(graded)
+        return graded
 
     def record(store, result, **kwargs):
         signals.append((result.node_id, kwargs["useful"], kwargs["signal"]))
         return apply(store, result, **kwargs)
 
     monkeypatch.setattr(feedback, "apply_retrieval_feedback", record)
+    monkeypatch.setattr(grounding, "ground_token_sets", record_grounding)
     response = mcp.tools["memory_remember"](CONTENT, CONTEXT)
     trace = store.get_node(response["node"]["id"])
     assert trace.content == CONTENT and trace.scope == CONTEXT["scope"]
@@ -83,6 +94,19 @@ def test_overlapping_events_keep_individual_grounding_ranks_and_credit(sources, 
         {a}, set(), {b}, {d, a}, {a},
     ]
     assert [store.credited_node_ids(event.id) for event in events] == expected
+    if policy == "all":
+        assert not grades
+    else:
+        # Same source b, three different event corpora. These hand-computed
+        # weights straddle 0.22; caching verdicts or using union IDF is wrong.
+        applied = grades[-len(events):]
+        assert applied[3][b].containment == pytest.approx(
+            math.log(2) / (math.log(2) + 3 * math.log(3))
+        )
+        assert applied[2][b].containment == pytest.approx(0.25)
+        assert applied[0][b].containment == pytest.approx(
+            math.log(7 / 3) / (math.log(7 / 3) + 3 * math.log(3))
+        )
     assert [signal for signal in signals if signal[0] == a] == [
         (a, True, 1 / 3), (a, True, 0.5), (a, True, 1.0),
     ]
@@ -144,12 +168,21 @@ def test_native_repeated_source_feedback_preserves_knowledge_without_fts_writes(
         return sqlite3.SQLITE_OK
 
     monkeypatch.setattr(store, "update_node", observe_update)
+    calls = Counter()
+    tokenize = grounding.token_set
+
+    def counted(content):
+        calls[content] += 1
+        return tokenize(content)
+
+    monkeypatch.setattr(grounding, "token_set", counted)
     store.connection.set_authorizer(observe_sql)
     try:
         response = mcp.tools["memory_remember"](CONTENT, CONTEXT)
     finally:
         store.connection.set_authorizer(None)
     assert fts_writes == source_writes == []
+    assert calls == {CONTENT: 1, source.content: 1}
     assert len(progress) == len(events)
     gains = [current - previous for previous, current in zip([source.usefulness_score, *progress], progress)]
     assert all(gain > 0 for gain in gains)
@@ -207,3 +240,110 @@ def test_self_source_is_not_grounded_or_recorded_in_provenance(sources):
     assert outcome.trace.provenance["prior_recalls"][0]["result_ids"] == [concept.id, concept.id]
     assert store.credited_node_ids(event.id) == {concept.id}
     assert store.get_node(trace.id).usefulness_score == 0.0
+
+
+@pytest.mark.parametrize("case", ["no_events", "missing", "all", "no_reinforcement"])
+def test_ungraded_feedback_never_tokenizes(sources, monkeypatch, case):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    if case != "no_events":
+        store.record_recall_event(
+            query="routing", scope=CONTEXT["scope"], ambient_context=CONTEXT,
+            results=[{"node_id": "missing" if case == "missing" else nodes[0].id}],
+        )
+    if case == "all":
+        monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "all")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("ungraded feedback must not tokenize")
+
+    monkeypatch.setattr(grounding, "token_set", forbidden)
+    if case == "no_reinforcement":
+        mcp.tools["memory_teach"](nodes[0].id, "Corrected routing ownership", context=CONTEXT)
+    else:
+        mcp.tools["memory_remember"](CONTENT, CONTEXT)
+    assert not store.pending_recall_events(scope=CONTEXT["scope"], context=CONTEXT)
+
+
+def test_source_tokens_are_fresh_after_unlocked_preparation_and_next_call(sources, monkeypatch):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    source = store.create_node(level="concept", content=nodes[0].content, context=CONTEXT)
+    changed = "unrelated violet garden requires daily watering"
+    events = []
+    for i in range(3):
+        events.append(store.record_recall_event(
+            query=f"routing observation {i}", scope=source.scope, ambient_context=CONTEXT,
+            results=[{"node_id": source.id}],
+        ))
+    calls = Counter()
+    tokenize = grounding.token_set
+    encode = feedback._encode_missing_feedback_queries
+
+    def counted(content):
+        calls[content] += 1
+        return tokenize(content)
+
+    def change_during_encoding(*args, **kwargs):
+        assert not store.connection.in_transaction
+        store.update_node(source.id, content=changed)
+        return encode(*args, **kwargs)
+
+    monkeypatch.setattr(grounding, "token_set", counted)
+    monkeypatch.setattr(feedback, "_encode_missing_feedback_queries", change_during_encoding)
+    response = mcp.tools["memory_remember"](CONTENT, CONTEXT)
+    assert calls == {CONTENT: 3, source.content: 1, changed: 2}
+    assert all(store.get_recall_event(event.id).feedback_trace_id == response["node"]["id"]
+               for event in events)
+    assert all(not store.credited_node_ids(event.id) for event in events)
+    assert store.count_query_anchors() == 0
+
+    # Independent new call, same source identity, newly matching content.
+    monkeypatch.setattr(feedback, "_encode_missing_feedback_queries", encode)
+    store.update_node(source.id, content=source.content)
+    event = store.record_recall_event(
+        query="routing next observation", scope=source.scope, ambient_context=CONTEXT,
+        results=[{"node_id": source.id}],
+    )
+    calls.clear()
+    mcp.tools["memory_remember"](CONTENT, CONTEXT)
+    assert calls == {CONTENT: 3, source.content: 3}
+    assert store.credited_node_ids(event.id) == {source.id}
+
+
+@pytest.mark.parametrize("repeat", [False, True])
+def test_tokens_live_only_until_their_last_event(sources, monkeypatch, repeat):
+    mcp, nodes = sources
+    store = mcp.memory_store
+    a, b, c, d = nodes
+    groups = [[a, b], [c], [a], [d]] if repeat else [[b], [c], [d]]
+    live_sources = [[a, b], [a, c], [a], [d]] if repeat else groups
+    for index, group in reversed(list(enumerate(groups))):
+        query = f"routing retention {index}"
+        store.record_recall_event(
+            query=query, scope=CONTEXT["scope"], ambient_context=CONTEXT,
+            results=[{"node_id": node.id} for node in group],
+        )
+        store.insert_query_anchor(scope=CONTEXT["scope"], query=query,
+                                  fingerprint=recall_fingerprint(query, CONTEXT["scope"]),
+                                  embedding=[1.0, 0.0])
+    refs = {}
+    observed = []
+    tokenize = grounding.token_set
+    ground = grounding.ground_token_sets
+
+    def tracked(content):
+        assert content not in refs  # One allocation per consumed body here.
+        tokens = tokenize(content)
+        refs[content] = weakref.ref(tokens)
+        return tokens
+
+    def inspect_live(*args, **kwargs):
+        observed.append({body for body, ref in refs.items() if ref() is not None})
+        return ground(*args, **kwargs)
+
+    monkeypatch.setattr(grounding, "token_set", tracked)
+    monkeypatch.setattr(grounding, "ground_token_sets", inspect_live)
+    mcp.tools["memory_remember"](CONTENT, CONTEXT)
+    assert observed == [{CONTENT, *(node.content for node in group)} for group in live_sources]
+    assert all(ref() is None for ref in refs.values())

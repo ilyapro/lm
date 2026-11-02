@@ -300,18 +300,30 @@ def test_replay_containment_delegates_to_the_shared_module() -> None:
     assert "sum(" not in source
 
 
-def test_feedback_grounds_through_the_shared_module() -> None:
+def test_feedback_grounds_through_the_shared_module(tmp_path, monkeypatch) -> None:
     """The live credit loop must not carry its own containment arithmetic."""
 
     from living_memory import feedback
+    from living_memory.storage import MemoryStore
 
-    source = inspect.getsource(feedback.apply_pending_recall_feedback)
-    code = "\n".join(
-        line for line in source.splitlines() if not line.lstrip().startswith("#")
-    )
-    assert "ground_results(" in code
-    for forbidden in ("build_idf", "math.log", "document_frequency", "Counter("):
-        assert forbidden not in code, f"{forbidden} re-derives grounding in the live path"
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        context = {"scope": "project:grounding", "task": "shared arithmetic"}
+        node = store.append_trace(GROUNDED, context)
+        trace = store.append_trace(TRACE, context)
+        event = store.record_recall_event(query="grounding", scope=trace.scope,
+                                          ambient_context=context, results=[{"node_id": node.id}])
+        calls = []
+
+        def grade(trace_tokens, result_tokens, *, min_containment):
+            calls.append((trace_tokens, result_tokens, min_containment))
+            return {node.id: Grounding(node.id, 1.0, True)}
+
+        monkeypatch.setattr(grounding, "ground_token_sets", grade)
+        with store.transaction():
+            feedback.apply_pending_recall_feedback(store, trace)
+        assert calls == [(token_set(TRACE), {node.id: token_set(GROUNDED)}, DEFAULT_MIN_CONTAINMENT)]
+        assert store.credited_node_ids(event.id) == {node.id}
     assert feedback.RECALL_CREDIT_MIN_CONTAINMENT is DEFAULT_MIN_CONTAINMENT
 
 
