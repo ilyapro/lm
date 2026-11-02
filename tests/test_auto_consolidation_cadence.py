@@ -27,14 +27,54 @@ def mcp(tmp_path, monkeypatch):
     instance.memory_store.close()
 
 
-def seed(store, count):
-    return [store.append_trace(f"{TOPIC} {index}", CONTEXT) for index in range(count)]
+def seed(store, count, topic=TOPIC):
+    return [store.append_trace(f"{topic} {index}", CONTEXT) for index in range(count)]
 
 
 def remember(mcp, content):
     result = mcp.tools["memory_remember"](content, CONTEXT)
     assert mcp.auto_consolidation.wait_idle(timeout=30)
     return result
+
+
+@pytest.mark.parametrize("policy,floor,topic_sizes,promoted_sizes", [
+    (None, None, [50, 50], [50, 50]),
+    (None, "fixed", [50, 50], []),
+    ("adaptive", None, [10], [10]),
+])
+def test_scheduled_pass_applies_merge_floor(mcp, monkeypatch, policy, floor, topic_sizes, promoted_sizes):
+    if policy is None:
+        monkeypatch.delenv("LM_AUTO_CONSOLIDATE_POLICY", raising=False)
+    else:
+        monkeypatch.setenv("LM_AUTO_CONSOLIDATE_POLICY", policy)
+    if floor is not None:
+        monkeypatch.setenv("LM_CONSOLIDATE_MERGE_FLOOR", floor)
+    store = mcp.memory_store
+    topics = [TOPIC, "Tokenizer vocabulary warmup blocks worker restart"][:len(topic_sizes)]
+    for index, (topic, size) in enumerate(zip(topics, topic_sizes)):
+        seed(store, size - 2 if index == len(topics) - 1 else size, topic)
+
+    assert remember(mcp, f"{topics[-1]} penultimate")["auto_consolidation"] is None
+    assert mcp.auto_consolidation.status()["passes_completed"] == 0
+    response = remember(mcp, f"{topics[-1]} boundary")
+    assert response["auto_consolidation"] == {
+        "status": "scheduled", "scope": SCOPE, "coalesced": False,
+        "trace_count": sum(topic_sizes),
+    }
+    assert mcp.auto_consolidation.status()["passes_completed"] == 1
+    finished = mcp.auto_consolidation.last_result(SCOPE)
+    assert finished["status"] == "completed"
+    summary = finished["summary"]
+    assert summary["traces_considered"] == sum(topic_sizes)
+    assert summary["concepts_updated"] == []
+    concepts = store.list_nodes(level="concept", scope=SCOPE)
+    assert {node.id for node in concepts} == set(summary["concepts_created"])
+    assert sorted(len(node.source_traces) for node in concepts) == promoted_sizes
+    if concepts:
+        assert set().union(*(node.source_traces for node in concepts)) == {
+            node.id for node in store.list_nodes(level="trace", scope=SCOPE)
+        }
+        assert any(response["node"]["id"] in node.source_traces for node in concepts)
 
 
 @pytest.mark.parametrize("policy,size,interval", [

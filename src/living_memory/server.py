@@ -2051,20 +2051,6 @@ def _auto_consolidation_due(
     return int(row["count"]) or None
 
 
-def _auto_consolidate_if_due(
-    store: MemoryStore,
-    consolidation_service: ConsolidationService,
-    scope: str,
-) -> dict[str, Any] | None:
-    """Run the due pass inline and return its summary (no scheduler)."""
-
-    if _auto_consolidation_due(store, scope) is None:
-        return None
-    return _compact_consolidation_summary(
-        consolidation_service.memory_consolidate(scope=scope, force=False)
-    )
-
-
 def _schedule_auto_consolidation_if_due(
     store: MemoryStore,
     scheduler: AutoConsolidationScheduler,
