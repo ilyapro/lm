@@ -89,8 +89,7 @@ from typing import Any
 import hashlib
 import logging
 
-from living_memory import feedback
-from living_memory.grounding import ground_results
+from living_memory import feedback, grounding
 from living_memory.models import Node, RecallEvent
 from living_memory.storage import MemoryStore, RecallAttestation, recall_fingerprint
 
@@ -239,7 +238,7 @@ def _grade(
 ) -> list[_Graded]:
     """Per-item containment, kept at each node's maximum across items.
 
-    One :func:`grounding.ground_results` call per evidence item, over all of
+    One :func:`grounding.ground_token_sets` call per evidence item, over all of
     the event's resolved results at once, so the IDF index of each call is the
     item plus the nodes being graded — the same shape the live path builds from
     a consuming trace plus that event's results. ``evidence_index`` names the
@@ -249,9 +248,19 @@ def _grade(
 
     contents = {node.id: node.content for _rank, _payload, node in resolved}
     best: dict[str, tuple[float, int]] = {node_id: (0.0, 0) for node_id in contents}
+    result_tokens: dict[str, frozenset[str]] | None = None
     for index, item in enumerate(items):
-        for node_id, verdict in ground_results(
-            item, contents, min_containment=ATTESTATION_MIN_CONTAINMENT
+        if not contents:
+            continue
+        item_tokens = grounding.token_set(item)
+        if result_tokens is None:
+            # These strings and frozensets belong to this grading pass only.
+            # Keep evidence-before-results error order and empty-input laziness.
+            result_tokens = {
+                node_id: grounding.token_set(content) for node_id, content in contents.items()
+            }
+        for node_id, verdict in grounding.ground_token_sets(
+            item_tokens, result_tokens, min_containment=ATTESTATION_MIN_CONTAINMENT
         ).items():
             if verdict.containment > best[node_id][0]:
                 best[node_id] = (verdict.containment, index)
