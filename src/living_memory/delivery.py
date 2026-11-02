@@ -272,11 +272,23 @@ class DeliveryHistory:
                 self._versions.setdefault((str(node_id), source), set()).add(body)
 
     def has_content(self, node: Node) -> bool:
+        if not self._versions:
+            # In-memory Node strings still owe the strict UTF-8 error contract.
+            node.content.encode("utf-8")
+            return False
         return (node.id, _content_digest(node.content)) in self._versions
 
     def covers(self, node: Node, excerpt: str) -> bool:
+        if not self._versions:
+            node.content.encode("utf-8")
+            excerpt.encode("utf-8")
+            return False
         source = _content_digest(node.content)
         bodies = self._versions.get((node.id, source), ())
+        if not bodies:
+            # No proof can match, but an invalid excerpt must still fail.
+            excerpt.encode("utf-8")
+            return False
         return source in bodies or _content_digest(excerpt) in bodies
 
 
