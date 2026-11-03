@@ -397,10 +397,13 @@ def _apply_attestation(
 ) -> dict[str, Any]:
     """Apply a new verdict inside the caller's required transaction."""
 
-    grounded_ids: list[str] = []
+    # Credit each node at its first delivered rank, retaining that rank's
+    # channel scores. The ledger below still records every graded rank.
+    grounded_entries: dict[str, _Graded] = {}
     for entry in graded:
-        if entry.grounded and entry.node_id not in grounded_ids:
-            grounded_ids.append(entry.node_id)
+        if entry.grounded:
+            grounded_entries.setdefault(entry.node_id, entry)
+    grounded_ids = list(grounded_entries)
 
     claimed = store.claim_recall_attestation(
         recall_event_id=event.id,
@@ -421,9 +424,7 @@ def _apply_attestation(
         return _verdict(recorded, event, replay=True)
 
     credited = False
-    for entry in graded:
-        if not entry.grounded:
-            continue
+    for entry in grounded_entries.values():
         feedback.apply_retrieval_feedback(
             store,
             SimpleNamespace(

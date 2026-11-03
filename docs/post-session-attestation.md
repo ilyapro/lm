@@ -122,6 +122,10 @@ attestation is the ledger, not `feedback_applied`.
 
 ## The ledger key, and what "idempotent" does and does not cover
 
+Within one new attestation, each grounded node earns numeric credit once, using
+its first delivered rank and that rank's channel scores. Repeated ranks retain
+their individual containment and verdict in the ledger and share one anchor edge.
+
 The `recall_attestations` table (schema v8) holds
 `UNIQUE(recall_event_id, evidence_sha256)`. `evidence_sha256` is SHA-256 over
 the **canonical** items joined with `\x1e` (ASCII RECORD SEPARATOR — not a

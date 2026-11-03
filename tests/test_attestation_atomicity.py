@@ -75,14 +75,116 @@ def durable_state(store):
 
 
 @pytest.mark.parametrize("route", ["direct", "native"])
+@pytest.mark.parametrize("first_rank", [0, 2])
+def test_duplicate_ranks_credit_first_delivery_and_preserve_verdicts(
+    runtime, monkeypatch, route, first_rank,
+):
+    r = runtime
+    first = {"node_id": r.node.id, "bm25_score": 0.25,
+             "vector_score": 0.5, "graph_score": 0.75}
+    r.event = r.store.record_recall_event(query=QUERY, scope=SCOPE, results=[
+        *[{"node_id": "missing"} for _ in range(first_rank)],
+        first,
+        {"node_id": r.node.id, "bm25_score": 9.0,
+         "vector_score": 8.0, "graph_score": 7.0},
+    ])
+    calls = []
+    original = feedback.apply_retrieval_feedback
+
+    def record(store, result, **kwargs):
+        calls.append((vars(result), kwargs))
+        return original(store, result, **kwargs)
+
+    monkeypatch.setattr(feedback, "apply_retrieval_feedback", record)
+    result = attest(r, route, trace_id=r.trace.id)
+    signal = max(0.2, 1.0 / (first_rank + 1))
+    assert r.store.get_node(r.node.id).usefulness_score == pytest.approx(0.1 * signal), (
+        f"numeric calls: {calls!r}; verdict: {result!r}"
+    )
+    assert calls == [(first, {"useful": True, "signal": signal, "scope": SCOPE})]
+    assert result["results"] == [
+        {"node_id": r.node.id, "rank": rank, "containment": 1.0,
+         "grounded": True, "evidence_index": 0}
+        for rank in (first_rank, first_rank + 1)
+    ]
+    assert result["grounded_node_ids"] == [r.node.id]
+    assert result["credited"] is True and result["replay"] is False
+    assert result["closed_by_attestation"] is True and result["closed"] is True
+    assert result["feedback_trace_id"] == r.trace.id
+    assert r.store.get_recall_event(r.event.id).feedback_trace_id == r.trace.id
+    ledger, = r.store.list_recall_attestations(recall_event_id=r.event.id)
+    assert list(ledger.containments) == result["results"]
+    assert list(ledger.grounded_node_ids) == [r.node.id]
+    anchor, = r.store.list_query_anchors()
+    edge, = r.store.list_query_anchor_edges(anchor_id=anchor.id)
+    assert result["anchor_ids"] == [anchor.id]
+    assert edge.target_id == r.node.id and edge.hits == 1
+    committed = durable_state(r.store)
+    assert attest(r, route, trace_id=r.trace.id) == dict(result, replay=True)
+    assert durable_state(r.store) == committed
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("live_first", [False, True])
+def test_duplicate_credit_is_independent_across_digests_and_live_use(
+    runtime, monkeypatch, live_first,
+):
+    r = runtime
+    monkeypatch.setenv("LM_RECALL_CREDIT_POLICY", "grounded")
+    context = {"scope": SCOPE, "session_id": "independent-observations"}
+    trace = r.store.create_node(level="trace", content=CONTENT, context=context)
+    r.event = r.store.record_recall_event(
+        query=QUERY, scope=SCOPE, ambient_context=context,
+        results=list(r.event.results) * 2,
+    )
+    signals = []
+    original = feedback.apply_retrieval_feedback
+
+    def record(*args, **kwargs):
+        signals.append(kwargs["signal"])
+        return original(*args, **kwargs)
+
+    def live():
+        with r.store.transaction():
+            applied = feedback.apply_pending_recall_feedback(r.store, trace)
+        assert [event.id for event in applied.events] == [r.event.id]
+
+    monkeypatch.setattr(feedback, "apply_retrieval_feedback", record)
+    if live_first:
+        live()
+        assert signals == [1.0]
+        assert r.store.get_node(r.node.id).usefulness_score == pytest.approx(0.1)
+    first = attest(r)
+    second = attest_recall_usage(r.store, r.event.id, [CONTENT, "Verified the rollout."])
+    assert second["evidence_sha256"] != first["evidence_sha256"]
+    assert second["credited"] is True and second["replay"] is False
+    if not live_first:
+        assert r.store.get_recall_event(r.event.id).feedback_applied is False
+        live()
+    assert signals == [1.0, 1.0, 1.0]
+    assert r.store.get_node(r.node.id).usefulness_score == pytest.approx(0.271)
+    assert r.store.credited_node_ids(r.event.id) == {r.node.id}
+    assert r.store.get_recall_event(r.event.id).feedback_trace_id == trace.id
+    committed = durable_state(r.store)
+    assert attest(r) == dict(first, replay=True)
+    assert signals == [1.0, 1.0, 1.0]
+    assert durable_state(r.store) == committed
+
+
+@pytest.mark.parametrize("route", ["direct", "native"])
+@pytest.mark.parametrize("repeat_node", [False, True])
 @pytest.mark.parametrize("stage", [
     "claim", "numeric", "closure", "completion", "after_completion", "commit",
     "endpoint_id", "endpoint_decayed",
 ])
 def test_required_failure_rolls_back_then_retry_and_replay_are_honest(
-    runtime, monkeypatch, route, stage,
+    runtime, monkeypatch, route, repeat_node, stage,
 ):
     r = runtime
+    if repeat_node:
+        r.event = r.store.record_recall_event(
+            query=QUERY, scope=SCOPE, results=list(r.event.results) * 2,
+        )
     before = durable_state(r.store)
     method = {
         "claim": "claim_recall_attestation", "numeric": "update_retrieval_weights",
