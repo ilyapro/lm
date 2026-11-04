@@ -32,6 +32,7 @@ def runtime(tmp_path, monkeypatch):
     state = SimpleNamespace(entered=Event(), release=Event(), guard=RLock(),
                             hold=False, fail=False, batches=[], unlocked_sql=[])
     encoder = Encoder()
+    services = []
 
     def encode(texts):
         state.batches.append(len(texts))
@@ -45,12 +46,15 @@ def runtime(tmp_path, monkeypatch):
         return encoder.embed_batch(texts)
 
     def build(store):
-        state.service = MemoryRecallService(store, embedder=encoder)
-        return state.service
+        service = MemoryRecallService(store, embedder=encoder)
+        services.append(service)
+        return service
 
     monkeypatch.setattr(server, "RLock", lambda: state.guard)
     monkeypatch.setattr(server, "MemoryRecallService", build)
     state.mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
+    # Tools register before prompts, which have an independent recall service.
+    state.service = services[0]
     state.store = state.mcp.memory_store
     state.node = legacy(state.store)
     state.store.set_chunk_embedder(encode)

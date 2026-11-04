@@ -18,6 +18,7 @@ All contents are synthetic; no text or identifier of a real project is used.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -26,7 +27,8 @@ from pathlib import Path
 import pytest
 
 from living_memory.consolidation import memory_consolidate, memory_teach
-from living_memory.retrieval import memory_recall
+from living_memory.embeddings import LocalEmbeddingModel
+from living_memory.retrieval import MemoryRecallService, memory_recall
 from living_memory.storage import MemoryStore
 
 SCOPE = "project:fixture"
@@ -836,7 +838,12 @@ NAMED_V2 = (
     "committed offset; otherwise restart the worker. 4. If the replay fails twice, "
     "restore yesterday's snapshot, keep the failed batch for inspection and page the owner."
 )
-NAMED_QUERY = "how do I run the ledger stall recovery"
+# Name the group without adding an unsupported content term ("run"). Under
+# docs/recall-schema-trigger.md, trigger coverage and source content both rank;
+# a matching label alone does not promise priority over six matching records.
+# The positive precondition and carrier-deletion controls below establish that
+# this query still reaches the complete recipe through its carrier only.
+NAMED_QUERY = "ledger stall recovery"
 # Records that share the query's words but not the procedure.
 NAMED_DISTRACTORS = (
     "ledger service: the stall alert fired twice during the recovery drill",
@@ -1012,9 +1019,41 @@ def test_same_trigger_carriers_do_not_crowd_out_a_record_recall_delivers_directl
 
     mcp, recipe = _crowded_server(tmp_path, monkeypatch)
     try:
-        obtained = obtained_texts(mcp, "how to reopen lesson", max_results=10)
+        query = "how to reopen lesson"
+
+        # Make the semantic premise explicit: the direct procedure answers
+        # this question; the independent incident histories only share its
+        # title. docs/recall-schema-dedup.md preserves all of those groups,
+        # and recall-schema-trigger.md promises no title-only priority.
+        # Fix vectors at the embedding boundary after ordinary consolidation
+        # so hash collisions/FTS position cannot define that semantic premise.
+        def embed(_model, text):
+            cosine = 1.0 if text == query else 0.95 if text == recipe else 0.1
+            return [cosine, math.sqrt(1 - cosine**2)]
+
+        monkeypatch.setattr(LocalEmbeddingModel, "embed", embed)
+        monkeypatch.setattr(
+            LocalEmbeddingModel, "embed_batch",
+            lambda model, texts: [embed(model, text) for text in texts],
+        )
+        store = mcp.memory_store
+        for node in store.list_nodes(scope=SCOPE, limit=1000):
+            store.update_node(node.id, embedding=embed(None, node.content))
+
+        # Confirm the real ranker received the intended evidence without
+        # adding access/feedback before the public recall-and-lookup consumer.
+        ranked = MemoryRecallService(store).memory_recall(
+            query, scope=SCOPE, max_results=10, log_access=False, log_event=False,
+        )
+        assert len(ranked) == 10
+        assert ranked[0].node.content == recipe
+        assert ranked[0].vector_score == pytest.approx(0.95)
+        assert all(result.vector_score == pytest.approx(0.1) for result in ranked[1:])
+
+        obtained = obtained_texts(mcp, query, max_results=10)
         assert ("trace", recipe) in obtained
         carriers = [text for level, text in obtained if level == "concept"]
+        assert len(carriers) == 9
         assert all(len(evidence_ids(content)) == 3 for content in carriers)
         assert len(set().union(*(evidence_ids(content) for content in carriers))) == 3 * len(carriers)
     finally:
@@ -1062,6 +1101,13 @@ def _relabel_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return mcp, schema, records
 
 
+# Ask for the group's case evidence, rather than relying on its label to outrank
+# twelve near-verbatim notes. Current trigger/lexical coverage retains content's
+# ranking role (docs/recall-schema-trigger.md and docs/recall-score-gate.md).
+# The same consumer query must lose the records under the relabel mutation.
+RELABEL_QUERY = "case evidence for relay drain audit"
+
+
 def test_group_node_keeps_the_trigger_it_is_found_by(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Regression-replay loss: a pass relabeled a legacy schema turned carrier
     with its records' majority procedure_id, and the query that reached the
@@ -1071,7 +1117,7 @@ def test_group_node_keeps_the_trigger_it_is_found_by(tmp_path: Path, monkeypatch
     for _ in range(2):
         memory_consolidate(mcp.memory_store, scope=SCOPE)
     assert mcp.memory_store.get_node(schema.id).context["trigger"] == "relay drain audit"
-    carriers = [text for level, text in obtained_texts(mcp, "how to relay drain audit", 10) if level == "concept"]
+    carriers = [text for level, text in obtained_texts(mcp, RELABEL_QUERY, 10) if level == "concept"]
     assert any(all(record.content in text for record in records) for text in carriers)
 
 
@@ -1085,5 +1131,5 @@ def test_trigger_oracle_detects_a_pass_that_relabels_the_group(
     mcp, schema, records = _relabel_server(tmp_path, monkeypatch)
     memory_consolidate(mcp.memory_store, scope=SCOPE)
     assert mcp.memory_store.get_node(schema.id).context["trigger"] == "ops sweep"
-    carriers = [text for level, text in obtained_texts(mcp, "how to relay drain audit", 10) if level == "concept"]
+    carriers = [text for level, text in obtained_texts(mcp, RELABEL_QUERY, 10) if level == "concept"]
     assert not any(all(record.content in text for record in records) for text in carriers)

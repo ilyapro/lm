@@ -186,9 +186,12 @@ def test_fresh_write_reaches_default_top10_against_boosted_competitors(
     # Incident profile: exact lexical hit plus a moderate vector match that
     # stays below the STRONG_VECTOR_MATCH floor (0.65).
     assert 0.08 < fresh_vector_score < 0.65
-    # The fresh trace is the only FTS match for QUERY (unique marker), so its
-    # rank-normalized bm25 score is 1.0.
-    fresh_base = WEIGHTS["bm25"] * 1.0 + WEIGHTS["vector"] * fresh_vector_score
+    # docs/recall-score-gate.md: FTS position selects candidates; the channel
+    # score is query coverage. The source covers recall, probe and the marker,
+    # but not deployment, pipeline or tuning: 3 of 6 terms, independently of
+    # being the only FTS hit. Keep the counterfactual window on that scale.
+    fresh_lexical_score = 3 / 6
+    fresh_base = WEIGHTS["bm25"] * fresh_lexical_score + WEIGHTS["vector"] * fresh_vector_score
 
     # Mid-window weak vector match: strong enough that pre-fix boosts push
     # every competitor above the fresh trace, weak enough that the capped
@@ -236,7 +239,7 @@ def test_fresh_write_reaches_default_top10_against_boosted_competitors(
     )
     # Scenario integrity: the unique marker made the fresh trace the sole (and
     # therefore top) lexical hit, with the expected moderate vector match.
-    assert fresh_result["bm25_score"] == pytest.approx(1.0)
+    assert fresh_result["bm25_score"] == pytest.approx(fresh_lexical_score)
     assert fresh_result["vector_score"] == pytest.approx(fresh_vector_score, abs=1e-5)
     for result in recalled["results"]:
         if result["node"]["id"] == fresh_id:

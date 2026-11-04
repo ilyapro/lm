@@ -138,10 +138,23 @@ def test_native_correction_decay_and_scope_during_replacement(tmp_path, monkeypa
     mcp = create_mcp_server(tmp_path / "memory.sqlite3")
     store = mcp.memory_store
     scope = "project:cobalt"
+    # Ranking retains history and a correction boost (docs/recall-score-gate.md).
+    # Reinforce both twins equally so the correction is a qualified tail entry:
+    # this must exercise replacement, rather than already-distinct plain cuts.
     twins = [store.create_node(level=level, content="Cobalt routing requires approval.",
-                               context={"scope": scope}) for level in ("trace", "concept")]
+                               context={"scope": scope}, stats={"usefulness_score": 0.5})
+             for level in ("trace", "concept")]
     original = store.append_trace("Cobalt routing requires inventory.", {"scope": scope})
     foreign = store.append_trace("Cobalt routing requires approval.", {"scope": "project:foreign"})
+    observations = []
+    rank = MemoryRecallService.rank_candidates
+
+    def observe(service, *args, **kwargs):
+        ranked = rank(service, *args, **kwargs)
+        observations.append((service, ranked))
+        return ranked
+
+    monkeypatch.setattr(MemoryRecallService, "rank_candidates", observe)
 
     async def scenario():
         async with Client(mcp) as client:
@@ -153,6 +166,10 @@ def test_native_correction_decay_and_scope_during_replacement(tmp_path, monkeypa
             args = {"query": "cobalt routing approval", "scope": scope, "depth": 0,
                     "max_results": 2, "view": view}
             active = (await client.call_tool("memory_recall", args)).structured_content
+            service, ranked = observations[-1]
+            assert [r.node.id for r in ranked] == [n.id for n in twins] + [correction_id, original.id]
+            assert service.last_query_relevance.passes(ranked[2])
+            assert not service.last_query_relevance.passes(ranked[3])
             assert [e.get("node", e)["id"] for e in active["results"]] == [twins[0].id, correction_id]
             assert [e["delivery"] for e in active["results"]] == ["full", "full"]
             store.soft_delete_node(correction_id, "expired synthetic correction")

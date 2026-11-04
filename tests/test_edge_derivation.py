@@ -566,18 +566,36 @@ def test_causal_recall_traverses_explicit_caused_edge(tmp_path: Path) -> None:
             type="working_fix",
             timestamp="2026-07-08T10:00:00Z",
         )
+        # Current lexical scores measure query coverage, not FTS position
+        # (docs/recall-score-gate.md). Seed the fix strongly enough that its
+        # backward path improves the cause's weaker task-label match.
+        query = "runner startup stale pid file"
+        without_edge = memory_recall(
+            store, query, scope=SCOPE, depth="causal", max_results=5,
+            log_access=False,
+        )
+        initial = {result.node.id: result for result in without_edge}
+        assert initial[fix.id].bm25_score == 1.0
+        assert initial[root_cause.id].lexical_score == 0.0
+        assert initial[root_cause.id].graph_score == 0.0
         store.create_connection(root_cause.id, fix.id, "caused", weight=.9)
 
         results = memory_recall(
             store,
-            "why does the runner fail to start",
+            query,
             scope=SCOPE,
             depth="causal",
             max_results=5,
+            log_access=False,
         )
 
         by_id = {result.node.id: result for result in results}
         assert root_cause.id in by_id
         # Reached by traversing the explicit caused edge backwards from the fix,
         # not by matching the (lexically disjoint) query directly.
-        assert by_id[root_cause.id].graph_score > 0
+        assert by_id[root_cause.id].graph_score == pytest.approx(.9)
+        assert by_id[root_cause.id].path == (fix.id, root_cause.id)
+        without_walk = memory_recall(
+            store, query, scope=SCOPE, depth=0, max_results=5, log_access=False,
+        )
+        assert all(result.graph_score == 0.0 for result in without_walk)

@@ -365,9 +365,12 @@ def test_admin_restart_returns_202_and_replaces_process(server: dict[str, Any]) 
     assert body["pid_before"] == pid_observed  # exec preserves PID
     assert "restart_at" in body and body["restart_at"]
 
-    # Wait until the original socket is closed (old process tearing down)
-    # then the new process re-binds and answers again.
-    _wait_for_restart(port, deadline=time.monotonic() + RESTART_TIMEOUT_SECONDS)
+    # A 401 can still come from the old process before its scheduled exec.
+    _wait_for_boot_id_change(
+        port,
+        current_boot_id=body["boot_id"],
+        deadline=time.monotonic() + RESTART_TIMEOUT_SECONDS,
+    )
 
     # PID stays the same across os.execv; the subprocess handle is still valid.
     assert proc.poll() is None, "subprocess should still be alive after exec"
@@ -382,12 +385,16 @@ def test_admin_restart_preserves_args_and_db(server: dict[str, Any]) -> None:
     db_path: Path = server["db_path"]
 
     # Seed the DB through the live server so we can confirm content survives.
-    asyncio.run(_remember_via_mcp(port, "pre-restart-marker"))
+    before = asyncio.run(_remember_via_mcp(port, "pre-restart-marker"))
 
     response = _post_restart(port, token=TOKEN)
     assert response.status_code == 202
 
-    _wait_for_restart(port, deadline=time.monotonic() + RESTART_TIMEOUT_SECONDS)
+    _wait_for_boot_id_change(
+        port,
+        current_boot_id=response.json()["boot_id"],
+        deadline=time.monotonic() + RESTART_TIMEOUT_SECONDS,
+    )
 
     # --db argument survived: the same file is still on disk.
     assert db_path.exists()
@@ -397,30 +404,12 @@ def test_admin_restart_preserves_args_and_db(server: dict[str, Any]) -> None:
     after = asyncio.run(_remember_via_mcp(port, "post-restart-marker"))
     assert after["node"]["scope"] == DEFAULT_SCOPE
 
-    # The trace we wrote pre-restart is still there.
+    # Default knowledge view exposes identity/content directly (architecture.md).
+    # The exact trace we wrote pre-restart is still there.
     results = asyncio.run(_recall_via_mcp(port, "pre-restart-marker"))
     assert any(
-        "pre-restart-marker" in (item["node"]["content"] or "")
+        item["id"] == before["node"]["id"] and item["content"] == "pre-restart-marker"
         for item in results
-    )
-
-
-def _wait_for_restart(port: int, deadline: float) -> None:
-    last_status: int | None = None
-    last_err: BaseException | None = None
-    while time.monotonic() < deadline:
-        try:
-            response = httpx.post(
-                f"http://127.0.0.1:{port}/admin/restart", timeout=1.0
-            )
-            last_status = response.status_code
-            if response.status_code == 401:
-                return
-        except (OSError, httpx.HTTPError) as err:
-            last_err = err
-        time.sleep(0.1)
-    raise RuntimeError(
-        f"server did not return to ready after restart: status={last_status} err={last_err!r}"
     )
 
 

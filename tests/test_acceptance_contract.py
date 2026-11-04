@@ -118,18 +118,38 @@ def test_mcp_remember_automatically_creates_concept_with_consensus_and_prompt(
     assert concept.stats["confidence"] > 0.5
     assert concept.stats["temporal_hint"] is None
 
-    block = mcp.prompts["memory://prompt/retrieval_context"](
+    # Nonempty-task prompts consume bounded recall; confidence is not a
+    # fallback for concepts absent from it (docs/mcp-interface.md). Here the
+    # 100 literal source matches precede their derived digest.
+    recalled = memory_recall(
+        mcp.memory_store, "deploy rollback migration", scope="project:alpha",
+        max_results=20, log_access=False,
+    )
+    assert len(recalled) == 20
+    assert all(result.node.level == "trace" for result in recalled)
+    task_block = mcp.prompts["memory://prompt/retrieval_context"](
         task="deploy rollback migration",
         scope="project:alpha",
         max_concepts=3,
         min_confidence=0.5,
         retrieval_policy="confidence",
     )
+    assert concept.id not in task_block
+
+    # The documented empty-task browse selects scoped concepts by policy.
+    # It must expose the automatically derived consensus without requiring
+    # that this digest outrank all of its literal source traces.
+    block = mcp.prompts["memory://prompt/retrieval_context"](
+        task="", scope="project:alpha", max_concepts=3,
+        min_confidence=0.5, retrieval_policy="confidence",
+    )
     assert block.startswith("BEGIN ACTIVE MEMORY CONTEXT")
     assert concept.id in block
     assert "scope_plan: project:alpha > global" in block
     assert "retrieval_policy: confidence" in block
     assert block.endswith("END ACTIVE MEMORY CONTEXT")
+    mcp.auto_consolidation.close()
+    mcp.memory_store.close()
 
 
 def test_adaptive_policy_consolidates_young_scope_at_low_thresholds(

@@ -124,9 +124,14 @@ def test_short_instruction_and_cross_project_fact_survive_public_read_chain(
     monkeypatch.setenv(MIN_SCORE_ENV, "0.25")
     mcp = create_mcp_server(tmp_path / "public.sqlite3")
     store = mcp.memory_store
-    clause = f"Before adjusting the {topic}, record the verified zero offset."
+    # Give the source actual evidence for the requested step. A matching
+    # concept trigger alone does not qualify unrelated content, nor does the
+    # lexical gate interpret negation (docs/recall-score-gate.md). An authored
+    # paragraph also keeps this independent instruction searchable apart from
+    # the setup ballast (docs/mcp-interface.md, search windows).
+    clause = f"Before the {topic} calibration adjustment step, record the verified zero offset."
     instruction = store.create_node(
-        level="concept", content="Instruction: " + "Routine setup notes. " * 350 + clause,
+        level="concept", content="Instruction: " + "Routine setup notes. " * 350 + "\n\n" + clause,
         context={"scope": "global", "trigger": topic},
     )
     fact = f"The {topic} calibration interval is 19 hours."
@@ -144,10 +149,22 @@ def test_short_instruction_and_cross_project_fact_survive_public_read_chain(
             context={"scope": f"project:old-{index}", "trigger": topic.split()[0]},
         ))
 
+    query = f"For {topic}, what is the calibration interval and required adjustment step {tail}"
+    service = MemoryRecallService(store)
+    raw = service.memory_recall(query, max_results=4, log_access=False)
+    target = next(result for result in raw if result.node.id == instruction.id)
+    # Independent fixture precondition: five requested terms occur in the
+    # source; neither a spare reference slot nor history supplies the answer.
+    assert target.lexical_score == pytest.approx(5 / (11 if tail else 7))
+    assert target.withheld is None
+    assert service.last_query_relevance.passes(target)
+    assert all(not service.last_query_relevance.passes(result)
+               for result in service.last_residual if result.node.id in {node.id for node in carriers})
+
     async def read():
         async with fastmcp.Client(mcp) as client:
             response = await client.call_tool("memory_recall", {
-                "query": f"For {topic}, what is the calibration interval and required adjustment step {tail}",
+                "query": query,
                 "max_results": 4,
             })
             recall = response.structured_content or json.loads(response.content[0].text)
@@ -156,13 +173,18 @@ def test_short_instruction_and_cross_project_fact_survive_public_read_chain(
             assert all(node.id in ids for node in supporting)
             assert not any(carrier.id in ids for carrier in carriers)
             entry = next(item for item in recall["results"] if item["id"] == instruction.id)
+            assert entry["delivery"] != "below_threshold"
             assert entry["content_ref"]["node_id"] == instruction.id
             lookup_response = await client.call_tool("memory_lookup", {"node_id": entry["content_ref"]["node_id"]})
             lookup = lookup_response.structured_content or json.loads(lookup_response.content[0].text)
             assert lookup["results"][0]["content"] == instruction.content
             assert clause in lookup["results"][0]["content"]
 
-    asyncio.run(read())
+    try:
+        asyncio.run(read())
+    finally:
+        mcp.auto_consolidation.close()
+        store.close()
 
 
 def test_specific_trigger_only_instruction_passes_rank_admission_and_gate(

@@ -1,10 +1,13 @@
-"""CLI checks for the aggregate-only paired report contract; no private data is read."""
+"""Real aggregate verifier checks with fixture-owned Git history; no private data is read."""
 
+import ast
 import copy
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,6 +26,74 @@ FAMILIES = [
     ("holdout", "missing_knowledge"),
 ]
 FIELDS = ("response_chars", "calls", "recall_calls", "lookup_calls", "latency_ms", "oracle_pass")
+
+
+def git_environment():
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith("GIT_")}
+    environment.update(
+        GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_AUTHOR_NAME="Report fixture", GIT_AUTHOR_EMAIL="fixture@example.invalid",
+        GIT_COMMITTER_NAME="Report fixture", GIT_COMMITTER_EMAIL="fixture@example.invalid",
+        GIT_AUTHOR_DATE="2001-01-01T00:00:00+00:00",
+        GIT_COMMITTER_DATE="2001-01-01T00:00:00+00:00",
+    )
+    return environment
+
+
+def git(root, *args):
+    return subprocess.check_output(
+        ["git", "-C", str(root), "-c", "commit.gpgsign=false",
+         "-c", "core.hooksPath=" + os.devnull, *args],
+        env=git_environment(), text=True, stderr=subprocess.PIPE,
+    ).strip()
+
+
+@pytest.fixture(scope="module")
+def report_repository(tmp_path_factory):
+    """Own all revisions, including a real divergent branch for provenance checks."""
+    root = tmp_path_factory.mktemp("aggregate-repository")
+    source = root / "src/living_memory"
+    source.mkdir(parents=True)
+    delivery = source / "delivery.py"
+    server = source / "server.py"
+    delivery.write_text("def deliver(value):\n    if value:\n        return value\n    return None\n")
+    server.write_text('def serve():\n    return "initial"\n')
+    git(root, "init", "--quiet")
+    git(root, "add", ".")
+    git(root, "commit", "--quiet", "-m", "Common fixture ancestor")
+    common = git(root, "rev-parse", "HEAD")
+    server.write_text('def serve():\n    return "ready"\n')
+    git(root, "commit", "--quiet", "-am", "Fixture baseline")
+    baseline = git(root, "rev-parse", "HEAD")
+
+    def complexity():
+        texts = [path.read_text() for path in (delivery, server)]
+        nodes = [node for text in texts for node in ast.walk(ast.parse(text))]
+        return {"lines": sum(len(text.splitlines()) for text in texts),
+                "functions": sum(isinstance(node, ast.FunctionDef) for node in nodes),
+                "ast_branch_nodes": sum(isinstance(node, ast.If) for node in nodes)}
+
+    left = complexity()
+    delivery.write_text(
+        "def deliver(value):\n    if value:\n        return shorten(value)\n    return None\n\n"
+        "def shorten(value):\n    if len(value) > 100:\n        return value[:100]\n    return value\n"
+    )
+    right = complexity()
+    git(root, "commit", "--quiet", "-am", "Fixture candidate")
+    candidate = git(root, "rev-parse", "HEAD")
+    divergent = git(root, "commit-tree", "HEAD^{tree}", "-p", common,
+                    "-m", "Candidate outside baseline ancestry")
+    files = ["src/living_memory/delivery.py", "src/living_memory/server.py"]
+    changes = [line.split("\t") for line in
+               git(root, "diff", "--numstat", baseline, candidate, "--", *files).splitlines()]
+    return SimpleNamespace(root=root, baseline=baseline, candidate=candidate,
+                           divergent=divergent, complexity={
+        "merge_base": baseline, "files": files, "baseline": left, "candidate": right,
+        "delta": {key: right[key] - left[key] for key in left},
+        "git_diff": {"insertions": sum(int(row[0]) for row in changes),
+                     "deletions": sum(int(row[1]) for row in changes)},
+    })
 
 
 def recalc(report):
@@ -47,7 +118,7 @@ def recalc(report):
     return report
 
 
-def good_report():
+def good_report(repository):
     cases = []
     for index, (split, family) in enumerate(FAMILIES, 1):
         arms = {}
@@ -65,16 +136,10 @@ def good_report():
         "private_packet_sha256": "a54df4594910edb62d421fe7eec1add260022a6779809cdf710eef5619fd5d64",
         "snapshot_sha256": "2891a098b23c7ad0ef2a1c64a8bdfdd9dadccdccf4e2693afd31b09e55f09e69",
         "synthetic_fixtures_sha256": "972bd2e0e33baba2d2a03d2c0238deb46eae92bf303582943bbaf042f285b293"},
-        "revisions": {"baseline": "cd4ad6c3984c41badc55199299532199ed4579b1",
-                      "candidate": "d3f4c26af2c6af5a72fbb177ecf53b42a469439a"},
+        "revisions": {"baseline": repository.baseline, "candidate": repository.candidate},
         "population": {"cases": 9, "development": 6, "holdout": 3,
                        "positive": 7, "missing_knowledge": 2},
-        "production_complexity": {"merge_base": "cd4ad6c3984c41badc55199299532199ed4579b1",
-            "files": ["src/living_memory/delivery.py", "src/living_memory/server.py"],
-            "baseline": {"lines": 200, "functions": 10, "ast_branch_nodes": 20},
-            "candidate": {"lines": 230, "functions": 11, "ast_branch_nodes": 22},
-            "delta": {"lines": 30, "functions": 1, "ast_branch_nodes": 2},
-            "git_diff": {"insertions": 35, "deletions": 5}},
+        "production_complexity": copy.deepcopy(repository.complexity),
         "independent_oracle": {"all_cases_pass": True, "all_positive_sufficient": True,
                                "loss_probe": "Buried instruction and correction loss rejected.",
                                "targeted_tests_passed": 8},
@@ -86,29 +151,68 @@ def good_report():
     return recalc(report)
 
 
-def cli(tmp_path, report):
+def cli(tmp_path, report, repository, *, frozen_defaults=False):
+    """Call the current read-only verifier, with no mocked validator or Git calls."""
     path = tmp_path / "aggregate.json"
     content = json.dumps(report)
     path.write_text(content)
-    result = subprocess.run([sys.executable, str(runner.ROOT / "scripts/recall_needed_cost.py"),
-                             "verify", "--report", str(path)], cwd=runner.ROOT,
+    head = git(repository.root, "rev-parse", "HEAD")
+    assert not git(repository.root, "status", "--porcelain")
+    if frozen_defaults:
+        command = [sys.executable, str(runner.ROOT / "scripts/recall_needed_cost.py"),
+                   "verify", "--report", str(path)]
+    else:
+        # Only dependency inputs differ from the CLI. Import and run the actual
+        # current verifier; expected_baseline is independent of the report.
+        command = [sys.executable, "-c", """
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from scripts import recall_needed_cost as runner
+assert Path(runner.__file__).resolve() == Path(sys.argv[1]) / "scripts/recall_needed_cost.py"
+try:
+    runner._verify_report(json.loads(Path(sys.argv[4]).read_text()),
+                          repository_root=Path(sys.argv[2]), expected_baseline=sys.argv[3])
+except ValueError as error:
+    raise SystemExit(f"error: {error}")
+""", str(runner.ROOT), str(repository.root), repository.baseline, str(path)]
+    result = subprocess.run(command, cwd=repository.root, env=git_environment(),
                             capture_output=True, text=True)
     assert path.read_text() == content  # verify is read-only
+    assert git(repository.root, "rev-parse", "HEAD") == head
+    assert not git(repository.root, "status", "--porcelain")
     return result
 
 
-def test_valid_aggregate_passes_read_only(tmp_path):
-    result = cli(tmp_path, good_report())
+def test_valid_aggregate_passes_read_only(tmp_path, report_repository):
+    result = cli(tmp_path, good_report(report_repository), report_repository)
     assert result.returncode == 0, result.stderr
+
+
+def test_cli_keeps_frozen_baseline_identity(tmp_path, report_repository):
+    result = cli(tmp_path, good_report(report_repository), report_repository, frozen_defaults=True)
+    assert result.returncode != 0
+    assert "baseline revision" in result.stderr
+
+
+def test_rejects_candidate_outside_baseline_ancestry(tmp_path, report_repository):
+    report = good_report(report_repository)
+    report["revisions"]["candidate"] = report_repository.divergent
+    result = cli(tmp_path, report, report_repository)
+    assert result.returncode != 0
+    assert "candidate merge-base provenance" in result.stderr
 
 
 @pytest.mark.parametrize("damage,expected", [
     (lambda d: d.update(schema_version=2), "schema_version"),
     (lambda d: d["inputs"].update(snapshot_sha256="0" * 64), "snapshot_sha256"),
+    (lambda d: d["revisions"].update(baseline=d["revisions"]["candidate"]), "baseline revision"),
+    (lambda d: d["revisions"].update(candidate=d["revisions"]["baseline"]), "distinct full commit hash"),
     (lambda d: d["revisions"].update(candidate="0" * 40), "revisions"),
     (lambda d: d["production_complexity"].update(merge_base="0" * 40), "merge_base"),
     (lambda d: d["production_complexity"]["delta"].update(lines=0), "delta.lines"),
     (lambda d: d["production_complexity"].pop("git_diff"), "git_diff"),
+    (lambda d: d["production_complexity"]["git_diff"].update(insertions=-1), "git_diff.insertions"),
     (lambda d: d["cases"].pop(), "nine frozen cases"),
     (lambda d: d["cases"][7].update(split="development"), "split"),
     (lambda d: d["cases"][3].update(family="ordinary_short_fact"), "family"),
@@ -128,16 +232,16 @@ def test_valid_aggregate_passes_read_only(tmp_path):
     (lambda d: d.pop("method"), "method"),
     (lambda d: d.update(verdict="FAIL: stale claim"), "verdict"),
 ])
-def test_rejects_incomplete_or_inconsistent_report(tmp_path, damage, expected):
-    report = copy.deepcopy(good_report())
+def test_rejects_incomplete_or_inconsistent_report(tmp_path, report_repository, damage, expected):
+    report = good_report(report_repository)
     damage(report)
-    result = cli(tmp_path, report)
+    result = cli(tmp_path, report, report_repository)
     assert result.returncode != 0
     assert expected in result.stderr
 
 
-def test_aggregate_saving_cannot_hide_large_carrier_lookup(tmp_path):
-    report = good_report()
+def test_aggregate_saving_cannot_hide_large_carrier_lookup(tmp_path, report_repository):
+    report = good_report(report_repository)
     case = report["cases"][0]
     case["candidate"]["responses"] = [
         {"tool": "memory_recall", "chars": 100},
@@ -147,19 +251,21 @@ def test_aggregate_saving_cannot_hide_large_carrier_lookup(tmp_path):
     case["candidate"]["latency_ms"] = 3.0
     recalc(report)
     assert report["totals"]["candidate"]["response_chars"] < report["totals"]["baseline"]["response_chars"]
-    assert cli(tmp_path, report).returncode != 0
+    result = cli(tmp_path, report, report_repository)
+    assert result.returncode != 0
+    assert "adds a mandatory call or lookup" in result.stderr
 
 
-def test_rejects_one_case_saving_even_with_lower_aggregate(tmp_path):
-    report = good_report()
+def test_rejects_one_case_saving_even_with_lower_aggregate(tmp_path, report_repository):
+    report = good_report(report_repository)
     report["cases"][7]["candidate"]["responses"][0]["chars"] = 500
     recalc(report)
     assert report["totals"]["candidate"]["response_chars"] < report["totals"]["baseline"]["response_chars"]
-    assert "only one case" in cli(tmp_path, report).stderr
+    assert "only one case" in cli(tmp_path, report, report_repository).stderr
 
 
-def test_rejects_absent_aggregate_saving(tmp_path):
-    report = good_report()
+def test_rejects_absent_aggregate_saving(tmp_path, report_repository):
+    report = good_report(report_repository)
     report["cases"][2]["candidate"]["responses"][0]["chars"] = 1300
     recalc(report)
-    assert "aggregate full-chain" in cli(tmp_path, report).stderr
+    assert "aggregate full-chain" in cli(tmp_path, report, report_repository).stderr

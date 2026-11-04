@@ -351,6 +351,7 @@ _FROZEN_HASHES = {
     "snapshot_sha256": "2891a098b23c7ad0ef2a1c64a8bdfdd9dadccdccf4e2693afd31b09e55f09e69",
     "synthetic_fixtures_sha256": "972bd2e0e33baba2d2a03d2c0238deb46eae92bf303582943bbaf042f285b293",
 }
+_FROZEN_BASELINE = "cd4ad6c3984c41badc55199299532199ed4579b1"
 _FROZEN_FAMILIES = (
     ("development", "known_large_carrier"),
     ("development", "ordinary_short_fact"),
@@ -365,8 +366,15 @@ _FROZEN_FAMILIES = (
 _TOTAL_FIELDS = ("response_chars", "calls", "recall_calls", "lookup_calls", "latency_ms", "oracle_pass")
 
 
-def _verify_report(report: Any) -> None:
-    """Validate the published aggregate without opening the private packet or replaying tools."""
+def _verify_report(
+    report: Any, *, repository_root: Path = ROOT,
+    expected_baseline: str = _FROZEN_BASELINE,
+) -> None:
+    """Validate the aggregate without opening the private packet or replaying tools.
+
+    The repository and independent baseline pin are explicit dependencies for
+    synthetic fixtures. The CLI retains the frozen study identity by default.
+    """
     def require(condition: bool, message: str) -> None:
         if not condition:
             raise ValueError(message)
@@ -410,13 +418,13 @@ def _verify_report(report: Any) -> None:
     revisions = mapping(report.get("revisions"), "revisions")
     baseline = revisions.get("baseline")
     candidate = revisions.get("candidate")
-    same(baseline, "cd4ad6c3984c41badc55199299532199ed4579b1", "baseline revision")
+    same(baseline, expected_baseline, "baseline revision")
     require(isinstance(candidate, str) and len(candidate) == 40 and
             all(char in "0123456789abcdef" for char in candidate) and candidate != baseline,
             "candidate revision must be a distinct full commit hash")
     try:
         actual_base = subprocess.check_output(
-            ["git", "-C", str(ROOT), "merge-base", baseline, candidate],
+            ["git", "-C", str(repository_root), "merge-base", baseline, candidate],
             text=True, stderr=subprocess.DEVNULL).strip()
     except subprocess.CalledProcessError as error:
         raise ValueError("report revisions must be available commits") from error
