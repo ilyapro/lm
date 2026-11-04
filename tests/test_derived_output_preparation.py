@@ -3,6 +3,7 @@
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import replace
 from threading import Event, RLock
 
 import pytest
@@ -394,3 +395,319 @@ def test_owner_losing_all_sources_during_preparation_is_invalidated(store):
     current = store.get_node(owner.id)
     assert current.decayed and current.decay_reason == "derivation: no current sources"
     assert c._current_derivation(store, current).live == []
+
+
+def independent_owners(store, *, level="trace"):
+    source, *others = sources(store, level=level)
+    others.extend(store.create_node(
+        level=level, content=f"Harbor inspection {i} checks separate equipment.",
+        context={"scope": SCOPE}, embedding=[1., 0., 0.], stats={"usefulness_score": 100.},
+    ) for i in range(2))
+    return source, [derived(store, f"owner {i}", [source, other]) for i, other in enumerate(others)]
+
+
+def output_work(store, monkeypatch, guard):
+    retries, encoded = [], []
+    prepare = c._DerivedOutputRequired.prepare
+    encoder = LocalEmbeddingModel(backend="hash", dimensions=3)
+
+    def counted(needed, current_store, preparation):
+        assert not guard._is_owned() and not store.connection.in_transaction
+        retries.append([item.key for item in (needed, *needed.additional)])
+        return prepare(needed, current_store, preparation)
+
+    def encode(texts):
+        assert not guard._is_owned() and not store.connection.in_transaction
+        encoded.append(list(texts))
+        return encoder.embed_batch(texts)
+
+    monkeypatch.setattr(c._DerivedOutputRequired, "prepare", counted)
+    store.set_chunk_embedder(encode)
+    return retries, encoded
+
+
+@pytest.mark.parametrize("operation", ["teach", "forget", "connect"])
+def test_independent_outputs_prepare_before_the_first_writer(store, monkeypatch, operation):
+    source, owners = independent_owners(store)
+    replacement = store.append_trace(CORRECTION, {"scope": SCOPE}) if operation == "connect" else None
+    guard = RLock()
+    retries, encoded = output_work(store, monkeypatch, guard)
+    if operation == "teach":
+        preparation = c.prepare_teach(store, source.id, CORRECTION, guard=lambda: guard)
+        assert len(encoded) == len(owners)
+        with guard:
+            replacement = c.memory_teach(store, source.id, CORRECTION, preparation=preparation).corrective_trace
+    elif operation == "forget":
+        preparation = c.prepare_forget(store, source.id, guard=lambda: guard)
+        assert len(encoded) == len(owners)
+        with guard:
+            c.memory_forget(store, source.id, preparation=preparation)
+    else:
+        c.memory_connect(store, replacement.id, source.id, "supersedes", guard=lambda: guard)
+    assert retries == []
+    assert len(encoded) == len(owners)
+    for owner in owners:
+        current = store.get_node(owner.id)
+        expected_ids = set(owner.source_traces) - {source.id}
+        if replacement:
+            expected_ids.add(replacement.id)
+        assert set(current.source_traces) == expected_ids
+        members = list(store.get_nodes(expected_ids).values())
+        best = max(members, key=lambda member: (c._trace_quality(member), member.id))
+        assert current.content == c._synthesize_digest(members, best=best)
+        assert_chunks(store, current)
+
+
+@pytest.mark.parametrize("change", ["missing", "stale_owner", "stale_source", "best"])
+def test_missing_or_stale_independent_outputs_share_one_rollback(store, monkeypatch, change):
+    source, owners = independent_owners(store, level="concept" if change == "stale_source" else "trace")
+    preparation = c.prepare_forget(store, source.id)
+    if change == "missing":
+        preparation.digests = {key: replace(value, chunks=None) for key, value in preparation.digests.items()}
+    else:
+        for index, owner in enumerate(owners):
+            if change == "stale_owner":
+                store.update_node(owner.id, content=owner.content + " New owner observation.")
+            else:
+                other = next(item for item in owner.source_traces if item != source.id)
+                if change == "stale_source":
+                    store.update_node(other, content=f"Harbor inspection {index} uses a calibrated scanner.")
+                else:
+                    # A newly admitted stronger source invalidates both best and membership.
+                    stronger = store.create_node(
+                        level="trace", content=f"Harbor inspection {index} checks the strongest current evidence.",
+                        context={"scope": SCOPE}, embedding=[0., 1., 0.], stats={"usefulness_score": 1000.},
+                    )
+                    store.update_node(owner.id, provenance={
+                        **owner.provenance, "source_traces": [*owner.source_traces, stronger.id],
+                    })
+    before = list(store.connection.iterdump())
+    guard = RLock()
+    retries, encoded = output_work(store, monkeypatch, guard)
+    prepare = c._DerivedOutputRequired.prepare
+
+    def rolled_back(*args):
+        assert list(store.connection.iterdump()) == before
+        return prepare(*args)
+
+    monkeypatch.setattr(c._DerivedOutputRequired, "prepare", rolled_back)
+    c.memory_forget(store, source.id, preparation=preparation)
+    assert len(retries) == 1 and set(retries[0]) == {owner.id for owner in owners}
+    assert len(encoded) == len(owners)
+    for owner in owners:
+        current = store.get_node(owner.id)
+        assert source.id not in current.source_traces
+        if change == "stale_source":
+            assert "calibrated scanner" in current.content
+        if change == "best":
+            assert current.embedding == [0., 1., 0.]
+        assert_chunks(store, current)
+
+
+@pytest.mark.parametrize("mode", ["unchanged", "missing_chunks", "no_representative", "procedural"])
+def test_preparation_encodes_only_required_outputs(store, monkeypatch, mode):
+    members = sources(store)
+    owner = derived(store, "inspection", members)
+    remaining = members[1:]
+    best = max(remaining, key=lambda member: (c._trace_quality(member), member.id))
+    expected = c._synthesize_digest(remaining, best=best)
+    store.update_node(owner.id, content=expected, representative_embedding=[1., 0., 0.])
+    if mode == "missing_chunks":
+        store.replace_node_chunks(owner.id, [])
+    elif mode == "no_representative":
+        store.update_node(owner.id, content="Harbor evidence still needs refreshing.")
+        for member in remaining:
+            store.update_node(member.id, representative_embedding=[])
+    elif mode == "procedural":
+        store.update_node(owner.id, context={**owner.context, "procedure_id": "harbor-check"},
+                          provenance={**owner.provenance, "strategy": "procedural"})
+    retries, encoded = output_work(store, monkeypatch, RLock())
+    preparation = c.prepare_forget(store, members[0].id)
+    c.memory_forget(store, members[0].id, preparation=preparation)
+    assert retries == []
+    assert len(encoded) == (1 if mode == "missing_chunks" else 0)
+    if mode in ("unchanged", "missing_chunks"):
+        assert_chunks(store, store.get_node(owner.id))
+
+
+@pytest.mark.parametrize("scope", ["project:other-harbor", "", None])
+def test_prepared_teach_uses_corrective_scope_in_output_identity(store, monkeypatch, scope):
+    source, owners = independent_owners(store)
+    context = {"scope": scope}
+    retries, encoded = output_work(store, monkeypatch, RLock())
+    preparation = c.prepare_teach(store, source.id, CORRECTION, context=context)
+    taught = c.memory_teach(store, source.id, CORRECTION, context=context, preparation=preparation)
+    assert taught.corrective_trace.scope == (scope or store.config.default_scope)
+    assert retries == [] and len(encoded) == len(owners)
+
+
+def test_diamond_batches_current_siblings_without_encoding_unwritten_sources(store, monkeypatch):
+    source, owners = independent_owners(store)
+    joined = [derived(store, f"joined {i}", owners[i:i + 2]) for i in (0, 2)]
+    tip = derived(store, "tip", joined)
+    retries, encoded = output_work(store, monkeypatch, RLock())
+    preparation = c.prepare_teach(store, source.id, CORRECTION)
+    assert len(encoded) == len(owners)
+    assert all(preparation.digests[node.id].chunks is None for node in [*joined, tip])
+    c.memory_teach(store, source.id, CORRECTION, preparation=preparation)
+    assert [set(batch) for batch in retries] == [{node.id for node in joined}, {tip.id}]
+    assert len(encoded) == len(owners) + len(joined) + 1
+    assert all("awaits its current evidence" not in text for batch in encoded for text in batch)
+    for node in [*owners, *joined, tip]:
+        current = store.get_node(node.id)
+        assert CORRECTION in current.content and source.content not in current.content
+        assert_chunks(store, current)
+
+
+@pytest.mark.parametrize("materializer", ["cluster", "promotion"])
+def test_multi_output_materialization_batches_required_chunks(store, monkeypatch, materializer):
+    members = [store.create_node(
+        level="trace" if materializer == "cluster" else "concept",
+        content=f"Harbor inspection {i} records distinct equipment {i}.",
+        context={"scope": SCOPE if materializer == "cluster" else f"project:harbor-{i}",
+                 "procedure_id": f"group-{i}" if materializer == "cluster" else "shared"},
+        embedding=[1., 0., 0.],
+    ) for i in range(4)]
+    owners = []
+    if materializer == "promotion":
+        owners = [store.create_node(
+            level="concept", content=f"Harbor promotion {i} awaits evidence.",
+            context={"scope": "global", "procedure_id": "shared"},
+            representative_embedding=[1., 0., 0.],
+            provenance={"strategy": "cross-scope-promotion", "source_concepts": [n.id for n in members]},
+        ) for i in range(4)]
+        expected_order = [node.id for node in store.list_nodes(level="concept", scope="global")]
+    guard = RLock()
+    retries, encoded = output_work(store, monkeypatch, guard)
+    if materializer == "cluster":
+        result = [node for node, _ in materialize(store, members, guard)]
+    else:
+        result = c._cross_scope_promotion(store, members[0], step=lambda: guard)
+        assert [node.id for node in result] == expected_order
+        assert {node.id for node in result} == {node.id for node in owners}
+    assert len(result) == 4 and len(encoded) == 4
+    assert len(retries) == 1 and len(retries[0]) == 4
+    for node in result:
+        assert_chunks(store, node)
+
+
+@pytest.mark.parametrize("policy", ["audit", "credit"])
+@pytest.mark.parametrize("missing", [False, True])
+def test_native_independent_outputs_retry_outside_feedback_and_commit_once(tmp_path, monkeypatch, policy, missing):
+    from living_memory import server
+    from test_lookup import FakeMCP
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    monkeypatch.setenv("LM_EXPLICIT_FEEDBACK_POLICY", policy)
+    monkeypatch.setattr(server, "_transport_session_id", lambda: "batched-outputs")
+    guard = RLock()
+    monkeypatch.setattr(server, "RLock", lambda: guard)
+    mcp = server.create_mcp_server(tmp_path / "native.sqlite3", mcp_factory=FakeMCP)
+    mcp.auto_consolidation.close()
+    store = mcp.memory_store
+    try:
+        source, owners = independent_owners(store)
+        context = {"scope": SCOPE, "agent": "inspector", "session_id": "batched-outputs"}
+        recalled = mcp.tools["memory_recall"]("Harbor departure permit inspection", scope=SCOPE,
+                                               ambient_context=context)
+        marked = [row["id"] for row in recalled["results"]]
+        assert marked
+        before = list(store.connection.iterdump())
+        if missing:
+            prepare = server.prepare_teach
+
+            def without_chunks(*args, **kwargs):
+                result = prepare(*args, **kwargs)
+                result.digests = {key: replace(value, chunks=None) for key, value in result.digests.items()}
+                return result
+
+            monkeypatch.setattr(server, "prepare_teach", without_chunks)
+        retries, _ = output_work(store, monkeypatch, guard)
+        prepare_required = c._DerivedOutputRequired.prepare
+
+        def rolled_back(*args):
+            assert list(store.connection.iterdump()) == before
+            return prepare_required(*args)
+
+        monkeypatch.setattr(c._DerivedOutputRequired, "prepare", rolled_back)
+        result = mcp.tools["memory_teach"](source.id, CORRECTION, context=context,
+                                            used=marked[:1], irrelevant=marked[1:])
+        assert len(retries) == int(missing)
+        if missing:
+            assert set(retries[0]) == {node.id for node in owners}
+        corrective_id = result["corrective_trace"]["id"]
+        assert result["feedback_marks"]["accepted"] == len(marked)
+        rows = store.connection.execute("SELECT source_id FROM recall_feedback_marks").fetchall()
+        assert len(rows) == len(marked) and {row[0] for row in rows} == {corrective_id}
+        assert store.get_recall_event(recalled["recall_event_id"]).feedback_trace_id == corrective_id
+        assert store.node_chunks_are_current(corrective_id)
+        for owner in owners:
+            current = store.get_node(owner.id)
+            assert corrective_id in current.source_traces and CORRECTION in current.content
+            assert_chunks(store, current)
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("operation", ["teach", "forget", "connect"])
+def test_native_eager_outputs_reject_concurrent_source_and_edge_changes(tmp_path, monkeypatch, operation):
+    from living_memory import server
+    from test_lookup import FakeMCP
+
+    monkeypatch.setenv("LIVING_MEMORY_EMBEDDING_BACKEND", "hash")
+    guard = RLock()
+    monkeypatch.setattr(server, "RLock", lambda: guard)
+    mcp = server.create_mcp_server(tmp_path / "native-race.sqlite3", mcp_factory=FakeMCP)
+    mcp.auto_consolidation.close()
+    store = mcp.memory_store
+    entered, release = Event(), Event()
+    try:
+        source, owners = independent_owners(store, level="concept")
+        replacement = store.append_trace(CORRECTION, {"scope": SCOPE})
+        prepare = c._prepare_derivation_digests
+
+        def pause(*args):
+            result = prepare(*args)
+            assert not guard._is_owned() and not store.connection.in_transaction
+            assert len(result.digests) == 4 and all(value.chunks for value in result.digests.values())
+            entered.set()
+            assert release.wait(15)
+            return result
+
+        monkeypatch.setattr(c, "_prepare_derivation_digests", pause)
+        retries, _ = output_work(store, monkeypatch, guard)
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            if operation == "teach":
+                work = workers.submit(mcp.tools["memory_teach"], source.id, CORRECTION)
+            elif operation == "forget":
+                work = workers.submit(mcp.tools["memory_forget"], source.id)
+            else:
+                work = workers.submit(mcp.tools["memory_connect"], replacement.id, source.id, "supersedes")
+            try:
+                assert entered.wait(10)
+                lookup = workers.submit(mcp.tools["memory_lookup"], node_ids=[node.id for node in owners])
+                assert len(lookup.result(timeout=10)["results"]) == len(owners)
+                with MemoryStore(store.db_path) as writer:
+                    for index, owner in enumerate(owners):
+                        other = next(item for item in owner.source_traces if item != source.id)
+                        if index % 2:
+                            new = writer.create_node(
+                                level="concept", content=f"Harbor inspection {index} uses a calibrated scanner.",
+                                context={"scope": SCOPE}, embedding=[1., 0., 0.],
+                                stats={"usefulness_score": 100.},
+                            )
+                            writer.create_connection(new.id, other, "supersedes")
+                        else:
+                            writer.update_node(other, content=f"Harbor inspection {index} uses a calibrated scanner.")
+            finally:
+                release.set()
+            work.result(timeout=15)
+        assert len(retries) == 1 and set(retries[0]) == {node.id for node in owners}
+        for owner in owners:
+            current = store.get_node(owner.id)
+            assert "calibrated scanner" in current.content and source.content not in current.content
+            if current.embedding:
+                assert_chunks(store, current)
+    finally:
+        release.set()
+        store.close()

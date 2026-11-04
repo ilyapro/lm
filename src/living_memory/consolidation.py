@@ -43,6 +43,7 @@ from living_memory.feedback import ImplicitRecallFeedback, apply_pending_recall_
 from living_memory.models import Connection, ConnectionType, Node, string_list
 from living_memory.query_anchors import resolve_replacement
 from living_memory.relations import CLUSTER_MEMBERSHIP_WEIGHT, DERIVED_FROM_WEIGHT, is_correction
+from living_memory.scope import normalize_scope
 from living_memory.storage import MemoryStore, _node_read_batches, new_ulid
 from living_memory.source_text import PASSAGE_SEPARATOR, passage_spans
 from living_memory.temporal import parse_timestamp
@@ -511,8 +512,13 @@ class _DerivedOutputRequired(Exception):
         self.identity = _output_identity(scope, members, existing)
         self.digest, self.chunks = digest, chunks
         self.current_content = current_content
+        self.additional: list[_DerivedOutputRequired] = []
 
     def prepare(self, store: MemoryStore, preparation: _DerivationPreparation) -> None:
+        for needed in (self, *self.additional):
+            needed._prepare(store, preparation)
+
+    def _prepare(self, store: MemoryStore, preparation: _DerivationPreparation) -> None:
         digest = self.digest
         if digest is None:
             digest = _prepare_digest(
@@ -526,6 +532,14 @@ class _DerivedOutputRequired(Exception):
             if not chunks:
                 raise ValueError("derived output requires complete content chunks")
         preparation.digests[self.key] = replace(digest, chunks=chunks, output_identity=self.identity)
+
+
+def _raise_required_outputs(required: Mapping[Any, _DerivedOutputRequired]) -> None:
+    """Unwind one atomic writer with all independently current requirements."""
+    if required:
+        first, *rest = required.values()
+        first.additional = rest
+        raise first
 
 
 def _derived_digest(
@@ -569,9 +583,10 @@ def prepare_teach(
     correction: str | Mapping[str, Any],
     *,
     confidence: float | None = None,
+    context: Mapping[str, Any] | None = None,
     guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> _TeachPreparation:
-    """Prepare expensive text work on call-local copies, without a transaction.
+    """Prepare digests and independent output chunks without a transaction.
 
     Only reads use the shared-store guard. The atomic writer resolves the graph
     again and accepts each prepared digest only for its actual content inputs
@@ -588,12 +603,14 @@ def prepare_teach(
             raise ValueError("correction must be non-empty")
         corrective = Node(
             id=new_ulid(), level="trace", content=content,
+            scope=normalize_scope(str(dict(context or {}).get("scope", original.scope)
+                                      or store.config.default_scope)),
             confidence=min(0.5, 0.5 if confidence is None else float(confidence)),
             usefulness_score=max(1.0, original.usefulness_score + 1.0),
         )
         snapshots = _derivation_snapshots(store, trace_id, replacement=corrective)
 
-    prepared = _prepare_derivation_digests(snapshots)
+    prepared = _prepare_derivation_digests(snapshots, store)
     return _TeachPreparation(prepared.source_inputs, prepared.digests, corrective.id)
 
 
@@ -601,20 +618,29 @@ def prepare_forget(
     store: MemoryStore, node_id: str,
     *, guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> _DerivationPreparation:
-    """Prepare detached digests; the atomic forget revalidates current inputs."""
+    """Prepare detached outputs; the atomic forget revalidates current inputs."""
 
     with guard():
         if store.get_node(node_id) is None:
             raise KeyError(node_id)
         snapshots = _derivation_snapshots(store, node_id)
-    return _prepare_derivation_digests(snapshots)
+    return _prepare_derivation_digests(snapshots, store)
+
+
+@dataclass(slots=True)
+class _DerivationSnapshot:
+    node: Node
+    members: list[Node]
+    changing_inputs: bool
+    chunks_current: bool
 
 
 def _derivation_snapshots(
     store: MemoryStore, source_id: str, *, replacement: Node | None = None,
-) -> list[tuple[Node, list[Node]]]:
+) -> list[_DerivationSnapshot]:
+    affected = _affected_derivatives(store, source_id)
     owners = [
-        node for node in _affected_derivatives(store, source_id).values()
+        node for node in affected.values()
         if node.materializer in ("cluster", "cross-scope-promotion")
     ]
     observation = _SourceObservation(store, (
@@ -630,28 +656,46 @@ def _derivation_snapshots(
                 member = replacement
             members.append(member)
         if members:
-            snapshots.append((node, members))
+            changing_inputs = any(member.id in affected for member in members)
+            snapshots.append(_DerivationSnapshot(
+                node, members, changing_inputs,
+                not changing_inputs and store.node_chunks_are_current(node.id),
+            ))
     return snapshots
 
 
 def _prepare_derivation_digests(
-    snapshots: Sequence[tuple[Node, list[Node]]],
+    snapshots: Sequence[_DerivationSnapshot], store: MemoryStore,
 ) -> _DerivationPreparation:
     source_inputs = {
         source.id: source
         for source in _prepare_digest_sources(list({
-            member.id: member for _, members in snapshots for member in members
+            member.id: member for snapshot in snapshots for member in snapshot.members
         }.values()))
     }
     digests = {}
-    for node, members in snapshots:
+    preparation = _DerivationPreparation(source_inputs, digests)
+    for snapshot in snapshots:
+        node, members = snapshot.node, snapshot.members
         prepared = [source_inputs[member.id] for member in members]
         best = (
             max(members, key=lambda member: (_trace_quality(member), member.id))
             if node.materializer == "cluster" else _highest_confidence_source(members)
         )
-        digests[node.id] = _prepare_digest(node.scope, members, best, prepared)
-    return _DerivationPreparation(source_inputs, digests)
+        digest = _prepare_digest(node.scope, members, best, prepared)
+        digests[node.id] = digest
+        # Changing derivatives must first be written by the source-first writer.
+        # Do not encode their old content or invent projected node metadata here.
+        # A promotion may be a complete no-op even with absent chunks; only its
+        # authoritative writer can decide whether unchanged content needs repair.
+        if not snapshot.changing_inputs and best.embedding and (
+            digest.content != node.content
+            or (node.materializer == "cluster" and not snapshot.chunks_current)
+        ):
+            _DerivedOutputRequired(
+                node.materializer, node.scope, members, best, node, digest, True,
+            )._prepare(store, preparation)
+    return preparation
 
 
 def memory_connect(
@@ -684,7 +728,7 @@ def memory_connect(
         nested = store.connection.in_transaction
         snapshots = [] if nested else _derivation_snapshots(store, id_b, replacement=replacement)
 
-    preparation = _prepare_derivation_digests(snapshots)
+    preparation = _prepare_derivation_digests(snapshots, store)
     while True:
         try:
             with guard(), store.transaction():
@@ -991,35 +1035,50 @@ def _refresh_derived_from(
 
     visiting: set[str] = set()
     refreshed: set[str] = set()
+    blocked: dict[str, _DerivedOutputRequired] = {}
 
     def refresh(node_id: str) -> None:
         if node_id in refreshed:
             return
+        if node_id in blocked:
+            raise blocked[node_id]
         if node_id in visiting:
             # A cycle has no source-first evaluation. Keep its evidence by id,
             # but it cannot remain current after one of its inputs changed.
             observation.updated(store.soft_delete_node(node_id, "derivation: cyclic sources"))
             return
         visiting.add(node_id)
-        # Reading current inputs drives the traversal through the same bounded
-        # replacement resolution that selects the writer's actual sources.
-        assessment = _current_derivation(store, affected[node_id], observation=observation)
-        # Resolving an input can close a cycle and decay this owner.
-        node = store.get_node(node_id)
-        if node is not None and not node.decayed:
-            observation.updated(_refresh_derived_node(
-                store, node, assessment=assessment, source_inputs=source_inputs,
-                prepared_digest=preparation.digests.get(node.id) if preparation else None,
-                observation=observation,
-            ))
-        visiting.remove(node_id)
+        try:
+            # Reading current inputs drives the traversal through the same bounded
+            # replacement resolution that selects the writer's actual sources.
+            assessment = _current_derivation(store, affected[node_id], observation=observation)
+            # Resolving an input can close a cycle and decay this owner.
+            node = store.get_node(node_id)
+            if node is not None and not node.decayed:
+                observation.updated(_refresh_derived_node(
+                    store, node, assessment=assessment, source_inputs=source_inputs,
+                    prepared_digest=preparation.digests.get(node.id) if preparation else None,
+                    observation=observation,
+                ))
+        except _DerivedOutputRequired as needed:
+            # Keep discovering independent outputs, but never consume an unwritten
+            # source. Every successful write in this pass will also roll back.
+            blocked[node_id] = needed
+            raise
+        finally:
+            visiting.remove(node_id)
         refreshed.add(node_id)
 
     observation = _SourceObservation(store, (
         source for node in affected.values() for source in _derivation_sources(store, node)
     ), changing=affected, refresh=refresh)
+    required = {}
     for node_id in affected:
-        refresh(node_id)
+        try:
+            refresh(node_id)
+        except _DerivedOutputRequired as needed:
+            required[needed.key] = needed
+    _raise_required_outputs(required)
 
 
 def _refresh_derived_node(
@@ -1809,18 +1868,23 @@ def _materialize_cluster(
                     # New owners and their admission share the same observation. No other
                     # materializer can claim these sources between selection and creation.
                     created: list[tuple[Node, bool]] = []
+                    required = {}
                     for (scope, _group), new_members in groups.items():
                         if len(new_members) < min_cluster_size and (
                             assigned or len(groups) > 1 or len(cluster.traces) < min_cluster_size
                         ):
                             continue
                         assessment = replace(fresh, live=new_members)
-                        created.append((_write_cluster_concept(
-                            store, scope, assessment, strategy=cluster.strategy,
-                            embeddings=cluster.embeddings_by_trace_id,
-                            source_inputs=source_inputs,
-                            prepared_digest=preparation.digests.get(_output_key("cluster", scope, new_members, None)),
-                        ), True))
+                        try:
+                            created.append((_write_cluster_concept(
+                                store, scope, assessment, strategy=cluster.strategy,
+                                embeddings=cluster.embeddings_by_trace_id,
+                                source_inputs=source_inputs,
+                                prepared_digest=preparation.digests.get(_output_key("cluster", scope, new_members, None)),
+                            ), True))
+                        except _DerivedOutputRequired as needed:
+                            required[needed.key] = needed
+                    _raise_required_outputs(required)
             break
         except _DerivedOutputRequired as needed:
             if nested:
@@ -2205,27 +2269,36 @@ def _cross_scope_promotion(
                             assigned[owner.id].update(unowned)
                             unowned.clear()
                     result = []
+                    required = {}
                     for owner in owners:
                         if owner.id not in assigned:
                             continue
                         current = _current_derivation(
                             store, owner, additional=(members[source] for source in sorted(assigned[owner.id])),
                         ).live
-                        updated = _write_global_promotion(
-                            store, current, existing=owner, similarities=similarities,
-                            source_inputs=preparation.source_inputs,
-                            prepared_digest=preparation.digests.get(owner.id),
-                        )
+                        try:
+                            updated = _write_global_promotion(
+                                store, current, existing=owner, similarities=similarities,
+                                source_inputs=preparation.source_inputs,
+                                prepared_digest=preparation.digests.get(owner.id),
+                            )
+                        except _DerivedOutputRequired as needed:
+                            required[needed.key] = needed
+                            continue
                         if updated != owner:
                             result.append(updated)
                     remaining = [members[source] for source in sorted(unowned)]
                     if len(_source_scopes(remaining)) >= 3:
-                        result.append(_write_global_promotion(
-                            store, remaining, similarities=similarities, source_inputs=preparation.source_inputs,
-                            prepared_digest=preparation.digests.get(
-                                _output_key("cross-scope-promotion", "global", remaining, None),
-                            ),
-                        ))
+                        try:
+                            result.append(_write_global_promotion(
+                                store, remaining, similarities=similarities, source_inputs=preparation.source_inputs,
+                                prepared_digest=preparation.digests.get(
+                                    _output_key("cross-scope-promotion", "global", remaining, None),
+                                ),
+                            ))
+                        except _DerivedOutputRequired as needed:
+                            required[needed.key] = needed
+                    _raise_required_outputs(required)
                     return result
         except _DerivedOutputRequired as needed:
             if nested:

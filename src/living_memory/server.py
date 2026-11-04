@@ -1143,14 +1143,15 @@ def _register_tools(
         source before commit. Their own failures remain nonfatal. Optional
         consolidation scheduling runs only after the knowledge commit.
         Corrective trace chunks are prepared from normalized text before the
-        store lock. Pure digest preparation also runs outside that lock; the
+        store lock. Derived digest/chunk preparation also runs outside it; the
         writer checks its inputs against the current graph before using it.
         """
 
         correction = _correction_text(correction)
         prepared = _prepare_trace_indices(store, [correction])
         preparation = prepare_teach(
-            store, trace_id, correction, confidence=confidence, guard=lambda: runtime_lock,
+            store, trace_id, correction, confidence=confidence, context=context,
+            guard=lambda: runtime_lock,
         )
         context = _with_transport_identity(context)
         while True:
