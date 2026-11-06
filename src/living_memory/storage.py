@@ -1657,12 +1657,12 @@ class MemoryStore:
         nodes: dict[str, Node] = {}
         for chunk in _node_read_batches(node_ids):
             placeholders = ",".join("?" for _ in chunk)
-            rows = self._conn.execute(
+            with closing(self._conn.execute(
                 f"SELECT * FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
-            ).fetchall()
-            for row in rows:
-                node = _node_from_row(row)
-                nodes[node.id] = node
+            )) as rows:
+                for row in rows:
+                    node = _node_from_row(row)
+                    nodes[node.id] = node
         return nodes
 
     def get_recall_nodes(self, node_ids: Iterable[str], plan: ScopePlan) -> dict[str, Node]:
@@ -1835,11 +1835,11 @@ class MemoryStore:
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.extend([int(limit), int(offset)])
-        rows = self._conn.execute(
+        with closing(self._conn.execute(
             f"SELECT * FROM nodes {where} ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?",
             params,
-        ).fetchall()
-        return [_node_from_row(row) for row in rows]
+        )) as rows:
+            return [_node_from_row(row) for row in rows]
 
     def list_concept_browse_fields(self, *, scope: str, limit: int) -> list[ConceptBrowseFields]:
         """Read the newest active concept prefix before consumer filtering."""
