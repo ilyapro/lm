@@ -1673,28 +1673,35 @@ class MemoryStore:
         retain their independent full-node and decayed-history contracts.
         """
         nodes: dict[str, Node] = {}
-        for row in self._recall_node_rows(node_ids, plan, columns="*"):
-            node = _node_from_row(row)
-            nodes[node.id] = node
+        # A decoder failure must close the suspended batch even if its caller
+        # retains the exception traceback (and therefore this generator).
+        with closing(self._recall_node_rows(node_ids, plan, columns="*")) as rows:
+            for row in rows:
+                node = _node_from_row(row)
+                nodes[node.id] = node
+                del row
         return nodes
 
     def get_recall_node_ids(self, node_ids: Iterable[str], plan: ScopePlan) -> set[str]:
         """Read admitted identities for source paths without selecting bodies."""
-        return {str(row["id"]) for row in self._recall_node_rows(node_ids, plan, columns="id")}
+        with closing(self._recall_node_rows(node_ids, plan, columns="id")) as rows:
+            return {str(row["id"]) for row in rows}
 
     def _recall_node_rows(
         self, node_ids: Iterable[str], plan: ScopePlan, *, columns: Literal["*", "id"],
     ) -> Iterator[sqlite3.Row]:
+        """Stream admitted rows; consumers must close this iterator on exit."""
         scopes = plan.named_scopes if plan.restricted else ()
         if plan.restricted and not scopes:
             return
         scope_filter = f" AND scope IN ({','.join('?' for _ in scopes)})" if scopes else ""
         for chunk in _node_read_batches(node_ids):
             placeholders = ",".join("?" for _ in chunk)
-            yield from self._conn.execute(
+            with closing(self._conn.execute(
                 f"SELECT {columns} FROM nodes WHERE id IN ({placeholders}) AND decayed = 0"
                 f"{scope_filter} ORDER BY id", (*chunk, *scopes),
-            ).fetchall()
+            )) as rows:
+                yield from rows
 
     def get_node_scopes(self, node_ids: Iterable[str]) -> dict[str, str]:
         """Read existing identities and authoritative scopes, including decayed nodes."""
