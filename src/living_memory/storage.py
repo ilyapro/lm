@@ -2481,7 +2481,7 @@ class MemoryStore:
             recall_map=recall_map,
             log_access=False,
         )
-        assert event is not None
+        assert isinstance(event, RecallEvent)
         return event
 
     def record_recall(
@@ -2499,7 +2499,8 @@ class MemoryStore:
         max_results: int = 10,
         results: Iterable[Mapping[str, Any]] | None = None,
         recall_map: Mapping[str, Any] | None = None,
-    ) -> tuple[list[Node], RecallEvent | None]:
+        event_id_only: bool = False,
+    ) -> tuple[list[Node], RecallEvent | str | None]:
         """Persist selected-node access and its recall event in one savepoint.
 
         Return the selected nodes in order with access metadata from SQLite's
@@ -2509,6 +2510,12 @@ class MemoryStore:
         this savepoint with its required response formation transaction; a
         failed projection rolls back consumption too. Network delivery remains
         outside that transaction.
+
+        By default return the full SQLite-derived event. ``event_id_only``
+        returns the writer's identity without reading and decoding the event
+        again; serialization and history recording are unchanged. Both modes
+        return None when event logging is disabled. The identity mode assumes
+        the supported schema, whose triggers do not transform recall events.
 
         ``recall_map`` is the map served with this delivery, stored verbatim as
         compact JSON. The live recall path leaves it unset and calls
@@ -2610,7 +2617,7 @@ class MemoryStore:
                 results=normalized_results,
                 recall_map=recall_map,
             )
-            event = self.get_recall_event(event_id)
+            event = event_id if event_id_only else self.get_recall_event(event_id)
         return selected, event
 
     def attach_recall_map(

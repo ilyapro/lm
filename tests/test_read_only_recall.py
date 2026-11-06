@@ -121,6 +121,23 @@ def test_memory_health_latency_leaves_writable_pending_work_untouched(tmp_path, 
         assert store.count_node_chunks(node.id) == 0
 
 
+@pytest.mark.parametrize("log_access,log_event", [(True, False), (False, True), (True, True)])
+def test_audit_override_refuses_ordinary_consumption(tmp_path, encoder, log_access, log_event):
+    with MemoryStore(tmp_path / "memory.sqlite3", chunk_embedder=encoder.embed_batch) as store:
+        store.create_node(level="concept", content=QUERY, context={"scope": SCOPE}, embedding=VECTOR)
+        # The borrowed connection is writable: the adapter override must enforce
+        # this boundary even when SQLite itself would allow the writes.
+        with ReadOnlyAuditStore.from_store(store) as reader:
+            before, changes = store.connection.serialize(), store.connection.total_changes
+            service = MemoryRecallService(reader, embedder=encoder)
+            with pytest.raises(RuntimeError, match="health audit latency probe is read-only"):
+                service.memory_recall(
+                    QUERY, scope=SCOPE, log_access=log_access, log_event=log_event,
+                )
+            assert service.last_recall_event_id is None
+            assert_no_writes(store.connection, before, changes, [])
+
+
 @pytest.mark.parametrize("drop_embedding_column", [False, True])
 def test_writer_preparation_waits_for_work_and_preserves_guard(
     tmp_path, encoder, monkeypatch, drop_embedding_column,

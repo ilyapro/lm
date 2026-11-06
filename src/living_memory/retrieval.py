@@ -810,7 +810,7 @@ class MemoryRecallService:
         try:
             with self.store.transaction() if log_access or log_event else nullcontext():
                 if log_access or log_event:
-                    nodes, event = self.store.record_recall(
+                    nodes, event_id = self.store.record_recall(
                         nodes=[result.node for result in limited],
                         log_access=log_access,
                         log_event=log_event,
@@ -822,8 +822,10 @@ class MemoryRecallService:
                         depth=depth,
                         max_results=max_results,
                         results=[_recall_result_summary(index, result) for index, result in enumerate(limited)],
+                        event_id_only=True,
                     )
-                    self.last_recall_event_id = event.id if event is not None else None
+                    assert event_id is None or isinstance(event_id, str)
+                    self.last_recall_event_id = event_id
                     limited = [
                         replace(result, node=node, recall_event_id=self.last_recall_event_id)
                         for result, node in zip(limited, nodes, strict=True)
