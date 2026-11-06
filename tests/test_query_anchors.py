@@ -17,8 +17,8 @@ downgrade that ``MemoryStore.create_connection`` exhibits, as the control that
 says why anchor edges do not reuse it.
 
 *Anchor edges follow their target.* Every write path that supersedes a node —
-teach and explicit connections, verified duplicate-content dedup — plus consolidation's
-explicit derivative displacement, plus the batch sweep.
+teach and explicit connections, verified duplicate-content dedup — plus explicit
+edge migration and the batch sweep.
 """
 
 from __future__ import annotations
@@ -937,67 +937,8 @@ def test_self_superseding_edge_does_not_move_anything(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# edge migration: explicit derivative displacement and sweep
+# edge migration: sweep
 # ---------------------------------------------------------------------------
-
-
-def test_source_exclusions_move_edges_for_the_reasons_that_name_a_replacement(
-    tmp_path: Path,
-) -> None:
-    """Explicit derivative displacement supplies the replacement mapping."""
-
-    with _store(tmp_path) as store:
-        displaced = _trace(store, "member folded into a concept")
-        concept = store.create_node(
-            level="concept", content="the consolidated concept", context={"scope": SCOPE}
-        )
-        replacement = _trace(store, "the node that replaced the concept")
-        anchor = qa.upsert_anchor(
-            store, "запрос", SCOPE, [1.0, 0.0], [displaced.id]
-        ).anchor
-        store.create_connection(replacement.id, concept.id, "supersedes")
-
-        moved = qa.migrate_anchor_edges_for_exclusions(
-            store, {displaced.id: f"displaced-via:{concept.id}"}
-        )
-
-        assert moved == 1
-        assert [e.target_id for e in store.list_query_anchor_edges(anchor_id=anchor.id)] == [
-            replacement.id
-        ]
-
-
-def test_source_exclusions_without_a_named_replacement_leave_edges_alone(
-    tmp_path: Path,
-) -> None:
-    with _store(tmp_path) as store:
-        member = _trace(store, "corrected member")
-        anchor = qa.upsert_anchor(store, "запрос", SCOPE, [1.0, 0.0], [member.id]).anchor
-
-        moved = qa.migrate_anchor_edges_for_exclusions(
-            store, {member.id: "no current source", "OTHER": "unspecified exclusion"}
-        )
-
-        assert moved == 0
-        assert [e.target_id for e in store.list_query_anchor_edges(anchor_id=anchor.id)] == [
-            member.id
-        ]
-
-
-def test_era_exclusion_superseded_by_reason_moves_edges(tmp_path: Path) -> None:
-    with _store(tmp_path) as store:
-        member = _trace(store, "superseded member")
-        replacement = _trace(store, "replacement")
-        anchor = qa.upsert_anchor(store, "запрос", SCOPE, [1.0, 0.0], [member.id]).anchor
-
-        moved = qa.migrate_anchor_edges_for_exclusions(
-            store, {member.id: f"superseded-by:{replacement.id}"}
-        )
-
-        assert moved == 1
-        assert [e.target_id for e in store.list_query_anchor_edges(anchor_id=anchor.id)] == [
-            replacement.id
-        ]
 
 
 def test_sweep_repairs_edges_written_before_the_hook_and_is_idempotent(

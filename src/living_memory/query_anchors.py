@@ -6,8 +6,8 @@ consumptions reinforce weighted edges; negative feedback resolves the same
 identity without reinforcing it.
 
 Edges follow genuine corrections and exact compatible duplicate replacements.
-Consolidation can also supply an explicit source displacement. The batch sweep
-uses the same resolution for existing anchor edges and historical backfills.
+The batch sweep uses the same resolution for existing anchor edges and historical
+backfills. Explicit callers can migrate edges between known replacement targets.
 Storage owns the additive anchor tables and transactional edge migration hooks.
 """
 
@@ -55,10 +55,6 @@ ANCHOR_EDGE_WEIGHT = 0.25
 #: to loop on (the walk carries a visited set); this only bounds a pathological
 #: chain length.
 MAX_SUPERSEDES_CHAIN_DEPTH = 32
-
-#: Consolidation exclusion reasons that name a replacement for a source.
-_DIRECT_REPLACEMENT_PREFIXES = ("superseded-by:", "replaced-by:")
-_DISPLACED_VIA_PREFIX = "displaced-via:"
 
 
 class AnchorMatch(NamedTuple):
@@ -667,39 +663,6 @@ def _reaches(store: MemoryStore, start: str, goal: str) -> bool:
         seen.add(successor)
         current = successor
     return current == str(goal)
-
-
-def migrate_anchor_edges_for_exclusions(
-    store: MemoryStore,
-    excluded: Mapping[str, str],
-    *,
-    now: str | datetime | None = None,
-) -> int:
-    """Follow source exclusions that explicitly identify a replacement.
-
-    ``superseded-by:<id>`` and ``replaced-by:<id>`` name the replacement
-    directly. ``displaced-via:<id>`` names a superseded derivative whose
-    replacement now speaks for its cited input. Reasons without a replacement
-    leave the anchor edge unchanged.
-
-    Returns the number of edge rows moved.
-    """
-
-    stamp = _timestamp(now)
-    moved = 0
-    for node_id, reason in excluded.items():
-        text = str(reason)
-        if text.startswith(_DIRECT_REPLACEMENT_PREFIXES):
-            destination = text.partition(":")[2].strip()
-        elif text.startswith(_DISPLACED_VIA_PREFIX):
-            via = text[len(_DISPLACED_VIA_PREFIX) :].strip()
-            destination = resolve_replacement(store, via) or ""
-        else:
-            continue
-        if not destination:
-            continue
-        moved += migrate_anchor_edges(store, str(node_id), destination, now=stamp)
-    return moved
 
 
 def sweep_anchor_edge_migration(
