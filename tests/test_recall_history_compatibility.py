@@ -144,8 +144,9 @@ def test_mcp_recall_delivery_and_feedback_ignore_unavailable_aggregate(tmp_path,
 
 @pytest.mark.parametrize("decayed", [False, True])
 @pytest.mark.parametrize("node_id, reference", [(" Trace ", " Trace "), ("1", 1)])
+@pytest.mark.parametrize("trace_id_only", [False, True])
 def test_feedback_closure_preserves_attribution_and_rejects_missing_references(
-    monkeypatch, decayed, node_id, reference,
+    monkeypatch, decayed, node_id, reference, trace_id_only,
 ):
     with MemoryStore(":memory:") as store:
         event = store.record_recall_event(
@@ -161,13 +162,17 @@ def test_feedback_closure_preserves_attribution_and_rejects_missing_references(
             pytest.fail("feedback closure must not hydrate a Node")
 
         monkeypatch.setattr(storage, "_node_from_row", no_hydration)
-        closed = store.mark_recall_event_feedback(event.id, reference)
+        result = store.mark_recall_event_feedback(event.id, reference, trace_id_only=trace_id_only)
+        if trace_id_only:
+            assert result == first.id
+        closed = store.get_recall_event(event.id) if trace_id_only else result
         assert closed.feedback_applied_at
         assert closed == replace(
             event, feedback_applied=True, feedback_trace_id=first.id,
             feedback_applied_at=closed.feedback_applied_at,
         )
-        assert store.mark_recall_event_feedback(event.id, second.id).feedback_trace_id == second.id
+        repeated = store.mark_recall_event_feedback(event.id, second.id, trace_id_only=trace_id_only)
+        assert (repeated if trace_id_only else repeated.feedback_trace_id) == second.id
         before = list(store.connection.iterdump())
         for event_id, trace_id, missing in [
             ("absent-event", first.id, "absent-event"),
@@ -177,7 +182,7 @@ def test_feedback_closure_preserves_attribution_and_rejects_missing_references(
             (event.id, " trace ", " trace "),
         ]:
             with pytest.raises(KeyError) as error:
-                store.mark_recall_event_feedback(event_id, trace_id)
+                store.mark_recall_event_feedback(event_id, trace_id, trace_id_only=trace_id_only)
             assert error.value.args == (missing,)
             assert not store.connection.in_transaction
             assert list(store.connection.iterdump()) == before
@@ -185,7 +190,8 @@ def test_feedback_closure_preserves_attribution_and_rejects_missing_references(
 
 
 @pytest.mark.parametrize("column", ["id", "decayed", "content", "context", "provenance"])
-def test_feedback_closure_requires_only_endpoint_columns(column):
+@pytest.mark.parametrize("trace_id_only", [False, True])
+def test_feedback_closure_requires_only_endpoint_columns(column, trace_id_only):
     with MemoryStore(":memory:") as store:
         trace = store.append_trace("consumer")
         event = store.record_recall_event(query=QUERY, scope=SCOPE)
@@ -200,9 +206,10 @@ def test_feedback_closure_requires_only_endpoint_columns(column):
         try:
             if column in {"id", "decayed"}:
                 with pytest.raises(sqlite3.DatabaseError, match=f"nodes.{column}"):
-                    store.mark_recall_event_feedback(event.id, trace.id)
+                    store.mark_recall_event_feedback(event.id, trace.id, trace_id_only=trace_id_only)
             else:
-                assert store.mark_recall_event_feedback(event.id, trace.id).feedback_applied
+                result = store.mark_recall_event_feedback(event.id, trace.id, trace_id_only=trace_id_only)
+                assert result == trace.id if trace_id_only else result.feedback_applied
         finally:
             store.connection.set_authorizer(None)
         assert not store.connection.in_transaction

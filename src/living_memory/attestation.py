@@ -455,10 +455,11 @@ def _apply_attestation(
     closed_by_attestation = False
     feedback_trace_id = event.feedback_trace_id
     if trace_node is not None and not closed:
-        closure = store.mark_recall_event_feedback(event.id, trace_node.id)
+        feedback_trace_id = store.mark_recall_event_feedback(
+            event.id, trace_node.id, trace_id_only=True,
+        )
         closed = True
         closed_by_attestation = True
-        feedback_trace_id = closure.feedback_trace_id
 
     record = store.complete_recall_attestation(
         claimed.id,

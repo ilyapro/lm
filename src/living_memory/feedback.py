@@ -587,7 +587,7 @@ def apply_pending_recall_feedback(
                 "result_ids": event_node_ids,
             }
         )
-        store.mark_recall_event_feedback(event.id, trace.id)
+        store.mark_recall_event_feedback(event.id, trace.id, trace_id_only=True)
 
     provenance["prior_recalls"] = prior_recalls
     provenance["recalled_nodes"] = recalled_nodes

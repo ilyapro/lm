@@ -3847,7 +3847,15 @@ class MemoryStore:
             params,
         ).fetchall()
 
-    def mark_recall_event_feedback(self, event_id: str, trace_id: str) -> RecallEvent:
+    def mark_recall_event_feedback(
+        self, event_id: str, trace_id: str, *, trace_id_only: bool = False,
+    ) -> RecallEvent | str | None:
+        """Close an event, returning the full event by default.
+
+        Feedback consumers can request only the saved attribution. Read it
+        from SQLite so identity affinity and persisted values match the full
+        result, without decoding the event payload a second time.
+        """
         if not self.get_node_endpoints([trace_id]):
             raise KeyError(trace_id)
         with self.transaction():
@@ -3863,7 +3871,12 @@ class MemoryStore:
             ).rowcount
             if not updated:
                 raise KeyError(event_id)
-        return self.get_recall_event(event_id)  # type: ignore[return-value]
+        if trace_id_only:
+            row = self._conn.execute(
+                "SELECT feedback_trace_id FROM recall_events WHERE id = ?", (event_id,)
+            ).fetchone()
+            return row["feedback_trace_id"] if row is not None else None
+        return self.get_recall_event(event_id)
 
     # ------------------------------------------------------------------
     # Grounded-usage attestation ledger (schema v8)
