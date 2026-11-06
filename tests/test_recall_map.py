@@ -363,7 +363,7 @@ def test_heaviest_edge_wins_and_decayed_anchors_do_not_label(store: MemoryStore)
     seed_anchor(store, "the weak question", [node], weight=0.2)
     seed_anchor(store, "the strong question", [node], weight=0.9)
     dead = seed_anchor(store, "the retired question", [node], weight=1.0)
-    store.decay_query_anchor(dead.id, "anchor_ttl_expired")
+    store.decay_query_anchor(dead.id, "manual")
 
     built = RecallMapBuilder(store).build(pool([node]), scope=SCOPE)
 

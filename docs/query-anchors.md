@@ -66,9 +66,12 @@ Replacement traversal stops on a cycle or after 32 steps. A missing or decayed
 replacement is not followed. These limits do not erase nodes, source provenance
 or known supersession from the memory lookup interface.
 
-Anchors decay after 90 days without a match, using their first-seen time when
-no match is recorded. Decay preserves their edges. A later exact query upsert
-revives the anchor with its accumulated evidence.
+Anchors have no automatic time-based expiry. Explicit storage decay through
+`MemoryStore.decay_query_anchor` excludes an anchor from matching and preserves
+its row and edges. A later exact query upsert reinforces and revives the anchor
+with its accumulated evidence. Reinforcement updates `last_matched_at` and
+preserves `first_seen`; matching alone does not revive a decayed anchor.
+The ordinary server decay sweep applies to memory nodes.
 
 ## Storage, bounds and verification
 

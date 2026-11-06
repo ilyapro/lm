@@ -16,7 +16,7 @@ from __future__ import annotations
 from array import array
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from heapq import nsmallest
 from typing import Any, NamedTuple, Protocol
 import math
@@ -50,14 +50,6 @@ ANCHOR_MATCH_LIMIT = 5
 #: 1.0, so a link the operator's work keeps re-confirming reaches full strength
 #: while a single accident stays weak.
 ANCHOR_EDGE_WEIGHT = 0.25
-
-#: Days without a match after which an anchor decays. Half of
-#: ``MemoryConfig.trace_ttl_days`` (180): an anchor is a claim about *current*
-#: working habits, which go stale faster than the facts they retrieve, and its
-#: decay is soft — the edges survive and a later match revives the anchor.
-ANCHOR_TTL_DAYS = 90
-
-ANCHOR_TTL_DECAY_REASON = "anchor_ttl_expired"
 
 #: Hard stop when walking a replacement chain. Cycles are already impossible
 #: to loop on (the walk carries a visited set); this only bounds a pathological
@@ -565,46 +557,6 @@ def _scope_list(
     if isinstance(scope_plan, str):
         return [normalize_scope(scope_plan)]
     return [normalize_scope(str(scope)) for scope in scope_plan]
-
-
-# ----------------------------------------------------------------------
-# Decay
-# ----------------------------------------------------------------------
-
-
-def decay_stale_anchors(
-    store: MemoryStore,
-    *,
-    now: str | datetime | None = None,
-    ttl_days: int = ANCHOR_TTL_DAYS,
-    scope: str | None = None,
-) -> list[QueryAnchor]:
-    """Soft-delete anchors whose last match has aged past ``ttl_days``.
-
-    Age is measured from ``last_matched_at``, falling back to ``first_seen``
-    for an anchor that has never been matched since it was written. Soft, like
-    every other deletion in this store: the row and its edges stay, so a later
-    :func:`upsert_anchor` on the same question revives the anchor with its
-    learned edges intact rather than relearning them from zero.
-    """
-
-    if ttl_days < 0:
-        raise ValueError("ttl_days must be non-negative")
-    moment = _moment(now)
-    cutoff = moment - timedelta(days=int(ttl_days))
-    stamp = _iso(moment)
-
-    decayed: list[QueryAnchor] = []
-    for anchor in store.list_query_anchors(scope=scope, include_decayed=False):
-        reference = _parse(anchor.last_matched_at) or _parse(anchor.first_seen)
-        if reference is None or reference >= cutoff:
-            continue
-        updated = store.decay_query_anchor(
-            anchor.id, ANCHOR_TTL_DECAY_REASON, now=stamp
-        )
-        if updated is not None:
-            decayed.append(updated)
-    return decayed
 
 
 # ----------------------------------------------------------------------

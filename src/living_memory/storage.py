@@ -5459,9 +5459,8 @@ class MemoryStore:
     ) -> QueryAnchor | None:
         """Bump reinforcement, refresh freshness, and revive a decayed anchor.
 
-        Revival is the point: an anchor that aged out and is then asked again
-        is exactly the repeated situation anchors exist for, and leaving it
-        decayed would throw away every edge it had learned.
+        Reinforcement revives an explicitly decayed anchor with every edge it
+        had learned intact.
         """
 
         if not self._anchor_tables_present():

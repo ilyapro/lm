@@ -531,7 +531,7 @@ with tempfile.TemporaryDirectory(prefix="lm-anchor-decay2-") as directory:
         target = store.append_trace(REVIEW, {"scope": SCOPE})
         upsert = anchor(store, INVISIBLE_A, [target.id], consumptions=4)
         live = ids(recall(service(store), INVISIBLE))
-        store.decay_query_anchor(upsert.anchor.id, qa.ANCHOR_TTL_DECAY_REASON)
+        store.decay_query_anchor(upsert.anchor.id, "manual")
         decayed = ids(recall(service(store), INVISIBLE))
         store.reinforce_query_anchor(upsert.anchor.id)
         result["decayed_anchor"] = {

@@ -33,11 +33,7 @@ from living_memory import query_anchors as qa
 from living_memory.consolidation import memory_teach
 from living_memory.edge_derivation import derive_edges_for_new_trace
 from living_memory.health_audit import open_read_only_store
-from living_memory.query_anchors import (
-    ANCHOR_EDGE_WEIGHT,
-    ANCHOR_TTL_DAYS,
-    ANCHOR_TTL_DECAY_REASON,
-)
+from living_memory.query_anchors import ANCHOR_EDGE_WEIGHT
 from living_memory.storage import (
     QUERY_ANCHOR_EDGE_TABLE,
     QUERY_ANCHOR_TABLE,
@@ -706,7 +702,9 @@ def test_decayed_anchors_do_not_match(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_stale_anchors_decay_and_a_new_match_revives_them(tmp_path: Path) -> None:
+def test_explicit_anchor_decay_preserves_edges_and_exact_upsert_revives(
+    tmp_path: Path,
+) -> None:
     with _store(tmp_path) as store:
         node = _trace(store, "node")
         fresh = qa.upsert_anchor(
@@ -721,9 +719,15 @@ def test_stale_anchors_decay_and_a_new_match_revives_them(tmp_path: Path) -> Non
             "2026-01-01T00:00:00Z",
         )
 
-        decayed = qa.decay_stale_anchors(store, now="2026-08-18T00:00:00Z")
-        assert [a.id for a in decayed] == [stale.anchor.id]
-        assert decayed[0].decay_reason == ANCHOR_TTL_DECAY_REASON
+        assert stale.anchor.last_matched_at == "2026-01-01T00:00:00Z"
+        decayed = store.decay_query_anchor(
+            stale.anchor.id, "manual", now="2026-08-18T00:00:00Z"
+        )
+        assert decayed is not None and decayed.id == stale.anchor.id
+        assert decayed.decayed is True
+        assert decayed.decay_reason == "manual"
+        assert decayed.first_seen == stale.anchor.first_seen
+        assert decayed.last_matched_at == stale.anchor.last_matched_at
         refetched = store.get_query_anchor(fresh.anchor.id)
         assert refetched is not None and refetched.decayed is False
 
@@ -731,34 +735,15 @@ def test_stale_anchors_decay_and_a_new_match_revives_them(tmp_path: Path) -> Non
         # brings the anchor back with everything it had learned.
         assert len(store.list_query_anchor_edges(anchor_id=stale.anchor.id)) == 1
         revived = qa.upsert_anchor(
-            store, "устаревший", SCOPE, _unit_at_cosine(0.1), [node.id]
+            store, "устаревший", SCOPE, _unit_at_cosine(0.1), [node.id],
+            now="2026-08-19T00:00:00Z",
         )
         assert revived.anchor.id == stale.anchor.id
         assert revived.anchor.decayed is False
         assert revived.anchor.decay_reason is None
+        assert revived.anchor.first_seen == stale.anchor.first_seen
+        assert revived.anchor.last_matched_at > stale.anchor.last_matched_at
         assert store.list_query_anchor_edges(anchor_id=stale.anchor.id)[0].hits == 2
-
-
-def test_decay_ttl_boundary_and_validation(tmp_path: Path) -> None:
-    with _store(tmp_path) as store:
-        node = _trace(store, "node")
-        anchor = qa.upsert_anchor(
-            store, "граница", SCOPE, [1.0, 0.0], [node.id], "2026-01-01T00:00:00Z"
-        ).anchor
-        assert anchor.last_matched_at == "2026-01-01T00:00:00Z"
-
-        # One day short of the TTL: still live. One day past it: decayed.
-        inside = f"2026-01-0{1}T00:00:00Z"
-        assert qa.decay_stale_anchors(store, now=inside, ttl_days=1) == []
-        assert qa.decay_stale_anchors(store, now="2026-01-01T23:00:00Z", ttl_days=1) == []
-        decayed = qa.decay_stale_anchors(store, now="2026-01-02T01:00:00Z", ttl_days=1)
-        assert [a.id for a in decayed] == [anchor.id]
-
-        # ttl_days=0 decays anything not matched at this very instant, and a
-        # negative TTL is a caller error rather than a silent no-op.
-        with pytest.raises(ValueError):
-            qa.decay_stale_anchors(store, ttl_days=-1)
-        assert ANCHOR_TTL_DAYS > 0
 
 
 # ---------------------------------------------------------------------------

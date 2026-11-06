@@ -217,8 +217,10 @@ any explicit-feedback policy; explicit `used` cancels under `credit`. Only
 
 - Rows do not follow `supersedes`. A correction is new content and starts
   without demotion.
-- A decayed anchor (`ANCHOR_TTL_DAYS` = 90 without a match) stops matching,
-  so its demotions lapse with it. A later match revives both.
+- Explicitly decaying an anchor stops it matching, so its retained demotions
+  stop applying. Reinforcing that exact anchor revives it and makes its remaining
+  demotions eligible again. Matching alone does not revive a decayed anchor;
+  anchors have no automatic time-based expiry.
 
 ## Cost
 

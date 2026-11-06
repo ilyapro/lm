@@ -19,12 +19,8 @@ with that moment, and every assertion here is a rule the graph depends on:
 * **No grounded result, no anchor** — including under
   ``LM_RECALL_CREDIT_POLICY=all``, which computes no verdicts at all and
   therefore has no honest target set, and under ``reinforce_results=False``.
-* **A repeat reinforces rather than duplicates**, and reinforcement refreshes
-  freshness. That last one is load-bearing because of an asymmetry in decay:
-  ``decay.soft_delete_expired`` ages nodes off ``last_accessed``, which
-  ``MemoryStore.record_access`` refreshes for *delivered* results — and anchors
-  are never delivered. If reinforcement did not refresh them, nothing else ever
-  would and every anchor would retire on schedule no matter how much it earned.
+* **A repeat reinforces rather than duplicates**, refreshes its last-match
+  timestamp and revives an explicitly decayed anchor with its edges intact.
 
 The anchor write is also required to stay cheap (one batched query vector per
 consuming remember, no second grounding pass, no re-embedding of results) and
@@ -35,7 +31,6 @@ survive intact.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -45,8 +40,6 @@ import living_memory.feedback as feedback_module
 from living_memory.feedback import apply_pending_recall_feedback
 from living_memory.query_anchors import (
     ANCHOR_EDGE_WEIGHT,
-    ANCHOR_TTL_DAYS,
-    decay_stale_anchors,
     match_anchors,
 )
 from living_memory.server import create_mcp_server
@@ -336,26 +329,22 @@ def test_repeat_of_the_same_query_reinforces_one_anchor(tmp_path: Path) -> None:
     assert (set(node_ids) - {node_ids[USED_INDEX]}).isdisjoint(edges)
 
 
-def test_reinforcement_refreshes_freshness_against_decay(tmp_path: Path) -> None:
-    """An anchor that keeps earning stays alive; an idle one retires.
-
-    Nothing but this write path ever refreshes an anchor: ``record_access``
-    fires for delivered results and anchors are never delivered.
-    """
+def test_reinforcement_revives_explicitly_decayed_anchor_and_refreshes_timestamp(
+    tmp_path: Path,
+) -> None:
+    """Grounded consumption revives the same anchor and refreshes its last match."""
 
     mcp, store, _node_ids, _event_id = _seed(tmp_path / "freshness.sqlite3")
     _consume(mcp)
     anchor = _anchors(store)[0]
 
-    # Age it past the TTL by rewinding its last match, then confirm the sweep
-    # really does retire an anchor nothing has reinforced.
-    stale = datetime.now(UTC) - timedelta(days=ANCHOR_TTL_DAYS + 1)
-    store.reinforce_query_anchor(anchor.id, now=stale.isoformat())
-    assert [a.id for a in decay_stale_anchors(store)] == [anchor.id]
+    previous_match = "2000-01-01T00:00:00Z"
+    store.reinforce_query_anchor(anchor.id, now=previous_match)
+    store.decay_query_anchor(anchor.id, "manual")
     assert store.get_query_anchor(anchor.id).decayed is True
 
-    # Now the same question earns again. The live path revives it and moves its
-    # freshness to now, so the next sweep leaves it alone.
+    # Now the same question earns again. The live path revives it and records
+    # the new match without changing its original first-seen timestamp.
     mcp.tools["memory_recall"](
         QUERY,
         scope=SCOPE,
@@ -367,9 +356,9 @@ def test_reinforcement_refreshes_freshness_against_decay(tmp_path: Path) -> None
 
     revived = store.get_query_anchor(anchor.id)
     assert revived.decayed is False
-    assert revived.last_matched_at > stale.isoformat()
-    assert decay_stale_anchors(store) == []
-    assert store.get_query_anchor(anchor.id).decayed is False
+    assert revived.decay_reason is None
+    assert revived.last_matched_at > previous_match
+    assert revived.first_seen == anchor.first_seen
 
 
 # ---------------------------------------------------------------------------
