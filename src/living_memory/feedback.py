@@ -19,7 +19,9 @@ from living_memory.models import Node, RecallEvent, RecallEventHeader, Retrieval
 from living_memory import storage as storage_module
 from living_memory.query_anchors import resolve_query_anchor, upsert_anchor
 from living_memory.scope import normalize_scope
-from living_memory.storage import ChunkEmbedder, MemoryStore, NodeContent, recall_fingerprint
+from living_memory.storage import (
+    ChunkEmbedder, MemoryStore, NodeContent, NodeProvenance, recall_fingerprint,
+)
 from living_memory.temporal import parse_timestamp
 
 _LOG = logging.getLogger(__name__)
@@ -477,8 +479,12 @@ def apply_pending_recall_feedback(
     anchor_work: list[tuple[RecallEvent, tuple[str, ...], tuple[str, ...]]] = []
     feedback_applied = False
     policy = _recall_credit_policy()
-    sources = store.get_node_contents(
+    source_ids = (
         node_id for event in events for node_id in event.result_ids if node_id != trace.id
+    )
+    sources = (
+        store.get_node_contents(source_ids) if reinforce_results
+        else store.get_node_provenance(source_ids)
     )
     observed_grounding = (
         _ObservedGrounding(trace.content, (event.result_ids for event in events))
@@ -502,7 +508,7 @@ def apply_pending_recall_feedback(
             else set()
         )
         # Preserve delivered order and rank, including repeated identities.
-        resolved: list[tuple[int, dict[str, Any], NodeContent]] = []
+        resolved: list[tuple[int, dict[str, Any], NodeContent | NodeProvenance]] = []
         for rank, result in enumerate(event.results):
             node_id = str(result.get("node_id") or "")
             if not node_id or node_id == trace.id:

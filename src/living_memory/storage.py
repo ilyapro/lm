@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from itertools import groupby
 from pathlib import Path
 from threading import RLock
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 import hashlib
 import json
 import re
@@ -905,6 +905,17 @@ class NodeEndpoint:
 
 
 @dataclass(frozen=True, slots=True)
+class NodeProvenance:
+    """Validated source identity and level, without retaining its body."""
+
+    id: str
+    level: NodeLevel
+
+
+_SourceFact = TypeVar("_SourceFact")
+
+
+@dataclass(frozen=True, slots=True)
 class NodeContent:
     """Source identity, content and level for grounding and trace provenance."""
 
@@ -1711,16 +1722,33 @@ class MemoryStore:
 
     def get_node_contents(self, node_ids: Iterable[str]) -> dict[str, NodeContent]:
         """Read source facts without context or statistics, including decayed nodes."""
-        contents: dict[str, NodeContent] = {}
+        return self._read_node_sources(node_ids, NodeContent)
+
+    def get_node_provenance(self, node_ids: Iterable[str]) -> dict[str, NodeProvenance]:
+        """Validate the same sources, retaining only facts used by provenance.
+
+        Content is still selected, decoded and converted: an unreadable source
+        must fail required feedback even when its text is not being graded.
+        """
+        return self._read_node_sources(
+            node_ids, lambda node_id, content, level: NodeProvenance(node_id, level),
+        )
+
+    def _read_node_sources(
+        self, node_ids: Iterable[str], project: Callable[[str, str, NodeLevel], _SourceFact],
+    ) -> dict[str, _SourceFact]:
+        """Finish validation and close every batch before returning source facts."""
+        sources: dict[str, _SourceFact] = {}
         for chunk in _node_read_batches(node_ids):
             placeholders = ",".join("?" for _ in chunk)
-            rows = self._conn.execute(
+            with closing(self._conn.execute(
                 f"SELECT id, content, level FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
-            ).fetchall()
-            for row in rows:
-                source = NodeContent(id=str(row["id"]), content=str(row["content"]), level=row["level"])
-                contents[source.id] = source
-        return contents
+            )) as rows:
+                for row in rows:
+                    node_id = str(row["id"])
+                    sources[node_id] = project(node_id, str(row["content"]), row["level"])
+                    del row
+        return sources
 
     def get_node_knowledge(
         self, node_ids: Iterable[str], *, context_key: str | None = None,
