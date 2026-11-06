@@ -224,11 +224,6 @@ class _TraceCluster:
                 self.embedding_sum[index] += value
         self.embedding_count += 1
 
-    def embedding_for(self, trace: Node) -> list[float] | None:
-        if trace.embedding is not None:
-            return trace.embedding
-        return self.embeddings_by_trace_id.get(trace.id)
-
 
 @dataclass(frozen=True, slots=True)
 class _ProcedureKey:

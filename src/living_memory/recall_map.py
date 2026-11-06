@@ -2838,16 +2838,6 @@ def cache_key(
     return work.key if work else ""
 
 
-def _dominant_scope(pool: list[_Member]) -> str:
-    counted: Counter[str] = Counter()
-    for member in pool:
-        scope = getattr(member.node, "scope", "") or GLOBAL_SCOPE
-        counted[str(scope)] += 1
-    if not counted:
-        return GLOBAL_SCOPE
-    return min(counted.items(), key=lambda item: (-item[1], item[0]))[0]
-
-
 def _dominant_residual_scope(results: Sequence[Any]) -> str:
     """Fallback scope when a non-empty residual admits no members."""
 
