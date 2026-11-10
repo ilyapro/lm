@@ -24,6 +24,24 @@ wrapper, unavailable metadata and failed listings block admission; they are
 never permission to delete, overwrite or repeat an unknown upload. All created
 objects use `--acl-private`, and downloaded objects' privacy is checked.
 
+Metadata reads use the installed s3cmd Python transport directly, in a bounded
+subprocess, instead of parsing `s3cmd info` display text. Versioning admission
+requires HTTP 200 with an empty `VersioningConfiguration`; enabled, suspended,
+denied, malformed and unavailable responses block backup. Only HTTP 404 with
+`NoSuchBucketPolicy` confirms no policy. Every privacy check still requires
+exactly the owner's `sfx: FULL_CONTROL` grant, with its canonical ID matching
+the ACL owner, and its own bucket-policy read.
+
+The command reads HEAD metadata only for the previous FINAL/safety comparison;
+download verification checks ACL/policy again and verifies the bytes directly.
+A valid original MD5 in `s3cmd-attrs` takes precedence over ETag; missing or
+malformed MD5, including a multipart ETag without original MD5, fails closed.
+It does not query requester-pays, ownership controls, public-access-block,
+lifecycle or CORS. Location discovery needed by signing and endpoint redirects
+remain in s3cmd's transport. With a configured region and no redirects, the
+ordinary replacement path uses 15 metadata reads (one versioning, six ACL, six
+policy, two HEAD), without sharing privacy checks between stages.
+
 The script snapshots the live SQLite database through the SQLite backup API with
 a read-only source connection. It neither replaces the working database nor
 stops Living Memory. It checks snapshot integrity and compresses it with gzip.
@@ -73,7 +91,8 @@ with a confirmed response and the corresponding checkpoint. Transport errors,
 timeouts and crashes can leave an applied effect with no confirmed response.
 They do not trigger automatic rollback, deletion or replay. s3cmd retries are
 disabled; reads have a 120-second limit and transfers/copies a 3600-second limit.
-Error reports omit s3cmd request output and credentials.
+Error reports omit s3cmd request output and credentials. Metadata errors report
+only the operation, exception class and HTTP status when available.
 
 On the next ordinary invocation, a verified/rolled-back/unchanged transaction
 with no pending mutation resumes only unfinished cleanup, preserving its
@@ -96,7 +115,11 @@ python3 -m pytest scripts/test_backup_living_memory_s3.py
 
 It executes the real `__main__`/lock/status path with disposable SQLite files and
 fake S3 transport. It forbids network and non-fixture SQLite access and uses no
-production credentials. This proves local semantics; the existing loop confirms
+production credentials. Metadata scenarios pass raw HTTP responses through the
+installed s3cmd request/signing/error handling, including rejected 403/5xx and
+malformed responses, confirmed absence, redirects and region discovery. The
+tests need that installed `S3` Python package, as does the metadata subprocess.
+This proves local semantics; the existing loop confirms
 fresh real backup bytes during its next ordinary work.
 
 To recover after losing local data, stop the Living Memory service on the

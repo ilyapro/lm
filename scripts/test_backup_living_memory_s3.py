@@ -1,9 +1,13 @@
 """Private, offline command-path regression. Run with pytest on this file only."""
 
 import fcntl
+from collections import Counter
+from contextlib import redirect_stderr, redirect_stdout
 import gzip
 import hashlib
+import io
 import json
+import logging
 import os
 from pathlib import Path
 import runpy
@@ -12,14 +16,93 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import pytest
+from S3.Config import Config
+from S3.ConnMan import ConnMan
+from S3.S3 import S3Request
 
 
 SCRIPT = Path(__file__).with_name("backup_living_memory_s3.py")
 BUCKET = "s3://lm-private-backup-sfx"
 FINAL = BUCKET + "/global.sqlite3.gz"
 STAGING = BUCKET + "/.incoming.sqlite3.gz"
+NAMESPACE = "http://s3.amazonaws.com/doc/2006-03-01/"
+
+
+class RawResponse:
+    def __init__(self, status=200, data=b"", headers=None):
+        self.status = status
+        self.reason = "fixture response"
+        self.data = data
+        self.headers = headers or {}
+
+    def getheaders(self):
+        return list(self.headers.items())
+
+    def read(self):
+        return self.data
+
+
+def raw_error(status, code):
+    return RawResponse(status, f"<Error><Code>{code}</Code><Message>FAKE SECRET</Message></Error>".encode())
+
+
+def raw_acl(grants=None):
+    if grants is None:
+        grants = [("fixture-owner", "sfx", "FULL_CONTROL")]
+    xml = f'<AccessControlPolicy xmlns="{NAMESPACE}"><Owner><ID>fixture-owner</ID><DisplayName>sfx</DisplayName></Owner><AccessControlList>'
+    for identifier, name, permission in grants:
+        xml += ('<Grant><Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="CanonicalUser">'
+                f'<ID>{identifier}</ID><DisplayName>{name}</DisplayName></Grantee><Permission>{permission}</Permission></Grant>')
+    return RawResponse(data=(xml + "</AccessControlList></AccessControlPolicy>").encode())
+
+
+class RawConnection:
+    """Replace only HTTP I/O; real S3 requests, signing and errors still execute."""
+    def __init__(self, fake, host):
+        self.fake = fake
+        self.host = host
+
+    def request(self, method, uri, body, headers):
+        assert "Authorization" in headers
+        parsed = urlsplit(uri)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        operation = "head" if method == "HEAD" else next(iter(params))
+        assert method == ("HEAD" if operation == "head" else "GET")
+        assert not body
+        assert operation in {"versioning", "acl", "policy", "head", "location"}
+        path = unquote(parsed.path).rstrip("/")
+        # Redirects can switch virtual-host requests to path-style routing.
+        bucket_path = "/lm-private-backup-sfx"
+        if path == bucket_path or path.startswith(bucket_path + "/"):
+            path = path[len(bucket_path):]
+        target = BUCKET + path
+        self.fake.raw_calls.append((operation, target))
+        self.fake.routes.append((self.host, method, uri))
+        self.response = self.fake.raw_hook(operation, target)
+        if self.response is not None:
+            return
+        if operation == "versioning":
+            value = "" if self.fake.versioning == "none" else f"<Status>{self.fake.versioning}</Status>"
+            self.response = RawResponse(data=f'<VersioningConfiguration xmlns="{NAMESPACE}">{value}</VersioningConfiguration>'.encode())
+        elif operation == "policy":
+            self.response = raw_error(404, "NoSuchBucketPolicy") if self.fake.policy == "none" else RawResponse(data=self.fake.policy.encode())
+        elif operation == "acl":
+            grants = [("fixture-owner", "sfx", "FULL_CONTROL")]
+            if target in self.fake.public:
+                grants.append(("foreign-id", "foreign", "READ"))
+            self.response = raw_acl(grants)
+        elif operation == "head":
+            payload = self.fake.objects[target]
+            self.response = RawResponse(headers={"content-length": str(len(payload)), "etag": f'"{hashlib.md5(payload).hexdigest()}"'})
+        elif operation == "location":
+            self.response = RawResponse(data=f'<LocationConstraint xmlns="{NAMESPACE}">fixture-1</LocationConstraint>'.encode())
+
+    def getresponse(self):
+        return self.response
 
 
 class FakeS3:
@@ -27,6 +110,9 @@ class FakeS3:
         self.home = home
         self.objects = {}
         self.calls = []
+        self.raw_calls = []
+        self.routes = []
+        self.raw_hook = lambda operation, target: None
         self.hook = lambda operation, args: None
         self.public = set()
         self.versioning = "none"
@@ -34,14 +120,22 @@ class FakeS3:
         self.uploads = []
 
     def __call__(self, command, **kwargs):
-        assert command[:3] == ["/usr/bin/s3cmd", "-c", str(self.home / ".config/living-memory/s3cmd-backup.conf")]
-        args = [arg for arg in command[3:] if not arg.startswith("--")]
-        operation, *args = args
+        config = str(self.home / ".config/living-memory/s3cmd-backup.conf")
+        if command[0] == "/usr/bin/python3":
+            assert command[1] == "-c"
+            assert command[3:5] == [str(SCRIPT.resolve()), config]
+            operation, args = "info", [command[5]]
+            assert kwargs["timeout"] == 120
+        else:
+            assert command[:3] == ["/usr/bin/s3cmd", "-c", config]
+            args = [arg for arg in command[3:] if not arg.startswith("--")]
+            operation, *args = args
+            assert operation != "info", "human-display metadata is forbidden"
+            assert "--max-retries=0" in command
         # Every remote read/mutation belongs to the actual command's lock.
         with (self.home / ".local/state/living-memory-backup/backup.lock").open("a") as lock:
             with pytest.raises(BlockingIOError):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        assert "--max-retries=0" in command
         assert 0 < kwargs["timeout"] <= 3600
         self.calls.append((operation, tuple(args)))
         override = self.hook(operation, args)
@@ -49,15 +143,25 @@ class FakeS3:
             return override
         output = ""
         if operation == "info":
-            target = args[0]
-            output = "   Policy:    " + self.policy + "\n   ACL:       sfx: FULL_CONTROL\n"
-            if target in self.public:
-                output += "   ACL:       *anon*: READ\n"
-            if target.rstrip("/") == BUCKET:
-                output += "   Versioning:" + self.versioning + "\n"
-            else:
-                payload = self.objects[target]
-                output += f"   File size: {len(payload)}\n   MD5 sum: {hashlib.md5(payload).hexdigest()}\n"
+            stdout, stderr = io.StringIO(), io.StringIO()
+            disabled, timeout = logging.root.manager.disable, socket.getdefaulttimeout()
+            try:
+                with pytest.MonkeyPatch.context() as patch, redirect_stdout(stdout), redirect_stderr(stderr):
+                    # A new metadata subprocess has fresh S3 singleton/maps.
+                    patch.setattr(Config, "_instance", None)
+                    patch.setattr(S3Request, "region_map", {})
+                    patch.setattr(S3Request, "redir_map", {})
+                    patch.setattr(ConnMan, "get", lambda host: SimpleNamespace(path=None, c=RawConnection(self, host)))
+                    patch.setattr(ConnMan, "put", lambda conn: None)
+                    patch.setattr(ConnMan, "close", lambda conn: None)
+                    patch.setattr(sys, "argv", ["-c", *command[3:]])
+                    exec(command[2], {"__name__": "__main__"})
+                    assert Config().max_retries == 0
+            finally:
+                logging.disable(disabled)
+                socket.setdefaulttimeout(timeout)
+            assert stderr.getvalue() == ""
+            output = stdout.getvalue()
         elif operation == "ls":
             output = "".join(f"2026-01-01 00:00 {len(value)} {key}\n" for key, value in sorted(self.objects.items()))
         elif operation == "multipart":
@@ -95,7 +199,9 @@ def backup(tmp_path, monkeypatch):
     old = gzip.compress(previous.read_bytes(), mtime=0)
     config = home / ".config/living-memory/s3cmd-backup.conf"
     config.parent.mkdir(parents=True)
-    config.write_text("FAKE: no credentials\n")
+    config.write_text("[default]\naccess_key = fixture\nsecret_key = fixture\n"
+                      "host_base = storage.invalid\nhost_bucket = %(bucket)s.storage.invalid\n"
+                      "bucket_location = fixture-1\n")
     config.chmod(0o600)
     fake = FakeS3(home)
     fake.objects[FINAL] = old
@@ -163,6 +269,18 @@ def test_success_command(backup):
     assert sum(op == "get" and args[0] == FINAL for op, args in backup.calls) == 1
     assert sum(op == "put" for op, _ in backup.calls) == 1
     assert (backup.state / "status.json").stat().st_mode & 0o077 == 0
+    # Bucket: versioning/ACL/policy. Content comparison: two HEADs. Every
+    # download verification still gets its own ACL/policy; no display reads.
+    assert Counter(op for op, _ in backup.raw_calls) == {
+        "versioning": 1, "acl": 6, "policy": 6, "head": 2,
+    }
+    safety = next(target for op, target in backup.raw_calls if "/.previous-" in target)
+    assert Counter(backup.raw_calls) == {
+        ("versioning", BUCKET): 1, ("acl", BUCKET): 1, ("policy", BUCKET): 6,
+        ("acl", FINAL): 2, ("head", FINAL): 1,
+        ("acl", safety): 2, ("head", safety): 1,
+        ("acl", STAGING): 1,
+    }
 
 
 def test_late_multipart_timeout_keeps_verified_result(backup):
@@ -212,10 +330,12 @@ def test_final_verification_failure_restores_previous(backup, failure):
 
     def fail_new_final(operation, args):
         nonlocal failed
+        if failed and operation == "cp" and args[-1] == FINAL:
+            backup.public.discard(FINAL)
         if not failed and args[0] == FINAL and backup.objects[FINAL] != backup.old:
             if failure == "acl" and operation == "info":
                 failed = True
-                return subprocess.CompletedProcess([], 0, "Policy: none\nACL: *anon*: READ\n", "")
+                backup.public.add(FINAL)
             if operation == "get":
                 failed = True
                 if failure == "timeout":
@@ -348,6 +468,7 @@ def test_no_previous_final_is_a_valid_first_backup(backup):
     assert set(backup.objects) == {FINAL}
     backup.fresh_bytes()
     assert not any(op == "cp" and args[0] == FINAL for op, args in backup.calls)
+    assert Counter(op for op, _ in backup.raw_calls) == {"versioning": 1, "acl": 3, "policy": 3}
 
 
 def test_first_backup_final_failure_keeps_checked_staging(backup):
@@ -510,3 +631,224 @@ def test_local_cleanup_failure_cannot_rollback_success(backup, monkeypatch):
     assert backup.old in backup.objects.values()
     backup.fresh_bytes()
     assert sum(op == "cp" and args[-1] == FINAL for op, args in backup.calls) == 1
+
+
+@pytest.mark.parametrize("response", [
+    raw_error(403, "AccessDenied"), raw_error(500, "InternalError"),
+    raw_error(503, "ServiceUnavailable"), raw_error(404, "NoSuchBucket"),
+    RawResponse(data=b""), RawResponse(data=b"<VersioningConfiguration>"),
+    RawResponse(data=b"<Error/>"),
+    RawResponse(data=b'<VersioningConfiguration xmlns="urn:wrong"/>'),
+    RawResponse(data=b"<VersioningConfiguration>none</VersioningConfiguration>"),
+    RawResponse(data=b"<VersioningConfiguration><Status/></VersioningConfiguration>"),
+    RawResponse(data=b"<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>"),
+    RawResponse(data=b"<VersioningConfiguration><Status>Suspended</Status></VersioningConfiguration>"),
+    RawResponse(data=b"<VersioningConfiguration><Unknown/></VersioningConfiguration>"),
+    RawResponse(data=b"<VersioningConfiguration><MfaDelete>Disabled</MfaDelete></VersioningConfiguration>"),
+    RawResponse(204, b"<VersioningConfiguration/>"),
+], ids=["403", "500", "503", "404", "empty", "broken-xml", "wrong-root", "wrong-namespace",
+        "text", "empty-status", "enabled", "suspended", "unknown-child", "mfa-only", "204"])
+def test_raw_versioning_cannot_authorize_mutation(backup, response, capsys):
+    backup.raw_hook = lambda op, target: response if op == "versioning" else None
+    assert backup.invoke() == 1
+    assert backup.objects == {FINAL: backup.old}
+    assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
+    assert backup.raw_calls == [("versioning", BUCKET)]  # No retry on 5xx.
+    status = backup.status()
+    assert "versioning" in status["last_error"]["message"]
+    assert "FAKE SECRET" not in json.dumps(status) + str(capsys.readouterr())
+
+
+@pytest.mark.parametrize("response", [
+    raw_error(403, "AccessDenied"), raw_error(500, "InternalError"),
+    raw_error(503, "ServiceUnavailable"), raw_error(501, "NotImplemented"),
+    raw_error(404, "NoSuchBucket"), RawResponse(404),
+    RawResponse(404, b"<Error>"), raw_error(403, "NoSuchBucketPolicy"),
+    RawResponse(data=b"none"), RawResponse(data=b""),
+    RawResponse(data=b'{"Statement": []}'), RawResponse(data=b"{broken"),
+], ids=["403", "500", "503", "501", "wrong-404", "bare-404", "broken-404",
+        "wrong-status", "display-none", "empty", "existing-policy", "malformed-policy"])
+@pytest.mark.parametrize("target", [BUCKET, FINAL])
+def test_raw_policy_cannot_authorize_mutation(backup, response, target, capsys):
+    # Policy is bucket-scoped even when the consumer checks an object's privacy.
+    failed = False
+
+    def raw_hook(op, uri):
+        nonlocal failed
+        if op == "policy" and (target == BUCKET or ("acl", FINAL) in backup.raw_calls):
+            assert uri == BUCKET
+            failed = True
+            return response
+
+    backup.raw_hook = raw_hook
+    assert backup.invoke() == 1
+    assert failed
+    assert backup.objects == {FINAL: backup.old}
+    assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
+    assert sum(op == "policy" for op, _ in backup.raw_calls) == (1 if target == BUCKET else 2)
+    assert "policy" in backup.status()["last_error"]["message"]
+    assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())
+
+
+@pytest.mark.parametrize("xml", [
+    b"<VersioningConfiguration/>",
+    f'<VersioningConfiguration xmlns="{NAMESPACE}">\n </VersioningConfiguration>'.encode(),
+])
+def test_raw_confirmed_absence_allows_backup(backup, xml):
+    backup.raw_hook = lambda op, target: RawResponse(data=xml) if op == "versioning" else None
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+
+
+@pytest.mark.parametrize("operation", ["versioning", "acl", "policy", "head"])
+def test_raw_transport_failure_is_not_absence(backup, operation, capsys):
+    failed = 0
+
+    def unavailable(op, target):
+        nonlocal failed
+        if op == operation:
+            failed += 1
+            raise socket.timeout("FAKE SECRET")
+
+    backup.raw_hook = unavailable
+    assert backup.invoke() == 1
+    assert failed == 1
+    assert backup.objects == {FINAL: backup.old}
+    assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
+    assert operation in backup.status()["last_error"]["message"]
+    assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())
+
+
+@pytest.mark.parametrize("target", [BUCKET, FINAL])
+@pytest.mark.parametrize("grants", [
+    [], [("fixture-owner", "sfx", "READ")],
+    [("foreign-id", "foreign", "FULL_CONTROL")],
+    [("foreign-id", "sfx", "FULL_CONTROL")],  # DisplayName cannot disguise a foreign ID.
+    [("fixture-owner", "sfx", "FULL_CONTROL"), ("foreign-id", "foreign", "READ")],
+])
+def test_raw_acl_must_be_exactly_owner_full_control(backup, target, grants):
+    backup.raw_hook = lambda op, uri: raw_acl(grants) if op == "acl" and uri == target else None
+    assert backup.invoke() == 1
+    assert backup.objects == {FINAL: backup.old}
+    assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
+
+
+@pytest.mark.parametrize("failure", ["safety-download", "staging", "final"])
+def test_policy_is_rechecked_at_each_verification(backup, failure):
+    failed = False
+
+    def policy_changed(op, target):
+        nonlocal failed
+        if op == "policy" and not failed:
+            # The preceding ACL identifies the current verification; the
+            # bucket policy itself is always read from the bucket root.
+            acl_target = backup.raw_calls[-2][1]
+            if ((failure == "safety-download" and "/.previous-" in acl_target
+                 and backup.raw_calls.count(("acl", acl_target)) == 2)
+                    or (failure == "staging" and acl_target == STAGING)
+                    or (failure == "final" and acl_target == FINAL and backup.objects[FINAL] != backup.old)):
+                failed = True
+                return raw_error(403, "AccessDenied")
+
+    backup.raw_hook = policy_changed
+    assert backup.invoke() == 1
+    assert failed
+    assert backup.objects == {FINAL: backup.old}
+    if failure == "safety-download":
+        assert not any(op == "put" for op, _ in backup.calls)
+    if failure != "final":
+        assert not any(op == "cp" and args[-1] == FINAL for op, args in backup.calls)
+    else:
+        assert backup.status()["rollback"] == "verified"
+
+
+@pytest.mark.parametrize("etag", ['"opaque-multipart-42"', '"' + '0' * 32 + '"'])
+def test_original_attrs_md5_has_priority_over_etag(backup, etag):
+    def multipart_headers(op, target):
+        if op == "head":
+            payload = backup.objects[target]
+            return RawResponse(headers={
+                "content-length": str(len(payload)), "etag": etag,
+                "x-amz-meta-s3cmd-attrs": "uid:1000/md5:" + hashlib.md5(payload).hexdigest().upper(),
+            })
+
+    backup.raw_hook = multipart_headers
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+
+
+@pytest.mark.parametrize("headers", [
+    {"content-length": "42", "etag": '"' + 'a' * 32 + '-2"'},
+    {"content-length": "42"},
+    {"content-length": "42", "etag": '"' + 'a' * 32 + '"', "x-amz-meta-s3cmd-attrs": "md5:invalid"},
+    {"content-length": "42", "x-amz-meta-s3cmd-attrs": "malformed"},
+    {"content-length": "-1", "etag": '"' + 'a' * 32 + '"'},
+    {"content-length": "1.0", "etag": '"' + 'a' * 32 + '"'},
+    {"etag": '"' + 'a' * 32 + '"'},
+], ids=["opaque-multipart", "missing-md5", "invalid-md5", "malformed-attrs", "negative-length", "fractional-length", "missing-length"])
+def test_raw_content_metadata_fails_closed(backup, headers):
+    backup.raw_hook = lambda op, target: RawResponse(headers=headers) if op == "head" else None
+    assert backup.invoke() == 1
+    assert backup.objects == {FINAL: backup.old}
+    assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
+
+
+@pytest.mark.parametrize("incorrect", ["md5", "length"])
+def test_metadata_must_match_actual_previous_content(backup, incorrect):
+    def wrong_headers(op, target):
+        if op == "head":
+            payload = backup.objects[target]
+            return RawResponse(headers={
+                "content-length": "0" if incorrect == "length" else str(len(payload)),
+                "etag": '"opaque-multipart-2"',
+                "x-amz-meta-s3cmd-attrs": "md5:" + ("0" * 32 if incorrect == "md5" else hashlib.md5(payload).hexdigest()),
+            })
+
+    backup.raw_hook = wrong_headers
+    assert backup.invoke() == 1
+    assert backup.objects == {FINAL: backup.old}
+    assert not any(op == "put" or (op == "cp" and args[-1] == FINAL) for op, args in backup.calls)
+
+
+def test_metadata_keeps_transport_region_discovery(backup):
+    config = backup.home / ".config/living-memory/s3cmd-backup.conf"
+    config.write_text(config.read_text().replace("fixture-1", "US"))
+    assert backup.invoke() == 0
+    # Location is allowed only when the unchanged signing transport needs it.
+    assert sum(op == "location" for op, _ in backup.raw_calls) == 6
+    assert set(op for op, _ in backup.raw_calls) == {"location", "versioning", "acl", "policy", "head"}
+
+
+def test_metadata_keeps_transport_redirects(backup):
+    redirected = False
+
+    def redirect(op, target):
+        nonlocal redirected
+        if op == "versioning" and not redirected:
+            redirected = True
+            return RawResponse(301, b"<Error><Code>PermanentRedirect</Code><Bucket>lm-private-backup-sfx</Bucket><Endpoint>redirect.invalid</Endpoint></Error>",
+                               {"x-amz-bucket-region": "fixture-2"})
+
+    backup.raw_hook = redirect
+    assert backup.invoke() == 0
+    assert backup.routes[0][0] == "lm-private-backup-sfx.storage.invalid"
+    assert backup.routes[1][0] == "redirect.invalid"
+    assert backup.raw_calls[:2] == [("versioning", BUCKET)] * 2
+
+
+@pytest.mark.parametrize("failure", ["deadline", "spawn", "exit", "invalid-json"])
+def test_metadata_subprocess_failure_stops_before_mutation(backup, failure, capsys):
+    def unavailable(op, args):
+        if op == "info":
+            if failure == "deadline":
+                raise subprocess.TimeoutExpired("FAKE SECRET", 120)
+            if failure == "spawn":
+                raise OSError("FAKE SECRET")
+            return subprocess.CompletedProcess([], 1 if failure == "exit" else 0,
+                                               "FAKE SECRET", "FAKE SECRET")
+
+    backup.hook = unavailable
+    assert backup.invoke() == 1
+    assert backup.calls == [("info", (BUCKET,))]
+    assert backup.objects == {FINAL: backup.old}
+    assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())

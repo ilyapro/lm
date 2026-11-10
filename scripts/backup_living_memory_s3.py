@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -18,6 +19,7 @@ import uuid
 import zlib
 from datetime import datetime, timezone
 from urllib.parse import quote
+from xml.etree import ElementTree
 
 
 DATABASE = Path.home() / ".local/share/living-memory/global.sqlite3"
@@ -97,19 +99,108 @@ def mutate(transaction: dict, phase: str, *args: str, completed: str | None = No
     save_status(transaction=transaction)
 
 
-def info(target: str) -> dict[str, str]:
-    output = s3("info", target)
-    fields = {}
-    acl = []
-    for line in output.splitlines():
-        key, separator, value = line.strip().partition(":")
-        if separator:
-            fields[key] = value.strip()
-            if key == "ACL":
-                acl.append(value.strip())
-    if acl != PRIVATE_ACL or fields.get("Policy") != "none":
-        raise RuntimeError("S3 privacy verification failed")
-    return fields
+def metadata(config_path: str, target: str, content: str) -> None:
+    """Read required facts in a bounded subprocess using s3cmd's own transport.
+
+    Do not use bucket_info/cmd_info: they turn failed versioning/policy reads
+    into display values indistinguishable from confirmed absence.
+    """
+    import logging
+    import socket
+
+    # Library diagnostics may contain signed headers, credentials or raw bodies.
+    logging.disable(logging.CRITICAL)
+    operation = "config"
+    try:
+        from S3.Config import Config
+        from S3.Exceptions import S3Error
+        from S3.S3 import S3
+        from S3.S3Uri import S3Uri
+
+        config = Config(config_path)
+        config.max_retries = 0
+        socket.setdefaulttimeout(config.socket_timeout)
+        client = S3(config)
+        uri = S3Uri(target)
+        fields = {}
+        if not uri.has_object():
+            operation = "versioning"
+            response = client.send_request(client.create_request(
+                "BUCKET_LIST", bucket=uri.bucket(), uri_params={"versioning": None}))
+            root = ElementTree.fromstring(response["data"])
+            # Only a successful, empty VersioningConfiguration is unversioned.
+            # An empty body, unknown XML, Status (even empty) or MFADelete is not.
+            if (response["status"] != 200 or root.tag not in {
+                    "VersioningConfiguration",
+                    "{http://s3.amazonaws.com/doc/2006-03-01/}VersioningConfiguration",
+                } or root.attrib or len(root) or (root.text or "").strip()):
+                raise ValueError("versioning is not confirmed empty")
+            fields["Versioning"] = "none"
+
+        operation = "acl"
+        acl = client.get_acl(uri)
+        grants = acl.getGrantList()
+        if ([f"{g['grantee']}: {g['permission']}" for g in grants] != PRIVATE_ACL
+                or not acl.owner_id or len(acl.grantees) != 1
+                or acl.grantees[0].xsi_type != "CanonicalUser"
+                or acl.grantees[0].tag != "ID"
+                or acl.grantees[0].name != acl.owner_id):
+            raise ValueError("ACL is not owner-only FULL_CONTROL")
+
+        operation = "policy"
+        try:
+            client.get_policy(uri)
+        except S3Error as error:
+            if error.status != 404 or error.code != "NoSuchBucketPolicy":
+                raise
+        else:
+            # Even an empty/invalid policy body is not authoritative absence.
+            raise ValueError("bucket policy is not confirmed absent")
+
+        if uri.has_object() and content == "1":
+            operation = "head"
+            response = client.object_info(uri)
+            headers = response["headers"]
+            length = headers.get("content-length", "")
+            md5 = response.get("s3cmd-attrs", {}).get("md5")
+            if md5 is None:
+                md5 = headers.get("etag", "").strip('"\'')
+            # s3cmd's original MD5 takes precedence over an opaque multipart
+            # ETag. Neither a multipart ETag nor malformed metadata is an MD5.
+            if (response["status"] != 200 or not re.fullmatch(r"[0-9]+", length)
+                    or not re.fullmatch(r"[0-9a-fA-F]{32}", md5)):
+                raise ValueError("invalid content metadata")
+            fields.update({"File size": str(int(length)), "MD5 sum": md5.lower()})
+        result = {"fields": fields}
+    except Exception as error:
+        # The process returns only locally generated operation/class/status.
+        status = getattr(error, "status", None)
+        detail = f", HTTP {status}" if isinstance(status, int) else ""
+        result = {"error": f"S3 metadata {operation} failed ({type(error).__name__}{detail})"}
+    print(json.dumps(result))
+
+
+def info(target: str, *, content: bool = True) -> dict[str, str]:
+    # Use the interpreter owning /usr/bin/s3cmd's installed S3 package. Keeping
+    # this in a subprocess retains the whole-read deadline, including redirects.
+    try:
+        result = subprocess.run(
+            ["/usr/bin/python3", "-c",
+             "import runpy, sys; runpy.run_path(sys.argv[1])['metadata'](*sys.argv[2:])",
+             str(Path(__file__).resolve()), str(CONFIG), target, "1" if content else "0"],
+            capture_output=True, text=True, timeout=READ_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f"S3 metadata transport failed ({type(error).__name__})") from None
+    if result.returncode:
+        raise RuntimeError(f"S3 metadata failed (exit {result.returncode})")
+    try:
+        response = json.loads(result.stdout)
+        if "error" in response:
+            raise RuntimeError(response["error"])
+        return response["fields"]
+    except (ValueError, KeyError, TypeError):
+        raise RuntimeError("invalid S3 metadata response") from None
 
 
 def objects() -> set[str]:
@@ -218,7 +309,7 @@ def snapshot(path: Path) -> None:
 
 
 def verify_download(target: str, work: Path, name: str, expected: dict | None = None) -> dict:
-    info(target)  # ACL and bucket policy are part of verification, before success.
+    info(target, content=False)  # Fresh ACL/policy check at each verification.
     archive = work / f"{name}.sqlite3.gz"
     restored = work / f"{name}.sqlite3"
     s3("get", target, str(archive))
@@ -242,7 +333,7 @@ def preserve_previous(transaction: dict, work: Path, before: dict) -> None:
             raise RuntimeError("previous safety metadata mismatch")
     previous = verify_download(safety, work, "previous")
     archive = work / "previous.sqlite3.gz"
-    # s3cmd's info uses the original content MD5 from s3cmd-attrs, including
+    # Metadata uses the original content MD5 from s3cmd-attrs, including
     # multipart objects. Missing/opaque multipart ETags fail closed here.
     md5 = hashlib.md5(usedforsecurity=False)
     with archive.open("rb") as stream:
