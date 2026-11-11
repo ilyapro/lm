@@ -10,6 +10,7 @@ and a wrong ``supersedes`` edge is worse than none.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import inspect
 import json
 from pathlib import Path
@@ -238,6 +239,22 @@ def answer(**overrides: Any) -> dict[str, Any]:
     }
     base.update(overrides)
     return base
+
+
+def repeat_delivery(
+    record: SessionRecord, index: int, content: str = NODE_CONTENT,
+) -> RecallInteraction:
+    recall = replace(
+        record.recalls[0],
+        ordinal=len(record.recalls),
+        span=_span(index, "mcpMeta.structuredContent"),
+        record_index=index,
+        position=index / record.record_count,
+        recall_event_id=f"recall-event-{index}",
+        delivered=[replace(node, content=content) for node in record.recalls[0].delivered],
+    )
+    record.recalls.append(recall)
+    return recall
 
 
 def judged(record: SessionRecord, *responses: Any) -> tuple[C.DetectionResult, FakeJudge]:
@@ -555,6 +572,116 @@ def test_candidates_pair_the_node_with_later_related_observations():
     assert candidate.node.node_id == NODE_ID
     assert all(item.record_index > candidate.recall.record_index for item in candidate.observations)
     assert candidate.score > 0
+
+
+@pytest.mark.parametrize(("content", "delivery", "reason"), [
+    ("", "below_threshold", "node_content_missing"),
+    ("", "full", "node_content_missing"),
+    ("scripts/postsession_corpus.py --build", "snippet", "node_content_missing"),
+    ("The corpus builder has information about rebuilding an existing index.",
+     "snippet", "node_has_no_anchors"),
+    (OTHER_NODE_CONTENT, "snippet", "no_related_observation"),
+])
+def test_detector_selects_later_usable_delivery(content, delivery, reason):
+    record = make_record(
+        nodes=((NODE_ID, content),), extra_outputs=((COMMAND, OUTPUT, 3),),
+    )
+    record.recalls[0].delivered[0].delivery = delivery
+    selected = repeat_delivery(record, 5)
+    candidate = only_candidate(record)
+    assert candidate.recall is selected
+    assert candidate.node is selected.delivered[0]
+    assert [obs.record_index for obs in candidate.observations] == [10]
+
+    result, judge = judged(record, answer())
+    assert result.judged == len(judge.calls) == len(result.ops) == 1
+    assert result.pair_stats == {reason: 1}
+    assert judge.calls[0]["payload"]["stored_fact"]["content"] == NODE_CONTENT
+    op = result.ops[0]
+    assert op.payload["context"]["recall_event_id"] == selected.recall_event_id
+    assert op.payload["context"]["observation_locator"] == answer()["observation_locator"]
+    assert op.evidence[1].locator == f"{SOURCE}:{PATH}#5:recalls[1].delivered[0].content"
+    assert op.evidence[1].quote == CLAIM
+
+
+@pytest.mark.parametrize("content", ["", OTHER_NODE_CONTENT])
+@pytest.mark.parametrize("index", [10, 15])
+def test_detector_cannot_borrow_content_from_a_delivery_after_evidence(content, index):
+    record = make_record(nodes=((NODE_ID, content),))
+    repeat_delivery(record, index)
+    assert C.candidates(record) == []
+    result, judge = judged(record, answer())
+    assert result.judged == 0
+    assert judge.calls == result.ops == []
+
+
+def test_detector_keeps_first_usable_delivery_and_judges_identity_once():
+    record = make_record(nodes=((NODE_ID, ""),))
+    selected = repeat_delivery(record, 5)
+    repeat_delivery(record, 7, NODE_CONTENT + " The scan probes 3953 transcripts.")
+    built = C.candidates(record)
+    assert len(built) == 1
+    assert built[0].recall is selected
+    assert built[0].node.content == NODE_CONTENT
+    result, judge = judged(record, answer())
+    assert result.judged == len(judge.calls) == len(result.ops) == 1
+    assert result.pair_stats == {"node_content_missing": 1, "duplicate_delivery": 1}
+
+
+@pytest.mark.parametrize(("overrides", "reason"), [
+    ({"observation_locator": f"{SOURCE}:{PATH}#3:tool_calls[2].result_text"}, "unknown_locator"),
+    ({"observation_quote": "The index was overwritten without producing any output."}, "quote_not_verbatim"),
+    ({"contradicted_claim": "retrieval ranks bm25 above the vector channel"}, "claim_not_in_node"),
+])
+def test_selected_delivery_still_requires_its_own_claim_and_later_verbatim_evidence(overrides, reason):
+    record = make_record(
+        nodes=((NODE_ID, OTHER_NODE_CONTENT),), extra_outputs=((COMMAND, OUTPUT, 3),),
+    )
+    repeat_delivery(record, 5)
+    result, judge = judged(record, answer(**overrides))
+    assert result.judged == len(judge.calls) == 1
+    assert result.ops == []
+    assert result.rejections == {reason: 1}
+
+
+def test_repeated_deliveries_keep_ranking_and_judge_budgets():
+    nodes = tuple((f"01NODE{index:020d}", NODE_CONTENT) for index in range(20))
+    record = make_record(
+        nodes=nodes, extra_outputs=tuple((COMMAND, OUTPUT, i) for i in range(11, 20)),
+    )
+    repeat_delivery(record, 5)
+    built = C.candidates(record)
+    cap = C.DEFAULT_CONFIG.max_nodes_per_session
+    assert [item.node.node_id for item in built] == [node_id for node_id, _ in nodes[:cap]]
+    for candidate in built:
+        assert candidate.recall is record.recalls[0]
+        assert [obs.record_index for obs in candidate.observations] == [10, 11, 12, 13, 14]
+    result, judge = judged(record, *[answer(contradicted=False) for _ in range(cap)])
+    assert result.judged == len(judge.calls) == cap
+    assert result.pair_stats == {"duplicate_delivery": 20, "over_session_cap": 20 - cap}
+
+
+def test_runner_proposes_one_correction_from_repeated_delivery(tmp_path):
+    from living_memory.postsession.runner import ExtractionRunner, Ledger, RunnerConfig
+
+    record = make_record(nodes=((NODE_ID, ""),))
+    repeat_delivery(record, 5)
+    repeat_delivery(record, 7)
+    judge = FakeJudge({C.TASK: [answer()]})
+    runner = ExtractionRunner(
+        config=RunnerConfig(), ledger=Ledger(tmp_path / "state"),
+        judge_factory=lambda: judge,
+    )
+    proposals = runner.propose(record)
+    assert proposals.errors == []
+    assert set(proposals.stage_stats) == {"insights", "corrections", "attest"}
+    assert proposals.stage_stats["corrections"]["judged"] == 1
+    assert len(proposals.ops) == 1
+    assert proposals.ops[0].kind == "teach"
+    decisions = runner.decide_and_execute([proposals])
+    teach = [decision for decision in decisions if decision.kind == "teach"]
+    assert len(teach) == 1
+    assert teach[0].status == "would_write"
 
 
 def test_candidates_ignore_observations_that_precede_the_recall():
@@ -1098,16 +1225,19 @@ def test_control_untouched_fact_is_not_corrected_by_an_incidental_mention():
 # --------------------------------------------------------------------------
 
 
-def test_production_skips_a_node_the_session_taught_but_recovery_judges_it():
+@pytest.mark.parametrize("repeated", [False, True])
+def test_production_skips_a_node_the_session_taught_but_recovery_judges_it(repeated):
     """The corpus's own labelled positives: production ignores, recovery measures."""
 
     record = make_record(teach_supersedes=NODE_ID)
+    if repeated:
+        repeat_delivery(record, 5)
     assert C.taught_delivered_nodes(record) == (NODE_ID,)
 
     produced, _ = judged(record, answer())
     assert produced.judged == 0
     assert produced.ops == []
-    assert produced.pair_stats["already_taught_in_session"] == 1
+    assert produced.pair_stats["already_taught_in_session"] >= 1
 
     judge = FakeJudge([answer()], prompt_config=PromptConfig(max_payload_bytes=24_000))
     recovered = C.recover_known_corrections(record, judge, split="train")
