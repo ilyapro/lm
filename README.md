@@ -193,7 +193,7 @@ CLI exit code 2.
 
 Without `--db`, dedup against existing memory is explicitly unavailable.
 When extraction outcomes are present, the report records
-`dedup.index_available: false` and unavailable verdicts. `--calibrate` alone
+`dedup.index_configured: false` and unavailable verdicts. `--calibrate` alone
 never opens memory, even if a `--db` argument is supplied. `--report` combines
 calibration and extraction and opens memory only for extraction.
 
@@ -201,6 +201,16 @@ Only equal content, scope and recorded extraction source (transcript hash and
 source span) suppress a proposal. Related or independently sourced claims
 remain proposals. Candidate retrieval stays bounded; judge selection, budgets,
 split restrictions and report fields retain their ordinary meaning.
+
+Each candidate read carries its complete nodes and read errors. Its status is
+`success` (including an empty result), `partial`, or `unavailable`; availability
+means the read completed, not that memory contains no matching entry. Full
+nodes remain usable in a partial read, while previews cannot establish identity.
+Dedup reports count partial and unavailable reads separately from confirmed
+exact matches. `unique` means no match among the bounded successful candidates.
+Extraction decisions retain `candidate_read` diagnostics when a fresh write
+proceeds. Candidate search never clears a saved UNKNOWN mutation or replaces
+the receiver's replay identity.
 
 Disposable checks run without a real corpus or external models:
 

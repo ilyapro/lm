@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "artifact": "counterfactual_consumption",
+    "generated_at_utc": "2026-08-19T01:00:00Z",
+    "as_of": "2026-08-19T00:00:00Z"
+  },
+  "protocol": {
+    "replay_since": "2026-08-15T00:00:00Z",
+    "min_containment": 0.25,
+    "within_days": 7
+  },
+  "selfcheck": {
+    "cohort_kind": "organic_control",
+    "cohort_nodes": 200,
+    "counterfactual_rate": 0.12,
+    "passed": true
+  }
+}

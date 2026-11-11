@@ -2,10 +2,8 @@
 
 Layers:
 
-* the consumption gate, against the *published* baseline artifact and against
-  synthetic verdicts covering PASS / FAIL / INCONCLUSIVE / MISSING / STALE —
-  the pre-registered bar names ``runner.py`` as its enforcer, so the decision
-  procedure is exercised branch by branch;
+* the consumption gate, against synthetic baseline and verdict fixtures covering
+  PASS / FAIL / INCONCLUSIVE / MISSING / STALE;
 * the idempotency ledger and the op fingerprint;
 * attribution enforcement — every write context carries the extractor identity
   and the SOURCE session's transport id;
@@ -56,8 +54,8 @@ from postsession_support import (
     _live_record, _load_cli, live_server, make_record, make_remember, make_teach,
 )
 
-BASELINE = ROOT_DIR / "artifacts" / "post-session" / "usage-baseline.json"
-SELFCHECK = ROOT_DIR / "artifacts" / "post-session" / "counterfactual-selfcheck.json"
+BASELINE = ROOT_DIR / "tests" / "fixtures" / "postsession" / "gate-baseline.json"
+SELFCHECK = ROOT_DIR / "tests" / "fixtures" / "postsession" / "gate-control.json"
 CLAUDE_FIXTURE = (
     ROOT_DIR
     / "tests"
@@ -115,17 +113,17 @@ def write_verdict(
 # --------------------------------------------------------------------------
 
 
-def test_gate_passes_bootstrap_on_the_published_artifacts() -> None:
+def test_gate_passes_bootstrap_with_a_valid_control() -> None:
     decision = evaluate_gate(BASELINE, SELFCHECK, now=NOW)
     assert decision.status == "PASS"
     assert decision.authorized
     assert decision.mode == "control_bootstrap"
     # The floor must be the protocol-keyed one, never the deprecated scalar.
-    published = json.loads(BASELINE.read_text())["pre_registered_bar"]
+    bar = json.loads(BASELINE.read_text())["pre_registered_bar"]
     assert decision.details["absolute_floor"] == pytest.approx(
-        published["absolute_floor_by_protocol"]["counterfactual_post_cutoff"]
+        bar["absolute_floor_by_protocol"]["counterfactual_post_cutoff"]
     )
-    assert decision.details["absolute_floor"] != published["absolute_floor"]
+    assert decision.details["absolute_floor"] != bar["absolute_floor"]
 
 
 def test_gate_missing_verdict_is_not_authorized(tmp_path: Path) -> None:

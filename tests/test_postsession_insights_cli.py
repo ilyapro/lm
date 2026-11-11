@@ -12,6 +12,7 @@ import sys
 import pytest
 
 from living_memory import health_audit
+from living_memory.postsession.client import ClientError, McpMemoryIndex
 from living_memory.postsession.dedup import Deduper, NodeSnapshot, StaticMemoryIndex
 from living_memory.postsession.judge import FakeJudge
 from living_memory.postsession.mining import mine
@@ -139,6 +140,42 @@ def test_helper_without_database_is_explicitly_unavailable(cli, monkeypatch):
         assert not verdict.available
         assert not verdict.duplicate
     assert connections == []
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_report_preserves_incomplete_mcp_read_and_usable_exact_match(cli, complete):
+    class Client:
+        def recall(self, *args, **kwargs):
+            full = {
+                "id": "complete", "content": FACT, "scope": SCOPE,
+                "context": {"source_transcript_sha256": SOURCE[0], "source_span": SOURCE[1]},
+            }
+            entries = [{"node": {**full, "id": "preview"}, "delivery": "snippet"}]
+            if complete:
+                entries.append({"node": full, "delivery": "full"})
+            return {"results": entries}
+
+        def lookup_nodes(self, *args, **kwargs):
+            raise ClientError("full candidate unavailable")
+
+    from living_memory.postsession.insights import extract_session
+
+    judge = FakeJudge([{
+        "verdict": "insight", "fact": FACT,
+        "why_durable": "rediscovering this costs a debugging cycle",
+        "identifiers": ["pyproject.toml", "src/app.py"], "evidence_locator": SOURCE[1],
+    }])
+    result = extract_session(_record(), judge, deduper=Deduper(McpMemoryIndex(Client())))
+    assert result.outcomes[0].dedup["errors"] == ["full lookup: full candidate unavailable"]
+    report = cli.build_report(
+        splits_read=["eval"], manifest=None, calibration=None, mining_report=None,
+        results=[result], judges=[judge], index_configured=True, elapsed_s=0, max_ops=10,
+    )
+    assert report["dedup"] == {
+        "index_configured": True, "unique": 0, "exact": int(complete),
+        "partial": int(complete), "unavailable": int(not complete), "within_run": 0,
+    }
+    assert report["extraction"]["proposed"] == int(not complete)
 
 
 @pytest.mark.parametrize("missing_parent", [False, True])

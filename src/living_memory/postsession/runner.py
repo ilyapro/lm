@@ -73,7 +73,7 @@ from .corrections import (
     DetectorConfig,
     detect_corrections,
 )
-from .dedup import CandidateObservation, DEFAULT_DEDUP, Deduper, NodeSnapshot, NullMemoryIndex
+from .dedup import DEFAULT_DEDUP, CandidateObservation, Deduper, NodeSnapshot, NullMemoryIndex
 from .evidence import proposed_attestations
 from .gate import DEFAULT_GATE, Gate
 from .insights import (
@@ -946,8 +946,8 @@ class ExtractionRunner:
                 results = found.get("results") or []
                 if results and results[0].get("scope"):
                     scope = results[0]["scope"]
-            except ClientError:
-                results = []
+            except ClientError as exc:
+                return "", CandidateObservation(errors=(f"original node lookup: {exc}"[:200],)).to_dict()
             if not results:
                 return "", CandidateObservation(errors=("original node unavailable",)).to_dict()
         index = McpMemoryIndex(self.client)

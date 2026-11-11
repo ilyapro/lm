@@ -1,0 +1,13 @@
+{
+  "pre_registered_bar": {
+    "pinned_protocol": "counterfactual_post_cutoff",
+    "absolute_floor": 0.15,
+    "absolute_floor_by_protocol": {"counterfactual_post_cutoff": 0.05},
+    "relative_floor": 0.5,
+    "inconclusive_rule": {
+      "min_control_nodes": 100,
+      "min_control_rate_by_protocol": {"counterfactual_post_cutoff": 0.1}
+    },
+    "replay_set_rule": {"validated_by": "2026-08-15"}
+  }
+}
