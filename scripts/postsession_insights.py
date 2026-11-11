@@ -454,7 +454,7 @@ def build_report(
     mining_report: dict[str, Any] | None,
     results: Sequence[SessionExtraction],
     judges: Sequence[Any],
-    dedup_available: bool,
+    index_configured: bool,
     elapsed_s: float,
     max_ops: int,
 ) -> dict[str, Any]:
@@ -495,13 +495,14 @@ def build_report(
                 DedupVerdict(
                     duplicate=bool((outcome.dedup or {}).get("duplicate")),
                     channel=str((outcome.dedup or {}).get("channel") or ""),
-                    available=bool((outcome.dedup or {}).get("available", True)),
+                    read_status=outcome.dedup["read_status"],
+                    errors=tuple(outcome.dedup["errors"]),
                 )
                 for result in results
                 for outcome in result.outcomes
                 if outcome.dedup
             ),
-            "index_available": dedup_available,
+            "index_configured": index_configured,
         }
         report["structural_checks"] = structural_checks(results)
         stats = [item for judge in judges for item in getattr(judge, "stats", ())]
@@ -638,7 +639,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     mining_report = None
     results: list[SessionExtraction] = []
     judges: list[Any] = []
-    dedup_available = False
 
     if do_calibrate:
         splits_read.extend(ALLOWED_SPLITS)
@@ -663,7 +663,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"extracting over {len(entries)} eval sessions", file=sys.stderr)
         try:
             with build_deduper(Path(args.db) if args.db else None) as deduper:
-                dedup_available = deduper.available
                 results, mining_report, judges = run_extraction(
                     entries,
                     judge_factory=lambda: build_judge(
@@ -689,7 +688,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         mining_report=mining_report,
         results=results,
         judges=judges,
-        dedup_available=dedup_available,
+        index_configured=bool(args.db),
         elapsed_s=time.monotonic() - started,
         max_ops=args.max_ops,
     )

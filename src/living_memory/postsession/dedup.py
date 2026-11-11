@@ -8,8 +8,8 @@ for the ordinary judge and write path.
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from .mining import hard_identifiers
@@ -34,6 +34,27 @@ class NodeSnapshot:
     scope: str | None = None
     created_at: str | None = None
     source_identity: SourceIdentity | None = None
+    context: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateObservation:
+    """One bounded read, retaining usable full candidates and read failures."""
+
+    nodes: tuple[NodeSnapshot, ...] = ()
+    errors: tuple[str, ...] = ()
+
+    @property
+    def status(self) -> str:
+        return ("partial" if self.nodes else "unavailable") if self.errors else "success"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "read_status": self.status,
+            "available": self.status == "success",
+            "checked": len(self.nodes),
+            "errors": list(self.errors),
+        }
 
 
 @runtime_checkable
@@ -42,8 +63,8 @@ class MemoryIndex(Protocol):
 
     def candidates(
         self, content: str, *, scope: str | None = None, limit: int = 20
-    ) -> Sequence[NodeSnapshot]:
-        """Lexically plausible neighbours of ``content``."""
+    ) -> CandidateObservation:
+        """Plausible neighbours and the outcome of this bounded read."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +85,12 @@ class DedupVerdict:
     channel: str = ""
     node_id: str = ""
     checked: int = 0
-    available: bool = True
+    read_status: str = "success"
+    errors: tuple[str, ...] = ()
+
+    @property
+    def available(self) -> bool:
+        return self.read_status == "success"
 
     @property
     def code(self) -> str:
@@ -83,6 +109,8 @@ class DedupVerdict:
             "node_id": self.node_id,
             "checked": self.checked,
             "available": self.available,
+            "read_status": self.read_status,
+            "errors": list(self.errors),
         }
 
 
@@ -92,20 +120,12 @@ class DedupVerdict:
 
 
 class NullMemoryIndex:
-    """No memory to compare against.
-
-    Used when the eval run has no database path. It returns nothing rather
-    than pretending everything is new, and :class:`Deduper` marks the verdict
-    ``available=False`` so the report can say "dedup did not run" instead of
-    silently reporting zero duplicates.
-    """
-
-    available = False
+    """No memory configured for comparison."""
 
     def candidates(
         self, content: str, *, scope: str | None = None, limit: int = 20
-    ) -> Sequence[NodeSnapshot]:
-        return ()
+    ) -> CandidateObservation:
+        return CandidateObservation(errors=("memory index not configured",))
 
 
 class StaticMemoryIndex:
@@ -116,14 +136,12 @@ class StaticMemoryIndex:
     proposal that finds its twin through SQLite finds it here.
     """
 
-    available = True
-
     def __init__(self, nodes: Iterable[NodeSnapshot]) -> None:
         self.nodes = list(nodes)
 
     def candidates(
         self, content: str, *, scope: str | None = None, limit: int = 20
-    ) -> Sequence[NodeSnapshot]:
+    ) -> CandidateObservation:
         wanted = set(hard_identifiers(content))
         scored: list[tuple[int, str, NodeSnapshot]] = []
         for node in self.nodes:
@@ -133,13 +151,11 @@ class StaticMemoryIndex:
             if overlap or not wanted:
                 scored.append((-overlap, node.node_id, node))
         scored.sort()
-        return [node for _, _, node in scored[:limit]]
+        return CandidateObservation(tuple(node for _, _, node in scored[:limit]))
 
 
 class StoreMemoryIndex:
     """Bounded FTS candidates from a caller-owned store; read errors propagate."""
-
-    available = True
 
     def __init__(self, store: Any, *, level: str = "trace") -> None:
         self.store = store
@@ -147,10 +163,10 @@ class StoreMemoryIndex:
 
     def candidates(
         self, content: str, *, scope: str | None = None, limit: int = 20
-    ) -> Sequence[NodeSnapshot]:
+    ) -> CandidateObservation:
         query = " ".join(hard_identifiers(content)[:8]) or content[:200]
         rows = self.store.search_content(query, level=self.level, scope=scope, limit=limit)
-        return [
+        return CandidateObservation(tuple(
             NodeSnapshot(
                 node_id=node.id,
                 content=node.content,
@@ -159,7 +175,7 @@ class StoreMemoryIndex:
                 source_identity=extraction_identity(node.context),
             )
             for node, _score in rows
-        ]
+        ))
 
 
 class Deduper:
@@ -172,10 +188,6 @@ class Deduper:
         self.config = config
         self._proposed: dict[tuple[str, str, SourceIdentity], str] = {}
         self._lock = threading.RLock()
-
-    @property
-    def available(self) -> bool:
-        return bool(getattr(self.index, "available", True))
 
     def reset(self) -> None:
         with self._lock:
@@ -201,27 +213,33 @@ class Deduper:
     def check(
         self, fact: str, *, scope: str, source_identity: SourceIdentity | None = None,
     ) -> DedupVerdict:
-        if not self.available:
-            return DedupVerdict(False, available=False)
         with self._lock:
-            neighbours = list(self.index.candidates(
+            observation = self.index.candidates(
                 fact, scope=scope, limit=self.config.candidate_limit,
-            ))
-        for node in neighbours:
+            )
+        details = {
+            "checked": len(observation.nodes), "read_status": observation.status,
+            "errors": observation.errors,
+        }
+        for node in observation.nodes:
             if (fact and node.content == fact and node.scope == scope
                     and source_identity is not None and node.source_identity == source_identity):
-                return DedupVerdict(True, "exact", node_id=node.node_id, checked=len(neighbours))
-        return DedupVerdict(False, checked=len(neighbours))
+                return DedupVerdict(True, "exact", node_id=node.node_id, **details)
+        return DedupVerdict(False, **details)
 
 
 def dedup_breakdown(verdicts: Iterable[DedupVerdict]) -> dict[str, Any]:
-    """Per-channel counts for the run report."""
+    """Match counts and incomplete reads; an exact match can also be partial.
 
-    counts = {"unique": 0, "exact": 0, "within_run": 0, "unavailable": 0}
+    ``unique`` means no exact match in a successful bounded read, not absence.
+    """
+
+    counts = {"unique": 0, "exact": 0, "within_run": 0, "unavailable": 0, "partial": 0}
     for verdict in verdicts:
-        channel = (
-            "unavailable" if not verdict.available
-            else verdict.channel if verdict.duplicate else "unique"
-        )
-        counts[channel] = counts.get(channel, 0) + 1
+        if not verdict.available:
+            counts[verdict.read_status] += 1
+        if verdict.duplicate:
+            counts[verdict.channel] += 1
+        elif verdict.available:
+            counts["unique"] += 1
     return counts

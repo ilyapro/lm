@@ -33,7 +33,7 @@ from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
-from .dedup import NodeSnapshot, extraction_identity
+from .dedup import CandidateObservation, NodeSnapshot, extraction_identity
 
 __all__ = [
     "DEFAULT_ENV_FILE",
@@ -257,40 +257,39 @@ class McpMemoryIndex:
     ``candidates`` returns *full* node contents: the delivery diet may snippet
     or stub a recall result, so anything not delivered ``full`` is re-fetched
     through ``memory_lookup``. An unavailable full result cannot establish
-    content identity and is omitted. Diagnostic
+    content identity and is reported as a read failure. Diagnostic
     recall supplies timestamps and context; a content_ref also requests the
     original metadata, since compacted source spans cannot identify an extraction.
 
     Callers pass the scope the write is aimed at so the server searches that
-    scope plus global, matching a reader recalling in that project. The last
-    fetch's node contexts are kept on :attr:`last_contexts` so the runner can
+    scope plus global, matching a reader recalling in that project. Full
+    contexts stay with the observation's nodes so the runner can
     additionally recognise its own earlier extraction of the same span
     (transcript sha + source span match) without a second round trip.
     """
 
-    available = True
-
     def __init__(self, client: LiveMemoryClient, *, max_results: int = 8) -> None:
         self.client = client
         self.max_results = max_results
-        self.last_contexts: dict[str, dict[str, Any]] = {}
 
     def candidates(
         self, content: str, *, scope: str | None = None, limit: int = 20
-    ) -> Sequence[NodeSnapshot]:
+    ) -> CandidateObservation:
         wanted = min(limit, self.max_results)
         try:
             delivered = self.client.recall(
                 content[:600], scope=scope, max_results=wanted, view="full",
             )
-        except ClientError:
-            return ()
+        except ClientError as exc:
+            return CandidateObservation(errors=(f"recall: {exc}"[:200],))
         entries = delivered.get("results") or []
         by_id: dict[str, dict[str, Any]] = {}
         needs_full: list[str] = []
+        errors: list[str] = []
         for entry in entries:
             node = _entry_node(entry)
             if node is None:
+                errors.append("recall result has no diagnostic node identity")
                 continue
             node_id = str(node["id"])
             by_id[node_id] = node
@@ -300,24 +299,27 @@ class McpMemoryIndex:
         if needs_full:
             try:
                 fetched = self.client.lookup_nodes(needs_full, view="full")
-            except ClientError:
-                fetched = {}
+            except ClientError as exc:
+                errors.append(f"full lookup: {exc}"[:200])
+                fetched = {"results": []}
             for node_id in needs_full:
                 by_id.pop(node_id, None)
             for full in fetched.get("results") or []:
-                if isinstance(full, dict) and full.get("id"):
+                if (isinstance(full, dict) and full.get("id") in needs_full
+                        and full.get("content")):
                     by_id[str(full["id"])] = full
-        self.last_contexts = {
-            node_id: dict(node.get("context") or {}) for node_id, node in by_id.items()
-        }
-        return [
+            missing = [node_id for node_id in needs_full if node_id not in by_id]
+            if missing and not errors:
+                errors.append("full lookup unavailable for: " + ", ".join(missing))
+        return CandidateObservation(tuple(
             NodeSnapshot(
                 node_id=node_id,
                 content=str(node.get("content") or ""),
                 scope=node.get("scope"),
                 created_at=node.get("created_at"),
                 source_identity=extraction_identity(node.get("context") or {}),
+                context=dict(node.get("context") or {}),
             )
             for node_id, node in by_id.items()
             if node.get("content")
-        ]
+        ), tuple(errors))

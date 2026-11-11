@@ -73,7 +73,7 @@ from .corrections import (
     DetectorConfig,
     detect_corrections,
 )
-from .dedup import DEFAULT_DEDUP, Deduper, NodeSnapshot, NullMemoryIndex
+from .dedup import CandidateObservation, DEFAULT_DEDUP, Deduper, NodeSnapshot, NullMemoryIndex
 from .evidence import proposed_attestations
 from .gate import DEFAULT_GATE, Gate
 from .insights import (
@@ -764,6 +764,7 @@ class OpDecision:
     node_id: str = ""
     supersedes_edge_id: str = ""
     attestation: dict[str, Any] = field(default_factory=dict)
+    candidate_read: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -783,6 +784,8 @@ class OpDecision:
             data["supersedes_edge_id"] = self.supersedes_edge_id
         if self.attestation:
             data["attestation"] = dict(self.attestation)
+        if self.candidate_read:
+            data["candidate_read"] = dict(self.candidate_read)
         return data
 
 
@@ -946,25 +949,28 @@ class ExtractionRunner:
             except ClientError:
                 results = []
             if not results:
-                return "", {"checked": 0, "error": "original node unavailable"}
+                return "", CandidateObservation(errors=("original node unavailable",)).to_dict()
         index = McpMemoryIndex(self.client)
         try:
             if node_id:
                 nodes = self.client.lookup_nodes([node_id], view="full").get("results") or []
-                snapshots = [
+                snapshots = tuple(
                     NodeSnapshot(node_id=n["id"], content=n.get("content", ""),
-                                 scope=n.get("scope"))
+                                 scope=n.get("scope"), context=n.get("context") or {})
                     for n in nodes if n.get("id") == node_id
-                ]
-                index.last_contexts = {n["id"]: n.get("context") or {} for n in nodes}
+                )
+                observation = CandidateObservation(
+                    snapshots, () if snapshots else ("requested node unavailable",),
+                )
             else:
-                snapshots = index.candidates(fact, scope=scope, limit=8)
+                observation = index.candidates(fact, scope=scope, limit=8)
         except ClientError as exc:
-            return "", {"checked": 0, "error": str(exc)[:200]}
-        for snapshot in snapshots:
+            return "", CandidateObservation(errors=(str(exc)[:200],)).to_dict()
+        detail = observation.to_dict()
+        for snapshot in observation.nodes:
             if snapshot.scope != scope or snapshot.content != fact:
                 continue
-            context = index.last_contexts.get(snapshot.node_id, {})
+            context = snapshot.context
             same_transcript = op.provenance.transcript_sha256 and (
                 context.get("source_transcript_sha256") == op.provenance.transcript_sha256
                 or context.get("transcript_sha256") == op.provenance.transcript_sha256
@@ -987,9 +993,9 @@ class ExtractionRunner:
             if same_transcript and same_operation:
                 return "lm_prior_extraction", {
                     "node_id": snapshot.node_id,
-                    "checked": len(snapshots),
+                    **detail,
                 }
-        return "", {"checked": len(snapshots)}
+        return "", detail
 
     def _execute(self, op: ProposedOp, decision: OpDecision) -> None:
         """One write through the live MCP interface. Client must be present."""
@@ -1067,6 +1073,7 @@ class ExtractionRunner:
         if op.kind == "attest" and not self.config.dry_run:
             return False  # Receiver replay uses the exact saved event/evidence.
         reason, detail = self._lm_duplicate(op, node_id=node_id)
+        decision.candidate_read = detail
         if reason:
             decision.status, decision.reason = "reconciled", reason
             decision.node_id = detail["node_id"]
@@ -1225,6 +1232,7 @@ class ExtractionRunner:
                         continue
 
                 reason, detail = self._lm_duplicate(op)
+                decision.candidate_read = detail
                 if reason:
                     decision.status = "skipped"
                     decision.reason = reason
