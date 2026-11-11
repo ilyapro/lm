@@ -165,7 +165,7 @@ def test_report_preserves_incomplete_mcp_read_and_usable_exact_match(cli, comple
         "why_durable": "rediscovering this costs a debugging cycle",
         "identifiers": ["pyproject.toml", "src/app.py"], "evidence_locator": SOURCE[1],
     }])
-    result = extract_session(_record(), judge, deduper=Deduper(McpMemoryIndex(Client())))
+    result = extract_session(_record(), judge=judge, deduper=Deduper(McpMemoryIndex(Client())))
     assert result.outcomes[0].dedup["errors"] == ["full lookup: full candidate unavailable"]
     report = cli.build_report(
         splits_read=["eval"], manifest=None, calibration=None, mining_report=None,
