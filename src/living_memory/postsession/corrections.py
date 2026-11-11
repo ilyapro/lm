@@ -670,6 +670,8 @@ def candidates(
 ) -> list[Candidate]:
     """Rank the (node, observation) pairings worth a judge call.
 
+    Keep the first delivery in session order with usable content and a qualifying
+    later observation for each node. Its content and recall stay paired.
     Ordering is by best pair score descending, then by recall/node ordinal, so
     the per-session cap spends the budget on the most plausible contradictions
     and the result is deterministic for a given record.
@@ -702,7 +704,6 @@ def candidates(
             if node.node_id in seen:
                 _bump(tally, "duplicate_delivery")
                 continue
-            seen.add(node.node_id)
             content = (node.content or "").strip()
             if len(content) < config.min_node_content_chars:
                 _bump(tally, "node_content_missing")
@@ -729,6 +730,7 @@ def candidates(
             if not scored:
                 _bump(tally, "no_related_observation")
                 continue
+            seen.add(node.node_id)
             scored.sort(key=lambda entry: (-entry[1], entry[0].record_index))
             built.append(
                 Candidate(
