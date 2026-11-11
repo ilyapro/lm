@@ -251,7 +251,10 @@ def repeat_delivery(
         record_index=index,
         position=index / record.record_count,
         recall_event_id=f"recall-event-{index}",
-        delivered=[replace(node, content=content) for node in record.recalls[0].delivered],
+        delivered=[
+            replace(node, content=content, delivery="full")
+            for node in record.recalls[0].delivered
+        ],
     )
     record.recalls.append(recall)
     return recall
@@ -618,6 +621,7 @@ def test_detector_cannot_borrow_content_from_a_delivery_after_evidence(content, 
 def test_detector_keeps_first_usable_delivery_and_judges_identity_once():
     record = make_record(nodes=((NODE_ID, ""),))
     selected = repeat_delivery(record, 5)
+    selected.delivered[0].delivery = "snippet"
     repeat_delivery(record, 7, NODE_CONTENT + " The scan probes 3953 transcripts.")
     built = C.candidates(record)
     assert len(built) == 1
