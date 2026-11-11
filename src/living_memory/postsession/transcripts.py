@@ -142,27 +142,14 @@ def iter_text_lines(path: str | os.PathLike[str]) -> Iterator[tuple[int, str]]:
             yield index, line.rstrip("\n")
 
 
-def _find_member(buffer: str, key: str, start: int = 0) -> int:
-    """Index just past ``"key"`` used as an object member name, else ``-1``."""
-
-    token = f'"{key}"'
-    at = buffer.find(token, start)
-    while at != -1:
-        before = buffer.rfind("{", 0, at), buffer.rfind(",", 0, at)
-        cut = max(before)
-        if cut != -1 and not buffer[cut + 1 : at].strip():
-            return at + len(token)
-        at = buffer.find(token, at + 1)
-    return -1
-
-
 class _JsonMemberScanner:
     """Incremental reader for one member of a top-level JSON object.
 
     Deepseek stores a whole session as a single JSON document, so line
     streaming is meaningless there. This walks the file in chunks and hands
-    back array elements one at a time, dropping consumed prefix as it goes, so
-    peak memory is one chunk plus the largest single element.
+    back array elements one at a time. Unselected values are skipped without
+    buffering them; peak memory is one chunk plus the selected value or largest
+    selected array element.
     """
 
     def __init__(self, path: str | os.PathLike[str], *, chunk_size: int = 1 << 16):
@@ -193,32 +180,80 @@ class _JsonMemberScanner:
         return True
 
     def _seek_member(self, key: str) -> bool:
-        while True:
-            at = _find_member(self._buffer, key)
-            if at != -1:
-                self._buffer = self._buffer[at:]
-                return True
-            # Keep a small overlap so a member name split across chunks is found.
-            if len(self._buffer) > self._chunk_size:
-                self._buffer = self._buffer[-64:]
-            if not self._fill():
-                return False
+        """Stop just after a top-level key's colon, discarding skipped chunks.
 
-    def _skip_to_value(self) -> bool:
+        Only member boundaries are scanned here; JSONDecoder still decodes
+        selected values. Nesting and string escapes survive chunk boundaries.
+        A key longer than any JSON spelling of ``key`` cannot match, so even
+        foreign member names need no unbounded buffer.
+        """
+
+        state = "root"
+        depth = 0
+        quoted = escaped = matched = False
+        name: list[str] | None = None
+        # One Unicode character can be escaped as a pair of UTF-16 surrogates.
+        name_limit = 12 * len(key) + 2
         while True:
-            stripped = self._buffer.lstrip()
-            if stripped.startswith(":"):
-                self._buffer = stripped[1:]
-                return True
-            if stripped and not stripped.startswith(":"):
-                return False
+            for at, char in enumerate(self._buffer):
+                if quoted:
+                    if state == "key" and name is not None:
+                        name.append(char)
+                        if len(name) > name_limit:
+                            name = None
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        quoted = False
+                        if state == "key":
+                            try:
+                                matched = name is not None and self._decoder.decode("".join(name)) == key
+                            except ValueError:
+                                return False
+                            state = "colon"
+                    continue
+                if state == "root":
+                    if char.isspace():
+                        continue
+                    if char != "{":
+                        return False
+                    state = "key"
+                elif state == "key":
+                    if char.isspace():
+                        continue
+                    if char != '"':
+                        return False
+                    quoted = True
+                    name = ['"']
+                elif state == "colon":
+                    if char.isspace():
+                        continue
+                    if char != ":":
+                        return False
+                    if matched:
+                        self._buffer = self._buffer[at + 1 :]
+                        return True
+                    state = "value"
+                elif char == '"':
+                    quoted = True
+                elif char in "[{":
+                    depth += 1
+                elif char in "]}":
+                    if depth == 0:
+                        return False
+                    depth -= 1
+                elif char == "," and depth == 0:
+                    state = "key"
+            self._buffer = ""
             if not self._fill():
                 return False
 
     def value(self, key: str) -> Any:
         """Decode the member ``key`` as a single value (used for small objects)."""
 
-        if not self._seek_member(key) or not self._skip_to_value():
+        if not self._seek_member(key):
             return None
         while True:
             candidate = self._buffer.lstrip()
@@ -232,7 +267,7 @@ class _JsonMemberScanner:
     def array(self, key: str) -> Iterator[Any]:
         """Yield elements of the array member ``key`` one at a time."""
 
-        if not self._seek_member(key) or not self._skip_to_value():
+        if not self._seek_member(key):
             return
         while True:
             self._buffer = self._buffer.lstrip()
