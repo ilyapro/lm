@@ -208,12 +208,15 @@ def test_postsession_keeps_original_span_sha_and_created_at(
 
     client = InProcessClient()
     index = McpMemoryIndex(client)
-    snapshots = index.candidates("Quartz extraction source", scope=context["scope"])
+    observation = index.candidates("Quartz extraction source", scope=context["scope"])
+    assert observation.status == "success"
+    snapshots = observation.nodes
     assert len(snapshots) == 1
     assert snapshots[0].content == node.content
     assert snapshots[0].created_at == node.created_at
-    assert index.last_contexts[node.id]["source_span"] == context["source_span"]
-    assert index.last_contexts[node.id]["source_transcript_sha256"] == context["source_transcript_sha256"]
+    assert snapshots[0].context["source_span"] == context["source_span"]
+    assert snapshots[0].context["source_transcript_sha256"] == context["source_transcript_sha256"]
+    assert snapshots[0].source_identity == (context["source_transcript_sha256"], context["source_span"])
     assert client.calls == ["memory_recall", "memory_lookup"]
 
 

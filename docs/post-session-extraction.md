@@ -215,6 +215,16 @@ count, concrete identifiers and grounding in the mined evidence. Correction
 proposals still require a judged contradiction, the recorded target and a later
 verbatim observation; only an exact unchanged claim is rejected as unchanged.
 
+Candidate reads report `success` (including an empty result), `partial`, or
+`unavailable`, with read errors and the number of complete candidates checked.
+Full candidates remain usable in a partial read; previews cannot establish
+identity. Dedup reports count incomplete reads separately from exact matches;
+`unique` means only that a successful bounded search found no exact match.
+`index_configured` records configuration, not read availability. Extraction
+decisions retain `candidate_read` diagnostics even when an independent fresh
+write proceeds. Neither a successful empty search nor a failed read clears
+an UNKNOWN mutation.
+
 **Budget flags.** `--max-ops-per-session` (default 3), `--max-total-ops` (24),
 `--max-attests-per-session` (8), `--max-total-attests` (64),
 `--max-judge-calls` (12 per session), `--max-bytes` (12 MB per transcript).

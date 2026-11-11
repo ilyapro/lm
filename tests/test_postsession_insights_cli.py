@@ -247,7 +247,7 @@ def test_cli_fake_judge_preserves_dedup_and_report(cli, tmp_path, memory, monkey
     assert cli.main(_args(tmp_path, *flags)) == 0
     report_text = (tmp_path / "report.json").read_text()
     report = json.loads(report_text)
-    assert report["dedup"]["index_available"] is with_db
+    assert report["dedup"]["index_configured"] is with_db
     assert report["dedup"]["exact" if with_db else "unavailable"] == 1
     assert report["extraction"]["proposed"] == (0 if with_db else 1)
     assert report["judge"]["calls"] == 1

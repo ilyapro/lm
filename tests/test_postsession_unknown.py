@@ -65,6 +65,37 @@ def test_unknown_does_not_block_an_independent_operation(tmp_path):
     assert len(Ledger(tmp_path)) == 2
 
 
+@pytest.mark.parametrize("read_failure", ["recall", "lookup", "empty"])
+def test_candidate_read_cannot_reopen_unknown_or_block_fresh_write(tmp_path, read_failure):
+    class CandidateRecipient(Recipient):
+        def recall(self, *args, **kwargs):
+            if read_failure == "recall":
+                raise ClientError("candidate recall failed")
+            if read_failure == "empty":
+                return {"results": []}
+            return {"results": [{
+                "node": {"id": "preview", "content": "Unverified preview."},
+                "delivery": "snippet",
+            }]}
+
+        def lookup_nodes(self, *args, **kwargs):
+            raise ClientError("candidate full lookup failed")
+
+    client = CandidateRecipient(ClientError("mutation reply lost"))
+    record = make_record()
+    op = make_remember(record, "First effect is unknown.")
+    assert run(tmp_path, client, record, [op])[0].status == "unknown"
+    client.failure = None
+    decisions = run(tmp_path, client, record, [op, make_remember(record, "Independent fact.")])
+    assert [d.status for d in decisions] == ["unknown", "written"]
+    assert [d.candidate_read["read_status"] for d in decisions] == [
+        "success" if read_failure == "empty" else "unavailable",
+    ] * 2
+    assert all(bool(d.candidate_read["errors"]) is (read_failure != "empty") for d in decisions)
+    assert len(client.effects) == 2
+    assert {e["state"] for e in Ledger(tmp_path).entries()} == {"unknown", "applied"}
+
+
 def test_known_pre_dispatch_failure_resumes_the_saved_request(tmp_path):
     record = make_record()
     client = Recipient(PreDispatchError("connection not established"))

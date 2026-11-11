@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 
 from living_memory.postsession.client import ClientError, LiveMemoryClient, McpMemoryIndex
+from living_memory.postsession.dedup import Deduper, dedup_breakdown
 from living_memory.postsession.judge import FakeJudge
 from living_memory.postsession.runner import (
     DEFAULT_BOOTSTRAP_ALLOWANCE,
@@ -35,6 +36,7 @@ from living_memory.postsession.runner import (
     EXIT_USAGE,
     REQUIRED_CONTEXT_KEYS,
     ExtractionRunner,
+    GateDecision,
     Ledger,
     LedgerError,
     OpDecision,
@@ -690,8 +692,136 @@ def test_mcp_index_never_compares_a_preview_when_full_lookup_is_unavailable() ->
             raise ClientError("unavailable")
 
     index = McpMemoryIndex(Client())
-    assert index.candidates("same preview", scope="project:demo") == []
-    assert index.last_contexts == {}
+    observation = index.candidates("same preview", scope="project:demo")
+    assert observation.nodes == ()
+    assert observation.to_dict() == {
+        "read_status": "unavailable", "available": False, "checked": 0,
+        "errors": ["full lookup: unavailable"],
+    }
+
+
+class CandidateClient:
+    url = "synthetic://candidate-reader"
+
+    def __init__(self, nodes=(), *, full=(), recall_error=False, lookup_error=False):
+        self.nodes = nodes
+        self.full = full
+        self.recall_error = recall_error
+        self.lookup_error = lookup_error
+        self.effects = []
+        self.calls = []
+
+    def recall(self, *args, **kwargs):
+        assert kwargs["view"] == "full"
+        self.calls.append("recall")
+        if self.recall_error:
+            raise ClientError("recall unavailable")
+        return {"results": self.nodes}
+
+    def lookup_nodes(self, node_ids, **kwargs):
+        assert kwargs["view"] == "full"
+        self.calls.append("lookup")
+        if self.lookup_error:
+            raise ClientError("lookup unavailable")
+        return {"results": self.full}
+
+    def remember(self, content, context):
+        self.effects.append((content, context))
+        return {"node": {"id": "fresh"}}
+
+
+@pytest.mark.parametrize("mode, status, checked, duplicate", [
+    ("recall_failure", "unavailable", 0, False),
+    ("lookup_failure", "unavailable", 0, False),
+    ("lookup_missing", "unavailable", 0, False),
+    ("lookup_empty_content", "unavailable", 0, False),
+    ("partial", "partial", 1, False),
+    ("partial_match", "partial", 1, True),
+    ("partial_lookup", "partial", 1, True),
+    ("empty", "success", 0, False),
+    ("exact", "success", 1, True),
+])
+def test_candidate_outcome_reaches_dedup_and_extraction_report(
+    tmp_path, mode, status, checked, duplicate,
+):
+    record = make_record()
+    op = make_remember(record, "src/app.py restart requires approval.")
+    full = {
+        "id": "complete", "scope": "project:demo", "content": op.payload["content"],
+        "context": {
+            "source_transcript_sha256": record.transcript_sha256,
+            "source_span": op.provenance.source_span,
+        },
+    }
+    preview = {"node": {**full, "id": "preview"}, "delivery": "snippet"}
+    client = CandidateClient()
+    if mode == "recall_failure":
+        client.recall_error = True
+    elif mode != "empty":
+        client.nodes = [preview]
+        if mode in {"partial", "partial_match", "exact"}:
+            node = full if mode != "partial" else {**full, "content": "Independent claim."}
+            client.nodes.append({"node": node, "delivery": "full"})
+        if mode == "exact":
+            client.nodes = client.nodes[1:]
+        elif mode == "partial_lookup":
+            client.nodes.append({"node": full, "delivery": "snippet"})
+            client.full = [full]
+        elif mode == "lookup_empty_content":
+            client.full = [{**preview["node"], "content": ""}]
+        else:
+            client.lookup_error = mode != "lookup_missing"
+
+    index = McpMemoryIndex(client)
+    observation = index.candidates(op.payload["content"], scope="project:demo")
+    assert (observation.status, len(observation.nodes)) == (status, checked)
+    assert bool(observation.errors) is (status != "success")
+    assert all(node.node_id != "preview" for node in observation.nodes)
+    verdict = Deduper(index).check(
+        op.payload["content"], scope="project:demo",
+        source_identity=(record.transcript_sha256, op.provenance.source_span),
+    )
+    assert (verdict.duplicate, verdict.available) == (duplicate, status == "success")
+    assert {key: verdict.to_dict()[key] for key in observation.to_dict()} == observation.to_dict()
+    counts = dedup_breakdown([verdict])
+    assert counts["unique"] == int(status == "success" and not duplicate)
+    assert counts["exact"] == int(duplicate)
+    assert counts["unavailable"] == int(status == "unavailable")
+    assert counts["partial"] == int(status == "partial")
+
+    runner = ExtractionRunner(
+        config=RunnerConfig(dry_run=False), ledger=Ledger(tmp_path), client=client,
+    )
+    proposals = [SessionProposals(record=record, ops=[op])]
+    decisions = runner.decide_and_execute(proposals)
+    assert decisions[0].status == ("skipped" if duplicate else "written")
+    assert len(client.effects) == int(not duplicate)
+    report = build_report(
+        mode="write", splits_read=[], gate_decision=GateDecision("PASS"),
+        proposals=proposals, decisions=decisions, config=runner.config, ledger=runner.ledger,
+    )
+    diagnostic = report["decisions"][0]["candidate_read"]
+    assert {key: diagnostic[key] for key in observation.to_dict()} == observation.to_dict()
+
+
+@pytest.mark.parametrize("failure", ["recall_error", "lookup_error"])
+def test_candidate_observations_do_not_keep_a_previous_success_or_failure(failure):
+    node = {
+        "id": "full", "content": "src/app.py requires approval.", "scope": "project:demo",
+        "context": {"source_transcript_sha256": "ab" * 32, "source_span": "source:3"},
+    }
+    client = CandidateClient([{"node": node, "delivery": "snippet"}], full=[node])
+    index = McpMemoryIndex(client)
+    deduper = Deduper(index)
+    for fails in (False, True, False):
+        setattr(client, failure, fails)
+        verdict = deduper.check(
+            node["content"], scope=node["scope"], source_identity=("ab" * 32, "source:3"),
+        )
+        assert verdict.duplicate is (not fails)
+        assert verdict.available is (not fails)
+        assert verdict.checked == int(not fails)
+        assert bool(verdict.errors) is fails
 
 
 @pytest.mark.parametrize("corrected_node_id, expected", [(None, ""), ("other", ""), ("original", "lm_prior_extraction")])
