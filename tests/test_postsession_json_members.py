@@ -62,7 +62,8 @@ def consumers(path: Path):
     ref = next(transcripts.DeepseekAdapter().discover(
         transcripts.Roots(deepseek_sessions=path.parent),
     ))
-    return transcripts.load_transcript(ref), corpus.probe(ref)
+    entry = corpus.probe(ref)
+    return transcripts.load_transcript(ref, sha256=entry.sha256), entry
 
 
 @pytest.mark.parametrize("order", list(permutations(document())))

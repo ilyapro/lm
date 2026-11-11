@@ -209,7 +209,10 @@ class _JsonMemberScanner:
                         quoted = False
                         if state == "key":
                             try:
-                                matched = name is not None and self._decoder.decode("".join(name)) == key
+                                matched = (
+                                    name is not None
+                                    and self._decoder.decode("".join(name)) == key
+                                )
                             except ValueError:
                                 return False
                             state = "colon"
