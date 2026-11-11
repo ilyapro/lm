@@ -1,6 +1,7 @@
 """Synthetic correction selection through the detector and default runner."""
 
 from dataclasses import replace
+from typing import Any
 
 import pytest
 
