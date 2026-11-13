@@ -69,19 +69,128 @@ def save_status(**updates: object) -> None:
         os.close(descriptor)
 
 
+def exception_chain(error: BaseException) -> list[dict]:
+    """Only local types and bounded integers, never exception text or args."""
+    chain, seen = [], set()
+    while error is not None and id(error) not in seen and len(chain) < 8:
+        seen.add(id(error))
+        name = type(error).__name__
+        item = {"class": name if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,63}", name) else "unclassified"}
+        for key, low, high in (("errno", -(2**31), 2**31 - 1), ("status", 100, 599)):
+            value = getattr(error, key, None)
+            if type(value) is int and low <= value <= high:
+                item[key] = value
+        chain.append(item)
+        error = error.__cause__ if error.__cause__ is not None else error.__context__
+    return chain
+
+
+def checked_chain(value: object) -> list[dict]:
+    if not isinstance(value, list) or len(value) > 8:
+        return []
+    for item in value:
+        if (not isinstance(item, dict) or not {"class"} <= item.keys() <= {"class", "errno", "status"}
+                or not isinstance(item["class"], str)
+                or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,63}", item["class"])):
+            return []
+        for key, low, high in (("errno", -(2**31), 2**31 - 1), ("status", 100, 599)):
+            if key in item and (type(item[key]) is not int or not low <= item[key] <= high):
+                return []
+    return value
+
+
+class S3Failure(RuntimeError):
+    def __init__(self, operation: str, chain: object, exit_code: int | None = None):
+        chain = checked_chain(chain)
+        self.transport = {"operation": operation, "chain": chain}
+        if exit_code is not None:
+            self.transport["exit_code"] = exit_code
+        detail = " -> ".join(
+            item["class"] + "".join(f" {key}={item[key]}" for key in ("errno", "status") if key in item)
+            for item in chain) or "cause unavailable"
+        code = f"exit {exit_code}; " if exit_code is not None else ""
+        super().__init__(f"s3cmd {operation} failed ({code}{detail})")
+
+
+def error_record(error: Exception) -> dict:
+    record = {"at": now(), "message": str(error)}
+    if isinstance(error, S3Failure):
+        record["transport"] = error.transport
+    return record
+
+
+def transport(descriptor: str, *args: str) -> None:
+    """Execute installed s3cmd, observing errors before its CLI discards them."""
+    from contextlib import redirect_stderr
+    import logging
+    import runpy
+
+    # This is a dedicated subprocess. No library diagnostics reach its stderr.
+    logging.disable(logging.CRITICAL)
+    with os.fdopen(int(descriptor), "w", closefd=False) as diagnostic, open(os.devnull, "w") as quiet:
+        def record(chain):
+            diagnostic.seek(0)
+            diagnostic.truncate()
+            diagnostic.write(json.dumps(chain))
+            diagnostic.flush()
+
+        with redirect_stderr(quiet):
+            try:
+                from S3.S3 import S3
+
+                depth = 0
+
+                def observe(method):
+                    def call(*positional, **keywords):
+                        nonlocal depth
+                        if depth == 0:
+                            record([])
+                        depth += 1
+                        try:
+                            return method(*positional, **keywords)
+                        except Exception as error:
+                            if depth == 1:
+                                record(exception_chain(error))
+                            raise
+                        finally:
+                            depth -= 1
+                    return call
+
+                for name in ("send_request", "send_file", "send_file_multipart", "recv_file"):
+                    setattr(S3, name, observe(getattr(S3, name)))
+                sys.argv = ["/usr/bin/s3cmd", *args]
+                runpy.run_path("/usr/bin/s3cmd", run_name="__main__")
+            except SystemExit as error:
+                # CLI handlers can also retain a cause on their SystemExit.
+                if error.code and error.__context__ is not None:
+                    record(exception_chain(error.__context__))
+                raise
+            except Exception as error:
+                record(exception_chain(error))
+                raise SystemExit(1) from None
+
+
 def s3(*args: str) -> str:
-    try:
-        result = subprocess.run(
-            ["/usr/bin/s3cmd", "-c", str(CONFIG), "--no-progress", "--max-retries=0", *args],
-            capture_output=True, text=True,
-            timeout=TRANSFER_TIMEOUT if args[0] in {"get", "put", "cp"} else READ_TIMEOUT,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        # Never include commands, config, request details or credentials in status.
-        raise RuntimeError(f"s3cmd {args[0]} transport failed ({type(error).__name__})") from None
-    if result.returncode:
-        raise RuntimeError(f"s3cmd {args[0]} failed (exit {result.returncode})")
-    return result.stdout
+    with tempfile.TemporaryFile(mode="w+") as diagnostic:
+        try:
+            result = subprocess.run(
+                ["/usr/bin/python3", "-c",
+                 "import runpy, sys; runpy.run_path(sys.argv[1])['transport'](*sys.argv[2:])",
+                 str(Path(__file__).resolve()), str(diagnostic.fileno()),
+                 "-c", str(CONFIG), "--no-progress", "--max-retries=0", *args],
+                pass_fds=(diagnostic.fileno(),), capture_output=True, text=True,
+                timeout=TRANSFER_TIMEOUT if args[0] in {"get", "put", "cp"} else READ_TIMEOUT,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise S3Failure(args[0], exception_chain(error)) from None
+        if result.returncode:
+            diagnostic.seek(0)
+            try:
+                chain = json.loads(diagnostic.read(4096))
+            except ValueError:
+                chain = []
+            raise S3Failure(args[0], chain, result.returncode)
+        return result.stdout
 
 
 def mutate(transaction: dict, phase: str, *args: str, completed: str | None = None) -> None:
@@ -173,10 +282,7 @@ def metadata(config_path: str, target: str, content: str) -> None:
             fields.update({"File size": str(int(length)), "MD5 sum": md5.lower()})
         result = {"fields": fields}
     except Exception as error:
-        # The process returns only locally generated operation/class/status.
-        status = getattr(error, "status", None)
-        detail = f", HTTP {status}" if isinstance(status, int) else ""
-        result = {"error": f"S3 metadata {operation} failed ({type(error).__name__}{detail})"}
+        result = {"error": operation, "chain": exception_chain(error)}
     print(json.dumps(result))
 
 
@@ -191,13 +297,16 @@ def info(target: str, *, content: bool = True) -> dict[str, str]:
             capture_output=True, text=True, timeout=READ_TIMEOUT,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        raise RuntimeError(f"S3 metadata transport failed ({type(error).__name__})") from None
+        raise S3Failure("metadata", exception_chain(error)) from None
     if result.returncode:
-        raise RuntimeError(f"S3 metadata failed (exit {result.returncode})")
+        raise S3Failure("metadata", [], result.returncode)
     try:
         response = json.loads(result.stdout)
         if "error" in response:
-            raise RuntimeError(response["error"])
+            operation = response["error"]
+            if operation not in {"config", "versioning", "acl", "policy", "head"}:
+                raise ValueError
+            raise S3Failure(f"metadata {operation}", response.get("chain"))
         return response["fields"]
     except (ValueError, KeyError, TypeError):
         raise RuntimeError("invalid S3 metadata response") from None
@@ -284,7 +393,7 @@ def finish(transaction: dict) -> int:
     except (OSError, RuntimeError) as error:
         unknown = bool(transaction.get("pending"))
         save_status(cleanup="unknown" if unknown else "unverified",
-                    cleanup_error={"at": now(), "message": str(error)})
+                    cleanup_error=error_record(error))
         print(f"Living Memory backup {transaction['phase']}; cleanup unverified: {error}", file=sys.stderr)
         return 3 if unknown else (2 if transaction["phase"] == "verified" else 1)
     save_status(transaction=None, cleanup="complete", cleanup_error=None)
@@ -397,7 +506,7 @@ def run() -> int:
         before = preflight()
     except (OSError, RuntimeError) as error:
         save_status(result="failed", last_attempt=now(), cleanup="unverified",
-                    last_error={"at": now(), "message": str(error)})
+                    last_error=error_record(error))
         raise
     transaction = {
         "phase": "preparing", "pending": None,
@@ -424,7 +533,7 @@ def run() -> int:
             verify_download(FINAL, work, "final", expected)
         except (OSError, sqlite3.Error, RuntimeError, EOFError) as error:
             save_status(result="unknown" if transaction["pending"] else "failed",
-                        last_error={"at": now(), "message": str(error)}, cleanup="unverified")
+                        last_error=error_record(error), cleanup="unverified")
             print(f"Living Memory backup not verified: {error}", file=sys.stderr)
             if transaction["pending"]:
                 return 3  # Never rollback or clean up an unconfirmed mutation.
@@ -437,7 +546,7 @@ def run() -> int:
                 except (OSError, sqlite3.Error, RuntimeError, EOFError) as restore_error:
                     save_status(result="unknown" if transaction["pending"] else "failed",
                                 rollback="unknown" if transaction["pending"] else "failed",
-                                rollback_error={"at": now(), "message": str(restore_error)}, cleanup="unverified")
+                                rollback_error=error_record(restore_error), cleanup="unverified")
                     print("Living Memory rollback unverified; safety retained", file=sys.stderr)
                     return 3 if transaction["pending"] else 1
             else:
@@ -479,7 +588,7 @@ def main() -> int:
                 pending = bool((status.get("transaction") or {}).get("pending"))
                 if status.get("result") == "verified":
                     save_status(cleanup="unknown" if pending else "unverified",
-                                cleanup_error={"at": now(), "message": str(error)})
+                                cleanup_error=error_record(error))
                     return 3 if pending else 2
                 if pending:
                     return 3
