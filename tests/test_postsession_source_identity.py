@@ -90,7 +90,7 @@ class ReceiptRecipient(Recipient):
 
 def test_same_span_retries_and_changed_context_keep_one_effect_per_source(tmp_path):
     record, client = make_record(), ReceiptRecipient()
-    first, second = proposal(record), proposal(record, 30)
+    first, second = proposal(record, source_span="context noise"), proposal(record, 30)
     decisions = execute(tmp_path, client, record, [first, first, second])
     assert [d.status for d in decisions] == ["written", "skipped", "written"]
     assert decisions[0].node_id == decisions[1].node_id != decisions[2].node_id
@@ -104,7 +104,8 @@ def test_same_span_retries_and_changed_context_keep_one_effect_per_source(tmp_pa
 
 
 @pytest.mark.parametrize("legacy", [False, True])
-def test_ready_retry_uses_exact_saved_request_despite_context_noise(tmp_path, legacy):
+@pytest.mark.parametrize("route", ["proposal", "reconcile"])
+def test_ready_retry_uses_exact_saved_request_despite_context_noise(tmp_path, legacy, route):
     record, client = make_record(), ReceiptRecipient()
     old = saved_operation(record)
     if legacy:
@@ -115,13 +116,31 @@ def test_ready_retry_uses_exact_saved_request_despite_context_noise(tmp_path, le
         client.failure = None
     saved = Ledger(tmp_path).entries()[0]
     noisy = proposal(record, task="new task", note="new attribution", source_span="context noise")
-    result = execute(tmp_path, client, record, [noisy])[0]
+    result = (execute(tmp_path, client, record, [noisy]) if route == "proposal"
+              else runner(tmp_path, client, task="new task").reconcile())[0]
     assert result.status == "written"
     assert result.fingerprint == saved["fingerprint"]
     assert client.effects == [(FACT, saved["operation"]["payload"]["context"])]
     assert Ledger(tmp_path).entries()[0]["operation"] == saved["operation"]
     assert execute(tmp_path, client, record, [noisy])[0].reason == "ledger_duplicate"
     assert len(client.effects) == len(Ledger(tmp_path)) == 1
+
+
+def test_legacy_ready_recipient_match_completes_the_saved_key(tmp_path):
+    record, client = make_record(), ReceiptRecipient()
+    old = saved_operation(record)
+    client.remember(FACT, old.payload["context"])
+    saved = save_legacy(tmp_path, old, client, "ready")
+    client.recall = lambda *args, **kwargs: {
+        "results": [{"node": client.lookup_nodes(["node-1"], view="full")["results"][0], "delivery": "full"}],
+    }
+    decision = execute(tmp_path, client, record, [proposal(record)])[0]
+    assert (decision.reason, decision.node_id) == ("lm_prior_extraction", "node-1")
+    assert decision.fingerprint == saved["fingerprint"]
+    assert len(client.effects) == len(Ledger(tmp_path)) == 1
+    retained = Ledger(tmp_path).entries()[0]
+    assert retained["state"] == "applied"
+    assert retained["operation"] == saved["operation"]
 
 
 @pytest.mark.parametrize("state", ["applied", "ready", "unknown"])
@@ -242,8 +261,10 @@ def test_native_recipient_retains_both_sources_and_restart_never_repeats(live_se
     decisions = execute(tmp_path, client, record, ops)
     assert [d.status for d in decisions] == ["written", "written"]
     assert len({d.node_id for d in decisions}) == 2
+    calls = list(client.calls)
     for task in ("restart", "different task"):
         assert [d.reason for d in execute(tmp_path, client, record, ops, task=task)] == ["ledger_duplicate"] * 2
+    assert client.calls == calls
     with sqlite3.connect(live_server["db"]) as db:
         rows = db.execute(
             "SELECT content, json_extract(context, '$.source_span') FROM nodes "
