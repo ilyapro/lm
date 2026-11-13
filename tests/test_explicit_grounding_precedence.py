@@ -1,15 +1,19 @@
 """Accepted query feedback outranks lexical overlap for its own delivery."""
 
+import asyncio
 import sqlite3
 
+from fastmcp import Client
 import pytest
 
 from living_memory import feedback
 from living_memory.irrelevance import list_query_irrelevance
+from test_derived_read_preparation import runtime
 from test_explicit_feedback import (
     AMBIENT, BODIES, CONSUMING_TRACE, OTHER_INDEX, QUERY, SCOPE, UNRELATED_TRACE,
     USED_INDEX, _clean_env, _ledger, _marks, _recall, _remember, _seed, _stamp,
 )
+from test_recall_query_preparation import CONTENT, SCOPE as NATIVE_SCOPE, call, recall
 
 
 REJECTED_QUOTE = (
@@ -144,6 +148,74 @@ def test_registered_attestation_obeys_same_precedence_and_keeps_receipt(recalled
     assert store.get_node(target).usefulness_score == before
     if policy == "credit":
         assert negative(store, target)["weight"] == 0.5
+
+
+def test_latest_accepted_mark_controls_new_evidence_without_rewriting_receipts(recalled):
+    mcp, store, ids, event = recalled
+    target = ids[USED_INDEX]
+    _remember(mcp, UNRELATED_TRACE, irrelevant=[target])
+    # Conflicting, dropped marks cannot revise accepted feedback.
+    dropped = _remember(mcp, UNRELATED_TRACE, used=[target], irrelevant=[target])
+    assert dropped["feedback_marks"]["accepted"] == 0
+    original = mcp.tools["memory_attest"](event, [REJECTED_QUOTE])
+    assert original["grounded_node_ids"] == []
+    _remember(mcp, UNRELATED_TRACE, used=[target])
+    assert store.irrelevant_marked_node_ids(event) == set()
+    assert mcp.tools["memory_attest"](event, [REJECTED_QUOTE]) == dict(original, replay=True)
+    confirmed = mcp.tools["memory_attest"](event, [CONSUMING_TRACE])
+    assert confirmed["grounded_node_ids"] == [target]
+    _remember(mcp, UNRELATED_TRACE, irrelevant=[target])
+    assert store.irrelevant_marked_node_ids(event) == {target}
+    before = store.get_node(target).usefulness_score
+    rejected = mcp.tools["memory_attest"](event, [REJECTED_QUOTE + " Still unrelated."])
+    assert rejected["grounded_node_ids"] == []
+    assert store.get_node(target).usefulness_score == before
+
+
+@pytest.mark.parametrize("lookup_first", [False, True])
+def test_real_mcp_reconnect_preserves_negative_even_after_lookup_credit(runtime, lookup_first):
+    r = runtime
+    context = {"scope": NATIVE_SCOPE, "session_id": "caller", "task": "query-feedback"}
+
+    async def scenario():
+        async with Client(r.mcp) as first:
+            prior = await recall(first, ambient_context=context)
+            if lookup_first:
+                await call(first, "memory_lookup", node_id=r.node.id)
+        with r.guard:
+            before = r.store.get_node(r.node.id).usefulness_score
+        async with Client(r.mcp) as second:
+            response = await call(
+                second, "memory_remember", content=f'"{CONTENT}" was irrelevant to the question.',
+                context=context, irrelevant=[r.node.id],
+            )
+        assert response["feedback_marks"]["accepted"] == 1
+        with r.guard:
+            event = r.store.get_recall_event(prior["recall_event_id"])
+            assert event.feedback_trace_id == response["node"]["id"]
+            assert r.store.get_node(r.node.id).usefulness_score == before
+            row = negative(r.store, r.node.id)
+            assert (row["weight"], row["cancels"]) == (0.5, 0)
+            assert r.store.credited_node_ids(event.id) == ({r.node.id} if lookup_first else set())
+
+    asyncio.run(scenario())
+
+
+def test_attestation_precedence_read_failure_leaves_no_receipt(recalled, monkeypatch):
+    mcp, store, ids, event = recalled
+    _remember(mcp, UNRELATED_TRACE, irrelevant=[ids[USED_INDEX]])
+    with sqlite3.connect(store.db_path) as reader:
+        before = list(reader.iterdump())
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("required feedback failure")
+
+    monkeypatch.setattr(store, "irrelevant_marked_node_ids", fail)
+    with pytest.raises(RuntimeError, match="required feedback failure"):
+        mcp.tools["memory_attest"](event, [REJECTED_QUOTE])
+    with sqlite3.connect(store.db_path) as reader:
+        assert list(reader.iterdump()) == before
+    assert not store.connection.in_transaction
 
 
 @pytest.mark.parametrize("failure", ["negative_write", "audit_write"])
