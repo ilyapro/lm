@@ -133,6 +133,7 @@ class FakeS3:
             assert "['transport']" in command[2]
             assert command[3] == str(SCRIPT.resolve())
             assert kwargs["pass_fds"] == (int(command[4]),)
+            self.diagnostic_fd = int(command[4])
             assert command[5:7] == ["-c", config]
             args = [arg for arg in command[7:] if not arg.startswith("--")]
             operation, *args = args
@@ -571,6 +572,129 @@ def test_arguments_never_start_a_backup(backup, monkeypatch):
     assert backup.invoke() == 1
     assert backup.calls == []
     assert not backup.state.exists()
+
+
+class TransferConnection:
+    """Allow real CLI HEAD/setup, then fail in the installed transfer method."""
+    def __init__(self, failure, calls):
+        self.failure, self.calls = failure, calls
+
+    def request(self, method, uri, body, headers):
+        assert "Authorization" in headers
+        self.calls.append(method)
+        if method == "HEAD":
+            self.response = RawResponse(headers={
+                "content-length": "1", "etag": '"0123456789abcdef0123456789abcdef"',
+                "last-modified": "Thu, 01 Jan 2026 00:00:00 GMT"})
+        elif method == "POST":
+            assert "uploads" in uri
+            self.response = RawResponse(data=b"<InitiateMultipartUploadResult><UploadId>FAKE-SECRET-ID</UploadId></InitiateMultipartUploadResult>")
+        else:
+            if isinstance(self.failure, Exception):
+                raise self.failure
+            self.response = self.failure
+
+    def putrequest(self, method, uri):
+        self.calls.append(method)
+        if isinstance(self.failure, Exception):
+            raise self.failure
+        self.response = self.failure
+
+    def putheader(self, *args):
+        pass
+
+    def endheaders(self):
+        pass
+
+    def send(self, data):
+        pass
+
+    def getresponse(self):
+        return self.response
+
+
+@pytest.mark.parametrize("operation", ["put", "multipart-put", "get", "ls"])
+@pytest.mark.parametrize("failure,tail", [
+    (TimeoutError(110, "FAKE SECRET https://signed.invalid/?token=secret"), {"class": "TimeoutError", "errno": 110}),
+    (ConnectionResetError(104, "FAKE SECRET Authorization: credential"), {"class": "ConnectionResetError", "errno": 104}),
+    (raw_error(403, "AccessDenied"), {"class": "S3Error", "status": 403}),
+])
+def test_installed_transport_cause_reaches_status(backup, operation, failure, tail, capsys):
+    previous = seed_success(backup)
+    verb = "put" if operation == "multipart-put" else operation
+    calls = []
+    backup.cli = lambda op, args: op == verb
+    backup.connection = lambda host: SimpleNamespace(path=None, c=TransferConnection(failure, calls))
+    config = backup.home / ".config/living-memory/s3cmd-backup.conf"
+    with config.open("a") as stream:
+        stream.write("use_http_expect = False\n")
+    if operation == "multipart-put":
+        # Incompressible disposable rows select the installed multipart path.
+        with sqlite3.connect(backup.database) as connection:
+            connection.execute("CREATE TABLE padding (value BLOB)")
+            connection.execute("INSERT INTO padding VALUES (?)", (os.urandom(6 * 1024 * 1024),))
+        with config.open("a") as stream:
+            stream.write("multipart_chunk_size_mb = 5\n")
+    assert backup.invoke() == (3 if verb == "put" else 1)
+    status = backup.status()
+    diagnostic = status["last_error"]["transport"]
+    assert diagnostic["operation"] == verb
+    assert diagnostic["chain"][-1] == tail
+    if isinstance(failure, Exception):
+        root = {"put": "S3UploadError", "get": "S3DownloadError", "ls": "S3RequestError"}[verb]
+        assert diagnostic["chain"] == [{"class": root}, tail]
+        assert diagnostic["exit_code"] == (75 if verb == "ls" else 2)
+    assert calls.count({"put": "PUT", "get": "GET", "ls": "GET"}[verb]) == 1
+    assert calls.count("POST") == (1 if operation == "multipart-put" else 0)
+    assert backup.objects[FINAL] == backup.old
+    assert status["last_success"] == previous["last_success"]
+    if verb == "put":
+        assert status["transaction"]["pending"]["operation"] == "put"
+        assert backup.objects[status["transaction"]["safety"]] == backup.old
+        saved_calls, saved_objects = list(backup.calls), dict(backup.objects)
+        assert backup.invoke() == 3
+        assert backup.calls == saved_calls
+        assert backup.objects == saved_objects
+        assert backup.status()["last_error"] == status["last_error"]
+    report = json.dumps(status["last_error"])
+    output = str(capsys.readouterr())
+    for secret in ("FAKE SECRET", "FAKE-SECRET-ID", "signed.invalid", "Authorization", "credential", "s3://", str(config)):
+        assert secret not in report + output
+
+
+@pytest.mark.parametrize("diagnostic", ["", "FAKE SECRET", '{"message":"FAKE SECRET"}',
+                                        '[{"class":"TimeoutError","errno":"FAKE SECRET"}]'])
+def test_unclassified_exit_never_invents_a_cause(backup, diagnostic, capsys):
+    def failed(operation, args):
+        if operation == "put":
+            # The parent accepts neither raw CLI output nor an invalid envelope.
+            os.write(backup.diagnostic_fd, diagnostic.encode())
+            return subprocess.CompletedProcess([], 2, "FAKE SECRET", "FAKE SECRET")
+
+    backup.hook = failed
+    assert backup.invoke() == 3
+    error = backup.status()["last_error"]
+    assert error["transport"] == {"operation": "put", "exit_code": 2, "chain": []}
+    assert "cause unavailable" in error["message"]
+    assert "Timeout" not in error["message"]
+    assert "FAKE SECRET" not in json.dumps(error) + str(capsys.readouterr())
+    calls = list(backup.calls)
+    assert backup.invoke() == 3
+    assert backup.calls == calls
+
+
+def test_exception_chain_is_bounded_and_uses_only_safe_fields(backup):
+    namespace = runpy.run_path(str(SCRIPT))
+    errors = [RuntimeError("FAKE SECRET") for _ in range(12)]
+    for parent, child in zip(errors, errors[1:]):
+        parent.__context__ = child
+    assert len(namespace["exception_chain"](errors[0])) == 8
+    error = OSError(110, "FAKE SECRET", "FAKE SECRET file")
+    error.status = True
+    error.__context__ = error
+    assert namespace["exception_chain"](error) == [{"class": "TimeoutError", "errno": 110}]
+    error.__cause__ = ConnectionError("FAKE SECRET")
+    assert namespace["exception_chain"](error)[-1] == {"class": "ConnectionError"}
 
 
 @pytest.mark.parametrize("failure", ["metadata", "bytes", "acl"])
