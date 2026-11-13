@@ -44,6 +44,8 @@ _LOG = logging.getLogger(__name__)
 # query-relative irrelevance; grounded consumption or explicit ``used`` can
 # cancel that row even if lookup claimed the numeric credit first. Provenance
 # and event closure follow the consuming trace independently.
+# Under explicit policy ``credit``, accepted event-specific irrelevance takes
+# precedence over inferred consumption; a later explicit ``used`` can revise it.
 RECALL_CREDIT_POLICIES: tuple[str, ...] = ("grounded", "grounded_negative", "all")
 DEFAULT_RECALL_CREDIT_POLICY = "grounded"
 
@@ -435,6 +437,18 @@ class _ObservedGrounding:
         )
 
 
+def explicit_irrelevant_node_ids(store: MemoryStore, event_id: str) -> set[str]:
+    """Current explicit negatives that inferred consumption must respect.
+
+    The existing audit owns resolved event/node identity and mark order.
+    Audit/off policies leave inferred credit untouched. Read failures propagate
+    inside the consumer's required transaction, never authorizing reinforcement.
+    """
+    if _explicit_feedback_policy() != "credit":
+        return set()
+    return store.irrelevant_marked_node_ids(event_id)
+
+
 def apply_pending_recall_feedback(
     store: MemoryStore,
     trace: Node,
@@ -497,6 +511,7 @@ def apply_pending_recall_feedback(
         # only carry the results *its own* query earned.
         event_grounded: list[str] = []
         event_confirmed: list[str] = []
+        irrelevant = explicit_irrelevant_node_ids(store, event.id) if reinforce_results else set()
         # Pairs already credited under any basis (a same-session lookup, an
         # explicit ``used`` mark). Read once per event, and only where it can
         # matter: under ``grounded_negative`` an ungrounded-but-credited
@@ -535,7 +550,7 @@ def apply_pending_recall_feedback(
             if node.level == "trace" and node_id not in source_traces:
                 source_traces.append(node_id)
 
-            if reinforce_results:
+            if reinforce_results and node_id not in irrelevant:
                 verdict = verdicts.get(node_id)
                 content_grounded = verdict is not None and verdict.grounded
                 if content_grounded:

@@ -227,6 +227,22 @@ that event's accepted irrelevant ids, deduplicated and in mark order. An
 irrelevant mark must never lower a node's global `usefulness_score`. It
 means "not for this query", not "wrong". "Wrong" is `memory_teach`.
 
+Under `credit`, inferred consumption respects the latest accepted mark for each
+event/node in the existing audit. An `irrelevant` result earns no implicit
+numeric credit, query-anchor reinforcement or cancellation, even when closing
+prose quotes it. It is also exempt from implicit negative global feedback.
+This applies to remember and new post-session attestations; attestations retain
+measured containment but report the rejected result as ungrounded. Recorded
+attestation receipts remain immutable on replay.
+
+A later accepted `used` mark revises that pair's explicit feedback. A separate
+recall event can independently ground the same node and cancel its query-relative
+demotion. Other events, queries and nodes keep their own evidence; irrelevance
+is not a global veto. `audit` and `off` leave inferred consumption unchanged.
+An optional negative-anchor write failure does not erase an accepted audit mark.
+Failure to read the authoritative marks rolls back the required consumption,
+like other required feedback reads.
+
 ## Delivery history and knowledge relations
 
 Compatible closing writes preserve all shown results in `recalled_nodes`,

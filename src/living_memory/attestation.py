@@ -83,7 +83,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any
 import hashlib
@@ -418,7 +418,12 @@ def _resolve_attestation(
             continue
         resolved.append((rank, dict(result), node))
 
-    return event, None, trace_node, _grade(items, resolved)
+    irrelevant = feedback.explicit_irrelevant_node_ids(store, event.id)
+    graded = [
+        replace(entry, grounded=False) if entry.node_id in irrelevant else entry
+        for entry in _grade(items, resolved)
+    ]
+    return event, None, trace_node, graded
 
 
 def _apply_attestation(

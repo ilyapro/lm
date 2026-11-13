@@ -3025,12 +3025,19 @@ class MemoryStore:
             )
 
     def irrelevant_marked_node_ids(self, recall_event_id: str) -> set[str]:
-        """Nodes an accepted ``irrelevant`` mark names for one recall event."""
+        """Nodes whose latest accepted mark for this event is ``irrelevant``."""
 
         rows = self._conn.execute(
             f"""
-            SELECT DISTINCT node_id FROM {RECALL_FEEDBACK_MARKS_TABLE}
-            WHERE recall_event_id = ? AND mark = 'irrelevant' AND accepted = 1
+            SELECT DISTINCT negative.node_id FROM {RECALL_FEEDBACK_MARKS_TABLE} AS negative
+            WHERE negative.recall_event_id = ? AND negative.mark = 'irrelevant'
+              AND negative.accepted = 1 AND NOT EXISTS (
+                  SELECT 1 FROM {RECALL_FEEDBACK_MARKS_TABLE} AS positive
+                  WHERE positive.recall_event_id = negative.recall_event_id
+                    AND positive.node_id = negative.node_id
+                    AND positive.mark = 'used' AND positive.accepted = 1
+                    AND positive.id > negative.id
+              )
             """,
             (str(recall_event_id),),
         ).fetchall()

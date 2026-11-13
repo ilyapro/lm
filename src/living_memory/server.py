@@ -1083,8 +1083,7 @@ def _register_tools(
                     )
                     rejected_alternatives = [rejected.id for rejected in rejected_nodes]
                 indexing = _index_written_traces(store, [node, *rejected_nodes], prepared)
-                # Explicit marks before implicit feedback, so an irrelevant mark
-                # carried on the closing call already keeps its edge out.
+                # Resolve explicit evidence before inferring consumption from prose.
                 marks = None
                 if has_explicit_marks(used, irrelevant):
                     marks = apply_explicit_marks(
