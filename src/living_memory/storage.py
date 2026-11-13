@@ -2835,39 +2835,6 @@ class MemoryStore:
         ).fetchall()
         return {str(row["node_id"]) for row in rows}
 
-    def recall_events_for_transport(
-        self,
-        transport_session_id: str | None,
-        *,
-        limit: int = 200,
-    ) -> list[RecallEvent]:
-        """The most recent recall events stamped with one transport session.
-
-        Newest first, served by ``idx_recall_events_transport_created``, and
-        bounded like :meth:`recall_delivery_history`: on a long-lived session only
-        the ``limit`` most recent events are candidates for the lookup-credit
-        join, and a ``None`` or empty transport id identifies no session and
-        returns nothing without touching the database. Closed events are
-        included on purpose — a lookup after the closure of an event whose
-        trace grounded nothing is still evidence that a delivered node was
-        used; the credit ledger, not ``feedback_applied``, decides whether
-        that evidence has already been spent.
-        """
-
-        if not transport_session_id or limit <= 0:
-            return []
-        rows = self._conn.execute(
-            """
-            SELECT *
-            FROM recall_events
-            WHERE transport_session_id = ?
-            ORDER BY created_at DESC, rowid DESC
-            LIMIT ?
-            """,
-            (str(transport_session_id), int(limit)),
-        ).fetchall()
-        return [_recall_event_from_row(row) for row in rows]
-
     def recall_deliveries(
         self,
         transport_session_id: str | None,

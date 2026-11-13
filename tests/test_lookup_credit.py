@@ -772,43 +772,6 @@ def test_claim_is_first_writer_wins_and_reads_back(tmp_path: Path) -> None:
             other.close()
 
 
-def test_recall_events_for_transport_is_newest_first_bounded_and_scoped_to_the_stamp(
-    tmp_path: Path,
-) -> None:
-    with MemoryStore(tmp_path / "transport.sqlite3") as store:
-        assert store.recall_events_for_transport(None) == []
-        assert store.recall_events_for_transport("") == []
-        ids = [
-            store.record_recall_event(
-                query=f"q{index}",
-                scope=SCOPE,
-                ambient_context={"transport_session_id": TRANSPORT},
-            ).id
-            for index in range(3)
-        ]
-        stranger = store.record_recall_event(
-            query="elsewhere", scope=SCOPE, ambient_context={"transport_session_id": OTHER_TRANSPORT}
-        ).id
-        unstamped = store.record_recall_event(query="nowhere", scope=SCOPE).id
-
-        listed = [event.id for event in store.recall_events_for_transport(TRANSPORT)]
-        assert listed == list(reversed(ids))
-        assert stranger not in listed and unstamped not in listed
-        assert [event.id for event in store.recall_events_for_transport(TRANSPORT, limit=1)] == [ids[-1]]
-        assert store.recall_events_for_transport(TRANSPORT, limit=0) == []
-        plan = " ".join(
-            str(row[3])
-            for row in store.connection.execute(
-                """
-                EXPLAIN QUERY PLAN SELECT * FROM recall_events
-                WHERE transport_session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?
-                """,
-                (TRANSPORT, 200),
-            )
-        )
-        assert "idx_recall_events_transport_created" in plan
-
-
 # ---------------------------------------------------------------------------
 # Additive ledger schema alongside the explicit derived task-index migration
 # ---------------------------------------------------------------------------
