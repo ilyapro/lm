@@ -512,6 +512,14 @@ class LedgerError(RuntimeError):
     """Operation state could not be read or durably saved. Do not dispatch."""
 
 
+def _written_nodes_total(entries: Iterable[Mapping[str, Any]]) -> int:
+    """Conservatively count possible writes towards the bootstrap bound."""
+    return sum(
+        entry["kind"] in ("remember", "teach") and entry["state"] != "ready"
+        for entry in entries
+    )
+
+
 class Ledger:
     """Durable operation state keyed by (transcript sha256, fingerprint).
 
@@ -622,10 +630,7 @@ class Ledger:
 
     def written_nodes_total(self) -> int:
         """Conservatively count possible writes towards the bootstrap bound."""
-        return sum(
-            entry["kind"] in ("remember", "teach") and entry["state"] != "ready"
-            for entry in self.entries()
-        )
+        return _written_nodes_total(self.entries())
 
     def begin(self, op: ProposedOp, recipient: str) -> tuple[bool, dict[str, Any]]:
         """Claim one operation durably, or return its existing admission state."""
@@ -1305,6 +1310,7 @@ def build_report(
     attest_decisions = [d for d in decisions if d.kind == "attest"]
     written = [d for d in decisions if d.status == "written"]
     judge_stats = [item for p in proposals for item in p.judge_stats]
+    ledger_entries = ledger.entries()
 
     report: dict[str, Any] = {
         "generator": "scripts/post_session_extract.py",
@@ -1378,11 +1384,11 @@ def build_report(
         },
         "ledger": {
             "path": str(ledger.path),
-            "entries": len(ledger),
-            "written_nodes_total": ledger.written_nodes_total(),
+            "entries": len(ledger_entries),
+            "written_nodes_total": _written_nodes_total(ledger_entries),
             "pending": [
                 {k: entry[k] for k in ("transcript_sha256", "fingerprint", "kind", "state")}
-                for entry in ledger.entries() if entry["state"] != "applied"
+                for entry in ledger_entries if entry["state"] != "applied"
             ],
         },
         "decisions": [d.to_dict() for d in decisions],
