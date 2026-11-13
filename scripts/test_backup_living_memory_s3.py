@@ -30,6 +30,7 @@ BUCKET = "s3://lm-private-backup-sfx"
 FINAL = BUCKET + "/global.sqlite3.gz"
 STAGING = BUCKET + "/.incoming.sqlite3.gz"
 NAMESPACE = "http://s3.amazonaws.com/doc/2006-03-01/"
+REAL_SUBPROCESS_RUN = subprocess.run
 
 
 class RawResponse:
@@ -696,6 +697,72 @@ def test_exception_chain_is_bounded_and_uses_only_safe_fields(backup):
     assert namespace["exception_chain"](error) == [{"class": "TimeoutError", "errno": 110}]
     error.__cause__ = ConnectionError("FAKE SECRET")
     assert namespace["exception_chain"](error)[-1] == {"class": "ConnectionError"}
+
+
+def test_diagnostic_descriptor_crosses_real_subprocess(backup, monkeypatch):
+    namespace = runpy.run_path(str(SCRIPT))
+
+    def isolated_child(command, **kwargs):
+        command = list(command)
+        command[2] = """
+import socket
+def forbidden(*args, **kwargs):
+    raise AssertionError('network forbidden')
+socket.socket = forbidden
+from S3.ConnMan import ConnMan
+def unavailable(host):
+    raise TimeoutError(110, 'FAKE SECRET https://signed.invalid Authorization: secret')
+ConnMan.get = unavailable
+""" + command[2]
+        result = REAL_SUBPROCESS_RUN(command, **kwargs, cwd=backup.home,
+                                     env={"HOME": str(backup.home), "LC_ALL": "C.UTF-8"})
+        assert "FAKE SECRET" not in result.stdout + result.stderr
+        assert result.stderr == ""
+        return result
+
+    monkeypatch.setattr(subprocess, "run", isolated_child)
+    with pytest.raises(namespace["S3Failure"]) as stopped:
+        namespace["s3"]("ls", BUCKET + "/")
+    assert stopped.value.transport == {
+        "operation": "ls", "exit_code": 75,
+        "chain": [{"class": "S3RequestError"}, {"class": "TimeoutError", "errno": 110}],
+    }
+
+
+@pytest.mark.parametrize("failure,chain", [
+    (subprocess.TimeoutExpired("FAKE SECRET command", 3600, output="FAKE SECRET", stderr="FAKE SECRET"),
+     [{"class": "TimeoutExpired"}]),
+    (OSError(2, "FAKE SECRET executable", "FAKE SECRET config"), [{"class": "FileNotFoundError", "errno": 2}]),
+])
+def test_subprocess_failure_has_its_own_typed_cause(backup, failure, chain, capsys):
+    def unavailable(operation, args):
+        if operation == "put":
+            raise failure
+
+    backup.hook = unavailable
+    assert backup.invoke() == 3
+    error = backup.status()["last_error"]
+    assert error["transport"] == {"operation": "put", "chain": chain}
+    assert "FAKE SECRET" not in json.dumps(error) + str(capsys.readouterr())
+
+
+@pytest.mark.parametrize("operation", ["put", "get", "ls"])
+def test_installed_http_503_preserves_only_available_cause(backup, operation, capsys):
+    calls = []
+    backup.cli = lambda op, args: op == operation
+    backup.connection = lambda host: SimpleNamespace(path=None, c=TransferConnection(raw_error(503, "ServiceUnavailable"), calls))
+    config = backup.home / ".config/living-memory/s3cmd-backup.conf"
+    with config.open("a") as stream:
+        stream.write("use_http_expect = False\n")
+    assert backup.invoke() == (3 if operation == "put" else 1)
+    error = backup.status()["last_error"]
+    # send_file constructs S3UploadError from text outside an except block;
+    # no underlying S3Error is present in that installed exception chain.
+    expected = [{"class": "S3UploadError"}] if operation == "put" else [{"class": "S3Error", "status": 503}]
+    assert error["transport"]["chain"] == expected
+    assert calls.count("PUT" if operation == "put" else "GET") == 1
+    assert "Timeout" not in error["message"]
+    assert "FAKE SECRET" not in json.dumps(error) + str(capsys.readouterr())
 
 
 @pytest.mark.parametrize("failure", ["metadata", "bytes", "acl"])
