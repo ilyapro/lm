@@ -323,7 +323,7 @@ def test_single_reduction_preserves_bytes_and_path_tiebreak(payload, budget, exp
 
 
 def test_source_marker_text_is_ordinary_payload_data():
-    source = "… [truncated, 999 chars omitted]"
+    source = "… [truncated, 999 chars omitted]" * 10
     bounded, truncated = bound_payload([source] * 2, max_bytes=100, min_field_chars=0)
     assert truncated
     for text in bounded:
@@ -355,8 +355,8 @@ def test_default_prompt_bounds_mixed_payload(payload_renders):
 
 
 def test_bounding_redacts_complete_values_before_cutting():
-    secret = "dummy-value-" * 100
-    payload = {"log": "API_TOKEN=" + secret, "notes": ["x" * 201] * 2}
+    dummy_secret = "dummy-value-" * 100
+    payload = {"log": "API_TOKEN=" + dummy_secret, "notes": ["x" * 201] * 2}
     built = build_prompt(
         "t", SCHEMA, payload,
         config=PromptConfig(max_payload_bytes=250, min_field_chars=20),
