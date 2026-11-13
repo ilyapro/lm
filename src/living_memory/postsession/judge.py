@@ -201,10 +201,10 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # NAME=value / NAME: value for token-ish names, quoted or bare.
     (
         re.compile(
-            r"\b([A-Za-z][A-Za-z0-9_]*?"
+            r"\b((?:[A-Za-z][A-Za-z0-9_]*?)?"
             r"(?:TOKEN|SECRET|PASSWORD|PASSWD|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY))"
-            r"(\s*[=:]\s*)"
-            r"(\"[^\"]*\"|'[^']*'|[^\s,;)\"']+)",
+            r"([\"']?\s*[=:]\s*)"
+            r"(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;)\"']+)",
             re.IGNORECASE,
         ),
         r"\1\2" + _REDACTED,
