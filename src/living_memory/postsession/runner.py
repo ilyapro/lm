@@ -491,9 +491,12 @@ def op_fingerprint(op: ProposedOp) -> str:
             "\x1f".join(item.strip() for item in items if item.strip()).encode("utf-8")
         ).hexdigest()
         try:  # keep byte-parity with the server's own ledger key when possible
-            from living_memory.attestation import canonical_evidence
+            from living_memory.attestation import EvidenceSeparatorError, canonical_evidence
 
             _, digest = canonical_evidence(items)
+        except EvidenceSeparatorError as exc:
+            # Retain saved operation identity without admitting rejected evidence.
+            digest = exc.evidence_sha256
         except Exception:  # noqa: BLE001 - unbounded evidence still fingerprints
             pass
         identity = {

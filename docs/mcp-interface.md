@@ -764,9 +764,14 @@ applied — an over-cap submission is rejected, never silently truncated:
 | `EVIDENCE_MAX_ITEM_CHARS` | 600 | characters per canonical item |
 | `EVIDENCE_MAX_TOTAL_CHARS` | 19200 | characters across all items |
 
-Items are canonicalized (CRLF normalized, trailing whitespace stripped, leading
-and trailing blank lines removed) and joined with `\x1e` to form
-`evidence_sha256`. `(recall_event_id, evidence_sha256)` is the idempotency key.
+Items are canonicalized (CRLF and CR normalized to LF, trailing whitespace
+stripped per line, leading and trailing blank lines removed). Empty canonical
+items are dropped. A canonical item containing U+001E (ASCII RECORD SEPARATOR)
+is rejected before grading or mutation. Accepted items are joined with `\x1e`
+and hashed as UTF-8 to form `evidence_sha256`.
+`(recall_event_id, evidence_sha256)` is the idempotency key. A saved receipt
+must also match the canonical item count and total character count to replay;
+a mismatch is rejected without changing the receipt or applying effects.
 
 Output:
 

@@ -200,6 +200,10 @@ from UNKNOWN is `memory_attest`: `--reconcile --write` resubmits the exact saved
 (event, evidence) identity and records the receiver's existing replay verdict.
 It does not create a second attestation or repeat credit. A received applied
 result remains applied even if connection cleanup or writing `--out` fails.
+Canonical evidence items cannot contain the reserved U+001E separator. The
+assembler reports that rejection without proposing the bundle. Saved operation
+fingerprints remain stable even for rejected evidence; a receiver rejection or
+an incompatible saved receipt leaves an existing UNKNOWN unresolved.
 
 The state directory contains private request content and evidence; new ledger
 files use owner-only permissions. Keep state and reports outside tracked source.

@@ -130,9 +130,8 @@ EVIDENCE_MAX_TOTAL_CHARS = 19200
 #: not be easier to earn than a same-session grounded consumption.
 ATTESTATION_MIN_CONTAINMENT = feedback.RECALL_CREDIT_MIN_CONTAINMENT
 
-#: Digest separator: ASCII RECORD SEPARATOR. Not a newline, because evidence
-#: items *contain* newlines and a newline join would let two different item
-#: splits hash the same.
+#: Digest separator: ASCII RECORD SEPARATOR, reserved between canonical items.
+#: Items may contain newlines, but must not contain this separator.
 EVIDENCE_SEPARATOR = "\x1e"
 
 
@@ -147,6 +146,18 @@ class AttestationError(ValueError):
     """
 
 
+class EvidenceSeparatorError(AttestationError):
+    """Rejected item framing; its digest only identifies saved client operations.
+
+    Keeping that identity lets the extraction ledger read unresolved requests.
+    It does not admit the evidence or establish any previous effect.
+    """
+
+    def __init__(self, index: int, digest: str) -> None:
+        super().__init__(f"evidence item {index} contains reserved separator U+001E")
+        self.evidence_sha256 = digest
+
+
 def canonical_evidence(items: Iterable[Any]) -> tuple[tuple[str, ...], str]:
     """Canonical evidence items plus their SHA-256 digest.
 
@@ -154,6 +165,8 @@ def canonical_evidence(items: Iterable[Any]) -> tuple[tuple[str, ...], str]:
     whitespace from each line, strip leading and trailing blank lines. Items
     that canonicalise to nothing are dropped — they carry no evidence, and
     keeping them would make the digest depend on invisible whitespace.
+    A canonical item containing the reserved separator U+001E is rejected;
+    accepted items are joined with that separator and hashed as UTF-8.
 
     Caps are enforced rather than applied: an over-cap submission raises
     :class:`AttestationError` naming the cap it broke. Truncating instead would
@@ -172,6 +185,7 @@ def canonical_evidence(items: Iterable[Any]) -> tuple[tuple[str, ...], str]:
             f"evidence carries {len(raw)} items, over EVIDENCE_MAX_ITEMS={EVIDENCE_MAX_ITEMS}"
         )
     canonical: list[str] = []
+    separator_index = None
     for index, item in enumerate(raw):
         text = _canonical_item(item)
         if not text:
@@ -181,6 +195,8 @@ def canonical_evidence(items: Iterable[Any]) -> tuple[tuple[str, ...], str]:
                 f"evidence item {index} is {len(text)} chars, over "
                 f"EVIDENCE_MAX_ITEM_CHARS={EVIDENCE_MAX_ITEM_CHARS}"
             )
+        if separator_index is None and EVIDENCE_SEPARATOR in text:
+            separator_index = index
         canonical.append(text)
     total = sum(len(text) for text in canonical)
     if total > EVIDENCE_MAX_TOTAL_CHARS:
@@ -191,6 +207,8 @@ def canonical_evidence(items: Iterable[Any]) -> tuple[tuple[str, ...], str]:
     digest = hashlib.sha256(
         EVIDENCE_SEPARATOR.join(canonical).encode("utf-8")
     ).hexdigest()
+    if separator_index is not None:
+        raise EvidenceSeparatorError(separator_index, digest)
     return tuple(canonical), digest
 
 
@@ -353,6 +371,20 @@ def attest_recall_usage(
     return result
 
 
+def _recorded_attestation(
+    store: MemoryStore, event_id: str, items: Sequence[str], digest: str,
+) -> RecallAttestation | None:
+    record = store.find_recall_attestation(event_id, digest)
+    if record is not None and (
+        record.evidence_items != len(items)
+        or record.evidence_chars != sum(map(len, items))
+    ):
+        raise AttestationError(
+            "recorded attestation has incompatible evidence item boundaries; receipt retained"
+        )
+    return record
+
+
 def _resolve_attestation(
     store: MemoryStore, recall_event_id: str, items: Sequence[str], digest: str,
     trace_id: str | None,
@@ -363,7 +395,7 @@ def _resolve_attestation(
     if event is None:
         raise AttestationError(f"unknown recall_event_id {str(recall_event_id)!r}")
 
-    recorded = store.find_recall_attestation(event.id, digest)
+    recorded = _recorded_attestation(store, event.id, items, digest)
     if recorded is not None:
         return event, recorded, None, []
 
@@ -418,7 +450,7 @@ def _apply_attestation(
     if claimed is None:
         # The unique key is the final credit guard. Replay only a recorded
         # verdict; a failed claim never authorizes applying its effects.
-        recorded = store.find_recall_attestation(event.id, digest)
+        recorded = _recorded_attestation(store, event.id, items, digest)
         if recorded is None:
             raise AttestationError("attestation ledger key could not be claimed")
         return _verdict(recorded, event, replay=True)

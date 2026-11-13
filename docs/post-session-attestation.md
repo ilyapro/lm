@@ -128,10 +128,13 @@ their individual containment and verdict in the ledger and share one anchor edge
 
 The `recall_attestations` table (schema v8) holds
 `UNIQUE(recall_event_id, evidence_sha256)`. `evidence_sha256` is SHA-256 over
-the **canonical** items joined with `\x1e` (ASCII RECORD SEPARATOR — not a
-newline, because items contain newlines and a newline join would let two
-different item splits hash the same). Canonicalization normalizes CRLF, strips
-trailing whitespace per line, and drops leading/trailing blank lines.
+the UTF-8 encoding of **canonical** items joined with `\x1e` (ASCII RECORD
+SEPARATOR). Canonicalization normalizes CRLF and CR to LF, strips trailing
+whitespace per line, removes leading/trailing blank lines and drops empty items.
+A canonical item containing U+001E is rejected before grading, ledger access
+or credit. The separator belongs only between items; newlines remain valid
+inside them. The extraction assembler uses the same canonical boundary and
+reports rejection as an attestation-stage error, without proposing that bundle.
 
 **What idempotency covers.** Re-running the extractor over the same transcript
 re-derives byte-identical evidence (`evidence.py` is deterministic by
@@ -158,10 +161,14 @@ grounding. Missing or decayed result nodes are skipped. Existing closure retains
 its first `feedback_trace_id`. Optional anchor preparation or write failure does
 not cancel otherwise valid numeric credit.
 
-Any existing ledger row is replayed conservatively, including an incomplete
-claim. `credited: false` alone does not prove that no earlier effects occurred;
-it never authorizes another credit. Replay reports the stored receipt without
-repairing or reapplying it.
+A saved ledger row must match the canonical item count and total character count
+before replay. A mismatch is rejected, leaving the row and all effects intact:
+the saved digest alone does not establish compatible item boundaries. Matching
+rows replay conservatively, including incomplete claims. `credited: false`
+alone does not prove that no earlier effects occurred; it never authorizes
+another credit. Replay reports the stored receipt without repairing or
+reapplying it. Rejected evidence and incompatible receipts do not resolve a
+client's UNKNOWN operation.
 
 **What it does not cover.** The key is over *bytes*, not over *meaning*:
 
