@@ -12,8 +12,9 @@ import pytest
 
 from living_memory import attestation
 from living_memory.postsession.evidence import assemble_evidence, proposed_attestations
+from living_memory.postsession.judge import canonical_json
 from living_memory.postsession.runner import (
-    ExtractionRunner, Ledger, RunnerConfig, canonical_json, op_fingerprint,
+    ExtractionRunner, Ledger, RunnerConfig, op_fingerprint,
 )
 from living_memory.postsession.session import (
     Evidence, FileMutation, ProposedOp, RecallInteraction, SessionRecord, SourceSpan, ToolCall,
@@ -162,6 +163,25 @@ def record(event_id="synthetic-event"):
     session.recalls.append(RecallInteraction(ordinal=0, query="", span=span,
                                              recall_event_id=event_id))
     return session, span
+
+
+@pytest.mark.parametrize(("items", "cap"), [
+    ([JOINED] + [""] * 64, "EVIDENCE_MAX_ITEMS"),
+    ([JOINED, "x" * 601], "EVIDENCE_MAX_ITEM_CHARS"),
+    ([JOINED] + ["y" * 600] * 32, "EVIDENCE_MAX_TOTAL_CHARS"),
+])
+def test_over_cap_fingerprint_remains_stable_with_reserved_separator(items, cap):
+    session, span = record()
+    op = ProposedOp.for_session("attest", {
+        "recall_event_id": "synthetic-event", "evidence": items,
+    }, session, span, [Evidence("synthetic command", span.locator())])
+    with pytest.raises(attestation.AttestationError, match=cap):
+        attestation.canonical_evidence(items)
+    fallback = hashlib.sha256("\x1f".join(item.strip() for item in items if item.strip()).encode()).hexdigest()
+    expected = hashlib.sha256(canonical_json({
+        "kind": "attest", "recall_event_id": "synthetic-event", "evidence_sha256": fallback,
+    }, indent=None).encode()).hexdigest()
+    assert op_fingerprint(op) == expected
 
 
 @pytest.mark.parametrize("source", ["command", "diff", "file"])

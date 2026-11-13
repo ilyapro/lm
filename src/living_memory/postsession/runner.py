@@ -486,13 +486,13 @@ def op_fingerprint(op: ProposedOp) -> str:
             else canonical_json(correction, indent=None),
         }
     elif op.kind == "attest":
+        from living_memory.attestation import EvidenceSeparatorError, canonical_evidence
+
         items = [str(item) for item in payload.get("evidence") or []]
         digest = hashlib.sha256(
             "\x1f".join(item.strip() for item in items if item.strip()).encode("utf-8")
         ).hexdigest()
         try:  # keep byte-parity with the server's own ledger key when possible
-            from living_memory.attestation import EvidenceSeparatorError, canonical_evidence
-
             _, digest = canonical_evidence(items)
         except EvidenceSeparatorError as exc:
             # Retain saved operation identity without admitting rejected evidence.
