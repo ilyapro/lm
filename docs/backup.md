@@ -91,8 +91,36 @@ with a confirmed response and the corresponding checkpoint. Transport errors,
 timeouts and crashes can leave an applied effect with no confirmed response.
 They do not trigger automatic rollback, deletion or replay. s3cmd retries are
 disabled; reads have a 120-second limit and transfers/copies a 3600-second limit.
-Error reports omit s3cmd request output and credentials. Metadata errors report
-only the operation, exception class and HTTP status when available.
+
+Transport failures add `transport` to the existing `last_error`, `cleanup_error`
+or `rollback_error` record. The human-readable `message` includes the same safe
+cause. `transport.operation` identifies the command (or `metadata` check),
+`exit_code` is present when the child exited, and `chain` contains at most eight
+exception entries, outermost first. Each entry contains only a local `class`
+(at most 64 ASCII identifier characters), optional signed 32-bit integer `errno`
+and optional integer HTTP `status` (100–599). For example:
+
+```json
+{"operation":"put","exit_code":2,"chain":[{"class":"S3UploadError"},{"class":"TimeoutError","errno":110}]}
+```
+
+The installed s3cmd CLI runs inside the existing bounded subprocess. Observers
+on its request/upload/multipart/download methods retain the escaping exception
+chain before CLI error handling discards it. Signing, redirects and transfer
+decisions stay in s3cmd. A separate private descriptor carries only this typed
+data; raw stderr, exception messages/arguments, URIs, headers, bodies,
+configuration and credentials are never included in the diagnostic. The parent
+validates its shape and bounds before recording it.
+
+An empty `chain` and `cause unavailable` mean no valid diagnostic was received;
+exit 2 alone never establishes a timeout. A root class alone establishes no
+underlying cause: s3cmd can erase the HTTP status when replacing a transfer's
+503 error. Available `__cause__` takes precedence over `__context__`, including
+context suppressed from displayed tracebacks. Cycles and chains beyond eight
+entries stop collection. `TimeoutExpired` identifies the whole-subprocess
+deadline; `TimeoutError` identifies an observed library exception. Neither
+localizes a network/server phase or diagnoses an earlier attempt. These fields
+grant no retry or recovery permission and do not establish a fresh backup.
 
 On the next ordinary invocation, a verified/rolled-back/unchanged transaction
 with no pending mutation resumes only unfinished cleanup, preserving its
@@ -106,11 +134,42 @@ just because a transport timed out or a later read sees no object. Unreadable
 status is also retained and blocks execution. There is no automatic recovery
 poller or second backup controller.
 
+For read-only diagnosis of an unresolved transaction, the existing backup owner
+can check the current FINAL through the same transport under `backup.lock`:
+
+```sh
+python3 - <<'PY'
+import fcntl, json, os, runpy, tempfile
+from pathlib import Path
+b = runpy.run_path('/home/sfx/p/lm/scripts/backup_living_memory_s3.py')
+os.umask(0o077)
+try:
+    with (b['STATE_DIR'] / 'backup.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with tempfile.TemporaryDirectory(prefix='read-only-', dir=b['STATE_DIR']) as work:
+            observed = b['verify_download'](b['FINAL'], Path(work), 'observed')
+    print(json.dumps({'read_only_final': observed}))
+except Exception as error:
+    detail = getattr(error, 'transport', {'chain': b['exception_chain'](error)})
+    print(json.dumps({'read_only_error': detail}))
+    raise SystemExit(1)
+PY
+```
+
+Exit 0 verifies only the existing FINAL's privacy and downloaded bytes; exit 1
+reports the safe failure. This reads no live database, changes no remote object
+or status, and does not replay a pending mutation. It cannot reconstruct an old
+failure or prove a new upload succeeded. Reconciliation still requires fresh
+object/multipart inventory and the specific transaction's retained hashes;
+the owner's `objects()` and `multipart()` reads can use the same locked boundary.
+Retain their private results locally. Never reuse an old upload ID without a
+current inventory or call `run()` to diagnose an UNKNOWN effect.
+
 The standalone script requires no LM service reload. Its offline regression is
 private source alongside the script:
 
 ```sh
-python3 -m pytest scripts/test_backup_living_memory_s3.py
+scripts/test.sh scripts/test_backup_living_memory_s3.py
 ```
 
 It executes the real `__main__`/lock/status path with disposable SQLite files and
@@ -118,7 +177,12 @@ fake S3 transport. It forbids network and non-fixture SQLite access and uses no
 production credentials. Metadata scenarios pass raw HTTP responses through the
 installed s3cmd request/signing/error handling, including rejected 403/5xx and
 malformed responses, confirmed absence, redirects and region discovery. The
-tests need that installed `S3` Python package, as does the metadata subprocess.
+Transfer scenarios execute the installed CLI and upload/multipart/download/
+request exception paths with fake HTTP, distinguishing timeout, connection,
+HTTP and unavailable causes. A socket-forbidden real subprocess checks the
+diagnostic descriptor. Sensitive fixture messages stay out of status and
+reported output. The tests need the installed `S3` Python package, as do the
+transport subprocesses.
 This proves local semantics; the existing loop confirms
 fresh real backup bytes during its next ordinary work.
 
