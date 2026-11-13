@@ -357,9 +357,10 @@ def bound_payload(
     """Shrink ``payload`` until its canonical JSON fits ``max_bytes``.
 
     Returns ``(payload, truncated)``. The algorithm is deterministic — always
-    the longest string leaf first, ties broken by path, then the longest list —
-    so the same input always produces the same bytes and therefore the same
-    sha256 and the same cassette key.
+    the longest retained string leaf first, ties broken by path, then the
+    longest retained list. Omission markers count toward the byte budget, but
+    never compete with source data for shrinking. Each step removes source
+    characters or list items, so exhausted candidates cannot block others.
 
     Raises :class:`JudgePayloadTooLarge` when nothing is left to shrink.
     """
@@ -367,23 +368,28 @@ def bound_payload(
     if max_bytes <= 0:
         raise ValueError("max_bytes must be positive")
 
+    min_field_chars = max(0, min_field_chars)
     current = json.loads(json.dumps(payload))  # normalise tuples away
+    rendered = current
+    omissions: dict[str, int] = {}
     truncated = False
-    for _ in range(10_000):
-        size = len(canonical_json(current).encode("utf-8"))
+    while True:
+        size = len(canonical_json(rendered).encode("utf-8"))
         if size <= max_bytes:
-            return current, truncated
+            return rendered, truncated
 
         leaves = [item for item in _string_leaves(current) if item[1] > min_field_chars]
         if leaves:
             longest = max(leaves, key=lambda item: (item[1], item[0]))
             keep = max(min_field_chars, int(longest[1] * 0.7))
+            dropped = omissions.get(longest[0], 0) + longest[1] - keep
+            omissions[longest[0]] = dropped
 
             def _cut(text: Any, keep: int = keep) -> str:
-                dropped = len(text) - keep
                 return text[:keep] + f"… [truncated, {dropped} chars omitted]"
 
-            current = _apply_at(current, longest[0], _cut)
+            current = _apply_at(current, longest[0], lambda text: text[:keep])
+            rendered = _apply_at(rendered, longest[0], _cut)
             truncated = True
             continue
 
@@ -391,21 +397,20 @@ def bound_payload(
         if lists:
             longest_list = max(lists, key=lambda item: (item[1], item[0]))
             keep = max(1, int(longest_list[1] * 0.7))
+            dropped = omissions.get(longest_list[0], 0) + longest_list[1] - keep
+            omissions[longest_list[0]] = dropped
 
             def _drop(items: Any, keep: int = keep) -> list[Any]:
-                dropped = len(items) - keep
                 return list(items[:keep]) + [f"… [truncated, {dropped} items omitted]"]
 
-            current = _apply_at(current, longest_list[0], _drop)
+            current = _apply_at(current, longest_list[0], lambda items: items[:keep])
+            rendered = _apply_at(rendered, longest_list[0], _drop)
             truncated = True
             continue
 
         raise JudgePayloadTooLarge(
             f"payload is {size} bytes and cannot be shrunk below {max_bytes}"
         )
-
-    raise JudgePayloadTooLarge("payload bounding did not converge")
-
 
 #: Replaces the ambient system prompt. Rule 5 is the confused-deputy guard: the
 #: payload is somebody else's session and routinely contains imperatives.
