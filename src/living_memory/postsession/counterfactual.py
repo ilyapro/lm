@@ -254,10 +254,10 @@ def query_digest(text: str) -> str:
 class NodeSnapshot:
     """Everything about one node that removal has to be able to put back.
 
-    The digest deliberately excludes surrogate keys the store re-mints on
-    write — a chunk row's ``id`` and its ``created_at``/``updated_at`` — because
-    :meth:`MemoryStore.replace_node_chunks` allocates them and no retrieval
-    decision reads them. Every column that does affect retrieval is compared.
+    The digest compares chunk vectors and their content-derived source addresses.
+    It excludes row-generation ``id`` and ``created_at``/``updated_at``, which
+    :meth:`MemoryStore.replace_node_chunks` re-mints; old chunk ids must not
+    resolve to the new generation.
     """
 
     node_id: str
@@ -304,9 +304,18 @@ class CohortSurgery:
 
 
 def _chunk_rows(connection: sqlite3.Connection, node_id: str) -> tuple[tuple[Any, ...], ...]:
+    columns = {row["name"] for row in connection.execute(
+        f"PRAGMA table_info({CHUNK_EMBEDDING_TABLE})"
+    )}
+    # Capture also reads frozen snapshots before the working store migrates them.
+    coordinates = ", ".join(
+        column if column in columns else f"NULL AS {column}"
+        for column in ("char_start", "char_end")
+    )
     rows = connection.execute(
         f"""
-        SELECT chunk_index, dimensions, embedding, token_start, token_end, content_fingerprint
+        SELECT chunk_index, dimensions, embedding, token_start, token_end,
+               content_fingerprint, {coordinates}
         FROM {CHUNK_EMBEDDING_TABLE} WHERE node_id = ? ORDER BY chunk_index
         """,
         (node_id,),
@@ -319,6 +328,8 @@ def _chunk_rows(connection: sqlite3.Connection, node_id: str) -> tuple[tuple[Any
             int(row["token_start"]),
             int(row["token_end"]),
             str(row["content_fingerprint"] or ""),
+            row["char_start"],
+            row["char_end"],
         )
         for row in rows
     )
@@ -499,16 +510,33 @@ def _restore_chunks(store: MemoryStore, snapshot: NodeSnapshot) -> int:
         return 0
     chunks: list[tuple[TextChunk, list[float]]] = []
     fingerprint = str(snapshot.row.get("content_fingerprint") or "")
-    for index, dimensions, blob, token_start, token_end, chunk_fingerprint in snapshot.chunks:
+    content = str(snapshot.row["content"])
+    source_fingerprint = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    for (
+        index, dimensions, blob, token_start, token_end, chunk_fingerprint,
+        char_start, char_end,
+    ) in snapshot.chunks:
+        if char_start is None and char_end is None:
+            # The chunk API keeps this unaddressed; token offsets cannot recover it.
+            text, char_start, char_end = "", 0, 0
+        elif (
+            chunk_fingerprint != source_fingerprint
+            or chunk_fingerprint != snapshot.row.get("content_fingerprint")
+            or not isinstance(char_start, int) or not isinstance(char_end, int)
+            or not 0 <= char_start < char_end <= len(content)
+        ):
+            raise CoherenceError(f"invalid chunk source address: {snapshot.node_id}/{index}")
+        else:
+            text = content[char_start:char_end]
         chunks.append(
             (
                 TextChunk(
-                    text="",
+                    text=text,
                     chunk_index=index,
                     token_start=token_start,
                     token_end=token_end,
-                    char_start=0,
-                    char_end=0,
+                    char_start=char_start,
+                    char_end=char_end,
                 ),
                 unpack_chunk_embedding(blob, dimensions),
             )
