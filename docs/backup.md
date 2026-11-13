@@ -176,7 +176,7 @@ It executes the real `__main__`/lock/status path with disposable SQLite files an
 fake S3 transport. It forbids network and non-fixture SQLite access and uses no
 production credentials. Metadata scenarios pass raw HTTP responses through the
 installed s3cmd request/signing/error handling, including rejected 403/5xx and
-malformed responses, confirmed absence, redirects and region discovery. The
+malformed responses, confirmed absence, redirects and region discovery.
 Transfer scenarios execute the installed CLI and upload/multipart/download/
 request exception paths with fake HTTP, distinguishing timeout, connection,
 HTTP and unavailable causes. A socket-forbidden real subprocess checks the
