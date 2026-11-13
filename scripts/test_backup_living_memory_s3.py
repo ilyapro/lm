@@ -759,11 +759,51 @@ def test_installed_http_503_preserves_only_available_cause(backup, operation, ca
     error = backup.status()["last_error"]
     # Transfer methods replace 503 errors outside an except block; their
     # installed exception chains contain no underlying S3Error/status.
-    expected = [{"class": {"put": "S3UploadError", "get": "S3DownloadError"}[operation]}] if operation != "ls" else [{"class": "S3Error", "status": 503}]
+    roots = {"put": "S3UploadError", "get": "S3DownloadError"}
+    expected = [{"class": roots[operation]}] if operation in roots else [{"class": "S3Error", "status": 503}]
     assert error["transport"]["chain"] == expected
     assert calls.count("PUT" if operation == "put" else "GET") == 1
     assert "Timeout" not in error["message"]
     assert "FAKE SECRET" not in json.dumps(error) + str(capsys.readouterr())
+
+
+def test_installed_listing_stdout_remains_parseable(backup):
+    backup.state.mkdir(parents=True)
+    namespace = runpy.run_path(str(SCRIPT))
+    backup.cli = lambda op, args: op == "ls"
+    response = RawResponse(data=b"""<ListBucketResult>
+        <IsTruncated>false</IsTruncated><Contents><Key>global.sqlite3.gz</Key>
+        <LastModified>2026-01-01T00:00:00.000Z</LastModified><Size>1</Size>
+        <ETag>0123456789abcdef0123456789abcdef</ETag></Contents></ListBucketResult>""")
+    calls = []
+    backup.connection = lambda host: SimpleNamespace(path=None, c=TransferConnection(response, calls))
+    with (backup.state / "backup.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert namespace["objects"]() == {FINAL}
+    assert calls == ["GET"]
+
+
+def test_read_only_diagnosis_preserves_unknown_status_and_remote_copies(backup, tmp_path):
+    def failed(operation, args):
+        if operation == "put":
+            raise subprocess.TimeoutExpired("FAKE SECRET", 3600)
+
+    backup.hook = failed
+    assert backup.invoke() == 3
+    before = (backup.state / "status.json").read_bytes()
+    copies = dict(backup.objects)
+    backup.calls.clear()
+    backup.hook = lambda *args: None
+    namespace = runpy.run_path(str(SCRIPT))
+    with (backup.state / "backup.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        observed = namespace["verify_download"](FINAL, tmp_path, "observed")
+        assert namespace["objects"]() == set(copies)
+        assert namespace["multipart"]() == []
+    assert observed == backup.status()["transaction"]["previous"]
+    assert {op for op, _ in backup.calls} == {"info", "get", "ls", "multipart"}
+    assert (backup.state / "status.json").read_bytes() == before
+    assert backup.objects == copies
 
 
 @pytest.mark.parametrize("failure", ["metadata", "bytes", "acl"])
