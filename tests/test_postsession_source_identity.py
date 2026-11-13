@@ -253,13 +253,13 @@ def test_native_recipient_retains_both_sources_and_restart_never_repeats(live_se
     assert sorted(rows) == sorted((FACT, op.provenance.source_span) for op in ops)
 
 
-@pytest.mark.parametrize("state,request", [("applied", False), ("ready", True), ("unknown", True)])
-def test_native_legacy_effect_is_preserved_through_retry_and_confirmation(live_server, tmp_path, state, request):
+@pytest.mark.parametrize("state,with_request", [("applied", False), ("ready", True), ("unknown", True)])
+def test_native_legacy_effect_is_preserved_through_retry_and_confirmation(live_server, tmp_path, state, with_request):
     client = LiveMemoryClient(live_server["url"], token=TOKEN)
     record = make_record(transcript_sha256={"applied": "b4", "ready": "c5", "unknown": "d6"}[state] * 32)
     old = saved_operation(record)
     node_id = "" if state == "ready" else client.remember(FACT, old.payload["context"])["node"]["id"]
-    saved = save_legacy(tmp_path, old, client, state, result_id=node_id if state == "applied" else "", request=request)
+    saved = save_legacy(tmp_path, old, client, state, result_id=node_id if state == "applied" else "", request=with_request)
     decisions = execute(tmp_path, client, record, [proposal(record, 30), proposal(record, task="new task")])
     assert decisions[0].status == "written"
     assert decisions[1].status == {"applied": "skipped", "ready": "written", "unknown": "reconciled"}[state]
