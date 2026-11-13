@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sqlite3
@@ -13,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from living_memory import resources
 from living_memory.config import MemoryConfig
 from living_memory.health_audit import (
     DEFAULT_LATENCY_QUERY,
@@ -929,3 +931,190 @@ def test_memory_health_payload_includes_feedback_closure_block(tmp_path: Path) -
     assert closure["identity_coverage"]["transport_only"]["closed"] == 0
 
     assert default_report["feedback_closure"]["window_hours"] == 168
+
+
+def _track_closure_cursor(store, monkeypatch, visit):
+    conn = store.connection
+    cursors = []
+
+    class Cursor:
+        def __init__(self, cursor):
+            self.cursor = cursor
+            self.rows = 0
+            self.closes = 0
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            row = next(self.cursor)
+            self.rows += 1
+            return visit(self.rows, row)
+
+        def fetchall(self):
+            pytest.fail("closure groups must be reduced directly from the cursor")
+
+        def close(self):
+            self.closes += 1
+            self.cursor.close()
+
+    class Connection:
+        def __getattr__(self, name):
+            return getattr(conn, name)
+
+        def execute(self, sql, params=()):
+            assert all(cursor.closes == 1 for cursor in cursors)
+            cursor = conn.execute(sql, params)
+            if "GROUP BY session_id, has_transport" in sql:
+                cursor = Cursor(cursor)
+                cursors.append(cursor)
+            return cursor
+
+    monkeypatch.setattr(MemoryStore, "connection", property(lambda self: Connection()))
+    return cursors
+
+
+@pytest.mark.parametrize("failure", [None, "empty", "iteration", "interrupt", "identity", "events", "closed"])
+def test_health_closure_cursor_closes_before_return_or_failure(tmp_path, monkeypatch, failure):
+    with MemoryStore(tmp_path / "closure-cursor.sqlite3") as store:
+        for index in range(0 if failure == "empty" else 3):
+            _record_closure_event(store, scope="project:alpha", ambient={"session_id": str(index)})
+        conn = store.connection
+        before = list(conn.iterdump())
+        conn.execute("PRAGMA query_only = ON")
+        error = KeyboardInterrupt("late closure read") if failure == "interrupt" else sqlite3.OperationalError("late closure read")
+
+        def visit(index, row):
+            if index == 2:
+                if failure in {"iteration", "interrupt"}:
+                    raise error
+                if failure in {"identity", "events", "closed"}:
+                    row = dict(row)
+                    row["session_id" if failure == "identity" else failure] = object()
+            return row
+
+        cursors = _track_closure_cursor(store, monkeypatch, visit)
+        if failure in {None, "empty"}:
+            report = memory_health(store)
+            assert report["feedback_closure"]["recall_events_in_window"] == (0 if failure == "empty" else 3)
+        else:
+            expected = (type(error) if failure in {"iteration", "interrupt"} else
+                        AttributeError if failure == "identity" else TypeError)
+            with pytest.raises(expected) as raised:
+                memory_health(store)
+            if failure in {"iteration", "interrupt"}:
+                assert raised.value is error
+        assert len(cursors) == 1
+        assert cursors[0].rows == (0 if failure == "empty" else 3 if failure is None else 2)
+        assert cursors[0].closes == 1
+        with pytest.raises(sqlite3.ProgrammingError, match="closed cursor"):
+            cursors[0].cursor.fetchone()
+        assert list(conn.iterdump()) == before
+
+
+def test_native_health_closure_scope_cutoff_and_unicode_identity(tmp_path, monkeypatch):
+    from fastmcp import Client
+    from living_memory.server import create_mcp_server
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 13, 12, tzinfo=UTC)
+
+    monkeypatch.setattr(resources, "datetime", Clock)
+    server = create_mcp_server(config=MemoryConfig(db_path=tmp_path / "native.sqlite3"),
+                               expose_operator_tools=True)
+    store = server.memory_store
+    try:
+        target = store.append_trace("closure target", {"scope": "project:alpha"})
+        for scope, session, transport, closed, created in [
+            ("project:alpha", "s", "t", True, "2026-11-13T12:00:00Z"),
+            ("project:alpha", "s", "t", False, "2026-11-13T12:00:00Z"),
+            ("project:alpha", "\u2003", "", True, "2026-11-12T12:00:00Z"),
+            ("project:alpha", "\u00a0", "t", False, "2026-11-12T12:00:00Z"),
+            ("project:alpha", "\u200b", "", True, "2026-11-12T12:00:00Z"),
+            ("project:alpha", "old", "", True, "2026-11-12T11:59:59.999999Z"),
+            ("project:beta", "s", "", True, "2026-11-13T12:00:00Z"),
+            ("project:alpha/child", "s", "", True, "2026-11-13T12:00:00Z"),
+        ]:
+            event_id = _record_closure_event(
+                store, scope=scope, ambient={"session_id": session, "transport_session_id": transport},
+                closed_by=target.id if closed else None,
+            )
+            with store.connection:
+                store.connection.execute("UPDATE recall_events SET created_at=? WHERE id=?", (created, event_id))
+        conn = store.connection
+        before = list(conn.iterdump())
+        changes = conn.total_changes
+        conn.execute("PRAGMA query_only = ON")
+
+        async def check():
+            async with Client(server) as client:
+                for scope, hours, counts in [
+                    ("alpha", 24, ((3, 2), (1, 0), (1, 1))),
+                    (None, 24, ((5, 4), (1, 0), (1, 1))),
+                    ("alpha", 1, ((2, 1), (0, 0), (0, 0))),
+                    ("project:empty", 24, ((0, 0), (0, 0), (0, 0))),
+                ]:
+                    response = await client.call_tool("memory_health", {"scope": scope, "window_hours": hours})
+                    assert not response.is_error
+                    events, closed = map(sum, zip(*counts))
+                    assert response.data["feedback_closure"] == {
+                        "window_hours": hours,
+                        "recall_events_in_window": events,
+                        "feedback_applied_in_window": closed,
+                        "closure_ratio": closed / events if events else None,
+                        "identity_coverage": {
+                            name: {"events": n, "closed": c, "closure_ratio": c / n if n else None}
+                            for name, (n, c) in zip(("explicit", "transport_only", "none"), counts)
+                        },
+                    }
+        asyncio.run(check())
+        assert conn.total_changes == changes
+        assert list(conn.iterdump()) == before
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_native_health_closure_releases_snapshot_before_next_read(tmp_path, monkeypatch, failure):
+    from fastmcp import Client
+    from living_memory.server import create_mcp_server
+
+    path = tmp_path / "closure-wal.sqlite3"
+    server = create_mcp_server(config=MemoryConfig(db_path=path), expose_operator_tools=True)
+    store = server.memory_store
+    try:
+        target = store.append_trace("closure freshness target", {"scope": "project:alpha"})
+        for index in range(3):
+            _record_closure_event(store, scope="project:alpha", ambient={"session_id": str(index)})
+        conn = store.connection
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        conn.execute("PRAGMA query_only = ON")
+
+        def visit(index, row):
+            if index == 1:
+                with sqlite3.connect(path) as writer:
+                    writer.execute("UPDATE nodes SET access_count=7 WHERE id=?", (target.id,))
+            if failure and index == 2:
+                raise sqlite3.OperationalError("late closure read")
+            return row
+
+        cursors = _track_closure_cursor(store, monkeypatch, visit)
+
+        async def check():
+            async with Client(server) as client:
+                response = await client.call_tool("memory_health", {}, raise_on_error=False)
+                assert response.is_error == failure
+                if failure:
+                    assert "late closure read" in response.content[0].text
+                    assert not response.structured_content
+                else:
+                    assert response.data["feedback_closure"]["recall_events_in_window"] == 3
+                    assert response.data["access"]["active_traces"]["never_accessed"] == 0
+        asyncio.run(check())
+        assert len(cursors) == 1
+        assert cursors[0].closes == 1
+        assert conn.execute("SELECT access_count FROM nodes WHERE id=?", (target.id,)).fetchone()[0] == 7
+    finally:
+        store.close()
