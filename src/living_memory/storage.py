@@ -23,7 +23,6 @@ from living_memory.chunking import TextChunk, chunk_text
 from living_memory.config import MemoryConfig, RetrievalWeightConfig
 from living_memory.embeddings import (
     LocalEmbeddingModel,
-    cosine_similarity,
     fts_prefix_term_allowed,
 )
 from living_memory.models import (
@@ -4947,91 +4946,6 @@ class MemoryStore:
         ).fetchall()
         return [_node_from_row(row) for row in rows]
 
-    @staticmethod
-    def _scope_filter(
-        alias: str = "",
-        *,
-        scope: str | None = None,
-        exclude_scope: str | None = None,
-        scope_prefix: str | None = None,
-    ) -> tuple[list[str], list[Any]]:
-        """Shared scope predicates for the two halves of a similarity search.
-
-        Both the node query and the chunk query behind it have to narrow to the
-        same set, or the chunk side does far more work than the node side will
-        use. ``alias`` is the table qualifier ("" for a bare nodes query, "n."
-        when joined).
-        """
-
-        clauses: list[str] = []
-        params: list[Any] = []
-        if scope is not None:
-            clauses.append(f"{alias}scope = ?")
-            params.append(scope)
-        if exclude_scope is not None:
-            clauses.append(f"{alias}scope != ?")
-            params.append(exclude_scope)
-        if scope_prefix is not None:
-            clauses.append(f"{alias}scope >= ?")
-            params.append(scope_prefix)
-            upper_bound = _prefix_upper_bound(scope_prefix)
-            if upper_bound is not None:
-                clauses.append(f"{alias}scope < ?")
-                params.append(upper_bound)
-        return clauses, params
-
-    def _chunk_max_pool_scores(
-        self,
-        embedding: Sequence[float],
-        *,
-        level: NodeLevel | None = None,
-        scope: str | None = None,
-        exclude_scope: str | None = None,
-        scope_prefix: str | None = None,
-    ) -> dict[str, float]:
-        """Cosine of ``embedding`` against each live node's best chunk.
-
-        One pass rather than a query per node, so the caller pays the same
-        single scan the JSON path paid. Reads ``dimensions`` alongside the BLOB
-        instead of going through :meth:`iter_chunk_embedding_rows`, because
-        decoding needs the recorded width and the byte length is not allowed to
-        stand in for it.
-        """
-
-        if not self._chunk_table_present():
-            return {}
-
-        query = list(embedding)
-        clauses = ["n.decayed = 0"]
-        params: list[Any] = []
-        if level is not None:
-            self._validate_level(level)
-            clauses.append("n.level = ?")
-            params.append(level)
-        scope_clauses, scope_params = self._scope_filter(
-            "n.", scope=scope, exclude_scope=exclude_scope, scope_prefix=scope_prefix
-        )
-        clauses.extend(scope_clauses)
-        params.extend(scope_params)
-        rows = self._conn.execute(
-            f"""
-            SELECT c.node_id AS node_id, c.dimensions AS dimensions,
-                   c.embedding AS embedding
-            FROM {CHUNK_EMBEDDING_TABLE} c
-            JOIN nodes n ON n.id = c.node_id
-            WHERE {' AND '.join(clauses)}
-            """,
-            params,
-        )
-        best: dict[str, float] = {}
-        for row in rows:
-            node_id = str(row["node_id"])
-            vector = unpack_chunk_embedding(row["embedding"], int(row["dimensions"]))
-            score = cosine_similarity(query, vector)
-            if score > best.get(node_id, float("-inf")):
-                best[node_id] = score
-        return best
-
     def promotion_candidate_page(
         self, *, limit: int, after: tuple[str, str] = ("", ""),
         through_rowid: int | None = None,
@@ -5062,89 +4976,6 @@ class MemoryStore:
             (*after, through_rowid, int(limit)),
         ).fetchall()
         return [_node_from_row(row) for row in rows], through_rowid
-
-    def find_similar_by_embedding(
-        self,
-        embedding: list[float],
-        *,
-        level: NodeLevel = "concept",
-        exclude_scope: str | None = None,
-        scope_prefix: str | None = None,
-        scope: str | None = None,
-        threshold: float = 0.7,
-        limit: int = 50,
-    ) -> list[tuple[Node, float]]:
-        """Scan active embedded nodes and return cosine matches above a threshold.
-
-        Compatibility path for the v6 rollout, so consolidation's callers keep
-        working without every one of them learning about chunks. While
-        ``nodes.embedding`` is present it stays the scoring vector and results
-        are bit-identical to v5 — that matters because the callers' thresholds
-        (cross-scope promotion and semantic retrieval) were calibrated
-        against single-vector scores, and max-pooling chunks would silently
-        raise every score and merge more aggressively than anyone asked for.
-        Once the column is gone every node scores from its chunks instead, as
-        the best of them — the same max-pool quantity the vector channel uses.
-        Nothing is lost in the handover: while the column exists a node only
-        ever has chunks if it also has a legacy vector, so the set of nodes this
-        can match is the same on both sides of the drop.
-        """
-
-        self._validate_level(level)
-        if not embedding or limit <= 0:
-            return []
-
-        legacy_embedding = self._node_embedding_column_present()
-        chunk_scores: dict[str, float] = {}
-        if not legacy_embedding:
-            chunk_scores = self._chunk_max_pool_scores(
-                embedding,
-                level=level,
-                scope=scope,
-                exclude_scope=exclude_scope,
-                scope_prefix=scope_prefix,
-            )
-
-        clauses = ["level = ?", "decayed = 0"]
-        params: list[Any] = [level]
-        if legacy_embedding:
-            clauses.append("embedding IS NOT NULL")
-        scope_clauses, scope_params = self._scope_filter(
-            scope=scope, exclude_scope=exclude_scope, scope_prefix=scope_prefix
-        )
-        clauses.extend(scope_clauses)
-        params.extend(scope_params)
-
-        rows = self._conn.execute(
-            f"""
-            SELECT *
-            FROM nodes
-            WHERE {' AND '.join(clauses)}
-            ORDER BY scope ASC, confidence DESC, usefulness_score DESC, id ASC
-            """,
-            params,
-        )
-
-        matches: list[tuple[Node, float]] = []
-        for row in rows:
-            node = _node_from_row(row)
-            if legacy_embedding:
-                score = cosine_similarity(embedding, node.embedding)
-            else:
-                score = chunk_scores.get(node.id, 0.0)
-            if score >= threshold:
-                matches.append((node, score))
-
-        matches.sort(
-            key=lambda item: (
-                -item[1],
-                -item[0].confidence,
-                -item[0].usefulness_score,
-                item[0].scope,
-                item[0].id,
-            )
-        )
-        return matches[: int(limit)]
 
     def trace_count(self, *, include_decayed: bool = True) -> int:
         if include_decayed:
@@ -6869,15 +6700,6 @@ def _scope_family(scope: str) -> str:
     if ":" in scope:
         return scope.split(":", 1)[0]
     return scope
-
-
-def _prefix_upper_bound(prefix: str) -> str | None:
-    if not prefix:
-        return None
-    last = ord(prefix[-1])
-    if last >= 0x10FFFF:
-        return None
-    return prefix[:-1] + chr(last + 1)
 
 
 def _json_dumps(value: Any) -> str:

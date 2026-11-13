@@ -19,7 +19,9 @@ import pytest
 
 from living_memory import replay
 from living_memory.chunking import TextChunk, chunk_text, count_tokens
+from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.health_audit import ReadOnlyAuditStore
+from living_memory.retrieval import MemoryRecallService
 from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
     CHUNK_EMBEDDING_TABLE,
@@ -561,23 +563,25 @@ def test_scan_blobs_decode_back_to_the_stored_vectors(store: MemoryStore) -> Non
 
 
 # ---------------------------------------------------------------------------
-# Compatibility for the legacy vector readers
+# Vector readers across storage shapes
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_similarity_and_evidence_still_work_with_chunks_present(
+def test_promotion_candidates_and_evidence_with_chunks_present(
     store: MemoryStore,
 ) -> None:
     embed, _calls = stub_embedder(3)
     store.set_chunk_embedder(embed)
     target = store.create_node(
-        level="concept", content="deployment runbook", embedding=[1.0, 0.0, 0.0]
+        level="concept", content="deployment runbook", embedding=[1.0, 0.0, 0.0],
+        context={"scope": "project:deployment"},
     )
     store.create_node(level="concept", content="unrelated topic", embedding=[0.0, 1.0, 0.0])
 
-    matches = store.find_similar_by_embedding([1.0, 0.0, 0.0], threshold=0.9)
-    assert [node.id for node, _score in matches] == [target.id]
-    assert store._has_vector_evidence("global") is True
+    candidates, _boundary = store.promotion_candidate_page(limit=10)
+    assert [node.id for node in candidates] == [target.id]
+    assert candidates[0].embedding == [1.0, 0.0, 0.0]
+    assert store._has_vector_evidence("project:deployment") is True
     assert store._has_vector_evidence("project:empty") is False
 
 
@@ -585,47 +589,45 @@ def test_dropping_the_column_is_explicit_and_leaves_reads_served_by_chunks(
     tmp_path: Path,
 ) -> None:
     db = tmp_path / "memory.sqlite3"
+    model = LocalEmbeddingModel(backend="hash")
+    query = "deployment runbook"
+
+    def check_recall(store: MemoryStore) -> None:
+        service = MemoryRecallService(store, embedder=model)
+        results = service.memory_recall(query, scope="global", depth=0)
+        assert results[0].node.id == target.id
+        assert results[0].vector_score == pytest.approx(1.0)
+        assert service.memory_recall(query, scope="project:empty", depth=0) == []
+
     with MemoryStore(db) as store:
-        embed, _calls = stub_embedder(3)
-        store.set_chunk_embedder(embed)
+        store.set_chunk_embedder(model.embed_batch)
         target = store.create_node(
-            level="concept", content="deployment runbook", embedding=[1.0, 0.0, 0.0]
+            level="concept", content=query, embedding=model.embed(query)
         )
-        store.create_node(level="concept", content="unrelated topic", embedding=[0.0, 1.0, 0.0])
+        store.create_node(
+            level="concept", content="unrelated topic", embedding=model.embed("unrelated topic")
+        )
         assert "embedding" in _node_columns(store.connection)
+        check_recall(store)
 
         assert store.drop_node_embedding_column() is True
         assert store.drop_node_embedding_column() is False, "must be idempotent"
         assert "embedding" not in _node_columns(store.connection)
 
-        # Served from chunks now, with the same answer as before the drop.
-        matches = store.find_similar_by_embedding([1.0, 0.0, 0.0], threshold=0.9)
-        assert [node.id for node, _score in matches] == [target.id]
-        # Scope narrowing must still narrow once the scoring moved to chunks.
-        assert store.find_similar_by_embedding(
-            [1.0, 0.0, 0.0], threshold=0.9, exclude_scope="global"
-        ) == []
-        assert store.find_similar_by_embedding(
-            [1.0, 0.0, 0.0], threshold=0.9, scope_prefix="project:"
-        ) == []
-        assert [
-            node.id
-            for node, _score in store.find_similar_by_embedding(
-                [1.0, 0.0, 0.0], threshold=0.9, scope="global"
-            )
-        ] == [target.id]
+        check_recall(store)
         assert store._has_vector_evidence("global") is True
-        # The legacy readers degrade to empty rather than raising.
+        assert store._has_vector_evidence("project:empty") is False
         assert list(store.iter_embedding_rows()) == []
         assert store.list_unembedded_nodes() == []
         assert store.get_node(target.id).embedding is None
 
-    # Reopening must not try to rebuild the index that named the dropped column.
     with MemoryStore(db) as reopened:
         assert "embedding" not in _node_columns(reopened.connection)
         assert reopened.count_node_chunks() > 0
+        check_recall(reopened)
         fresh = reopened.create_node(
-            level="concept", content="written after the drop", embedding=[0.0, 0.0, 1.0]
+            level="concept", content="written after the drop",
+            embedding=model.embed("written after the drop"),
         )
         assert reopened.count_node_chunks(fresh.id) == 1
         reopened.update_node(fresh.id, stats={"usefulness_score": 0.5})
@@ -788,12 +790,9 @@ def test_read_only_audit_store_tolerates_both_shapes(tmp_path: Path, shape: str)
         # simply is not there. Every chunk-aware read must answer anyway.
         assert audit.list_unembedded_nodes() == []
         assert audit.list_unchunked_nodes() == []
-        similar = audit.find_similar_by_embedding([1.0, 0.0, 0.0], threshold=0.9)
-        # The v5 fixture holds only traces, so a concept-level query finds
-        # nothing there; the v6 one holds the matching concept.
-        assert [node.level for node, _score in similar] == (
-            [] if shape == "pre_v6" else ["concept"]
-        )
+        embedding_rows = list(audit.iter_embedding_rows(scope="project:legacy"))
+        assert len(embedding_rows) == (5 if shape == "pre_v6" else 1)
+        assert list(audit.iter_embedding_rows(scope="project:absent")) == []
         # Both shapes keep nodes.embedding, so the evidence gate answers the
         # same on either side of the migration.
         assert audit._has_vector_evidence("project:legacy") is True
