@@ -591,10 +591,11 @@ def test_dropping_the_column_is_explicit_and_leaves_reads_served_by_chunks(
     db = tmp_path / "memory.sqlite3"
     model = LocalEmbeddingModel(backend="hash")
     query = "deployment runbook"
+    scope = "project:deployment"
 
     def check_recall(store: MemoryStore) -> None:
         service = MemoryRecallService(store, embedder=model)
-        results = service.memory_recall(query, scope="global", depth=0)
+        results = service.memory_recall(query, scope=scope, depth=0)
         assert results[0].node.id == target.id
         assert results[0].vector_score == pytest.approx(1.0)
         assert service.memory_recall(query, scope="project:empty", depth=0) == []
@@ -602,10 +603,11 @@ def test_dropping_the_column_is_explicit_and_leaves_reads_served_by_chunks(
     with MemoryStore(db) as store:
         store.set_chunk_embedder(model.embed_batch)
         target = store.create_node(
-            level="concept", content=query, embedding=model.embed(query)
+            level="concept", content=query, embedding=model.embed(query), context={"scope": scope}
         )
         store.create_node(
-            level="concept", content="unrelated topic", embedding=model.embed("unrelated topic")
+            level="concept", content="unrelated topic", embedding=model.embed("unrelated topic"),
+            context={"scope": scope}
         )
         assert "embedding" in _node_columns(store.connection)
         check_recall(store)
@@ -615,7 +617,7 @@ def test_dropping_the_column_is_explicit_and_leaves_reads_served_by_chunks(
         assert "embedding" not in _node_columns(store.connection)
 
         check_recall(store)
-        assert store._has_vector_evidence("global") is True
+        assert store._has_vector_evidence(scope) is True
         assert store._has_vector_evidence("project:empty") is False
         assert list(store.iter_embedding_rows()) == []
         assert store.list_unembedded_nodes() == []
