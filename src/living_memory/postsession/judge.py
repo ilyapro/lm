@@ -205,7 +205,7 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
             r"(?:TOKEN|SECRET|PASSWORD|PASSWD|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY))"
             r"([\"']?\s*[=:]\s*)"
             r"(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;)\"']+)",
-            re.IGNORECASE,
+            re.IGNORECASE | re.DOTALL,
         ),
         r"\1\2" + _REDACTED,
     ),

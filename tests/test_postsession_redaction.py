@@ -34,6 +34,13 @@ def test_named_secret_vocabulary(prefix, suffix):
         assert default_redactor(spelling + "=dummy-value") == spelling + "=<redacted>"
 
 
+@pytest.mark.parametrize("quote", ['"', "'"])
+@pytest.mark.parametrize("value", ["dummy-head\ndummy-tail", "dummy-head\\\ndummy-tail"])
+def test_quoted_assignments_allow_multiline_values(quote, value):
+    text = "APP_TOKEN=" + quote + value + quote + "; status=ok"
+    assert default_redactor(text) == "APP_TOKEN=<redacted>; status=ok"
+
+
 @pytest.mark.parametrize(
     "text",
     [
