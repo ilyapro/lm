@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import pytest
 from S3.Config import Config
 from S3.ConnMan import ConnMan
-from S3.S3 import S3Request
+from S3.S3 import S3, S3Request
 
 
 SCRIPT = Path(__file__).with_name("backup_living_memory_s3.py")
@@ -118,17 +118,23 @@ class FakeS3:
         self.versioning = "none"
         self.policy = "none"
         self.uploads = []
+        self.cli = lambda operation, args: False
+        self.connection = lambda host: SimpleNamespace(path=None, c=RawConnection(self, host))
 
     def __call__(self, command, **kwargs):
         config = str(self.home / ".config/living-memory/s3cmd-backup.conf")
-        if command[0] == "/usr/bin/python3":
+        assert command[:2] == ["/usr/bin/python3", "-c"]
+        if "['metadata']" in command[2]:
             assert command[1] == "-c"
             assert command[3:5] == [str(SCRIPT.resolve()), config]
             operation, args = "info", [command[5]]
             assert kwargs["timeout"] == 120
         else:
-            assert command[:3] == ["/usr/bin/s3cmd", "-c", config]
-            args = [arg for arg in command[3:] if not arg.startswith("--")]
+            assert "['transport']" in command[2]
+            assert command[3] == str(SCRIPT.resolve())
+            assert kwargs["pass_fds"] == (int(command[4]),)
+            assert command[5:7] == ["-c", config]
+            args = [arg for arg in command[7:] if not arg.startswith("--")]
             operation, *args = args
             assert operation != "info", "human-display metadata is forbidden"
             assert "--max-retries=0" in command
@@ -141,6 +147,8 @@ class FakeS3:
         override = self.hook(operation, args)
         if override is not None:
             return override
+        if self.cli(operation, args):
+            return self.installed(command)
         output = ""
         if operation == "info":
             stdout, stderr = io.StringIO(), io.StringIO()
@@ -182,6 +190,33 @@ class FakeS3:
         else:
             raise AssertionError(f"unexpected command: {command}")
         return subprocess.CompletedProcess(command, 0, stdout=output, stderr="")
+
+    def installed(self, command):
+        """Run the actual child entry/CLI in process with only HTTP I/O faked."""
+        stdout = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        stderr = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        disabled, timeout = logging.root.manager.disable, socket.getdefaulttimeout()
+        try:
+            with pytest.MonkeyPatch.context() as patch, redirect_stdout(stdout), redirect_stderr(stderr):
+                patch.setattr(Config, "_instance", None)
+                patch.setattr(S3Request, "region_map", {})
+                patch.setattr(S3Request, "redir_map", {})
+                patch.setattr(ConnMan, "get", self.connection)
+                patch.setattr(ConnMan, "put", lambda conn: None)
+                patch.setattr(ConnMan, "close", lambda conn: None)
+                for name in ("send_request", "send_file", "send_file_multipart", "recv_file"):
+                    patch.setattr(S3, name, getattr(S3, name))
+                patch.setattr(sys, "argv", ["-c", *command[3:]])
+                with pytest.raises(SystemExit) as stopped:
+                    exec(command[2], {"__name__": "__main__"})
+                assert Config().max_retries == 0
+                sys.stdout.flush()
+            assert stderr.buffer.getvalue() == b""
+            return subprocess.CompletedProcess(command, stopped.value.code,
+                                               stdout.buffer.getvalue().decode(), "")
+        finally:
+            logging.disable(disabled)
+            socket.setdefaulttimeout(timeout)
 
 
 @pytest.fixture
