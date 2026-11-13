@@ -642,8 +642,9 @@ def test_installed_transport_cause_reaches_status(backup, operation, failure, ta
     assert diagnostic["chain"][-1] == tail
     if isinstance(failure, Exception):
         root = {"put": "S3UploadError", "get": "S3DownloadError", "ls": "S3RequestError"}[verb]
-        assert diagnostic["chain"] == [{"class": root}, tail]
-        assert diagnostic["exit_code"] == (75 if verb == "ls" else 2)
+        direct = isinstance(failure, ConnectionResetError) and verb != "put"
+        assert diagnostic["chain"] == ([tail] if direct else [{"class": root}, tail])
+        assert diagnostic["exit_code"] == (74 if direct else (75 if verb == "ls" else 2))
     assert calls.count({"put": "PUT", "get": "GET", "ls": "GET"}[verb]) == 1
     assert calls.count("POST") == (1 if operation == "multipart-put" else 0)
     assert backup.objects[FINAL] == backup.old

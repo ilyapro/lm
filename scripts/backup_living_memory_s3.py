@@ -162,7 +162,7 @@ def transport(descriptor: str, *args: str) -> None:
                 runpy.run_path("/usr/bin/s3cmd", run_name="__main__")
             except SystemExit as error:
                 # CLI handlers can also retain a cause on their SystemExit.
-                if error.code and error.__context__ is not None:
+                if error.code and isinstance(error.__context__, Exception):
                     record(exception_chain(error.__context__))
                 raise
             except Exception as error:
