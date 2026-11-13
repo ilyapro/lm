@@ -529,7 +529,7 @@ def test_source_address_corruption_is_detected(fixture_db: Path, bounds: tuple) 
 
 
 @pytest.mark.parametrize("mode", ["faithful", "fresh"])
-@pytest.mark.parametrize("corruption", ["fingerprint", "bounds", "partial"])
+@pytest.mark.parametrize("corruption", ["fingerprint", "content", "bounds", "partial"])
 def test_invalid_source_address_is_rejected(
     fixture_db: Path, mode: str, corruption: str
 ) -> None:
@@ -538,6 +538,11 @@ def test_invalid_source_address_is_rejected(
             if corruption == "fingerprint":
                 store.connection.execute(
                     "UPDATE node_chunk_embeddings SET content_fingerprint = 'stale'"
+                )
+            elif corruption == "content":
+                store.connection.execute(
+                    "UPDATE nodes SET content = ? WHERE id = 'cohort-writer'",
+                    (COHORT_CONTENT["cohort-writer"][::-1],),
                 )
             elif corruption == "bounds":
                 store.connection.execute("UPDATE node_chunk_embeddings SET char_end = 999999")
@@ -555,11 +560,14 @@ def test_snapshot_without_coordinate_columns_round_trips(fixture_db: Path) -> No
         connection.execute("ALTER TABLE node_chunk_embeddings DROP COLUMN char_end")
     report = _run(fixture_db)
     assert report["arms"]["counterfactual_faithful"]["round_trip"]["mismatched"] == 0
-    with open_readonly(fixture_db) as connection:
+    connection = open_readonly(fixture_db)
+    try:
         columns = {row["name"] for row in connection.execute(
             "PRAGMA table_info(node_chunk_embeddings)"
         )}
         assert not {"char_start", "char_end"} & columns
+    finally:
+        connection.close()
 
 
 # ---------------------------------------------------------------------------
@@ -855,6 +863,30 @@ def test_cli_rejects_an_unpublishable_cohort_rule(fixture_db: Path) -> None:
                 "--quiet",
             ]
         )
+
+
+def test_cli_refuses_report_after_source_address_loss(
+    fixture_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = MemoryStore.replace_node_chunks
+
+    def lose_address(store: MemoryStore, *args: Any, **kwargs: Any) -> int:
+        count = original(store, *args, **kwargs)
+        with store.connection:
+            store.connection.execute(
+                "UPDATE node_chunk_embeddings SET char_start = NULL, char_end = NULL"
+            )
+        return count
+
+    monkeypatch.setattr(MemoryStore, "replace_node_chunks", lose_address)
+    out = tmp_path / "report.json"
+    with pytest.raises(SystemExit, match="working copy lost coherence.*did not round-trip"):
+        _load_cli().main([
+            "--db", str(fixture_db), "--as-of", AS_OF,
+            "--window", "2026-08-12..2026-08-15", "--replay-since", REPLAY_SINCE,
+            "--cohort-rule", COHORT_RULE, "--out", str(out), "--quiet",
+        ])
+    assert not out.exists()
 
 
 def test_cli_rejects_a_missing_database(tmp_path: Path) -> None:
