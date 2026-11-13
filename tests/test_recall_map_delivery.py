@@ -461,7 +461,6 @@ def test_a_lookup_of_a_delivered_medoid_is_the_only_outcome_that_moves(
     }
 
 
-
 # --- (f) The column arrives on databases that predate it ---------------------
 
 

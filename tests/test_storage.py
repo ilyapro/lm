@@ -1141,15 +1141,17 @@ def _frozen_ledger_dump(store) -> list:
             """
         )
     ]
+
+
 FROZEN_LEDGER_GOLDEN: list = [
-        # D1: transport-matched, transport-nonconsumed, and a fallback hit that
-        # transport-first overrides. The run that records lookups scores this
-        # same window lookup_consumed = 1 without changing these three bits.
-        ["FROZEN-A", "2026-05-01T00:00:00.000000Z", "2026-05-02T00:00:00.000000Z", "T1", "project:frozen", "alpha", 1, 0, 1],
-        ["FROZEN-A", "2026-05-03T00:00:00.000000Z", "2026-05-04T00:00:00.000000Z", None, "project:frozen", "delta", 0, 0, 1],
-        ["FROZEN-B", "2026-05-02T00:00:00.000000Z", "2026-05-03T00:00:00.000000Z", "T3", "project:frozen", "gamma", 1, 1, 1],
-        ["FROZEN-B", "2026-05-05T00:00:00.000000Z", "2026-05-06T00:00:00.000000Z", None, "project:frozen", None, 0, 0, 0],
-        ["FROZEN-MEDOID", "2026-05-04T00:00:00.000000Z", "2026-05-05T00:00:00.000000Z", "T4", "project:frozen", "epsilon", 1, 1, 1],
+    # D1: transport-matched, transport-nonconsumed, and a fallback hit that
+    # transport-first overrides. The run that records lookups scores this
+    # same window lookup_consumed = 1 without changing these three bits.
+    ["FROZEN-A", "2026-05-01T00:00:00.000000Z", "2026-05-02T00:00:00.000000Z", "T1", "project:frozen", "alpha", 1, 0, 1],
+    ["FROZEN-A", "2026-05-03T00:00:00.000000Z", "2026-05-04T00:00:00.000000Z", None, "project:frozen", "delta", 0, 0, 1],
+    ["FROZEN-B", "2026-05-02T00:00:00.000000Z", "2026-05-03T00:00:00.000000Z", "T3", "project:frozen", "gamma", 1, 1, 1],
+    ["FROZEN-B", "2026-05-05T00:00:00.000000Z", "2026-05-06T00:00:00.000000Z", None, "project:frozen", None, 0, 0, 0],
+    ["FROZEN-MEDOID", "2026-05-04T00:00:00.000000Z", "2026-05-05T00:00:00.000000Z", "T4", "project:frozen", "epsilon", 1, 1, 1],
 ]
 
 
