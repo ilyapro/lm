@@ -73,7 +73,10 @@ from .corrections import (
     DetectorConfig,
     detect_corrections,
 )
-from .dedup import DEFAULT_DEDUP, CandidateObservation, Deduper, NodeSnapshot, NullMemoryIndex
+from .dedup import (
+    DEFAULT_DEDUP, CandidateObservation, Deduper, NodeSnapshot, NullMemoryIndex,
+    extraction_identity,
+)
 from .evidence import proposed_attestations
 from .gate import DEFAULT_GATE, Gate
 from .insights import (
@@ -458,24 +461,32 @@ def evaluate_gate(
 # --------------------------------------------------------------------------
 
 
-def op_fingerprint(op: ProposedOp) -> str:
+def _remember_fingerprint(content: str, scope: str, span: str | None = None) -> str:
+    identity = {"kind": "remember", "content": content, "scope": scope}
+    if span is not None:
+        identity["source_span"] = span
+    return hashlib.sha256(canonical_json(identity, indent=None).encode("utf-8")).hexdigest()
+
+
+def op_fingerprint(op: ProposedOp, *, legacy: bool = False) -> str:
     """A stable identity for one op, independent of run-time context noise.
 
-    Only what the write *does* is hashed: the fact and its scope, the corrected
+    Only what the write *does* is hashed: the fact, scope and source span, the corrected
     node and its correction, the attested event and its canonical evidence
     digest (the same digest the server's own attestation ledger keys on).
     Attribution context is excluded on purpose — a runner restarted with a
     different task label must still recognise its earlier write.
+    ``legacy`` addresses remember entries that predate source-aware identity;
+    it does not change teach or attest identity.
     """
 
     payload = op.payload
     if op.kind == "remember":
         context = payload.get("context") or {}
-        identity: dict[str, Any] = {
-            "kind": "remember",
-            "content": str(payload.get("content") or ""),
-            "scope": str(context.get("scope") or ""),
-        }
+        return _remember_fingerprint(
+            str(payload.get("content") or ""), str(context.get("scope") or ""),
+            None if legacy else op.provenance.source_span,
+        )
     elif op.kind == "teach":
         correction = payload.get("correction")
         identity = {
@@ -513,6 +524,25 @@ def op_fingerprint(op: ProposedOp) -> str:
 
 class LedgerError(RuntimeError):
     """Operation state could not be read or durably saved. Do not dispatch."""
+
+
+def _entry_source_span(entry: Mapping[str, Any], receipt: NodeSnapshot | None) -> str:
+    """Source from a saved request or its exact, fully identified recipient result."""
+    if "operation" in entry:
+        return ProposedOp.from_dict(entry["operation"]).provenance.source_span
+    if receipt is None or entry["state"] != "applied" or entry["kind"] != "remember":
+        return ""
+    source = extraction_identity(receipt.context)
+    if (receipt.node_id != entry.get("result_id") or not source
+            or source[0] != entry["transcript_sha256"]
+            or receipt.context.get("corrected_node_id")):
+        return ""
+    legacy = _remember_fingerprint(receipt.content, str(receipt.scope or ""))
+    current = _remember_fingerprint(receipt.content, str(receipt.scope or ""), source[1])
+    fingerprint = receipt.context.get("extraction_fingerprint")
+    if entry["fingerprint"] != legacy or (fingerprint and fingerprint not in {legacy, current}):
+        return ""
+    return source[1]
 
 
 def _written_nodes_total(entries: Iterable[Mapping[str, Any]]) -> int:
@@ -563,9 +593,10 @@ class Ledger:
                     raise ValueError("invalid operation state")
                 if entry["kind"] not in {"remember", "teach", "attest"}:
                     raise ValueError("invalid operation kind")
-                if entry["state"] != "applied":
+                if entry["state"] != "applied" or "operation" in entry:
                     op = ProposedOp.from_dict(entry["operation"]).validate()
-                    if (op.provenance.transcript_sha256, op_fingerprint(op)) != key:
+                    if (op.provenance.transcript_sha256 != key[0]
+                            or key[1] not in {op_fingerprint(op), op_fingerprint(op, legacy=True)}):
                         raise ValueError("saved operation identity mismatch")
                     if op.kind != entry["kind"] or not isinstance(entry["recipient"], str):
                         raise ValueError("invalid saved operation")
@@ -635,15 +666,41 @@ class Ledger:
         """Conservatively count possible writes towards the bootstrap bound."""
         return _written_nodes_total(self.entries())
 
-    def begin(self, op: ProposedOp, recipient: str) -> tuple[bool, dict[str, Any]]:
+    def _operation_entry(
+        self, op: ProposedOp, receipt: NodeSnapshot | None = None,
+    ) -> dict[str, Any] | None:
+        sha = op.provenance.transcript_sha256
+        entry = self._seen.get((sha, op_fingerprint(op)))
+        if entry is not None or op.kind != "remember":
+            return entry
+        entry = self._seen.get((sha, op_fingerprint(op, legacy=True)))
+        if entry is not None:
+            span = _entry_source_span(entry, receipt)
+            if span and span != op.provenance.source_span:
+                return None
+        return entry
+
+    def for_operation(
+        self, op: ProposedOp, receipt: NodeSnapshot | None = None,
+    ) -> dict[str, Any] | None:
+        with self._locked():
+            entry = self._operation_entry(op, receipt)
+            return dict(entry) if entry is not None else None
+
+    def begin(
+        self, op: ProposedOp, recipient: str, *, receipt: NodeSnapshot | None = None,
+    ) -> tuple[bool, dict[str, Any]]:
         """Claim one operation durably, or return its existing admission state."""
         key = (op.provenance.transcript_sha256, op_fingerprint(op))
         with self._locked():
-            prior = self._seen.get(key)
+            # Recheck receipt identity against the current row under the claim lock.
+            prior = self._operation_entry(op, receipt)
             if prior and prior["state"] != "ready":
                 return False, dict(prior)
             if prior and prior["recipient"] != recipient:
                 return False, dict(prior)
+            if prior:
+                key = (prior["transcript_sha256"], prior["fingerprint"])
             entry = dict(prior) if prior else {
                 "transcript_sha256": key[0], "fingerprint": key[1],
                 "kind": op.kind, "session_key": op.provenance.session_key,
@@ -725,7 +782,7 @@ def enforce_attribution(
         record.transcript_sha256 or op.provenance.transcript_sha256
     )
     context.setdefault("source_session_key", record.session_key)
-    context.setdefault("source_span", op.provenance.source_span)
+    context["source_span"] = op.provenance.source_span
     context.setdefault("extraction_runner", RUNNER_VERSION)
     context["extraction_fingerprint"] = op_fingerprint(op)
     payload["context"] = context
@@ -992,7 +1049,7 @@ class ExtractionRunner:
                 same_span and not context.get("corrected_node_id")
             )
             fingerprint = context.get("extraction_fingerprint")
-            if fingerprint and fingerprint != op_fingerprint(op):
+            if fingerprint and fingerprint not in {op_fingerprint(op), op_fingerprint(op, legacy=True)}:
                 continue
             if op.kind == "teach" and snapshot.node_id not in (
                 results[0].get("superseded_by") or []
@@ -1062,7 +1119,7 @@ class ExtractionRunner:
 
     def _prior(
         self, entry: dict[str, Any] | None, decision: OpDecision, *,
-        node_id: str = "", persist: bool = False,
+        node_id: str = "", persist: bool = False, receipt: NodeSnapshot | None = None,
     ) -> bool:
         """Resolve existing state. False means that dispatch may be considered."""
         if entry is None:
@@ -1071,6 +1128,12 @@ class ExtractionRunner:
             decision.status, decision.reason = "unknown", "recipient_mismatch"
             decision.detail = "Use the saved recipient URL; changing targets cannot resolve this operation."
             return True
+        if decision.fingerprint != entry["fingerprint"]:
+            if not _entry_source_span(entry, receipt):
+                decision.status, decision.reason = "unknown", "legacy_source_unconfirmed"
+                decision.detail = "The saved result's exact source is unavailable; mutation is blocked."
+                return True
+            decision.fingerprint = entry["fingerprint"]
         if entry["state"] == "applied":
             decision.status, decision.reason = "skipped", "ledger_duplicate"
             decision.node_id = entry.get("result_id", "") if entry["kind"] != "attest" else ""
@@ -1099,16 +1162,19 @@ class ExtractionRunner:
             )
         return True
 
-    def _dispatch(self, op: ProposedOp, decision: OpDecision) -> None:
+    def _dispatch(
+        self, op: ProposedOp, decision: OpDecision, *, receipt: NodeSnapshot | None = None,
+    ) -> None:
         if self.config.dry_run:
             decision.status = "would_write"
             return
         if self.client is None:
             decision.status, decision.reason = "failed", "no_client"
             return
-        claimed, entry = self.ledger.begin(op, getattr(self.client, "url", ""))
-        if not claimed and self._prior(entry, decision, persist=True):
+        claimed, entry = self.ledger.begin(op, getattr(self.client, "url", ""), receipt=receipt)
+        if not claimed and self._prior(entry, decision, persist=True, receipt=receipt):
             return
+        decision.fingerprint = entry["fingerprint"]
         # Reuse the saved request, even if a new proposal changed attribution.
         op = ProposedOp.from_dict(entry["operation"])
         try:
@@ -1209,9 +1275,23 @@ class ExtractionRunner:
                 decision = self._decision(op)
                 decisions.append(decision)
                 sha = op.provenance.transcript_sha256
+                receipt = None
                 try:
-                    entry = self.ledger.get(sha, fingerprint)
-                    if self._prior(entry, decision, persist=not self.config.dry_run):
+                    entry = self.ledger.for_operation(op)
+                    if (entry and entry["fingerprint"] != fingerprint
+                            and "operation" not in entry and self.client is not None
+                            and entry.get("result_id")
+                            and entry.get("recipient", self.client.url) == self.client.url):
+                        try:
+                            nodes = self.client.lookup_nodes([entry["result_id"]], view="full").get("results") or []
+                            receipt = next((NodeSnapshot(
+                                node_id=n["id"], content=n.get("content", ""),
+                                scope=n.get("scope"), context=n.get("context") or {},
+                            ) for n in nodes if n.get("id") == entry["result_id"]), None)
+                        except ClientError:
+                            pass  # Unavailable exact evidence cannot release a legacy key.
+                        entry = self.ledger.for_operation(op, receipt)
+                    if self._prior(entry, decision, persist=not self.config.dry_run, receipt=receipt):
                         continue
                     if entry:
                         op = ProposedOp.from_dict(entry["operation"])
@@ -1268,7 +1348,7 @@ class ExtractionRunner:
                     total_ops += 1
 
                 try:
-                    self._dispatch(op, decision)
+                    self._dispatch(op, decision, receipt=receipt)
                 except LedgerError as exc:
                     decision.status, decision.reason = "unknown", "ledger_error"
                     decision.detail = str(exc)
