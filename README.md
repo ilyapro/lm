@@ -544,6 +544,15 @@ Attestation has an independent, default-off control. `LM_EXPOSE_ATTEST=1` or
 variable. Neither attestation control changes maintenance-tool visibility, and
 the operator-tool control does not enable attestation.
 
+Attestation evidence is canonicalized by normalizing CRLF/CR to LF, stripping
+trailing whitespace per line and leading/trailing blank lines, and dropping
+empty items. Canonical items containing U+001E are rejected before grading or
+mutation. Accepted items are joined with that reserved separator and hashed as
+UTF-8; the event ID and digest identify the receipt. Replay also requires the
+saved item count and total character count to match, and applies no new effects.
+Incompatible receipts remain intact. Extraction reports invalid bundles without
+proposing them; a rejected replay leaves a saved UNKNOWN unresolved.
+
 FastMCP and sentence-transformers are declared runtime dependencies. When
 sentence-transformers is absent in a source checkout or a model is unavailable
 locally, Living Memory uses its deterministic multilingual hash fallback.
