@@ -117,9 +117,10 @@ def test_extraction_redacts_named_assignments_before_prompt_and_cassette(
         call["task"], call["schema"], expected_payload,
         config=PromptConfig(redactor=lambda s: s),
     )
-    assert ordinary in json.loads(
+    rendered_payload = json.loads(
         call["prompt"].split("# Payload\n", 1)[1].split("\n\nReply", 1)[0]
-    )["candidate"]["evidence"][0]["text"]
+    )
+    assert any(ordinary in item["quote"] for item in rendered_payload["evidence"])
     assert call["prompt"] == expected.user_prompt
     assert call["prompt_sha256"] == expected.prompt_sha256
     assert "dummy-" not in call["prompt"]
