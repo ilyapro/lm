@@ -412,6 +412,7 @@ def bound_payload(
             f"payload is {size} bytes and cannot be shrunk below {max_bytes}"
         )
 
+
 #: Replaces the ambient system prompt. Rule 5 is the confused-deputy guard: the
 #: payload is somebody else's session and routinely contains imperatives.
 JUDGE_SYSTEM_PROMPT = """\
