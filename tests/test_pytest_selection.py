@@ -1,4 +1,4 @@
-"""Explicit pytest selections require every requested target to exist."""
+"""Checkout pytest preserves explicit target selection."""
 
 from __future__ import annotations
 
@@ -28,7 +28,9 @@ def project(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _run_pytest(project: Path, *args: str, cwd: Path | None = None):
+def _run_pytest(
+    project: Path, *args: str, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     env = dict(os.environ)
     env.update(
         PYTHONPATH=os.pathsep.join(p for p in sys.path if p),
@@ -78,7 +80,7 @@ def test_valid_selection(project: Path, args: tuple[str, ...], count: int) -> No
 )
 @pytest.mark.parametrize("with_present", [False, True], ids=["alone", "mixed"])
 def test_missing_target_fails(project: Path, missing: str, with_present: bool) -> None:
-    args = ["selection_suite/test_present.py"] if with_present else []
+    args = ["selection_suite/test_present.py::test_first"] if with_present else []
     completed = _run_pytest(project, *args, missing)
 
     assert completed.returncode == pytest.ExitCode.USAGE_ERROR, completed.stdout + completed.stderr
@@ -97,6 +99,20 @@ def test_missing_pyargs_module_fails(project: Path) -> None:
     )
 
     assert completed.returncode == pytest.ExitCode.USAGE_ERROR, completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize("node", ["test_first", "test_absent"])
+def test_overlapping_nodeid_with_keep_duplicates(project: Path, node: str) -> None:
+    completed = _run_pytest(
+        project, "--keep-duplicates", "selection_suite/test_present.py",
+        f"selection_suite/test_present.py::{node}",
+    )
+
+    if node == "test_first":
+        assert completed.returncode == pytest.ExitCode.OK, completed.stdout + completed.stderr
+        assert "3 passed" in completed.stdout
+    else:
+        assert completed.returncode == pytest.ExitCode.USAGE_ERROR, completed.stdout + completed.stderr
 
 
 @pytest.mark.parametrize("absolute", [False, True], ids=["relative", "absolute"])

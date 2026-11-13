@@ -78,6 +78,11 @@ npm run server -- ./living_memory.sqlite3
 that instantiates the server, verifies the four-tool default discovery surface,
 and exercises all nine registered core tools locally.
 
+Explicit pytest targets are passed through unchanged; missing files and
+directories fail the run. Select individual node IDs to check them independently.
+When selecting a whole file or directory together with a node ID inside it, use
+`--keep-duplicates` to prevent pytest from absorbing the narrower selection.
+
 `scripts/setup-python.sh`, `scripts/test.sh`, and `scripts/server.sh` use
 `.cache/python-deps` by default. Setup reuses a cache when its `pyproject.toml`
 fingerprint and target preparation format match and `fastmcp` and `pytest`
