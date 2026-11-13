@@ -37,7 +37,7 @@ def legacy_fingerprint(op):
         "scope": op.payload["context"]["scope"],
     }
     return hashlib.sha256(json.dumps(
-        identity, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+        identity, sort_keys=True, ensure_ascii=False,
     ).encode()).hexdigest()
 
 
