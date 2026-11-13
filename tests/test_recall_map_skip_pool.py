@@ -32,9 +32,8 @@ def test_case_preserves_measured_and_unmeasured_pool(tmp_path: Path, pool: int |
 
 
 @pytest.mark.parametrize("decay", [False, True])
-def test_recall_residual_skips_pool_history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decay: bool) -> None:
+def test_recall_residual_preserves_unmeasured_pool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decay: bool) -> None:
     import os
-    from unittest.mock import patch
 
     from living_memory.config import MemoryConfig
     from living_memory.recall_map import CURTAIL_STREAK, RecallMapBuilder
@@ -69,9 +68,7 @@ def test_recall_residual_skips_pool_history(tmp_path: Path, monkeypatch: pytest.
             ambient_context={"task": task},
         )
         assert len(selected) == 3 and service.last_residual
-        with patch.object(store, "matured_recall_history", wraps=store.matured_recall_history) as history:
-            built = RecallMapBuilder(store).build(service.last_residual, scope=scope, task=task)
-        history.assert_not_called()
+        built = RecallMapBuilder(store).build(service.last_residual, scope=scope, task=task)
         assert built is not None and built.pool_size is None and built.selection is None
         payload = built.to_dict()
         assert payload == {"clusters": [], "covered": 0, "curtailed": True,

@@ -13,11 +13,9 @@ overstating what the classification supports.  These tests cover both.
   are NULL, are excluded from the ``known`` denominator, and still contribute
   their observable arms.  A database on ledger format 1 yields all-NULL and
   says why, rather than reading a missing column as "nobody followed anything".
-* **Fidelity to the production readers** — the census's M/C/K is checked
-  against :meth:`MemoryStore.matured_recall_history` on the same corpus, and
-  its inverted-index echo probe against ``recall_map._echoes`` itself.  Both
-  are reimplementations forced by the read-only boundary, and an unchecked
-  reimplementation is where a census quietly stops describing production.
+* **Reader outcomes** — the census's M/C/K and lookup counts match explicit
+  synthetic outcomes, and its inverted-index echo probe agrees with
+  ``recall_map._echoes``.
 * **The boundary** — the corpus is opened read-only, and reading it does not
   move a byte of it.
 * **The artifact** — the committed census and procedure exist, agree with each
@@ -26,7 +24,7 @@ overstating what the classification supports.  These tests cover both.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 import importlib.util
@@ -37,10 +35,7 @@ import sys
 import pytest
 
 from living_memory.recall_map import _echoes
-from living_memory.storage import (
-    RECALL_DELIVERY_HISTORY_STATE_TABLE,
-    MemoryStore,
-)
+from living_memory.storage import RECALL_DELIVERY_HISTORY_STATE_TABLE
 
 REPO = Path(__file__).resolve().parents[1]
 ARTIFACT_DIR = REPO / "artifacts" / "recall-map" / "follow-signal"
@@ -214,39 +209,76 @@ def test_zero_known_windows_never_reports_a_decided_rate(arm: dict[str, Any]) ->
 
 
 # ----------------------------------------------------------------------
-# Fidelity to the production readers
+# Reader outcomes
 # ----------------------------------------------------------------------
 
 
-def test_census_mck_matches_the_stores_own_matured_recall_history(
+def test_census_reports_expected_delivery_and_lookup_outcomes(
     synthetic: dict[str, Any], arm: dict[str, Any]
 ) -> None:
-    """The read-only copy of the ledger reader must agree with the reader.
-
-    ``matured_recall_history`` needs a writable store, which the live-database
-    boundary forbids, so the census reimplements the ordering and the trailing
-    runs.  This is the check that keeps the copy a copy.
-    """
-
-    node_ids = sorted(synthetic["nodes"].values())
-    with MemoryStore(Path(synthetic["path"])) as store:
-        expected = store.matured_recall_history(node_ids, DECISION_AT)
-
+    # M/C/K, then lookup consumed/known/trailing absent. The lookup-followed
+    # node has three windows; the sticky node has two pre-epoch NULL windows.
+    expected = {
+        "lookup_followed": (3, 1, 1, 3, 3, 0),
+        "ask_follow": (1, 0, 1, 0, 1, 1),
+        "redelivered_only": (4, 2, 1, 0, 2, 2),
+        "nothing": (1, 0, 1, 0, 1, 1),
+    }
     rows = {row["node_id"]: row["matured_history"] for row in arm["top_sticky_rows"]}
-    checked = 0
-    for node_id in node_ids:
-        if node_id not in rows:
-            continue
-        theirs, ours = expected[node_id], rows[node_id]
-        assert ours["available"] is theirs.available
-        assert ours["matured"] == theirs.matured
-        assert ours["consumed"] == theirs.consumed
-        assert ours["trailing_nonconsumed"] == theirs.trailing_nonconsumed
-        assert ours["lookup_consumed"] == theirs.lookup_consumed
-        assert ours["lookup_known"] == theirs.lookup_known
-        assert ours["lookup_trailing_absent"] == theirs.lookup_trailing_absent
-        checked += 1
-    assert checked == len(node_ids), "every scenario node must appear in the rows"
+    assert set(rows) == set(synthetic["nodes"].values())
+    for scenario, counts in expected.items():
+        row = rows[synthetic["nodes"][scenario]]
+        assert row == dict(zip(
+            ("matured", "consumed", "trailing_nonconsumed", "lookup_consumed",
+             "lookup_known", "lookup_trailing_absent"), counts
+        ), available=True, unavailable_reason=None, rows=counts[0])
+
+
+@pytest.mark.parametrize("hours,count", [(23, 0), (24, 1), (25, 2)])
+def test_census_includes_only_matured_windows_at_the_boundary(
+    synthetic: dict[str, Any], hours: int, count: int
+) -> None:
+    connection = census.open_readonly(Path(synthetic["path"]))
+    try:
+        windows, _ = census.classify_windows(
+            connection, census.load_events(connection),
+            probe=census.probe_schema(connection),
+            decision_at=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=hours),
+        )
+    finally:
+        connection.close()
+    assert len(windows) == count
+    assert all(w.node_id == synthetic["nodes"]["redelivered_only"] for w in windows)
+
+
+def test_census_lookup_run_skips_unknown_windows_and_truncation_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Newest first: absent, unknown, absent, followed. Input order differs
+    # from time order, so skipping NULL cannot hide an ordering error.
+    windows = [
+        census.Window(
+            node_id="TRI", delivery_event_id=f"event-{day}",
+            delivered_at=f"2026-09-{day:02d}T00:00:00Z",
+            outcome_end=f"2026-09-{day + 1:02d}T00:00:00Z",
+            redelivered=False, lookup=lookup, is_map_medoid=False,
+            ask_applicable=False, ask_any=False, ask_transport=False,
+        )
+        for day, lookup in ((3, False), (1, True), (7, False), (5, None))
+    ]
+    assert census.matured_triples(windows)["TRI"] == {
+        "available": True, "unavailable_reason": None,
+        "matured": 4, "consumed": 0, "trailing_nonconsumed": 4,
+        "lookup_consumed": 1, "lookup_known": 3, "lookup_trailing_absent": 2,
+        "rows": 4,
+    }
+    monkeypatch.setattr(census, "MAX_RECALL_HISTORY_DELIVERIES_PER_NODE", 2)
+    assert census.matured_triples(windows)["TRI"] == {
+        "available": False, "unavailable_reason": "history_truncated",
+        "matured": None, "consumed": None, "trailing_nonconsumed": None,
+        "lookup_consumed": None, "lookup_known": None, "lookup_trailing_absent": None,
+        "rows": 4,
+    }
 
 
 def test_inverted_index_probe_agrees_with_the_modules_own_echo(

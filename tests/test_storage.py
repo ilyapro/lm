@@ -9,7 +9,6 @@ import pytest
 import living_memory.storage as storage_module
 from living_memory.config import MemoryConfig, load_config
 from living_memory.storage import (
-    MAX_RECALL_HISTORY_CANDIDATES,
     RECALL_DELIVERY_HISTORY_TABLE,
     RECALL_DELIVERY_HISTORY_STATE_TABLE,
     RECALL_HISTORY_EVENT_TABLE,
@@ -614,7 +613,7 @@ def _organic_tail(node_id: str, prefix: str) -> list[dict[str, object]]:
     ]
 
 
-def test_matured_recall_history_matches_frozen_delivery_and_consumption_rules(
+def test_recall_history_records_delivery_windows_and_transport_first_consumption(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
@@ -642,8 +641,7 @@ def test_matured_recall_history_matches_frozen_delivery_and_consumption_rules(
             transport="transport-1",
         )
 
-        # D2 is consumed through its transport; D3 has no consumer.  At the
-        # exact D3 maturity boundary the expected history is M=3,C=1,K=1.
+        # D2 is consumed through its transport; D3 has no consumer.
         _record_event_at(
             store,
             monkeypatch,
@@ -666,29 +664,7 @@ def test_matured_recall_history_matches_frozen_delivery_and_consumption_rules(
             transport=None,
         )
 
-        before_boundary = store.matured_recall_history(
-            ["NODE-A", "NEVER-DELIVERED"], "2026-01-04T11:59:59Z"
-        )
-        assert before_boundary["NODE-A"].available is True
-        assert (
-            before_boundary["NODE-A"].m,
-            before_boundary["NODE-A"].c,
-            before_boundary["NODE-A"].k,
-        ) == (2, 1, 0)
-        assert before_boundary["NEVER-DELIVERED"].available is True
-        assert (
-            before_boundary["NEVER-DELIVERED"].m,
-            before_boundary["NEVER-DELIVERED"].c,
-            before_boundary["NEVER-DELIVERED"].k,
-        ) == (0, 0, 0)
-
-        at_boundary = store.matured_recall_history(
-            ["NODE-A"], "2026-01-04T12:00:00Z"
-        )["NODE-A"]
-        assert (at_boundary.m, at_boundary.c, at_boundary.k) == (3, 1, 1)
-
-        # A delivery at the decision instant and a later delivery are both
-        # present in the ledger, but neither has a matured outcome.
+        # Every delivery records its own 24-hour window.
         _record_event_at(
             store,
             monkeypatch,
@@ -703,10 +679,18 @@ def test_matured_recall_history_matches_frozen_delivery_and_consumption_rules(
             results=_organic_tail("NODE-A", "FUTURE"),
             task="other-task",
         )
-        unchanged = store.matured_recall_history(
-            ["NODE-A"], "2026-01-04T12:00:00Z"
-        )["NODE-A"]
-        assert (unchanged.m, unchanged.c, unchanged.k) == (3, 1, 1)
+        rows = store.connection.execute(
+            f"""SELECT node_id, delivered_at, outcome_end, transport_matched,
+                       transport_consumed, fallback_consumed
+                FROM {RECALL_DELIVERY_HISTORY_TABLE} ORDER BY delivered_at"""
+        ).fetchall()
+        assert [tuple(row) for row in rows] == [
+            ("NODE-A", "2026-01-01T00:00:00.000000Z", "2026-01-02T00:00:00.000000Z", 1, 0, 1),
+            ("NODE-A", "2026-01-02T06:00:00.000000Z", "2026-01-03T06:00:00.000000Z", 1, 1, 1),
+            ("NODE-A", "2026-01-03T12:00:00.000000Z", "2026-01-04T12:00:00.000000Z", 0, 0, 0),
+            ("NODE-A", "2026-01-04T12:00:00.000000Z", "2026-01-05T12:00:00.000000Z", 0, 0, 1),
+            ("NODE-A", "2026-01-04T13:00:00.000000Z", "2026-01-05T13:00:00.000000Z", 0, 0, 0),
+        ]
 
 
 def test_attach_recall_map_adds_medoid_and_resolves_existing_later_consumer(
@@ -738,86 +722,12 @@ def test_attach_recall_map_adds_medoid_and_resolves_existing_later_consumer(
             },
         )
 
-        history = store.matured_recall_history(
-            ["MAP-MEDOID"], "2026-02-02T00:00:00Z"
-        )["MAP-MEDOID"]
-        assert history.available is True
-        assert (history.m, history.c, history.k) == (1, 1, 0)
-
-
-def test_matured_recall_history_is_indexed_bounded_and_select_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        for index, at in enumerate(
-            (
-                "2026-03-01T00:00:00Z",
-                "2026-03-03T00:00:00Z",
-                "2026-03-05T00:00:00Z",
-            )
-        ):
-            _record_event_at(
-                store,
-                monkeypatch,
-                at,
-                results=_organic_tail("FREQUENT", f"F{index}"),
-                task=None,
-            )
-
-        plan = " ".join(
-            row["detail"]
-            for row in store.connection.execute(
-                f"""
-                EXPLAIN QUERY PLAN
-                SELECT transport_matched, transport_consumed,
-                       fallback_consumed, lookup_consumed
-                FROM {RECALL_DELIVERY_HISTORY_TABLE}
-                WHERE node_id = 'FREQUENT'
-                  AND delivered_at < '2026-03-07T00:00:00.000000Z'
-                  AND outcome_end <= '2026-03-07T00:00:00.000000Z'
-                ORDER BY outcome_end DESC, delivered_at DESC,
-                    (CASE WHEN transport_matched = 1
-                        THEN transport_consumed ELSE fallback_consumed END) DESC,
-                    delivery_event_id DESC
-                LIMIT 1025
-                """
-            ).fetchall()
-        )
-        assert "idx_recall_delivery_history_node_matured" in plan
-
-        statements: list[str] = []
-        before_changes = store.connection.total_changes
-        store.connection.set_trace_callback(statements.append)
-        history = store.matured_recall_history(
-            ["FREQUENT", "ABSENT"], "2026-03-07T00:00:00Z"
-        )
-        store.connection.set_trace_callback(None)
-        assert history["FREQUENT"].m == 3
-        assert store.connection.total_changes == before_changes
-        assert not any(
-            statement.lstrip().upper().startswith(
-                ("INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP", "ALTER")
-            )
-            for statement in statements
-        )
-
-        monkeypatch.setattr(
-            storage_module, "MAX_RECALL_HISTORY_DELIVERIES_PER_NODE", 2
-        )
-        truncated = store.matured_recall_history(
-            ["FREQUENT"], "2026-03-07T00:00:00Z"
-        )["FREQUENT"]
-        assert truncated.available is False
-        assert truncated.unavailable_reason == "history_truncated"
-        assert (truncated.m, truncated.c, truncated.k) == (None, None, None)
-
-        too_many = store.matured_recall_history(
-            [f"NODE-{index}" for index in range(MAX_RECALL_HISTORY_CANDIDATES + 1)],
-            "2026-03-07T00:00:00Z",
-        )
-        assert {item.unavailable_reason for item in too_many.values()} == {
-            "candidate_batch_truncated"
-        }
+        rows = store.connection.execute(
+            f"""SELECT delivery_event_id, node_id, transport_matched,
+                       transport_consumed, fallback_consumed
+                FROM {RECALL_DELIVERY_HISTORY_TABLE}"""
+        ).fetchall()
+        assert [tuple(row) for row in rows] == [(delivery.id, "MAP-MEDOID", 1, 1, 1)]
 
 
 def test_recall_history_backfill_is_idempotent_and_malformed_legacy_is_unavailable(
@@ -841,10 +751,15 @@ def test_recall_history_backfill_is_idempotent_and_malformed_legacy_is_unavailab
         store.connection.commit()
 
     with MemoryStore(db) as store:
-        rebuilt = store.matured_recall_history(
-            ["LEGACY-NODE"], "2026-04-02T00:00:00Z"
-        )["LEGACY-NODE"]
-        assert (rebuilt.m, rebuilt.c, rebuilt.k) == (1, 0, 1)
+        rebuilt = store.connection.execute(
+            f"""SELECT node_id, delivered_at, outcome_end, transport_matched,
+                       transport_consumed, fallback_consumed, lookup_consumed
+                FROM {RECALL_DELIVERY_HISTORY_TABLE}"""
+        ).fetchall()
+        assert [tuple(row) for row in rebuilt] == [
+            ("LEGACY-NODE", "2026-04-01T00:00:00.000000Z",
+             "2026-04-02T00:00:00.000000Z", 0, 0, 0, None),
+        ]
         row_count = store.connection.execute(
             f"SELECT COUNT(*) FROM {RECALL_DELIVERY_HISTORY_TABLE}"
         ).fetchone()[0]
@@ -863,19 +778,11 @@ def test_recall_history_backfill_is_idempotent_and_malformed_legacy_is_unavailab
             store.connection.execute(f"DELETE FROM {table}")
         store.connection.commit()
 
-    store = MemoryStore(db)
-    malformed = store.matured_recall_history(
-        ["LEGACY-NODE"], "2026-04-02T00:00:00Z"
-    )["LEGACY-NODE"]
-    assert malformed.available is False
-    assert malformed.unavailable_reason == "malformed_legacy_results"
-    store.close()
-
-    failed = store.matured_recall_history(
-        ["LEGACY-NODE"], "2026-04-02T00:00:00Z"
-    )["LEGACY-NODE"]
-    assert failed.available is False
-    assert failed.unavailable_reason == "history_read_failed"
+    with MemoryStore(db) as store:
+        state = store.connection.execute(
+            f"SELECT complete, unavailable_reason FROM {RECALL_DELIVERY_HISTORY_STATE_TABLE}"
+        ).fetchone()
+        assert tuple(state) == (0, "malformed_legacy_results")
 
 
 def _lookup_column(store: MemoryStore, node_id: str) -> list:
@@ -1046,12 +953,6 @@ def test_rebuilt_windows_predating_the_first_lookup_are_unknown_not_absent(
     rebuild()
     with MemoryStore(db) as store:
         assert _lookup_column(store, "OLD-NODE") == [None]
-        history = store.matured_recall_history(
-            ["OLD-NODE"], "2026-07-20T00:00:00Z"
-        )["OLD-NODE"]
-        assert (history.m, history.c, history.k) == (1, 0, 1)
-        assert history.lookup_known == 0
-        assert history.lookup_consumed == 0
 
         # (b) The first lookup arrives long after this window closed. It still
         # says nothing about the window, so the window stays unknown — the
@@ -1062,9 +963,6 @@ def test_rebuilt_windows_predating_the_first_lookup_are_unknown_not_absent(
     rebuild()
     with MemoryStore(db) as store:
         assert _lookup_column(store, "OLD-NODE") == [None]
-        assert store.matured_recall_history(
-            ["OLD-NODE"], "2026-07-20T00:00:00Z"
-        )["OLD-NODE"].lookup_known == 0
 
         # (c) A lookup predating the window makes it observable. It is outside
         # the window, so the answer is a known absence: 0, not NULL.
@@ -1074,70 +972,10 @@ def test_rebuilt_windows_predating_the_first_lookup_are_unknown_not_absent(
     rebuild()
     with MemoryStore(db) as store:
         assert _lookup_column(store, "OLD-NODE") == [0]
-        history = store.matured_recall_history(
-            ["OLD-NODE"], "2026-07-20T00:00:00Z"
-        )["OLD-NODE"]
-        assert (history.lookup_known, history.lookup_consumed) == (1, 0)
-        # Re-derivation never invents the frozen triple either.
-        assert (history.m, history.c, history.k) == (1, 0, 1)
         # The primary record survives its own rebuild.
         assert store.connection.execute(
             f"SELECT COUNT(*) FROM {RECALL_LOOKUP_EVENT_TABLE}"
         ).fetchone()[0] == 2
-
-
-def test_matured_recall_history_reports_the_tristate_skipping_unknown_windows(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        for index, at in enumerate(
-            (
-                "2026-09-01T00:00:00Z",
-                "2026-09-03T00:00:00Z",
-                "2026-09-05T00:00:00Z",
-                "2026-09-07T00:00:00Z",
-            )
-        ):
-            _record_event_at(
-                store, monkeypatch, at, results=_organic_tail("TRI", f"T{index}")
-            )
-        # Followed inside the second window only.
-        store.record_lookup_event(["TRI"], occurred_at="2026-09-03T06:00:00Z")
-
-        # The reader's contract, stated on a ledger written by hand because the
-        # online rule cannot produce an unknown window newer than a known one:
-        # newest-first the outcomes are 0, NULL, 0, 1, so the run counts two
-        # known absences, steps over the unknown, and stops at the follow.
-        store.connection.execute(
-            f"""
-            UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
-            SET lookup_consumed = CASE delivered_at
-                WHEN '2026-09-01T00:00:00.000000Z' THEN 1
-                WHEN '2026-09-03T00:00:00.000000Z' THEN 0
-                WHEN '2026-09-05T00:00:00.000000Z' THEN NULL
-                ELSE 0 END
-            WHERE node_id = 'TRI'
-            """
-        )
-        store.connection.commit()
-
-        history = store.matured_recall_history(["TRI"], "2026-09-09T00:00:00Z")["TRI"]
-        assert (history.m, history.c, history.k) == (4, 0, 4)
-        assert history.lookup_known == 3
-        assert history.lookup_consumed == 1
-        assert history.lookup_trailing_absent == 2
-
-        # Unavailability is tri-state-aware: no count is a stand-in for zero.
-        monkeypatch.setattr(
-            storage_module, "MAX_RECALL_HISTORY_DELIVERIES_PER_NODE", 2
-        )
-        truncated = store.matured_recall_history(["TRI"], "2026-09-09T00:00:00Z")["TRI"]
-        assert truncated.available is False
-        assert (
-            truncated.lookup_known,
-            truncated.lookup_consumed,
-            truncated.lookup_trailing_absent,
-        ) == (None, None, None)
 
 
 def test_lookup_column_is_added_to_a_ledger_that_predates_it(
@@ -1180,27 +1018,13 @@ def test_lookup_column_is_added_to_a_ledger_that_predates_it(
                 f"SELECT format_version FROM {RECALL_DELIVERY_HISTORY_STATE_TABLE}"
             ).fetchone()["format_version"] == storage_module._RECALL_DELIVERY_HISTORY_FORMAT
             assert _lookup_column(store, "PRE-NODE") == [None]
-            history = store.matured_recall_history(
-                ["PRE-NODE"], "2026-10-03T00:00:00Z"
-            )["PRE-NODE"]
-            assert history.available is True
-            assert (history.m, history.c, history.k) == (1, 0, 1)
-            assert history.lookup_known == 0
 
 
 #: One replay that exercises every frozen mechanic at once: transport-first
 #: invalidation of a fallback hit, a transport consumer, a scope/task consumer,
 #: a late-attached map medoid resolved against an already-recorded consumer,
-#: and a delivery nobody ever answers.  Kept free of pytest fixtures on purpose
-#: — ``scripts`` reproducing the golden below runs it against a checkout of the
-#: pre-lookup code, where no fixture of this module exists.
+#: and a delivery nobody ever answers.
 FROZEN_SCENARIO_SCOPE = "project:frozen"
-FROZEN_SCENARIO_NODES = ("FROZEN-A", "FROZEN-B", "FROZEN-MEDOID", "FROZEN-NEVER")
-FROZEN_SCENARIO_INSTANTS = (
-    "2026-05-02T00:00:00Z",
-    "2026-05-04T00:00:00Z",
-    "2026-05-07T00:00:00Z",
-)
 
 
 def _replay_frozen_scenario(store, set_now, *, record_lookups: bool) -> None:
@@ -1288,14 +1112,14 @@ def _replay_frozen_scenario(store, set_now, *, record_lookups: bool) -> None:
         )
 
 
-def _frozen_ledger_dump(store) -> dict:
-    """Every frozen field of the ledger, plus the M/C/K the evaluator reads.
+def _frozen_ledger_dump(store) -> list:
+    """Delivery fields unaffected by lookup correlation.
 
     ``delivery_event_id`` is excluded because it is a fresh ULID per run; the
     remaining key ``(node_id, delivered_at)`` is unique within this scenario.
     """
 
-    rows = [
+    return [
         [
             row["node_id"],
             row["delivered_at"],
@@ -1317,58 +1141,16 @@ def _frozen_ledger_dump(store) -> dict:
             """
         )
     ]
-    mck = {
-        instant: {
-            node_id: [history.available, history.m, history.c, history.k]
-            for node_id, history in sorted(
-                store.matured_recall_history(
-                    list(FROZEN_SCENARIO_NODES), instant
-                ).items()
-            )
-        }
-        for instant in FROZEN_SCENARIO_INSTANTS
-    }
-    return {"rows": rows, "mck": mck}
-
-
-#: Captured by replaying ``_replay_frozen_scenario`` against the pre-lookup
-#: code (``git archive HEAD`` of the commit that introduced the column), where
-#: ``lookup_consumed`` and ``recall_lookup_events`` do not exist.  It is the
-#: evidence for the claim that the tri-state is additive: not an assertion that
-#: nothing moved, but the previous release's own answer, kept verbatim.
-FROZEN_LEDGER_GOLDEN: dict = {
-    "rows": [
+FROZEN_LEDGER_GOLDEN: list = [
         # D1: transport-matched, transport-nonconsumed, and a fallback hit that
         # transport-first overrides. The run that records lookups scores this
-        # same window lookup_consumed = 1 — which is exactly the divergence the
-        # goal is about, and it moves none of these three bits.
+        # same window lookup_consumed = 1 without changing these three bits.
         ["FROZEN-A", "2026-05-01T00:00:00.000000Z", "2026-05-02T00:00:00.000000Z", "T1", "project:frozen", "alpha", 1, 0, 1],
         ["FROZEN-A", "2026-05-03T00:00:00.000000Z", "2026-05-04T00:00:00.000000Z", None, "project:frozen", "delta", 0, 0, 1],
         ["FROZEN-B", "2026-05-02T00:00:00.000000Z", "2026-05-03T00:00:00.000000Z", "T3", "project:frozen", "gamma", 1, 1, 1],
         ["FROZEN-B", "2026-05-05T00:00:00.000000Z", "2026-05-06T00:00:00.000000Z", None, "project:frozen", None, 0, 0, 0],
         ["FROZEN-MEDOID", "2026-05-04T00:00:00.000000Z", "2026-05-05T00:00:00.000000Z", "T4", "project:frozen", "epsilon", 1, 1, 1],
-    ],
-    "mck": {
-        "2026-05-02T00:00:00Z": {
-            "FROZEN-A": [True, 1, 0, 1],
-            "FROZEN-B": [True, 0, 0, 0],
-            "FROZEN-MEDOID": [True, 0, 0, 0],
-            "FROZEN-NEVER": [True, 0, 0, 0],
-        },
-        "2026-05-04T00:00:00Z": {
-            "FROZEN-A": [True, 2, 1, 0],
-            "FROZEN-B": [True, 1, 1, 0],
-            "FROZEN-MEDOID": [True, 0, 0, 0],
-            "FROZEN-NEVER": [True, 0, 0, 0],
-        },
-        "2026-05-07T00:00:00Z": {
-            "FROZEN-A": [True, 2, 1, 0],
-            "FROZEN-B": [True, 2, 1, 1],
-            "FROZEN-MEDOID": [True, 1, 1, 0],
-            "FROZEN-NEVER": [True, 0, 0, 0],
-        },
-    },
-}
+]
 
 
 def test_lookup_column_leaves_the_frozen_ledger_byte_identical(
@@ -1384,8 +1166,7 @@ def test_lookup_column_leaves_the_frozen_ledger_byte_identical(
             dumps.append(_frozen_ledger_dump(store))
 
     without_lookups, with_lookups = dumps
-    # The golden is the pre-change release's answer; both of today's runs must
-    # reproduce it, including the run where lookups were recorded throughout.
+    # Recording lookups preserves every delivery field in both runs.
     assert without_lookups == FROZEN_LEDGER_GOLDEN
     assert with_lookups == FROZEN_LEDGER_GOLDEN
 

@@ -813,14 +813,10 @@ def classify_windows(
 
 
 def matured_triples(windows: Sequence[Window]) -> dict[str, dict[str, Any]]:
-    """Recompute the ledger's own M/C/K per node, ordering rule included.
+    """Summarize matured ledger windows by node in newest-first order.
 
-    Deliberately a reimplementation rather than a call into
-    :meth:`MemoryStore.matured_recall_history`: that method needs a writable
-    store, which would migrate a live database this script is forbidden to
-    touch.  ``tests/test_recall_map_follow_signal_census.py`` pins the two
-    against each other on a corpus where both can run, so the copy is checked
-    rather than asserted.
+    Unknown lookup outcomes are excluded from lookup counts and trailing runs.
+    A node whose windows exceed the bound is reported as unavailable.
     """
 
     by_node: dict[str, list[Window]] = defaultdict(list)

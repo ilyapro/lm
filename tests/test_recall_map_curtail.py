@@ -70,7 +70,6 @@ from living_memory.grounding import token_set
 from living_memory.retrieval import RecallResult
 from living_memory.storage import (
     RECALL_DELIVERY_HISTORY_HORIZON_HOURS,
-    MaturedRecallHistory,
     MemoryStore,
 )
 

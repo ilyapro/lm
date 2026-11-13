@@ -11,7 +11,7 @@ from living_memory import storage as storage_module
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.recall_map import RecallMapBuilder, cache_key
 from living_memory.server import create_mcp_server
-from living_memory.storage import MaturedRecallHistory, MemoryStore, RecallWork
+from living_memory.storage import MemoryStore, RecallWork
 
 from test_recall_map_curtail import OPERATOR_VALVES, cluster, offered, residual
 from test_transport_identity import _structured

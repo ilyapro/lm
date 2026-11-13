@@ -14,7 +14,7 @@ from living_memory.recall_map import (
     RecallMapBuilder, STAGE_ANCHOR, STAGE_PATH, STAGE_STRUCTURAL, _Curtailment,
 )
 from living_memory.retrieval import RecallResult
-from living_memory.storage import MaturedRecallHistory, MemoryStore, recall_fingerprint
+from living_memory.storage import MemoryStore, recall_fingerprint
 
 SCOPE = "project:lm"
 DECISION_AT = "2026-08-23T12:00:00Z"

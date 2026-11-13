@@ -42,7 +42,7 @@ import pytest
 from living_memory import storage as storage_module
 from living_memory.recall_map import RecallMapBuilder
 from living_memory.server import create_mcp_server
-from living_memory.storage import MaturedRecallHistory, SCHEMA_VERSION, MemoryStore
+from living_memory.storage import SCHEMA_VERSION, MemoryStore
 
 from test_transport_identity import FakeMCP
 from test_recall_map_curtail import OPERATOR_VALVES
@@ -405,13 +405,7 @@ def test_attach_recall_map_overwrites_and_rejects_unknown_events(
 def test_a_lookup_of_a_delivered_medoid_is_the_only_outcome_that_moves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """End to end, the case the tri-state was added for.
-
-    The map offers a medoid; nobody recalls it again, so all three frozen
-    consumed bits stay 0 and the evaluator's triple keeps reading "delivered,
-    never used". Somebody fetches that exact ULID inside the window, and the
-    fourth column — and only the fourth column — flips.
-    """
+    """Fetching a delivered medoid changes only its lookup outcome."""
 
     # Frozen clock, so the delivery window and the lookup instant are exact.
     # The sweep has to go with it: seeds stamped in 2026 against a real-clock
@@ -466,14 +460,6 @@ def test_a_lookup_of_a_delivered_medoid_is_the_only_outcome_that_moves(
         "lookup_consumed": 1,
     }
 
-    # The pool gate above runs on the fixture's stubbed history; the ledger
-    # verdict itself has to come from the real reader.
-    history = store.matured_recall_history([medoid_id], "2026-01-03T00:00:00Z")[medoid_id]
-    # The frozen triple is unmoved and still says nobody used it...
-    assert (history.m, history.c, history.k) == (1, 0, 1)
-    # ...while the honest signal says somebody did.
-    assert (history.lookup_known, history.lookup_consumed) == (1, 1)
-    assert history.lookup_trailing_absent == 0
 
 
 # --- (f) The column arrives on databases that predate it ---------------------
@@ -552,22 +538,17 @@ def test_skipped_recall_preserves_results_and_persists_unmeasured_pool(
     shutil.copyfile(seed, on)
     shutil.copyfile(seed, off)
 
-    calls = {"pool": 0, "history": 0}
+    calls = {"pool": 0}
     original_pool = RecallMapBuilder._pool
 
     def pool_spy(self, results, **kwargs):
         calls["pool"] += 1
         return original_pool(self, results, **kwargs)
 
-    def history_spy(self, ids, instant):
-        calls["history"] += 1
-        raise AssertionError("skipped map must not read candidate history")
-
     monkeypatch.setattr(RecallMapBuilder, "_pool", pool_spy)
-    monkeypatch.setattr(MemoryStore, "matured_recall_history", history_spy)
     with_map = _server(on)
     response = _recall(with_map, max_results=3, ambient_context={"task": task})
-    assert calls == {"pool": 0, "history": 0}
+    assert calls == {"pool": 0}
     marker = response["recall_map"]
     assert marker == {"clusters": [], "covered": 0, "curtailed": True,
                       "streak": CURTAIL_STREAK + int(decay)}
@@ -580,7 +561,7 @@ def test_skipped_recall_preserves_results_and_persists_unmeasured_pool(
     again = _recall(restarted, max_results=3, ambient_context={"task": task})
     assert again["recall_map"]["streak"] == marker["streak"] + 1
     assert "pool" not in again["recall_map"] and "sel" not in again["recall_map"]
-    assert calls == {"pool": 0, "history": 0}
+    assert calls == {"pool": 0}
     restarted.memory_store.close()
 
     monkeypatch.setenv("LM_RECALL_MAP", "0")

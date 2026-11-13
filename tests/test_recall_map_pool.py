@@ -7,7 +7,6 @@ import json
 import random
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
 
 import pytest
 
@@ -21,7 +20,7 @@ from living_memory.recall_map import (
 )
 from living_memory.retrieval import MemoryRecallService, RecallResult
 from living_memory.score_gate import QueryRelevance, apply_score_gate
-from living_memory.storage import MaturedRecallHistory, MemoryStore
+from living_memory.storage import MemoryStore
 from test_recall_map import seed_corpus
 
 POOL_QUERY = "deployment failure database migration rollback"
@@ -487,14 +486,7 @@ def result(node, evidence=1.0, **kwargs):
                         vector_score=evidence, **kwargs)
 
 
-@pytest.mark.parametrize("histories", [((2, 1, 1), (100, 50, 50)),
-                                      ((100, 50, 50), (2, 1, 1)),
-                                      ((0, 0, 0), (100, 50, 50))])
-def test_query_evidence_survives_history_swap_and_cold_start(tmp_path, monkeypatch, histories):
-    # Exercise the supplied two-candidate consumer counterexample with the
-    # actual builder and SQLite. Histories differ only in exposure volume.
-    monkeypatch.setenv("LM_MAP_POOL_COLD_QUOTA_GATE", "1")
-    monkeypatch.setenv("LM_MAP_POOL_COLD_SLOTS", "2")
+def test_query_evidence_selects_relevant_candidates(tmp_path, monkeypatch):
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", "0.35")
     with MemoryStore(tmp_path / "query.sqlite3") as store:
         seed_corpus(store)
@@ -502,16 +494,10 @@ def test_query_evidence_survives_history_swap_and_cold_start(tmp_path, monkeypat
                          context={"topic": "feedback credit"})
         unrelated = _node(store, "unrelated", "orchard irrigation inspection schedule",
                           context={"topic": "orchard irrigation"})
-        ledger = dict(zip((relevant.id, unrelated.id), histories))
-        history = Mock(side_effect=lambda ids, at: {
-            key: MaturedRecallHistory.known(*ledger[key]) for key in ids
-        })
-        monkeypatch.setattr(store, "matured_recall_history", history)
         built = RecallMapBuilder(store).build([result(relevant), result(unrelated, 0.0)],
                                              scope=POOL_SCOPE)
         assert built and [c.medoid.node_id for c in built.clusters] == [relevant.id]
         assert built.selection.excluded == (0, 0, 0, 0, 0, 1, 0)
-        history.assert_not_called()
         assert len(json.dumps(built.to_dict(), ensure_ascii=False, separators=(",", ":"))) <= MAX_RESPONSE_CHARS
 
 
@@ -537,7 +523,7 @@ def test_relevant_minority_topics_share_capacity_before_clustering(tmp_path):
         assert builder.last_cache_hit
 
 
-def test_complete_residual_accounting_and_no_history_read(tmp_path, monkeypatch):
+def test_complete_residual_accounting(tmp_path):
     with MemoryStore(tmp_path / "accounting.sqlite3") as store:
         head = _node(store, "head", "qualified residual")
         file_chunk = _node(store, "file", f"[file-chunk] {_machine_header(1)}\nbody")
@@ -548,7 +534,6 @@ def test_complete_residual_accounting_and_no_history_read(tmp_path, monkeypatch)
         raw = [SimpleNamespace(node=None), SimpleNamespace(node=SimpleNamespace(id=" ")),
                result(head), result(head), result(file_chunk), result(stagnation),
                result(journal), result(unrelated, 0.0), *(result(n) for n in tail)]
-        monkeypatch.setattr(store, "matured_recall_history", Mock(side_effect=AssertionError("history must not select")))
         pool, selection = RecallMapBuilder(store)._pool(raw)
         assert len(pool) == MAX_POOL_NODES
         assert [m.rank for m in pool] == [2, *range(8, 207)]
