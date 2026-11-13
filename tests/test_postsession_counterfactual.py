@@ -44,7 +44,9 @@ from typing import Any
 
 import pytest
 
+from living_memory.chunking import TextChunk
 from living_memory.config import MemoryConfig
+from living_memory.delivery import _relevant_excerpt
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.postsession.counterfactual import (
     SELFCHECK_MAX_GAP,
@@ -459,6 +461,105 @@ def test_fresh_reinsertion_drops_history_but_keeps_created_at(fixture_db: Path) 
                 readonly.close()
         finally:
             store.close()
+
+
+@pytest.mark.parametrize("mode", ["faithful", "fresh"])
+def test_round_trip_preserves_source_passages(tmp_path: Path, mode: str) -> None:
+    content = (
+        "Обычное введение без нужной информации. 🌙\n\n"
+        "The verified semantic passage says lunar pumps require a cobalt seal.\n\n"
+        "Final unrelated details."
+    )
+    start = content.index("The verified")
+    end = content.index("\n\nFinal")
+    fingerprint = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    with MemoryStore(MemoryConfig(db_path=tmp_path / "source.sqlite3")) as store:
+        node = store.create_node(level="trace", content=content, context={"scope": "global"})
+        store.replace_node_chunks(node.id, [
+            (TextChunk(content[start:end], 0, 7, 19, start, end), [1.0, 0.0]),
+            (TextChunk("", 1, 19, 25, 0, 0), [0.0, 1.0]),
+        ])
+
+        def source_view() -> tuple[list[str], list[tuple[Any, ...]], str]:
+            rows = store.connection.execute(
+                "SELECT id, char_start, char_end, content_fingerprint, token_start, token_end "
+                "FROM node_chunk_embeddings WHERE node_id = ? ORDER BY chunk_index", (node.id,)
+            ).fetchall()
+            ids = [row["id"] for row in rows]
+            passages = store.get_chunk_passages(ids)
+            assert set(passages) == {ids[0]}
+            passage = passages[ids[0]]
+            assert (passage.content_fingerprint, passage.char_start, passage.char_end) == (
+                fingerprint, start, end
+            )
+            excerpt = _relevant_excerpt(content, 100, None, passage)
+            assert excerpt == content[start:end] + "\n[Incomplete source context]"
+            return ids, [tuple(row)[1:] for row in rows], excerpt
+
+        before_ids, before_rows, before_excerpt = source_view()
+        assert before_rows == [
+            (start, end, fingerprint, 7, 19), (None, None, fingerprint, 19, 25)
+        ]
+        snapshots = capture_cohort(store.connection, [node.id])
+        surgery = remove_cohort(store, snapshots)
+        assert_cohort_absent(store.connection, [node.id])
+        reinsert_cohort(store, snapshots, mode=mode, surgery=surgery)
+        after_ids, after_rows, after_excerpt = source_view()
+        assert after_rows == before_rows
+        assert after_excerpt == before_excerpt
+        assert set(before_ids).isdisjoint(after_ids)
+        assert store.get_chunk_passages(before_ids) == {}
+        if mode == "faithful":
+            assert assert_cohort_restored(store.connection, snapshots)["mismatched"] == 0
+
+
+@pytest.mark.parametrize("bounds", [(None, None), (1, 10)])
+def test_source_address_corruption_is_detected(fixture_db: Path, bounds: tuple) -> None:
+    with MemoryStore(MemoryConfig(db_path=fixture_db)) as store:
+        snapshots = capture_cohort(store.connection, ["cohort-writer"])
+        surgery = remove_cohort(store, snapshots)
+        reinsert_cohort(store, snapshots, surgery=surgery)
+        with store.connection:
+            store.connection.execute(
+                "UPDATE node_chunk_embeddings SET char_start = ?, char_end = ? "
+                "WHERE node_id = 'cohort-writer'", bounds
+            )
+        with pytest.raises(CoherenceError, match="did not round-trip"):
+            assert_cohort_restored(store.connection, snapshots)
+
+
+@pytest.mark.parametrize("mode", ["faithful", "fresh"])
+@pytest.mark.parametrize("corruption", ["fingerprint", "bounds", "partial"])
+def test_invalid_source_address_is_rejected(
+    fixture_db: Path, mode: str, corruption: str
+) -> None:
+    with MemoryStore(MemoryConfig(db_path=fixture_db)) as store:
+        with store.connection:
+            if corruption == "fingerprint":
+                store.connection.execute(
+                    "UPDATE node_chunk_embeddings SET content_fingerprint = 'stale'"
+                )
+            elif corruption == "bounds":
+                store.connection.execute("UPDATE node_chunk_embeddings SET char_end = 999999")
+            else:
+                store.connection.execute("UPDATE node_chunk_embeddings SET char_start = NULL")
+        snapshots = capture_cohort(store.connection, ["cohort-writer"])
+        surgery = remove_cohort(store, snapshots)
+        with pytest.raises(CoherenceError, match="source address"):
+            reinsert_cohort(store, snapshots, mode=mode, surgery=surgery)
+
+
+def test_snapshot_without_coordinate_columns_round_trips(fixture_db: Path) -> None:
+    with sqlite3.connect(fixture_db) as connection:
+        connection.execute("ALTER TABLE node_chunk_embeddings DROP COLUMN char_start")
+        connection.execute("ALTER TABLE node_chunk_embeddings DROP COLUMN char_end")
+    report = _run(fixture_db)
+    assert report["arms"]["counterfactual_faithful"]["round_trip"]["mismatched"] == 0
+    with open_readonly(fixture_db) as connection:
+        columns = {row["name"] for row in connection.execute(
+            "PRAGMA table_info(node_chunk_embeddings)"
+        )}
+        assert not {"char_start", "char_end"} & columns
 
 
 # ---------------------------------------------------------------------------
