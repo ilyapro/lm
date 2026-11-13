@@ -706,10 +706,11 @@ def test_diagnostic_descriptor_crosses_real_subprocess(backup, monkeypatch):
         command = list(command)
         command[2] = """
 import socket
+from S3.S3 import S3
+from S3.ConnMan import ConnMan
 def forbidden(*args, **kwargs):
     raise AssertionError('network forbidden')
 socket.socket = forbidden
-from S3.ConnMan import ConnMan
 def unavailable(host):
     raise TimeoutError(110, 'FAKE SECRET https://signed.invalid Authorization: secret')
 ConnMan.get = unavailable
@@ -756,9 +757,9 @@ def test_installed_http_503_preserves_only_available_cause(backup, operation, ca
         stream.write("use_http_expect = False\n")
     assert backup.invoke() == (3 if operation == "put" else 1)
     error = backup.status()["last_error"]
-    # send_file constructs S3UploadError from text outside an except block;
-    # no underlying S3Error is present in that installed exception chain.
-    expected = [{"class": "S3UploadError"}] if operation == "put" else [{"class": "S3Error", "status": 503}]
+    # Transfer methods replace 503 errors outside an except block; their
+    # installed exception chains contain no underlying S3Error/status.
+    expected = [{"class": {"put": "S3UploadError", "get": "S3DownloadError"}[operation]}] if operation != "ls" else [{"class": "S3Error", "status": 503}]
     assert error["transport"]["chain"] == expected
     assert calls.count("PUT" if operation == "put" else "GET") == 1
     assert "Timeout" not in error["message"]
