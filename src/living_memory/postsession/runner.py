@@ -526,20 +526,29 @@ class LedgerError(RuntimeError):
     """Operation state could not be read or durably saved. Do not dispatch."""
 
 
-def _entry_source_span(entry: Mapping[str, Any], receipt: NodeSnapshot | None) -> str:
+@dataclass(frozen=True)
+class _Receipt:
+    recipient: str
+    node: NodeSnapshot
+
+
+def _entry_source_span(entry: Mapping[str, Any], receipt: _Receipt | None) -> str:
     """Source from a saved request or its exact, fully identified recipient result."""
     if "operation" in entry:
         return ProposedOp.from_dict(entry["operation"]).provenance.source_span
     if receipt is None or entry["state"] != "applied" or entry["kind"] != "remember":
         return ""
-    source = extraction_identity(receipt.context)
-    if (receipt.node_id != entry.get("result_id") or not source
-            or source[0] != entry["transcript_sha256"]
-            or receipt.context.get("corrected_node_id")):
+    if entry.get("recipient") and entry["recipient"] != receipt.recipient:
         return ""
-    legacy = _remember_fingerprint(receipt.content, str(receipt.scope or ""))
-    current = _remember_fingerprint(receipt.content, str(receipt.scope or ""), source[1])
-    fingerprint = receipt.context.get("extraction_fingerprint")
+    node = receipt.node
+    source = extraction_identity(node.context)
+    if (node.node_id != entry.get("result_id") or not source
+            or source[0] != entry["transcript_sha256"]
+            or node.context.get("corrected_node_id")):
+        return ""
+    legacy = _remember_fingerprint(node.content, str(node.scope or ""))
+    current = _remember_fingerprint(node.content, str(node.scope or ""), source[1])
+    fingerprint = node.context.get("extraction_fingerprint")
     if entry["fingerprint"] != legacy or (fingerprint and fingerprint not in {legacy, current}):
         return ""
     return source[1]
@@ -667,7 +676,7 @@ class Ledger:
         return _written_nodes_total(self.entries())
 
     def _operation_entry(
-        self, op: ProposedOp, receipt: NodeSnapshot | None = None,
+        self, op: ProposedOp, receipt: _Receipt | None = None,
     ) -> dict[str, Any] | None:
         sha = op.provenance.transcript_sha256
         entry = self._seen.get((sha, op_fingerprint(op)))
@@ -681,14 +690,14 @@ class Ledger:
         return entry
 
     def for_operation(
-        self, op: ProposedOp, receipt: NodeSnapshot | None = None,
+        self, op: ProposedOp, receipt: _Receipt | None = None,
     ) -> dict[str, Any] | None:
         with self._locked():
             entry = self._operation_entry(op, receipt)
             return dict(entry) if entry is not None else None
 
     def begin(
-        self, op: ProposedOp, recipient: str, *, receipt: NodeSnapshot | None = None,
+        self, op: ProposedOp, recipient: str, *, receipt: _Receipt | None = None,
     ) -> tuple[bool, dict[str, Any]]:
         """Claim one operation durably, or return its existing admission state."""
         key = (op.provenance.transcript_sha256, op_fingerprint(op))
@@ -1119,7 +1128,7 @@ class ExtractionRunner:
 
     def _prior(
         self, entry: dict[str, Any] | None, decision: OpDecision, *,
-        node_id: str = "", persist: bool = False, receipt: NodeSnapshot | None = None,
+        node_id: str = "", persist: bool = False, receipt: _Receipt | None = None,
     ) -> bool:
         """Resolve existing state. False means that dispatch may be considered."""
         if entry is None:
@@ -1163,7 +1172,7 @@ class ExtractionRunner:
         return True
 
     def _dispatch(
-        self, op: ProposedOp, decision: OpDecision, *, receipt: NodeSnapshot | None = None,
+        self, op: ProposedOp, decision: OpDecision, *, receipt: _Receipt | None = None,
     ) -> None:
         if self.config.dry_run:
             decision.status = "would_write"
@@ -1284,10 +1293,12 @@ class ExtractionRunner:
                             and entry.get("recipient", self.client.url) == self.client.url):
                         try:
                             nodes = self.client.lookup_nodes([entry["result_id"]], view="full").get("results") or []
-                            receipt = next((NodeSnapshot(
+                            node = next((NodeSnapshot(
                                 node_id=n["id"], content=n.get("content", ""),
                                 scope=n.get("scope"), context=n.get("context") or {},
                             ) for n in nodes if n.get("id") == entry["result_id"]), None)
+                            if node is not None:
+                                receipt = _Receipt(self.client.url, node)
                         except ClientError:
                             pass  # Unavailable exact evidence cannot release a legacy key.
                         entry = self.ledger.for_operation(op, receipt)
@@ -1329,7 +1340,7 @@ class ExtractionRunner:
                     if not self.config.dry_run:
                         try:
                             self.ledger.record(
-                                sha, fingerprint, kind=op.kind,
+                                sha, decision.fingerprint, kind=op.kind,
                                 session_key=record.session_key, result_id=decision.node_id,
                             )
                         except LedgerError as exc:
