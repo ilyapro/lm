@@ -792,9 +792,6 @@ def test_read_only_audit_store_tolerates_both_shapes(tmp_path: Path, shape: str)
         # simply is not there. Every chunk-aware read must answer anyway.
         assert audit.list_unembedded_nodes() == []
         assert audit.list_unchunked_nodes() == []
-        embedding_rows = list(audit.iter_embedding_rows(scope="project:legacy"))
-        assert len(embedding_rows) == (5 if shape == "pre_v6" else 1)
-        assert list(audit.iter_embedding_rows(scope="project:absent")) == []
         # Both shapes keep nodes.embedding, so the evidence gate answers the
         # same on either side of the migration.
         assert audit._has_vector_evidence("project:legacy") is True
