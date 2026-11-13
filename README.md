@@ -212,6 +212,16 @@ Extraction decisions retain `candidate_read` diagnostics when a fresh write
 proceeds. Candidate search never clears a saved UNKNOWN mutation or replaces
 the receiver's replay identity.
 
+Execution uses the same remember identity: content, scope, transcript hash and
+source span. Task labels and other attribution do not create another operation.
+Retries retain the saved request and key, including older ledger entries whose
+fingerprints omitted the span. A saved request identifies that older source;
+an original applied entry with only a result ID requires exact recipient lookup
+to distinguish its source. Missing or mismatched receipt evidence blocks the
+ambiguous operation, without changing the completed entry or authorizing a retry.
+Independent confirmed sources remain separate writes. Teach and attestation
+retain their correction and event/evidence identities.
+
 Disposable checks run without a real corpus or external models:
 
 ```sh
