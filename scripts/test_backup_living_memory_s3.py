@@ -606,7 +606,7 @@ class TransferConnection:
     def endheaders(self):
         pass
 
-    def send(self, data):
+    def wrapper_send_body(self, data):
         pass
 
     def getresponse(self):
