@@ -263,6 +263,110 @@ def test_ledger_round_trip_reload_and_corruption_refusal(tmp_path: Path) -> None
         Ledger(tmp_path / "state")
 
 
+def _ledger_report(ledger: Ledger) -> dict[str, Any]:
+    return build_report(
+        mode="dry-run", splits_read=[], gate_decision=GateDecision("MISSING"),
+        proposals=[], decisions=[], config=RunnerConfig(), ledger=ledger,
+    )["ledger"]
+
+
+def test_report_uses_one_current_ledger_snapshot(tmp_path: Path, monkeypatch) -> None:
+    observer, writer = Ledger(tmp_path), Ledger(tmp_path)
+    op = make_remember(make_record(), "A pending write from another runner.")
+    entries, load = observer.entries, observer._load
+    reads, loads = [], []
+
+    def counted_load():
+        loads.append(None)
+        load()
+
+    def read_then_write():
+        snapshot = entries()
+        reads.append(len(snapshot))
+        if len(reads) == 1:
+            # Interleave a supported writer after the reader releases its lock.
+            writer.record("sha", "fp", kind="teach", session_key="s", result_id="n")
+            writer.begin(op, "synthetic://recipient")
+        return snapshot
+
+    monkeypatch.setattr(observer, "_load", counted_load)
+    monkeypatch.setattr(observer, "entries", read_then_write)
+    first = _ledger_report(observer)
+    assert first == {
+        "path": str(observer.path), "entries": 0, "written_nodes_total": 0, "pending": [],
+    }
+    assert reads == [0]
+    assert len(loads) == 1
+
+    assert _ledger_report(observer) == {
+        "path": str(observer.path), "entries": 2, "written_nodes_total": 2,
+        "pending": [{
+            "transcript_sha256": op.provenance.transcript_sha256,
+            "fingerprint": op_fingerprint(op), "kind": "remember", "state": "unknown",
+        }],
+    }
+    assert reads == [0, 2]
+    assert len(loads) == 2
+    assert first["entries"] == first["written_nodes_total"] == 0
+    assert first["pending"] == []
+
+
+@pytest.mark.parametrize("kind", ["remember", "teach", "attest"])
+@pytest.mark.parametrize("state", ["applied", "unknown", "ready"])
+def test_report_preserves_pending_and_conservative_write_count(tmp_path, kind, state):
+    ledger = Ledger(tmp_path)
+    record = make_record()
+    op = make_remember(record, "A possible node write.")
+    if kind == "teach":
+        op = make_teach(record, "original", "The corrected fact.")
+    elif kind == "attest":
+        op = ProposedOp(
+            kind="attest", payload={"recall_event_id": "event", "evidence": ["quote"]},
+            provenance=op.provenance, evidence=op.evidence,
+        ).validate()
+    ledger.begin(op, "synthetic://recipient")
+    if state != "unknown":
+        ledger.finish(op.provenance.transcript_sha256, op_fingerprint(op), state=state)
+    written = int(kind != "attest" and state != "ready")
+    assert _ledger_report(ledger) == {
+        "path": str(ledger.path), "entries": 1, "written_nodes_total": written,
+        "pending": [] if state == "applied" else [{
+            "transcript_sha256": op.provenance.transcript_sha256,
+            "fingerprint": op_fingerprint(op), "kind": kind, "state": state,
+        }],
+    }
+    assert ledger.written_nodes_total() == written
+
+
+@pytest.mark.parametrize("change", ["missing", "json", "state", "encoding", "directory"])
+def test_report_observes_current_missing_or_invalid_ledger(tmp_path, change):
+    ledger = Ledger(tmp_path)
+    ledger.record("sha", "fp", kind="remember", session_key="s", result_id="n")
+    assert _ledger_report(ledger)["written_nodes_total"] == 1
+    if change in {"missing", "directory"}:
+        ledger.path.unlink()
+        if change == "directory":
+            ledger.path.mkdir()
+    elif change == "json":
+        ledger.path.write_text("not JSON\n", encoding="utf-8")
+    elif change == "state":
+        entry = ledger.entries()[0]
+        entry["state"] = "invalid"
+        ledger.path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    else:
+        ledger.path.write_bytes(b"\xff")
+    if change == "missing":
+        assert _ledger_report(ledger) == {
+            "path": str(ledger.path), "entries": 0, "written_nodes_total": 0, "pending": [],
+        }
+        assert len(Ledger(tmp_path)) == 0
+    else:
+        with pytest.raises(LedgerError):
+            _ledger_report(ledger)
+        with pytest.raises(LedgerError):
+            Ledger(tmp_path)
+
+
 # --------------------------------------------------------------------------
 # attribution
 # --------------------------------------------------------------------------
