@@ -576,7 +576,11 @@ def feedback_closure_metrics(
         clauses.append("scope = ?")
         params.append(normalized_scope)
 
-    rows = store.connection.execute(
+    identity_coverage: dict[str, dict[str, Any]] = {
+        name: {"events": 0, "closed": 0, "closure_ratio": None}
+        for name in _FEEDBACK_CLOSURE_IDENTITY_CLASSES
+    }
+    with closing(store.connection.execute(
         f"""
         SELECT
             session_id,
@@ -588,21 +592,16 @@ def feedback_closure_metrics(
         GROUP BY session_id, has_transport
         """,
         params,
-    ).fetchall()
-
-    identity_coverage: dict[str, dict[str, Any]] = {
-        name: {"events": 0, "closed": 0, "closure_ratio": None}
-        for name in _FEEDBACK_CLOSURE_IDENTITY_CLASSES
-    }
-    for row in rows:
-        # The writer has already resolved the session alias and stringified it.
-        # Use the explicit reconnect consumer's nonblank check on those bytes.
-        session_id = row["session_id"]
-        identity_class = ("explicit" if session_id and session_id.strip() else
-                          "transport_only" if row["has_transport"] else "none")
-        coverage = identity_coverage[identity_class]
-        coverage["events"] += int(row["events"])
-        coverage["closed"] += int(row["closed"] or 0)
+    )) as rows:
+        for row in rows:
+            # The writer has already resolved the session alias and stringified it.
+            # Use the explicit reconnect consumer's nonblank check on those bytes.
+            session_id = row["session_id"]
+            identity_class = ("explicit" if session_id and session_id.strip() else
+                              "transport_only" if row["has_transport"] else "none")
+            coverage = identity_coverage[identity_class]
+            coverage["events"] += int(row["events"])
+            coverage["closed"] += int(row["closed"] or 0)
     for coverage in identity_coverage.values():
         if coverage["events"]:
             coverage["closure_ratio"] = coverage["closed"] / coverage["events"]
