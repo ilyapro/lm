@@ -87,13 +87,14 @@ not claim that cleanup completed. No outer rollback should undo this result.
 
 Before each remote mutation, the script persists `transaction.pending` with its
 operation and target (and upload ID for an abort). It clears that intent only
-with a confirmed response and the corresponding checkpoint. Transport errors,
+with a confirmed response or successful reconciliation on a later scheduled
+invocation. Transport errors,
 timeouts and crashes can leave an applied effect with no confirmed response.
-They do not trigger automatic rollback, deletion or replay. s3cmd retries are
+The failing invocation retains the intent and copies. s3cmd retries are
 disabled; reads have a 120-second limit and transfers/copies a 3600-second limit.
 
-Transport failures add `transport` to the existing `last_error`, `cleanup_error`
-or `rollback_error` record. The human-readable `message` includes the same safe
+Transport failures add `transport` to the `last_error`, `cleanup_error`,
+`recovery_error` or `rollback_error` record. The human-readable `message` includes the same safe
 cause. `transport.operation` identifies the command (or `metadata` check),
 `exit_code` is present when the child exited, and `chain` contains at most eight
 exception entries, outermost first. Each entry contains only a local `class`
@@ -122,17 +123,35 @@ deadline; `TimeoutError` identifies an observed library exception. Neither
 localizes a network/server phase or diagnoses an earlier attempt. These fields
 grant no retry or recovery permission and do not establish a fresh backup.
 
-On the next ordinary invocation, a verified/rolled-back/unchanged transaction
-with no pending mutation resumes only unfinished cleanup, preserving its
-original success time and completed cleanup checkpoints. It does not take
-another snapshot, upload again or download FINAL again. A pending mutation,
-failed rollback or other interrupted transaction stops before any remote call.
-The existing backup owner must reconcile the specific recorded effect with the
-recipient, preserving status and safety until the outcome and necessary copies
-are established. Do not clear status, overwrite safety, or rerun the mutation
-just because a transport timed out or a later read sees no object. Unreadable
-status is also retained and blocks execution. There is no automatic recovery
-poller or second backup controller.
+The next ordinary invocation reconciles an interrupted operation under the same
+lock. It checks bucket privacy/versioning, object inventory and multipart uploads
+before changing anything. Only FINAL, this transaction's safety and the staging
+key are admitted. Before replacement, recovery downloads FINAL and any retained
+safety, checking privacy, SQLite integrity and the recorded hashes (or original
+content MD5/size if safety verification had not finished).
+
+If FINAL already matches the expected new backup, recovery records success and
+finishes cleanup. If FINAL still matches the previous backup and complete
+staging matches the expected hashes, recovery copies that verified staging to
+FINAL and verifies it before committing success. If staging is absent and the
+previous FINAL is verified (or this is a first backup with no FINAL), recovery
+aborts the currently listed staging uploads, cleans up, and takes one fresh
+snapshot in the same scheduled invocation. It never resumes old multipart parts
+using bytes from a different snapshot.
+
+A committed verified result resumes only cleanup, preserving its success time;
+it is never rolled back because of a recovery/cleanup failure. For interrupted
+deletes or aborts, fresh inventory establishes what remains; an already absent
+target is not deleted or aborted again. Cleanup without a pending mutation uses
+its durable checkpoints without downloading FINAL again. After cleanup of an
+unsuccessful attempt, the invocation proceeds with a fresh backup.
+
+Unavailable reads defer recovery until the next scheduled invocation and record
+`recovery_error`. Missing required safety, mismatched contents, foreign objects
+or uploads, and unreadable or unrecognized state preserve the retained copies
+and require investigation. A missing staging object alone never authorizes
+clearing a pending operation. There is no separate recovery poller, controller
+or retry loop, and no manual status reset is needed for a reconciled timeout.
 
 For read-only diagnosis of an unresolved transaction, the existing backup owner
 can check the current FINAL through the same transport under `backup.lock`:
@@ -181,7 +200,9 @@ Transfer scenarios execute the installed CLI and upload/multipart/download/
 request exception paths with fake HTTP, distinguishing timeout, connection,
 HTTP and unavailable causes. A socket-forbidden real subprocess checks the
 diagnostic descriptor. Sensitive fixture messages stay out of status and
-reported output. The tests need the installed `S3` Python package, as do the
+reported output. Scheduled recovery scenarios cover applied and unapplied
+mutations, partial uploads, repeated interruptions, unavailable evidence and
+preservation of previous/verified copies. The tests need the installed `S3` Python package, as do the
 transport subprocesses.
 This proves local semantics; the existing loop confirms
 fresh real backup bytes during its next ordinary work.
