@@ -484,23 +484,124 @@ def preflight() -> dict | None:
     return {key: previous.get(key, "") for key in ("File size", "MD5 sum")}
 
 
+def matches_previous(observed: dict, archive: Path, previous: dict) -> bool:
+    if "archive_sha256" in previous:
+        return observed == previous
+    # Before safety verification, only the original HEAD metadata is durable.
+    md5 = hashlib.md5(usedforsecurity=False)
+    with archive.open("rb") as stream:
+        for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            md5.update(block)
+    return (str(archive.stat().st_size) == previous.get("File size")
+            and md5.hexdigest() == previous.get("MD5 sum"))
+
+
+def record_success(transaction: dict) -> None:
+    transaction.update(phase="verified", pending=None)
+    save_status(transaction=transaction, result="verified", last_success=now(),
+                last_error=None, recovery_error=None, rollback=None, rollback_error=None,
+                **transaction["expected"])
+
+
+def recover(transaction: dict) -> int | None:
+    """Reconcile under backup.lock; None admits one fresh scheduled attempt."""
+    phase, pending = transaction["phase"], transaction["pending"]
+    safety, previous, expected = (transaction[key] for key in ("safety", "previous", "expected"))
+    completed = phase in {"verified", "rolled_back", "unchanged"}
+    if phase not in {"preparing", "safety_copied", "safety_verified", "uploaded",
+                     "replaced", "restored", "verified", "rolled_back", "unchanged"}:
+        raise RuntimeError("unrecognized backup recovery phase")
+    if safety is not None and (not isinstance(safety, str) or not re.fullmatch(
+            re.escape(f"s3://{BUCKET}/.previous-") + r"[0-9a-f]{32}\.sqlite3\.gz", safety)):
+        raise RuntimeError("unrecognized backup safety target")
+    if pending:
+        allowed = {("put", STAGING), ("cp", FINAL)}
+        if safety:
+            allowed.add(("cp", safety))
+        cleanup = {("del", STAGING), ("abortmp", STAGING)}
+        if safety:
+            cleanup.add(("del", safety))
+        if (pending.get("operation"), pending.get("target")) not in (cleanup if completed else allowed):
+            raise RuntimeError("unrecognized pending backup operation")
+        if pending["operation"] == "abortmp" and not pending.get("upload_id"):
+            raise RuntimeError("missing pending multipart upload identity")
+
+    check_config()
+    if info(f"s3://{BUCKET}").get("Versioning") != "none":
+        raise RuntimeError("S3 bucket versioning must be disabled")
+    keys, uploads = objects(), multipart()
+    if keys - {FINAL, STAGING, safety} or any(key != STAGING for key, _ in uploads):
+        raise RuntimeError("unowned S3 objects or uploads; preserving recovery state")
+
+    if completed:
+        # A committed success is never rolled back because cleanup was interrupted.
+        if (FINAL in keys) != bool(phase == "verified" or previous):
+            raise RuntimeError("unexpected FINAL inventory during cleanup recovery")
+        if pending and pending["operation"] == "del":
+            checkpoint = "staging_deleted" if pending["target"] == STAGING else "safety_deleted"
+            transaction[checkpoint] = pending["target"] not in keys
+        transaction["multipart_clean"] = not uploads
+        transaction["pending"] = None
+        save_status(transaction=transaction, recovery_error=None)
+        return finish(transaction)
+
+    with tempfile.TemporaryDirectory(prefix="recovery-", dir=STATE_DIR) as directory:
+        work = Path(directory)
+        observed = verify_download(FINAL, work, "current") if FINAL in keys else None
+        if expected and observed == expected:
+            record_success(transaction)
+            return finish(transaction)
+        if previous:
+            if observed is None or not matches_previous(observed, work / "current.sqlite3.gz", previous):
+                raise RuntimeError("FINAL matches neither recorded backup; preserving all copies")
+        elif observed is not None:
+            raise RuntimeError("unexpected FINAL during first-backup recovery")
+        if safety in keys:
+            retained = verify_download(safety, work, "retained")
+            if not previous or not matches_previous(retained, work / "retained.sqlite3.gz", previous):
+                raise RuntimeError("retained safety does not match previous backup")
+        elif previous and phase not in {"preparing", "safety_copied"}:
+            raise RuntimeError("retained safety is missing; preserving recovery state")
+
+        if STAGING in keys:
+            if not expected or (previous and safety not in keys):
+                raise RuntimeError("staging lacks recorded checksums or verified safety")
+            verify_download(STAGING, work, "staging", expected)
+            # A fresh read established the old FINAL and the exact complete upload.
+            transaction.update(pending=None, phase="uploaded")
+            save_status(transaction=transaction, recovery_error=None)
+            mutate(transaction, "replaced", "cp", "--acl-private", STAGING, FINAL)
+            verify_download(FINAL, work, "final", expected)
+            record_success(transaction)
+            return finish(transaction)
+
+        # No complete upload exists. The verified old FINAL stays in place while
+        # cleanup aborts only currently listed uploads for this operation's key.
+        transaction.update(pending=None, phase="unchanged", staging_deleted=True,
+                           safety_deleted=safety not in keys, multipart_clean=not uploads)
+        save_status(transaction=transaction, result="failed", recovery_error=None)
+        result = finish(transaction)
+        if read_status().get("transaction") is not None:
+            return result
+    return None
+
+
 def run() -> int:
     """Called only by main(), while holding backup.lock for the whole operation."""
     status = read_status()
     transaction = status.get("transaction")
     if transaction:
-        if transaction.get("pending"):
-            completed = transaction["phase"] in {"verified", "rolled_back", "unchanged"}
-            save_status(result=status.get("result") if completed else "unknown",
-                        cleanup="unknown" if completed else "unverified")
-            print("Living Memory backup UNKNOWN mutation; owner reconciliation required; copies retained", file=sys.stderr)
-            return 3
-        if transaction.get("phase") in {"verified", "rolled_back", "unchanged"}:
+        if not transaction.get("pending") and transaction.get("phase") in {"verified", "rolled_back", "unchanged"}:
             check_config()
             return finish(transaction)  # No snapshot, upload or duplicate FINAL verification.
-        save_status(result="unknown", cleanup="unverified")
-        print("Living Memory backup interrupted/unresolved; owner reconciliation required; copies retained", file=sys.stderr)
-        return 3
+        try:
+            result = recover(transaction)
+        except (OSError, sqlite3.Error, RuntimeError, ValueError, EOFError) as error:
+            save_status(recovery_error=error_record(error))
+            print(f"Living Memory backup recovery deferred: {error}", file=sys.stderr)
+            return 3
+        if result is not None:
+            return result
 
     try:
         before = preflight()
@@ -514,7 +615,8 @@ def run() -> int:
         "previous": before, "expected": None,
     }
     save_status(transaction=transaction, result="in_progress", cleanup="pending",
-                last_attempt=now(), last_error=None, cleanup_error=None, rollback=None, rollback_error=None)
+                last_attempt=now(), last_error=None, cleanup_error=None, recovery_error=None,
+                rollback=None, rollback_error=None)
     with tempfile.TemporaryDirectory(prefix="work-", dir=STATE_DIR) as directory:
         work = Path(directory)
         local = work / "snapshot.sqlite3"
@@ -557,10 +659,7 @@ def run() -> int:
 
         # Commit the verified result BEFORE cleanup. No later exception enters
         # rollback, erases success or authorizes a consumer to repeat this work.
-        transaction["phase"] = "verified"
-        save_status(transaction=transaction, result="verified", last_success=now(),
-                    last_error=None, sha256=expected["sha256"], bytes=expected["bytes"],
-                    archive_sha256=expected["archive_sha256"])
+        record_success(transaction)
     return finish(transaction)
 
 
