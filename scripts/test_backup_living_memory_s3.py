@@ -420,12 +420,13 @@ def test_rollback_failure_retains_safety_and_blocks_restart(backup, failure):
     calls = list(backup.calls)
     assert backup.invoke() == 3
     assert backup.objects == saved
-    assert backup.calls == calls
+    assert all(op in {"info", "ls", "multipart", "get"} for op, _ in backup.calls[len(calls):])
+    assert backup.status()["recovery_error"]
 
 
 @pytest.mark.parametrize("operation", ["safety", "upload", "replace"])
 @pytest.mark.parametrize("applied", [False, True])
-def test_unknown_mutations_are_not_replayed(backup, operation, applied):
+def test_unknown_mutations_are_reconciled_before_continuing(backup, operation, applied):
     def lost_response(verb, args):
         matched = ((operation == "safety" and verb == "cp" and args[0] == FINAL)
                    or (operation == "upload" and verb == "put")
@@ -439,16 +440,26 @@ def test_unknown_mutations_are_not_replayed(backup, operation, applied):
 
     backup.hook = lost_response
     assert backup.invoke() == 3
-    saved = dict(backup.objects)
-    calls = list(backup.calls)
     safety = backup.status()["transaction"]["safety"]
     assert backup.status()["result"] == "unknown"
     if operation != "safety" or applied:
         assert backup.objects[safety] == backup.old
-    assert backup.invoke() == 3
-    assert backup.calls == calls
-    assert backup.objects == saved
-    assert backup.status()["transaction"]["safety"] == safety
+    backup.hook = lambda *args: None
+    backup.calls.clear()
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+    assert set(backup.objects) == {FINAL}
+    assert backup.status()["transaction"] is None
+    mutations = [op for op, _ in backup.calls if op in {"put", "cp", "del", "abortmp"}]
+    assert backup.calls[0][0] == "info"
+    assert "get" in [op for op, _ in backup.calls[:next(
+        i for i, (op, _) in enumerate(backup.calls) if op in mutations)]]
+    if operation == "replace" or (operation == "upload" and applied):
+        assert "put" not in mutations
+    else:
+        assert mutations.count("put") == 1
+    if operation == "replace" and applied:
+        assert "cp" not in mutations
 
 
 @pytest.mark.parametrize("target", ["staging", "safety"])
@@ -467,9 +478,13 @@ def test_unknown_cleanup_preserves_success_and_does_not_repeat_delete(backup, ta
     assert status["last_error"] is None
     if target == "staging":
         assert backup.objects[status["transaction"]["safety"]] == backup.old
-    calls = list(backup.calls)
-    assert backup.invoke() == 3
-    assert backup.calls == calls
+    backup.hook = lambda *args: None
+    backup.calls.clear()
+    assert backup.invoke() == 0
+    deleted = STAGING if target == "staging" else status["transaction"]["safety"]
+    assert not any(op == "del" and args[0] == deleted for op, args in backup.calls)
+    assert not any(op in {"put", "cp", "get"} for op, _ in backup.calls)
+    assert set(backup.objects) == {FINAL}
     assert backup.status()["last_success"] == status["last_success"]
 
 
@@ -838,12 +853,13 @@ def test_crash_after_mutation_retains_durable_intent(backup):
     safety = status["transaction"]["safety"]
     assert status["transaction"]["pending"] == {"operation": "cp", "target": FINAL}
     assert backup.objects[safety] == backup.old
-    saved = dict(backup.objects)
+    fresh = backup.objects[FINAL]
+    backup.hook = lambda *args: None
     backup.calls.clear()
-    assert backup.invoke() == 3
-    assert backup.calls == []
-    assert backup.objects == saved
-    assert backup.status()["result"] == "unknown"
+    assert backup.invoke() == 0
+    assert not any(op in {"cp", "put"} for op, _ in backup.calls)
+    assert backup.objects == {FINAL: fresh}
+    assert backup.status()["result"] == "verified"
 
 
 @pytest.mark.parametrize("timeout", [False, True])
@@ -866,9 +882,10 @@ def test_owned_multipart_cleanup_is_not_requeried(backup, timeout):
     assert backup.status()["result"] == "verified"
     if timeout:
         assert backup.old in backup.objects.values()
+        backup.hook = lambda *args: None
         backup.calls.clear()
-        assert backup.invoke() == 3
-        assert backup.calls == []
+        assert backup.invoke() == 0
+        assert not any(op in {"abortmp", "cp", "put", "get"} for op, _ in backup.calls)
 
 
 def test_empty_multipart_response_does_not_claim_cleanup(backup):
