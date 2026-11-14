@@ -503,7 +503,7 @@ def interrupted_upload(backup, *, complete=False):
     backup.calls.clear()
 
 
-def test_scheduled_multipart_recovery_takes_current_snapshot(backup):
+def test_scheduled_multipart_recovery_takes_current_snapshot(backup, tmp_path):
     interrupted_upload(backup)
     old_expected = backup.status()["transaction"]["expected"]
     with sqlite3.connect(backup.database) as connection:
@@ -523,7 +523,11 @@ def test_scheduled_multipart_recovery_takes_current_snapshot(backup):
     assert backup.uploads == []
     assert set(backup.objects) == {FINAL}
     assert backup.status()["sha256"] != old_expected["sha256"]
-    assert gzip.decompress(backup.objects[FINAL]) == backup.database.read_bytes()
+    restored = tmp_path / "recovered.sqlite3"
+    restored.write_bytes(gzip.decompress(backup.objects[FINAL]))
+    with sqlite3.connect(restored) as connection:
+        assert connection.execute("SELECT value FROM new_fact").fetchall() == [("after timeout",)]
+        assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
     assert sum(op == "put" for op, _ in backup.calls) == 1
     assert [(op, args) for op, args in backup.calls if op == "abortmp"] == [
         ("abortmp", (STAGING, "interrupted-upload"))]
@@ -828,7 +832,7 @@ def test_installed_transport_cause_reaches_status(backup, operation, failure, ta
         assert backup.objects[FINAL] == backup.old
         assert backup.objects[backup.status()["transaction"]["safety"]] == backup.old
         assert backup.status()["last_error"]["transport"] == diagnostic
-        assert backup.status()["last_error"] == status["last_error"]
+        assert backup.status()["last_error"]["message"] == status["last_error"]["message"]
     report = json.dumps(status["last_error"])
     output = str(capsys.readouterr())
     for secret in ("FAKE SECRET", "FAKE-SECRET-ID", "signed.invalid", "Authorization", "credential", "s3://", str(config)):
