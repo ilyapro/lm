@@ -668,10 +668,12 @@ def test_installed_transport_cause_reaches_status(backup, operation, failure, ta
     if verb == "put":
         assert status["transaction"]["pending"]["operation"] == "put"
         assert backup.objects[status["transaction"]["safety"]] == backup.old
-        saved_calls, saved_objects = list(backup.calls), dict(backup.objects)
+        backup.calls.clear()
         assert backup.invoke() == 3
-        assert backup.calls == saved_calls
-        assert backup.objects == saved_objects
+        assert sum(op == "put" for op, _ in backup.calls) == 1
+        assert backup.objects[FINAL] == backup.old
+        assert backup.objects[backup.status()["transaction"]["safety"]] == backup.old
+        assert backup.status()["last_error"]["transport"] == diagnostic
         assert backup.status()["last_error"] == status["last_error"]
     report = json.dumps(status["last_error"])
     output = str(capsys.readouterr())
@@ -695,9 +697,11 @@ def test_unclassified_exit_never_invents_a_cause(backup, diagnostic, capsys):
     assert "cause unavailable" in error["message"]
     assert "Timeout" not in error["message"]
     assert "FAKE SECRET" not in json.dumps(error) + str(capsys.readouterr())
-    calls = list(backup.calls)
+    backup.calls.clear()
     assert backup.invoke() == 3
-    assert backup.calls == calls
+    assert sum(op == "put" for op, _ in backup.calls) == 1
+    assert backup.objects[FINAL] == backup.old
+    assert backup.status()["last_error"]["transport"] == error["transport"]
 
 
 def test_exception_chain_is_bounded_and_uses_only_safe_fields(backup):
