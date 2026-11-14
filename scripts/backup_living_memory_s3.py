@@ -591,16 +591,21 @@ def run() -> int:
     status = read_status()
     transaction = status.get("transaction")
     if transaction:
-        if not transaction.get("pending") and transaction.get("phase") in {"verified", "rolled_back", "unchanged"}:
-            check_config()
-            return finish(transaction)  # No snapshot, upload or duplicate FINAL verification.
         try:
-            result = recover(transaction)
+            if not transaction.get("pending") and transaction.get("phase") in {"verified", "rolled_back", "unchanged"}:
+                check_config()
+                result = finish(transaction)
+            else:
+                result = recover(transaction)
         except (OSError, sqlite3.Error, RuntimeError, ValueError, EOFError) as error:
-            save_status(recovery_error=error_record(error))
+            current = read_status()
+            save_status(recovery_error=error_record(error),
+                        result="verified" if current.get("result") == "verified" else "unknown")
             print(f"Living Memory backup recovery deferred: {error}", file=sys.stderr)
             return 3
-        if result is not None:
+        # Completed cleanup of an unsuccessful attempt admits today's snapshot.
+        # A verified result resumes only its cleanup and keeps its success time.
+        if result is not None and not (result == 1 and read_status().get("transaction") is None):
             return result
 
     try:
