@@ -488,6 +488,160 @@ def test_unknown_cleanup_preserves_success_and_does_not_repeat_delete(backup, ta
     assert backup.status()["last_success"] == status["last_success"]
 
 
+def interrupted_upload(backup, *, complete=False):
+    def timeout(operation, args):
+        if operation == "put":
+            if complete:
+                backup.objects[STAGING] = Path(args[0]).read_bytes()
+            else:
+                backup.uploads.append((STAGING, "interrupted-upload"))
+            raise subprocess.TimeoutExpired("fixture upload", 3600)
+
+    backup.hook = timeout
+    assert backup.invoke() == 3
+    backup.hook = lambda *args: None
+    backup.calls.clear()
+
+
+def test_scheduled_multipart_recovery_takes_current_snapshot(backup):
+    interrupted_upload(backup)
+    old_expected = backup.status()["transaction"]["expected"]
+    with sqlite3.connect(backup.database) as connection:
+        connection.execute("CREATE TABLE new_fact (value TEXT)")
+        connection.execute("INSERT INTO new_fact VALUES ('after timeout')")
+
+    def check_preservation(operation, args):
+        if operation in {"abortmp", "put"}:
+            assert backup.objects[FINAL] == backup.old
+        if operation == "put":
+            assert backup.uploads == []
+        if operation == "del" and args[0] != STAGING and backup.objects[FINAL] != backup.old:
+            assert backup.status()["result"] == "verified"
+
+    backup.hook = check_preservation
+    assert backup.invoke() == 0
+    assert backup.uploads == []
+    assert set(backup.objects) == {FINAL}
+    assert backup.status()["sha256"] != old_expected["sha256"]
+    assert gzip.decompress(backup.objects[FINAL]) == backup.database.read_bytes()
+    assert sum(op == "put" for op, _ in backup.calls) == 1
+    assert [(op, args) for op, args in backup.calls if op == "abortmp"] == [
+        ("abortmp", (STAGING, "interrupted-upload"))]
+
+
+@pytest.mark.parametrize("failure", ["info", "ls", "multipart", "final_read", "safety_read",
+                                    "public", "versioning", "foreign_object", "foreign_upload",
+                                    "bad_final", "bad_safety", "bad_staging", "missing_safety"])
+def test_recovery_requires_positive_remote_evidence(backup, failure):
+    previous = seed_success(backup)
+    interrupted_upload(backup)
+    status = backup.status()
+    safety = status["transaction"]["safety"]
+    if failure == "public":
+        backup.public.add(safety)
+    elif failure == "versioning":
+        backup.versioning = "enabled"
+    elif failure == "foreign_object":
+        backup.objects[BUCKET + "/unrelated"] = b"keep"
+    elif failure == "foreign_upload":
+        backup.uploads.append((BUCKET + "/unrelated", "keep"))
+    elif failure in {"bad_final", "bad_safety", "bad_staging"}:
+        backup.objects[{"bad_final": FINAL, "bad_safety": safety, "bad_staging": STAGING}[failure]] = b"corrupt"
+    elif failure == "missing_safety":
+        del backup.objects[safety]
+    else:
+        def unavailable(operation, args):
+            if (operation == failure or (operation == "get" and args[0] ==
+                    {"final_read": FINAL, "safety_read": safety}.get(failure))):
+                raise subprocess.TimeoutExpired("fixture recovery read", 120)
+        backup.hook = unavailable
+    objects, uploads = dict(backup.objects), list(backup.uploads)
+    assert backup.invoke() == 3
+    assert backup.objects == objects
+    assert backup.uploads == uploads
+    assert backup.status()["transaction"] == status["transaction"]
+    assert backup.status()["last_success"] == previous["last_success"]
+    assert backup.status()["recovery_error"]
+    assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
+
+
+def test_transient_recovery_read_failure_recovers_on_next_schedule(backup):
+    interrupted_upload(backup)
+
+    def unavailable(operation, args):
+        if operation == "ls":
+            raise subprocess.TimeoutExpired("fixture listing", 120)
+
+    backup.hook = unavailable
+    assert backup.invoke() == 3
+    assert backup.status()["recovery_error"]
+    backup.hook = lambda *args: None
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+    assert backup.status()["recovery_error"] is None
+
+
+@pytest.mark.parametrize("operation", ["abortmp", "del"])
+@pytest.mark.parametrize("applied", [False, True])
+def test_recovery_cleanup_survives_another_timeout(backup, operation, applied):
+    interrupted_upload(backup)
+    safety = backup.status()["transaction"]["safety"]
+
+    def lost_response(verb, args):
+        if verb == operation:
+            if applied:
+                if verb == "abortmp":
+                    backup.uploads.remove(tuple(args))
+                else:
+                    backup.objects.pop(args[0])
+            raise subprocess.TimeoutExpired("fixture recovery cleanup", 120)
+
+    backup.hook = lost_response
+    assert backup.invoke() == 3
+    assert backup.objects[FINAL] == backup.old
+    assert backup.status()["transaction"]["pending"]["operation"] == operation
+    backup.hook = lambda *args: None
+    backup.calls.clear()
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+    assert set(backup.objects) == {FINAL}
+    assert backup.uploads == []
+    if applied:
+        assert not any(op == "abortmp" for op, _ in backup.calls)
+        if operation == "del":
+            assert not any(op == "del" and args[0] == safety for op, args in backup.calls)
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_first_backup_upload_recovery(backup, complete):
+    backup.objects.clear()
+    interrupted_upload(backup, complete=complete)
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+    assert set(backup.objects) == {FINAL}
+    assert backup.uploads == []
+    assert sum(op == "put" for op, _ in backup.calls) == (0 if complete else 1)
+
+
+def test_recovery_interrupted_after_remote_replace(backup):
+    interrupted_upload(backup, complete=True)
+
+    def crash(operation, args):
+        if operation == "cp" and args[-1] == FINAL:
+            backup.objects[FINAL] = backup.objects[STAGING]
+            raise KeyboardInterrupt("fixture recovery crash")
+
+    backup.hook = crash
+    with pytest.raises(KeyboardInterrupt):
+        backup.invoke()
+    assert backup.status()["transaction"]["pending"] == {"operation": "cp", "target": FINAL}
+    backup.hook = lambda *args: None
+    backup.calls.clear()
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+    assert not any(op in {"put", "cp"} for op, _ in backup.calls)
+
+
 @pytest.mark.parametrize("operation", ["multipart", "ls"])
 def test_cleanup_read_timeout_resumes_only_cleanup(backup, operation):
     def late_timeout(verb, args):
