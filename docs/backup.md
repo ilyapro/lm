@@ -96,13 +96,13 @@ TCP connection and TLS establishment use a 15-second socket timeout, preserving
 any shorter configured timeout. After connection setup the original socket
 timeout is restored for transfers. DNS and the complete child process remain
 bounded by the operation's outer deadline. Before sending a mutation request,
-failed connection setup can make five attempts with pauses of 2, 4, 8 and
-16 seconds. Read retries own their connection failures, so these budgets do not
+failed connection setup can make eight attempts with pauses of 3, 9, 27, 81,
+243, 729 and 2187 seconds. Read retries own their connection failures, so these budgets do not
 multiply. Responses lost after a request was sent require reconciliation.
 
-Metadata, object/multipart listings and verification downloads make at most five
+Metadata, object/multipart listings and verification downloads make at most eight
 attempts on recognized transient network failures or HTTP 408, 429, 500, 502,
-503 and 504. Pauses between attempts are 2, 4, 8 and 16 seconds. Each attempt
+503 and 504. The same powers-of-three pauses apply. Each attempt
 starts a fresh subprocess and connection; a partial verification download is
 removed before retrying into its private temporary file. Access denials,
 unclassified failures, invalid responses, privacy and checksum failures are not
@@ -110,12 +110,16 @@ retried. The final failure retains its typed transport diagnostic.
 
 Each metadata/listing attempt has a 120-second limit; each download has a
 3600-second limit. Thus an exhausted metadata/listing read can take up to
-630 seconds including pauses. Uploads, copies, deletes and multipart aborts
+4239 seconds including pauses. Uploads, copies, deletes and multipart aborts
 are never replayed by this read-retry policy; their pending effects go through
-the scheduled recovery checks. Uploads/copies retain their 3600-second limit.
+the scheduled recovery checks. Child limits for uploads/copies are 7089 seconds
+and for deletes/aborts 3609 seconds: the ordinary deadline plus 3279 seconds of
+backoff and seven extra TCP/TLS setup attempts of up to 30 seconds each. This
+reserves one complete retry budget; repeated failures across several parts can
+still exhaust the whole-command deadline and leave pending recovery work.
 
-Within a staging multipart upload, each part can make five attempts on the same
-recognized transient failures, with the same doubling pauses. The part owns its
+Within a staging multipart upload, each part can make eight attempts on the same
+recognized transient failures, with the same powers-of-three pauses. The part owns its
 connection retry budget. Failed connections are closed before another attempt.
 The child retains that part's immutable bytes in memory (normally 15 MiB, at most
 64 MiB) and retries the same upload ID and part number. The existing s3cmd
@@ -242,8 +246,8 @@ HTTP and unavailable causes. A socket-forbidden real subprocess checks the
 diagnostic descriptor. Sensitive fixture messages stay out of status and
 reported output. Scheduled recovery scenarios cover applied and unapplied
 mutations, partial uploads, repeated interruptions, unavailable evidence and
-preservation of previous/verified copies. Read-retry cases verify the five-attempt
-budget, doubling pauses, partial download removal and permanent-error refusal.
+preservation of previous/verified copies. Read-retry cases verify the eight-attempt
+budget, powers-of-three pauses, partial download removal and permanent-error refusal.
 Multipart cases exercise the installed uploader's connection/send/response
 failures, immutable bytes, repeated part identity and exhausted attempts;
 unknown initiation/completion/copy/delete requests are not replayed. The tests
