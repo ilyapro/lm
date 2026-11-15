@@ -933,6 +933,8 @@ def test_multipart_retries_keep_part_identity_and_bytes(backup, monkeypatch, fai
             accepted[2] = bytes(self.body)
             if failure == "lost_response" and self.attempt <= failures:
                 # The part was stored; losing its response must not append data.
+                stream.seek(len(prefix))
+                stream.write(b"!" * len(part))
                 raise TimeoutError(110, "FAKE SECRET")
             return RawResponse(headers={"etag": '"' + hashlib.md5(part).hexdigest() + '"'})
 
@@ -990,6 +992,38 @@ def test_connection_setup_retry_budget_before_requests(backup, monkeypatch, enab
             ConnMan.get("storage.invalid")
     assert attempts == (5 if enabled and not permanent else 1)
     assert backup.sleeps == ([2, 4, 8, 16] if enabled and not permanent else [])
+
+
+@pytest.mark.parametrize("operation,params", [
+    ("OBJECT_POST", {"uploads": None}),
+    ("OBJECT_POST", {"uploadId": "fixed-upload"}),
+    ("OBJECT_DELETE", {"uploadId": "fixed-upload"}),
+    ("OBJECT_PUT", {}),
+])
+def test_unknown_nonpart_request_is_not_replayed(backup, monkeypatch, operation, params):
+    from S3.S3Uri import S3Uri
+    namespace = runpy.run_path(str(SCRIPT))
+    monkeypatch.setattr(Config, "_instance", None)
+    cfg = Config(str(backup.home / ".config/living-memory/s3cmd-backup.conf"))
+    cfg.max_retries = 0
+    monkeypatch.setattr(S3Request, "region_map", {})
+    monkeypatch.setattr(S3Request, "redir_map", {})
+    monkeypatch.setattr(ConnMan, "conn_pool", {})
+    sent = []
+
+    def send(method, uri, body, headers):
+        sent.append(method)
+        raise TimeoutError(110, "FAKE SECRET after request")
+
+    conn = SimpleNamespace(path=None, c=SimpleNamespace(request=send))
+    monkeypatch.setattr(ConnMan, "get", lambda *a, **k: conn)
+    monkeypatch.setattr(ConnMan, "close", lambda conn: None)
+    client = S3(cfg)
+    with namespace["resilient_transport"](True):
+        with pytest.raises(Exception):
+            client.send_request(client.create_request(operation, uri=S3Uri(STAGING), uri_params=params))
+    assert len(sent) == 1
+    assert backup.sleeps == []
 
 
 @pytest.mark.parametrize("secure", [False, True])
