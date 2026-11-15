@@ -915,7 +915,7 @@ def test_installed_transport_cause_reaches_status(backup, operation, failure, ta
         direct = isinstance(failure, ConnectionResetError) and verb != "put"
         assert diagnostic["chain"] == ([tail] if direct else [{"class": root}, tail])
         assert diagnostic["exit_code"] == (74 if direct else (75 if verb == "ls" else 2))
-    attempts = 5 if verb in {"get", "ls"} and isinstance(failure, Exception) else 1
+    attempts = 5 if operation in {"get", "ls", "multipart-put"} and isinstance(failure, Exception) else 1
     assert calls.count({"put": "PUT", "get": "GET", "ls": "GET"}[verb]) == attempts
     assert calls.count("POST") == (1 if operation == "multipart-put" else 0)
     assert backup.objects[FINAL] == backup.old
