@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import fcntl
 import errno
+import fcntl
 import gzip
 import hashlib
 import json
@@ -33,7 +33,7 @@ STAGING = f"s3://{BUCKET}/.incoming.sqlite3.gz"
 PRIVATE_ACL = ["sfx: FULL_CONTROL"]
 READ_TIMEOUT = 120
 TRANSFER_TIMEOUT = 3600
-READ_RETRY_DELAYS = (2, 5)
+READ_RETRY_DELAYS = (2, 4, 8, 16)
 
 
 def now() -> str:
