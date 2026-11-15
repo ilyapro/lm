@@ -824,7 +824,7 @@ def test_installed_transport_cause_reaches_status(backup, operation, failure, ta
         direct = isinstance(failure, ConnectionResetError) and verb != "put"
         assert diagnostic["chain"] == ([tail] if direct else [{"class": root}, tail])
         assert diagnostic["exit_code"] == (74 if direct else (75 if verb == "ls" else 2))
-    attempts = 3 if verb in {"get", "ls"} and isinstance(failure, Exception) else 1
+    attempts = 5 if verb in {"get", "ls"} and isinstance(failure, Exception) else 1
     assert calls.count({"put": "PUT", "get": "GET", "ls": "GET"}[verb]) == attempts
     assert calls.count("POST") == (1 if operation == "multipart-put" else 0)
     assert backup.objects[FINAL] == backup.old
@@ -945,7 +945,7 @@ def test_installed_http_503_preserves_only_available_cause(backup, operation, ca
     roots = {"put": "S3UploadError", "get": "S3DownloadError"}
     expected = [{"class": roots[operation]}] if operation in roots else [{"class": "S3Error", "status": 503}]
     assert error["transport"]["chain"] == expected
-    assert calls.count("PUT" if operation == "put" else "GET") == (3 if operation == "ls" else 1)
+    assert calls.count("PUT" if operation == "put" else "GET") == (5 if operation == "ls" else 1)
     assert "Timeout" not in error["message"]
     assert "FAKE SECRET" not in json.dumps(error) + str(capsys.readouterr())
 
@@ -1106,7 +1106,8 @@ def test_raw_versioning_cannot_authorize_mutation(backup, response, capsys):
     assert backup.invoke() == 1
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
-    assert backup.raw_calls == [("versioning", BUCKET)]  # No retry on 5xx.
+    attempts = 5 if response.status in {408, 429, 500, 502, 503, 504} else 1
+    assert backup.raw_calls == [("versioning", BUCKET)] * attempts
     status = backup.status()
     assert "versioning" in status["last_error"]["message"]
     assert "FAKE SECRET" not in json.dumps(status) + str(capsys.readouterr())
@@ -1138,7 +1139,7 @@ def test_raw_policy_cannot_authorize_mutation(backup, response, target, capsys):
     assert failed
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
-    attempts = 3 if response.status in {408, 429, 500, 502, 503, 504} else 1
+    attempts = 5 if response.status in {408, 429, 500, 502, 503, 504} else 1
     assert sum(op == "policy" for op, _ in backup.raw_calls) == attempts + (target != BUCKET)
     assert "policy" in backup.status()["last_error"]["message"]
     assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())
@@ -1166,7 +1167,7 @@ def test_raw_transport_failure_is_not_absence(backup, operation, capsys):
 
     backup.raw_hook = unavailable
     assert backup.invoke() == 1
-    assert failed == 3
+    assert failed == 5
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
     assert operation in backup.status()["last_error"]["message"]
@@ -1303,6 +1304,6 @@ def test_metadata_subprocess_failure_stops_before_mutation(backup, failure, caps
 
     backup.hook = unavailable
     assert backup.invoke() == 1
-    assert backup.calls == [("info", (BUCKET,))] * (3 if failure == "deadline" else 1)
+    assert backup.calls == [("info", (BUCKET,))] * (5 if failure == "deadline" else 1)
     assert backup.objects == {FINAL: backup.old}
     assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())
