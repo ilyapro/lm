@@ -88,10 +88,23 @@ not claim that cleanup completed. No outer rollback should undo this result.
 Before each remote mutation, the script persists `transaction.pending` with its
 operation and target (and upload ID for an abort). It clears that intent only
 with a confirmed response or successful reconciliation on a later scheduled
-invocation. Transport errors,
-timeouts and crashes can leave an applied effect with no confirmed response.
-The failing invocation retains the intent and copies. s3cmd retries are
-disabled; reads have a 120-second limit and transfers/copies a 3600-second limit.
+invocation. Transport errors, timeouts and crashes can leave an applied effect
+with no confirmed response. Failed mutations retain the intent and copies.
+Automatic mutation retries in s3cmd remain disabled.
+
+Metadata, object/multipart listings and verification downloads make at most five
+attempts on recognized transient network failures or HTTP 408, 429, 500, 502,
+503 and 504. Pauses between attempts are 2, 4, 8 and 16 seconds. Each attempt
+starts a fresh subprocess and connection; a partial verification download is
+removed before retrying into its private temporary file. Access denials,
+unclassified failures, invalid responses, privacy and checksum failures are not
+retried. The final failure retains its typed transport diagnostic.
+
+Each metadata/listing attempt has a 120-second limit; each download has a
+3600-second limit. Thus an exhausted metadata/listing read can take up to
+630 seconds including pauses. Uploads, copies, deletes and multipart aborts
+are never replayed by this read-retry policy; their pending effects go through
+the scheduled recovery checks. Uploads/copies retain their 3600-second limit.
 
 Transport failures add `transport` to the `last_error`, `cleanup_error`,
 `recovery_error` or `rollback_error` record. The human-readable `message` includes the same safe
@@ -120,8 +133,9 @@ underlying cause: s3cmd can erase the HTTP status when replacing a transfer's
 context suppressed from displayed tracebacks. Cycles and chains beyond eight
 entries stop collection. `TimeoutExpired` identifies the whole-subprocess
 deadline; `TimeoutError` identifies an observed library exception. Neither
-localizes a network/server phase or diagnoses an earlier attempt. These fields
-grant no retry or recovery permission and do not establish a fresh backup.
+localizes a network/server phase or diagnoses an earlier attempt. Typed causes
+classify transient read failures; they never authorize mutation replay or
+establish a fresh backup.
 
 The next ordinary invocation reconciles an interrupted operation under the same
 lock. It checks bucket privacy/versioning, object inventory and multipart uploads
@@ -146,12 +160,12 @@ target is not deleted or aborted again. Cleanup without a pending mutation uses
 its durable checkpoints without downloading FINAL again. After cleanup of an
 unsuccessful attempt, the invocation proceeds with a fresh backup.
 
-Unavailable reads defer recovery until the next scheduled invocation and record
-`recovery_error`. Missing required safety, mismatched contents, foreign objects
+Reads that exhaust their retry budget defer recovery until the next scheduled
+invocation and record `recovery_error`. Missing required safety, mismatched contents, foreign objects
 or uploads, and unreadable or unrecognized state preserve the retained copies
 and require investigation. A missing staging object alone never authorizes
-clearing a pending operation. There is no separate recovery poller, controller
-or retry loop, and no manual status reset is needed for a reconciled timeout.
+clearing a pending operation. There is no separate recovery poller or controller,
+and no manual status reset is needed for a reconciled timeout.
 
 For read-only diagnosis of an unresolved transaction, the existing backup owner
 can check the current FINAL through the same transport under `backup.lock`:
@@ -202,7 +216,9 @@ HTTP and unavailable causes. A socket-forbidden real subprocess checks the
 diagnostic descriptor. Sensitive fixture messages stay out of status and
 reported output. Scheduled recovery scenarios cover applied and unapplied
 mutations, partial uploads, repeated interruptions, unavailable evidence and
-preservation of previous/verified copies. The tests need the installed `S3` Python package, as do the
+preservation of previous/verified copies. Read-retry cases verify the five-attempt
+budget, doubling pauses, partial download removal, permanent-error refusal and
+absence of automatic mutation retries. The tests need the installed `S3` Python package, as do the
 transport subprocesses.
 This proves local semantics; the existing loop confirms
 fresh real backup bytes during its next ordinary work.
