@@ -128,14 +128,14 @@ def error_record(error: Exception) -> dict:
 @contextmanager
 def resilient_transport(connection_retries: bool):
     """Retry connection setup and immutable staging parts inside this child only."""
-    import ssl
+    import http.client
     from S3.ConnMan import ConnMan
     from S3.MultiPart import MultiPartUpload
 
     original_get = ConnMan.get
     original_part = MultiPartUpload.upload_part
-    original_connect = socket.socket.connect
-    original_handshake = ssl.SSLSocket.do_handshake
+    original_connect = http.client.HTTPConnection.connect
+    original_https_connect = http.client.HTTPSConnection.connect
     borrowed = {}
     part_active = False
 
@@ -153,15 +153,17 @@ def resilient_transport(connection_retries: bool):
         borrowed.clear()
 
     def bounded(method):
-        def call(sock, *args, **kwargs):
-            timeout = sock.gettimeout()
-            if timeout is None or timeout > CONNECT_TIMEOUT:
-                sock.settimeout(CONNECT_TIMEOUT)
+        def call(conn, *args, **kwargs):
+            timeout = conn.timeout
+            effective = socket.getdefaulttimeout() if timeout is socket._GLOBAL_DEFAULT_TIMEOUT else timeout
+            if effective is None or effective > CONNECT_TIMEOUT:
+                conn.timeout = CONNECT_TIMEOUT
             try:
-                return method(sock, *args, **kwargs)
+                return method(conn, *args, **kwargs)
             finally:
-                if sock.fileno() != -1:
-                    sock.settimeout(timeout)
+                conn.timeout = timeout
+                if conn.sock is not None:
+                    conn.sock.settimeout(effective)
         return call
 
     def connect(*args, **kwargs):
@@ -212,15 +214,15 @@ def resilient_transport(connection_retries: bool):
 
     ConnMan.get = staticmethod(connect)
     MultiPartUpload.upload_part = upload_part
-    socket.socket.connect = bounded(original_connect)
-    ssl.SSLSocket.do_handshake = bounded(original_handshake)
+    http.client.HTTPConnection.connect = bounded(original_connect)
+    http.client.HTTPSConnection.connect = bounded(original_https_connect)
     try:
         yield
     finally:
         ConnMan.get = staticmethod(original_get)
         MultiPartUpload.upload_part = original_part
-        socket.socket.connect = original_connect
-        ssl.SSLSocket.do_handshake = original_handshake
+        http.client.HTTPConnection.connect = original_connect
+        http.client.HTTPSConnection.connect = original_https_connect
         discard_connections()
 
 
