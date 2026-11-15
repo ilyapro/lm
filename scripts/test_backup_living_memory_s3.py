@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -241,6 +242,8 @@ def backup(tmp_path, monkeypatch):
                       "bucket_location = fixture-1\n")
     config.chmod(0o600)
     fake = FakeS3(home)
+    fake.sleeps = []
+    monkeypatch.setattr(time, "sleep", fake.sleeps.append)
     fake.objects[FINAL] = old
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.setattr(subprocess, "run", fake)
@@ -369,14 +372,16 @@ def test_final_verification_failure_restores_previous(backup, failure):
         nonlocal failed
         if failed and operation == "cp" and args[-1] == FINAL:
             backup.public.discard(FINAL)
+        if (failure == "timeout" and operation == "get" and args[0] == FINAL
+                and backup.objects[FINAL] != backup.old):
+            failed = True
+            raise subprocess.TimeoutExpired("FAKE SECRET", 120)
         if not failed and args[0] == FINAL and backup.objects[FINAL] != backup.old:
             if failure == "acl" and operation == "info":
                 failed = True
                 backup.public.add(FINAL)
             if operation == "get":
                 failed = True
-                if failure == "timeout":
-                    raise subprocess.TimeoutExpired("FAKE SECRET", 120)
                 backup.objects[FINAL] = b"corrupt new FINAL"
 
     backup.hook = fail_new_final
@@ -819,7 +824,8 @@ def test_installed_transport_cause_reaches_status(backup, operation, failure, ta
         direct = isinstance(failure, ConnectionResetError) and verb != "put"
         assert diagnostic["chain"] == ([tail] if direct else [{"class": root}, tail])
         assert diagnostic["exit_code"] == (74 if direct else (75 if verb == "ls" else 2))
-    assert calls.count({"put": "PUT", "get": "GET", "ls": "GET"}[verb]) == 1
+    attempts = 3 if verb in {"get", "ls"} and isinstance(failure, Exception) else 1
+    assert calls.count({"put": "PUT", "get": "GET", "ls": "GET"}[verb]) == attempts
     assert calls.count("POST") == (1 if operation == "multipart-put" else 0)
     assert backup.objects[FINAL] == backup.old
     assert status["last_success"] == previous["last_success"]
@@ -939,7 +945,7 @@ def test_installed_http_503_preserves_only_available_cause(backup, operation, ca
     roots = {"put": "S3UploadError", "get": "S3DownloadError"}
     expected = [{"class": roots[operation]}] if operation in roots else [{"class": "S3Error", "status": 503}]
     assert error["transport"]["chain"] == expected
-    assert calls.count("PUT" if operation == "put" else "GET") == 1
+    assert calls.count("PUT" if operation == "put" else "GET") == (3 if operation == "ls" else 1)
     assert "Timeout" not in error["message"]
     assert "FAKE SECRET" not in json.dumps(error) + str(capsys.readouterr())
 
@@ -1132,7 +1138,8 @@ def test_raw_policy_cannot_authorize_mutation(backup, response, target, capsys):
     assert failed
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
-    assert sum(op == "policy" for op, _ in backup.raw_calls) == (1 if target == BUCKET else 2)
+    attempts = 3 if response.status in {408, 429, 500, 502, 503, 504} else 1
+    assert sum(op == "policy" for op, _ in backup.raw_calls) == attempts + (target != BUCKET)
     assert "policy" in backup.status()["last_error"]["message"]
     assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())
 
@@ -1159,7 +1166,7 @@ def test_raw_transport_failure_is_not_absence(backup, operation, capsys):
 
     backup.raw_hook = unavailable
     assert backup.invoke() == 1
-    assert failed == 1
+    assert failed == 3
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
     assert operation in backup.status()["last_error"]["message"]
@@ -1296,6 +1303,6 @@ def test_metadata_subprocess_failure_stops_before_mutation(backup, failure, caps
 
     backup.hook = unavailable
     assert backup.invoke() == 1
-    assert backup.calls == [("info", (BUCKET,))]
+    assert backup.calls == [("info", (BUCKET,))] * (3 if failure == "deadline" else 1)
     assert backup.objects == {FINAL: backup.old}
     assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())
