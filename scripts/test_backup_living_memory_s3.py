@@ -883,6 +883,143 @@ class TransferConnection:
         return self.response
 
 
+@pytest.mark.parametrize("failure", ["connect", "body", "lost_response", "denied"])
+@pytest.mark.parametrize("failures", [1, 4, 5])
+def test_multipart_retries_keep_part_identity_and_bytes(backup, monkeypatch, failure, failures):
+    from S3.MultiPart import MultiPartUpload
+    from S3.S3Uri import S3Uri
+
+    namespace = runpy.run_path(str(SCRIPT))
+    monkeypatch.setattr(Config, "_instance", None)
+    cfg = Config(str(backup.home / ".config/living-memory/s3cmd-backup.conf"))
+    cfg.max_retries, cfg.progress_meter, cfg.use_http_expect = 0, False, False
+    monkeypatch.setattr(S3Request, "region_map", {})
+    monkeypatch.setattr(S3Request, "redir_map", {})
+    monkeypatch.setattr(ConnMan, "conn_pool", {})
+    part = b"second part bytes" * 8192
+    prefix = b"first part differs" * 8192
+    stream = io.BytesIO(prefix + part)
+    stream.stream_name = "private fixture archive"
+    upload = MultiPartUpload.__new__(MultiPartUpload)
+    upload.s3, upload.file_stream = S3(cfg), stream
+    upload.dst_uri, upload.upload_id = S3Uri(STAGING), "fixed-upload-id"
+    upload.parts = {1: "previous-part-etag"}
+    accepted, requests, connections = {}, [], []
+    attempts = 0
+
+    class Connection:
+        def __init__(self, attempt):
+            self.attempt, self.body, self.closed = attempt, bytearray(), False
+
+        def putrequest(self, method, uri):
+            params = parse_qs(urlsplit(uri).query)
+            requests.append((method, params['uploadId'][0], params['partNumber'][0]))
+
+        def putheader(self, *args):
+            pass
+
+        def endheaders(self):
+            pass
+
+        def wrapper_send_body(self, data):
+            self.body.extend(data)
+            if failure == "body" and self.attempt <= failures:
+                raise ConnectionResetError(104, "FAKE SECRET")
+
+        def getresponse(self):
+            if failure == "denied":
+                return raw_error(403, "AccessDenied")
+            assert bytes(self.body) == part
+            accepted[2] = bytes(self.body)
+            if failure == "lost_response" and self.attempt <= failures:
+                # The part was stored; losing its response must not append data.
+                raise TimeoutError(110, "FAKE SECRET")
+            return RawResponse(headers={"etag": '"' + hashlib.md5(part).hexdigest() + '"'})
+
+        def close(self):
+            self.closed = True
+
+    def acquire(host, *args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        assert all(conn.closed for conn in connections), "retry must discard failed connections"
+        if failure == "connect" and attempts <= failures:
+            raise TimeoutError(110, "FAKE SECRET")
+        conn = Connection(attempts)
+        connections.append(conn)
+        return SimpleNamespace(c=conn, path=None)
+
+    monkeypatch.setattr(ConnMan, "get", acquire)
+    monkeypatch.setattr(ConnMan, "put", lambda conn: None)
+    monkeypatch.setattr(ConnMan, "close", lambda conn: conn.c.close())
+    original_part = MultiPartUpload.upload_part
+    with namespace["resilient_transport"](True):
+        if failure == "denied" or failures == 5:
+            with pytest.raises(Exception):
+                upload.upload_part(2, len(prefix), len(part), {})
+            assert upload.parts == {1: "previous-part-etag"}
+        else:
+            upload.upload_part(2, len(prefix), len(part), {})
+            assert upload.parts == {1: "previous-part-etag", 2: hashlib.md5(part).hexdigest()}
+            assert accepted == {2: part}
+    assert MultiPartUpload.upload_part is original_part
+    assert attempts == (1 if failure == "denied" else min(failures + 1, 5))
+    assert backup.sleeps == ([] if failure == "denied" else [2, 4, 8, 16][:failures])
+    assert all(item == ('PUT', 'fixed-upload-id', '2') for item in requests)
+    assert all(part.startswith(bytes(conn.body)) for conn in connections)
+    assert all(conn.closed for conn in connections)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("permanent", [False, True])
+def test_connection_setup_retry_budget_before_requests(backup, monkeypatch, enabled, permanent):
+    namespace = runpy.run_path(str(SCRIPT))
+    attempts = 0
+    monkeypatch.setattr(ConnMan, "conn_pool", {})
+
+    def unavailable(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if permanent:
+            raise ValueError("invalid connection configuration")
+        raise TimeoutError(110, "FAKE SECRET")
+
+    monkeypatch.setattr(ConnMan, "get", unavailable)
+    with namespace["resilient_transport"](enabled):
+        with pytest.raises((TimeoutError, ValueError)):
+            ConnMan.get("storage.invalid")
+    assert attempts == (5 if enabled and not permanent else 1)
+    assert backup.sleeps == ([2, 4, 8, 16] if enabled and not permanent else [])
+
+
+@pytest.mark.parametrize("secure", [False, True])
+@pytest.mark.parametrize("timeout", [None, 3, 300])
+def test_connect_deadline_restores_transfer_timeout(backup, monkeypatch, secure, timeout):
+    import http.client
+    namespace = runpy.run_path(str(SCRIPT))
+    cls = http.client.HTTPSConnection if secure else http.client.HTTPConnection
+    observed = []
+
+    class Socket:
+        def fileno(self):
+            return 1
+
+        def settimeout(self, value):
+            observed.append(('transfer', value))
+
+    def connect(conn):
+        observed.append(('connect', conn.timeout))
+        conn.sock = Socket()
+
+    monkeypatch.setattr(cls, "connect", connect)
+    with namespace["resilient_transport"](True):
+        conn = SimpleNamespace(timeout=timeout, sock=None)
+        cls.connect(conn)
+    assert observed == [('connect', 3 if timeout == 3 else 15), ('transfer', timeout)]
+    assert conn.timeout == timeout
+    assert cls.connect is connect
+
+
 @pytest.mark.parametrize("operation", ["put", "multipart-put", "get", "ls"])
 @pytest.mark.parametrize("failure,tail", [
     (TimeoutError(110, "FAKE SECRET https://signed.invalid/?token=secret"), {"class": "TimeoutError", "errno": 110}),
