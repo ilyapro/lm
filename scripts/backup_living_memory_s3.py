@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import fcntl
+import errno
 import gzip
 import hashlib
 import json
@@ -15,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 import zlib
 from datetime import datetime, timezone
@@ -31,6 +33,7 @@ STAGING = f"s3://{BUCKET}/.incoming.sqlite3.gz"
 PRIVATE_ACL = ["sfx: FULL_CONTROL"]
 READ_TIMEOUT = 120
 TRANSFER_TIMEOUT = 3600
+READ_RETRY_DELAYS = (2, 5)
 
 
 def now() -> str:
@@ -170,7 +173,38 @@ def transport(descriptor: str, *args: str) -> None:
                 raise SystemExit(1) from None
 
 
+def transient_read_failure(error: S3Failure) -> bool:
+    chain = error.transport["chain"]
+    statuses = [item["status"] for item in chain if "status" in item]
+    if statuses:
+        return all(status in {408, 429, 500, 502, 503, 504} for status in statuses)
+    network_errors = {errno.ETIMEDOUT, errno.ECONNRESET, errno.ECONNABORTED,
+                      errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.ENETUNREACH, errno.EPIPE}
+    return any(item["class"] in {"TimeoutExpired", "TimeoutError", "ConnectionResetError",
+                                "ConnectionAbortedError", "BrokenPipeError", "RemoteDisconnected"}
+               or item.get("errno") in network_errors for item in chain)
+
+
+def retry_read(read):
+    for attempt in range(len(READ_RETRY_DELAYS) + 1):
+        try:
+            return read()
+        except S3Failure as error:
+            if attempt == len(READ_RETRY_DELAYS) or not transient_read_failure(error):
+                raise
+            delay = READ_RETRY_DELAYS[attempt]
+            print(f"Living Memory backup retrying {error.transport['operation']} read "
+                  f"in {delay}s after transient failure", file=sys.stderr)
+            time.sleep(delay)
+
+
 def s3(*args: str) -> str:
+    if args[0] in {"ls", "multipart"}:
+        return retry_read(lambda: s3_once(*args))
+    return s3_once(*args)
+
+
+def s3_once(*args: str) -> str:
     with tempfile.TemporaryFile(mode="w+") as diagnostic:
         try:
             result = subprocess.run(
@@ -287,6 +321,10 @@ def metadata(config_path: str, target: str, content: str) -> None:
 
 
 def info(target: str, *, content: bool = True) -> dict[str, str]:
+    return retry_read(lambda: info_once(target, content=content))
+
+
+def info_once(target: str, *, content: bool = True) -> dict[str, str]:
     # Use the interpreter owning /usr/bin/s3cmd's installed S3 package. Keeping
     # this in a subprocess retains the whole-read deadline, including redirects.
     try:
@@ -421,7 +459,12 @@ def verify_download(target: str, work: Path, name: str, expected: dict | None = 
     info(target, content=False)  # Fresh ACL/policy check at each verification.
     archive = work / f"{name}.sqlite3.gz"
     restored = work / f"{name}.sqlite3"
-    s3("get", target, str(archive))
+    def download():
+        # Each attempt uses a fresh child/connection and a clean local file.
+        archive.unlink(missing_ok=True)
+        return s3("get", target, str(archive))
+
+    retry_read(download)
     archive_hash = digest(archive)
     if expected and archive_hash != expected["archive_sha256"]:
         raise RuntimeError(f"{name} archive checksum mismatch")
