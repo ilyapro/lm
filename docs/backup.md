@@ -90,7 +90,15 @@ operation and target (and upload ID for an abort). It clears that intent only
 with a confirmed response or successful reconciliation on a later scheduled
 invocation. Transport errors, timeouts and crashes can leave an applied effect
 with no confirmed response. Failed mutations retain the intent and copies.
-Automatic mutation retries in s3cmd remain disabled.
+General mutation retries in s3cmd remain disabled.
+
+TCP connection and TLS establishment use a 15-second socket timeout, preserving
+any shorter configured timeout. After connection setup the original socket
+timeout is restored for transfers. DNS and the complete child process remain
+bounded by the operation's outer deadline. Before sending a mutation request,
+failed connection setup can make five attempts with pauses of 2, 4, 8 and
+16 seconds. Read retries own their connection failures, so these budgets do not
+multiply. Responses lost after a request was sent require reconciliation.
 
 Metadata, object/multipart listings and verification downloads make at most five
 attempts on recognized transient network failures or HTTP 408, 429, 500, 502,
@@ -106,6 +114,23 @@ Each metadata/listing attempt has a 120-second limit; each download has a
 are never replayed by this read-retry policy; their pending effects go through
 the scheduled recovery checks. Uploads/copies retain their 3600-second limit.
 
+Within a staging multipart upload, each part can make five attempts on the same
+recognized transient failures, with the same doubling pauses. The part owns its
+connection retry budget. Failed connections are closed before another attempt.
+The child retains that part's immutable bytes in memory (normally 15 MiB, at most
+64 MiB) and retries the same upload ID and part number. The existing s3cmd
+uploader still signs requests, checks responses and assembles the completed
+upload. [S3 UploadPart semantics](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html)
+replace an existing part with the same number; an accepted part whose reply was
+lost therefore receives identical bytes. Later parts use a zero-based private
+buffer, preserving the original part's data despite its offset in the archive.
+
+This part retry never starts another multipart upload, repeats completion,
+copies FINAL or resumes an old upload using a newly generated snapshot. Small
+single-request uploads and multipart initiation/completion retain pending-state
+reconciliation after uncertain responses. Exhausting the part attempts or the
+whole-transfer deadline also leaves pending/safety for scheduled recovery.
+
 Transport failures add `transport` to the `last_error`, `cleanup_error`,
 `recovery_error` or `rollback_error` record. The human-readable `message` includes the same safe
 cause. `transport.operation` identifies the command (or `metadata` check),
@@ -120,8 +145,9 @@ and optional integer HTTP `status` (100–599). For example:
 
 The installed s3cmd CLI runs inside the existing bounded subprocess. Observers
 on its request/upload/multipart/download methods retain the escaping exception
-chain before CLI error handling discards it. Signing, redirects and transfer
-decisions stay in s3cmd. A separate private descriptor carries only this typed
+chain before CLI error handling discards it. Signing and redirects stay in
+s3cmd; the child adds only bounded connection and staging-part retries.
+A separate private descriptor carries only this typed
 data; raw stderr, exception messages/arguments, URIs, headers, bodies,
 configuration and credentials are never included in the diagnostic. The parent
 validates its shape and bounds before recording it.
@@ -217,8 +243,11 @@ diagnostic descriptor. Sensitive fixture messages stay out of status and
 reported output. Scheduled recovery scenarios cover applied and unapplied
 mutations, partial uploads, repeated interruptions, unavailable evidence and
 preservation of previous/verified copies. Read-retry cases verify the five-attempt
-budget, doubling pauses, partial download removal, permanent-error refusal and
-absence of automatic mutation retries. The tests need the installed `S3` Python package, as do the
+budget, doubling pauses, partial download removal and permanent-error refusal.
+Multipart cases exercise the installed uploader's connection/send/response
+failures, immutable bytes, repeated part identity and exhausted attempts;
+unknown initiation/completion/copy/delete requests are not replayed. The tests
+need the installed `S3` Python package, as do the
 transport subprocesses.
 This proves local semantics; the existing loop confirms
 fresh real backup bytes during its next ordinary work.
