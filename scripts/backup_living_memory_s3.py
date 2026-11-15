@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -20,6 +21,7 @@ import time
 import uuid
 import zlib
 from datetime import datetime, timezone
+from contextlib import contextmanager
 from urllib.parse import quote
 from xml.etree import ElementTree
 
@@ -33,7 +35,8 @@ STAGING = f"s3://{BUCKET}/.incoming.sqlite3.gz"
 PRIVATE_ACL = ["sfx: FULL_CONTROL"]
 READ_TIMEOUT = 120
 TRANSFER_TIMEOUT = 3600
-READ_RETRY_DELAYS = (2, 4, 8, 16)
+CONNECT_TIMEOUT = 15
+RETRY_DELAYS = (2, 4, 8, 16)
 
 
 def now() -> str:
@@ -122,6 +125,105 @@ def error_record(error: Exception) -> dict:
     return record
 
 
+@contextmanager
+def resilient_transport(connection_retries: bool):
+    """Retry connection setup and immutable staging parts inside this child only."""
+    import ssl
+    from S3.ConnMan import ConnMan
+    from S3.MultiPart import MultiPartUpload
+
+    original_get = ConnMan.get
+    original_part = MultiPartUpload.upload_part
+    original_connect = socket.socket.connect
+    original_handshake = ssl.SSLSocket.do_handshake
+    borrowed = {}
+    part_active = False
+
+    def discard_connections():
+        with ConnMan.conn_pool_sem:
+            for connections in ConnMan.conn_pool.values():
+                for conn in connections:
+                    borrowed[id(conn)] = conn
+            ConnMan.conn_pool.clear()
+        for conn in borrowed.values():
+            try:
+                ConnMan.close(conn)
+            except OSError:
+                pass
+        borrowed.clear()
+
+    def bounded(method):
+        def call(sock, *args, **kwargs):
+            timeout = sock.gettimeout()
+            if timeout is None or timeout > CONNECT_TIMEOUT:
+                sock.settimeout(CONNECT_TIMEOUT)
+            try:
+                return method(sock, *args, **kwargs)
+            finally:
+                if sock.fileno() != -1:
+                    sock.settimeout(timeout)
+        return call
+
+    def connect(*args, **kwargs):
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            try:
+                conn = original_get(*args, **kwargs)
+                borrowed[id(conn)] = conn
+                return conn
+            except Exception as error:
+                # ConnMan.get connects/TLS-authenticates before S3 sends a request.
+                # Parts own their retry budget; outer read retries own theirs.
+                if (not connection_retries or part_active or attempt == len(RETRY_DELAYS)
+                        or not transient_failure(exception_chain(error))):
+                    raise
+                discard_connections()
+                time.sleep(RETRY_DELAYS[attempt])
+
+    def upload_part(upload, seq, offset, chunk_size, labels, buffer='', remote_status=None):
+        nonlocal part_active
+        if upload.file_stream is None or upload.dst_uri.uri() != STAGING or remote_status is not None:
+            return original_part(upload, seq, offset, chunk_size, labels, buffer, remote_status)
+        if not upload.upload_id or not 1 <= seq <= 10000 or not 0 < chunk_size <= 64 * 1024 * 1024:
+            raise RuntimeError("invalid staging part identity or size")
+        if buffer:
+            payload = bytes(buffer[offset:offset + chunk_size])
+        else:
+            upload.file_stream.seek(offset)
+            payload = upload.file_stream.read(chunk_size)
+        if not isinstance(payload, bytes) or len(payload) != chunk_size:
+            raise RuntimeError("incomplete staging part source")
+        identity = (upload.upload_id, upload.dst_uri.uri())
+        part_active = True
+        try:
+            for attempt in range(len(RETRY_DELAYS) + 1):
+                if (upload.upload_id, upload.dst_uri.uri()) != identity:
+                    raise RuntimeError("staging part identity changed")
+                try:
+                    # The same upload id, part number and immutable bytes replace
+                    # the same part even when its previous response was lost.
+                    return original_part(upload, seq, 0, chunk_size, labels, payload)
+                except Exception as error:
+                    if attempt == len(RETRY_DELAYS) or not transient_failure(exception_chain(error)):
+                        raise
+                    discard_connections()
+                    time.sleep(RETRY_DELAYS[attempt])
+        finally:
+            part_active = False
+
+    ConnMan.get = staticmethod(connect)
+    MultiPartUpload.upload_part = upload_part
+    socket.socket.connect = bounded(original_connect)
+    ssl.SSLSocket.do_handshake = bounded(original_handshake)
+    try:
+        yield
+    finally:
+        ConnMan.get = staticmethod(original_get)
+        MultiPartUpload.upload_part = original_part
+        socket.socket.connect = original_connect
+        ssl.SSLSocket.do_handshake = original_handshake
+        discard_connections()
+
+
 def transport(descriptor: str, *args: str) -> None:
     """Execute installed s3cmd, observing errors before its CLI discards them."""
     from contextlib import redirect_stderr
@@ -137,7 +239,8 @@ def transport(descriptor: str, *args: str) -> None:
             diagnostic.write(json.dumps(chain))
             diagnostic.flush()
 
-        with redirect_stderr(quiet):
+        mutations = {"put", "cp", "del", "abortmp"}
+        with redirect_stderr(quiet), resilient_transport(any(arg in mutations for arg in args)):
             try:
                 from S3.S3 import S3
 
@@ -173,8 +276,7 @@ def transport(descriptor: str, *args: str) -> None:
                 raise SystemExit(1) from None
 
 
-def transient_read_failure(error: S3Failure) -> bool:
-    chain = error.transport["chain"]
+def transient_failure(chain: list[dict]) -> bool:
     statuses = [item["status"] for item in chain if "status" in item]
     if statuses:
         return all(status in {408, 429, 500, 502, 503, 504} for status in statuses)
@@ -182,17 +284,18 @@ def transient_read_failure(error: S3Failure) -> bool:
                       errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.ENETUNREACH, errno.EPIPE}
     return any(item["class"] in {"TimeoutExpired", "TimeoutError", "ConnectionResetError",
                                 "ConnectionAbortedError", "BrokenPipeError", "RemoteDisconnected"}
+               or (item["class"] == "gaierror" and item.get("errno") == socket.EAI_AGAIN)
                or item.get("errno") in network_errors for item in chain)
 
 
 def retry_read(read):
-    for attempt in range(len(READ_RETRY_DELAYS) + 1):
+    for attempt in range(len(RETRY_DELAYS) + 1):
         try:
             return read()
         except S3Failure as error:
-            if attempt == len(READ_RETRY_DELAYS) or not transient_read_failure(error):
+            if attempt == len(RETRY_DELAYS) or not transient_failure(error.transport["chain"]):
                 raise
-            delay = READ_RETRY_DELAYS[attempt]
+            delay = RETRY_DELAYS[attempt]
             print(f"Living Memory backup retrying {error.transport['operation']} read "
                   f"in {delay}s after transient failure", file=sys.stderr)
             time.sleep(delay)
@@ -243,6 +346,11 @@ def mutate(transaction: dict, phase: str, *args: str, completed: str | None = No
 
 
 def metadata(config_path: str, target: str, content: str) -> None:
+    with resilient_transport(False):
+        metadata_once(config_path, target, content)
+
+
+def metadata_once(config_path: str, target: str, content: str) -> None:
     """Read required facts in a bounded subprocess using s3cmd's own transport.
 
     Do not use bucket_info/cmd_info: they turn failed versioning/policy reads
