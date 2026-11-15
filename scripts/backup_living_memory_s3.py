@@ -162,7 +162,7 @@ def resilient_transport(connection_retries: bool):
                 return method(conn, *args, **kwargs)
             finally:
                 conn.timeout = timeout
-                if conn.sock is not None:
+                if conn.sock is not None and conn.sock.fileno() != -1:
                     conn.sock.settimeout(effective)
         return call
 
