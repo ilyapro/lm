@@ -36,7 +36,7 @@ PRIVATE_ACL = ["sfx: FULL_CONTROL"]
 READ_TIMEOUT = 120
 TRANSFER_TIMEOUT = 3600
 CONNECT_TIMEOUT = 15
-RETRY_DELAYS = (2, 4, 8, 16)
+RETRY_DELAYS = tuple(3 ** exponent for exponent in range(1, 8))
 
 
 def now() -> str:
@@ -310,6 +310,11 @@ def s3(*args: str) -> str:
 
 
 def s3_once(*args: str) -> str:
+    timeout = TRANSFER_TIMEOUT if args[0] in {"get", "put", "cp"} else READ_TIMEOUT
+    if args[0] in {"put", "cp", "del", "abortmp"}:
+        # These retries happen inside the child. Reserve the backoff and extra
+        # TCP/TLS attempts so the ordinary deadline does not cut off one budget.
+        timeout += sum(RETRY_DELAYS) + len(RETRY_DELAYS) * 2 * CONNECT_TIMEOUT
     with tempfile.TemporaryFile(mode="w+") as diagnostic:
         try:
             result = subprocess.run(
@@ -318,7 +323,7 @@ def s3_once(*args: str) -> str:
                  str(Path(__file__).resolve()), str(diagnostic.fileno()),
                  "-c", str(CONFIG), "--no-progress", "--max-retries=0", *args],
                 pass_fds=(diagnostic.fileno(),), capture_output=True, text=True,
-                timeout=TRANSFER_TIMEOUT if args[0] in {"get", "put", "cp"} else READ_TIMEOUT,
+                timeout=timeout,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
             raise S3Failure(args[0], exception_chain(error)) from None
