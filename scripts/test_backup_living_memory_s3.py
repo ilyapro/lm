@@ -338,6 +338,97 @@ def test_late_multipart_timeout_keeps_verified_result(backup):
     assert backup.old in backup.objects.values()
 
 
+@pytest.mark.parametrize("operation", ["info", "ls", "multipart", "get"])
+@pytest.mark.parametrize("failures", [1, 4, 5])
+def test_read_retry_budget_and_clean_downloads(backup, operation, failures):
+    attempts = 0
+
+    def transient(verb, args):
+        nonlocal attempts
+        if verb != operation or (verb == "get" and args[0] != STAGING):
+            return
+        # Only the first logical read fails; later cleanup reads succeed.
+        if attempts > failures:
+            return
+        attempts += 1
+        if verb == "get":
+            assert not Path(args[1]).exists(), "retry must discard partial download"
+        if attempts <= failures:
+            if verb == "get":
+                Path(args[1]).write_bytes(b"partial download")
+            raise subprocess.TimeoutExpired("FAKE SECRET", 120)
+
+    backup.hook = transient
+    assert backup.invoke() == (1 if failures == 5 else 0)
+    assert attempts == min(failures + 1, 5)
+    assert backup.sleeps == [2, 4, 8, 16][:failures]
+    if failures == 5:
+        assert backup.objects == {FINAL: backup.old}
+        assert backup.status()["last_error"]["transport"]["chain"] == [{"class": "TimeoutExpired"}]
+    else:
+        backup.fresh_bytes()
+        assert backup.status()["last_error"] is None
+        assert backup.status()["transaction"] is None
+
+
+@pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504, 403, 404, 501])
+def test_metadata_http_retry_classification(backup, status):
+    attempts = 0
+
+    def unavailable(operation, target):
+        nonlocal attempts
+        if operation == "versioning":
+            attempts += 1
+            return raw_error(status, "FixtureFailure")
+
+    backup.raw_hook = unavailable
+    assert backup.invoke() == 1
+    retryable = status in {408, 429, 500, 502, 503, 504}
+    assert attempts == (5 if retryable else 1)
+    assert backup.sleeps == ([2, 4, 8, 16] if retryable else [])
+    assert backup.objects == {FINAL: backup.old}
+    assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
+
+
+def test_read_retry_stops_when_failure_becomes_permanent(backup):
+    attempts = 0
+
+    def failure(operation, args):
+        nonlocal attempts
+        if operation == "ls":
+            attempts += 1
+            if attempts == 1:
+                raise subprocess.TimeoutExpired("FAKE SECRET", 120)
+            os.write(backup.diagnostic_fd, b'[{"class":"S3Error","status":403}]')
+            return subprocess.CompletedProcess([], 1, "", "FAKE SECRET")
+
+    backup.hook = failure
+    assert backup.invoke() == 1
+    assert attempts == 2
+    assert backup.sleeps == [2]
+    assert backup.status()["last_error"]["transport"]["chain"] == [{"class": "S3Error", "status": 403}]
+    assert backup.objects == {FINAL: backup.old}
+
+
+@pytest.mark.parametrize("operation", ["put", "cp", "del", "abortmp"])
+def test_mutation_timeout_has_no_automatic_retry(backup, operation):
+    attempts = 0
+
+    def timeout(verb, args):
+        nonlocal attempts
+        if operation == "abortmp" and verb == "get" and args[0] == FINAL:
+            backup.uploads.append((STAGING, "owned-upload"))
+        if verb == operation:
+            attempts += 1
+            raise subprocess.TimeoutExpired("FAKE SECRET", 120)
+
+    backup.hook = timeout
+    assert backup.invoke() == 3
+    assert attempts == 1
+    assert backup.sleeps == []
+    assert backup.status()["transaction"]["pending"]["operation"] == operation
+
+
 def seed_success(backup):
     backup.state.mkdir(parents=True, exist_ok=True)
     status = {"last_success": "2000-01-01T00:00:00Z", "sha256": "prior-success", "bytes": 8192}
