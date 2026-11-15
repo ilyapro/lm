@@ -972,6 +972,76 @@ def test_multipart_retries_keep_part_identity_and_bytes(backup, monkeypatch, fai
     assert all(conn.closed for conn in connections)
 
 
+def test_command_completes_after_lost_multipart_response(backup):
+    with sqlite3.connect(backup.database) as connection:
+        connection.execute("CREATE TABLE padding (value BLOB)")
+        connection.execute("INSERT INTO padding VALUES (?)", (os.urandom(6 * 1024 * 1024),))
+    with (backup.home / ".config/living-memory/s3cmd-backup.conf").open("a") as stream:
+        stream.write("multipart_chunk_size_mb = 5\nuse_http_expect = False\n")
+    parts, attempts = {}, Counter()
+    posts = []
+
+    class Connection:
+        def request(self, method, uri, body, headers):
+            self.part = None
+            if method == "HEAD":
+                self.response = RawResponse(headers={'content-length': '1',
+                    'etag': '"0123456789abcdef0123456789abcdef"',
+                    'last-modified': 'Thu, 01 Jan 2026 00:00:00 GMT'})
+                return
+            assert method == "POST"
+            params = parse_qs(urlsplit(uri).query, keep_blank_values=True)
+            if "uploads" in params:
+                posts.append('initiate')
+                self.response = RawResponse(data=b'<InitiateMultipartUploadResult><UploadId>fixture-upload</UploadId></InitiateMultipartUploadResult>')
+            else:
+                assert params['uploadId'] == ['fixture-upload']
+                posts.append('complete')
+                assert set(parts) == {1, 2}
+                backup.objects[STAGING] = parts[1] + parts[2]
+                self.response = RawResponse(data=b'<CompleteMultipartUploadResult><ETag>fixture-etag</ETag></CompleteMultipartUploadResult>')
+
+        def putrequest(self, method, uri):
+            assert method == 'PUT'
+            params = parse_qs(urlsplit(uri).query)
+            assert params['uploadId'] == ['fixture-upload']
+            self.part = int(params['partNumber'][0])
+            attempts[self.part] += 1
+            self.body = bytearray()
+
+        def putheader(self, *args):
+            pass
+
+        def endheaders(self):
+            pass
+
+        def wrapper_send_body(self, data):
+            self.body.extend(data)
+
+        def getresponse(self):
+            if self.part is None:
+                return self.response
+            body = bytes(self.body)
+            if self.part in parts:
+                assert parts[self.part] == body
+            parts[self.part] = body
+            if self.part == 2 and attempts[2] < 3:
+                raise TimeoutError(110, 'FAKE SECRET response lost after storing part')
+            return RawResponse(headers={'etag': '"' + hashlib.md5(body).hexdigest() + '"'})
+
+    backup.cli = lambda operation, args: operation == 'put'
+    backup.connection = lambda host: SimpleNamespace(path=None, c=Connection())
+    assert backup.invoke() == 0
+    backup.fresh_bytes()
+    assert backup.status()['result'] == 'verified'
+    assert backup.status()['cleanup'] == 'complete'
+    assert backup.status()['transaction'] is None
+    assert set(backup.objects) == {FINAL}
+    assert attempts == {1: 1, 2: 3}
+    assert posts == ['initiate', 'complete']
+    assert backup.sleeps == [2, 4]
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("permanent", [False, True])
 def test_connection_setup_retry_budget_before_requests(backup, monkeypatch, enabled, permanent):
