@@ -145,7 +145,10 @@ class FakeS3:
         with (self.home / ".local/state/living-memory-backup/backup.lock").open("a") as lock:
             with pytest.raises(BlockingIOError):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        assert 0 < kwargs["timeout"] <= 3600
+        expected_timeout = 3600 if operation in {"get", "put", "cp"} else 120
+        if operation in {"put", "cp", "del", "abortmp"}:
+            expected_timeout += 3279 + 7 * 30
+        assert kwargs["timeout"] == expected_timeout
         self.calls.append((operation, tuple(args)))
         override = self.hook(operation, args)
         if override is not None:
@@ -339,7 +342,7 @@ def test_late_multipart_timeout_keeps_verified_result(backup):
 
 
 @pytest.mark.parametrize("operation", ["info", "ls", "multipart", "get"])
-@pytest.mark.parametrize("failures", [1, 4, 5])
+@pytest.mark.parametrize("failures", [1, 7, 8])
 def test_read_retry_budget_and_clean_downloads(backup, operation, failures):
     attempts = 0
 
@@ -359,10 +362,10 @@ def test_read_retry_budget_and_clean_downloads(backup, operation, failures):
             raise subprocess.TimeoutExpired("FAKE SECRET", 120)
 
     backup.hook = transient
-    assert backup.invoke() == (1 if failures == 5 else 0)
-    assert attempts == min(failures + 1, 5)
-    assert backup.sleeps == [2, 4, 8, 16][:failures]
-    if failures == 5:
+    assert backup.invoke() == (1 if failures == 8 else 0)
+    assert attempts == min(failures + 1, 8)
+    assert backup.sleeps == [3, 9, 27, 81, 243, 729, 2187][:failures]
+    if failures == 8:
         assert backup.objects == {FINAL: backup.old}
         assert backup.status()["last_error"]["transport"]["chain"] == [{"class": "TimeoutExpired"}]
     else:
@@ -384,8 +387,8 @@ def test_metadata_http_retry_classification(backup, status):
     backup.raw_hook = unavailable
     assert backup.invoke() == 1
     retryable = status in {408, 429, 500, 502, 503, 504}
-    assert attempts == (5 if retryable else 1)
-    assert backup.sleeps == ([2, 4, 8, 16] if retryable else [])
+    assert attempts == (8 if retryable else 1)
+    assert backup.sleeps == ([3, 9, 27, 81, 243, 729, 2187] if retryable else [])
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
 
@@ -405,7 +408,7 @@ def test_read_retry_stops_when_failure_becomes_permanent(backup):
     backup.hook = failure
     assert backup.invoke() == 1
     assert attempts == 2
-    assert backup.sleeps == [2]
+    assert backup.sleeps == [3]
     assert backup.status()["last_error"]["transport"]["chain"] == [{"class": "S3Error", "status": 403}]
     assert backup.objects == {FINAL: backup.old}
 
@@ -884,7 +887,7 @@ class TransferConnection:
 
 
 @pytest.mark.parametrize("failure", ["connect", "body", "lost_response", "denied"])
-@pytest.mark.parametrize("failures", [1, 4, 5])
+@pytest.mark.parametrize("failures", [1, 7, 8])
 def test_multipart_retries_keep_part_identity_and_bytes(backup, monkeypatch, failure, failures):
     from S3.MultiPart import MultiPartUpload
     from S3.S3Uri import S3Uri
@@ -956,7 +959,7 @@ def test_multipart_retries_keep_part_identity_and_bytes(backup, monkeypatch, fai
     monkeypatch.setattr(ConnMan, "close", lambda conn: conn.c.close())
     original_part = MultiPartUpload.upload_part
     with namespace["resilient_transport"](True):
-        if failure == "denied" or failures == 5:
+        if failure == "denied" or failures == 8:
             with pytest.raises(Exception):
                 upload.upload_part(2, len(prefix), len(part), {})
             assert upload.parts == {1: "previous-part-etag"}
@@ -965,8 +968,8 @@ def test_multipart_retries_keep_part_identity_and_bytes(backup, monkeypatch, fai
             assert upload.parts == {1: "previous-part-etag", 2: hashlib.md5(part).hexdigest()}
             assert accepted == {2: part}
     assert MultiPartUpload.upload_part is original_part
-    assert attempts == (1 if failure == "denied" else min(failures + 1, 5))
-    assert backup.sleeps == ([] if failure == "denied" else [2, 4, 8, 16][:failures])
+    assert attempts == (1 if failure == "denied" else min(failures + 1, 8))
+    assert backup.sleeps == ([] if failure == "denied" else [3, 9, 27, 81, 243, 729, 2187][:failures])
     assert all(item == ('PUT', 'fixed-upload-id', '2') for item in requests)
     assert all(part.startswith(bytes(conn.body)) for conn in connections)
     assert all(conn.closed for conn in connections)
@@ -1039,7 +1042,7 @@ def test_command_completes_after_lost_multipart_response(backup):
     assert set(backup.objects) == {FINAL}
     assert attempts == {1: 1, 2: 3}
     assert posts == ['initiate', 'complete']
-    assert backup.sleeps == [2, 4]
+    assert backup.sleeps == [3, 9]
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -1060,8 +1063,8 @@ def test_connection_setup_retry_budget_before_requests(backup, monkeypatch, enab
     with namespace["resilient_transport"](enabled):
         with pytest.raises((TimeoutError, ValueError)):
             ConnMan.get("storage.invalid")
-    assert attempts == (5 if enabled and not permanent else 1)
-    assert backup.sleeps == ([2, 4, 8, 16] if enabled and not permanent else [])
+    assert attempts == (8 if enabled and not permanent else 1)
+    assert backup.sleeps == ([3, 9, 27, 81, 243, 729, 2187] if enabled and not permanent else [])
 
 
 @pytest.mark.parametrize("operation,params", [
@@ -1156,7 +1159,7 @@ def test_installed_transport_cause_reaches_status(backup, operation, failure, ta
         direct = isinstance(failure, ConnectionResetError) and verb != "put"
         assert diagnostic["chain"] == ([tail] if direct else [{"class": root}, tail])
         assert diagnostic["exit_code"] == (74 if direct else (75 if verb == "ls" else 2))
-    attempts = 5 if operation in {"get", "ls", "multipart-put"} and isinstance(failure, Exception) else 1
+    attempts = 8 if operation in {"get", "ls", "multipart-put"} and isinstance(failure, Exception) else 1
     assert calls.count({"put": "PUT", "get": "GET", "ls": "GET"}[verb]) == attempts
     assert calls.count("POST") == (1 if operation == "multipart-put" else 0)
     assert backup.objects[FINAL] == backup.old
@@ -1277,7 +1280,7 @@ def test_installed_http_503_preserves_only_available_cause(backup, operation, ca
     roots = {"put": "S3UploadError", "get": "S3DownloadError"}
     expected = [{"class": roots[operation]}] if operation in roots else [{"class": "S3Error", "status": 503}]
     assert error["transport"]["chain"] == expected
-    assert calls.count("PUT" if operation == "put" else "GET") == (5 if operation == "ls" else 1)
+    assert calls.count("PUT" if operation == "put" else "GET") == (8 if operation == "ls" else 1)
     assert "Timeout" not in error["message"]
     assert "FAKE SECRET" not in json.dumps(error) + str(capsys.readouterr())
 
@@ -1438,7 +1441,7 @@ def test_raw_versioning_cannot_authorize_mutation(backup, response, capsys):
     assert backup.invoke() == 1
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
-    attempts = 5 if response.status in {408, 429, 500, 502, 503, 504} else 1
+    attempts = 8 if response.status in {408, 429, 500, 502, 503, 504} else 1
     assert backup.raw_calls == [("versioning", BUCKET)] * attempts
     status = backup.status()
     assert "versioning" in status["last_error"]["message"]
@@ -1471,7 +1474,7 @@ def test_raw_policy_cannot_authorize_mutation(backup, response, target, capsys):
     assert failed
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
-    attempts = 5 if response.status in {408, 429, 500, 502, 503, 504} else 1
+    attempts = 8 if response.status in {408, 429, 500, 502, 503, 504} else 1
     assert sum(op == "policy" for op, _ in backup.raw_calls) == attempts + (target != BUCKET)
     assert "policy" in backup.status()["last_error"]["message"]
     assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())
@@ -1499,7 +1502,7 @@ def test_raw_transport_failure_is_not_absence(backup, operation, capsys):
 
     backup.raw_hook = unavailable
     assert backup.invoke() == 1
-    assert failed == 5
+    assert failed == 8
     assert backup.objects == {FINAL: backup.old}
     assert not any(op in {"cp", "put", "del", "abortmp"} for op, _ in backup.calls)
     assert operation in backup.status()["last_error"]["message"]
@@ -1636,6 +1639,6 @@ def test_metadata_subprocess_failure_stops_before_mutation(backup, failure, caps
 
     backup.hook = unavailable
     assert backup.invoke() == 1
-    assert backup.calls == [("info", (BUCKET,))] * (5 if failure == "deadline" else 1)
+    assert backup.calls == [("info", (BUCKET,))] * (8 if failure == "deadline" else 1)
     assert backup.objects == {FINAL: backup.old}
     assert "FAKE SECRET" not in json.dumps(backup.status()) + str(capsys.readouterr())
