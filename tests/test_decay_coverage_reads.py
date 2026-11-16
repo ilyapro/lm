@@ -41,7 +41,7 @@ def test_ordinary_sweep_projects_and_parses_only_required_coverage(tmp_path, mon
         for node_id in ("covered", "dated"):
             store.create_node(
                 level="trace", node_id=node_id, content=f"Read source {node_id}.",
-                context={"scope": SCOPE, "timestamp": "2026-10-20"},
+                context={"scope": SCOPE, "timestamp": "2020-01-01"},
                 stats={"last_accessed": "2026-10-22"},
             )
         bodies = [
@@ -110,6 +110,72 @@ def test_ordinary_sweep_projects_and_parses_only_required_coverage(tmp_path, mon
         assert sum(len(row.get("provenance", "")) for row in projected) == (
             sum(map(len, bodies)) if enabled else 0
         )
+
+
+@pytest.mark.parametrize("anchor", ["created", "last_accessed"])
+@pytest.mark.parametrize("case", ["empty", "fresh", "unknown", "cutoff", "empty-opt-in"])
+def test_ineligible_scope_needs_no_coverage(tmp_path, monkeypatch, anchor, case):
+    monkeypatch.delenv(decay.CONCEPT_COVERED_ENV, raising=False)
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        owner(store, "digest", '["source"]', "{}")
+        if not case.startswith("empty"):
+            store.create_node(
+                level="trace", node_id="source", content="Scoped source.",
+                context={"scope": SCOPE},
+            )
+            timestamp = {"fresh": "2026-10-23", "unknown": "invalid",
+                         "cutoff": "2026-10-16T07:00:00+07:00"}[case]
+            with store.transaction():
+                store.connection.execute(
+                    "UPDATE nodes SET timestamp=?, created_at=?, last_accessed=? WHERE id='source'",
+                    (timestamp, timestamp, timestamp),
+                )
+        before = list(store.connection.iterdump())
+
+        def deny_coverage(action, table, column, *rest):
+            if action == sqlite3.SQLITE_READ and table == "nodes" and column == "source_traces":
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        store.connection.set_authorizer(deny_coverage)
+        try:
+            assert decay.soft_delete_expired(
+                store, scope=SCOPE, now=NOW, ttl_days=7, ttl_anchor=anchor,
+                levels=iter(["trace", "trace"]),
+                **({"decay_concept_covered": True} if case == "empty-opt-in" else {}),
+            ) == []
+        finally:
+            store.connection.set_authorizer(None)
+        assert list(store.connection.iterdump()) == before
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("cap", [0, 1])
+def test_required_coverage_failure_precedes_any_retirement(tmp_path, enabled, cap):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for node_id in ("a", "b"):
+            store.create_node(
+                level="trace", node_id=node_id, content=node_id,
+                context={"scope": SCOPE, "timestamp": "2026-10-23" if enabled else "2020-01-01"},
+            )
+        owner(store, "digest", '["b"]', "{}")
+        before = list(store.connection.iterdump())
+
+        def deny_coverage(action, table, column, *rest):
+            if action == sqlite3.SQLITE_READ and table == "nodes" and column == "source_traces":
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        store.connection.set_authorizer(deny_coverage)
+        try:
+            with pytest.raises(sqlite3.DatabaseError, match="prohibited"):
+                decay.soft_delete_expired(
+                    store, scope=SCOPE, now=NOW, ttl_days=7, ttl_anchor="created",
+                    decay_concept_covered=enabled, max_expired=cap,
+                )
+        finally:
+            store.connection.set_authorizer(None)
+        assert list(store.connection.iterdump()) == before
 
 
 @pytest.mark.parametrize("enabled", [False, True])

@@ -243,11 +243,10 @@ def soft_delete_expired(
 ) -> list[Node]:
     """Decay nodes whose TTL has run out, oldest first, up to the sweep cap.
 
-    Concept coverage is checked before age: a covered trace is skipped whatever
-    its anchor says, unless the operator enabled
-    :data:`CONCEPT_COVERED_ENV`, in which case a covered trace unread since
-    coverage decays and a covered trace still being read falls through to the
-    normal TTL check.
+    Global concept coverage is loaded only when eligibility needs it. Under
+    defaults only expired traces need the guard, which protects covered sources.
+    With :data:`CONCEPT_COVERED_ENV`, even a fresh covered trace unread since
+    coverage can decay; a covered trace still being read falls through to TTL.
     """
 
     ttl = store.config.trace_ttl_days if ttl_days is None else int(ttl_days)
@@ -266,9 +265,9 @@ def soft_delete_expired(
 
     moment = now or datetime.now(UTC)
     cutoff = moment - timedelta(days=ttl)
-    coverage = concept_coverage(store, include_dates=coverage_rule)
 
     def eligible_candidates() -> Iterable[tuple[datetime, str, str]]:
+        coverage = None
         for level in levels:
             clauses = ["decayed = 0"]
             params: list[str] = []
@@ -292,6 +291,10 @@ def soft_delete_expired(
             for row in rows:
                 node_id = str(row["id"])
                 reference = _ttl_reference(row, anchor)
+                if not coverage_rule and (reference is None or reference >= cutoff):
+                    continue
+                if coverage is None:
+                    coverage = concept_coverage(store, include_dates=coverage_rule)
                 if node_id in coverage:
                     if not coverage_rule:
                         # The invariant: no trace listed in a live concept's
