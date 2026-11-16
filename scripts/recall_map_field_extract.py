@@ -581,9 +581,7 @@ def attach_replay(cases: list[dict[str, Any]], snapshot: Path) -> dict[str, Any]
                 task=case["task"],
                 task_pattern=case["task_pattern"],
             )
-            # The residual is the whole ranked tail; the *pool* is what
-            # RecallMapBuilder._pool makes of it — deduplicated and capped at
-            # MAX_POOL_NODES. Only the pool is what a map was ever built from.
+            # Describe the builder's selected pool, not the whole ranked tail.
             members, _selection = RecallMapBuilder(store)._pool(residual)
             composition = Counter(
                 attribute_stage(member.node, store)["stage"] for member in members
@@ -1070,8 +1068,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "splits": {
             "unit": "cache_key = cache_key(scope, task=task) -- the builder's structure-cache key",
             "rationale": (
-                "RecallMapBuilder caches cluster structure per (scope, normalized task) "
-                "(recall_map.py:836-895). Two cases under one key are two looks at one cached "
+                "RecallMapBuilder caches cluster structure per current work identity. "
+                "Two cases under one key are two looks at one cached "
                 "structure, so keys are never split across train/eval/holdout."
             ),
             "shared_by_construction": (
