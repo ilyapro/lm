@@ -146,6 +146,18 @@ def hub_counts(
     e.g. a train/eval split point. Sorted by ``distinct_anchors`` descending.
     """
 
+    return _hub_counts(conn, min_queries=min_queries, before=before, hubs_only=False)
+
+
+def _hub_counts(
+    conn: sqlite3.Connection,
+    *,
+    min_queries: int,
+    before: str | None = None,
+    hubs_only: bool,
+) -> list[HubCount]:
+    """Share evidence and policy; finalize only the consumer's selected nodes."""
+
     present = _present(conn)
     if _MARKS not in present:
         return []
@@ -261,8 +273,16 @@ def hub_counts(
             credits[str(node_id)] = credits.get(str(node_id), 0) + int(count)
 
     threshold = max(1, int(min_queries))
-    result = [
-        HubCount(
+    result = []
+    for node_id in anchors:
+        hub = (
+            len(anchors[node_id]) >= threshold
+            and not used.get(node_id)
+            and not credits.get(node_id)
+        )
+        if hubs_only and not hub:
+            continue
+        result.append(HubCount(
             node_id=node_id,
             distinct_anchors=len(anchors[node_id]),
             distinct_queries=len(queries[node_id]),
@@ -270,14 +290,8 @@ def hub_counts(
             first_irrelevant_at=first[node_id],
             used_marks=used.get(node_id, 0),
             credits_after_first=credits.get(node_id, 0),
-            hub=(
-                len(anchors[node_id]) >= threshold
-                and not used.get(node_id)
-                and not credits.get(node_id)
-            ),
-        )
-        for node_id in anchors
-    ]
+            hub=hub,
+        ))
     result.sort(key=lambda item: (-item.distinct_anchors, -item.irrelevant_marks, item.node_id))
     return result
 
@@ -337,8 +351,7 @@ def _full(conn: sqlite3.Connection, min_queries: int, revision: tuple[Any, ...])
         revision=revision,
         hubs={
             item.node_id: item.first_irrelevant_at
-            for item in hub_counts(conn, min_queries=min_queries)
-            if item.hub
+            for item in _hub_counts(conn, min_queries=min_queries, hubs_only=True)
         },
         computed_at=time.monotonic(),
         counted_marks=revision[0],
