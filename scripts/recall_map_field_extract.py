@@ -581,7 +581,7 @@ def attach_replay(cases: list[dict[str, Any]], snapshot: Path) -> dict[str, Any]
             # The residual is the whole ranked tail; the *pool* is what
             # RecallMapBuilder._pool makes of it — deduplicated and capped at
             # MAX_POOL_NODES. Only the pool is what a map was ever built from.
-            members = RecallMapBuilder(store)._pool(residual)
+            members, _selection = RecallMapBuilder(store)._pool(residual)
             composition = Counter(
                 attribute_stage(member.node, store)["stage"] for member in members
             )
@@ -615,17 +615,9 @@ def attach_replay(cases: list[dict[str, Any]], snapshot: Path) -> dict[str, Any]
 def recount_drift_probe(cases: Sequence[dict[str, Any]], snapshot: Path) -> dict[str, Any]:
     """Does a cache hit put a structurally-keyed node into a *path* cluster?
 
-    ``_matches`` (recall_map.py:1502-1511) re-derives path membership from the
-    subsystem alone: it never asks whether stage 1 would have claimed the node
-    first, because in a fresh cascade stage 1 already had its chance. On a cache
-    hit that precondition is gone — the cached template set only holds the
-    structural keys the *cached* pool happened to show — so a node whose key is
-    new to the key falls through to a path template and is renamed after a
-    directory.
-
     This runs the mechanism directly on real field pools: build cold on one
-    case's residual to seed the cache, then ``_recount`` the next case's
-    residual through those templates and count the members that land in a path
+    case's residual to seed the cache, then ``_recount`` the next case's selected
+    members through those templates and count the members that land in a path
     group while carrying a structural key of their own.
     """
 
@@ -671,7 +663,7 @@ def recount_drift_probe(cases: Sequence[dict[str, Any]], snapshot: Path) -> dict
             )
             if cached is None:
                 continue
-            members = builder._pool(residual_of(second))
+            members, _selection = builder._pool(residual_of(second))
             groups = builder._recount(cached.templates, members)
             if groups is None:
                 continue
