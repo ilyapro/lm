@@ -446,8 +446,8 @@ def test_cache_serves_unchanged_store(tmp_path: Path, monkeypatch: pytest.Monkey
         ids = _seed(store)
         _mark_distinct(store, ids[0], QUERIES[:3])
         calls: list[int] = []
-        original = hubs.hub_counts
-        monkeypatch.setattr(hubs, "hub_counts", lambda *a, **k: calls.append(1) or original(*a, **k))
+        original = hubs._full
+        monkeypatch.setattr(hubs, "_full", lambda *a, **k: calls.append(1) or original(*a, **k))
         assert hub_demotions(store) == {ids[0]: 0.3}
         assert hub_demotions(store) == {ids[0]: 0.3}
         assert len(calls) == 1

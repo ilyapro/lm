@@ -9,6 +9,13 @@ import pytest
 from living_memory import hubs
 
 
+@pytest.fixture(params=["diagnostic", "runtime"])
+def read_evidence(request):
+    if request.param == "diagnostic":
+        return hubs.hub_counts
+    return lambda conn: hubs._full(conn, 3, hubs.store_revision(conn)).hubs
+
+
 class GroupedCursor(sqlite3.Cursor):
     closed = False
     exhausted = False
@@ -79,35 +86,42 @@ def test_grouped_values_order_cutoff_and_optional_tables(events, anchors, before
     with closing(sqlite3.connect(":memory:", factory=ObservedConnection)) as conn:
         seed(conn, events=events, anchors=anchors)
         count = (2 if events else 3) - (before is not None)
-        assert hubs.hub_counts(conn, min_queries=2, before=before) == [
+        expected = [
             hubs.HubCount(node, count, count, 4 if before is None else 3,
                           "2026-01-01", 0, 0, count >= 2)
             for node in ("n1", "n2")
         ]
+        assert hubs.hub_counts(conn, min_queries=2, before=before) == expected
         assert conn.grouped.closed and conn.grouped.exhausted
         assert conn.anchor_reads == int(events and anchors)
         assert not conn.in_transaction
+        if before is None:
+            cache = hubs._full(conn, 2, hubs.store_revision(conn))
+            assert list(cache.hubs.items()) == [
+                (item.node_id, item.first_irrelevant_at) for item in expected if item.hub
+            ]
+            assert not conn.in_transaction
 
 
 @pytest.mark.parametrize("missing_marks,events", [(True, True), (False, True), (False, False)])
-def test_empty_skips_anchor_observation(missing_marks, events):
+def test_empty_skips_anchor_observation(missing_marks, events, read_evidence):
     with closing(sqlite3.connect(":memory:", factory=ObservedConnection)) as conn:
         seed(conn, events=events, empty=True)
         if missing_marks:
             conn.execute("DROP TABLE recall_feedback_marks")
         conn.failure = "anchor"
-        assert hubs.hub_counts(conn) == []
+        assert not read_evidence(conn)
         assert conn.anchor_reads == 0
         assert conn.grouped is None or conn.grouped.closed
 
 
 @pytest.mark.parametrize("events,failure", [(True, "iteration"), (False, "iteration"), (True, "anchor")])
-def test_cursor_closes_on_read_error_and_cache_fails_open(monkeypatch, events, failure):
+def test_cursor_closes_on_read_error_and_cache_fails_open(monkeypatch, events, failure, read_evidence):
     with closing(sqlite3.connect(":memory:", factory=ObservedConnection)) as conn:
         seed(conn, events=events)
         conn.failure = failure
         with pytest.raises(sqlite3.OperationalError, match="read failed"):
-            hubs.hub_counts(conn)
+            read_evidence(conn)
         assert conn.grouped.closed
         monkeypatch.setenv("LM_HUB_SUPPRESSION_FACTOR", "0.2")
         store = SimpleNamespace(connection=conn)
@@ -176,20 +190,20 @@ def test_string_subclasses_and_custom_values_are_not_hashed(monkeypatch, custom)
         assert seen and all(query is value for query in seen)
 
 
-def test_anchor_error_precedes_scope_normalization():
+def test_anchor_error_precedes_scope_normalization(read_evidence):
     with closing(sqlite3.connect(":memory:", factory=ObservedConnection)) as conn:
         seed(conn)
         conn.execute("UPDATE recall_events SET scope = 'unsupported:scope'")
         conn.failure = "anchor"
         with pytest.raises(sqlite3.OperationalError, match="anchor read failed"):
-            hubs.hub_counts(conn)
+            read_evidence(conn)
         conn.failure = None
         with pytest.raises(ValueError, match="unsupported scope"):
-            hubs.hub_counts(conn)
+            read_evidence(conn)
         assert conn.grouped.closed
 
 
-def test_wal_anchor_drop_between_statements_is_observed(tmp_path):
+def test_wal_anchor_drop_between_statements_is_observed(tmp_path, read_evidence):
     path = tmp_path / "hubs.sqlite3"
     with closing(sqlite3.connect(path, factory=ObservedConnection)) as conn:
         seed(conn)
@@ -203,6 +217,63 @@ def test_wal_anchor_drop_between_statements_is_observed(tmp_path):
 
         conn.before_anchors = drop_anchors
         with pytest.raises(sqlite3.OperationalError, match="no such table: query_anchors"):
-            hubs.hub_counts(conn)
+            read_evidence(conn)
         assert conn.grouped.closed and conn.grouped.exhausted
         assert conn.anchor_reads == 1 and not conn.in_transaction
+
+
+@pytest.mark.parametrize("min_queries", [0, 1, 3, 5])
+def test_runtime_finalizes_only_hubs_in_diagnostic_order(monkeypatch, min_queries):
+    with closing(sqlite3.connect(":memory:", factory=ObservedConnection)) as conn:
+        seed(conn, empty=True)
+        conn.execute("DELETE FROM recall_events")
+        conn.executemany("INSERT INTO recall_events VALUES (?, ?, 'global', NULL)", [
+            (f"e{i}", f"question {i}") for i in range(4)
+        ])
+        conn.execute("CREATE TABLE recall_credit_ledger(node_id, credited_at, basis)")
+        conn.execute("CREATE TABLE recall_explicit_credit(node_id, credited_at)")
+        for node, count in (("used", 4), ("small", 1), ("repeat", 3), ("top", 4),
+                            ("tie-a", 3), ("tie-b", 3), ("grounded", 4), ("explicit", 4)):
+            conn.executemany("INSERT INTO recall_feedback_marks VALUES (?, ?, '2026-01-01', 1, 'irrelevant')",
+                             [(node, f"e{i}") for i in range(count)])
+        conn.executemany("INSERT INTO recall_feedback_marks VALUES ('repeat', 'e0', '2026-01-02', 1, 'irrelevant')",
+                         [(), ()])
+        conn.execute("INSERT INTO recall_feedback_marks VALUES ('used', 'e0', '2025-01-01', 1, 'used')")
+        conn.execute("INSERT INTO recall_feedback_marks VALUES ('top', 'e0', '2026-01-02', 0, 'used')")
+        conn.execute("INSERT INTO recall_feedback_marks VALUES ('small', 'e1', '2026-01-02', 0, 'irrelevant')")
+        conn.execute("INSERT INTO recall_credit_ledger VALUES ('grounded', '2026-01-01', 'grounded')")
+        conn.execute("INSERT INTO recall_explicit_credit VALUES ('explicit', '2026-01-02')")
+        conn.execute("INSERT INTO recall_credit_ledger VALUES ('top', '2026-01-02', 'lookup')")
+        conn.execute("INSERT INTO recall_credit_ledger VALUES ('top', '2025-01-01', 'grounded')")
+        conn.commit()
+
+        diagnostic = hubs.hub_counts(conn, min_queries=min_queries)
+        assert diagnostic == [
+            hubs.HubCount(node, count, count, marks, "2026-01-01", used, credits,
+                          count >= max(1, min_queries) and not used and not credits)
+            for node, count, marks, used, credits in (
+                ("explicit", 4, 4, 0, 1), ("grounded", 4, 4, 0, 1),
+                ("top", 4, 4, 0, 0), ("used", 4, 4, 1, 0),
+                ("repeat", 3, 5, 0, 0), ("tie-a", 3, 3, 0, 0),
+                ("tie-b", 3, 3, 0, 0), ("small", 1, 1, 0, 0),
+            )
+        ]
+        selected = [item for item in diagnostic if item.hub]
+        assert list(hubs.hub_ids(conn, min_queries=min_queries).items()) == [
+            (item.node_id, item.distinct_anchors) for item in selected
+        ]
+        constructed = []
+        original = hubs.HubCount
+
+        def count_record(**kwargs):
+            record = original(**kwargs)
+            constructed.append(record)
+            return record
+
+        monkeypatch.setattr(hubs, "HubCount", count_record)
+        cache = hubs._full(conn, min_queries, hubs.store_revision(conn))
+        assert list(cache.hubs.items()) == [
+            (item.node_id, item.first_irrelevant_at) for item in selected
+        ]
+        assert sorted(constructed, key=lambda item: item.node_id) == sorted(selected, key=lambda item: item.node_id)
+        assert not conn.in_transaction
