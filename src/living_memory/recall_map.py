@@ -629,10 +629,11 @@ class RecallMap:
 
 @dataclass(slots=True)
 class _Member:
-    """One admitted entry with its original retrieval ordinal."""
+    """One admitted entry with its retrieval ordinal and this build's topic."""
 
     rank: int
     node: Node
+    topic: tuple[str, ...]
 
 
 @dataclass(slots=True)
@@ -1585,7 +1586,7 @@ class RecallMapBuilder:
                 else (STAGE_PATH, path) if path is not None
                 else (STAGE_EMBEDDING,)
             )
-            buckets.setdefault(key, deque()).append(_Member(rank=ordinal, node=node))
+            buckets.setdefault(key, deque()).append(_Member(rank=ordinal, node=node, topic=key))
 
         admitted: list[_Member] = []
         active = deque(buckets.values())
@@ -1688,17 +1689,17 @@ class RecallMapBuilder:
     def _stage_structural(
         self, members: list[_Member]
     ) -> tuple[list[_Group], list[_Member]]:
-        buckets: dict[tuple[str, str], list[_Member]] = {}
+        buckets: dict[tuple[str, ...], list[_Member]] = {}
         rest: list[_Member] = []
         for member in members:
-            key = _structural_key(member.node)
-            if key is None:
+            if member.topic[0] != STAGE_STRUCTURAL:
                 rest.append(member)
                 continue
-            buckets.setdefault(key, []).append(member)
+            buckets.setdefault(member.topic, []).append(member)
 
         groups: list[_Group] = []
-        for (structural_field, raw), bucket in sorted(buckets.items()):
+        for topic, bucket in sorted(buckets.items()):
+            _, structural_field, raw = topic
             normalized = normalize_key(raw)
             if _looks_unreadable(raw):
                 # A hash groups perfectly and names nothing; the medoid does.
@@ -1718,7 +1719,7 @@ class RecallMapBuilder:
             groups.append(
                 _Group(
                     stage=STAGE_STRUCTURAL,
-                    signature=(STAGE_STRUCTURAL, structural_field, raw),
+                    signature=topic,
                     label=label,
                     ask_hint=hint,
                     members=bucket,
@@ -1736,22 +1737,22 @@ class RecallMapBuilder:
         happen to live.
         """
 
-        buckets: dict[str, list[_Member]] = {}
+        buckets: dict[tuple[str, ...], list[_Member]] = {}
         rest: list[_Member] = []
         for member in members:
-            subsystem = _node_subsystem(member.node)
-            if subsystem is None:
+            if member.topic[0] != STAGE_PATH:
                 rest.append(member)
                 continue
-            buckets.setdefault(subsystem, []).append(member)
+            buckets.setdefault(member.topic, []).append(member)
 
         groups: list[_Group] = []
-        for subsystem, bucket in sorted(buckets.items()):
+        for topic, bucket in sorted(buckets.items()):
+            _, subsystem = topic
             label, hint = self._enrich(normalize_key(subsystem), bucket)
             groups.append(
                 _Group(
                     stage=STAGE_PATH,
-                    signature=(STAGE_PATH, subsystem),
+                    signature=topic,
                     label=label,
                     ask_hint=hint,
                     members=bucket,
@@ -2399,8 +2400,8 @@ class RecallMapBuilder:
     ) -> list[_Group] | None:
         """Refit a cached structure to the pool in hand, or refuse to.
 
-        Stages 1 and 2 re-derive membership exactly — their signatures are pure
-        functions of a node's context — so a node the cached pool never saw
+        Stages 1 and 2 match this build's exact topics, derived from each node's
+        current context in the pool, so a node the cached pool never saw
         still lands in the right cluster. Stages 3 and 4 match by remembered
         membership: an anchor lookup is cheap but a *re-clustering* is not, and
         a cached embedding cluster has no rule to offer beyond the ids it was
@@ -2423,7 +2424,7 @@ class RecallMapBuilder:
         for member in pool:
             matched = False
             for index, template in ordered:
-                if not self._matches(template, member.node):
+                if not self._matches(template, member):
                     continue
                 buckets.setdefault(index, []).append(member)
                 covered += 1
@@ -2501,20 +2502,10 @@ class RecallMapBuilder:
         return groups
 
     @staticmethod
-    def _matches(template: _ClusterTemplate, node: Node) -> bool:
-        if template.stage == STAGE_STRUCTURAL:
-            key = _structural_key(node)
-            return key is not None and (STAGE_STRUCTURAL, *key) == template.signature
-        if template.stage == STAGE_PATH:
-            # On a cold build stage 2 only sees the residual stage 1 declined.
-            # Re-establish that precondition on a cache hit; otherwise a path
-            # template can rename a node carrying a new structural value after
-            # its directory merely because that value had no cached template.
-            if _structural_key(node) is not None:
-                return False
-            subsystem = _node_subsystem(node)
-            return subsystem is not None and (STAGE_PATH, subsystem) == template.signature
-        return node.id in template.member_ids
+    def _matches(template: _ClusterTemplate, member: _Member) -> bool:
+        if template.stage in (STAGE_STRUCTURAL, STAGE_PATH):
+            return template.signature == member.topic
+        return member.node.id in template.member_ids
 
     # -- assembly ------------------------------------------------------
 
