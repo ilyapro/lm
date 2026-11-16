@@ -894,17 +894,19 @@ class _SessionlessNotificationShim:
             await self.app(scope, receive, send)
             return
         # Buffer the request body so we can both inspect and (if needed) replay it.
-        body = b""
+        body_buffer = bytearray()
         disconnected = False
         while True:
             message = await receive()
             if message["type"] == "http.request":
-                body += message.get("body", b"")
+                body_buffer.extend(message.get("body", b""))
                 if not message.get("more_body", False):
                     break
             else:  # http.disconnect or anything unexpected
                 disconnected = True
                 break
+        body = bytes(body_buffer)
+        del body_buffer
         if not disconnected and _is_jsonrpc_notification(body):
             from starlette.responses import Response
 
