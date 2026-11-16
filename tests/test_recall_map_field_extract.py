@@ -14,6 +14,7 @@ import pytest
 from living_memory.config import MemoryConfig
 from living_memory.recall_map import RecallMapBuilder, cache_key
 from living_memory.retrieval import MemoryRecallService, RecallResult
+from living_memory.retrieval_harness import manifest_path_for
 from living_memory.storage import MemoryStore
 
 
@@ -23,8 +24,9 @@ assert spec is not None and spec.loader is not None
 extract = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(extract)
 
-SCOPE = "project:game"
-TASK = "quality clips coverage registry refresh"
+SCOPE = "project:replay-fixture"
+TASK = "synthetic replay task"
+CONTROL_PREFIX = "synthetic-control/"
 QUERY = "database migration rollback"
 CONTENT = "database migration rollback verify release note"
 NO_DRIFT = {
@@ -75,6 +77,84 @@ def cases(head=()):
         }
         for index in range(2)
     ]
+
+
+def dataset(splits=None):
+    return {
+        "splits": splits if splits is not None else [{"scope": SCOPE, "task": TASK, "split": "train"}],
+        "e2e_task_prefix": CONTROL_PREFIX,
+    }
+
+
+def test_dataset_and_case_share_exact_work_identity(tmp_path):
+    path = tmp_path / "dataset.json"
+    pattern = "synthetic Pattern"
+    entries = [
+        {"scope": SCOPE, "task": TASK, "task_pattern": pattern, "split": "eval"},
+        {"scope": SCOPE, "task": "another turn", "task_pattern": pattern, "split": "eval"},
+        {"scope": SCOPE, "task": pattern.lower(), "split": "holdout"},
+    ]
+    path.write_text(json.dumps(dataset(entries)))
+    splits, prefix = extract.load_dataset(path)
+    assert prefix == CONTROL_PREFIX
+    assert splits == {
+        cache_key(SCOPE, task_pattern=pattern): "eval",
+        cache_key(SCOPE, task=pattern.lower()): "holdout",
+    }
+    with MemoryStore(tmp_path / "case.sqlite3") as store:
+        event = store.record_recall_event(
+            query=QUERY, scope=SCOPE, ambient_context={"task": TASK, "task_pattern": pattern},
+        )
+        row = store.connection.execute("SELECT * FROM recall_events WHERE id = ?", (event.id,)).fetchone()
+        case = extract.build_case(row, None, store, source="field_alt")
+    assert case["task_pattern"] == pattern
+    assert case["cache_key"] == cache_key(SCOPE, task=TASK, task_pattern=pattern)
+    extract.assign_splits([case], splits)
+    assert case["split"] == "eval" and case["split_role"] == "field"
+
+
+@pytest.mark.parametrize("entries, message", [
+    ([{"scope": SCOPE, "split": "train"}], "needs a task or task_pattern"),
+    ([{"scope": SCOPE, "task": 7, "split": "train"}], "must be strings"),
+    ([{"task": TASK, "split": "train"}], "needs a scope"),
+    ([{"scope": SCOPE, "task": TASK, "split": "unknown"}], "needs train, eval or holdout"),
+    ([{"scope": SCOPE, "task": TASK, "split": "train"},
+      {"scope": SCOPE, "task_pattern": TASK, "split": "eval"}], "conflicting splits"),
+])
+def test_dataset_rejects_invalid_or_conflicting_identity(tmp_path, entries, message):
+    path = tmp_path / "dataset.json"
+    path.write_text(json.dumps(dataset(entries)))
+    with pytest.raises(ValueError, match=message):
+        extract.load_dataset(path)
+
+
+@pytest.mark.parametrize("source, splits, message", [
+    ("field_alt", {}, "no split pinned"),
+    ("e2e_local", {cache_key(SCOPE, task=TASK): "holdout"}, "must belong to train"),
+])
+def test_assign_splits_rejects_missing_or_conflicting_assignments(source, splits, message):
+    case = {**cases()[0], "source": source}
+    with pytest.raises(ValueError, match=message):
+        extract.assign_splits([case], splits)
+
+
+def test_control_selector_is_a_literal_prefix(tmp_path):
+    snapshot = tmp_path / "controls.sqlite3"
+    prefix = "synthetic_control_%/"
+    with MemoryStore(snapshot) as store:
+        expected = []
+        for task in (prefix + "one", "syntheticXcontrolXanything/two", prefix.upper() + "three"):
+            event = store.record_recall_event(
+                query=QUERY, scope=SCOPE, ambient_context={"task": task},
+                recall_map={"clusters": [], "pool": 0, "covered": 0},
+            )
+            if task == prefix + "one":
+                expected.append(event.id)
+    selected, _summary = extract.e2e_cases(snapshot, [], prefix)
+    assert [case["case_id"] for case in selected] == expected
+    extract.assign_splits(selected, {})
+    assert selected[0]["split"] == "train"
+    assert selected[0]["split_role"] == "contrastive_control"
 
 
 @pytest.mark.parametrize("populated", [False, True])
@@ -232,11 +312,15 @@ def test_cli_with_disposable_snapshots_and_journals(tmp_path, populated):
             events.append({"kind": "probe", "query": QUERY, "ts": event.created_at,
                            "session_id": "synthetic", "outcome": "ok"})
     (streams / "journal.jsonl").write_text("".join(json.dumps(event) + "\n" for event in events))
+    dataset_path = tmp_path / "dataset.json"
+    dataset_path.write_text(json.dumps(dataset()))
+    provenance = {"source": {"kind": "synthetic", "label": "fixture provenance"}}
+    manifest_path_for(snapshot).write_text(json.dumps(provenance))
     manifest = tmp_path / "manifest.json"
     analysis = tmp_path / "analysis.json"
     original = snapshot.read_bytes()
     completed = subprocess.run(
-        [sys.executable, str(SCRIPT), "--streams", str(streams),
+        [sys.executable, str(SCRIPT), "--dataset", str(dataset_path), "--streams", str(streams),
          "--field-snapshot", str(snapshot), "--e2e-snapshot", str(snapshot),
          "--e2e-journals", str(tmp_path / "absent-*.jsonl"), "--since", "2000-01-01",
          "--out-manifest", str(manifest), "--out-analysis", str(analysis)],
@@ -247,6 +331,12 @@ def test_cli_with_disposable_snapshots_and_journals(tmp_path, populated):
     assert result["replay"]["field_alt"]["cases"] == 2
     assert result["recount_drift_probe"] == {**NO_DRIFT, "pairs_probed": int(populated)}
     saved = json.loads(manifest.read_text())
+    for source in ("field_alt", "e2e_local"):
+        assert saved["snapshots"][source] == {"path": str(snapshot), "manifest": provenance}
+    assert result["generated_from"]["field_snapshot_manifest"] == provenance
+    assert result["generated_from"]["e2e_snapshot_manifest"] == provenance
+    assert saved["splits"]["assignment"] == {cache_key(SCOPE, task=TASK): "train"}
+    assert saved["splits"]["e2e_task_prefix"] == CONTROL_PREFIX
     assert saved["splits"]["counts"] == {"train": 2, "eval": 0, "holdout": 0}
     assert [case["replay"]["warm_cache_hit"] for case in saved["cases"]] == [False, populated]
     assert snapshot.read_bytes() == original
