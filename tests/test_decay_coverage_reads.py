@@ -150,6 +150,29 @@ def test_ineligible_scope_needs_no_coverage(tmp_path, monkeypatch, anchor, case)
 
 
 @pytest.mark.parametrize("enabled", [False, True])
+def test_empty_coverage_is_read_once_across_repeated_levels(tmp_path, enabled):
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        for node_id in ("b", "a"):
+            store.create_node(
+                level="trace", node_id=node_id, content=node_id,
+                context={"timestamp": "2020-01-01"},
+            )
+        queries = []
+        store.connection.set_trace_callback(queries.append)
+        try:
+            retired = decay.soft_delete_expired(
+                store, now=NOW, ttl_days=7, levels=iter(["trace", "trace"]),
+                ttl_anchor="created", decay_concept_covered=enabled, max_expired=0,
+            )
+        finally:
+            store.connection.set_trace_callback(None)
+        assert [(node.id, node.decay_reason) for node in retired] == [
+            (node_id, decay.TTL_EXPIRED_REASON) for node_id in ("a", "a", "b", "b")
+        ]
+        assert len([query for query in queries if query.strip().startswith("SELECT source_traces")]) == 1
+
+
+@pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("cap", [0, 1])
 def test_required_coverage_failure_precedes_any_retirement(tmp_path, enabled, cap):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
