@@ -638,8 +638,8 @@ def test_structural_keys_that_normalize_alike_still_get_distinct_labels(
     ]
 
     builder = RecallMapBuilder(store)
-    built = builder.build(pool(nodes), scope=SCOPE)
-    warm = builder.build(pool(nodes), scope=SCOPE)
+    built = builder.build(pool(nodes), scope=SCOPE, task="raw-identity")
+    warm = builder.build(pool(nodes), scope=SCOPE, task="raw-identity")
     assert builder.last_cache_hit
     assert warm.to_dict() == built.to_dict()
 
