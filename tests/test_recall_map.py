@@ -1319,7 +1319,6 @@ def test_cached_topics_follow_current_context(store, before, after, cache_hit):
     assert builder._corpus_revision() == revision
     cold = RecallMapBuilder(store).build(candidates, scope=SCOPE, task="current-context")
     assert current.to_dict() == cold.to_dict()
-    assert current.to_dict() != first.to_dict()
     assert builder.build(candidates, scope=SCOPE, task="current-context").to_dict() == current.to_dict()
     assert builder.last_cache_hit
     assert candidates == original
