@@ -645,11 +645,13 @@ def _relevant_excerpt(
                 spans[max(indices)][1] - spans[min(indices)][0], min(indices),
             )):
                 include(indices)
+    paragraph_members: dict[tuple[int, int], set[int]] = {}
+    for index, paragraph in enumerate(paragraphs):
+        paragraph_members.setdefault(paragraph, set()).add(index)
     for index in scored:
         if index not in picked:
             # Keep optional matches with the rest of their source paragraph.
-            include({other for other in range(len(units))
-                     if paragraphs[other] == paragraphs[index]})
+            include(paragraph_members[paragraphs[index]])
     return render(picked)
 
 
