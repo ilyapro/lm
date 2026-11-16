@@ -1913,9 +1913,9 @@ class RecallMapBuilder:
         averaged — vectors of two widths are points in two different spaces.
         """
 
-        rows = [list(chunk) for chunk in chunks if chunk]
+        rows = [chunk for chunk in chunks if chunk]
         if not rows and node.embedding:
-            rows = [list(node.embedding)]
+            rows = [node.embedding]
         if not rows:
             return None
         width = len(rows[0])

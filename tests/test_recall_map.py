@@ -34,7 +34,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from living_memory import recall_map
+from living_memory import recall_map, storage
 from living_memory.chunking import TextChunk
 from living_memory.grounding import token_set
 from living_memory.health_audit import ReadOnlyAuditStore
@@ -691,17 +691,32 @@ def test_anchor_queries_sharing_a_long_prefix_stay_distinguishable(
     ]
 
 
+@pytest.mark.parametrize("row_type", [list, tuple])
+@pytest.mark.parametrize("source", ["chunks", "fallback"])
 def test_a_cached_build_agrees_with_a_cold_one_on_embedding_clusters(
-    store: MemoryStore,
+    store: MemoryStore, monkeypatch: pytest.MonkeyPatch, row_type, source,
 ) -> None:
     """Warm stage 4 revalidates vectors and recomputes the same medoid."""
 
     outlier = make_node(store, "an outlying note about caching layers")
     centre = make_node(store, "a central note about caching layers")
     partner = make_node(store, "another note about caching layers")
-    embed(store, outlier, [1.0, 0.9, 0.0])
-    embed(store, centre, [1.0, 0.0, 0.0])
-    embed(store, partner, [1.0, 0.05, 0.0])
+    inputs = []
+
+    def retain(values):
+        row = row_type(values)
+        inputs.append((row, tuple(row)))
+        return row
+
+    unpack = storage.unpack_chunk_embedding
+    monkeypatch.setattr(storage, "unpack_chunk_embedding", lambda *args: retain(unpack(*args)))
+    for node, vector in zip(
+        (outlier, centre, partner), ([1.0, 0.9, 0.0], [1.0, 0.0, 0.0], [1.0, 0.05, 0.0]),
+    ):
+        if source == "chunks":
+            embed(store, node, vector)
+        else:
+            node.embedding = retain(vector)
     candidates = pool([outlier, centre, partner])
 
     builder = RecallMapBuilder(store)
@@ -711,7 +726,10 @@ def test_a_cached_build_agrees_with_a_cold_one_on_embedding_clusters(
     assert builder.last_cache_hit is True
     assert cold == warm
     assert cold is not None
+    assert len(cold.clusters) == 1
+    assert cold.clusters[0].member_ids == (outlier.id, centre.id, partner.id)
     assert cold.clusters[0].medoid.node_id == partner.id  # not the top-ranked one
+    assert inputs and all(tuple(row) == original for row, original in inputs)
 
 
 def test_warm_embedding_map_skips_new_labels_but_refreshes_vectors_and_gate(
