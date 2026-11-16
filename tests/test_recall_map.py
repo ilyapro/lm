@@ -26,11 +26,13 @@ the chunk revision probe is checked against actual table changes.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import random
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -536,9 +538,27 @@ def test_mixed_pool_reaches_every_stage(monkeypatch: pytest.MonkeyPatch, store: 
         embed(store, node, [0.0, 1.0, 0.0])
 
     monkeypatch.setattr(recall_map, "MAX_RESPONSE_CHARS", 10_000)
-    built = RecallMapBuilder(store).build(
-        pool(structural + paths + anchored + embedded), scope=SCOPE, task="mixed"
-    )
+    candidates = pool(structural + paths + anchored + embedded)
+    original = deepcopy(candidates)
+    builder = RecallMapBuilder(store)
+    for hit in (False, True):
+        with (
+            patch.object(recall_map, "_structural_key", wraps=recall_map._structural_key) as structural_key,
+            patch.object(recall_map, "_node_subsystem", wraps=recall_map._node_subsystem) as subsystem,
+        ):
+            built = builder.build(candidates, scope=SCOPE, task="mixed")
+        assert builder.last_cache_hit is hit
+        assert [call.args[0].id for call in structural_key.call_args_list] == [
+            result.node.id for result in candidates
+        ]
+        assert [call.args[0].id for call in subsystem.call_args_list] == [
+            node.id for node in paths + anchored + embedded
+        ]
+        assert candidates == original
+        if not hit:
+            cold = built.to_dict()
+        else:
+            assert built.to_dict() == cold
 
     assert built is not None
     by_stage = {cluster.stage: cluster for cluster in built.clusters}
@@ -604,17 +624,24 @@ def test_equal_cluster_scores_use_unique_best_original_ordinal(
     ]
 
 
+@pytest.mark.parametrize("contexts", [
+    ({"type": "root-cause"}, {"lesson_kind": "root_cause"}),
+    ({"lesson_kind": "root_cause"}, {"lesson_kind": "root-cause"}),
+    ({"type": "root_cause"}, {"lesson_kind": "root_cause"}),
+])
 def test_structural_keys_that_normalize_alike_still_get_distinct_labels(
-    store: MemoryStore,
+    store: MemoryStore, contexts,
 ) -> None:
-    """``type: root-cause`` and ``lesson_kind: root_cause`` are two clusters."""
-
     nodes = [
-        make_node(store, "a note about the failing deploy", {"type": "root-cause"}),
-        make_node(store, "a note about the filling disk", {"lesson_kind": "root_cause"}),
+        make_node(store, "a note about the failing deploy", contexts[0]),
+        make_node(store, "a note about the filling disk", contexts[1]),
     ]
 
-    built = RecallMapBuilder(store).build(pool(nodes), scope=SCOPE)
+    builder = RecallMapBuilder(store)
+    built = builder.build(pool(nodes), scope=SCOPE)
+    warm = builder.build(pool(nodes), scope=SCOPE)
+    assert builder.last_cache_hit
+    assert warm.to_dict() == built.to_dict()
 
     assert built is not None
     labels = [cluster.label for cluster in built.clusters]
@@ -1264,6 +1291,64 @@ def test_cached_build_recomputes_query_selection_every_time(store):
     assert warm.pool_size == 1
     assert [c.label for c in warm.clusters] == ["beta ritual"]
     assert warm.to_dict()["sel"]["x"] == [0, 0, 0, 0, 0, 1, 0]
+
+
+@pytest.mark.parametrize("before, after, cache_hit", [
+    ({"lesson_kind": "root-cause"}, {"lesson_kind": "root_cause"}, False),
+    ({"lesson_kind": "root-cause"}, {"type": "root-cause"}, False),
+    ({"files": ["src/root-cause/a.py"]}, {"files": ["src/root_cause/a.py"]}, False),
+    ({"files": ["src/root_cause/a.py"]},
+     {"topic": "root_cause", "files": ["src/root_cause/a.py"]}, False),
+    ({"topic": "root_cause"}, {"files": ["src/root_cause/a.py"]}, False),
+    ({"topic": "alpha_ritual"}, {"topic": "beta_ritual"}, True),
+])
+def test_cached_topics_follow_current_context(store, before, after, cache_hit):
+    changed = make_node(store, "orbital telemetry calibration", before)
+    stable = make_node(store, "orchard harvest rotation", {"topic": "beta_ritual"})
+    candidates = pool([changed, stable])
+    builder = RecallMapBuilder(store)
+    first = builder.build(candidates, scope=SCOPE, task="current-context")
+    assert builder.build(candidates, scope=SCOPE, task="current-context") == first
+    assert builder.last_cache_hit
+    revision = builder._corpus_revision()
+
+    changed.context = {"scope": SCOPE, **after}
+    original = deepcopy(candidates)
+    current = builder.build(candidates, scope=SCOPE, task="current-context")
+    assert builder.last_cache_hit is cache_hit
+    assert builder._corpus_revision() == revision
+    cold = RecallMapBuilder(store).build(candidates, scope=SCOPE, task="current-context")
+    assert current.to_dict() == cold.to_dict()
+    assert current.to_dict() != first.to_dict()
+    assert builder.build(candidates, scope=SCOPE, task="current-context").to_dict() == current.to_dict()
+    assert builder.last_cache_hit
+    assert candidates == original
+
+
+@pytest.mark.parametrize("stage", [STAGE_ANCHOR, STAGE_EMBEDDING])
+def test_cached_later_stages_match_member_ids_without_a_topic_template(store, stage):
+    node = make_node(store, "orbital telemetry calibration")
+    if stage == STAGE_ANCHOR:
+        seed_anchor(store, "orbital telemetry calibration", [node])
+    else:
+        embed(store, node, [1.0, 0.0])
+    builder = RecallMapBuilder(store)
+    first = builder.build(pool([node]), scope=SCOPE, task="later-stage")
+    assert [cluster.stage for cluster in first.clusters] == [stage]
+
+    node.context["procedure_id"] = "fresh structural topic"
+    warm = builder.build(pool([node]), scope=SCOPE, task="later-stage")
+    assert builder.last_cache_hit
+    assert warm.to_dict() == first.to_dict()
+
+    newcomer = make_node(store, "another telemetry note", {"procedure_id": "fresh structural topic"})
+    candidates = pool([node, newcomer])
+    rebuilt = builder.build(candidates, scope=SCOPE, task="later-stage")
+    assert not builder.last_cache_hit
+    cold = RecallMapBuilder(store).build(candidates, scope=SCOPE, task="later-stage")
+    assert rebuilt.to_dict() == cold.to_dict()
+    assert [cluster.stage for cluster in rebuilt.clusters] == [STAGE_STRUCTURAL]
+    assert rebuilt.clusters[0].member_ids == (node.id, newcomer.id)
 
 
 def test_a_different_key_does_not_share_a_structure(store: MemoryStore) -> None:

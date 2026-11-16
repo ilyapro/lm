@@ -1699,7 +1699,7 @@ class RecallMapBuilder:
 
         groups: list[_Group] = []
         for topic, bucket in sorted(buckets.items()):
-            _, structural_field, raw = topic
+            _, _, raw = topic
             normalized = normalize_key(raw)
             if _looks_unreadable(raw):
                 # A hash groups perfectly and names nothing; the medoid does.

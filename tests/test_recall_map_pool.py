@@ -7,6 +7,7 @@ import json
 import random
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -534,7 +535,14 @@ def test_complete_residual_accounting(tmp_path):
         raw = [SimpleNamespace(node=None), SimpleNamespace(node=SimpleNamespace(id=" ")),
                result(head), result(head), result(file_chunk), result(stagnation),
                result(journal), result(unrelated, 0.0), *(result(n) for n in tail)]
-        pool, selection = RecallMapBuilder(store)._pool(raw)
+        with (
+            patch.object(recall_map_module, "_structural_key", wraps=recall_map_module._structural_key) as structural,
+            patch.object(recall_map_module, "_node_subsystem", wraps=recall_map_module._node_subsystem) as path,
+        ):
+            pool, selection = RecallMapBuilder(store)._pool(raw)
+        eligible = [head.id, *(node.id for node in tail)]
+        assert [call.args[0].id for call in structural.call_args_list] == eligible
+        assert [call.args[0].id for call in path.call_args_list] == eligible
         assert len(pool) == MAX_POOL_NODES
         assert [m.rank for m in pool] == [2, *range(8, 207)]
         assert selection.inspected == 209

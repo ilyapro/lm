@@ -52,7 +52,7 @@ def membership_ids(groups):
 def test_reduction_retains_only_one_decoded_node_and_build_recounts(store, monkeypatch, chunks):
     seed_corpus(store)
     results = pool(store, chunks=chunks)
-    members = [_Member(i, result.node) for i, result in enumerate(results)]
+    members = [_Member(i, result.node, topic=(STAGE_EMBEDDING,)) for i, result in enumerate(results)]
     expected_groups = [[result.node.id for result in results[axis::4]] for axis in range(4)]
     expected_vectors = {
         result.node.id: [float(axis == index % 4) for axis in range(8)]
@@ -126,8 +126,8 @@ def test_member_duplicates_keep_individual_fallbacks_and_original_order(store):
     for result in results:
         store.delete_node_chunks(result.node.id)
     first = results[0].node
-    members = [_Member(0, first), _Member(1, replace(first, embedding=[])),
-               _Member(2, results[1].node), _Member(3, replace(first, embedding=[0.0, 2.0]))]
+    members = [_Member(0, first, topic=(STAGE_EMBEDDING,)), _Member(1, replace(first, embedding=[]), topic=(STAGE_EMBEDDING,)),
+               _Member(2, results[1].node, topic=(STAGE_EMBEDDING,)), _Member(3, replace(first, embedding=[0.0, 2.0]), topic=(STAGE_EMBEDDING,))]
     groups, vectors, rest = RecallMapBuilder(store)._embedding_membership(members)
     assert vectors == {first.id: [0.0, 1.0], results[1].node.id: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
     assert groups == [[members[0], members[3]], [members[2]]]
@@ -143,7 +143,7 @@ def test_sum_cancellation_and_boundary_cosine_keep_exact_vectors(store, threshol
         for i, value in enumerate([2.0 ** 54, 1.0, -(2.0 ** 54)])
     ])
     store.replace_node_chunks(results[1].node.id, [(CHUNK, [3.0, 4.0])])
-    members = [_Member(i, result.node) for i, result in enumerate(results)]
+    members = [_Member(i, result.node, topic=(STAGE_EMBEDDING,)) for i, result in enumerate(results)]
     groups, vectors, rest = RecallMapBuilder(store, cluster_cosine=threshold)._embedding_membership(members)
     assert vectors == {members[0].node.id: [1.0, 0.0], members[1].node.id: [0.6, 0.8]}
     assert groups == ([members] if joined else [[member] for member in members])
@@ -154,7 +154,7 @@ def test_equal_similarity_chooses_first_ranked_leader(store):
     results = pool(store, count=3)
     for result, vector in zip(results, ([1.0, 0.0], [0.0, 1.0], [1.0, 1.0])):
         store.replace_node_chunks(result.node.id, [(CHUNK, vector)])
-    members = [_Member(i, r.node) for i, r in enumerate(results)]
+    members = [_Member(i, r.node, topic=(STAGE_EMBEDDING,)) for i, r in enumerate(results)]
     groups, vectors, rest = RecallMapBuilder(store, cluster_cosine=0.7)._embedding_membership(members)
     assert groups == [[members[0], members[2]], [members[1]]]
     assert vectors[members[2].node.id] == [1.0 / sqrt(2.0)] * 2
@@ -172,7 +172,7 @@ def test_first_nonempty_ordinal_sets_width(store):
         store.connection.execute(
             "UPDATE node_chunk_embeddings SET dimensions=0, embedding=X'' WHERE chunk_index=0"
         )
-    member = _Member(0, result.node)
+    member = _Member(0, result.node, topic=(STAGE_EMBEDDING,))
     groups, vectors, rest = RecallMapBuilder(store)._embedding_membership([member])
     assert groups == [[member]] and rest == []
     assert vectors == {result.node.id: [0.6, 0.8]}

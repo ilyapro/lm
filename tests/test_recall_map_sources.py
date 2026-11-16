@@ -8,7 +8,7 @@ import pytest
 
 from living_memory.chunking import TextChunk
 from living_memory.health_audit import ReadOnlyAuditStore
-from living_memory.recall_map import RecallMapBuilder, _Curtailment, _Member
+from living_memory.recall_map import RecallMapBuilder, STAGE_EMBEDDING, _Curtailment, _Member
 from living_memory.retrieval import RecallResult
 from living_memory.storage import MemoryStore
 from test_recall_map_anchor_observation import SCOPE, build, due, seed_pool
@@ -106,7 +106,7 @@ def test_chunk_ordinal_width_and_node_fallback_define_vectors(store):
     results[1].node.embedding = [0.0, 1.0]
     results[2].node.embedding = [0.0, 0.0, 2.0]
     results[3].node.embedding = []
-    members = [_Member(rank, result.node) for rank, result in enumerate(results)]
+    members = [_Member(rank, result.node, topic=(STAGE_EMBEDDING,)) for rank, result in enumerate(results)]
     _, vectors, rest = RecallMapBuilder(store)._embedding_membership(members)
     assert vectors["mixed"] == pytest.approx([3 ** -0.5] * 3)
     assert vectors["empty"] == [0.0, 1.0]
@@ -128,7 +128,7 @@ def test_read_only_sources_tolerate_missing_tables_and_chunk_coordinates(store, 
             store.connection.execute("ALTER TABLE node_chunk_embeddings DROP COLUMN char_end")
     with ReadOnlyAuditStore.open_path(store.db_path) as reader:
         builder = RecallMapBuilder(reader)
-        members = [_Member(rank, result.node) for rank, result in enumerate(results)]
+        members = [_Member(rank, result.node, topic=(STAGE_EMBEDDING,)) for rank, result in enumerate(results)]
         assignment = builder._anchor_assignment(members)
         assert assignment.by_node == (
             {} if {"query_anchors", "query_anchor_edges"}.intersection(missing) else
