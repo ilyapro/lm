@@ -126,8 +126,12 @@ def test_member_duplicates_keep_individual_fallbacks_and_original_order(store):
     for result in results:
         store.delete_node_chunks(result.node.id)
     first = results[0].node
-    members = [_Member(0, first, topic=(STAGE_EMBEDDING,)), _Member(1, replace(first, embedding=[]), topic=(STAGE_EMBEDDING,)),
-               _Member(2, results[1].node, topic=(STAGE_EMBEDDING,)), _Member(3, replace(first, embedding=[0.0, 2.0]), topic=(STAGE_EMBEDDING,))]
+    members = [
+        _Member(0, first, topic=(STAGE_EMBEDDING,)),
+        _Member(1, replace(first, embedding=[]), topic=(STAGE_EMBEDDING,)),
+        _Member(2, results[1].node, topic=(STAGE_EMBEDDING,)),
+        _Member(3, replace(first, embedding=[0.0, 2.0]), topic=(STAGE_EMBEDDING,)),
+    ]
     groups, vectors, rest = RecallMapBuilder(store)._embedding_membership(members)
     assert vectors == {first.id: [0.0, 1.0], results[1].node.id: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
     assert groups == [[members[0], members[3]], [members[2]]]
