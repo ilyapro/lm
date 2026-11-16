@@ -46,12 +46,21 @@ builder's own serializer, so the answer is the builder's own arithmetic.
 Usage::
 
     python3 scripts/recall_map_field_extract.py \\
-        --streams /tmp/fieldstream \\
-        --field-snapshot ~/.cache/living-memory-field/recall-map-field-alt-20260820.sqlite3 \\
-        --e2e-snapshot ~/.cache/living-memory-field/recall-map-e2e-local-20260820.sqlite3 \\
-        --e2e-journals '/tmp/ae-stream-live-e2e.*/journal.jsonl' \\
-        --out-manifest artifacts/recall-map/field/manifest.json \\
-        --out-analysis artifacts/recall-map/field/analysis.json
+        --dataset /tmp/replay-input/dataset.json \\
+        --streams /tmp/replay-input/streams \\
+        --field-snapshot /tmp/replay-input/field.sqlite3 \\
+        --e2e-snapshot /tmp/replay-input/control.sqlite3 \\
+        --e2e-journals '/tmp/replay-input/controls/*.jsonl' \\
+        --since 2000-01-01 \\
+        --out-manifest /tmp/replay-output/manifest.json \\
+        --out-analysis /tmp/replay-output/analysis.json
+
+The local dataset JSON supplies ``splits`` entries with ``scope``, ``task``
+and/or ``task_pattern``, and ``split`` (train/eval/holdout), plus a literal
+``e2e_task_prefix`` selecting control events. Controls belong to train; field
+assignments must not place the same work identity in another split. Dataset
+files, snapshots, journals and generated reports can contain private material
+and are not public source inputs.
 """
 
 from __future__ import annotations
@@ -103,25 +112,34 @@ from living_memory.storage import MemoryStore  # noqa: E402
 # leak the very thing the splits exist to hold out.
 # ----------------------------------------------------------------------
 
-SPLIT_BY_KEY: dict[str, str] = {
-    cache_key("project:game", task=task): split
-    for task, split in {
-        "quality clips coverage registry refresh": "train",
-        "quality clips coverage clips restore": "train",
-        "quality meter honesty": "train",
-        "quality footslip rest proc footlock": "train",
-        "quality clips coverage idle rest clips": "eval",
-        "quality clips coverage rest clips land": "eval",
-        "quality footslip rest gait reach": "eval",
-        "quality footslip rest": "holdout",
-        "quality clips land": "holdout",
-        "feeling control": "holdout",
-    }.items()
-}
+def load_dataset(path: Path) -> tuple[dict[str, str], str]:
+    """Read local workload selection and pin splits by the builder's identity."""
 
-#: The contrastive live-e2e key. Quoted in diagnosis.md, so it is train by
-#: construction: a case the diagnosis reads cannot also be held out.
-E2E_TASK_PREFIX = "stream-agents-thinking-map-live-e2e"
+    dataset = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(dataset, dict) or not isinstance(dataset.get("splits"), list):
+        raise ValueError("dataset must contain a splits list")
+    prefix = dataset.get("e2e_task_prefix")
+    if not isinstance(prefix, str) or not prefix.strip():
+        raise ValueError("dataset must contain a nonempty e2e_task_prefix")
+    splits: dict[str, str] = {}
+    for index, entry in enumerate(dataset["splits"]):
+        if not isinstance(entry, dict):
+            raise ValueError(f"split entry {index} must be an object")
+        scope, task, pattern = (entry.get(field) for field in ("scope", "task", "task_pattern"))
+        if not isinstance(scope, str) or not scope.strip():
+            raise ValueError(f"split entry {index} needs a scope")
+        if any(value is not None and not isinstance(value, str) for value in (task, pattern)):
+            raise ValueError(f"split entry {index} task/task_pattern must be strings")
+        if not any(value and value.strip() for value in (task, pattern)):
+            raise ValueError(f"split entry {index} needs a task or task_pattern")
+        split = entry.get("split")
+        if split not in ("train", "eval", "holdout"):
+            raise ValueError(f"split entry {index} needs train, eval or holdout")
+        key = cache_key(scope, task=task, task_pattern=pattern)
+        if key in splits and splits[key] != split:
+            raise ValueError(f"conflicting splits for cache key {key!r}")
+        splits[key] = split
+    return splits, prefix
 
 
 # ----------------------------------------------------------------------
@@ -418,7 +436,9 @@ def build_case(
     inject: dict[str, Any] | None = None,
     consumes: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
-    key = cache_key(row["scope"], task=row["task"])
+    ambient = json.loads(row["ambient_context"] or "{}") or {}
+    pattern = ambient.get("task_pattern")
+    key = cache_key(row["scope"], task=row["task"], task_pattern=pattern)
     clusters: list[dict[str, Any]] = []
     contents: dict[str, str] = {}
     if payload:
@@ -458,12 +478,12 @@ def build_case(
         "scope": row["scope"],
         "requested_scope": row["requested_scope"],
         "task": row["task"],
-        "task_pattern": (json.loads(row["ambient_context"] or "{}") or {}).get("task_pattern"),
+        "task_pattern": pattern,
         "agent": row["agent"],
         "query": row["query"],
         "depth": row["depth"],
         "max_results": int(row["max_results"]),
-        "ambient_context": json.loads(row["ambient_context"] or "{}"),
+        "ambient_context": ambient,
         "created_at": row["created_at"],
         "persisted_payload": payload,
         "delivered": delivered,
@@ -814,7 +834,9 @@ def abs_delta(left: str, right: str) -> float:
     return abs(parse(left) - parse(right))
 
 
-def e2e_cases(snapshot: Path, journals: Sequence[Path]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def e2e_cases(
+    snapshot: Path, journals: Sequence[Path], task_prefix: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     events = read_journals(journals)
     sessions = journal_index(events)
     by_inject_nodes: dict[tuple[str, ...], list[dict[str, Any]]] = {}
@@ -827,8 +849,9 @@ def e2e_cases(snapshot: Path, journals: Sequence[Path]) -> tuple[list[dict[str, 
         connection = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
-            "SELECT * FROM recall_events WHERE task LIKE ? AND recall_map IS NOT NULL ORDER BY created_at",
-            (f"{E2E_TASK_PREFIX}%",),
+            "SELECT * FROM recall_events WHERE substr(task, 1, ?) = ? "
+            "AND recall_map IS NOT NULL ORDER BY created_at",
+            (len(task_prefix), task_prefix),
         ).fetchall()
         cases = []
         for row in rows:
@@ -883,15 +906,17 @@ def e2e_cases(snapshot: Path, journals: Sequence[Path]) -> tuple[list[dict[str, 
     return cases, summary
 
 
-def assign_splits(cases: list[dict[str, Any]]) -> None:
+def assign_splits(cases: list[dict[str, Any]], splits: dict[str, str]) -> None:
     for case in cases:
         if case["source"] == "e2e_local":
+            if splits.get(case["cache_key"], "train") != "train":
+                raise ValueError(f"control cache key {case['cache_key']!r} must belong to train")
             case["split"] = "train"
             case["split_role"] = "contrastive_control"
             continue
-        split = SPLIT_BY_KEY.get(case["cache_key"])
+        split = splits.get(case["cache_key"])
         if split is None:
-            raise SystemExit(f"no split pinned for cache key {case['cache_key']!r}")
+            raise ValueError(f"no split pinned for cache key {case['cache_key']!r}")
         case["split"] = split
         case["split_role"] = "field"
 
@@ -953,24 +978,34 @@ def analyse(cases: Sequence[dict[str, Any]], snapshot: Path) -> dict[str, Any]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dataset", required=True, help="Local JSON split assignments and control selector")
     parser.add_argument("--streams", required=True)
     parser.add_argument("--field-snapshot", required=True)
     parser.add_argument("--e2e-snapshot", required=True)
     parser.add_argument("--e2e-journals", required=True)
-    parser.add_argument("--since", default="2026-08-20T04:00")
+    parser.add_argument("--since", required=True)
     parser.add_argument("--out-manifest", required=True)
     parser.add_argument("--out-analysis", required=True)
     args = parser.parse_args(argv)
 
+    dataset_path = Path(args.dataset).expanduser()
+    try:
+        splits, e2e_task_prefix = load_dataset(dataset_path)
+    except ValueError as exc:
+        parser.error(str(exc))
     field_snapshot = Path(args.field_snapshot).expanduser()
     e2e_snapshot = Path(args.e2e_snapshot).expanduser()
 
     cases, journal_summary = field_cases(Path(args.streams), field_snapshot, args.since)
     controls, e2e_summary = e2e_cases(
-        e2e_snapshot, [Path(path) for path in sorted(globlib.glob(args.e2e_journals))]
+        e2e_snapshot, [Path(path) for path in sorted(globlib.glob(args.e2e_journals))],
+        e2e_task_prefix,
     )
     everything = cases + controls
-    assign_splits(everything)
+    try:
+        assign_splits(everything, splits)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     replay_field = attach_replay(cases, field_snapshot)
     replay_e2e = attach_replay(controls, e2e_snapshot)
@@ -988,6 +1023,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     analysis = {
         "generated_from": {
+            "dataset": str(dataset_path),
             "field_snapshot": str(field_snapshot),
             "field_snapshot_manifest": load_manifest(field_snapshot),
             "e2e_snapshot": str(e2e_snapshot),
@@ -1026,19 +1062,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             "field_alt": {
                 "path": str(field_snapshot),
                 "manifest": load_manifest(field_snapshot),
-                "provenance": (
-                    "sqlite backup-API snapshot of a read-only stream of host alt's live "
-                    "living-memory store (/home/user/.local/share/living-memory/global.sqlite3 "
-                    "plus its WAL). Nothing was written on alt."
-                ),
             },
             "e2e_local": {
                 "path": str(e2e_snapshot),
                 "manifest": load_manifest(e2e_snapshot),
-                "provenance": (
-                    "sqlite backup-API snapshot of this workstation's living-memory store, "
-                    "which is where the contrastive live-e2e run persisted its maps."
-                ),
             },
         },
         "replay_contract": {
@@ -1050,40 +1077,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "RecallMapBuilder.build(scope=scope, task=task, task_pattern=task_pattern)."
             ),
             "pool_recoverability": (
-                "The residual pool itself is not persisted anywhere: retrieval.py:614 keeps it "
-                "in memory only. What IS recoverable per case is head_node_ids (the ranked head "
-                "the recall delivered, which is exactly the complement of the pool) and "
-                "medoid_node_ids (pool members the map named). Replay fidelity should be "
-                "asserted on head_node_ids: a replay that reproduces the head reproduced the "
-                "ranking, and therefore the residual behind it."
+                "The original residual is not persisted. Replay reports the current head, "
+                "residual size and selected pool IDs. Matching head_node_ids is a cross-check; "
+                "it does not establish that the unpersisted tail matches the original recall."
             ),
             "caveat": (
-                "The snapshot is later than the field run (recall_events up to "
-                "2026-08-20T07:31Z), so a replay reconstructs the pool a recall would get "
-                "against this corpus, not a byte-identical rerun of the historical one. "
+                "Replay reconstructs the pool against the supplied snapshot, which may differ "
+                "from the corpus at the original observation. "
                 "Cases whose head_node_ids do not reproduce should be reported, not silently "
                 "dropped."
             ),
         },
         "splits": {
-            "unit": "cache_key = cache_key(scope, task=task) -- the builder's structure-cache key",
+            "unit": "cache_key(scope, task=task, task_pattern=task_pattern)",
             "rationale": (
                 "RecallMapBuilder caches cluster structure per current work identity. "
                 "Two cases under one key are two looks at one cached "
                 "structure, so keys are never split across train/eval/holdout."
             ),
             "shared_by_construction": (
-                "All field keys live in scope project:game over one corpus; the splits are "
-                "disjoint in cases and in cache keys, not in corpus. A rule fitted on train "
-                "still meets unseen tasks, unseen pools and unseen label sets on holdout."
+                "Splits are disjoint by work identity. Cases can share a supplied snapshot; "
+                "split disjointness does not imply independent corpora."
             ),
-            "assignment": SPLIT_BY_KEY,
+            "assignment": splits,
+            "e2e_task_prefix": e2e_task_prefix,
             "controls": (
-                "The live-e2e cases (source e2e_local, split_role contrastive_control) are "
-                "train by construction: diagnosis.md quotes them, and a case the diagnosis "
-                "reads cannot also be held out. They are a different corpus and a different "
-                "snapshot, so they are counted separately below and must not be pooled with "
-                "the field cases in any metric."
+                "Selected control cases (source e2e_local, split_role contrastive_control) "
+                "belong to train and are counted separately from field cases."
             ),
             "counts": {
                 split: sum(1 for case in everything if case["split"] == split)
@@ -1101,9 +1121,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for source in ("field_alt", "e2e_local")
             },
             "holdout_discipline": (
-                "Holdout cases are listed here in full so they can be replayed, and are "
-                "neither analysed nor quoted in diagnosis.md. Every aggregate in diagnosis.md "
-                "is computed over train+eval field cases only."
+                "Holdout cases remain available for replay and per-split reporting. "
+                "train_eval_field and recount_drift_probe exclude them."
             ),
         },
         "cases": everything,
