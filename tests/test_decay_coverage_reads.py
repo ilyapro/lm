@@ -41,7 +41,7 @@ def test_ordinary_sweep_projects_and_parses_only_required_coverage(tmp_path, mon
         for node_id in ("covered", "dated"):
             store.create_node(
                 level="trace", node_id=node_id, content=f"Read source {node_id}.",
-                context={"scope": SCOPE, "timestamp": "2020-01-01"},
+                context={"scope": SCOPE, "timestamp": "2026-10-20" if enabled else "2020-01-01"},
                 stats={"last_accessed": "2026-10-22"},
             )
         bodies = [
