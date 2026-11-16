@@ -98,22 +98,25 @@ from living_memory.storage import MemoryStore  # noqa: E402
 
 # ----------------------------------------------------------------------
 # Splits. Disjoint by cache key, because the builder caches cluster
-# *structure* per (scope, normalized task): two cases under one key are two
+# *structure* per work identity: two cases under one key are two
 # looks at one cached structure, and straddling a key across splits would
 # leak the very thing the splits exist to hold out.
 # ----------------------------------------------------------------------
 
 SPLIT_BY_KEY: dict[str, str] = {
-    "project:game|quality clips coverage registry refresh": "train",
-    "project:game|quality clips coverage clips restore": "train",
-    "project:game|quality meter honesty": "train",
-    "project:game|quality footslip rest proc footlock": "train",
-    "project:game|quality clips coverage idle rest clips": "eval",
-    "project:game|quality clips coverage rest clips land": "eval",
-    "project:game|quality footslip rest gait reach": "eval",
-    "project:game|quality footslip rest": "holdout",
-    "project:game|quality clips land": "holdout",
-    "project:game|feeling control": "holdout",
+    cache_key("project:game", task=task): split
+    for task, split in {
+        "quality clips coverage registry refresh": "train",
+        "quality clips coverage clips restore": "train",
+        "quality meter honesty": "train",
+        "quality footslip rest proc footlock": "train",
+        "quality clips coverage idle rest clips": "eval",
+        "quality clips coverage rest clips land": "eval",
+        "quality footslip rest gait reach": "eval",
+        "quality footslip rest": "holdout",
+        "quality clips land": "holdout",
+        "feeling control": "holdout",
+    }.items()
 }
 
 #: The contrastive live-e2e key. Quoted in diagnosis.md, so it is train by
