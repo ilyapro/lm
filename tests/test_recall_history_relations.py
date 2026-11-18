@@ -144,7 +144,7 @@ def test_two_topics_keep_credit_and_history_without_graph_leakage(
     ("related", {**IMPLICIT, "kind": "unknown"}, False),
     ("related", {**IMPLICIT, "kind": "content_reference", "rule": "R6"}, True),
     ("related", {**IMPLICIT, "kind": "derived_from", "rule": "R5a"}, True),
-    ("related", {**IMPLICIT, "basis": "shared_files"}, True),
+    ("related", {**IMPLICIT, "basis": "shared_files", "files": ["sample.txt"]}, True),
     ("related", {}, True),
     ("requires", IMPLICIT, True),
     ("caused", IMPLICIT, True),
@@ -153,8 +153,9 @@ def test_two_topics_keep_credit_and_history_without_graph_leakage(
 ])
 def test_semantics_agree_across_readers_and_keep_raw_history(tmp_path, relation_type, metadata, semantic):
     with MemoryStore(tmp_path / "memory.sqlite3") as store:
-        a = store.append_trace(ORCHID, {"scope": SCOPE})
-        b = store.append_trace(DEPLOYMENT, {"scope": SCOPE})
+        context = {"scope": SCOPE, "files": ["sample.txt"]}
+        a = store.append_trace(ORCHID, context)
+        b = store.append_trace(DEPLOYMENT, context)
         edge = store.create_connection(a.id, b.id, relation_type, metadata=metadata)
         assert is_semantic_relation(relation_type, metadata) is semantic
         assert bool(store.connection.execute(

@@ -9,6 +9,7 @@ from fastmcp import Client
 import pytest
 
 from living_memory import edge_derivation as ed, server, storage
+from living_memory.file_evidence import file_citations
 
 
 def tuples(edges):
@@ -29,12 +30,12 @@ def test_caps_include_source_and_duplicate_occurrences(
     tmp_path, kind, peers, duplicates, edge_count,
 ):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        context = {"commit": "abc1234ff"} if kind == "commit" else {"files": ["shared"]}
+        context = {"commit": "abc1234ff"} if kind == "commit" else {"scope": "project:edges", "files": ["shared"]}
         targets = [store.create_node(level=("trace", "concept", "schema")[i % 3],
                                      content=f"Peer {i}", context=context) for i in range(peers)]
         stale = store.append_trace("Retired peer", context)
         store.soft_delete_node(stale.id)
-        note = store.append_trace("Source", context if kind == "commit" else {"files": ["shared"] * duplicates})
+        note = store.append_trace("Source", context if kind == "commit" else {"scope": "project:edges", "files": ["shared"] * duplicates})
         metadata = ({"rule": "R4a", "basis": "same_commit", "commit": "abc1234"}
                     if kind == "commit" else {"rule": "R4b", "basis": "shared_files", "files": ["shared"]})
         oracle = [expected(note, peer, 0.9 if kind == "commit" else 0.65, metadata)
@@ -49,7 +50,7 @@ def test_caps_include_source_and_duplicate_occurrences(
 @pytest.mark.parametrize("kind", ["commit", "file"])
 def test_json_truthiness_and_multiple_shared_files(tmp_path, kind):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        context = {"commit": " ABC1234abcdef "} if kind == "commit" else {"files": ["one", "one", "two"]}
+        context = {"commit": " ABC1234abcdef "} if kind == "commit" else {"scope": "project:edges", "files": ["one", "one", "two"]}
         flags = [True, False, [], {}, "false", 0, None, 1]
         peers = [store.append_trace(f"Peer {i}", {**context, "is_rejected_alternative": flag})
                  for i, flag in enumerate(flags)]
@@ -89,7 +90,7 @@ def test_commit_sql_membership_and_python_normalization(tmp_path, value, prefix,
 @pytest.mark.parametrize("denied", ["content", "provenance", "id", "decayed", "context", "SQL"])
 def test_required_reads_fail_and_unused_bodies_can_be_denied(tmp_path, monkeypatch, kind, denied):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        context = {"commit": "abc1234ff"} if kind == "commit" else {"files": ["shared", "second"] if kind == "files" else ["shared"]}
+        context = {"commit": "abc1234ff"} if kind == "commit" else {"scope": "project:edges", "files": ["shared", "second"] if kind == "files" else ["shared"]}
         peer = store.create_node(level="trace", content="b" * 131072,
                                  context={**context, "procedure": "p" * 131072},
                                  provenance={"unrelated": "h" * 65536})
@@ -115,7 +116,7 @@ def test_required_reads_fail_and_unused_bodies_can_be_denied(tmp_path, monkeypat
         try:
             if denied in {"content", "provenance"}:
                 assert len(ed.derive_edges_for_new_trace(store, note)) == 1
-                assert reads == {"id", "decayed", "context"}
+                assert reads == {"id", "decayed", "context", "scope"}
             else:
                 with pytest.raises(sqlite3.DatabaseError):
                     ed.derive_edges_for_new_trace(store, note)
@@ -128,7 +129,7 @@ def test_required_reads_fail_and_unused_bodies_can_be_denied(tmp_path, monkeypat
 @pytest.mark.parametrize("kind", ["commit", "file", "files"])
 def test_malformed_required_context_is_not_a_missing_candidate(tmp_path, kind):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        context = {"commit": "abc1234ff"} if kind == "commit" else {"files": ["shared", "second"] if kind == "files" else ["shared"]}
+        context = {"commit": "abc1234ff"} if kind == "commit" else {"scope": "project:edges", "files": ["shared", "second"] if kind == "files" else ["shared"]}
         peer = store.append_trace("Peer", context)
         note = store.append_trace("Source", context)
         # Corruption fixture: expression indexes otherwise reject this UPDATE.
@@ -150,7 +151,7 @@ def test_malformed_selected_json_is_not_swallowed(tmp_path, field):
 
 def test_rules_merge_weights_metadata_and_remain_idempotent(tmp_path):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        context = {"commit": "abc1234ff", "files": ["one", "two"]}
+        context = {"scope": "project:edges", "commit": "abc1234ff", "files": ["one", "two"]}
         peer = store.append_trace("Peer", context)
         note = store.append_trace("Source", context)
         store.create_connection(*sorted((peer.id, note.id)), "related", weight=0.94, metadata={"kept": True})
@@ -162,7 +163,7 @@ def test_rules_merge_weights_metadata_and_remain_idempotent(tmp_path):
         ed.derive_edges_for_new_trace(store, note)
         assert tuples(store.list_connections()) == tuples(first)
         # The final contribution by itself is an unchanged upsert.
-        edge = ed.rule_r4b_shared_files(note, {f: [peer, note] for f in ["one", "two"]})[0]
+        edge = ed.rule_r4b_shared_files(note, {key: [peer, note] for key, _ in file_citations(note.scope, note.context)})[0]
         before = store.list_connections()[0]
         assert ed.upsert_derived_edge(store, edge) == before
 
@@ -171,7 +172,7 @@ def test_rules_merge_weights_metadata_and_remain_idempotent(tmp_path):
 @pytest.mark.parametrize("fault", ["removed", "writer"])
 def test_writer_revalidates_endpoints_and_enclosing_transaction_rolls_back(tmp_path, monkeypatch, kind, fault):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        context = {"commit": "abc1234ff"} if kind == "commit" else {"files": ["shared", "second"] if kind == "files" else ["shared"]}
+        context = {"commit": "abc1234ff"} if kind == "commit" else {"scope": "project:edges", "files": ["shared", "second"] if kind == "files" else ["shared"]}
         peers = [store.append_trace(f"Peer {i}", context) for i in range(2)]
         note = store.append_trace("Source", context)
         name = "_commit_group_candidates" if kind == "commit" else "_file_citation_candidates"
@@ -207,7 +208,7 @@ def test_fastmcp_remember_keeps_required_commit_and_guard(tmp_path, monkeypatch,
     mcp = server.create_mcp_server(tmp_path / "memory.sqlite3")
     store = mcp.memory_store
     try:
-        context = {"commit": "abc1234ff"} if kind == "commit" else {"files": ["shared", "second"] if kind == "files" else ["shared"]}
+        context = {"commit": "abc1234ff"} if kind == "commit" else {"scope": "project:edges", "files": ["shared", "second"] if kind == "files" else ["shared"]}
         peer = store.append_trace("Peer", context)
         name = "_commit_group_candidates" if kind == "commit" else "_file_citation_candidates"
         read = getattr(ed, name)
@@ -254,19 +255,20 @@ def test_fastmcp_remember_keeps_required_commit_and_guard(tmp_path, monkeypatch,
 
 def test_grouped_files_preserve_occurrences_sql_values_and_input_order(tmp_path):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        peer = store.append_trace("Peer", {"files": [
+        peer = store.append_trace("Peer", {"scope": "project:edges", "files": [
             "a", "a", "b", 7, True, None, {"a": 1}, [1], "7", "True", "None", "[1]",
         ], "is_rejected_alternative": []})
-        stale = store.append_trace("Retired", {"files": ["a", "b"]})
+        stale = store.append_trace("Retired", {"scope": "project:edges", "files": ["a", "b"]})
         store.soft_delete_node(stale.id)
-        store.append_trace("Scalar files", {"files": "a"})
+        store.append_trace("Scalar files", {"scope": "project:edges", "files": "a"})
         names = ["b", "a", "7", "True", "None", "[1]", '{"a":1}', "1", "null"]
         names += [f"absent-{i}" for i in range(ed._FILE_CITATION_BATCH_SIZE)]
-        note = store.append_trace("Source", {"files": names + ["a"]})
-        counts = dict(zip(names[:9], [1, 2, 1, 1, 1, 2, 1, 0, 0]))
-        citing = ed._file_citation_candidates(store, ed.node_files(note))
-        assert list(citing) == names
-        for fname, rows in citing.items():
+        note = store.append_trace("Source", {"scope": "project:edges", "files": names + ["a"]})
+        counts = dict(zip(names[:9], [1, 2, 1, 1, 1, 1, 0, 0, 0]))
+        citing = ed._file_citation_candidates(store, dict(file_citations(note.scope, note.context)))
+        assert [key.split("\0")[1] for key in citing] == names
+        for key, rows in citing.items():
+            fname = key.split("\0")[1]
             expected_ids = [peer.id] * counts.get(fname, 0)
             expected_ids += [note.id] * (2 if fname == "a" else 1)
             assert [row.id for row in rows] == sorted(expected_ids)
@@ -274,17 +276,17 @@ def test_grouped_files_preserve_occurrences_sql_values_and_input_order(tmp_path)
                        for row in rows if row.id == peer.id)
         edges = ed.derive_edges_for_new_trace(store, note)
         assert tuples(edges) == [expected(note, peer, 0.95, {
-            "rule": "R4b", "basis": "shared_files", "files": names[:7],
+            "rule": "R4b", "basis": "shared_files", "files": names[:6],
         })]
         assert [edge.id for edge in ed.derive_edges_for_new_trace(store, note)] == [edge.id for edge in edges]
 
 
 def test_grouped_files_bound_each_file_before_selected_json(tmp_path, monkeypatch):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        hub = store.create_node(level="trace", node_id="a-hub", content="Hub", context={"files": ["hot"] * 21})
-        overflow = store.create_node(level="trace", node_id="b-overflow", content="Overflow", context={"files": ["hot"] * 100})
-        peer = store.create_node(level="trace", node_id="c-peer", content="Peer", context={"files": ["cold"]})
-        note = store.create_node(level="trace", node_id="d-source", content="Source", context={"files": ["hot", "cold"]})
+        hub = store.create_node(level="trace", node_id="a-hub", content="Hub", context={"scope": "project:edges", "files": ["hot"] * 21})
+        overflow = store.create_node(level="trace", node_id="b-overflow", content="Overflow", context={"scope": "project:edges", "files": ["hot"] * 100})
+        peer = store.create_node(level="trace", node_id="c-peer", content="Peer", context={"scope": "project:edges", "files": ["cold"]})
+        note = store.create_node(level="trace", node_id="d-source", content="Source", context={"scope": "project:edges", "files": ["hot", "cold"]})
         decode = ed._candidate_from_row
         decoded = []
 
@@ -305,17 +307,17 @@ def test_grouped_files_bound_each_file_before_selected_json(tmp_path, monkeypatc
 ])
 def test_grouped_file_limit_preserves_required_source_errors(tmp_path, names, raises):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        hub = store.append_trace("Hub", {"files": ["hot", "warm"] * 21})
-        bad = store.append_trace("Bad tail", {"files": ["hot"]})
+        hub = store.append_trace("Hub", {"scope": "project:edges", "files": ["hot", "warm"] * 21})
+        bad = store.append_trace("Bad tail", {"scope": "project:edges", "files": ["hot"]})
         store.connection.execute("DROP INDEX idx_nodes_commit_prefix")
         store.connection.execute("DROP INDEX idx_nodes_files_present")
         store.connection.execute("UPDATE nodes SET context = '{' WHERE id = ?", (bad.id,))
         if raises:
             with pytest.raises(sqlite3.OperationalError, match="malformed JSON"):
-                ed._file_citation_candidates(store, names)
+                ed._file_citation_candidates(store, ["project:edges\0" + f for f in names])
         else:
-            rows = ed._file_citation_candidates(store, names)
-            assert {f: [r.id for r in citing] for f, citing in rows.items()} == {
+            rows = ed._file_citation_candidates(store, ["project:edges\0" + f for f in names])
+            assert {f.split("\0")[1]: [r.id for r in citing] for f, citing in rows.items()} == {
                 f: [hub.id] * 21 for f in names
             }
         # Neither success nor failure leaves the request callback registered.
@@ -325,7 +327,7 @@ def test_grouped_file_limit_preserves_required_source_errors(tmp_path, names, ra
 
 def test_grouped_file_selected_json_failure_closes_cursor(tmp_path, monkeypatch):
     with storage.MemoryStore(tmp_path / "memory.sqlite3") as store:
-        peer = store.append_trace("Peer", {"files": ["one", "two"]})
+        peer = store.append_trace("Peer", {"scope": "project:edges", "files": ["one", "two"]})
         decode = ed._candidate_from_row
 
         def malformed(row):
@@ -335,8 +337,8 @@ def test_grouped_file_selected_json_failure_closes_cursor(tmp_path, monkeypatch)
         with monkeypatch.context() as patch:
             patch.setattr(ed, "_candidate_from_row", malformed)
             with pytest.raises(json.JSONDecodeError):
-                ed._file_citation_candidates(store, ["one", "two"])
-        rows = ed._file_citation_candidates(store, ["one", "two"])
-        assert {f: [r.id for r in citing] for f, citing in rows.items()} == {
+                ed._file_citation_candidates(store, ["project:edges\0one", "project:edges\0two"])
+        rows = ed._file_citation_candidates(store, ["project:edges\0one", "project:edges\0two"])
+        assert {f.split("\0")[1]: [r.id for r in citing] for f, citing in rows.items()} == {
             "one": [peer.id], "two": [peer.id],
         }
