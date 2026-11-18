@@ -2702,11 +2702,8 @@ class MemoryStore:
     ) -> None:
         """Record the map served with an already-recorded recall event.
 
-        One statement, no read-back: this runs on the live recall path, after
-        the response has been shaped, and its result is never consumed. An
-        unknown ``event_id`` raises ``KeyError`` rather than writing nothing
-        silently — an unattributable delivery is the failure this column exists
-        to prevent.
+        Persist the payload and its delivery attribution atomically. An
+        unknown ``event_id`` raises ``KeyError``.
         """
 
         encoded = _encode_recall_map(recall_map)
@@ -3267,6 +3264,7 @@ class MemoryStore:
         if event is None:
             self._mark_recall_history_unavailable("history_event_missing")
             return
+        attaching_map = result_ids is None
         if result_ids is None:
             raw = self._conn.execute(
                 "SELECT results FROM recall_events WHERE id = ?", (event_id,)
@@ -3287,6 +3285,27 @@ class MemoryStore:
         if outcome_end is None:  # pragma: no cover - normalized table invariant
             self._mark_recall_history_unavailable("malformed_event_timestamp")
             return
+        if attaching_map:
+            existing = self._conn.execute(
+                f"""
+                SELECT node_id, lookup_consumed
+                FROM {RECALL_DELIVERY_HISTORY_TABLE} WHERE delivery_event_id = ?
+                """,
+                (event_id,),
+            ).fetchall()
+            if {row["node_id"] for row in existing} == set(delivered_ids):
+                # Lookups eagerly mark hits. An unrelated first lookup can also
+                # make a previously unknown absence observable at late attach.
+                if any(row["lookup_consumed"] is None for row in existing):
+                    first_lookup = self._first_recorded_lookup_at()
+                    if first_lookup is not None and first_lookup <= outcome_end:
+                        self._conn.execute(
+                            f"""UPDATE {RECALL_DELIVERY_HISTORY_TABLE}
+                                SET lookup_consumed = 0
+                                WHERE delivery_event_id = ? AND lookup_consumed IS NULL""",
+                            (event_id,),
+                        )
+                return
         self._conn.execute(
             f"DELETE FROM {RECALL_DELIVERY_HISTORY_TABLE} WHERE delivery_event_id = ?",
             (event_id,),
