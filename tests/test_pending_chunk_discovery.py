@@ -12,7 +12,7 @@ from living_memory.storage import MemoryStore
 SOURCE_INDEXES = {
     "idx_nodes_active_scope_source",
     "idx_nodes_active_level_source",
-    "idx_chunk_source",
+    "idx_chunk_source_space",
 }
 OLD_INDEXES = {"idx_nodes_active_scope_level", "idx_nodes_level_scope_active"}
 

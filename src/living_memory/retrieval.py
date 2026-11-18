@@ -506,7 +506,7 @@ class MemoryRecallService:
         query_embedding = prepared.embedding
 
         if repair_pending:
-            self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context)
+            self.refresh_pending_chunks(scope=scope, ambient_context=ambient_context, encoder_id=prepared.encoder_id)
 
         plan = self.scope_resolver.resolve(
             scope=scope,
@@ -647,6 +647,7 @@ class MemoryRecallService:
 
     def refresh_pending_chunks(
         self, *, scope: str | None = None,
+        encoder_id: str | None = None,
         ambient_context: dict[str, Any] | None = None,
         guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
     ) -> None:
@@ -663,7 +664,7 @@ class MemoryRecallService:
             after = self._pending_chunk_positions.get(scopes)
             pending = sorted(
                 (position for item in scopes for position in self.store.list_unchunked_node_positions(
-                    scope=item, limit=LAZY_CHUNK_NODE_LIMIT, after=after,
+                    scope=item, limit=LAZY_CHUNK_NODE_LIMIT, after=after, encoder_id=encoder_id,
                 )),
                 key=lambda position: (after is not None and position <= after, *position),
             )[:LAZY_CHUNK_NODE_LIMIT]
@@ -689,7 +690,7 @@ class MemoryRecallService:
                 continue
             try:
                 if node is not None and not node.decayed and plan.allows(node.scope):
-                    self._rechunk_node(node, guard=guard)
+                    self._rechunk_node(node, guard=guard, encoder_id=encoder_id)
             except Exception as error:
                 deferred_errors.append(type(error).__name__)
         if deferred_errors:
@@ -1642,13 +1643,17 @@ class MemoryRecallService:
                 queue.append((neighbor_id, next_score, depth, path))
 
     def _rechunk_node(
-        self, node: Node, *, guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
+        self, node: Node, *, encoder_id: str | None = None,
+        guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
     ) -> None:
         """Refresh content search without overwriting a cluster representative."""
 
         with guard():
             self._share_embedder_with_store()
-        self.store.refresh_pending_chunks(node, self.embedder.embed, guard=guard)
+        self.store.refresh_pending_chunks(
+            node, self.embedder.embed, encoder_id=encoder_id,
+            embed_batch=getattr(self.embedder, "embed_batch", None), guard=guard,
+        )
 
     def _share_embedder_with_store(self) -> None:
         """Share one encoder for queries, source chunks and feedback anchors.

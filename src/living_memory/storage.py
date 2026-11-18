@@ -4283,7 +4283,7 @@ class MemoryStore:
             ).fetchone()
         return int(row["count"])
 
-    def node_chunks_are_current(self, node_id: str) -> bool:
+    def node_chunks_are_current(self, node_id: str, *, encoder_id: str | None = None) -> bool:
         """Whether ``node_id`` has chunks and all of them match its content.
 
         False both for a node that was never chunked and for one whose content
@@ -4293,16 +4293,17 @@ class MemoryStore:
 
         if not self._chunk_table_present():
             return False
+        space = "AND c.encoder_id = ?" if encoder_id is not None else ""
         row = self._conn.execute(
             f"""
             SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN c.content_fingerprint = n.content_fingerprint
+                   SUM(CASE WHEN c.content_fingerprint = n.content_fingerprint {space}
                             THEN 1 ELSE 0 END) AS fresh
             FROM {CHUNK_EMBEDDING_TABLE} c
             JOIN nodes n ON n.id = c.node_id
             WHERE c.node_id = ?
             """,
-            (str(node_id),),
+            (encoder_id, str(node_id)) if space else (str(node_id),),
         ).fetchone()
         total = int(row["total"] or 0)
         return total > 0 and int(row["fresh"] or 0) == total
@@ -4331,6 +4332,7 @@ class MemoryStore:
         scope: str | None = None,
         level: NodeLevel | None = None,
         limit: int = 200,
+        encoder_id: str | None = None,
         after: tuple[str, str] | None = None,
     ) -> list[tuple[str, str]]:
         """Pending timestamp/id positions, without decoding source bodies."""
@@ -4338,11 +4340,12 @@ class MemoryStore:
         return [(str(row["timestamp"]), str(row["id"]))
                 for row in self._unchunked_node_rows(
                     scope=scope, level=level, limit=limit, after=after, positions_only=True,
+                    encoder_id=encoder_id,
                 )]
 
     def _unchunked_node_rows(
         self, *, scope: str | None, level: NodeLevel | None, limit: int,
-        after: tuple[str, str] | None, positions_only: bool,
+        after: tuple[str, str] | None, positions_only: bool, encoder_id: str | None = None,
     ) -> list[sqlite3.Row]:
         """Select current pending sources with either full rows or positions.
 
@@ -4376,6 +4379,9 @@ class MemoryStore:
         if scope is not None:
             clauses.append("n.scope = ?")
             params.append(scope)
+        space = "AND c.encoder_id = ?" if encoder_id is not None else ""
+        if space:
+            params.append(encoder_id)
         order = "n.timestamp ASC, n.id ASC"
         if after is not None:
             order = "(n.timestamp, n.id) <= (?, ?) ASC, " + order
@@ -4389,7 +4395,7 @@ class MemoryStore:
                   AND NOT EXISTS (
                     SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
                     WHERE c.node_id = n.id
-                      AND c.content_fingerprint = n.content_fingerprint
+                      AND c.content_fingerprint = n.content_fingerprint {space}
                   )
             )
             SELECT {'n.timestamp, n.id' if positions_only else 'n.*'}
@@ -4452,6 +4458,8 @@ class MemoryStore:
 
     def refresh_pending_chunks(
         self, selected: Node, embed: Callable[[str], Sequence[float]], *,
+        encoder_id: str | None = None,
+        embed_batch: ChunkEmbedder | None = None,
         guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
     ) -> bool:
         """Prepare a complete pending index and apply it only to the same source.
@@ -4474,23 +4482,31 @@ class MemoryStore:
         with guard():
             current = self.get_node(selected.id)
             if (current is None or current.decayed or identity(current) != identity(selected)
-                    or self.node_chunks_are_current(selected.id)):
+                    or self.node_chunks_are_current(selected.id, encoder_id=encoder_id)):
                 return False
             before = chunk_ids()
             source = identity(current)
             content = current.content
+            space_change = encoder_id is not None and self.node_chunks_are_current(selected.id)
             representative = bool(
                 current.materializer in ("cluster", "cross-scope-promotion") and current.embedding
             )
 
-        embedding = None if representative else embed(content)
-        pairs = self._chunk_embeddings_for(content, embedding, require_complete=True)
+        embedding = None if representative or space_change else copy_vector(embed(content))
+        pairs = self._chunk_embeddings_for(
+            content, embedding, require_complete=True,
+            embed_batch=embed_batch if space_change else None,
+        )
+        if space_change and not all(
+            isinstance(v, EncodedVector) and v.encoder_id == encoder_id for _, v in pairs
+        ):
+            return False
         if not pairs:
             raise ValueError("pending index requires a complete nonempty chunk set")
         with guard(), self.transaction(immediate=True):
             current = self.get_node(selected.id)
             if (current is None or identity(current) != source or chunk_ids() != before
-                    or self.node_chunks_are_current(selected.id)):
+                    or self.node_chunks_are_current(selected.id, encoder_id=encoder_id)):
                 return False
             self._replace_node_chunks(selected.id, pairs, _content_fingerprint(content))
             if embedding is not None and self._node_embedding_column_present():
@@ -4619,6 +4635,7 @@ class MemoryStore:
         *,
         max_chunks: int | None = None,
         require_complete: bool = False,
+        embed_batch: ChunkEmbedder | None = None,
     ) -> list[tuple[TextChunk, Sequence[float]]]:
         """Split ``content`` into windows and pair each with its vector.
 
@@ -4643,7 +4660,7 @@ class MemoryStore:
         with self._chunk_embedder_lock:
             vectors = [
                 copy_vector(vector) for vector in
-                self._resolve_chunk_embedder()([chunk.text for chunk in chunks])
+                (embed_batch or self._resolve_chunk_embedder())([chunk.text for chunk in chunks])
             ]
         if len(vectors) != len(chunks):
             raise ValueError(
@@ -5717,10 +5734,6 @@ class MemoryStore:
                 DROP INDEX IF EXISTS idx_nodes_active_scope_level;
                 DROP INDEX IF EXISTS idx_nodes_level_scope_active;
 
-                -- Freshness probes must not visit rows containing vector BLOBs.
-                -- UNIQUE(node_id, chunk_index) separately owns ordinal identity.
-                CREATE INDEX IF NOT EXISTS idx_chunk_source
-                    ON node_chunk_embeddings(node_id, content_fingerprint);
 
                 CREATE INDEX IF NOT EXISTS idx_nodes_dedup
                     ON nodes(level, scope, content_fingerprint)
@@ -5813,6 +5826,9 @@ class MemoryStore:
                 """
             )
             self._migrate_chunk_columns()
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chunk_source_space ON "
+                               "node_chunk_embeddings(node_id, content_fingerprint, encoder_id)")
+            self._conn.execute("DROP INDEX IF EXISTS idx_chunk_source")
             self._initialize_chunk_revisions()
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
