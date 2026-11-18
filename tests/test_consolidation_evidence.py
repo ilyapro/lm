@@ -307,3 +307,57 @@ def test_promotion_pages_do_not_expand_to_new_insertions(tmp_path, monkeypatch):
         monkeypatch.setattr(store, "promotion_candidate_page", insert_after_selection)
         assert c.memory_consolidate(store, scope=SCOPE).concepts_promoted == []
         assert len(c.memory_consolidate(store, scope=SCOPE).concepts_promoted) == 1
+
+
+@pytest.mark.parametrize("tagged", [True, False], ids=["identified", "legacy"])
+@pytest.mark.parametrize("positive", [True, False], ids=["semantic", "collision"])
+def test_promotion_compares_reopened_concepts_across_encoders(tmp_path, monkeypatch, tagged, positive):
+    from threading import RLock
+
+    model = LocalEmbeddingModel(backend="hash")
+    seed_text = "auth slow in prod"
+    historical_text = "authentication timeout in production" if positive else "amber sundial"
+    current_vector = model.embed(seed_text)
+    historical_vector = [-v for v in current_vector] if positive else current_vector
+    assert not c._significant_tokens(seed_text) & c._significant_tokens(historical_text)
+    assert (cosine_similarity(model.embed(historical_text), current_vector)
+            >= c.CROSS_SCOPE_PROMOTION_THRESHOLD) == positive
+    path = tmp_path / "memory.db"
+    scopes = ["project:first", "project:second", "project:third"]
+    ids = []
+    with MemoryStore(path) as store:
+        for scope in scopes[:2]:
+            store.create_node(level="trace", content=historical_text, context={"scope": scope},
+                              embedding=EncodedVector(historical_vector, "fixture:historical"))
+            result = c.memory_consolidate(store, scope=scope, min_cluster_size=1)
+            concept, = result.concepts_created
+            assert not result.concepts_promoted
+            if not tagged:
+                store.update_node(concept.id, representative_embedding=list(concept.embedding))
+            ids.append(concept.id)
+
+    with MemoryStore(path) as store:
+        guard = RLock()
+        batch = LocalEmbeddingModel.embed_batch
+        calls = []
+
+        def encode(self, texts):
+            assert not guard._is_owned() and not store.connection.in_transaction
+            calls.extend(texts)
+            return batch(self, texts)
+
+        monkeypatch.setattr(LocalEmbeddingModel, "embed_batch", encode)
+        store.append_trace(seed_text, {"scope": scopes[-1]})
+        result = c.memory_consolidate(store, scope=scopes[-1], min_cluster_size=1, guard=lambda: guard)
+        concept, = result.concepts_created
+        ids.append(concept.id)
+        assert historical_text in calls
+        assert set(store.get_nodes(ids)) == set(ids)
+        persisted = store.list_nodes(level="concept", scope="global")
+        assert persisted == result.concepts_promoted
+        if positive:
+            promoted, = persisted
+            assert set(promoted.materializer_sources) == set(ids)
+            assert set(promoted.provenance["promoted_from"]) == set(scopes)
+        else:
+            assert persisted == []
