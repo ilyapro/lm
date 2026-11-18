@@ -1,11 +1,16 @@
 """Learned graph and negative evidence follow the encoder that produced a query."""
 
+from threading import RLock
+
 import pytest
 
 from living_memory import embeddings, server
-from living_memory.embeddings import LocalEmbeddingModel, cosine_similarity
+from living_memory.embeddings import EncodedVector, LocalEmbeddingModel, cosine_similarity
+from living_memory.health_audit import ReadOnlyAuditStore
+from living_memory.query_anchors import match_anchors
 from living_memory.retrieval import MemoryRecallService
 from living_memory.server import create_mcp_server
+from living_memory.storage import MemoryStore, recall_fingerprint
 from test_mcp_server import FakeMCP
 
 
@@ -66,9 +71,6 @@ def test_feedback_after_encoder_fallback(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("reader", ["current", "old-read-only", "upgraded"])
 def test_first_historical_match_rescores_text_and_reuses_encoder_work(tmp_path, reader, monkeypatch):
-    from living_memory.health_audit import ReadOnlyAuditStore
-    from living_memory.storage import MemoryStore, recall_fingerprint
-
     model = LocalEmbeddingModel(backend="hash")
     query = "database schema failure"
     old_text = "database migration failed"
@@ -122,12 +124,6 @@ def test_first_historical_match_rescores_text_and_reuses_encoder_work(tmp_path, 
 
 
 def test_verification_admits_only_rows_from_the_prepared_space(tmp_path):
-    from threading import RLock
-
-    from living_memory.embeddings import EncodedVector
-    from living_memory.query_anchors import match_anchors
-    from living_memory.storage import MemoryStore
-
     guard = RLock()
 
     class Encoder:
@@ -164,9 +160,6 @@ def test_verification_admits_only_rows_from_the_prepared_space(tmp_path):
 
 
 def test_known_foreign_collisions_cannot_displace_unlabelled_semantic_nominee(tmp_path):
-    from living_memory.embeddings import EncodedVector
-    from living_memory.storage import MemoryStore
-
     class Model:
         def embed(self, text):
             direction = [1.0, 0.0] if text in ("needle", "lasso") else [0.0, 1.0]

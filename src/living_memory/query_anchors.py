@@ -301,7 +301,7 @@ def match_anchors(
 
     if isinstance(query_embedding, EncodedVector):
         encoder_id = query_embedding.encoder_id
-    if encoder_id is None:
+    if not encoder_id:
         return []
     space = (encoder_id, True)
     ranked = _rank_anchors(

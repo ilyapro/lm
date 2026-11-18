@@ -528,11 +528,17 @@ class MemoryRecallService:
                 and has_active_irrelevance(self.store)
             ):
                 return replace(query, historical_scores={})
-            source = self._anchor_vector_source(encoder)
-            if source is None:
+            try:
+                source = self._anchor_vector_source(encoder)
+                if source is None:
+                    return replace(query, historical_scores={})
+                plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context, store=self.store)
+                texts = self._historical_anchor_queries(source, query, plan)
+            except Exception:
+                if graph or for_annotation:
+                    raise
+                # Query-relative demotion is optional, including its historical read.
                 return replace(query, historical_scores={})
-            plan = self.scope_resolver.resolve(scope=scope, ambient_context=ambient_context, store=self.store)
-            texts = self._historical_anchor_queries(source, query, plan)
             vectors = {}
             for text in dict.fromkeys(texts.values()):
                 if text == query.text:
