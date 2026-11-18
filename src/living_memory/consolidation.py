@@ -1549,35 +1549,45 @@ def _trace_embeddings(
 
     if embedder is None or not traces:
         return {}
+    spaces = {_embedding_space(node) if node.embedding else None for node in traces}
+    if len(spaces) == 1 and None not in spaces:
+        return {node.id: _stored_vector(node) for node in traces}
+
     encoder = embedder.encoder_id()
-    vectors = {node.id: EncodedVector(node.embedding, encoder) for node in traces
+    vectors = {node.id: _stored_vector(node) for node in traces
                if node.embedding and _embedding_space(node) == encoder}
     missing = [node for node in traces if node.id not in vectors]
     for start in range(0, len(missing), _CACHE_READ_BATCH):
         with step():
-            vectors.update(
-                store.get_consolidation_embeddings(
-                    missing[start : start + _CACHE_READ_BATCH], encoder
-                )
-            )
-    to_encode = [trace for trace in missing if trace.id not in vectors]
-    fresh: list[tuple[Node, list[float]]] = []
-    for start in range(0, len(to_encode), _ENCODE_BATCH):
-        batch = to_encode[start : start + _ENCODE_BATCH]
-        encoded = embedder.embed_batch([trace.content for trace in batch])
-        for trace, vector in zip(batch, encoded, strict=True):
-            vectors[trace.id] = vector
-            fresh.append((trace, vector))
-    if fresh and embedder.encoder_id() != encoder:
-        # LocalEmbeddingModel can fall back mid-batch. Reuse only content
-        # produced in its final space, including for earlier cache hits.
-        return _trace_embeddings(store, traces, embedder, step)
+            vectors.update(store.get_consolidation_embeddings(missing[start:start + _CACHE_READ_BATCH], encoder))
+
+    fresh = {}
+    pending = [node for node in missing if node.id not in vectors]
+    while pending:
+        for start in range(0, len(pending), _ENCODE_BATCH):
+            batch = pending[start:start + _ENCODE_BATCH]
+            encoded = embedder.embed_batch([node.content for node in batch])
+            for node, vector in zip(batch, encoded, strict=True):
+                vectors[node.id] = vector
+                fresh[node.id] = (node, vector)
+        final = embedder.encoder_id()
+        if final == encoder:
+            break
+        # Keep outputs already produced by the fallback. Earlier stored
+        # representatives, cache hits and fresh outputs need the new space.
+        encoder = final
+        vectors = {key: v for key, v in vectors.items() if getattr(v, "encoder_id", None) == encoder}
+        fresh = {key: entry for key, entry in fresh.items() if key in vectors}
+        pending = [node for node in traces if node.id not in vectors]
+
+    # The resolved producer qualifies a stable call; an explicit per-vector
+    # identity takes precedence, including within scalar fallback batches.
+    vectors = {key: v for key, v in vectors.items() if getattr(v, "encoder_id", encoder) == encoder}
     if fresh:
         with step():
             try:
-                store.put_consolidation_embeddings(fresh, encoder)
+                store.put_consolidation_embeddings([entry for key, entry in fresh.items() if key in vectors], encoder)
             except Exception:
-                # A cache write is an optimization; the pass has its vectors.
                 _LOG.warning("could not cache consolidation embeddings", exc_info=True)
     return vectors
 
@@ -2186,20 +2196,25 @@ def _promotion_matches(
     model = LocalEmbeddingModel(model_name=store.config.embedding_model)
     stream = iter(_promotion_candidates(store, step=step) if candidates is None else candidates)
     while page := list(islice(stream, _PROMOTION_READ_BATCH)):
-        pairs = [(seed, candidate) for candidate in page
-                 for seed in groups.get(_cluster_group(candidate)[1], ())
-                 if seed.scope != candidate.scope and _promotion_source(candidate)]
-        # A known shared producer can compare its original representatives.
-        # Recover other comparisons from content in one available space.
-        repair = {n.id: n for seed, candidate in pairs
-                  if not _embedding_space(seed) or _embedding_space(seed) != _embedding_space(candidate)
-                  for n in (seed, candidate)}
+        def pairs():
+            for candidate in page:
+                if _promotion_source(candidate):
+                    for seed in groups.get(_cluster_group(candidate)[1], ()):
+                        if seed.scope != candidate.scope:
+                            space = _embedding_space(seed)
+                            yield seed, candidate, bool(space and space == _embedding_space(candidate))
+
+        # Reuse original representatives with a shared producer. Prepare the
+        # remaining evidence together without retaining every candidate pair.
+        repair = {n.id: n for seed, candidate, shared in pairs() if not shared for n in (seed, candidate)}
         vectors = _trace_embeddings(store, list(repair.values()), model, step)
-        for seed, candidate in pairs:
-            if _embedding_space(seed) and _embedding_space(seed) == _embedding_space(candidate):
+        for seed, candidate, shared in pairs():
+            if shared:
                 similarity = cosine_similarity(seed.embedding, candidate.embedding)
-            else:
+            elif seed.id in vectors and candidate.id in vectors:
                 similarity = cosine_similarity(vectors[seed.id], vectors[candidate.id])
+            else:
+                continue
             if similarity < CROSS_SCOPE_PROMOTION_THRESHOLD:
                 continue
             best = selected[seed.id].get(candidate.scope)
