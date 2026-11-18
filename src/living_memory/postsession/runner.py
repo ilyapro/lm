@@ -985,7 +985,7 @@ class ExtractionRunner:
     def _lm_duplicate(
         self, op: ProposedOp, *, node_id: str = "",
     ) -> tuple[str, dict[str, Any]]:
-        """Ask the live server whether this write already exists.
+        """Find existing source knowledge or evidence that the recipient applied the operation.
 
         Returns ``(reason, details)``; an empty reason means "not a duplicate
         as far as the server shows"; it never proves absence. A known node id
@@ -1061,6 +1061,22 @@ class ExtractionRunner:
                     **detail,
                 }
         return "", detail
+
+    def _skip_existing(self, op: ProposedOp, decision: OpDecision) -> bool:
+        """Skip redundant work. Only an operation match can complete the ledger."""
+        reason, detail = self._lm_duplicate(op)
+        decision.candidate_read = detail
+        if not reason:
+            return False
+        decision.status, decision.reason = "skipped", reason
+        decision.detail = canonical_json(detail, indent=None)
+        decision.node_id = detail["node_id"]
+        if reason == "lm_prior_extraction" and not self.config.dry_run:
+            self.ledger.record(
+                decision.transcript_sha256, decision.fingerprint, kind=op.kind,
+                session_key=decision.session_key, result_id=decision.node_id,
+            )
+        return True
 
     def _execute(self, op: ProposedOp, decision: OpDecision) -> None:
         """One write through the live MCP interface. Client must be present."""
@@ -1241,6 +1257,8 @@ class ExtractionRunner:
                         sessions.get(skey, 0) >= getattr(self.config, f"max_{group}_per_session")):
                     decision.status, decision.reason = "dropped", "budget_reconcile"
                     continue
+                if op.kind == "remember" and self._skip_existing(op, decision):
+                    continue
                 attempts[group] += 1
                 sessions[skey] = sessions.get(skey, 0) + 1
                 self._dispatch(op, decision)
@@ -1321,22 +1339,12 @@ class ExtractionRunner:
                         decision.reason = "budget_total_ops"
                         continue
 
-                reason, detail = self._lm_duplicate(op)
-                decision.candidate_read = detail
-                if reason:
-                    decision.status = "skipped"
-                    decision.reason = reason
-                    decision.detail = canonical_json(detail, indent=None)
-                    decision.node_id = detail.get("node_id", "")
-                    if reason == "lm_prior_extraction" and not self.config.dry_run:
-                        try:
-                            self.ledger.record(
-                                sha, decision.fingerprint, kind=op.kind,
-                                session_key=record.session_key, result_id=decision.node_id,
-                            )
-                        except LedgerError as exc:
-                            decision.status, decision.reason = "unknown", "ledger_error"
-                            decision.detail = str(exc)
+                try:
+                    if self._skip_existing(op, decision):
+                        continue
+                except LedgerError as exc:
+                    decision.status, decision.reason = "unknown", "ledger_error"
+                    decision.detail = str(exc)
                     continue
 
                 # The op is accepted; it consumes budget whether or not this

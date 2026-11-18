@@ -400,6 +400,11 @@ def test_correction_suppresses_insight_without_confirming_remember(cli, live_ser
     )
     assert len(run.ledger) == 0
     assert run.ledger.begin(op, client.url)[0]
+    run.ledger.finish(record.transcript_sha256, run.ledger.entries()[0]["fingerprint"], state="ready")
+    resumed, = run.reconcile()
+    assert (resumed.status, resumed.reason) == ("skipped", "existing_knowledge")
+    assert run.ledger.entries()[0]["state"] == "ready"
+    assert run.ledger.begin(op, client.url)[0]
     for node_id in ("", correction_id):
         decision, = run.reconcile(node_id=node_id)
         assert decision.status == "unknown"
