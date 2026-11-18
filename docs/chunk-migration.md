@@ -193,7 +193,12 @@ for both source and query vectors. Plain vectors have unknown provenance.
 
 Opening a database preserves historical chunk rows. Writable recall uses its
 ordinary scope-aware repair budget (up to 16 sources per call) to encode missing,
-stale or incompatible chunks from the source text. Other retrieval channels
+stale or incompatible chunks from the source text. With a larger backlog,
+same-width unknown vectors can nominate sources for repair. An FTS search for
+the fallback encoder's synonyms can also nominate sources across a backend
+switch. The queue keeps at least one slot for cyclic repair. Only compatible
+windows scored after repair supply vector evidence. A source without a useful
+discovery signal may still wait for its turn in the queue. Other retrieval channels
 remain available while repair is pending. Read-only recall skips the repair.
 
 ## 5. Second backfill pass — catch the window

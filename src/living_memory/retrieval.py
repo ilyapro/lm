@@ -18,7 +18,7 @@ import logging
 import os
 import re
 from collections import OrderedDict, deque
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from heapq import heappush, heapreplace, nlargest
@@ -653,7 +653,7 @@ class MemoryRecallService:
         ambient_context: dict[str, Any] | None = None,
         guard: Callable[[], AbstractContextManager[Any]] = nullcontext,
     ) -> None:
-        """Repair a bounded cyclic selection from the current pending identities.
+        """Repair query candidates and advance through pending sources in cyclic order.
 
         Positions belong to this service and search-scope set, across clients.
         Restart or LRU eviction starts at the oldest pending source again;
@@ -677,10 +677,11 @@ class MemoryRecallService:
                 return
             # Advance under the selection guard before model work releases it,
             # even when a selected source fails or changes before application.
-            selected: dict[str, None] = {}
+            candidates = []
             if (len(pending) > LAZY_CHUNK_NODE_LIMIT and query is not None
                     and encoder_id and query.embedding and LAZY_CHUNK_NODE_LIMIT > 1):
-                selected.update(dict.fromkeys(self._repair_candidates(query, scopes, LAZY_CHUNK_NODE_LIMIT - 1)))
+                candidates = self._repair_candidates(query, scopes, LAZY_CHUNK_NODE_LIMIT - 1)
+            selected = dict.fromkeys(candidates)
             for position in pending:
                 selected[position[1]] = None
                 if len(selected) == LAZY_CHUNK_NODE_LIMIT:
@@ -730,11 +731,13 @@ class MemoryRecallService:
         terms = repair_search_terms(query.text)
         lexical = []
         if terms:
-            matches = sorted((score, node_id) for scope in scopes for node_id, score
-                             in self.store.search_content_ids(terms, scope=scope, limit=limit))
-            lexical = [node_id for _, node_id in matches
-                       if self.store.node_chunks_are_current(node_id)
-                       and not self.store.node_chunks_are_current(node_id, encoder_id=query.encoder_id)]
+            matches = sorted(
+                (score, node_id) for scope in scopes
+                for node_id, score in self.store.search_content_ids(
+                    terms, scope=scope, limit=limit, pending_encoder=query.encoder_id,
+                )
+            )
+            lexical = [node_id for _, node_id in matches]
         return list(dict.fromkeys(node_id for pair in zip_longest(historical, lexical)
                                   for node_id in pair if node_id is not None))[:limit]
 
@@ -2227,7 +2230,7 @@ def _is_rejected_alternative_node(node: Node) -> bool:
 
 
 def _historical_window_scores(
-    batches: Any, query: Sequence[float],
+    batches: Iterable[Sequence[Sequence[Any]]], query: Sequence[float],
 ) -> Iterator[tuple[str, float]]:
     """Stream provisional cosines with bounded scratch space."""
     direction = _as_query_array(query)

@@ -3823,10 +3823,12 @@ class MemoryStore:
         level: NodeLevel | None = None,
         scope: str | None = None,
         limit: int = 10,
+        pending_encoder: str | None = None,
     ) -> list[tuple[str, float]]:
         """Discover lexical identities and ranks without materializing bodies."""
 
-        rows = self._search_content_rows(query, projection="n.id", level=level, scope=scope, limit=limit)
+        rows = self._search_content_rows(query, projection="n.id", level=level, scope=scope,
+                                         limit=limit, pending_encoder=pending_encoder)
         return [(str(row["id"]), float(row["score"])) for row in rows]
 
     def _search_content_rows(
@@ -3837,6 +3839,7 @@ class MemoryStore:
         level: NodeLevel | None,
         scope: str | None,
         limit: int,
+        pending_encoder: str | None = None,
     ) -> list[sqlite3.Row]:
         fts_query = _fts_query(query)
         if not fts_query:
@@ -3852,6 +3855,13 @@ class MemoryStore:
         if scope is not None:
             clauses.append("n.scope = ?")
             params.append(scope)
+        if pending_encoder is not None:
+            clauses.append(f"""EXISTS (
+                SELECT 1 FROM {CHUNK_EMBEDDING_TABLE} c
+                WHERE c.node_id = n.id AND c.content_fingerprint = n.content_fingerprint
+                  AND c.encoder_id IS NOT ?
+            )""")
+            params.append(pending_encoder)
         params.append(int(limit))
         return self._conn.execute(
             f"""
@@ -4340,12 +4350,12 @@ class MemoryStore:
         params = (dimension, dimension * CHUNK_EMBEDDING_ITEMSIZE)
         cursor = self._conn.execute(
             f"""
-            SELECT c.node_id, c.embedding FROM {CHUNK_EMBEDDING_TABLE} c
-            JOIN nodes n ON n.id = c.node_id
+            SELECT n.id, c.embedding FROM nodes n
+            JOIN {CHUNK_EMBEDDING_TABLE} c ON n.id = c.node_id
             WHERE c.encoder_id IS NULL AND c.dimensions = ? AND length(c.embedding) = ?
               AND n.decayed = 0 AND c.content_fingerprint = n.content_fingerprint
               {scope_clause}
-            ORDER BY c.node_id
+            ORDER BY n.scope, n.level, n.id
             """,
             (*params, scope) if scope is not None else params,
         )
