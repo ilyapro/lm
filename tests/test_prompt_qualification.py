@@ -92,6 +92,36 @@ def test_native_withheld_reference_is_refetchable_without_becoming_knowledge(run
     asyncio.run(scenario())
 
 
+def test_native_task_concepts_keep_recall_correction_order(runtime, monkeypatch):
+    monkeypatch.setenv("LM_RECALL_MIN_SCORE", "off")
+    store = runtime.memory_store
+    task = "beacon endpoint timeout"
+    original = concept(store, task + " = 30 seconds", stats={
+        "confidence": 1, "usefulness_score": 1, "access_count": 10_000,
+    })
+    middle = concept(store, "allow five seconds")
+    latest = concept(store, "one second maximum")
+    store.connect_nodes(middle.id, original.id, "supersedes")
+    store.connect_nodes(latest.id, middle.id, "supersedes")
+
+    raw = MemoryRecallService(store).memory_recall(task, scope=SCOPE, log_access=False)
+    assert [(r.node.id, r.withheld) for r in raw] == [(middle.id, None), (original.id, None)]
+    assert raw[0].score < raw[1].score
+
+    async def scenario():
+        async with Client(runtime) as client:
+            for limit in (1, 2):
+                response = await client.get_prompt(PROMPT, {
+                    "task": task, "scope": SCOPE, "max_concepts": str(limit),
+                })
+                lines = response.messages[0].content.text.splitlines()
+                assert [line.strip() for line in lines if line.startswith("   ")] == [
+                    result.node.content for result in raw[:limit]
+                ]
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("policy_name", ["balanced", "confidence", "project", "recent"])
 def test_native_no_query_candidates_cannot_fall_back_to_scoped_browse(runtime, policy_name):
     store = runtime.memory_store

@@ -205,19 +205,7 @@ def select_context_concepts(
             return [ContextConcept(node=nodes[fields.id], score=score, methods=("policy",))
                     for fields, score in winners]
 
-    concepts = sorted(
-        selected.values(),
-        key=lambda concept: (
-            not concept.withheld,
-            concept.score,
-            concept.node.confidence,
-            concept.node.usefulness_score,
-            concept.node.access_count,
-            concept.node.timestamp,
-        ),
-        reverse=True,
-    )
-    return concepts[:limit]
+    return sorted(selected.values(), key=lambda concept: bool(concept.withheld))[:limit]
 
 
 def select_context_schemas(
