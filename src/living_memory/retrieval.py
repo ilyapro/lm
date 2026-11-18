@@ -825,26 +825,10 @@ class MemoryRecallService:
                                                store=self.store)
             scopes = plan.search_scopes
             after = self._pending_chunk_positions.get(scopes)
-            with self.store.read_snapshot():
-                revisions = self.store.chunk_corpus_revisions(
-                    plan.scopes if plan.restricted else None,
-                ) if self.store.cacheable_read else None
-                if revisions is not None and self._complete_chunk_plans.get(scopes) == (encoder_id, revisions):
-                    return
-                pending = sorted(
-                    (position for item in scopes for position in self.store.list_unchunked_node_positions(
-                        scope=item, limit=LAZY_CHUNK_NODE_LIMIT + 1, after=after, encoder_id=encoder_id,
-                    )),
-                    key=lambda position: (after is not None and position <= after, *position),
-                )
-                if not pending:
-                    self._pending_chunk_positions.pop(scopes, None)
-                    if revisions is not None:
-                        self._complete_chunk_plans[scopes] = (encoder_id, revisions)
-                        self._complete_chunk_plans.move_to_end(scopes)
-                        if len(self._complete_chunk_plans) > LAZY_CHUNK_PLAN_LIMIT:
-                            self._complete_chunk_plans.popitem(last=False)
-                    return
+            pending = self._list_pending_chunks(plan, encoder_id, after)
+            if not pending:
+                self._pending_chunk_positions.pop(scopes, None)
+                return
             # Advance under the selection guard before model work releases it,
             # even when a selected source fails or changes before application.
             candidates = []
@@ -881,6 +865,33 @@ class MemoryRecallService:
                 "lazy chunk indexing deferred for %d/%d nodes (first error: %s); using available index",
                 len(deferred_errors), len(selected), deferred_errors[0],
             )
+
+    def _list_pending_chunks(
+        self, plan: ScopePlan, encoder_id: str | None, after: tuple[str, str] | None,
+    ) -> list[tuple[str, str]]:
+        """Remember only emptiness proven in the same snapshot as its revisions."""
+        scopes = plan.search_scopes
+        # A caller can roll back its own writes and reuse their revision numbers.
+        cacheable = not self.store.connection.in_transaction
+        with self.store.read_snapshot():
+            revisions = self.store.chunk_corpus_revisions(
+                plan.scopes if plan.restricted else None,
+            ) if cacheable else None
+            if revisions is not None and self._complete_chunk_plans.get(scopes) == (encoder_id, revisions):
+                self._complete_chunk_plans.move_to_end(scopes)
+                return []
+            pending = sorted(
+                (position for item in scopes for position in self.store.list_unchunked_node_positions(
+                    scope=item, limit=LAZY_CHUNK_NODE_LIMIT + 1, after=after, encoder_id=encoder_id,
+                )),
+                key=lambda position: (after is not None and position <= after, *position),
+            )
+            if not pending and revisions is not None:
+                self._complete_chunk_plans[scopes] = (encoder_id, revisions)
+                self._complete_chunk_plans.move_to_end(scopes)
+                if len(self._complete_chunk_plans) > LAZY_CHUNK_PLAN_LIMIT:
+                    self._complete_chunk_plans.popitem(last=False)
+            return pending
 
     def _repair_candidates(
         self, query: _PreparedQuery, scopes: tuple[str | None, ...], limit: int,
