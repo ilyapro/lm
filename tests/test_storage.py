@@ -730,6 +730,52 @@ def test_attach_recall_map_adds_medoid_and_resolves_existing_later_consumer(
         assert [tuple(row) for row in rows] == [(delivery.id, "MAP-MEDOID", 1, 1, 1)]
 
 
+@pytest.mark.parametrize(
+    ("lookup_at", "expected"),
+    [
+        (None, [None, None]),
+        ("2026-02-02T00:00:01Z", [None, None]),
+        ("2026-02-02T00:00:00Z", [1, 0]),
+    ],
+)
+def test_attach_reuses_current_union_and_resolves_lookup_epoch(
+    tmp_path, monkeypatch, lookup_at, expected,
+):
+    with MemoryStore(tmp_path / "history.db") as store:
+        event = _record_event_at(
+            store, monkeypatch, "2026-02-01T00:00:00Z",
+            results=_organic_tail("A", "test") + [{"node_id": "B"}],
+        )
+        if lookup_at:
+            store.record_lookup_event(["A"], occurred_at=lookup_at)
+
+        def outcomes():
+            return [tuple(row) for row in store.connection.execute(
+                """SELECT node_id, lookup_consumed FROM recall_delivery_history
+                   WHERE delivery_event_id = ? ORDER BY node_id""", (event.id,)
+            )]
+
+        empty = {"clusters": [], "pool": 4}
+        overlap = {"clusters": [{"medoid": {"node_id": "B"}}], "pool": 3}
+        for payload in (empty, overlap, overlap, None):
+            before = store.connection.total_changes
+            prior = outcomes()
+            store.attach_recall_map(event.id, payload)
+            assert outcomes() == list(zip(("A", "B"), expected))
+            # The payload write and any newly observable absence are sufficient.
+            assert store.connection.total_changes - before == 1 + sum(
+                old != new for (_, old), new in zip(prior, expected)
+            )
+            assert store.get_recall_event(event.id).recall_map == payload
+
+        extra = {"clusters": [{"medoid": {"node_id": "C"}}]}
+        for replacement in (empty, None):
+            store.attach_recall_map(event.id, extra)
+            assert [key for key, _ in outcomes()] == ["A", "B", "C"]
+            store.attach_recall_map(event.id, replacement)
+            assert outcomes() == list(zip(("A", "B"), expected))
+
+
 def test_recall_history_backfill_is_idempotent_and_malformed_legacy_is_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
