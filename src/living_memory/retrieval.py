@@ -18,7 +18,7 @@ import logging
 import os
 import re
 from collections import Counter, OrderedDict, defaultdict, deque
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from heapq import heappush, heapreplace, nlargest, nsmallest
@@ -433,6 +433,22 @@ class _PreparedQuery:
     embedding: tuple[float, ...]
     encoder_id: str | None = None
     historical_scores: Mapping[str, tuple[str, float]] | None = None
+    prompt_discovery: _PromptDiscovery | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _PromptDiscovery:
+    """Read-only channel seeds for one query inside the prompt's snapshot."""
+
+    plan: ScopePlan
+    by_limit: dict[int, dict[str, _Candidate]]
+
+
+_VectorMatch = tuple[float, int, str, str | None, str]
+
+
+def _vector_keep_n(plan: ScopePlan, max_results: int) -> int:
+    return max(50, max_results * 12) * max(1, len(plan.scopes))
 
 
 class MemoryRecallService:
@@ -689,6 +705,23 @@ class MemoryRecallService:
             self.last_recall_event_id = None
             raise
 
+    def prepare_prompt_discovery(
+        self, query: _PreparedQuery, plan: ScopePlan, limits: Sequence[int],
+    ) -> _PreparedQuery:
+        """Prepare bounded seeds for the active selectors within their shared snapshot."""
+        groups: dict[int, dict[str, _Candidate]] = {}
+        for limit in dict.fromkeys(limits):
+            candidates = groups[limit] = {}
+            self._collect_bm25(query.text, plan, candidates, max_results=limit)
+        if query.encoder_id is not None:
+            lexical_ids = set().union(*(group.keys() for group in groups.values()))
+            discovery, lexical = self._vector_winners(
+                query.embedding, plan, query.encoder_id, _vector_keep_n(plan, max(limits)), lexical_ids,
+            )
+            for limit, candidates in groups.items():
+                self._admit_vector(plan, candidates, discovery[:_vector_keep_n(plan, limit)], lexical)
+        return replace(query, prompt_discovery=_PromptDiscovery(plan, groups))
+
     def _select_recall(
         self, prepared: _PreparedQuery, *, scope: str | None,
         ambient_context: dict[str, Any] | None, depth: int | str | None, max_results: int,
@@ -700,11 +733,15 @@ class MemoryRecallService:
             ambient_context=ambient_context,
             store=self.store,
         )
-        candidates: dict[str, _Candidate] = {}
-
-        self._collect_bm25(query, plan, candidates, max_results=max_results)
-        self._collect_vector(query_embedding, plan, candidates, max_results=max_results,
-                             encoder_id=prepared.encoder_id)
+        discovery = prepared.prompt_discovery
+        if discovery is not None and discovery.plan == plan and max_results in discovery.by_limit:
+            # Graph walks and trigger collection mutate evidence independently for each depth.
+            candidates = {key: replace(seed) for key, seed in discovery.by_limit[max_results].items()}
+        else:
+            candidates = {}
+            self._collect_bm25(query, plan, candidates, max_results=max_results)
+            self._collect_vector(query_embedding, plan, candidates, max_results=max_results,
+                                 encoder_id=prepared.encoder_id)
         by_name = schema_trigger_by_name()
         if not by_name:
             self._collect_schema_triggers(query, plan, candidates)
@@ -1233,13 +1270,18 @@ class MemoryRecallService:
         if encoder_id is None:
             return
 
-        per_scope_limit = max(50, max_results * 12)
+        discovery, lexical = self._vector_winners(
+            query_embedding, plan, encoder_id, _vector_keep_n(plan, max_results), candidates,
+        )
+        self._admit_vector(plan, candidates, discovery, lexical)
 
+    def _vector_winners(
+        self, query_embedding: Sequence[float], plan: ScopePlan, encoder_id: str,
+        keep_n: int, lexical_ids: Collection[str],
+    ) -> tuple[list[_VectorMatch], list[_VectorMatch]]:
         q_arr = _as_query_array(query_embedding)
-        # Resolve membership after the drain, which can write new chunks.
-        keep_n = per_scope_limit * max(1, len(plan.scopes))
-        discovery: list[tuple[float, int, str, str | None, str]] = []
-        lexical: list[tuple[float, int, str, str | None, str]] = []
+        discovery: list[_VectorMatch] = []
+        lexical: list[_VectorMatch] = []
         order = 0
         for block in self._chunk_blocks(plan, len(query_embedding), encoder_id):
             scores = _pooled_chunk_similarities(block, query_embedding, q_arr)
@@ -1250,18 +1292,24 @@ class MemoryRecallService:
                 # earlier scan position wins a tie, including across scopes.
                 item = (similarity, -order, node_id, chunk_id, block.source_versions[index])
                 order += 1
-                if node_id in candidates:
+                if node_id in lexical_ids:
                     lexical.append(item)
                 if len(discovery) < keep_n:
                     heappush(discovery, item)
                 elif item > discovery[0]:
                     heapreplace(discovery, item)
 
-        # Discovery limits do not discard evidence on pre-admitted candidates.
-        # Both collections carry their winner directly from pooling, retaining
-        # at most keep_n + len(candidates) records throughout the corpus scan.
+        discovery.sort(reverse=True)
+        return discovery, lexical
+
+    def _admit_vector(
+        self, plan: ScopePlan, candidates: dict[str, _Candidate],
+        discovery: list[_VectorMatch], lexical: list[_VectorMatch],
+    ) -> None:
+        # Keep vector evidence for this selector's lexical tail, including
+        # winners below its discovery cutoff, before current-source admission.
         kept = [item for item in discovery if item[2] not in candidates]
-        kept.extend(lexical)
+        kept.extend(item for item in lexical if item[2] in candidates)
         kept.sort(reverse=True)
         # One query for the whole kept set rather than one per node. Max-pool
         # puts more nodes over VECTOR_MATCH_THRESHOLD than a single vector did

@@ -57,6 +57,14 @@ class DecisionHistory:
     withheld: str | None = None
 
 
+def _concept_recall_limit(limit: int) -> int:
+    return max(limit * 6, 20)
+
+
+def _schema_recall_limit(limit: int) -> int:
+    return max(limit * 4, 12)
+
+
 def retrieval_context_prompt(
     store: MemoryStore,
     *,
@@ -89,6 +97,11 @@ def retrieval_context_prompt(
 
     with guard(), store.read_snapshot():
         plan = resolve_scope(scope=scope, ambient_context=ambient, store=store)
+        if isinstance(task, _PreparedQuery) and int(max_concepts) > 0:
+            limits = [_concept_recall_limit(int(max_concepts))]
+            if int(max_schemas) > 0:
+                limits.append(_schema_recall_limit(int(max_schemas)))
+            task = service.prepare_prompt_discovery(task, plan, limits)
         concepts = select_context_concepts(
             store,
             task=task,
@@ -158,7 +171,7 @@ def select_context_concepts(
             task,
             scope=plan.recall_scope,
             ambient_context=ambient_context,
-            max_results=max(limit * 6, 20),
+            max_results=_concept_recall_limit(limit),
             log_access=False,
             include_passages=False,
             repair_pending=repair_pending,
@@ -235,7 +248,7 @@ def select_context_schemas(
         task,
         scope=plan.recall_scope,
         ambient_context=ambient_context,
-        max_results=max(limit * 4, 12),
+        max_results=_schema_recall_limit(limit),
         log_access=False,
         include_passages=False,
         log_event=False,
@@ -286,7 +299,7 @@ def select_decision_history(
         scope=plan.recall_scope,
         ambient_context=ambient_context,
         depth="decision",
-        max_results=max(limit * 6, 20),
+        max_results=_concept_recall_limit(limit),
         log_access=False,
         include_passages=False,
         repair_pending=repair_pending,
