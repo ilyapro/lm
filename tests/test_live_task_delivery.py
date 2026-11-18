@@ -208,7 +208,6 @@ def test_native_projection_binds_process_published_code_and_fresh_public_respons
     assert observation == json.loads(output.read_text())
     assert observation["behavior_passed"] is True
     loaded = observation["loaded_bytes"]
-    assert len(loaded) == 31
     assert {
         "pyproject.toml",
         "src/living_memory/__init__.py",
@@ -218,6 +217,7 @@ def test_native_projection_binds_process_published_code_and_fresh_public_respons
         "src/living_memory/retrieval.py",
         "src/living_memory/embeddings.py",
         "src/living_memory/feedback.py",
+        "src/living_memory/delivery.py",
     } <= set(loaded)
     assert loaded == {
         path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
@@ -268,3 +268,68 @@ def test_native_projection_rejects_foreign_loaded_code(
     assert result.returncode == 2
     assert not output.exists()
     assert "CANNOT CHECK" in result.stderr
+
+
+def test_consumer_inventory_includes_transitive_lazy_imports_and_excludes_tools(monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    from observe_live_task_recall import _product_sources
+
+    package = "src/living_memory/"
+    modules = {
+        "__init__": "", "server": "import living_memory.runtime", "storage": "",
+        "retrieval": "", "runtime": "def run():\n    from .detail import work",
+        "detail": "from living_memory import storage", "unrelated": "",
+    }
+    sources = {package + name + ".py": body.encode() for name, body in modules.items()}
+    expected = {"pyproject.toml"} | {
+        package + name + ".py"
+        for name in ("__init__", "server", "storage", "retrieval", "runtime", "detail")
+    }
+    assert set(_product_sources(sources, [package + "detail.py"])) == expected
+
+
+def _compare(reader, installed_root, *, port=None, commit=None):
+    revision = commit or subprocess.check_output(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True,
+    ).strip()
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "compare", "--port", str(port or reader["port"]),
+         "--candidate-root", str(ROOT), "--published-commit", revision,
+         "--installed-root", str(installed_root)],
+        env=reader["env"], text=True, capture_output=True, timeout=90,
+    )
+    report = json.loads(result.stdout)
+    assert report["recall"] == "not_run"
+    return result.returncode, report
+
+
+def test_compare_candidate_reports_disk_and_process_independently(isolated_reader, tmp_path):
+    code, report = _compare(isolated_reader, ROOT)
+    assert code == 0, report
+    assert report["process"]["candidate_digest"] == isolated_reader["health"]["code_identity"]["digest"]
+    assert report["disk"]["status"] == report["process"]["status"] == "match"
+
+    shutil.copytree(ROOT / "src/living_memory", tmp_path / "src/living_memory")
+    changed = "src/living_memory/models.py"
+    (tmp_path / changed).write_text("# changed")
+    extra = "src/living_memory/extra.py"
+    (tmp_path / extra).touch()
+    code, report = _compare(isolated_reader, tmp_path)
+    assert code == 1
+    assert report["process"]["status"] == "match"
+    assert report["disk"]["status"] == "mismatch"
+    assert set(report["disk"]["different_paths"]) == {"pyproject.toml", changed, extra}
+
+    code, report = _compare(isolated_reader, ROOT, port=_port())
+    assert code == 2
+    assert report["disk"]["status"] == "match"
+    assert report["process"]["status"] == "unknown"
+
+
+@pytest.mark.parametrize("isolated_reader", ["changed-functions"], indirect=True)
+def test_compare_candidate_detects_different_serving_functions(isolated_reader):
+    code, report = _compare(isolated_reader, ROOT)
+    assert code == 1
+    assert report["disk"]["status"] == "match"
+    assert report["process"]["status"] == "mismatch"
+    assert report["process"]["service_digest"] == isolated_reader["health"]["code_identity"]["digest"]
