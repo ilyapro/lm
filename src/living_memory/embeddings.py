@@ -915,9 +915,8 @@ def _raw_tokens(text: str) -> list[str]:
 
 def _canonical_tokens(raw_tokens: Iterable[str], *, evidence: bool) -> Iterator[str]:
     stop_words = _EVIDENCE_STOP_WORDS if evidence else _STOP_WORDS
-    for raw_token in raw_tokens:
-        token = raw_token.strip("_")
-        if not token or (token.isdigit() and not evidence) or token in stop_words:
+    for token in raw_tokens:
+        if token in stop_words or (not evidence and token.isdigit()):
             continue
         canonical = _canonical_token(token)
         if canonical and canonical not in stop_words:
