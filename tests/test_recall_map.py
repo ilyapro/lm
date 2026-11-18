@@ -889,22 +889,24 @@ def test_warm_embedding_medoid_uses_current_windows(
     cold = builder.build(candidates, scope=SCOPE, task="fresh-medoid")
     assert cold is not None and cold.clusters[0].medoid.node_id == nodes[2].id
 
-    def unexpected_label_work(_members):
-        pytest.fail("Unchanged membership must retain its label and hint")
-
-    monkeypatch.setattr(builder, "_ctfidf_label", unexpected_label_work)
-    # Change which windows are current without changing the chunk revision.
     with store.connection:
         store.connection.execute(
             "UPDATE node_chunk_embeddings SET content_fingerprint='stale' WHERE chunk_index=0 AND node_id IN (?, ?)",
             (nodes[1].id, nodes[2].id),
         )
-    warm = builder.build(candidates, scope=SCOPE, task="fresh-medoid")
+    refreshed = builder.build(candidates, scope=SCOPE, task="fresh-medoid")
+    assert not builder.last_cache_hit and refreshed is not None
+    assert refreshed.clusters[0].medoid.node_id == nodes[1].id
+    assert refreshed.clusters[0].label == cold.clusters[0].label
+    assert refreshed.clusters[0].ask_hint == cold.clusters[0].ask_hint
 
+    def unexpected_label_work(_members):
+        pytest.fail("Unchanged membership must retain its label and hint")
+
+    monkeypatch.setattr(builder, "_ctfidf_label", unexpected_label_work)
+    warm = builder.build(candidates, scope=SCOPE, task="fresh-medoid")
     assert builder.last_cache_hit and warm is not None
-    assert warm.clusters[0].medoid.node_id == nodes[1].id
-    assert warm.clusters[0].label == cold.clusters[0].label
-    assert warm.clusters[0].ask_hint == cold.clusters[0].ask_hint
+    assert payload_bytes(warm) == payload_bytes(refreshed)
 
 
 @pytest.mark.parametrize("fresh_vector", [None, [1.0, 0.0, 0.0]])
