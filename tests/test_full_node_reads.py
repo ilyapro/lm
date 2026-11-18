@@ -217,3 +217,28 @@ def test_decoder_only_hydrates_owned_values(tmp_path):
         assert not queries
         assert tuple(row) == original_row
         assert store.connection.serialize() == before
+
+
+@pytest.mark.parametrize("raw", [
+    None, "", " [ 1.0 , -0 ] ", "[NaN,-Infinity,Infinity]", b"[2.5]",
+    '{"legacy":[true,null]}', "[1.,3]", "[01]", "[1e+]", "[1,]", "[1]\x00",
+    b"\xff", "[" + "9" * 5000 + "]",
+], ids=["null", "empty", "spaced", "nonfinite", "blob", "object", "fraction",
+        "leading-zero", "exponent", "trailing-comma", "nul", "encoding", "long-integer"])
+def test_output_projection_preserves_legacy_vector_and_decoder_errors(tmp_path, raw):
+    from living_memory.resources import node_to_dict
+
+    with MemoryStore(tmp_path / "memory.sqlite3") as store:
+        node = store.append_trace("Vector compatibility.")
+        with store.transaction():
+            store.connection.execute("UPDATE nodes SET embedding=? WHERE id=?", (raw, node.id))
+        try:
+            expected = node_to_dict(store.get_node(node.id))
+        except ValueError as original:
+            with pytest.raises(type(original)) as caught:
+                store.get_nodes([node.id], include_embedding=False)
+            assert str(caught.value) == str(original)
+        else:
+            projected = store.get_nodes([node.id], include_embedding=False)[node.id]
+            assert node_to_dict(projected) == expected
+            assert projected.embedding is None

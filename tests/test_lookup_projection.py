@@ -237,3 +237,48 @@ def test_storage_projection_batches_without_full_columns(tmp_path):
         assert set(columns) == {
             "id", "level", "content", "scope", "decayed", "decay_reason", "corrections", "provenance",
         }
+
+
+def test_full_output_reads_keep_raw_vector_provenance_without_decoding(runtime, monkeypatch):
+    from living_memory.embeddings import EncodedVector
+
+    mcp, _ = runtime
+    store = mcp.memory_store
+    vector = EncodedVector([0.125, -0.0, -9.3e-24], "probe")
+    node = store.create_node(level="concept", content="Numeric vector.", context={
+        "scope": "project:probe", "task_pattern": "vector",
+    }, representative_embedding=vector)
+    raw = store.connection.execute("SELECT embedding FROM nodes WHERE id=?", (node.id,)).fetchone()[0]
+    original_loads = storage._json_loads
+
+    async def scenario():
+        async with Client(mcp) as client:
+            async def check(expect_space):
+                full = store.get_nodes([node.id])[node.id]
+                assert ("embedding_space" in full.provenance) == expect_space
+                expected = node_to_dict(full) | {"superseded": False, "superseded_by": []}
+
+                def counted(value, default):
+                    assert value != raw
+                    return original_loads(value, default)
+
+                with monkeypatch.context() as capture:
+                    capture.setattr(storage, "_json_loads", counted)
+                    exact = await client.call_tool("memory_lookup", {"node_id": node.id, "view": "full"})
+                    filtered = await client.call_tool("memory_lookup", {
+                        "task_pattern": "vector", "scope": "project:probe", "level": "concept",
+                    })
+                    resource = await client.read_resource("memory://project/probe/concepts")
+                    assert exact.data["results"] == filtered.data["results"] == [expected]
+                    assert json.loads(resource[0].text)["concepts"] == [expected]
+                return full.embedding
+
+            assert await check(True) == vector
+            # Same coordinates, different source bytes invalidate the fingerprint.
+            with store.transaction():
+                store.connection.execute("UPDATE nodes SET embedding=replace(embedding,'0.125','0.1250')")
+            assert await check(False) == vector
+            assert store.drop_node_embedding_column()
+            assert await check(False) is None
+
+    asyncio.run(scenario())
