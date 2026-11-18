@@ -62,10 +62,12 @@ def _rank_ids(store: MemoryStore, candidates: dict[str, _Candidate], plan: Scope
     return [result.node.id for result in ranked]
 
 
-def test_rank_reads_each_admitted_scope_policy_once_per_call(tmp_path, monkeypatch):
+def test_rank_reads_each_admitted_scope_policy_once_per_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("LM_RECALL_SCHEMA_TRIGGER", raising=False)
     candidates = {
-        key: _candidate(key, scope, vector_score=0.8, decayed=key == "old")
+        key: _candidate(key, scope, vector_score=0.4, decayed=key == "old")
         for key, scope in [
             ("p1", PROJECT_SCOPE), ("g1", "global"), ("p2", PROJECT_SCOPE),
             ("g2", "global"), ("other", "project:other"), ("old", "global"),
