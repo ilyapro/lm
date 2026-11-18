@@ -225,7 +225,7 @@ def _published_sources(root: Path, commit: str) -> dict[str, bytes]:
     return {path: _git(root, "show", f"{revision}:{path}") for path in [*files, "pyproject.toml"]}
 
 
-def _candidate_identity(source: dict[str, bytes]) -> dict[str, Any]:
+def _candidate_identity(source: dict[str, bytes], installed_root: Path) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="lm-candidate-") as temporary:
         directory = Path(temporary)
         for relative, content in source.items():
@@ -234,20 +234,36 @@ def _candidate_identity(source: dict[str, bytes]) -> dict[str, Any]:
             path.write_bytes(content)
         # Separate interpreter and temporary database reproduce the server's
         # import population without reading or changing the real memory DB.
-        program = (
-            "import json; from pathlib import Path; "
-            "from living_memory import server; "
-            "origin = Path(server.__file__).resolve(); "
-            "expected = Path('src/living_memory/server.py').resolve(); "
-            "assert origin == expected; "
-            "instance = server.create_mcp_server(Path('candidate.sqlite3')); "
-            "print(json.dumps(server._loaded_code_identity())); instance.memory_store.close()"
-        )
-        environment = dict(os.environ, PYTHONPATH=str(directory / "src"),
-                           LIVING_MEMORY_EMBEDDING_BACKEND="hash")
+        # server.sh adds one dependency target ahead of the interpreter's
+        # packages. Leave a standalone venv's import order intact.
+        deps = os.environ.get("LIVING_MEMORY_DEPS_DIR")
+        if not deps:
+            cache = os.path.realpath(installed_root / ".cache/python-deps")
+            active_paths = os.environ.get("PYTHONPATH", "").split(os.pathsep)
+            if any(os.path.realpath(p) == cache for p in active_paths if p):
+                deps = cache
+        import_paths = [str(directory / "src")]
+        if deps:
+            import_paths.append(os.path.abspath(deps))
+        program = """
+import json
+from pathlib import Path
+import sys
+
+sys.path[:0] = sys.argv[1:]
+from living_memory import server
+
+if Path(server.__file__).resolve() != Path("src/living_memory/server.py").resolve():
+    raise RuntimeError("unexpected candidate origin")
+instance = server.create_mcp_server(Path("candidate.sqlite3"))
+print(json.dumps(server._loaded_code_identity()))
+instance.memory_store.close()
+"""
+        environment = dict(os.environ, LIVING_MEMORY_EMBEDDING_BACKEND="hash")
+        environment.pop("PYTHONPATH", None)
         environment.pop("LM_AUTH_TOKEN", None)
         result = subprocess.run(
-            [sys.executable, "-c", program], cwd=directory, env=environment,
+            [sys.executable, "-B", "-c", program, *import_paths], cwd=directory, env=environment,
             capture_output=True, text=True, check=True, timeout=60,
         )
         identity = json.loads(result.stdout)
@@ -336,7 +352,7 @@ def _native_before(args: Any, health: dict[str, Any], base: str, token: str | No
         path: hashlib.sha256(source[path]).hexdigest()
         for path in _product_sources(source, args.loaded_path)
     }
-    candidate_identity = _candidate_identity(source)
+    candidate_identity = _candidate_identity(source, args.installed_root)
     if candidate_identity != health["code_identity"]:
         raise ObservationError("loaded functions differ from published candidate")
     source_state = _installed_sources(args.installed_root, source, process)
@@ -430,7 +446,7 @@ def _disk_comparison(root: Path, source: dict[str, bytes]) -> dict[str, Any]:
 
 def _process_comparison(args: argparse.Namespace, source: dict[str, bytes]) -> dict[str, Any]:
     try:
-        expected = _candidate_identity(source)["digest"]
+        expected = _candidate_identity(source, args.installed_root)["digest"]
     except (OSError, subprocess.SubprocessError, ObservationError, ValueError):
         return {"status": "unknown", "reason": "candidate function identity unavailable"}
 
