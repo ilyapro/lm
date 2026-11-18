@@ -3482,10 +3482,16 @@ class MemoryStore:
         """
 
         predicate, values = work.predicate()
+        # Keep retained result bodies out of the work/time sort. Fetch each
+        # selected body in the same SQLite statement as its event identity.
         recalls = self._conn.execute(
-            f"""SELECT id, created_at, query, results FROM recall_events
-                WHERE {predicate} AND created_at >= ?
-                ORDER BY created_at DESC, rowid DESC LIMIT ?""",
+            f"""SELECT id, created_at, query,
+                       (SELECT results FROM recall_events WHERE rowid = recent.event_rowid) AS results
+                FROM (
+                    SELECT rowid AS event_rowid, id, created_at, query FROM recall_events
+                    WHERE {predicate} AND created_at >= ?
+                    ORDER BY created_at DESC, rowid DESC LIMIT ?
+                ) AS recent""",
             (*values, since, limit + 1),
         ).fetchall()
         if len(recalls) > limit:
