@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from living_memory.chunking import TextChunk, count_tokens
 from living_memory.consolidation import memory_consolidate, memory_teach
 from living_memory.embeddings import LocalEmbeddingModel
 from living_memory.retrieval import MemoryRecallService, memory_recall
@@ -1025,18 +1026,19 @@ def test_same_trigger_carriers_do_not_crowd_out_a_record_recall_delivers_directl
         # this question; the independent incident histories only share its
         # title. docs/recall-schema-dedup.md preserves all of those groups,
         # and recall-schema-trigger.md promises no title-only priority.
-        # Fix vectors at the embedding boundary after ordinary consolidation
-        # so hash collisions/FTS position cannot define that semantic premise.
         def embed(text):
             cosine = 1.0 if text == query else 0.95 if text == recipe else 0.1
             return [cosine, math.sqrt(1 - cosine**2)]
 
         monkeypatch.setattr(LocalEmbeddingModel, "embed", staticmethod(embed))
         store = mcp.memory_store
-        # The store binds its own batch encoder for multi-window content.
-        store.set_chunk_embedder(lambda texts: [embed(text) for text in texts])
+        # One search window per source makes its pooled score the raw cosine.
+        # Ordinary tokenizers may split the carrier and incur a length penalty.
         for node in store.list_nodes(scope=SCOPE, limit=1000):
-            store.update_node(node.id, embedding=embed(node.content))
+            text = node.content
+            window = TextChunk(text=text, chunk_index=0, token_start=0, token_end=count_tokens(text),
+                               char_start=0, char_end=len(text))
+            store.replace_node_chunks(node.id, [(window, embed(text))])
 
         # Confirm the real ranker received the intended evidence without
         # adding access/feedback before the public recall-and-lookup consumer.
