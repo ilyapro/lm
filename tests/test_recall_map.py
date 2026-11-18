@@ -2146,6 +2146,52 @@ def test_bookkeeping_preserves_map_identity_without_scanning_chunks(store, revis
     assert warm == RecallMapBuilder(store).build(candidates, scope=SCOPE, task="bookkeeping")
 
 
+@pytest.mark.parametrize("mutation,retains_template", [
+    ("bookkeeping", True), ("chunkless", True), ("chunk", False), ("anchor", False),
+])
+def test_filtered_key_preserves_revision_sensitive_eviction(
+    store, monkeypatch, mutation, retains_template,
+):
+    monkeypatch.setattr(recall_map, "MAX_CACHE_ENTRIES", 2)
+    left = make_node(store, "a note about the failing deploy", {"type": "root-cause"})
+    right = make_node(store, "a note about the filling disk", {"lesson_kind": "root_cause"})
+    filtered = [RecallResult(node=left, score=0.0)]
+    builder = RecallMapBuilder(store)
+
+    def build(key, candidates):
+        return builder.build(candidates, scope=SCOPE, task=key).to_dict()
+
+    empty = build("filtered", filtered)
+    if mutation == "bookkeeping":
+        store.record_access(left.id)
+    elif mutation == "chunkless":
+        make_node(store, "a different source")
+    elif mutation == "chunk":
+        embed(store, right, [1.0, 0.0])
+    else:
+        store.connection.execute("UPDATE metadata SET value = value + 1 WHERE key = 'query_anchor_revision'")
+        store.connection.commit()
+    offered = build("positive", pool([left, right]))
+    assert offered["clusters"][0]["label"] == "root cause deploy"
+    assert build("filtered", filtered) == empty
+    assert build("pressure", filtered) == empty
+    returned = build("positive", pool([left]))
+    assert builder.last_cache_hit is retains_template
+    assert returned["clusters"][0]["label"] == ("root cause deploy" if retains_template else "root cause")
+
+
+def test_transactional_filtered_key_leaves_positive_template_in_place(store):
+    left = make_node(store, "a note about the failing deploy", {"type": "root-cause"})
+    right = make_node(store, "a note about the filling disk", {"lesson_kind": "root_cause"})
+    builder = RecallMapBuilder(store)
+    builder.build(pool([left, right]), scope=SCOPE, task="positive")
+    store.connection.execute("BEGIN")
+    builder.build([RecallResult(node=left, score=0.0)], scope=SCOPE, task="positive")
+    store.connection.rollback()
+    returned = builder.build(pool([left]), scope=SCOPE, task="positive")
+    assert builder.last_cache_hit and returned.clusters[0].label == "root cause deploy"
+
+
 @pytest.mark.parametrize("filtered", [False, True], ids=["clusters", "empty-selection"])
 def test_map_never_retains_transactional_structure(store, filtered):
     nodes = [make_node(store, "orbital telemetry calibration"),
@@ -2160,7 +2206,8 @@ def test_map_never_retains_transactional_structure(store, filtered):
     builder = RecallMapBuilder(store)
     original = build(builder)
     assert original is not None
-    assert build(builder) == original and builder.last_cache_hit
+    assert build(builder) == original
+    assert builder.last_cache_hit is (not filtered)
     committed = builder._corpus_revision()
     cached = dict(builder._cache)
     store.connection.execute("BEGIN")
@@ -2178,7 +2225,7 @@ def test_map_never_retains_transactional_structure(store, filtered):
     store.connection.rollback()
     assert builder._corpus_revision() == committed
     assert build(builder) == original == build(RecallMapBuilder(store))
-    assert builder.last_cache_hit
+    assert builder.last_cache_hit is (not filtered)
 
     # A different committed vector can reuse the rolled-back counter value.
     with store.connection:

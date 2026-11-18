@@ -622,7 +622,7 @@ def test_empty_selection_does_not_offer_or_hide_later_query_evidence(tmp_path):
         first = builder.build([result(node, 0)], scope=POOL_SCOPE, task="work")
         again = builder.build([result(node, 0)], scope=POOL_SCOPE, task="work")
         assert first == again and not first.clusters and first.pool_size == 0
-        assert builder.last_cache_hit
+        assert not builder.last_cache_hit
         offered = builder.build([result(node)], scope=POOL_SCOPE, task="work")
         assert offered.clusters and not builder.last_cache_hit
         empty = builder.build([result(node, 0)], scope=POOL_SCOPE, task="work")
