@@ -4290,7 +4290,7 @@ class MemoryStore:
         return int(row["count"])
 
     def node_chunks_are_current(self, node_id: str, *, encoder_id: str | None = None) -> bool:
-        """Whether ``node_id`` has chunks and all of them match its content.
+        """Whether all chunks match the source and the requested space, if given.
 
         False both for a node that was never chunked and for one whose content
         changed after chunking — the two cases a re-embed has to cover, which is
@@ -5497,6 +5497,12 @@ class MemoryStore:
         """Install scope revisions atomically, including existing membership."""
 
         with self.transaction(immediate=True):
+            self._migrate_chunk_columns()
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chunk_source_space ON "
+                "node_chunk_embeddings(node_id, content_fingerprint, encoder_id)"
+            )
+            self._conn.execute("DROP INDEX IF EXISTS idx_chunk_source")
             row = self._conn.execute(
                 "SELECT value FROM metadata WHERE key = ?",
                 (_CHUNK_SCOPE_REVISION_FORMAT,),
@@ -5836,12 +5842,7 @@ class MemoryStore:
                     ON recall_events(scope, task_pattern, created_at DESC);
                 """
             )
-            with self.transaction(immediate=True):
-                self._migrate_chunk_columns()
-                self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chunk_source_space ON "
-                                   "node_chunk_embeddings(node_id, content_fingerprint, encoder_id)")
-                self._conn.execute("DROP INDEX IF EXISTS idx_chunk_source")
-                self._initialize_chunk_revisions()
+            self._initialize_chunk_revisions()
             # Query anchors (v7). Same script the pre-v7 migration runs, so a
             # fresh database and a migrated one end up with identical objects.
             self._conn.executescript(_QUERY_ANCHOR_SCHEMA_SQL)

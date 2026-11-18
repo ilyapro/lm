@@ -260,7 +260,7 @@ class _Candidate:
 
 @dataclass(frozen=True, slots=True)
 class _ChunkBlock:
-    """One vector-width slice of a scope's chunk corpus, grouped by node.
+    """One encoder space and width within a scope, grouped by node.
 
     ``rows`` holds every chunk vector of ``node_ids`` back to back in scan
     order and ``starts[i]`` is where node ``i``'s run of chunks begins, which

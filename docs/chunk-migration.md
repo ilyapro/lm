@@ -186,6 +186,16 @@ curl -fsS http://127.0.0.1:8765/health     # boot_id must differ from before
 From here every write path chunks what it writes (`create_node`, `update_node`,
 consolidation), and stale chunks are invalidated on content change.
 
+A chunk's nullable `encoder_id` identifies the space that produced its
+coordinates. Recall scores chunks with the prepared query's encoder identity
+and width. Custom encoders can return `EncodedVector(values, encoder_id)`
+for both source and query vectors. Plain vectors have unknown provenance.
+
+Opening a database preserves historical chunk rows. Writable recall uses its
+ordinary scope-aware repair budget (up to 16 sources per call) to encode missing,
+stale or incompatible chunks from the source text. Other retrieval channels
+remain available while repair is pending. Read-only recall skips the repair.
+
 ## 5. Second backfill pass — catch the window
 
 Nodes the old server wrote between step 2 and step 4 have no chunks: the code that
