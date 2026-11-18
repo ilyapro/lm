@@ -1059,27 +1059,29 @@ class RecallWork:
     def key(self) -> str:
         return json.dumps((self.scope, self.kind, self.value), separators=(",", ":"))
 
-    def predicate(self, alias: str = "") -> tuple[str, tuple[str, ...]]:
-        """SQL over recall_events, with the same precedence as resolution."""
+    def _match_branches(self, alias: str = "") -> tuple[str, ...]:
+        """Disjoint predicates, each using the same (scope, value) bindings."""
 
         prefix = f"{alias}." if alias else ""
         pattern = f"{prefix}task_pattern"
         task = f"{prefix}task"
         scope = f"{prefix}scope = ?"
         if self.kind == "work":
-            # Each alternative can seek the (scope, task_pattern, created_at)
-            # index, including the legacy rows whose effective label is task.
-            return (
-                f"(({scope} AND {pattern} = ?) "
-                f"OR ({scope} AND {pattern} IS NULL AND {task} = ?) "
-                f"OR ({scope} AND {pattern} = '' AND {task} = ?))",
-                (self.scope, self.value) * 3,
-            )
+            branches = (f"{scope} AND {pattern} = ?", f"{scope} AND {pattern} IS NULL AND {task} = ?")
+            if self.value:
+                branches += (f"{scope} AND {pattern} = '' AND {task} = ?",)
+            return branches
         return (
             f"{scope} AND ({pattern} IS NULL OR {pattern} = '') "
             f"AND ({task} IS NULL OR {task} = '') AND {prefix}transport_session_id = ?",
-            (self.scope, self.value),
         )
+
+    def predicate(self, alias: str = "") -> tuple[str, tuple[str, ...]]:
+        """SQL over recall_events, with the same precedence as resolution."""
+
+        branches = self._match_branches(alias)
+        return "(" + " OR ".join(f"({sql})" for sql in branches) + ")", (self.scope, self.value) * len(branches)
+
 
 
 class MemoryStore:
@@ -3481,19 +3483,16 @@ class MemoryStore:
         ``None`` means the observation exceeded its bound, not non-use.
         """
 
-        predicate, values = work.predicate()
-        # Keep retained result bodies out of the work/time sort. Fetch each
-        # selected body in the same SQLite statement as its event identity.
+        # Merge ordered index ranges so the limit can stop each probe before
+        # reading older payloads. The patternless ranges use the legacy task.
+        probes = [
+            f"SELECT id, created_at, query, results, rowid AS event_rowid "
+            f"FROM recall_events WHERE {branch} AND created_at >= ?"
+            for branch in work._match_branches()
+        ]
         recalls = self._conn.execute(
-            f"""SELECT id, created_at, query,
-                       (SELECT results FROM recall_events WHERE rowid = recent.event_rowid) AS results
-                FROM (
-                    SELECT rowid AS event_rowid, id, created_at, query FROM recall_events
-                    WHERE {predicate} AND created_at >= ?
-                    ORDER BY created_at DESC, rowid DESC LIMIT ?
-                ) AS recent
-                ORDER BY recent.created_at DESC, recent.event_rowid DESC""",
-            (*values, since, limit + 1),
+            " UNION ALL ".join(probes) + " ORDER BY created_at DESC, event_rowid DESC LIMIT ?",
+            (*((work.scope, work.value, since) * len(probes)), limit + 1),
         ).fetchall()
         if len(recalls) > limit:
             return None
