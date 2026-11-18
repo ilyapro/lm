@@ -38,7 +38,7 @@ import os
 import re
 import sqlite3
 
-from living_memory.embeddings import cosine_similarity, tokenize
+from living_memory.embeddings import EncodedVector, cosine_similarity, tokenize
 from living_memory.grounding import token_set
 from living_memory.models import Node
 from living_memory.scope import GLOBAL_SCOPE, normalize_scope
@@ -1857,38 +1857,27 @@ class RecallMapBuilder:
         and the seed is by construction the highest-ranked member of it.
         """
 
-        vectors: dict[str, list[float]] = {}
-        clusterable: list[_Member] = []
-        rest: list[_Member] = []
-        positions: dict[str, list[int]] = {}
-        for index, member in enumerate(members):
-            positions.setdefault(member.node.id, []).append(index)
-        reduced: dict[int, list[float] | None] = {}
-        with self.store.iter_node_chunk_vectors(list(positions)) as groups:
+        reduced: dict[str, EncodedVector | None] = {}
+        ids = [member.node.id for member in members]
+        with self.store.iter_node_chunk_vectors(ids, current_encoded_only=True) as groups:
             for node_id, chunks in groups:
-                for index in positions[node_id]:
-                    reduced[index] = self._node_vector(members[index].node, chunks)
+                reduced[node_id] = self._node_vector(chunks)
                 del chunks
-        # Complete reading and closure before clustering in the original rank
-        # order; storage's batch/node order must not choose the leaders.
-        for index, member in enumerate(members):
-            vector = (reduced[index] if index in reduced
-                      else self._node_vector(member.node, ()))
+
+        # Seed leaders in retrieval order, independent of the storage batch order.
+        leaders: list[tuple[EncodedVector, list[_Member]]] = []
+        vectors: dict[str, list[float]] = {}
+        rest: list[_Member] = []
+        for member in members:
+            vector = reduced.get(member.node.id)
             if vector is None:
                 rest.append(member)
                 continue
             vectors[member.node.id] = vector
-            clusterable.append(member)
-        if not clusterable:
-            return [], vectors, rest
-
-        leaders: list[tuple[list[float], list[_Member]]] = []
-        for member in clusterable:
-            vector = vectors[member.node.id]
             best_index = -1
             best_similarity = 0.0
             for index, (leader_vector, _bucket) in enumerate(leaders):
-                if len(leader_vector) != len(vector):
+                if leader_vector.encoder_id != vector.encoder_id or len(leader_vector) != len(vector):
                     continue
                 similarity = cosine_similarity(leader_vector, vector)
                 # Strictly better, so an exact tie keeps the earlier-seeded
@@ -1903,27 +1892,17 @@ class RecallMapBuilder:
 
         return [bucket for _leader_vector, bucket in leaders], vectors, rest
 
-    def _node_vector(
-        self, node: Node, chunks: Sequence[Sequence[float]],
-    ) -> list[float] | None:
-        """One unit vector per node: the mean of its chunk vectors.
+    def _node_vector(self, chunks: Sequence[Sequence[float]]) -> EncodedVector | None:
+        """Mean of current chunks in the first usable ordinal's encoder space and width."""
 
-        Chunks first, because they are what the store keeps for every node that
-        has been embedded at all, and the node-level vector second, for a
-        fixture or a freshly written node whose chunks have not landed yet.
-        Chunks of a width other than the first one's are dropped rather than
-        averaged — vectors of two widths are points in two different spaces.
-        """
-
-        rows = [chunk for chunk in chunks if chunk]
-        if not rows and node.embedding:
-            rows = [node.embedding]
+        rows = [row for row in chunks if isinstance(row, EncodedVector) and row]
         if not rows:
             return None
-        width = len(rows[0])
-        kept = [row for row in rows if len(row) == width]
-        mean = [sum(row[index] for row in kept) / len(kept) for index in range(width)]
-        return _normalize_vector(mean)
+        first = rows[0]
+        kept = [row for row in rows if row.encoder_id == first.encoder_id and len(row) == len(first)]
+        mean = [sum(row[i] for row in kept) / len(kept) for i in range(len(first))]
+        unit = _normalize_vector(mean)
+        return EncodedVector(unit, first.encoder_id) if unit is not None else None
 
     def _ctfidf_label(self, bucket: list[_Member]) -> str:
         terms = self._ranked_terms(bucket)
