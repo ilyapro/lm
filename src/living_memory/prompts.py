@@ -160,6 +160,7 @@ def select_context_concepts(
             ambient_context=ambient_context,
             max_results=max(limit * 6, 20),
             log_access=False,
+            include_passages=False,
             repair_pending=repair_pending,
         )
         for result in recall_results:
@@ -248,6 +249,7 @@ def select_context_schemas(
         ambient_context=ambient_context,
         max_results=max(limit * 4, 12),
         log_access=False,
+        include_passages=False,
         log_event=False,
         repair_pending=repair_pending,
     )
@@ -298,6 +300,7 @@ def select_decision_history(
         depth="decision",
         max_results=max(limit * 6, 20),
         log_access=False,
+        include_passages=False,
         repair_pending=repair_pending,
     )
 

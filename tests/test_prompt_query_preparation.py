@@ -1,6 +1,7 @@
 """Prompt selectors share immutable query input while reading current memory."""
 
 import asyncio
+import sqlite3
 from dataclasses import replace
 from threading import Event
 from types import SimpleNamespace
@@ -120,7 +121,20 @@ async def get_prompt(client, **arguments):
 def test_native_prompt_matches_independent_selectors_and_encodes_once(runtime, monkeypatch, gate):
     r = runtime
     monkeypatch.setenv("LM_RECALL_MIN_SCORE", gate)
-    expected = standalone_context(r.store)
+    recall = MemoryRecallService.memory_recall
+
+    def recall_with_passages(self, query, **kwargs):
+        kwargs["include_passages"] = True
+        return recall(self, query, **kwargs)
+
+    with monkeypatch.context() as reference:
+        reference.setattr(MemoryRecallService, "memory_recall", recall_with_passages)
+        expected = standalone_context(r.store)
+
+    def unavailable(chunk_ids):
+        raise sqlite3.OperationalError("prompt read semantic passages")
+
+    monkeypatch.setattr(r.store, "get_chunk_passages", unavailable)
     assert r.encoded == [TASK] * 3
     assert r.concept.id in expected and r.schema.id in expected and r.primary.id in expected
     assert 'trigger="cobalt release rollback"' in expected
