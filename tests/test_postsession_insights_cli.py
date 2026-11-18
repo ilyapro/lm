@@ -18,6 +18,7 @@ from living_memory.postsession.judge import FakeJudge
 from living_memory.postsession.mining import mine
 from living_memory.postsession.session import FileMutation, SessionRecord, SourceSpan, ToolCall
 from living_memory.storage import MemoryStore
+from postsession_support import live_server
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "postsession_insights.py"
 FACT = (
@@ -351,3 +352,53 @@ def test_reader_sees_committed_wal_content(cli, tmp_path):
                 context={"scope": SCOPE, "source_transcript_sha256": SOURCE[0], "source_span": SOURCE[1]},
             )
             assert deduper.check(FACT, scope=SCOPE, source_identity=SOURCE).duplicate
+
+
+def test_correction_suppresses_insight_without_confirming_remember(cli, live_server, tmp_path):
+    from living_memory.postsession.client import LiveMemoryClient
+    from living_memory.postsession.runner import (
+        ExtractionRunner, Ledger, RunnerConfig, enforce_attribution,
+    )
+    from postsession_support import TOKEN
+
+    record = _record()
+    client = LiveMemoryClient(live_server["url"], token=TOKEN)
+    answer = {
+        "verdict": "insight", "fact": FACT,
+        "why_durable": "rediscovering this costs a debugging cycle",
+        "identifiers": ["pyproject.toml", "src/app.py"], "evidence_locator": SOURCE[1],
+    }
+
+    def runner(deduper=None):
+        return ExtractionRunner(
+            config=RunnerConfig(stages=("insights",), dry_run=False),
+            ledger=Ledger(tmp_path), client=client, deduper=deduper,
+            judge_factory=lambda: FakeJudge([answer]),
+        )
+
+    run = runner()
+    pending = run.propose(record)
+    op, = pending.ops
+    context = enforce_attribution(op, record, task="fixture").payload["context"]
+    original = client.remember("The pytest configuration is empty.", {"scope": SCOPE})
+    corrected = client.teach(original["node"]["id"], FACT, context=context)
+    correction_id = corrected["node"]["id"]
+
+    with cli.build_deduper(live_server["db"]) as readonly:
+        for reader in (runner(), runner(readonly)):
+            result = reader.propose(record)
+            assert result.ops == []
+            outcome, = result.stage_stats["insights"]["outcomes"]
+            assert outcome["code"] == "existing_knowledge"
+            assert outcome["dedup"]["node_id"] == correction_id
+
+    decision, = run.decide_and_execute([pending])
+    assert (decision.status, decision.reason, decision.node_id) == (
+        "skipped", "existing_knowledge", correction_id,
+    )
+    assert len(run.ledger) == 0
+    assert run.ledger.begin(op, client.url)[0]
+    for node_id in ("", correction_id):
+        decision, = run.reconcile(node_id=node_id)
+        assert decision.status == "unknown"
+        assert run.ledger.entries()[0]["state"] == "unknown"
