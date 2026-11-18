@@ -1585,7 +1585,7 @@ def _register_tools(
                 # Pin the rows, incident edges and correction scopes to one SQLite snapshot.
                 with store.transaction():
                     found = (
-                        store.get_nodes(requested_ids) if view == "full"
+                        store.get_nodes(requested_ids, include_embedding=False) if view == "full"
                         else store.get_node_knowledge(requested_ids, context_key=context_key)
                     )
                     validity = read_validity(store, found, plan)
@@ -1685,6 +1685,7 @@ def _register_tools(
                 nodes = store.list_nodes_by_context(
                     scope=normalized_scope,
                     context_filters=filters,
+                    include_embedding=False,
                     level=level,  # type: ignore[arg-type]
                 )
                 validity = read_validity(store, (node.id for node in nodes), plan)

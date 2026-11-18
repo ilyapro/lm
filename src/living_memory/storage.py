@@ -1661,7 +1661,10 @@ class MemoryStore:
         row = self._conn.execute("SELECT * FROM nodes WHERE id = ?", (node_id,)).fetchone()
         return _node_from_row(row) if row else None
 
-    def get_nodes(self, node_ids: Iterable[str]) -> dict[str, Node]:
+    def get_nodes(
+        self, node_ids: Iterable[str], *, include_embedding: bool = True,
+    ) -> dict[str, Node]:
+        decode = _node_from_row if include_embedding else _node_for_output
         nodes: dict[str, Node] = {}
         for chunk in _node_read_batches(node_ids):
             placeholders = ",".join("?" for _ in chunk)
@@ -1669,7 +1672,7 @@ class MemoryStore:
                 f"SELECT * FROM nodes WHERE id IN ({placeholders}) ORDER BY id", chunk
             )) as rows:
                 for row in rows:
-                    node = _node_from_row(row)
+                    node = decode(row)
                     nodes[node.id] = node
         return nodes
 
@@ -1825,12 +1828,14 @@ class MemoryStore:
         include_decayed: bool = False,
         limit: int = 100,
         offset: int = 0,
+        include_embedding: bool = True,
     ) -> list[Node]:
         """List nodes, optionally citing any of the given source identities.
 
         Source traces and source concepts are citations; callers still verify
         materializer ownership. Related edges alone are not recorded inputs.
         """
+        decode = _node_from_row if include_embedding else _node_for_output
         clauses: list[str] = []
         params: list[Any] = []
         if level is not None:
@@ -1861,7 +1866,7 @@ class MemoryStore:
             f"SELECT * FROM nodes {where} ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?",
             params,
         )) as rows:
-            return [_node_from_row(row) for row in rows]
+            return [decode(row) for row in rows]
 
     def list_concept_browse_fields(self, *, scope: str, limit: int) -> list[ConceptBrowseFields]:
         """Read the newest active concept prefix before consumer filtering."""
@@ -1962,7 +1967,9 @@ class MemoryStore:
         level: NodeLevel | None = "trace",
         include_decayed: bool = False,
         limit: int = 1000,
+        include_embedding: bool = True,
     ) -> list[Node]:
+        decode = _node_from_row if include_embedding else _node_for_output
         clauses: list[str] = ["scope = ?"]
         params: list[Any] = [normalize_scope(scope)]
         if level is not None:
@@ -1994,7 +2001,7 @@ class MemoryStore:
             """,
             params,
         ).fetchall()
-        return [_node_from_row(row) for row in rows]
+        return [decode(row) for row in rows]
 
     def update_node(
         self,
@@ -7269,7 +7276,17 @@ def _duplicate_nodes(
             and content_identity(replace(node, corrections=[])) == identity]
 
 
-def _node_from_row(row: sqlite3.Row) -> Node:
+# Recognize compact numeric vectors without allocating their Python values.
+# Longer integer parts go through json.loads to retain its integer digit limit.
+_JSON_NUMBER = r"-?(?:0|[1-9][0-9]{0,18})(?:\.[0-9]++)?(?:[eE][+-]?[0-9]++)?"
+_COMPACT_VECTOR = re.compile(rf"\[{_JSON_NUMBER}(?:,{_JSON_NUMBER})*+\]")
+
+
+def _node_for_output(row: sqlite3.Row) -> Node:
+    return _node_from_row(row, include_embedding=False)
+
+
+def _node_from_row(row: sqlite3.Row, *, include_embedding: bool = True) -> Node:
     source_traces = _json_loads(row["source_traces"], [])
     corrections = _json_loads(row["corrections"], [])
     provenance = _json_loads(row["provenance"], {})
@@ -7283,11 +7300,18 @@ def _node_from_row(row: sqlite3.Row) -> Node:
         and isinstance(raw_embedding, str) and space[1] == _content_fingerprint(raw_embedding)
     ):
         provenance.pop("embedding_space")
+    embedding = None
+    if include_embedding:
+        embedding = _json_loads(raw_embedding, None)
+    elif raw_embedding is not None and not (
+        isinstance(raw_embedding, str) and _COMPACT_VECTOR.fullmatch(raw_embedding)
+    ):
+        _json_loads(raw_embedding, None)
     return Node(
         id=str(row["id"]),
         level=row["level"],
         content=str(row["content"]),
-        embedding=_json_loads(raw_embedding, None),
+        embedding=embedding,
         context=_json_loads(row["context"], {}),
         scope=str(row["scope"]),
         agent=row["agent"],

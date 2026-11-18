@@ -70,6 +70,7 @@ def concepts_for_scope(
             level="concept",
             scope=scope,
             include_decayed=False,
+            include_embedding=False,
             limit=max(0, int(limit)),
         )
         return {
@@ -106,6 +107,7 @@ def recent_interactions(
         traces = store.list_nodes(
             level="trace",
             include_decayed=False,
+            include_embedding=False,
             limit=max(0, int(limit)),
         )
         return {

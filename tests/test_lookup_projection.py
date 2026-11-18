@@ -55,9 +55,9 @@ def test_native_paired_projection_work_and_full_view(runtime, monkeypatch):
                     reads.append(len((value or "").encode()))
                     return original_loads(value, default)
 
-                def materialized(row):
+                def materialized(row, **kwargs):
                     nodes.append(row["id"])
-                    return original_node(row)
+                    return original_node(row, **kwargs)
 
                 with monkeypatch.context() as capture:
                     capture.setattr(storage, "_json_loads", counted)
