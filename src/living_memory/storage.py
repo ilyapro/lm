@@ -4059,10 +4059,10 @@ class MemoryStore:
         include_identity: bool = False,
         include_encoder: bool = False,
         known_only: bool = False,
-        current_only: bool = False,
+        current_source_version: bool = False,
     ) -> Iterator[
         tuple[str, int, memoryview] | tuple[str, int, memoryview, str | None]
-        | tuple[str, int, memoryview, str, str | None]
+        | tuple[str, int, memoryview, str, str | None] | tuple[str, int, memoryview, str, str | None, str]
     ]:
         """Yield ``(node_id, chunk_index, embedding)`` for live chunks.
 
@@ -4098,7 +4098,8 @@ class MemoryStore:
         ``include_encoder`` appends the producer's space. Historical rows and
         unmigrated snapshots return None for that field. With ``known_only``,
         SQLite excludes those payloads before they reach the caller.
-        With ``current_only``, each window must match a nonempty source fingerprint.
+        With ``current_source_version``, require a matching nonempty source
+        fingerprint and append it for validation against the admitted body.
 
         Yields nothing on a pre-v6 database rather than raising, so a snapshot
         opened without migrations degrades instead of crashing.
@@ -4108,7 +4109,7 @@ class MemoryStore:
             return
 
         clauses = ["n.decayed = 0"] if not include_decayed else []
-        if current_only:
+        if current_source_version:
             clauses.extend(["n.content_fingerprint != ''", "c.content_fingerprint = n.content_fingerprint"])
         params: list[Any] = []
         if level is not None:
@@ -4136,6 +4137,7 @@ class MemoryStore:
         cursor.execute(
             f"""
             SELECT c.node_id, c.chunk_index, c.embedding{', c.id' if include_identity else ''}{encoder_column}
+                   {', c.content_fingerprint' if current_source_version else ''}
             FROM {CHUNK_EMBEDDING_TABLE} c
             JOIN nodes n ON n.id = c.node_id
             {where}
@@ -4601,7 +4603,12 @@ class MemoryStore:
             if (current is None or identity(current) != source or chunk_ids() != before
                     or self.node_chunks_are_current(selected.id, encoder_id=encoder_id)):
                 return False
-            self._replace_node_chunks(selected.id, pairs, _content_fingerprint(content))
+            fingerprint = _content_fingerprint(content)
+            self._conn.execute(
+                "UPDATE nodes SET content_fingerprint = ? WHERE id = ? AND content_fingerprint IS NOT ?",
+                (fingerprint, selected.id, fingerprint),
+            )
+            self._replace_node_chunks(selected.id, pairs, fingerprint)
             if embedding is not None and self._node_embedding_column_present():
                 self._conn.execute("UPDATE nodes SET embedding = ?, updated_at = ? WHERE id = ?",
                                    (_json_dumps(embedding), _utc_now(), selected.id))

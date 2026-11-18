@@ -74,6 +74,7 @@ from living_memory.storage import (
     CHUNK_EMBEDDING_DTYPE,
     CHUNK_EMBEDDING_ITEMSIZE,
     MemoryStore,
+    _content_fingerprint,
     unpack_chunk_embedding,
 )
 from living_memory.validity import supersedes_sets
@@ -297,6 +298,7 @@ class _ChunkBlock:
     log2_chunk_counts: Any
     norms: Any = None
     norm_deviation: float = 0.0
+    source_versions: tuple[str, ...] = ()
     chunk_ids: tuple[str, ...] = ()
     encoder_id: str | None = None
 
@@ -1206,18 +1208,17 @@ class MemoryRecallService:
         q_arr = _as_query_array(query_embedding)
         # Resolve membership after the drain, which can write new chunks.
         keep_n = per_scope_limit * max(1, len(plan.scopes))
-        discovery: list[tuple[float, int, str, str | None]] = []
-        lexical: list[tuple[float, int, str, str | None]] = []
+        discovery: list[tuple[float, int, str, str | None, str]] = []
+        lexical: list[tuple[float, int, str, str | None, str]] = []
         order = 0
         for block in self._chunk_blocks(plan, len(query_embedding), encoder_id):
-            for similarity, node_id, chunk_id in _pooled_chunk_similarities(
-                block, query_embedding, q_arr,
-            ):
+            scores = _pooled_chunk_similarities(block, query_embedding, q_arr)
+            for index, (similarity, node_id, chunk_id) in enumerate(scores):
                 if not similarity >= VECTOR_MATCH_THRESHOLD:
                     continue
                 # The worst retained discovery ranks first in the heap; an
                 # earlier scan position wins a tie, including across scopes.
-                item = (similarity, -order, node_id, chunk_id)
+                item = (similarity, -order, node_id, chunk_id, block.source_versions[index])
                 order += 1
                 if node_id in candidates:
                     lexical.append(item)
@@ -1237,15 +1238,18 @@ class MemoryRecallService:
         # -- a node now clears it if *any* window does -- so this list runs
         # closer to its `keep_n` ceiling than it used to, and the per-node
         # round trip is the part of it that is pure overhead.
-        missing = [node_id for _score, _order, node_id, _chunk_id in kept if node_id not in candidates]
+        missing = [item[2] for item in kept if item[2] not in candidates]
         fetched = self.store.get_recall_nodes(missing, plan) if missing else {}
-        for similarity, _order, node_id, chunk_id in kept:
+        for similarity, _order, node_id, chunk_id, version in kept:
             existing = candidates.get(node_id)
+            node = existing.node if existing is not None else fetched.get(node_id)
+            # Hydration can span a concurrent edit. Historical source rows can
+            # also retain a fingerprint predating their text. Check only the
+            # bounded winners, using the version from the scored block.
+            if node is None or _content_fingerprint(node.content) != version:
+                continue
             if existing is None:
-                node = fetched.get(node_id)
-                if node is None:
-                    continue
-                existing = candidates.setdefault(node_id, _Candidate(node=node))
+                existing = candidates[node_id] = _Candidate(node=node)
             if similarity > existing.vector_score:
                 existing.vector_score = similarity
                 existing.chunk_id = chunk_id
@@ -1321,8 +1325,8 @@ class MemoryRecallService:
         """
 
         accumulators: dict[tuple[int, str], _BlockAccumulator] = {}
-        for node_id, _ordinal, view, chunk_id, encoder_id in self.store.iter_chunk_embedding_rows(
-            scope=scope, include_identity=True, include_encoder=True, known_only=True, current_only=True,
+        for node_id, _ordinal, view, chunk_id, encoder_id, version in self.store.iter_chunk_embedding_rows(
+            scope=scope, include_identity=True, include_encoder=True, known_only=True, current_source_version=True,
         ):
             width, remainder = divmod(len(view), CHUNK_EMBEDDING_ITEMSIZE)
             if remainder or not width or not encoder_id:
@@ -1330,7 +1334,7 @@ class MemoryRecallService:
             key = (width, encoder_id)
             if key not in accumulators:
                 accumulators[key] = _BlockAccumulator()
-            accumulators[key].add(node_id, view, chunk_id)
+            accumulators[key].add(node_id, view, chunk_id, version)
 
         blocks = tuple(
             replace(accumulator.freeze(width), encoder_id=encoder_id)
@@ -2440,7 +2444,7 @@ LENGTH_BIAS_LOG2_COEFFICIENT = 0.031
 class _BlockAccumulator:
     """Collect ordered BLOBs once, retaining one raw array per vector width."""
 
-    __slots__ = ("payload", "node_ids", "starts", "rows", "chunk_ids")
+    __slots__ = ("payload", "node_ids", "starts", "rows", "chunk_ids", "source_versions")
 
     def __init__(self) -> None:
         self.payload = bytearray()
@@ -2448,12 +2452,14 @@ class _BlockAccumulator:
         self.starts: list[int] = []
         self.rows = 0
         self.chunk_ids: list[str] = []
+        self.source_versions: list[str] = []
 
-    def add(self, node_id: str, view: Any, chunk_id: str) -> None:
+    def add(self, node_id: str, view: Any, chunk_id: str, version: str) -> None:
         # iter_chunk_embedding_rows promises rows grouped by node, so a node id
         # that differs from the last one can only mean a new run.
         if not self.node_ids or self.node_ids[-1] != node_id:
             self.node_ids.append(node_id)
+            self.source_versions.append(version)
             self.starts.append(self.rows)
         self.payload += view
         self.chunk_ids.append(chunk_id)
@@ -2483,7 +2489,7 @@ class _BlockAccumulator:
                 log2_chunk_counts=_np.log2(counts),
                 norms=norms,
                 norm_deviation=norm_deviation,
-                chunk_ids=tuple(self.chunk_ids),
+                source_versions=tuple(self.source_versions), chunk_ids=tuple(self.chunk_ids),
             )
         payload = bytes(self.payload)
         stride = dimension * CHUNK_EMBEDDING_ITEMSIZE
@@ -2501,7 +2507,7 @@ class _BlockAccumulator:
             log2_chunk_counts=tuple(
                 log2(bounds[index + 1] - bounds[index]) for index in range(len(node_ids))
             ),
-            chunk_ids=tuple(self.chunk_ids),
+            source_versions=tuple(self.source_versions), chunk_ids=tuple(self.chunk_ids),
         )
 
 
@@ -2513,6 +2519,7 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
         for block in blocks for index, node_id in enumerate(block.node_ids)
     )
     node_ids = tuple(node_id for node_id, _, _ in runs)
+    versions = tuple(block.source_versions[index] for _, block, index in runs)
     counts = [
         (int(block.starts[index + 1]) if index + 1 < len(block.node_ids) else block.row_count)
         - int(block.starts[index])
@@ -2544,7 +2551,7 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
             dimension, node_ids, starts, None, row_count,
             _np.asarray([block.log2_chunk_counts[index] for _, block, index in runs]),
             norms, float(_np.max([block.norm_deviation for block in blocks])),
-            chunk_ids=chunk_ids, encoder_id=blocks[0].encoder_id,
+            source_versions=versions, chunk_ids=chunk_ids, encoder_id=blocks[0].encoder_id,
         )
         return _ChunkGatherPlan(blocks, tuple(placements), template)
     starts_list = []
@@ -2556,7 +2563,7 @@ def _prepare_chunk_gather(blocks: tuple[_ChunkBlock, ...]) -> _ChunkGatherPlan:
     template = _ChunkBlock(
         dimension, node_ids, tuple(starts_list), tuple(scalar_rows), row_count,
         tuple(block.log2_chunk_counts[index] for _, block, index in runs),
-        chunk_ids=chunk_ids, encoder_id=blocks[0].encoder_id,
+        source_versions=versions, chunk_ids=chunk_ids, encoder_id=blocks[0].encoder_id,
     )
     return _ChunkGatherPlan(blocks, (), template)
 
