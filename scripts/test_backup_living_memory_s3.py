@@ -644,6 +644,7 @@ def test_recovery_metadata_md5_uses_received_archive(backup, name):
     assert backup.invoke() == 3
     transaction = backup.status()["transaction"]
     assert set(transaction["previous"]) == {"File size", "MD5 sum"}
+    copies = dict(backup.objects)
     backup.calls.clear()
 
     def altered_header(operation, args):
@@ -655,6 +656,7 @@ def test_recovery_metadata_md5_uses_received_archive(backup, name):
 
     backup.hook = altered_header
     assert backup.invoke() == 3
+    assert backup.objects == copies
     assert backup.status()["result"] == "unknown"
     assert backup.status()["transaction"] == transaction
     assert all(op in {"info", "ls", "multipart", "get"} for op, _ in backup.calls)
