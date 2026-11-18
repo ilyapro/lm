@@ -584,6 +584,16 @@ def temporary_file(path: Path):
 
 
 @contextmanager
+def temporary_sqlite(path: Path):
+    # A read-only integrity_check on a WAL-mode image can leave WAL/SHM files.
+    with ExitStack() as files:
+        for suffix in ("-journal", "-wal", "-shm"):
+            files.enter_context(temporary_file(path.with_name(path.name + suffix)))
+        with temporary_file(path):
+            yield path
+
+
+@contextmanager
 def checked_download(target: str, work: Path, name: str, expected: dict | None = None,
                      *, keep_for_md5: bool = False):
     info(target, content=False)  # Fresh ACL/policy check at each verification.
@@ -600,7 +610,7 @@ def checked_download(target: str, work: Path, name: str, expected: dict | None =
         archive_hash = digest(archive)
         if expected and archive_hash != expected["archive_sha256"]:
             raise RuntimeError(f"{name} archive checksum mismatch")
-        with temporary_file(work / f"{name}.sqlite3") as restored:
+        with temporary_sqlite(work / f"{name}.sqlite3") as restored:
             decompress(archive, restored)
             if not keep_for_md5:
                 downloaded.close()
@@ -810,7 +820,7 @@ def run() -> int:
         archive = work / "snapshot.sqlite3.gz"
         try:
             with temporary_file(archive):
-                with temporary_file(local):
+                with temporary_sqlite(local):
                     snapshot(local)
                     check_sqlite(local)
                     compress(local, archive)
